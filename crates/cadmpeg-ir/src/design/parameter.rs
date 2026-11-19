@@ -239,6 +239,17 @@ pub struct Deviations {
     pub upper: FiniteReal,
 }
 
+impl Deviations {
+    /// The deviations of the limits `lower` and `upper` about `nominal`.
+    #[must_use]
+    pub fn from_limits(nominal: f64, lower: f64, upper: f64) -> Option<Self> {
+        Some(Self {
+            lower: FiniteReal::new(lower - nominal)?,
+            upper: FiniteReal::new(upper - nominal)?,
+        })
+    }
+}
+
 /// A fit's stored deviations: the designation's published cell (a cache),
 /// the source's own where they differ from it, or deviations no table the
 /// decoder holds checks.

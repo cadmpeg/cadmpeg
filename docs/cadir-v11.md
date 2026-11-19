@@ -296,9 +296,9 @@ A writer stores no application-private data in the target to mark a lowered cons
 
 **States.** A writer to a format that stores per-feature states writes each state the document holds that it can encode in the format's state encoding, at its position. Full-shape formats take any state (FreeCAD per-object shapes). A delta-chain writer encodes a state only where it can produce a chain its target accepts: an F3D writer writes ASM history states; a SolidWorks or NX writer writes the current partition, because a Parasolid delta chain built from neutral states is not established as acceptable. A body that a later feature consumes stays in the format's stored model with the format's hidden marking where the format keeps consumed bodies (F3D).
 
-**Features without their state.** A feature whose state the target needs and the document lacks, or whose state or input names the writer cannot produce for the target, charges `export:evaluation.missing` naming the feature. The writer never substitutes another position's state and never encodes a missing state with a value the format uses for another fact. Where the target's state encoding chains each state to its predecessor (an F3D ASM history), such a feature ends the stated run: the features after it in its container are written as if their states were absent, whether or not the document holds them. A full-shape target (FreeCAD) receives every state the document holds, at its position, and loses only the features whose states are missing.
+**Features without their state.** A feature whose state the target needs and the document lacks, or whose state or input names the writer cannot produce for the target, charges `export:evaluation.missing` naming the feature. The writer never substitutes another position's state and never encodes a missing state with a value the format uses for another fact. Where the target's state encoding chains each state to its predecessor (an F3D ASM history), such a feature ends the stated run: the features after it in its container are written as if their states were absent, whether or not the document holds them. A full-shape target (FreeCAD) receives every state the document holds, at its position, and loses only the features whose states are missing. The current state at an unstated rollback (§5.2) is no member's state: a writer never takes it for the state after the container's last member, so a feature whose state would come from it alone is a feature without its state.
 
-A target that takes feature definitions over the current geometry (FreeCAD, SolidWorks, NX, Creo, CATIA) writes each feature's definition, with every state it can encode, and the application rebuilds the features when the user asks; the written history's final state is the current geometry, shown exactly once. It writes this one form whatever `missing_states` says. A target that holds no feature without its state (Fusion, whose timeline features before the marker each carry a stored state) has two forms, and the caller chooses one (`missing_states`, §3.5):
+A target that takes feature definitions over the current geometry (FreeCAD, SolidWorks, NX, Creo, CATIA) writes each feature's definition, with every state it can encode, and the application rebuilds the features when the user asks; the written history's final state is the current geometry, shown exactly once. Where an ordered container's `rollback` is unstated (§5.2), the writer writes the target's own default for it, the container built through its last member, and that member, where no evaluation states its state, is a feature written without its state (below): the current geometry shown after it is not established as its result. It writes this one form whatever `missing_states` says. A target that holds no feature without its state (Fusion, whose timeline features before the marker each carry a stored state) has two forms, and the caller chooses one (`missing_states`, §3.5):
 - **Geometry-true** (the default). The current geometry is written exactly. A timeline is written with its history only where every feature in it can be written with its state and its names. Otherwise the writer writes the parameters and one stored-geometry feature of the current bodies, and charges `export:evaluation.missing` for each feature it does not write. It writes the source's sketches as timeline items before that feature, each on an origin plane or on construction geometry written before it, never on its faces: a Base Feature is a timeline item like any other, and Fusion itself lists sketches and parametric features before one, in regeneration order. A state the writer stores for a feature must be that feature's result: Fusion stores nothing that ties a state to its definition and shows a stored state as stored until something recomputes it, and it has no stale mark (below), so a feature whose exact state the writer cannot produce is a feature without its state.
 - **History-true.** The stated run is written with its states, up to the timeline marker, which the writer places after the run's last feature. The later features follow the marker rolled back, with their definitions and without their states (Fusion stores rolled-back features this way), and the final geometry is not shown. The report charges `export:evaluation.missing` naming each rolled-back feature.
 
@@ -439,7 +439,7 @@ After the edit they recompute the cache of every dependent `Neutral` expression 
 
 `set_dimension(p, v)` replaces the definition of design parameter `p` with the one-literal expression `v`: for a quantity kind a number in its authored unit, a unit of that quantity (a negative value as `-` over its magnitude, §5.13); for an integer kind a whole number with no unit; a Boolean; or a text (an enumerator's wire name where an option binds `p`, §5.14). It sets the base definition. It writes no configuration's or arrangement's override. The override is then as the sentence above states: its value is recomputed, or it is removed where it states no expression and the value is cleared (D12). On a parameter that is `Driven`, `Assigned`, or has references it returns `DrivenParameter` with its drivers, and on a value that is not of `p`'s kind `KindMismatch`: a number of another quantity, a number with a unit or a fraction for an integer kind, or another variant. A `Native`-kind parameter has no neutral literal, so every value is refused. Edits to process records mark process states and toolpaths as §7.9 states.
 
-`insert_member(c, i, records)` takes `records`, a `Design` that holds one new member (a feature, or a container with its members and theirs) and the records they own, and nothing else. It adds them to the document and makes that member a member of container `c`, at index `i` of an ordered container; it refuses where the document already holds one of their ids. `remove_member(m)` deletes `m` from the document with what it owns: where `m` is a container, every member under it; the sketches and spatial sketches whose `owner` is a deleted feature, with their entities and constraints (§6.1), and the sheet a deleted feature's `Spreadsheet` operation names (§5.12); the parameters whose `owner` is a deleted feature or container, and the programs whose `owner` is a deleted feature; and every override, pose, and instance-body entry keyed by a deleted record. It refuses, returning `Referenced` with the referring records, where a record it keeps names a deleted record by id (a `ParameterRef`, a bound `Dimension`, a `Datum`, `Feature`, `FeatureResult`, `Sketch`, or sketch-entity pick, a `Link`, a `ReferenceTarget::Feature`, a `driven_by`, a process state's `feature`, an occurrence path), since a dangling id is an Error (D6). A pick that resolves through a name mentioning a deleted feature stays, and no longer resolves (D51). Either edit marks `Stale` every evaluation and current state at or after `m`'s position in an ordered container (§5.3), and every one that depends on a feature at or after it; in an unordered container, which has no order, every one that depends on a deleted member. Removal also deletes the evaluations keyed by a deleted member (`of` is `State(After(x))` or `Tool(x)`) and rebases the evaluations and process states based on them so that their resolved states are unchanged. In each state it keeps, a name-table entry whose name mentions a deleted feature or an entity of a deleted sketch loses that name and keeps its `native`, and an entry left with neither is removed: no feature of the document now produced the entity (§5.7). In an ordered container it retargets every other position that names a deleted member, or the `Start` of a deleted container (a `Pinned` anchor, a current state's position, a `StateRef`, §8), to the position before `m` (§5.3), and retargets `Rollback::Before(m)` to the member after `m`, or to `End` where `m` is the last member. A folder of `m`'s container keeps its other members, and one left with no member is removed. In an unordered container, which has no position before a member (§5.3), removal removes the result that only each deleted member produced. For each deleted member `x` that has its own result (§5.3), it rebases every evaluation and process state whose base is `StateBase::Current(After(x))` so that its resolved state is unchanged, and then deletes the current state at `After(x)` with the part of its extent that no other current state's extent and no unproduced body holds: its bodies and the records only they reach, their name entries, their owner entries, their instance-body entries, and its poses, as `set_active_configuration` removes an outgoing extent. It re-anchors every selection anchored `Pinned(After(x))` to `Current` (§5.8) and clears the `resolved` cache of every pick that lists a deleted record; a pick that named an entity of the deleted result no longer resolves (D51). It deletes each model-class record all of whose targets lie in the deleted extent or in a deleted evaluation (a tessellation of a deleted body, an appearance binding or an attribute on it, a PMI annotation on its entities alone), deletes the tessellations a removed `Stored` feature names, and removes the deleted entities from each presentation layer's `items`. It refuses, returning `Referenced` with the referring records, where any other record it keeps names a deleted record by id (a PMI annotation or a declared measure that also targets geometry the document keeps, a drawing reference). Removing a container also deletes, in the same way, each current state at a position inside it, since a container's states are its own (§5.2), and treats every other position inside it as one that names the container.
+`insert_member(c, i, records)` takes `records`, a `Design` that holds one new member (a feature, or a container with its members and theirs) and the records they own, and nothing else. It adds them to the document and makes that member a member of container `c`, at index `i` of an ordered container; it refuses where the document already holds one of their ids. `remove_member(m)` deletes `m` from the document with what it owns: where `m` is a container, every member under it; the sketches and spatial sketches whose `owner` is a deleted feature, with their entities and constraints (§6.1), and the sheet a deleted feature's `Spreadsheet` operation names (§5.12); the parameters whose `owner` is a deleted feature or container, and the programs whose `owner` is a deleted feature; and every override, pose, and instance-body entry keyed by a deleted record. It refuses, returning `Referenced` with the referring records, where a record it keeps names a deleted record by id (a `ParameterRef`, a bound `Dimension`, a `Datum`, `Feature`, `FeatureResult`, `Sketch`, or sketch-entity pick, a `Link`, a `ReferenceTarget::Feature`, a `driven_by`, a process state's `feature`, an occurrence path), since a dangling id is an Error (D6). A pick that resolves through a name mentioning a deleted feature stays, and no longer resolves (D51). Either edit marks `Stale` every evaluation and current state at or after `m`'s position in an ordered container (§5.3), and every one that depends on a feature at or after it; in an unordered container, which has no order, every one that depends on a deleted member. A current state at the unstated rollback of an ordered container counts as at or after each of its members. Removal also deletes the evaluations keyed by a deleted member (`of` is `State(After(x))` or `Tool(x)`) and rebases the evaluations and process states based on them so that their resolved states are unchanged. In each state it keeps, a name-table entry whose name mentions a deleted feature or an entity of a deleted sketch loses that name and keeps its `native`, and an entry left with neither is removed: no feature of the document now produced the entity (§5.7). In an ordered container it retargets every other position that names a deleted member, or the `Start` of a deleted container (a `Pinned` anchor, a current state's position, a `StateRef`, §8), to the position before `m` (§5.3), and retargets `Rollback::Before(m)` to the member after `m`, or to `End` where `m` is the last member. An unstated rollback stays unstated. A folder of `m`'s container keeps its other members, and one left with no member is removed. In an unordered container, which has no position before a member (§5.3), removal removes the result that only each deleted member produced. For each deleted member `x` that has its own result (§5.3), it rebases every evaluation and process state whose base is `StateBase::Current(After(x))` so that its resolved state is unchanged, and then deletes the current state at `After(x)` with the part of its extent that no other current state's extent and no unproduced body holds: its bodies and the records only they reach, their name entries, their owner entries, their instance-body entries, and its poses, as `set_active_configuration` removes an outgoing extent. It re-anchors every selection anchored `Pinned(After(x))` to `Current` (§5.8) and clears the `resolved` cache of every pick that lists a deleted record; a pick that named an entity of the deleted result no longer resolves (D51). It deletes each model-class record all of whose targets lie in the deleted extent or in a deleted evaluation (a tessellation of a deleted body, an appearance binding or an attribute on it, a PMI annotation on its entities alone), deletes the tessellations a removed `Stored` feature names, and removes the deleted entities from each presentation layer's `items`. It refuses, returning `Referenced` with the referring records, where any other record it keeps names a deleted record by id (a PMI annotation or a declared measure that also targets geometry the document keeps, a drawing reference). Removing a container also deletes, in the same way, each current state at a position inside it or at `After(Container(d))` for the container or a container under it, since a container's states are its own (§5.2), and treats every other position inside it as one that names the container.
 
 `set_active_configuration(scope, c)` changes which configuration the current geometry holds for one scope, and keeps every state the document holds. For each current state of that scope, it exchanges only that state's extent (§5.5): its bodies and the records they reach, their names, owners, and instance bodies, and its poses. The geometry, names, and records of other scopes and of the scope's other current states are untouched. So are the scope's unproduced bodies (§5.5).
 - it writes the outgoing extent into an evaluation of the outgoing configuration at that current state's position;
@@ -506,11 +506,11 @@ A design scope is the design of one product definition: its history, parameters,
 
 ```rust
 pub enum Container {
-    Ordered   { id: ContainerId, kind: OrderedKind, members: Vec<Member>, folders: Vec<Folder>, rollback: Rollback, placement: Option<Construction<Frame>> },
+    Ordered   { id: ContainerId, kind: OrderedKind, members: Vec<Member>, folders: Vec<Folder>, rollback: Option<Rollback>, placement: Option<Construction<Frame>> },
     Unordered { id: ContainerId, kind: UnorderedKind, members: BTreeSet<Member> },
 }
 pub enum Member { Feature(FeatureId), Container(ContainerId) }
-pub enum OrderedKind { Timeline, Body }
+pub enum OrderedKind { Timeline, Body, GeometricalSet }
 pub enum UnorderedKind { GeometricalSet, Group }
 pub struct Folder { pub name: Option<String>, pub first: u32, pub last: u32 }
 pub enum Rollback { End, Before(Member) }
@@ -523,14 +523,16 @@ History is a graph of features with containers inside it.
 | Creo, NX, SolidWorks | one ordered `Timeline` per scope; SolidWorks' rollback bar is `Rollback::Before`; SolidWorks FeatureManager folders are `Folder`s. A Creo assembly's timeline holds its component placements and assembly features in regeneration order |
 | Inventor | one ordered `Timeline`, with the end-of-part marker as `Rollback::Before`; a sheet-metal flat pattern is a second root `Timeline`; the Blocks folder is a root unordered `Group` (§6.1) |
 | Fusion | one ordered `Timeline` per timeline in the design stream that holds an item, each a root of the document's scope; a component's empty timeline (every component stores one, and only the root's holds items) is native, and the F3D writer regenerates it; timeline groups are `Folder`s. A design stream that holds no timeline item has no ordered container: its sketches and construction geometry are members of one root unordered `Group`, and its bodies are unproduced (§5.5). A stream that holds only such bodies has no scope (§5.1). |
-| CATIA | ordered `Body` containers and unordered `GeometricalSet`s, nested; a Boolean feature selects another body's result; the in-work object is the `Rollback` of its body |
+| CATIA | a part's top-level bodies, ordered geometrical sets, and geometrical sets are roots of its scope, listed as the part lists them: ordered `Body` containers, ordered `GeometricalSet`s, and unordered `GeometricalSet`s. The features the part lists outside every set (its xy, yz, and zx planes among them, §6.2) are members of one root unordered `Group`, the part's own, which is listed first. A set that the part stores inside another is a member of it. A Boolean feature selects another body's result. The part's one in-work object is the `rollback` of the body or ordered geometrical set that lists it as a member: `Before` the member after it, or `End` where it is that set's last member; where the in-work object is itself a body or an ordered geometrical set, that set's `rollback` is `End` (part 11) |
 | FreeCAD | each PartDesign Body an ordered `Body` with `Tip` as `Rollback`; Part workbench objects, and `App::Link` objects as `Place` features (§6.7), members of an unordered `Group` |
 | Rhino | history records members of one unordered `Group`; an object that no history record lists among its descendants is unproduced (§5.5) |
 
 - Membership lives only in containers. Every feature and container is a member of exactly one container or is a root of exactly one scope; containers form a tree.
+- Where a source lists a scope's root containers in one list (a CATIA part's list of its sets), `roots` keeps that order; otherwise their order states nothing. It is display order and scopes nothing: no state, position, or rule depends on it, and a scope that loses a root to a given-up part keeps its other roots in their order (§3.3).
 - Sketches, datums, component placements, and joints are features (§6) and so are members of a container, with a place in its order where it is ordered.
 - Dependencies derive from definition references (D26) and cross containers and scopes freely. A dependency cycle is legal in the document and reported as a Warning (FreeCAD and Rhino store cycles).
-- `Rollback::Before(m)` names a member of its container. An unordered container has no rollback and no order.
+- `rollback` is how far the source builds the container: `End` through its last member, `Before(m)` before member `m`, so that `m` and every member after it are not built. `Rollback::Before(m)` names a member of its container. `None` where no stored fact the decoder read fixes it (§3.1). A decoder states the rollback where it reads the source's marker (FreeCAD `Tip`, the Inventor end-of-part marker, the CATIA in-work object) or another stored fact that fixes it, and a decoder of a format established to save every container built through its end states `End`; it never fills one it did not read (§2.4). A writer writes an unstated rollback as its target's own default (§3.4). An unordered container has no rollback and no order.
+- `kind` says what the container is in its source (table above). A `Timeline` is a history of any number of bodies. A `Body` is an ordered container whose solid features build one body and act on it (`targets`, §6); in a CATIA body, wireframe and surface features also have results in its states. An ordered `GeometricalSet` is a CATIA ordered geometrical set, whose features build wireframe and surfaces in order, each result a body of its own; it is typed from Dassault's pages Managing Ordered Geometrical Sets and Order and Absorption Concepts. An unordered `GeometricalSet` is a CATIA geometrical set, and a `Group` any other set of independent members.
 - `placement` is the placement a source applies to the whole of an ordered container's result (a FreeCAD PartDesign Body's `Placement`), as a construction whose components can be bound. An ordered container's states are in its local frame: its members' operands, picks, sketch frames, and `Principal { container }` values read them there (FreeCAD stores a Body's feature shapes in Body coordinates). `placement` maps that frame into the definition's. `Body.transform` (§5.6) holds the placement's resolved value on each body of the container's states, in the current geometry and in every evaluation alike (resolved in the evaluation's configuration), and a geometry writer applies it; the construction's `resolved` is the cache of that `Body.transform` in the current geometry. A reference that reaches the result through the container reads it under the placement: an operand or a pick at `After(Container(c))` (§5.3), and, where no `App::Link` places the container's object, a process pick with `workpiece: None` (part 7). A workpiece with a `placement` reads it under that placement instead (§7.1). Where an `App::Link` places the container's object, the object is a definition of its own whose bodies have no `Body.transform`, `placement` defines the transform of the object's own occurrence, and `resolved` is the cache of that `Occurrence.transform`; a selection from outside the object reaches its result through that occurrence or the object's definition (§6.7). `None` where the source has none.
 - An ordered container carries its own origin where the source stores origin entities that belong to the container: a FreeCAD PartDesign Body, whose `Origin` holds its planes, axes, and point in the Body's local frame. A container whose source stores none (a CATIA body, a part's timeline) carries none: its members read their definition's origin, or its origin features (§6.2).
 - A container scopes a state: an ordered container builds one cumulative state, and a member of an unordered container has its own result where §5.3 gives it one. A `Folder` is a display grouping of a contiguous run of an ordered container's members (`first` to `last`, by index); it scopes no state, has no position, and has no rollback. Folders of one container nest or are disjoint.
@@ -541,7 +543,7 @@ History is a graph of features with containers inside it.
 pub enum Position { Start(ContainerId), After(Member) }
 ```
 
-A position is a state boundary. `Start(c)` is the state entering ordered container `c` before its first member. `After(m)` is the state leaving member `m`: in an ordered container, the cumulative state after `m`; in an unordered container, `m`'s own result. A feature that is a member of an unordered container has its own result in a configuration unless it is stateless there (§5.4) or its operation there is a `Place`, `PlaceSet`, `Joint`, `RigidGroup`, `ComponentPattern`, or `MirrorComponents`: the container's members produce the effect of those six together, as the occurrences' base placements and existence (§6.7), and none of them has a state of its own. An `Unresolved` operation is judged by its family, as for `CadIr::is_stateless`. A `Native` member states no operation, so this rule does not require a current state at `After(m)` and does not forbid one. Where `m` has no result in a configuration, `After(m)` names no state in it. A container that is a member of an unordered container has no result of its own: where it is ordered, `After(Container(c))` is the state at its rollback position, as the next sentence states, and where it is unordered `After(Container(c))` names no state, since its members have their own. `After(Member::Container(c))` for an ordered container `c` is the state at `c`'s rollback position, read under `c`'s `placement` (§5.2): it has no evaluation of its own, and a pick anchored there resolves in the current state or the evaluation at that rollback position (§5.4, §5.5). `Start` names only ordered containers. Each state has one spelling: the state entering member k > 0 of an ordered container is `After(member k−1)`, and the state entering its first member is `Start(c)`. `CurrentState.at` and `StateBase::Current` name a rollback position by that spelling, through its member, and `After(Container(c))` occurs only as a selection anchor outside `c`.
+A position is a state boundary. `Start(c)` is the state entering ordered container `c` before its first member. `After(m)` is the state leaving member `m`: in an ordered container, the cumulative state after `m`; in an unordered container, `m`'s own result. A feature that is a member of an unordered container has its own result in a configuration unless it is stateless there (§5.4) or its operation there is a `Place`, `PlaceSet`, `Joint`, `RigidGroup`, `ComponentPattern`, or `MirrorComponents`: the container's members produce the effect of those six together, as the occurrences' base placements and existence (§6.7), and none of them has a state of its own. An `Unresolved` operation is judged by its family, as for `CadIr::is_stateless`. A `Native` member states no operation, so this rule does not require a current state at `After(m)` and does not forbid one. Where `m` has no result in a configuration, `After(m)` names no state in it. A container that is a member of a container, ordered or unordered, has no result of its own there: its states are its own, and its parent takes its result only through a member that selects it (§5.8). Where it is ordered, `After(Container(c))` is the state at its rollback position, as the next sentence states, and where it is unordered `After(Container(c))` names no state, since its members have their own. `After(Member::Container(c))` for an ordered container `c` is the state at `c`'s rollback position, read under `c`'s `placement` (§5.2): it has no evaluation of its own, and a pick anchored there resolves in the current state or the evaluation at that rollback position (§5.4, §5.5). It never names a state of `c`'s parent: in an ordered parent, the state leaving a member that is a container is the state entering it. `Start` names only ordered containers. Each state has one spelling: the state entering member k > 0 of an ordered container `c` is `After` the nearest member before k that is a feature, and the state entering a member that no feature of `c` precedes is `Start(c)`. `CurrentState.at` and `StateBase::Current` name a stated rollback position by that spelling, through its member. Where `c`'s rollback is unstated (§5.2), the state at it has no spelling through a member, and `After(Container(c))` is its one spelling, in `CurrentState.at` and `StateBase::Current` too, whether `c` is a root of its scope or a member of a container; otherwise `After(Container(c))` occurs only as a selection anchor outside `c`.
 
 A state at `P` depends on feature `f` when `f` is at or before `P` in `P`'s container chain, or when a feature at or before `P` in that chain depends on `f` transitively (D26). A `Tool(g)` evaluation (§5.4) depends on `g` and on what `g`'s definition depends on. A state that holds instance bodies (§8.1) also depends, through the occurrences of each instance path, on the features of the prototypes those occurrences place, which a name on an instance body may mention (§5.7). This order is computed from containers, dependencies, and instance paths, and every rule below uses it. Positions are ordered only within one scope: no position of one scope is before or after a position of another. A pick is ordered in the scope that holds its target, against its anchored state there (§5.8). Where the target is in the selection's own scope, that state is the selection's anchor, whatever the pick's context (a Fusion pick of another component of the same design). Where the target is in another scope, it is the state of that scope the pick resolves in: the `Pinned` position where the selection is pinned to a position of that scope, and otherwise that scope's current state that holds the target's container (§5.5). Dependencies between scopes are references (D26), and a cycle through them is a Warning, as any dependency cycle is.
 
@@ -611,14 +613,14 @@ pub struct CurrentState {
 
 `CadIr.geometry` is a model-class arena because a geometry-only document, and a geometry-only writer, need a model that stands without the design class (§2.1). The current state of every scope is held outside evaluations: its geometry in `CadIr.geometry`, its body owners and occurrence membership in the product definitions' `bodies` and `occurrences`, and its instance bodies in `ProductDefinition.instance_bodies` (all model class), its names in `Design.names`, and its poses in `CurrentState.poses`. Every other state is an evaluation that states its difference from another state (§5.4).
 
-- Each scope lists its current states. A `CurrentState` names a position and the bodies of `CadIr.geometry` that belong to the state there. Every listed body is a body of `CadIr.geometry`, and every body listed in `bodies` or in an `instance_bodies` entry of a definition a scope spans belongs to exactly one of that scope's current states or to its `unproduced` (below). A current state inside an ordered container is at that container's rollback position, spelled through its member (§5.3); a selection outside the container names the same state as `After(Container(c))`. Two FreeCAD Bodies with different `Tip`s are two current states; a CATIA part has one per body at its own in-work position, and one per geometrical-set result. The own result (§5.3) of a member of an unordered container, in the active configuration, is a current state at `After(m)` whatever its visibility: hiding is presentation (D20), so the `Base` and `Tool` that a FreeCAD Part Cut hides are current states beside the Cut's.
+- Each scope lists its current states. A `CurrentState` names a position and the bodies of `CadIr.geometry` that belong to the state there. Every listed body is a body of `CadIr.geometry`, and every body listed in `bodies` or in an `instance_bodies` entry of a definition a scope spans belongs to exactly one of that scope's current states or to its `unproduced` (below). A current state inside an ordered container `c` is at `c`'s rollback position, spelled through its member where the rollback is stated and as `After(Container(c))` where it is not (§5.3); a selection outside the container names the same state as `After(Container(c))`. Two FreeCAD Bodies with different `Tip`s are two current states; a CATIA part has one per body and per ordered geometrical set, at its rollback position, and one per geometrical-set result. The own result (§5.3) of a member of an unordered container, in the active configuration, is a current state at `After(m)` whatever its visibility: hiding is presentation (D20), so the `Base` and `Tool` that a FreeCAD Part Cut hides are current states beside the Cut's.
 - **Unproduced geometry.** `unproduced` lists the bodies of `CadIr.geometry`, owned by definitions the scope spans (§5.1), that no member of the scope produces: a Rhino object that no history record lists among its descendants, a body of a Fusion design whose design stream holds no timeline item, a body of a definition the scope spans that a USD stage or a STEP product holds beside joints and no history (§6.7), and a body of a scope whose producing members the document does not hold. Such a body has no position: it is in no current state, and no evaluation states it. Its extent is the body and the records it reaches, with their name entries, its owner, and the instance-body entries that list it; a pick anchored `Current` resolves in it as in each current state's extent (§5.8). No state of the scope depends on a feature through it (§5.3), so its name entries state no structured name (§5.7). No feature the scope holds produces it, so no feature override moves it, and a material override may select it (§5.11) without exchanging it. `set_active_configuration` leaves it in place (§4). A decoder mints no feature to hold it. A feature the source stores, whose own content is the geometry, is a `Stored` member (§5.10), and the bodies it holds are its result. A decoder lists a body here wherever the document holds no member that produces it. A `Definition` mesh that no feature's `tessellations` names is no entry: `unproduced` lists bodies, and the mesh states its definition itself (§8). A history read in part states what was read (§3.3): the members it read produce its bodies, which are not unproduced. A history read not at all leaves its bodies unproduced, with a loss naming the unread history. A writer whose target holds every body in a feature (SolidWorks, Inventor, NX, Creo, CATIA, FreeCAD) writes each unproduced body as its target's stored-geometry feature, which no edit regenerates either, and charges nothing: the geometry and what an edit does to it are the same. A writer to Rhino writes it as an object that no history record produces. A writer to Fusion writes it as a body of a design whose stream holds no timeline item where the scope holds no ordered container and no member that can change a state, and otherwise as a Base Feature ahead of the scope's other timeline items.
 - **Extent.** The extent of a current state is its bodies and the records they reach, their name entries, their owners, the instance-body entries whose bodies are among them, the occurrence membership of the definitions the scope spans, and its poses. `StateBase::Current(p)` is that extent (§5.4). A selection whose anchored position is a current state's position, in the active configuration, resolves in that state's extent, not in all of `CadIr.geometry`: no evaluation repeats that state (§5.4), and `All { kind }`, `KeepSelected`, and every rule that reads every entity of a state read the extent. A pick anchored `Current` resolves in the current geometry of the scope it resolves in: the union of that scope's current-state extents and the extent of its unproduced bodies (§5.8).
 - `CadIr.geometry`, `Design.names`, `ProductDefinition.instance_bodies`, and the current states' poses hold the state of each scope's active configuration. `Design.names` names the entities of `CadIr.geometry`. Changing the active configuration is `set_active_configuration` (§4), which exchanges each current state's extent and nothing else.
 - **Poses.** `poses` holds a placed instance's placement in the current state where it differs from the placement its configuration resolves to, keyed by the instance's path under the rule of `delta.poses` (§5.4, D54). The resolved placement is `Occurrence.transform`, the placement the source stores on the occurrence (for Fusion, its current pose, §8.1), so a current state states a pose only where the instance's placement differs from it: a per-path pose of a nested instance (Fusion stores poses per component path), or, in a timeline rolled back before a Move or a joint, the placement the instance has at the rollback. `effective_transform` applies it (§4). A path has a pose in at most one current state of its scope. A scope that holds no current state states no pose: there, the placement of an instance nested inside an occurrence's prototype, for that occurrence alone, is a nested override of that occurrence (§8.1).
 - With `design` out of scope, `CadIr.geometry` stands alone.
 
-A body a later feature of an ordered container consumes, removes, or splits exists in the states before that feature, where the feature's operand selects it. A body the source keeps in its stored model but hides because a feature of its timeline consumed it (Fusion) belongs to the earlier state, not to the current geometry; the F3D writer restores it hidden (§3.4). A member of an unordered container that has its own result (§5.3) keeps that result as a current state when another member uses it (above).
+A body a later feature of an ordered container consumes, removes, or splits exists in the states before that feature, where the feature's operand selects it. In a CATIA body and an ordered geometrical set, a modification feature consumes the result it absorbs (Dassault's page Order and Absorption Concepts). A body the source keeps in its stored model but hides because a feature of its timeline consumed it (Fusion) belongs to the earlier state, not to the current geometry; the F3D writer restores it hidden (§3.4). A member of an unordered container that has its own result (§5.3) keeps that result as a current state when another member uses it (above).
 
 ### 5.6 Topology and record references
 
@@ -789,7 +791,7 @@ pub enum SourceGeometryRole { Independent, Support }
 - **Faces and loops.** `Face.sense` states whether the face normal agrees with its surface's normal. `FaceLoops::Classified` names the outer loop and the inner loops in source order, where the source classifies them; `Unspecified` lists them in source order where it does not, and is empty for a closed surface with no boundary. Loops are simple cycles with reciprocal links; an outer loop runs counterclockwise about the face's oriented normal. A loop is a `Ring` of coedges in traversal order, a checked `LoopRing` (above), with the pole vertices it passes (`vertex_uses`, each after the coedge `after` names), or one `Vertex` at a surface singularity (a cone apex) with that pole's parameter-space images.
 - **Coedges.** A coedge is one use of an edge by a loop. `sense` states whether its traversal agrees with its edge's curve. `radial_next` is the next coedge around the edge; radial rings close through it, and a coedge whose `radial_next` is itself bounds a laminar edge of a sheet. `pcurves` lists the coedge's parameter-space images on its face's surface in order, each with the interval of the pcurve's own parameter it uses (`DirectedParameterRange`, whose two values differ and run from the use's start to its end) and `isoparametric` where the source declares the image isoparametric. `use_curve` is a 3D carrier of this use alone, in place of the edge's curve, with its interval in traversal order. Wire edges and free vertices belong to exactly one shell.
 - **Edges.** `carrier` is the edge's curve and the parameter range admitted on it: with a `curve`, `param_range` is that curve's interval from the edge's start to its end, `start ≤ end`; with no `curve`, it holds the parameters of the edge's ends where the source states them; with neither, the edge has no carrier. `ends` holds the edge's start and end vertices; `None` is a closed edge with no vertex (a Parasolid ring edge, such as the circular edge of a through hole), which occurs only on a closed carrier (§10). A closed edge with no vertex states no `param_range`: its whole carrier is admitted. `tolerance` is the edge's own tolerance (§2.3), as a face's and a vertex's are theirs. A curve record's own domain is its `parameter_range` where it states one, and otherwise the domain its carrier defines: one turn of a circle or an ellipse, and the knot domain of a NURBS curve, clamped or periodic. A curve record is closed where that domain is finite and the curve evaluates at its two ends to one point, within the tolerance in force (§2.3). A closed edge with no vertex admits that whole domain. A curve record with no finite domain (a line, a parabola, a hyperbola, or a procedural curve, with no `parameter_range`) is not closed, and an edge on it has vertices or a `param_range`.
-- **Bodies.** `transform` places the body in its owning definition: on a body of an ordered container with a `placement`, it holds that placement's resolved value, in the current geometry and in each evaluation of the container's states (resolved in the evaluation's configuration), and a geometry writer applies it (§5.2); a body of a definition that a FreeCAD `App::Link` places is in the object's local frame and has none (§6.7). World placement composes it with the occurrence chain (D25). `name` is the source's display name for the body (a Fusion body's browser name, `Body1`), `color` its display colour (D19), and `visible` whether the source displays it (D20). On the bodies of the states of an ordered `Body` container (a FreeCAD PartDesign Body), `visible` and `name` are `None`, except on its result bodies in the current geometry, which state the container object's `Visibility` and `Label` where no `App::Link` places the object. A member feature's display state is no body's: a FreeCAD PartDesign feature's `Visibility` stays in its native record (a UI state, Rule N case (b)), and its `Label` is `Feature.name`. An object that an `App::Link` places states its `Visibility` and `Label` as its own occurrence's `visible` and `name` (§6.7), and its bodies state none. The result of a member of an unordered container (a FreeCAD Part object) states the member's `Visibility` as its `visible` (§5.5).
+- **Bodies.** `transform` places the body in its owning definition: on a body of an ordered container with a `placement`, it holds that placement's resolved value, in the current geometry and in each evaluation of the container's states (resolved in the evaluation's configuration), and a geometry writer applies it (§5.2); a body of a definition that a FreeCAD `App::Link` places is in the object's local frame and has none (§6.7). World placement composes it with the occurrence chain (D25). `name` is the source's display name for the body (a Fusion body's browser name, `Body1`), `color` its display colour (D19), and `visible` whether the source displays it (D20). On the bodies of the states of a FreeCAD PartDesign Body, `visible` and `name` are `None`, except on its result bodies in the current geometry, which state the container object's `Visibility` and `Label` where no `App::Link` places the object. A member feature's display state is no body's: a FreeCAD PartDesign feature's `Visibility` stays in its native record (a UI state, Rule N case (b)), and its `Label` is `Feature.name`. An object that an `App::Link` places states its `Visibility` and `Label` as its own occurrence's `visible` and `name` (§6.7), and its bodies state none. The result of a member of an unordered container (a FreeCAD Part object) states the member's `Visibility` as its `visible` (§5.5).
 - **Colour.** A `Color` is RGBA, each component in [0, 1]. `Body.color` and `Face.color` are display colours (D19); a colour that an appearance holds is the appearance's (§8).
 - **Carriers.** Surfaces: plane, cylinder, cone, sphere, torus, NURBS, polygonal, placed (`Transformed`), procedural, unknown. Curves: line, circle, ellipse, parabola, hyperbola, degenerate, composite, NURBS, polyline, placed (`Transformed`), procedural, unknown. Pcurves in `(u, v)`. The analytic, NURBS, polyline, and placed carriers have the parameterization below; decoders convert kernel conventions at decode and mark converted fields `derived`. `SurfaceGeometry::Solved` and `CurveGeometry::Solved` hold a solved carrier; `Procedural` names the procedural record that defines the carrier and holds its solved form as `cache` where the source stores one (D23). `Curve.parameter_range` bounds the curve where the source bounds it, `start < end`. `Pcurve.metadata` states the pcurve's source form: `AsmInline` an ASM pcurve stored inline in its coedge, with its wrapper sense, tail flags, `uv_offset`, and fit tolerance; `General` every other pcurve, with its support surface, offset, sense, parameter range, and fit tolerance where the source states them.
 
@@ -1676,7 +1678,7 @@ pub enum Solidify { Sheet, IfClosed, CapPlanarOpenings }
 
 - `Sheet` is a surface result (Fusion surface extrude; FreeCAD `Solid = false`; CATIA GSD extrude and revolve; Creo surface forms; NX sheet body type). `Thin` is a solid wall about the profile curves (CATIA thin; Creo form bit 128; SolidWorks thin; NX extrude offset; NX sweep-along-guide offsets).
 - `Thickness` is a wall's thickness and where it lies. `OneSide` puts the whole `value` on `side`. `Inside` and `Outside` grow the wall into or away from the material that a closed profile or a face bounds; for a face offset (thicken), `Outside` is along the face normal and `Inside` against it. `Left` and `Right` are the sides of an open profile: its chain traversed in pick order, starting along the first curve's own direction, seen looking against the profile normal. A source whose side rule is not established states `WallSide::Native` and keeps its flag as a native option (Rule N case (a), part 11): SolidWorks one-direction thin, whose reverse is a value of its wall type and no separate flag (`ThinWallType` 0 one direction, 1 one direction reverse: SolidWorks API `IExtrudeFeatureData2.ThinWallType`), is `WallSide::Native("sldprt:one_direction")` or `WallSide::Native("sldprt:one_direction_reverse")`, and CATIA states two thicknesses. A CATIA prism is thin where its `Thin` is 2 (the stored boolean is its value plus one, as `Sym`, the sweep modes, and the hole bottoms store theirs: inferred), and its wall is `ThickThin1` + `ThickThin2` thick, one on each side of the profile, either of which may be 0. Which side `ThickThin1` lies on is not established, so the CATIA decoder states `Thickness::Native("catia:ThickThin")` with `catia:ThickThin1` and `catia:ThickThin2` as native options until it is, and `Offsets` once it is (Rule N case (a), part 11). `NeutralFiber`, read from its name as splitting the wall equally about the profile whatever `ThickThin2` holds, is the native option `catia:NeutralFiber` (part 11). `Symmetric` splits its value equally between the sides. `Offsets` states the extent on each side, signed and measured into that side, so a negative value makes a band that does not touch the profile (Fusion shell inside and outside thickness, CATIA `TopOffset` and `BotOffset`, NX first and second offset; an NX non-symmetric offset with start `s` and end `e` measured along the outside direction is `outside: e` and `inside: −s`, through `Negated` where a parameter binds `s`). On an open profile, `outside` is the `Left` side. `Capped` closes the ends of a thin wall over a closed profile, with the cap thickness (SolidWorks cap ends). `Merged` extends the wall ends to existing material (CATIA `MergeThin`). `corner_round` applies to a wall over an open profile. `Round(r)` rounds each corner where two lines of the profile meet at an angle: the wall's face on the concave side of the corner is a cylinder of radius r tangent to both straight faces there. The face on the convex side is the concentric cylinder of radius r plus the thickness where the wall keeps its thickness through the corner; that is inferred, and neither a page nor a stored corner states it. `Sharp` leaves every corner sharp. `Round` says nothing of a corner that involves an arc or a spline, so it occurs only with a profile whose picked curves are all line segments (part 10): a source that sets the option on a profile with an arc or a spline keeps it in its native options with `corner_round: None`, and a writer of another codec charges a loss naming the feature. SolidWorks' auto-fillet corners is `Round`, typed from SolidWorks' Extrude PropertyManager page ("Creates a round at each edge where the lines meet at an angle"; its Fillet Radius "Sets the inside radius of the round"): r is that inside radius, the concave face's, and no stored rounded corner is established. That its carrier is the thin specification's radial display dimension `D7` is inferred from `D7` being the only radial dimension a thin specification owns, and the flag that turns the option on is not read. No stored file known to the project settles whether the option is on or whether `D7` is the inside or the convex face's radius, and `Round`'s inside radius is the page's (part 11). No stored byte is tied to the option, and the SolidWorks decoder states `corner_round: None` and keeps `sldprt:thin_auto_fillet` and `sldprt:thin_fillet_radius` (typed, carrier unread, part 11). A writer whose target has no corner round on a thin feature takes step 3 (§3.4).
-- `Apply` combines the result with existing bodies. `targets` names them: `All`, or the `Selected` bodies (SolidWorks feature scope, `moPerBodyChooserData_c`; Fusion participant bodies; Inventor extrusion slot 24; NX target bodies). A SolidWorks feature scope with auto-select is `Selected` with the bodies SolidWorks stored at creation: it processes only those, so it differs from `All` after edits; the auto flag is the source setting `sldprt:auto_select`, which records how the list was chosen and not which bodies it holds, and no edit makes it change them (Rule N case (b)); a SolidWorks writer clears it when it writes `Selected`. A member of a `Body` container acts on that container's body (§5.2), and its `targets` is `None`. An assembly feature's operation acts on its participants (§6.7), and its `targets` is `None`. `NewBody` creates a body with no combination, which includes a surface result. A `Join` whose input state holds no target body is `NewBody`: a source's first solid feature with "merge result" set has nothing to merge, so it states `NewBody`, and no `sldprt:auto_select`.
+- `Apply` combines the result with existing bodies. `targets` names them: `All`, or the `Selected` bodies (SolidWorks feature scope, `moPerBodyChooserData_c`; Fusion participant bodies; Inventor extrusion slot 24; NX target bodies). A SolidWorks feature scope with auto-select is `Selected` with the bodies SolidWorks stored at creation: it processes only those, so it differs from `All` after edits; the auto flag is the source setting `sldprt:auto_select`, which records how the list was chosen and not which bodies it holds, and no edit makes it change them (Rule N case (b)); a SolidWorks writer clears it when it writes `Selected`. A member of a `Body` container whose `Boolean` is `Apply` acts on that container's body (§5.2), and its `targets` is `None`. An assembly feature's operation acts on its participants (§6.7), and its `targets` is `None`. `NewBody` creates a body with no combination, which includes a surface result. A `Join` whose input state holds no target body is `NewBody`: a source's first solid feature with "merge result" set has nothing to merge, so it states `NewBody`, and no `sldprt:auto_select`.
 - `Assemble` adds a tool body by its own polarity (CATIA Boolean assemble) and occurs only in `Combine`. `Compound` joins with no material interaction: the result is one body that holds each operand's solids as regions of its own, overlapping ones included, and it occurs only in `Combine` (FreeCAD `Part::Compound`, §6). A writer whose target has no such body leaves the operands as separate bodies and charges a loss naming the feature. `Sew` sews the result into the sheets it meets (NX Boolean Sew; a surface merge or knit, such as the SolidWorks filled surface's "merge result") and occurs only in an output. The "merge result" option of a SolidWorks solid feature is `Join`, or `NewBody` where it is cleared or where the feature's input state holds no body.
 - `body: None` and `boolean: None` mean the decoder did not read the value (§2.4); the operation keeps every operand it read.
 - `SheetOutput.solid` states whether a closed result becomes a solid: `Sheet` keeps a sheet, `IfClosed` forms a solid where the result closes (SolidWorks "try to form solid"), `CapPlanarOpenings` also caps planar openings (CATIA close surface).
@@ -1772,7 +1774,7 @@ pub enum SolveState { Full, Under, NotFull, Over, Inconsistent, Native(NonBlankS
 ```
 
 - **Owner.** `owner` is the feature whose definition holds the sketch; a sketch is part of its owner's definition (§5.8). A sketch that is a history member of its own is owned by a feature whose operation is `Sketch(s)` (planar) or `SpatialSketch(s)`, which names the sketch and carries no other operand. A sketch the source keeps inside another feature (a Creo section; a CATIA hole's internal sketch) is owned by that feature and is no member of a container, as an inline construction is (§5.9). The sketch's selections are part of its owner's definition: an `Input` anchor in a sketch evaluates in the state entering the owner. A configuration that places a sketch on another plane or changes its entities overrides the owner's definition with one that names another sketch record of the same owner, which then swaps the sketch in that configuration (§5.11; SolidWorks configurations).
-- **Placement.** `Placed` holds the plane frame as a `Construction<Frame>` (§5.9). The support is a `Whole` `Coincident` input that picks a datum plane, a principal plane, a planar face, or another sketch's plane (`SketchFrame`); the origin is an `Origin` `Coincident` input; the in-plane x axis is an `XAxis` input `Parallel` to an edge or axis, and a vertical reference is a `YAxis` input; an offset distance or angle from the support is a `Whole` `Offset` or `Angle` input with its dimension. CATIA's swap of the H and V directions puts the orientation input on `YAxis`; its reverse flags and NX's reference-direction flip set the input's `reversed`. `mode` keeps the source method (a FreeCAD attachment mode, the CATIA support, origin, and orientation modes, a Fusion `refType`, CATIA sliding or positioned). The construction's `after` holds, in the source's order, its flip of the normal as a `Flip` step (Creo `plane_flip`, FreeCAD `MapReversed`, NX reverse normal) and its displacement in the attached frame as `Translate` and `Rotate` steps (FreeCAD `AttachmentOffset`, Fusion `OffsetX/Y/Z` and `AngleZ`). `resolved` is the solved frame, a cache (K2). A sketch with free placement (FreeCAD) has no inputs and a resolved frame. A Creo sketch-plane datum that nothing else references is inline: its constraints are the sketch's inputs (§5.9).
+- **Placement.** `Placed` holds the plane frame as a `Construction<Frame>` (§5.9). The support is a `Whole` `Coincident` input that picks a datum plane, a principal plane, a planar face, or another sketch's plane (`SketchFrame`); the origin is an `Origin` `Coincident` input; the in-plane x axis is an `XAxis` input `Parallel` to an edge or axis, and a vertical reference is a `YAxis` input; an offset distance or angle from the support is a `Whole` `Offset` or `Angle` input with its dimension. CATIA's swap of the H and V directions puts the orientation input on `YAxis`; its reverse flags and NX's reference-direction flip set the input's `reversed`. `mode` keeps the source method (a FreeCAD attachment mode, the CATIA support, origin, and orientation modes, a Fusion `refType`, CATIA sliding or positioned). The construction's `after` holds, in the source's order, its flip of the normal as a `Flip` step (Creo `plane_flip`, FreeCAD `MapReversed`, NX reverse normal) and its displacement in the attached frame as `Translate` and `Rotate` steps (FreeCAD `AttachmentOffset`, Fusion `OffsetX/Y/Z` and `AngleZ`). `resolved` is the solved frame, a cache (K2). A sketch with free placement (FreeCAD) has no inputs and a resolved frame. A Creo sketch whose frame the decoder does not read has one input whose `role` is `None` and whose reference is an `Unread` selection of its support, and no resolved value, as a helix whose axis the decoder cannot resolve has (§6.6). A Creo sketch-plane datum that nothing else references is inline: its constraints are the sketch's inputs (§5.9).
 - **Block.** `Block` marks a block definition: a sketch with no plane, whose entities are placed by block instances in other sketches (SolidWorks, Inventor). A block definition the source keeps outside its history is owned by a feature in a root `Group` container of the scope (§5.2), which gives it no place in any history order: the feature is stateless (§5.4) and, as a member of an unordered container, has no result (§5.3); a SolidWorks block definition, a history feature, stays in the timeline. Inventor keeps its definitions so: each is a participant of a folder record of type `d5260222` (the Blocks folder), which is participant 0 of the part's root label, ahead of every feature, and of no other label, though a definition may have been created after features it precedes there. The Inventor decoder takes that folder as the root `Group`, and gives it no place in its history order.
 - **Solve state.** `state` is the source's record of how far the constraints determine the geometry: `Full` (FreeCAD `FullyConstrained` true), `NotFull` (FreeCAD false: under-constrained or unsolvable, the source does not say which), `Under`, `Over`, `Inconsistent` (CATIA `SolvingStatus`, NX `Sketch.Status`). `None` means not stated.
 - **Solve status.** `status` is the status of the sketch's solved values (entity geometry, the resolved frame): `Current` where the source does not flag them, `Stale` (FreeCAD `Touched`), `Failed` (a recorded solve failure). The edit helpers mark it `Stale` when they edit a dimension of the sketch or a referent of its selections (§4).
@@ -2003,7 +2005,7 @@ A datum feature is reference geometry: points, an axis, a plane, or a coordinate
 - **Elements.** `Points` holds one or more points; a Creo datum point feature holds up to five or more, and each is picked by index. `Points` is never empty. A datum has no topology. Its value is its construction's `resolved` (D42); a source's display shape of a datum (a FreeCAD datum plane's face) is not stored. A datum whose construction the decoder does not read, so that it has no input, no step, and no whole `resolved` value, is `Unresolved { family: Datum }` (§6), whatever element the source states; the option values the source stores beside it stay in the feature's native record (§3.1).
 - **Display.** Display size and resize mode (FreeCAD `fcstd:Length`, `fcstd:Width`, `fcstd:ResizeMode`; the NX and Inventor display extents, `nx:display_extent` and `inventor:display_extent`) are `source_settings`: they size the datum's display, and a plane or axis is unbounded whatever its display (Rule N case (b)). Name and suppression are the feature's; visibility is presentation (D20).
 - **Principal entities.** Every product definition has a fixed origin: three planes, three axes, a point, and its frame. An ordered container that carries its own origin (a FreeCAD PartDesign Body) has one too, and a pick of it always names `container` (§5.8). `PickTarget::Principal` picks them, in the definition the pick resolves in (§5.8). `PrincipalEntity::Frame` is the definition's coordinate frame itself (a Creo default coordinate system, an NX absolute CSYS).
-- **Origin features.** A source that lists its origin entities as named members (SolidWorks Front, Top, Right, and Origin; Creo default planes and default coordinate system, constraint codes 513 to 515 and 1270/1271; the NX template DATUM_CSYS; CATIA xy, yz, and zx planes; the Inventor origin folder) has one datum feature for each, whose construction is one `Coincident` input on the matching `Principal` entity with no `after` steps. A pick of an origin entity of such a source picks its feature as `Datum`, never `Principal` (a SolidWorks relation to the Origin feature's point). A source with built-in origins (Fusion, FreeCAD) has no such features; its picks name `Principal` directly.
+- **Origin features.** A source that lists its origin entities as named members (SolidWorks Front, Top, Right, and Origin; Creo default planes and default coordinate system, constraint codes 513 to 515 and 1270/1271; the NX template DATUM_CSYS; CATIA xy, yz, and zx planes; the Inventor origin folder) has one datum feature for each, a member of the container the source lists it in (the scope's timeline in SolidWorks, Creo, NX, and Inventor; the part's root `Group` in CATIA, §5.2), whose construction is one `Coincident` input on the matching `Principal` entity with no `after` steps. A pick of an origin entity of such a source picks its feature as `Datum`, never `Principal` (a SolidWorks relation to the Origin feature's point). A source with built-in origins (Fusion, FreeCAD) has no such features; its picks name `Principal` directly.
 - **Writers.** A writer whose target has built-in origin entities writes an origin feature as the built-in entity and maps picks of it there. A writer whose target lists origin features maps `Principal` picks to them, creating them where the document has none.
 - **Picks.** `PickTarget::Datum { feature, part: None }` picks the whole datum: its single point, its axis, its plane, or its frame. `part` picks a principal entity of a `Frame` datum (an NX sketch on a DATUM_CSYS plane, a SolidWorks coordinate-system axis, an Inventor UCS plane) or one point of a `Points` datum. A sketch frame's parts are picked through `SketchFrame` (§5.8).
 - **Linked datums.** A datum copied from another datum (NX EXTRACT_DATUM_PLANE, EXTRACT_DATUM_AXIS, NX WAVE datum links) is a datum whose construction is one `Coincident` input picking the source datum, or has no inputs where the source is unread, with the copied value in `resolved`. That pick is the one home of the source: its context states the part and the assembly the link runs through, and its anchor the state it reads (`Pinned(position)` for NX fix at current timestamp, `Native` where that state is outside the document). `link` states the rest of the link (§5.10): `associative` (NX `Associative`), a frozen placement in `transform` (an NX position-independent link), and the link's health in `state`; its `source` is `None`, and its `document` names the source definition only where the construction has no input. The undecoded NX `*_extract_parms` records of linked datums hold these fields' values (an extract body's record is another class, §6.5); which field holds which is typed, carrier unread (part 11), and until it is read the decoder keeps them in `native_options` under their NX names (`nx:<name>`).
@@ -4975,12 +4977,12 @@ Validation uses reference lookup and in-IR arithmetic and never refuses a decode
 
 **Containers, positions, evaluations, current geometry.**
 - The container tree and membership (§5.2): every feature and container is a member of exactly one container or a root of exactly one scope; containers form a tree; `Rollback::Before(m)` names a member of its container; folders of one container nest or are disjoint. Dependency cycles are Warnings.
-- Positions name existing members and ordered containers; `Start` names an ordered container (§5.3). No evaluation has `of` equal to `State(After(Container(c)))` for an ordered container `c`: that state is the state at `c`'s rollback position (§5.3). In an unordered container, no current state is at `After(m)` for a member with no result of its own in the active configuration; no evaluation of configuration `c` has `of` equal to `State(After(m))` for a member with none in `c`; and no `Pinned` anchor or `StateBase::Current` is at `After(m)` for a member with none in any configuration of its scope (§5.3). `After(Container(c))` for an unordered container `c` occurs nowhere.
+- Positions name existing records: `Start` names an ordered container, and `After` a member of a container or, as `After(Container(c))`, an ordered container `c` that is a root of its scope (§5.3). No evaluation has `of` equal to `State(After(Container(c)))` for an ordered container `c`: that state is the state at `c`'s rollback position (§5.3). In an unordered container, no current state is at `After(m)` for a member with no result of its own in the active configuration; no evaluation of configuration `c` has `of` equal to `State(After(m))` for a member with none in `c`; and no `Pinned` anchor or `StateBase::Current` is at `After(m)` for a member with none in any configuration of its scope (§5.3). `After(Container(c))` for an unordered container `c` occurs nowhere.
 - Evaluation keys: at most one per (scope, configuration, `of`); `configuration` names a configuration of the scope when the scope has configurations and is `None` exactly when it has none; `Tool(f)` names a feature for which `CadIr::has_tool_body(f, c)` holds in the evaluation's configuration `c` (§5.4); the rule does not fire on an `Unresolved` or `Native` operation, or on one whose Boolean is unstated; bases form a forest.
 - Which features have evaluations (§5.4, D34, D35): no evaluation of configuration `c` has `of` equal to `State(After(f))` or `Tool(f)` for a feature `f` for which `CadIr::is_stateless(f, c)` holds, a feature whose `suppressed` resolves to true in `c` or whose operation in `c` cannot change a state; every other feature may have one. An evaluation with no content has status `Stale` or `Failed`.
 - No evaluation of the active configuration has `of` equal to `State(p)` for the position `p` of one of its scope's current states (§5.4).
-- `StateBase::Evaluation` and `ProcessBase::State` name a state with content. `StateBase::Current(p)` names the position of a current state of the evaluation's scope, or, under a process state, of its setup's scope (§5.5). No `CurrentState.at` and no `StateBase::Current` is `After(Container(_))` (§5.3).
-- Current geometry (§5.5): every listed body is a body of `CadIr.geometry`; every body listed in `bodies` or in an `instance_bodies` entry of a definition a scope spans is in exactly one of that scope's current states or in its `unproduced`, and in no other scope's current state or `unproduced`; every `unproduced` entry is a body owned by a definition the scope spans and is in no current state; a current state inside an ordered container is at its rollback position. Every key of `CurrentState.poses` is a path from the scope's definition, resolved against the current occurrence membership, that names a placed instance existing in that state, at a placement other than the one its configuration resolves to (D54); no path has a pose in two current states of one scope.
+- `StateBase::Evaluation` and `ProcessBase::State` name a state with content. `StateBase::Current(p)` names the position of a current state of the evaluation's scope, or, under a process state, of its setup's scope (§5.5). A `CurrentState.at` or `StateBase::Current` is `After(Container(c))` only where `c` is an ordered container whose `rollback` is unstated (§5.3).
+- Current geometry (§5.5): every listed body is a body of `CadIr.geometry`; every body listed in `bodies` or in an `instance_bodies` entry of a definition a scope spans is in exactly one of that scope's current states or in its `unproduced`, and in no other scope's current state or `unproduced`; every `unproduced` entry is a body owned by a definition the scope spans and is in no current state; a current state inside an ordered container `c` is at its rollback position, spelled through its member where `c`'s rollback is stated and as `After(Container(c))` where it is not; a rule that orders a member of `c` against the state at `c`'s unstated rollback reads every member of `c` as before it, and no evaluation inside `c` is checked against that current state's position. Every key of `CurrentState.poses` is a path from the scope's definition, resolved against the current occurrence membership, that names a placed instance existing in that state, at a placement other than the one its configuration resolves to (D54); no path has a pose in two current states of one scope.
 - A scope holds a root container that has a member, a parameter, program, sheet-metal rule, configuration, arrangement, or publication that names it, an `occurrences` entry, or a setup that names it; a scope that holds none is an Error (§5.1).
 - Stored geometry (§5.10): where the state after a `Stored` feature is stored, each body its `bodies` names is a body of that state; each `tessellations` entry names a tessellation whose `of` is `Definition`, naming a definition the feature's scope spans.
 - Each `Topology` is closed over its own references; each resolved state is closed (§5.4). An unordered child list (a shell's faces, a body's regions) is not stored; each stored child list is reciprocal with its children's parent pointers (D29). An edge's `ends` is `None` only where its carrier names a closed curve and states no `param_range`, and a coedge of such an edge is the only coedge of its loop (§5.6).
@@ -5279,7 +5281,7 @@ Each entry names a fact the design does not yet establish (Rule N case (a), §3.
 
 The entries fall in two lists by what happens when the fact is settled. Settling a fact of list A adds or changes a type, or changes the meaning of a typed arm, and its entry names the arm, field, record, or definition it adds or changes. Settling a fact of list B changes only what a decoder reads into, or a writer writes from, the types this document states. Each list A entry still open when "11" is released is a wire amendment: after a release, a change to a field's presence, name, or type, or a new arm of an enum that refuses unknown variants, requires a new version (§3.6), so the fact waits for that version or stays native for good.
 
-List A holds 97 entries in two groups that one test divides. An entry is in the first group (2 entries) when a stored file the project holds can still settle or narrow its fact: a record not read, a record not parsed, or a reference not joined. An entry is in the second group (95 entries) when no stored file known to the project settles it and no vendor page defines the fact; it states the input that would separate it. A fact with a part in each group is two entries. Three entries stand for open sets: A.1, the operation settings that no stored file known to the project carries; A.71, the operation settings that no typed field holds and no stored file known to the project separates (Fusion setting names and Creo's coded values); and A.2, every value of an open enumeration that no decoder has met. List B holds 219 entries: 92 whose meaning is typed and whose carrier is unread, and 127 that decide a decoder's reading or a writer's output.
+List A holds 97 entries in two groups that one test divides. An entry is in the first group (2 entries) when a stored file the project holds can still settle or narrow its fact: a record not read, a record not parsed, or a reference not joined. An entry is in the second group (95 entries) when no stored file known to the project settles it and no vendor page defines the fact; it states the input that would separate it. A fact with a part in each group is two entries. Three entries stand for open sets: A.1, the operation settings that no stored file known to the project carries; A.71, the operation settings that no typed field holds and no stored file known to the project separates (Fusion setting names and Creo's coded values); and A.2, every value of an open enumeration that no decoder has met. List B holds 225 entries: 98 whose meaning is typed and whose carrier is unread, and 127 that decide a decoder's reading or a writer's output.
 
 Two kinds of evidence type a fact (Rule N, §3.1): stored files, and the vendor's public documentation where it defines the behaviour, so that a reader could construct the result from the quoted text without the application. A fact typed from a page alone, with no stored file read, is typed, and the place that types it says so in one clause naming the page; its stored carrier is unread, so it has an entry of list B under "Typed, carrier unread". Where a stored file and a page disagree, the stored file wins, and the entry says what disagrees. A page that names an option, or leaves the result unconstructible, types nothing, and its fact stays in list A.
 
@@ -5327,7 +5329,7 @@ No stored file known to the project settles a fact below, and no vendor page def
 31. **A swept corner between continued rounds of different radii.** What a Creo code-7 three-set corner builds where the two rounds it continues have different radii, so that its section's radius runs from one to the other and `SweptAround`'s constant ball does not describe it (§6.4). Each such face is a sweep of circular arcs tangent to a listed round piece and a bordering face, its radius running from one continued set's radius to the other's; the round's records hold one radius per set and no radius points or law, so the radius law and the section rule are only in the stored surface. Adds: an arm for the corner, with its radius law and section rule (§6.4). Until then `Native("creo:7")` with the stored faces, the decoder telling the case by the continued sets' radii (§6.4). Would settle it: a source that stores such a corner's radius law, or a Creo file whose corner of this kind has radius points.
 32. **NX hole relief.** The shape of an NX hole relief. The relief object belongs to the hole package of every threaded and countersunk hole; its inline byte reads relief on or off (inferred from the sibling chamfer object), and it holds one or three references to expressions: on a threaded hole a length of half the thread's nominal diameter, an angle, and a length equal to the nominal diameter, and on a countersunk hole one length. Which of a threaded hole's two lengths is the depth and which the diameter is not known. Adds: `Bore` fields (§6.4). Until then `nx:hole_relief` for the flag and `nx:hole_relief.1` to `.3` for the lengths and the angle, each a reference to its expression's parameter. Would settle it: one threaded NX hole with relief on, its stack set against the tapped bore.
 33. **Hole series.** What each stage of an NX hole series holds, where a blind last stage of a CATIA or SolidWorks hole series is measured from, and what a SolidWorks middle stage's size follows (§6.4). Dassault's Using Hole Series page gives each series its parts and a complete hole and does not say where a blind series' depth runs from; a SolidWorks series stores each stage as a complete Hole Wizard record in its part's file. Adds: an NX stage form, and a blind reference of `SeriesStage` other than the first face of the stage's part (§6.4). Until then `nx:hole_series`, and a CATIA blind stage states `extent: None` with its depth as a native option. Would settle it: one NX part or assembly with a hole series through three bodies, its per-body bores set against the stage objects its registry declares; one CATIA or SolidWorks assembly with a blind series whose last stage ends inside its part, its bore's end set against the series' start face and the part's first face; a SolidWorks series through three parts.
-34. **The union trim's rule on a void piece in an open notch, or enclosed by material it does not touch.** Whether a CATIA union trim removes a void piece that lies in an open notch or groove touching a concave face of the other operand, or one that touches only a convex wall but is enclosed by material it does not touch, the two shapes on which the plane-enclosure rule of `BooleanOp::UnionTrim` and a convexity statement that fits the same known pieces differ (§6.5). Adds: a changed definition of `UnionTrim`, a new version (§3.6), if a trim of either shape follows the convexity statement (§6.5). Until then the definition states plane enclosure, and the CATIA decoder states `UnionTrim` on every union trim under Rule H1's clause for a rule the decoder cannot test, the operands' solids before the trim not being stored (§3.1, §6.5, B.201). Would settle it: a union trim whose tool leaves a void piece in a notch of the other operand, and one whose void piece touches only a convex wall inside material it does not touch, each set against both statements.
+34. **The union trim's rule on a void piece in an open notch, or enclosed by material it does not touch.** Whether a CATIA union trim removes a void piece that lies in an open notch or groove touching a concave face of the other operand, or one that touches only a convex wall but is enclosed by material it does not touch, the two shapes on which the plane-enclosure rule of `BooleanOp::UnionTrim` and a convexity statement that fits the same known pieces differ (§6.5). Adds: a changed definition of `UnionTrim`, a new version (§3.6), if a trim of either shape follows the convexity statement (§6.5). Until then the definition states plane enclosure, and the CATIA decoder states `UnionTrim` on every union trim under Rule H1's clause for a rule the decoder cannot test, the operands' solids before the trim not being stored (§3.1, §6.5, B.207). Would settle it: a union trim whose tool leaves a void piece in a notch of the other operand, and one whose void piece touches only a convex wall inside material it does not touch, each set against both statements.
 35. **What a union trim's picks select on inputs no stored file known to the project holds.** Whether a CATIA union trim's picked faces change which pieces it removes where the pieces that its faces to remove or to keep bound differ from those the plane-enclosure rule removes, as the CATIA Part Design guide's wording allows (§6.5). The guide states that the trim removes the pieces that faces to remove bound and keeps the piece that faces to keep bound; the rule decides the known trims without consulting the picks (§6.5). Adds: the picks back on `UnionTrim` as its operands, with a clause of its definition by which they select pieces, if a counter-example shows one (§6.5). Until then the rule, under Rule H1's clause for a rule the decoder cannot test, and the picks in the operation's `native_options` (Rule N case (a)), which every other writer charges (§3.4, §6.5). Would settle it: a union trim whose picked faces bound a piece the rule keeps, or that leaves unpicked a piece the rule removes, its stored result set against both.
 36. **Pattern propagation of visual properties.** Which of two bytes of a SolidWorks pattern record is the option propagate visual properties (`sldprt:propagate_visual_properties`), and what the option does when cleared, which a writer needs to keep the instances' appearance live after an edit of the seed's (§6.5). Each instance face stores its own appearance, so a reader reproduces a stored part from the faces and needs no pattern field; the one SolidWorks page that names the option says only true or false. Adds: a `Pattern` field (§6.5). Until then both bytes stay in the pattern's `native_options`, and each instance face's appearance is read from the face. Would settle it: a pattern with a coloured seed saved once with the option set and once cleared.
 37. **NX pattern options.** What NX's pattern frame only (`FrameOnlyToggle`) does, and what an instance's clocking does when its expressions are not zero. Clocking, the class `PatternClocking`, is stored per instance with four expressions and an integer. Adds: a `Pattern` field for frame only, and an `InstanceChange` arm for clocking (§6.5). Until then `nx:frame_only`, and `nx:clocking` with its four expressions and integer kept per instance. Would settle it: a rectangular pattern of at least 3 × 3 with frame only set; an instance whose clocking expressions are not zero, read against where its stored matrix puts it.
@@ -5385,16 +5387,16 @@ No stored file known to the project settles a fact below, and no vendor page def
 89. **Zero bend radius.** What a bend radius of 0 builds (§6.6). A Fusion flange or contour flange can store an explicit bend radius of 0, and no stored file known to the project holds such a feature with its bend faces. Adds: a bend radius that admits 0, with the faces it builds (§6.6). Until then the feature is `SheetMetalKind::Native` with its kind and the radius as a native option. Would settle it: a Fusion flange or contour flange with an explicit radius of 0, its faces in the state after it.
 90. **Fusion refold pairing.** Which unfold a Fusion refold folds back (§6.6). The refold's group can hold operations between an unfold and the refold, and no stored file known to the project holds a refold that folds back an unfold other than the nearest earlier one. Adds: a `Refold` field that names its unfold (§6.6). Until then the native option `f3d:refold_group`. Would settle it: a refold after two unfolds that folds back the earlier one.
 91. **SolidWorks ordinate dimensions.** What a SolidWorks `Ordinate` semantic dimension states beyond its length (§5.12). The record supplies a length as a linear record does; that it is measured from an ordinate datum, and which datum, are not stated. Adds: a `DimensionDisplay` arm for an ordinate dimension (§5.12). Until then the parameter's native option `sldprt:dimension_subtype`. Would settle it: ordinate dimensions of one datum, their records set against the datum.
-92. **Fusion unfold factor.** Which rule's factor a Fusion unfold flattens its bends with (§6.6). The unfold's settings record names a rule, which the decoder reads as the unique registered rule target inside the settings frame, and the decoder reads the factor as that rule's material-trailer scalar; both readings are assumptions, and no stored file sets the rule the settings name against the rule that governs the body, though where the two differ the flat length differs. Adds: an `Unfold` field naming the rule it unfolds with (§6.6). Until then the native option `f3d:unfold_k_factor`, and the unfold's bends take the governing rule's `allowance` (D53), which a Fusion rule leaves `None` until B.212 is settled. Would settle it: an unfold of a body whose governing rule differs from the rule its settings name, its flat set against both factors, and unfolds saved with the rule's factor changed alone.
+92. **Fusion unfold factor.** Which rule's factor a Fusion unfold flattens its bends with (§6.6). The unfold's settings record names a rule, which the decoder reads as the unique registered rule target inside the settings frame, and the decoder reads the factor as that rule's material-trailer scalar; both readings are assumptions, and no stored file sets the rule the settings name against the rule that governs the body, though where the two differ the flat length differs. Adds: an `Unfold` field naming the rule it unfolds with (§6.6). Until then the native option `f3d:unfold_k_factor`, and the unfold's bends take the governing rule's `allowance` (D53), which a Fusion rule leaves `None` until B.218 is settled. Would settle it: an unfold of a body whose governing rule differs from the rule its settings name, its flat set against both factors, and unfolds saved with the rule's factor changed alone.
 93. **Fusion mesh section plane.** Which plane a Fusion mesh section cuts its mesh bodies with (§6.6). The section's record stores its source group, the sketch that receives the curves, and its geometry tail, and no plane; that the plane is the sketch's is not established. Adds: a `Section` field for the plane, unless the plane is always the sketch's (§6.6). Until then the section states no plane, and its curves are the sketch's entities where the decoder reads them (B.81). Would settle it: a section whose curves are known, the plane they lie in set against its sketch's plane, and a section whose sketch is moved after it.
 94. **Fusion silhouette split through the material.** What surface divides the body in a Fusion silhouette split's shelled-body operation; whether its solid-body operation cuts by the whole plane of the outline or by the part of it the outline bounds; and whether its faces operation divides along every curve where the normal is perpendicular to the direction or only along those the view shows (§6.5). The solid-body operation is typed from the vendor's sentence that the parting line is planar, and the shelled-body operation from no text. Adds: a `Kept` form or a `SplitTool::Silhouette` field for the cut. Until then `Kept::Native("f3d:silhouette_split_shelled_body")`, and `Kept::Native("f3d:silhouette_split_solid_body")` where the stored result does not fit the plane. Would settle it: one stored split of each operation with its result, the edges and faces the split adds read against the outline.
 95. **SolidWorks silhouette split line angle.** Which curves a SolidWorks silhouette split line with a nonzero angle gives (§6.5). SolidWorks' page says only that the angle creates a draft angle. Adds: an angle of `SplitTool::Silhouette`, where the curves are those at which the face's normal makes that angle with the plane normal to the direction. Until then such a split line is a `Native` operation. Would settle it: a stored silhouette split line at a nonzero angle, its edges read against the faces' normals.
 96. **FreeCAD link-array scales.** A link array composes scalar placement, scalar scale, element placement, element scale, and, where `LinkTransform` is set, the prototype placement (`docs/formats/freecad_fcstd.md`). One `Place.scale` cannot state both scales without repeating the scalar scale on every element. Adds: a home that states the scalar scale once and each element scale once (§6.7). Until then an element occurrence holds the composed map and states no `scale`. Would settle the home: the same files the order is already read from; the order itself is not open.
 97. **Creo intermediate display level.** A participant of a Creo assembly feature whose stored display level is neither 0 nor the length of its path (§6.7). PTC's text gives each intersected component Top Level or Part Level and names a third option, Sel Level, without saying what a level between the two shows (About the Intersection Tab User Interface); no stored file known to the project holds one. Adds: a typed effect for a participant shown at a sub-assembly, and where its resulting feature lies. Until then `ContextEffect::Native("creo:visibility_level:<k>")`. Would settle it: an assembly whose feature intersects a part of a sub-assembly at that sub-assembly's level, with the sub-assembly's file.
 
-### B. Facts whose settling changes only what a codec reads or writes (219)
+### B. Facts whose settling changes only what a codec reads or writes (225)
 
-#### Typed, carrier unread (92)
+#### Typed, carrier unread (98)
 
 The meaning of each fact below is typed, from stored files or from a vendor page. What is not yet read is the stored field, byte, code, or join that carries it in one format or, for a fact typed from a page alone, any stored file that holds it (§3.1). Settling one changes only what that format's decoder reads.
 
@@ -5421,7 +5423,7 @@ The meaning of each fact below is typed, from stored files or from a vendor page
 21. **Inventor area-loft store.** Which flag of an Inventor area-loft station states that its area drives the loft, and which that a scale factor sizes it (§6.3). The stations are records of type `3f3e1786` in slot 11 of a loft whose construction value is 2, each referencing its absolute position, proportional position, area, and scale factor and holding three Booleans; a station's area is its own section's. Decides the Inventor decoder's `Centerline.stations`, each at its proportional position, with its area and `driving`; until then `inventor:area_loft`. Would settle it: a station sized by a scale factor beside one sized by its area, their records differenced.
 22. **NX preserve shape carrier.** Which byte of NX's swept record holds preserve shape, and the tolerance it refits to (§6.3). The option byte b1 (2 set, 3 cleared) and the rebuild byte x (1 set, 2 cleared) co-vary on records with a multi-member section; a one-member section gives one face under either value, so it does not separate the bytes; the record's equal pair of reals is a candidate tolerance, read from its values only. Decides which byte the NX decoder reads, and `Refit.tolerance`; until then it reads the two together and keeps `nx:preserve_shape` where they disagree, with `tolerance: None`. Would settle it: one sweep of a one-member section saved with the option set and cleared: whichever byte changes is the flag.
 23. **Corner style carrier.** Where Fusion and Inventor store the corner style (Fusion `isRollingBallCorner`, Inventor `RollingBallWherePossible`). The record is framed this far and no further. Decides `BlendControls.corner_style` for them; until then `None` (§6.4). Would settle it: Fusion and Inventor fillets whose corners are rolling-ball and setback in their stored states, their records compared.
-24. **Creo round and draft codes.** The typed form of Creo round code 992, the chamfer schemes, and the `draft_choice` bits; and the readings of a round's transition codes, surface rows, and instructions beyond the records read (§6.4). The `round_choice` codes 989, 986, 987, and 995 are read (§6.4); 992's references are an edge and a surface with one radius dimension. Transition code 1 is `Intersect` under Rule H1, its pieces meeting in a sharp edge. Code 4 is `Continue` on closed chains, its pieces meeting across a seam, and under Rule H1 between two subsets, where the round's own fillet at the pieces' ball spans their unequal ends, as `Continue` states. Code 2 is `Blend` under Rule H1: the decoder states `Blend` on a record whose junction faces are all read and are fillets or tori at the end pieces' radius to 1e-3 and join both end pieces, where at every junction–end seam the angle between the ball's radii changes by less than 0.1 rad; a record with a seam whose angle does not read (a torus side or an unread row) states `Native("creo:2")`, since the records whose seams read do not meet the floor of Rule H1's clause for a rule the decoder cannot test; and `Native("creo:2")` holds on a corner a later round feature rebuilt, on a record with spline faces, on one with an unread junction face, and on one whose second end piece the junction does not touch (A.22 and A.23). A face's edges are read from its rows' tails with a first face id of one byte where the two-byte rule misses the row, and with the later of two alignments where the leftmost names no surface row, and a tail may lie anywhere before the next row head, where the decoder keeps one only within 400 bytes of the row's head (B.195); a surface row of class 214 is a face on the carrier of the face its third column names, and an edge of type 8 joins a piece to its reference face; instruction 4557 names a piece and its subset, and 1124 a transition's chain points. A junction along a ridge may read codes 1 and 2 the other way. Decides 992's `FilletSet`, chamfer sizes, and draft angles, which arm the Creo decoder states at a ridge junction, and the edge-row tail forms it reads; until then the other codes are native options keyed `creo:<code>`, codes 1, 2, and 4 their arms where the stored junction agrees and `Native("creo:<code>")` otherwise, the stored code kept as `creo:transition_type` in the transition's `native_options` where its arm does not fix it (A.25), which the Creo writer emits, and a size form outside the typed list is `FilletSize::Native`. Would settle it: code-992 rounds' faces set against their edge and surface; per chamfer scheme and draft bit, the stored faces set against each documented form; a ridge junction read against the enumeration; a two-subset code-4 transition in a file with no edge rows, decoded with its edges; code-2 records' junction faces and seams read across at least 3 designs.
+24. **Creo round and draft codes.** The typed form of Creo round code 992, the chamfer schemes, and the `draft_choice` bits; and the readings of a round's transition codes, surface rows, and instructions beyond the records read (§6.4). The `round_choice` codes 989, 986, 987, and 995 are read (§6.4); 992's references are an edge and a surface with one radius dimension. Transition code 1 is `Intersect` under Rule H1, its pieces meeting in a sharp edge. Code 4 is `Continue` on closed chains, its pieces meeting across a seam, and under Rule H1 between two subsets, where the round's own fillet at the pieces' ball spans their unequal ends, as `Continue` states. Code 2 is `Blend` under Rule H1: the decoder states `Blend` on a record whose junction faces are all read and are fillets or tori at the end pieces' radius to 1e-3 and join both end pieces, where at every junction–end seam the angle between the ball's radii changes by less than 0.1 rad; a record with a seam whose angle does not read (a torus side or an unread row) states `Native("creo:2")`, since the records whose seams read do not meet the floor of Rule H1's clause for a rule the decoder cannot test; and `Native("creo:2")` holds on a corner a later round feature rebuilt, on a record with spline faces, on one with an unread junction face, and on one whose second end piece the junction does not touch (A.22 and A.23). A face's edges are read from its rows' tails with a first face id of one byte where the two-byte rule misses the row, and with the later of two alignments where the leftmost names no surface row, and a tail may lie anywhere before the next row head, where the decoder keeps one only within 400 bytes of the row's head (B.201); a surface row of class 214 is a face on the carrier of the face its third column names, and an edge of type 8 joins a piece to its reference face; instruction 4557 names a piece and its subset, and 1124 a transition's chain points. A junction along a ridge may read codes 1 and 2 the other way. Decides 992's `FilletSet`, chamfer sizes, and draft angles, which arm the Creo decoder states at a ridge junction, and the edge-row tail forms it reads; until then the other codes are native options keyed `creo:<code>`, codes 1, 2, and 4 their arms where the stored junction agrees and `Native("creo:<code>")` otherwise, the stored code kept as `creo:transition_type` in the transition's `native_options` where its arm does not fix it (A.25), which the Creo writer emits, and a size form outside the typed list is `FilletSize::Native`. Would settle it: code-992 rounds' faces set against their edge and surface; per chamfer scheme and draft bit, the stored faces set against each documented form; a ridge junction read against the enumeration; a two-subset code-4 transition in a file with no edge rows, decoded with its edges; code-2 records' junction faces and seams read across at least 3 designs.
 25. **Vertex chamfer side.** Which edge a SolidWorks vertex chamfer's distance `Side` 0 runs along (`IVertex.EnumEdgesOriented` lists the edges counterclockwise from a start the API does not name). The chamfer type is read by the record's parameter roster (§6.4): `D4`, `D5`, and `D6`; a vertex-roster chamfer record holds no list triple with each class tag taken in its short or its long CArchive form. Decides the SolidWorks decoder's `Vertex` pairing and picks (§6.4); until then a vertex chamfer's distances stay native options. Would settle it: one vertex chamfer with three different distances, its stored distances set against the lengths its triangular face cuts along the vertex's edges.
 26. **Symmetric pattern counts.** The symmetric pattern facts §6.5 does not settle: the field that marks a Fusion feature pattern symmetric, Fusion circular symmetric patterns, a Fusion sketch pattern's symmetric extent, and NX's symmetric count and the order in which NX stores the reverse side's instances. The Fusion sketch and feature rectangular counts, the feature extent, the distance-type byte, the sketch flags, and the sketch order are read (§6.5); no byte of the scope or its referenced records separates symmetric feature scopes from one-sided ones of the same forms. Decides `RunSides::Symmetric` for those cases and each decoder's instance coordinates; until then a Fusion feature pattern's symmetry is read from its instances, and the rest state `None`, with the stored number unconverted, which only a writer of the same codec writes (§2.4, §6.5). Would settle it: Fusion circular symmetric patterns' instance angles; one symmetric sketch pattern of the extent form; NX symmetric patterns' stored instances set against their counts.
 27. **Copies of bodies.** How SolidWorks places copy k of a translated move or copy of bodies, the sense and order of its rotations, and what NX `Divisions` divides. Of a rotated Move/Copy Body, copy k applies the per-copy rotation k times (§6.5); the stored angle and axis are not read. Decides `TransformMode::Copy.divisions` and the order of the SolidWorks decoder's `Rotate` steps; until then SolidWorks states `None`, and only a SolidWorks writer writes the copy's distances and angles (§2.4). Would settle it: SolidWorks copies' stored angles read beside their bodies, and a translated copy; NX copies that state divisions, with their stored instances.
@@ -5470,7 +5472,7 @@ The meaning of each fact below is typed, from stored files or from a vendor page
 70. **Where a Creo instance names its generic.** Where a Creo instance file stores the generic it is an instance of, which `ProductDefinition.generated_from` types (§5.14). An instance model has header kind `INST_PART`, its own name is a row of the generic's table, its dimensions follow the cells, and a dependency names an instance as `INSTANCE<GENERIC>`; the field in the instance file that names the generic is not located. Decides the Creo decoder's `generated_from`; until then `None`, and the instance a definition of its own. Would settle it: instance models' headers and dependency tables read for the generic's name.
 71. **Inventor pattern compute carrier.** Where Inventor stores a pattern's compute choice, identical against adjust (§6.5). Pattern and mirror records store the compute code (0, 0); copies may differ from the seed in the state the pattern made, which `Identical` cannot give, so the stored code does not say identical (§6.5). Decides the Inventor decoder's `method`; until then `Adjust { against: None }` where the copies differ from the seed and every seed's extents are distances, where `Adjust` and the third construction give one solid, and otherwise `method: None` with the native option `inventor:pattern_compute` (the third construction is A.41). Would settle it: one Inventor pattern saved once with identical and once with adjust compute.
 72. **Configuration carriers no stored file shows.** Two configuration values the type holds whose carrier no stored file known to the project shows (§5.14): a Fusion `Property` column that names a child component (`DefinitionOverride` keyed by that component's definition), and a member's own value of an Inventor `<free>` parameter (`OccurrenceDesign.parameters`). How a column names its property and component is read, and a factory's members each name their factory and hold their row (§5.14). Decides the Fusion and Inventor decoders' keys and values for those cells; until then none is stated. Would settle it: a Fusion configuration table with a property column on a child component; an Inventor assembly that places a member of a table with a `<free>` column, setting its value.
-73. **CATIA in-work object.** Where a CATIA part stores its in-work object, which the body's `Rollback` types (§5.2). The root field `CurrentFeature` holds it; its value after the marker is usually empty, and its lead token (`9d`, `d3 17`) resolves neither as a record index nor as an identity offset from the root. Decides the CATIA decoder's `Rollback`; until then none is stated. Would settle it: roots with a value, their tokens set against the records of a part saved with its in-work object moved back.
+73. **CATIA in-work object.** Where a CATIA part stores its in-work object, which the `rollback` of the body or ordered geometrical set that lists it types (§5.2). A part has one, which the part feature manages (Dassault's page Order and Absorption Concepts); the root field `CurrentFeature` holds it; its value after the marker is usually empty, and its lead token (`9d`, `d3 17`) resolves neither as a record index nor as an identity offset from the root. Decides the CATIA decoder's `rollback`; until then `None`. Would settle it: roots with a value, their tokens set against the records of a part saved with its in-work object moved back; and one part saved with the in-work object on its body and again on its last feature, to read what an empty value states.
 74. **CATIA rib point moved along the axis.** Whether a CATIA stiffening rib's stored point, where it is the picked point moved along the bend's axis, binds a point of the rib's positioning sketch, so that `at` is a `Construction<Point>` on that sketch rather than a fixed point (§6.6). The rib's place is typed: `at` is the punch's own `Axis1` origin, whose position along the bend's axis is the rib's symmetry plane. `CATSm_StiffeningRibPunch` may carry a tangent plane at a picked point; the `Axis1` origin equals the picked point or lies in the plane tangent to the bend at the picked point, moved along the axis and around it; the punch references a positioning sketch and a reference plane, whose values are not read. That the move is the positioning sketch's is inferred. Decides the CATIA decoder's `at` construction on a rib whose origin is so moved; until then `at` from the `Axis1` origin as a fixed point. Would settle it: such ribs' positioning sketches read, their points set against the `Axis1` origins.
 75. **SolidWorks break-corner shape carrier.** Where SolidWorks stores whether a break corner is a round or a chamfer, which `CornerBreak` types (§6.6). A `moBreakCornerFeat_c` record with a radial display dimension builds rounds of the stored radius through the thickness, and one with a plain size builds 45-degree cuts with both legs equal to it; no round-or-chamfer flag is in the record headers, and the dimension's display, the only carrier seen, does not hold on every record. Decides the SolidWorks decoder's `shape`; until then the shape where the built faces agree, else `CornerBreak::Native("sldprt:break_corner")`. Would settle it: one file saved twice with one corner set to round and then to chamfer, the records compared.
 76. **Inventor corner chamfer size.** Where Inventor's Corner Chamfer (class `8598cc98`) stores its size, which `BreakCorner.size` types (§6.6). It builds 45-degree cuts; the decoder does not read the record's size, and the size's slot is not located. Decides where the Inventor decoder reads `size`; until then, under Rule H1, `BreakCorner` with `shape: Chamfer` and `size` read from the stored faces where the two legs of each cut agree, and `SheetMetalKind::Native` with its picks where the faces are not read or disagree. Would settle it: corner chamfer records' slots set against the legs of their built faces.
@@ -5490,139 +5492,13237 @@ The meaning of each fact below is typed, from stored files or from a vendor page
 90. **Appearance assignments not joined.** Which decoded entity is the owner of a SolidWorks appearance record, the object of an NX RMFastLoad colour assignment, the object a CATIA colour packet styles, and the item of a STEP styled item that names no decoded record (§8). The source's identity of the object is read; its join to an entity of the document is not. Decides each decoder's `AppearanceBinding.target`; until then `AppearanceTarget::Unresolved` with `source_entity_id` or `native_ref`. Would settle it: per format, a stored file whose assignment is known from the design, its object identity read against the decoded entities.
 91. **Fusion mesh-body visibility.** Which stored record states whether a Fusion mesh body is shown (§8). A B-rep body's hidden flag is a browser-node member reached through the BREP body map; a mesh body is in no body map, and the record that joins a browser node to a mesh body is not read. Decides the `visible` the Fusion decoder states on a `Definition` mesh; until then it states none. Would settle it: one design saved with a mesh body shown and again with it hidden, and the records that differ.
 92. **Every-component scope of assembly features.** Where SolidWorks stores an assembly feature's All components scope, and where Creo stores an assembly feature's Automatic Update and its default display level (§6.7). Both are typed from the vendors' pages (SOLIDWORKS help, Feature Scope in Assemblies; PTC, About the Intersection Tab User Interface). No SolidWorks assembly feature known to the project is read. No field of the Creo cut, hole, slot, and material-removal records known to the project is established as either option, and each of those records was saved by a Pro/ENGINEER release that precedes the page. Decides the decoders' `Affected` terms. Until then each decoder states the participants the file lists as `Named` selections, so a `Named` participant list of either format does not show that its source keeps a list. Would settle it: one assembly feature saved with the option on and again with it off, the two records compared.
+93. **CATIA rollback of a set without the in-work object.** How a body or ordered geometrical set that does not list the part's in-work object as a member, and is not itself the in-work object, is built: through its end, as CATIA's selection of a feature from another body below or above the current one implies (Dassault's page Order and Absorption Concepts), or only through the features above the in-work object in the specification tree, as Dassault's page Defining Current Objects reads. Both fit `rollback` (§5.2): `End`, or `Before` the set's first member. Decides the CATIA decoder's `rollback` on those sets; until then `None`. Would settle it: a part of two bodies saved with its in-work object inside the first, its second body's stored result and visible-body list (`CATSeeBodyCont`) set against the same part saved with the second body in work.
+94. **SolidWorks rollback bar.** Where a SolidWorks part stores its rollback bar, which `rollback` types (§5.2). SolidWorks saves a part with the bar anywhere and reopens it there (SolidWorks' page Rollback Bar); no stream of a part read names the field, and the history's XML declares no such attribute. Decides the SolidWorks decoder's `rollback`, and so whether a writer may take the current geometry as the last feature's state (§3.4); until then `None`. Would settle it: one part saved with the bar at its end and again with the bar moved up one feature, the two files compared, and each feature's body mark (`moPMarkRecord_c`) set against the state the partition holds.
+95. **Creo insert mode.** Whether a Creo model saved in insert mode stores its insert point, and where, which `rollback` types (§5.2). In a session Creo suppresses every feature after the insert point and marks them all with the sequence number of the first (PTC's page About Suppressing and Resuming Features); whether the saved model holds that marking is not established, and the decoder reads no suppression. Decides the Creo decoder's `rollback`, and which suppressions are the insert mode's rather than the features' own `suppressed`; until then `None`. Would settle it: one model saved with insert mode before its last feature and again with that feature suppressed by hand, the two compared.
+96. **NX current feature.** Whether an NX part saves a current feature other than its last (Make Current Feature), and where, which `rollback` types (§5.2). Decides the NX decoder's `rollback`; until then `None`, or `End` once it is established that NX saves every part built through its end (§5.2). Would settle it: one part saved after Make Current on an earlier feature, set against the same part saved at its end.
+97. **Fusion timeline marker.** Where the design stream stores the saved timeline marker, which `rollback` types (§5.2); `docs/formats/f3d-open-items.md` DR-523 states the question. The timeline items that carry a stored state (§3.4) may fix it without the marker's own field. Decides the Fusion decoder's `rollback`; until then `None`. Would settle it: the controlled saves DR-523 names.
+98. **CATIA ordered geometrical set carrier.** What a CATIA part stores that separates an ordered geometrical set from a geometrical set: a record class, a type name, or a field of one class. Ordered `GeometricalSet` types the set (§5.2) from Dassault's pages Managing Ordered Geometrical Sets and Order and Absorption Concepts; no stored file read shows one. Decides which CATIA set records the decoder states as ordered and which as unordered `GeometricalSet`; until then a set is stated as either only where a stored fact separates the two, and otherwise is not stated. Would settle it: a part holding one ordered geometrical set, saved again after converting it to a geometrical set, the two set records compared.
 
 #### Decoders' readings and writers' outputs (127)
 
 Each fact below is open in its meaning, or is a target application's behaviour; settling it changes a decoder's mapping into types this document states, or what a writer writes.
 
-93. **Fusion reads written archives.** Whether Fusion opens a cadmpeg-written archive and whether it opens one whose design stream holds no timeline item, and which states a Fusion feature edit uses (no CAM record names a design state). Stored files show what Fusion writes, not what it reads back. Decides whether an F3D writer can write a feature whose input state the document lacks; until then Fusion is a target that holds no feature without its state, and the writer uses the form the caller chooses (§3.4). Would settle it: a written archive opened in Fusion, and a feature edit on a written document whose input state is absent.
-94. **Parasolid chains accepted.** Whether SolidWorks and NX accept a Parasolid delta chain built from neutral states. Stored chains show what the applications write, not what they accept. Decides whether those writers write earlier states or the current partition only; until then the current partition only (§3.4). Would settle it: a written chain opened in each application.
-95. **NX plane flip and offset.** Whether NX moves a plane's offset along the flipped or the unflipped normal (NXOpen `Plane` has `Flip` beside `OffsetFlip` and `OffsetExpression`). A plane's constraint is an object embedded in its operation record, whose class names its kind (offset, centre, coincident, Frenet, tangent, or two); an offset constraint's option bytes are a pair that varies together, (1, 0) or (2, 1), and an independent byte, 1 or 0; the distance is no stored number in its file but an expression reference. Which byte is `Flip` and which `OffsetFlip` is not read, and no plane is joined to a stored frame. Decides the order of the NX decoder's `Flip` and `Translate` steps (§5.9); until then such a plane keeps them in `mode.native_options` (`nx:Flip`, `nx:OffsetFlip`, `nx:OffsetExpression`), with its geometry in `resolved`. Would settle it: in a file that holds both values of the pair, an offset plane joined to the stored frame of a sketch placed on it, set against its reference's plane and its expression's value.
-96. **Sign and remainder.** Fusion and Inventor `sign(0)`, and `%` with a negative operand. No stored expression known to the project calls `sign` or uses `%`. Decides their translation: `sign` as `if(x > 0[u], 1, 0)` or `if(x >= 0[u], 1, 0)`, and `%` as the truncating `mod` or as `a - floor(a / b) * b`; until then both stay `Source` (§5.13). Would settle it: one stored parameter whose expression is `sign(x)` with x zero, and one `a % b` with one negative operand, each with its cached value.
-97. **Trig conventions.** NX's `tan` and `rad` and the unit NX inverse trig returns; the unit SolidWorks inverse trig returns; and SolidWorks' unit where its equation manager states no angular mode. NX `sin`, `cos`, and `deg` work in degrees (§5.13); NX stores no evaluated value for a formula expression; NX's `tan`, `rad`, and `arctan` drive no read geometry, and no SolidWorks equation known to the project calls a trig function. Decides whether those calls translate; until then they stay `Source` (§5.13). Would settle it: a SolidWorks equation that calls `sin` or `arcsin`, set against its cached value, in a manager without the angular-mode byte for the first fact; an NX part whose `tan` or inverse-trig result drives a dimension, set against its geometry, which would also test the degree reading of `sin` and `cos`.
-98. **CATIA silhouette order.** How CATIA silhouettes order several outputs of one source (`SilhouetteGeomSet`). Each output heads a report header whose one member has no key and no reference, so no output is linked to a cell of its source; the output curves are sketch-level curves the decoder does not read, so their positions cannot be set against the source. Decides CATIA `Derivation.piece` numbering; until then the order of the stored records (§6.1). Would settle it: one silhouette of a cylinder whose two output lines are decoded in sketch coordinates.
-99. **FreeCAD prism vertex.** Whether a FreeCAD prism and regular polygon put their first vertex on the frame's x axis (inferred from `PrimitiveFeature.cpp`, which steps the radius vector about z). In FreeCAD 1.1.4 a 5-sided prism of circumradius 10 has a base vertex at (10, 0, 0), and a regular polygon starts at (10, 0). Decides how the FreeCAD decoder states their placement (§6.3, §6.6); until then the inferred convention. Would settle it: a stored FreeCAD prism and regular polygon, their shapes set against the convention.
-100. **Inventor selector secondary array.** What the second array of an Inventor edge selector holds beyond its modifier tags, and whether a selector a writer creates needs it (§5.7). It never shares a value with the generator array, and every value is a feature older than the selector; modifier tags on the side and end faces explain some values; many values never name the edge's neighbourhood in any state, have no live name at the stamp state, or belong to features that insert no name in any stored state; no rule tried reproduces it. Decides whether a writer to Inventor can write an edge selector, whose key must also name a matched attribute stamped on the edge in a stored state (§3.4); until then the array stays in the pick's native name, and a writer to Inventor writes an edge pick in the unresolved-reference form. Would settle it: a file whose history holds the edit that removed the geometry of an extrusion that inserts no name in any stored state.
-101. **Copy names.** How sources name extract and transform copies other than a SolidWorks Move/Copy Body: the field of a SolidWorks Surface Cut copy hop, and the copy names of NX, CATIA, Creo, and Fusion. A SolidWorks copy hop (`moCopySurfIdRep_c`) names the copying feature as its producer; a Move/Copy Body's field is the copy's step, 1 to the copy count (§5.7, §6.5); a Surface Cut's field is constant per feature, and the Surface Cut consumes its original faces, so its field has nothing to be compared with. Decides where decoders state `Instance { feature, instance, of }` for those copies (§5.7); until then their copy names stay in `NameEntry.native`. Would settle it: a Surface Cut whose original face survives, its field set against the faces; per format, a copy's names set against its source faces.
-102. **One-direction thin side.** Which side of an open profile SolidWorks one-direction thin (`ThinWallType` 0, with 1 its reverse) puts the wall on, and which side of its profile CATIA's `ThickThin1` lies on, with what CATIA's `NeutralFiber` does. A SolidWorks open wall's faces are two `FromSktEnt` and two `ThinOffset` planes at the thickness, so the wall's side is stored; the byte at +22 after `moThinSpec_c` is not shown to be the wall type; the open chain's segment order and line directions are not framed, so both sides fit. A CATIA thin wall is `ThickThin1` + `ThickThin2` thick; the profile circles' radii are not read, so the side is not. Decides SolidWorks' `WallSide::Left` or `Right`, the order of CATIA's `Thickness::Offsets`, and `NeutralFiber` as `Thickness::Symmetric`; until then `WallSide::Native` (`sldprt:one_direction`, `sldprt:one_direction_reverse`) and `Thickness::Native("catia:ThickThin")` with `catia:ThickThin1`, `catia:ThickThin2`, and `catia:NeutralFiber` (§6). Would settle it: for SolidWorks open-profile thin walls, the sketch's line array framed and each wall's side set against the chain's direction crossed with the profile normal, the chain reversed as the control; for CATIA, a two-pad file's sketch circles decoded, its walls' radii set against them, and a `NeutralFiber` set.
-103. **Keep-angle laws.** Whether SolidWorks follow path, Fusion perpendicular, Inventor path, and CATIA keep angle give one frame on a non-planar path, and whether any equals FreeCAD's corrected Frenet. A Fusion sweep with an identifiable cap is perpendicular, and the option's field is not located (its two varying bytes vary among perpendicular sweeps); a non-planar Fusion sweep that runs into another body keeps no end cap. Decides each decoder's mapping to `FollowPath` or `MinimumTwist`; until then `FollowPath` (§6.3). Would settle it: per source, a sweep along a path with torsion whose section is not symmetric about the path and ends in a free cap; for Fusion's option field, one parallel sweep.
-104. **NX symmetric extent.** NX's symmetric extrude measure in files last saved in a release from NX 12 to NX 1926, and in NX 10 files (§6). `LIMITS_SYMMETRIC` is total in NX 1934 and later and per side in NX 9 and NX 11 (§6); a file first saved in NX 12 and last in NX 2027 reads as total, and whether NX converts an old value on load is not read. Decides the NX decoder's `measure` for those releases; until then `None`, with the stored number unconverted, which only an NX writer writes (§2.4). Would settle it: a symmetric extrude in a file last saved in NX 12 to NX 1926, its caps set against its value; an NX 10 body made by one symmetric extrude.
-105. **Coil triangle placement.** Which point of a coil's triangle `SectionPlacement` `Inside` and `Outside` put on the helix (§6.3). The section-position word lies at an offset that depends on the record form (92, 88, 220, 216); a polygon section fills the radial band the word names (inside D/2 − d to D/2, centre D/2 − d/2 to D/2 + d/2, outside D/2 to D/2 + d), two helicoids at the band's edges. Which of the triangle's vertices and sides lie on the band's edges is not read from its faces. Decides a writer's lowering of such a coil (§3.4); until then step 3. Would settle it: triangular coils' start caps, their vertex radii set against D/2.
-106. **NX alignment code 3.** Whether NX through-curves alignment 3 is arc length (§6.3). Records of the older grammar store each option less one in their u32 values. A record of value 3 whose members have equal length has arc-length parameterized surfaces, where arc length and parameter coincide. Decides the NX decoder's `ArcLength`; until then `CouplingMode::Native("nx:alignment:3")`. Would settle it: a record of value 3 whose sections' members differ in length.
-107. **NX inner-loop taper.** That NX tapers a drafted extrude's inner loops `WithOuter` on every extrude (§6.3). Coaxial outer and hole cone pairs grow in one direction with a constant wall thickness, and face drafts give the opposite sense under the same reader; the decoder joins no face to its feature, so a hole cut by a second drafted extrude of the same angle is not excluded. Decides the NX decoder's `ExtrudeDraft.holes`; until then `WithOuter`. Would settle it: the face-to-feature join, each coaxial outer and hole cone pair's faces set against their extrude.
-108. **NX edge draft faces.** Whether the entries of an NX draft record's list are the faces it tilts or its stationary edges, and which records are edge drafts (§6.4). In a `DRAFT` operation of class `TAPER_PARMS` the list length equals the number of faces the draft owns; its entries are reference objects of the feature section beside the operation, which carry no class, and whose partition tag, carried by some entries and not others within one list, names no current face or edge. On a chain of one edge per face the counts cannot tell faces from edges; the draft type is not separated in the shared record. Decides whether the NX decoder states `DraftSet.faces` or leaves it `None`; until then `None`, with the list's size and order in the native record. Would settle it: the feature section's class table, or the tag replayed against the partition state before the draft; one edge draft whose stationary chain has more or fewer edges than the faces it drafts.
-109. **Inventor face-draft mode 3.** Whether Inventor face-draft mode 3's face is a fixed plane or a parting tool (§6.4). A mode-3 draft turns its drafted faces about their edges on the selected face's plane and keeps the face count, mode 2's drafts serving as the control for the hinge; mode 3 names its face by a face item. Where no drafted face crosses the selected face's plane, the input on which a parting tool splits it and a fixed plane does not is absent. Decides `neutral` against `parting`; until then the mode and its face stay native options of the draft (§6.4). Would settle it: a mode-3 draft whose drafted face crosses the selected face's plane, its faces after set against one turned face or two.
-110. **CATIA chordal chamfer.** Whether CATIA applies its chordal chamfer's Width = Length / cos(Angle) on faces that do not meet at a right angle, or measures the face's true width. No chamfer ribbon known to the project holds a value in `ChordalLength` or `Height`, whose `Mode` is 1 or 2. Decides the CATIA decoder's `WidthAngle` on such edges (§6.4); until then `ChamferSize::Native`. Would settle it: a chordal chamfer on faces that meet off a right angle, its stored face width set against both readings.
-111. **NX percent stations.** Whether an NX percent radius station measures the whole chain or its own edge, by release (a Siemens article's summary says the whole chain from NX 11.0.1). No decoded variable-radius blend with percent stations is known to the project. Decides the NX decoder's `Along` for percent stations by release; until then `Along::Chain`. Would settle it: a two-edge variable blend, its stored radius at the station set against both readings.
-112. **Spotface on a curved face.** Where an Inventor spotface's depth is measured on a start face that is not flat. On a plane, the bore runs from the spotface floor, so its blind depth is measured from the floor. Decides the Inventor decoder's `Spotface` depth on such a face (§6.4); until then the stored depth. Would settle it: a spotface on a cylindrical start face, its floor set against the face.
-113. **Trimmed bottom on an inclined face.** Whether a CATIA trimmed hole ends on a bounding face inclined to its axis, or in a flat bottom normal to it (§6.4). A located bore ends where it leaves the body, on a face normal to its axis, where both readings give one end. Decides how a writer of another codec writes `Trimmed`; until then the bore ends on its bounding face. Would settle it: one trimmed hole ending on an inclined plane or a curved face inside the material.
-114. **SolidWorks circular pattern field.** The second field of SolidWorks `CirPattern2(P, k, m, n)`, which takes the value 0 where read. Decides the decoder's mapping; until then `m` is the Direction 2 index, at coordinate −m (§6.5). Would settle it: a circular pattern with a Direction 2 instance.
-115. **Template members.** What a CATIA user-feature instance whose `UdfBlackBox` flag takes another value stores, and Inventor iFeatures in general (§6.5). Both store their members as ordinary features (§6.5); the CATIA flag stores atom 3, and whether another value stores a black box with no members is not read. Decides whether the CATIA decoder lists members or one `Stored` member for another value; until then the flag stays `catia:udf_black_box`. Would settle it: an instance whose `UdfBlackBox` atom differs, with its member records present or absent; Inventor iFeatures of further designs.
-116. **Creo template prompts.** How Creo pairs a group's `gp_keys` prompts with its `new_refs` inputs. An order join does not align them. Decides which `TemplateInput` each Creo prompt names; until then the roles are `None`. Would settle it: each prompt's text set against the kind of the reference it would bind.
-117. **CATIA line-sweep angles.** The zero of CATIA's reference-surface angle (the documentation measures it from the projected surface normal) and of its reference-curve and centre-and-angles angles, which `LineMode::Surface.from`, `LineMode::Curve.from`, and `CircleMode::CenterAngles.from` state (§6.6). The stored modes and fields are read; the reference-surface sweeps' surfaces are not sampled. Decides those three `from` fields; until then `from: None`. Would settle it: reference-surface sweeps' surfaces sampled at a station against both zeros, through the report's join to their result surfaces; a line sweep of the reference-curve mode and a circle sweep of the centre-and-angles mode with a nonzero angle.
-118. **CATIA corner pieces.** Which piece of each element a CATIA corner that trims keeps (§6.6). Each result lists cells that modify one input cell each; the wires are not decoded as geometry, so the kept pieces are not set against the tangency points; tangent continuity gives one assembly, which is inferred. Decides how a writer of another codec writes `Corner` with `trim`; until then the tangent-continuous pieces. Would settle it: one trimming corner's wire decoded, its pieces set against the tangency points.
-119. **Creo bend angle.** That a Creo bend's angle dimension is its deflection on every bend (§6.6). A non-right bend's flange face turns by its dimension, not by the included angle; a 90° bend gives one result under both readings. Decides the Creo decoder's `angle`; until then the deflection. Would settle it: Creo bends of other non-right angles with stored flats.
-120. **K-factor table segment of the SheetMetal add-on.** The SheetMetal add-on's new unfolder looks up a `Linear` table by searching for the bracketing segment with `while r_over_t <= values[i]`, which picks the first segment for every ratio inside a table of three or more rows, so it extrapolates that segment (§6.6). This holds at `v0.2.60-beta` and at master `c505f5ea`, and every version returns the last row's K-factor above the table. Open: whether a release of the new unfolder corrects the search, and which unfolder produced a stored flat pattern, which no file records. Decides a FreeCAD writer's output for a `Linear` table; until then it writes the table and charges a loss naming the rule where a governed bend's ratio lies inside the table beyond its first segment. Would settle it: the add-on's next release run on the same table.
-121. **Assembly feature effect.** The effect of an NX assembly cut, and of Inventor assembly features in general (§6.7). An Inventor participant's part keeps its uncut body while the assembly carrier holds the cut one, and a feature on an NX promoted body changes the referencing part's copy only (§6.7). Decides the effect of an NX assembly cut's participants; until then `None`, or `Instances` where the decoder finds per-instance bodies. Would settle it: one NX assembly with an assembly cut, its target part's stored body set against the assembly's.
-122. **SolidWorks coordinate mate.** Whether SolidWorks' coordinate mate class (`moMateCoordinate`) also stores coincidences of origins and coordinate systems, with their axes aligned (§6.7). The class stores a coincident mate whose two operands are component sketch points, with no coordinate-system or origin class in it. Decides the mapping of the class with other operands; until then `Coincident` of two `Point` connectors, and a class whose operands are frames stays `JointKind::Native`. Would settle it: a mate between two coordinate systems with axes aligned, its record set against a point-to-point one.
-123. **NX CAM geometry and setups.** Whether an NX operation's geometry adds to or replaces its geometry group's, and whether NX means one setup per MCS or one per MCS and WORKPIECE pair. The machine and carrier nodes of NX CAM files are read, not their geometry groups. Decides `ProcessGeometry.combine` for NX (§7.7) and how the NX decoder forms setups; until then `combine: None`, and one setup per MCS. Would settle it: NX CAM files that declare setups, their operations' geometry set against their groups'.
-124. **Fusion profile-loop order.** The side-token order of the Fusion profile forms §3.4's rule does not cover: loops with inner loops, trimmed pieces, circles and splines, the second side of a two-sided or symmetric extrude, and revolves; and whether the rule's start curve is the one with the largest id or the newest. The rule holds on single-loop extrudes and base flanges; the largest id and the newest curve coincide where read. Decides whether a Fusion writer names those forms' side faces; until then it names caps and the forms the rule covers, and a feature that picks another side face, or an edge beside one, is a feature whose names it cannot produce (§3.4). Would settle it: loops with inner loops, trimmed pieces, and circles, and revolves, joined the same way; a sketch whose newest curve does not carry the largest id.
-125. **SolidWorks face ordinals.** The rule that assigns `n` in `Fillet(F, n)`, field `a` of `WzdHole(H, a, b)`, and the name SolidWorks accepts on a face that no rule names. `n` usually runs over 1 to N, N the selected edge count or larger, and follows neither the API edge order nor the face node order, nor throughout the stored selection order; `b` identifies the hole's position (faces of one `b` share one axis, and different values have different axes); `a` varies with the face kind; the shell's rule is settled (§5.7). Decides whether a SolidWorks writer names fillet and Hole Wizard faces and picks them by name; until then their picks are written in the unresolved-reference form (§3.4). Would settle it: the pre-fillet state from the deltas, its selection's edge order set against `n`; each `a` set against its hole's profile elements.
-126. **CATIA limit-curve circle mode.** That CATIA stores the limit-curve-and-tangency-surface circle subtype, `TangentLimitRadius`, as mode 10 (§6.6). A mode-10 sweep's operands are one curve, one reference surface, a radius, and two relimiting angles, which no other subtype has; its surface is not sampled against the reference surface. Decides the CATIA decoder's `CircleMode` for stored 10; until then `TangentLimitRadius`. Would settle it: a mode-10 sweep's surface sampled at a station against its reference surface and limit curve.
-127. **Dome surface.** The surface SolidWorks builds for a dome over a circular face and in its elliptical and continuous forms (§6.4). A default convex dome over an outline that is not a circle is a degree-5 B-spline cap whose highest point lies `height` above the face plane, at the outline box's centre in the surface's frame, fitting no sphere and no radial profile of the peak. Decides a writer's lowering of a dome to a target's spherical or ellipsoidal cap; until then step 3 (§3.4). Would settle it: a dome over a circular face and an elliptical dome, their cap surfaces' types and radii read from the partition.
-128. **Flex laws.** How SolidWorks flex varies a twist or a taper between the trim planes, what a taper factor scales, which trim plane a stretch keeps, and whether material beyond the trims moves rigidly. No part known to the project declares a class whose name contains `flex`. Decides a writer's lowering of `Flex` (§6.5); until then step 3 (§3.4). Would settle it: one part with a flex of each kind, its states before and after the flex compared at three stations along the triad's z axis.
-129. **Fusion hole tokens on few faces.** That Fusion tokens 7 and 8 are a counterbore's wall and floor and selector-2 token 10 a countersink's cone on every hole, that token 2 names a flat bottom as 4 and 5 do, and which tokens name the faces of tapered, spotface, and counterdrill heads (§5.7). Token 7 marks cylinders and token 8 planes of counterbore holes, and token 10 cones; the token-7 cylinder's radius is the counterbore radius, not the bore radius, and the token-10 cone's angle the stored head angle; the token-2 face lies at its hole's stored depth, its outward normal against the drilling direction. Decides the Fusion decoder's `Hole` roles for those tokens; until then the roles §5.7 states, and a token no rule maps is `Other` with its code. Would settle it: counterbore and countersink holes' token-7 radii and token-10 angles set against their stored head parameters; token-2 faces set against their holes' stored form; one Fusion hole of each other head form.
-130. **Fusion flange and hem forms.** That Fusion stores the flange height datum as the API value plus one (1 `InnerSharp`, 2 `OuterSharp`), and that teardrop and rolled hems are as §6.6 states (§6.6). A code-1 flange's free end lies at the inner sharp's reading and a code-2 one's at the outer sharp's, where swapped labels predict the reverse; the teardrop's fold radius, return tilt, and end gap, and the rolled hem's arc, follow their values. Decides the Fusion decoder's `height_datum` codes and hem forms; until then the mappings §6.6 states. Would settle it: flanges whose heights are read against their solids; teardrop and rolled hems of other values.
-131. **SolidWorks pierce on an interior crossing.** That a SolidWorks pierce relation (code 40) puts its point where its curve crosses the sketch plane where that crossing is not the curve's end (§6.1). The point lies on the curve at its crossing of the sketch plane, and a projection reading does not fit; where the crossing is the path's start, crossing and end coincide. Decides the SolidWorks decoder's mapping of code 40; until then `Pierce`. Would settle it: a pierce whose curve crosses the plane at an interior point, as a profile sketch placed part way along a sweep path.
-132. **SolidWorks inner-loop taper.** That SolidWorks tapers a drafted profile's inner loops `WithRegion` in every design (§6.3). Inner-loop faces of a drafted cut or boss have the outer faces' sign of n·d, where `WithOuter` predicts the opposite. Decides the SolidWorks decoder's `ExtrudeDraft.holes`; until then `WithRegion`. Would settle it: drafted extrudes with holes in further designs.
-133. **Fusion draft sign, and inner loops of other sources.** That a positive Fusion `TaperAngle` widens the outer loop of an extrude that adds material on every feature; the sign and inner-loop taper of a drafted Fusion cut; and how Inventor and Creo taper the inner loops of a drafted extrude (§6.3). A drafted Fusion extrude that adds material tapers its concentric outer and hole walls `WithRegion`, not `WithOuter`, by face-name attribution, and its positive angle widens the outer loop; a holed Fusion cut keeps only its hole walls. Decides the Fusion decoder's sign and a cut's `draft`, and the Inventor and Creo decoders' `ExtrudeDraft.holes`; until then the Fusion decoder negates the angle of an extrude that adds material and states `WithRegion`, keeps a cut's angles as `f3d:TaperAngle` and `f3d:Side2TaperAngle`, and Inventor and Creo state `None`. Would settle it: further drafted Fusion extrudes that add material and a drafted cut with an island, their walls attributed by name; per source, an Inventor or Creo drafted extrude with a hole, its inner faces' sign of n·d set against the outer faces'.
-134. **Fusion operation settings below Rule H1's threshold.** The Fusion bindings of §7.3 and §7.5 that do not meet Rule H1's threshold or rest on one value: `finishingStepover` with `numberOfFinishingStepovers`, `stockToLeave` (a `pocket2d` finishing pass, and `adaptive2d` wall passes bounded by it), `verticalStockToLeave`, `numberOfFinishingStepdowns` above 1, `entry_sweep` (one value, 90°, at which a sweep and its supplement coincide), and pocket clearing's `maximumStepover` (an evened bound, never equal); `HeightFrom::ModelTop`, `closed_pass_overlap` from `finishingOverlap`, `PassTransition::Line` and `None`, `reduce_feed` from `useFeedOptimization`, and `HoleDepth` (where same-hole pairs share a bottom mode and the tip term, so `break_through` without `tip_through` is not shown). Decides each binding of the Fusion decoder; until then the bindings §7.3 and §7.5 state, the ones listed here where the stored toolpath agrees. Would settle it: per setting, operations that vary it alone.
-135. **Inventor coil rotation in general.** That Inventor's coil flag `ClockwiseRotation`, the slot-3 Boolean of the coil's property record, is true for a right-handed coil in every file (§6.3). A helical face joined to its coil, its helix fitted with both ends on the end-cap centres, is right-handed where the flag is true and left-handed where it is false; the other Booleans do not separate them. Decides the Inventor decoder's `hand`; until then `Right` where the flag is true and `Left` where it is false. Would settle it: a coil of another save version or with a reversed axis, its helical face set against the flag.
-136. **Fusion to-face holes.** That a Fusion hole with extent control 1 whose last construction group names a face is a to-face limit and not through all (§6.4). Its bore ends on the named face, at the exact intersection radius on a spherical face; where the body does not continue past the face, through all gives the same bore. Decides that mapping; until then `ToGeometry` on the face (§6.4). Would settle it: a control-1 hole with a face operand past whose face the body continues along its axis.
-137. **Support trimming in general.** That a CATIA blend limit storing 2 in `TrimSupport` puts its support in the result (§6.3, `Section.trim_support`). The report of a blend whose limits store 2 lists new cells that are copies of its supports' faces among its result's cells, and a blend at the default lists none; where the supports were cut at the limit curve before the blend, the two readings agree. Decides the CATIA decoder's `trim_support`; until then `Some(true)` where a limit stores 2. Would settle it: a blend that trims supports not cut before it.
-138. **STEP directed-location order by producer.** Which producers write a `DIRECTED_DIMENSIONAL_LOCATION` with the origin as the relating shape aspect, as ISO 10303 defines it (§8). An ST-Developer file names its relating aspect `ORIGIN`; a CATIA V5 export may store as related the datum face its own presentation draws as the origin; an Open CASCADE file's relating aspect is the shared base of a baseline chain. Decides whether a STEP decoder reads a producer's order as stored; until then it reads every file as ISO 10303 defines. Would settle it: directed locations from further CATIA V5 exports and from other producers, each set against its drawn origin symbol.
-139. **Creo spherical equation curves in general.** That a Creo spherical curve from equation (`csys_type` 4, instruction 4134, `rho`, `theta`, `phi` assigned) measures `theta` from the frame's +z axis and `phi` about z from x toward y, in degrees (§6.6). `theta` from −z with `phi` clockwise gives the same point set, and only a sweep's start at t = 0 puts `theta`'s zero at +z. Decides the Creo decoder's reading of the spherical form; until then the stated convention. Would settle it: a spherical curve from equation whose curve, or a feature built on it, stores points, set against the convention.
-140. **NX swept interpolation in general.** That NX Swept's interpolation byte 02 is `Linear` and 04 `Smooth` on every record, and that bytes 6 and 7 of the option array do not carry the interpolation (§6.3). The label `SKIN` is shared by swept, ruled, and bounded-plane records, whose class the owning section's class list gives. Bytes 6 and 7 differ between the 02 and 04 records as byte 2 does, and a record may store 04 with the bytes 6 and 7 of an 02 record. Decides which byte the NX decoder reads for `section_law`; until then byte 2, with bytes 6 and 7 kept as native options. Would settle it: a record of three or more sections whose bytes 6 and 7 do not follow byte 2, with its surfaces read.
-141. **Pipe section turn below Rule H1's threshold.** That a Fusion pipe's section turns as `SectionTurn::PathPlane` and `ZStart` state on every pipe (§6.3). `PathPlane` holds on a triangular pipe on a straight path, and `ZStart` on a square pipe on a path that leaves its plane, from a start set by the model's z axis; neither arm meets Rule H1's threshold; on a path of body edges the transport is not read; a triangle's apex side is A.12. Decides the Fusion decoder's `turn`; until then the arms where the stored faces agree, else `None`. Would settle it: square pipes on spatial sketch paths; a pipe on body edges, its section at several stations.
-142. **NX symmetric-angle draft in general.** That NX's `TAPER_SYMMETRIC` draft is one angle applied from the section plane toward both limits in every file (§6.3). Stored cones and cap circles of a legacy-release file follow the profile circles under that reading, with the limits from the records. Decides the NX decoder's `ExtrudeDraft` for that class; until then both angles the class's. Would settle it: a symmetric-angle draft in a file of a later release, of another angle, its cap circles set against its profile.
-143. **Rhino loft style carrier.** That value 9 of a Rhino loft's history record states its style, its values 0 and 2 being the styles RhinoCommon's `LoftType` numbers so, and the other fields of the record as read, on every loft (§6.3). Each loft's end rows and knot steps rebuild from its sections (`ChordLength`, `SqrtChordLength`; §6.3); the record's antecedent list is not always in loft order, and value 100 gives the order; the natural end shape does not fit values 14 and 15; value 10 is read as the simplify mode from its position only; whether the `SqrtChordLength` rule belongs to the style or to the Rhino 4 release that wrote it is A.18. Decides the Rhino decoder's `style`; until then the mapping §6.3 states, each arm where its rebuild gives the stored net, else `Native`. Would settle it: a `SqrtChordLength` loft written by a later Rhino; lofts saved in each style.
-144. **SolidWorks translate surface in general.** That a SolidWorks offset-from-surface end with its translate word set is `Translated` on every end (§6). Ends whose targets are not planes perpendicular to the direction separate the two readings; the face-layout block's word positions are inferred by alignment with the normal layout. Decides the SolidWorks decoder's `Translated`; until then as §6 states. Would settle it: an offset-from-surface end on a tilted plane saved with translate set, its end face set against the target.
-145. **NX general pattern in general.** That an NX general pattern with point locations is `Points` with its from-point as `reference` in every design (§6.5). Such a pattern has identity rotations and every instance on a stored cylinder of the seed's radius. Decides the NX decoder's general layout; until then `Points`. Would settle it: general patterns of point locations in further designs, their instances' faces set against the translations.
-146. **NX single output carrier.** Which stored value of an NX pattern record states single output (§6.5). A `Multi Instance Output` pattern record's child list holds one kind-02 child for its declared instances, where a multi-output record holds one kind-03 child per instance; among the unassigned fields only the reference-point lane count separates the two forms (5 on a single-output record, 2 or 3 on the others), besides a file edit stamp and the symmetric flag. Decides the NX decoder's and writer's reading of `nx:single_output`; until then the form is read from the child list, and the lane count stays native. Would settle it: further single-output patterns, their lane counts set against 5.
-147. **SolidWorks fill optimize on other boundaries.** What a SolidWorks fill with optimize set builds over a boundary that is not four-sided, two-sided, or planar (§6.6). Tail byte a+6 set gives a degree-3 B-surface patch and clear a degree-5 one; a set fill over five edges that closes a solid is a degree-3 surface that does not lie on its own boundary. Decides what the SolidWorks decoder states for `simplified` there; until then the decoder states the flag, and a writer of another codec charges a loss for a set patch over such a boundary (§6.6). Would settle it: optimized fills over five or more edges, their patches set against their boundaries.
-148. **CATIA stamp forms in general.** That the CATIA louver, flanged cutout, bridge relief, and bead read as §6.6 states on every stamp (§6.6). Decides the CATIA decoder's `Louver`, its flanged-cutout `ExtrudedHole`, `relief_length`, and `Bead`; until then as §6.6 states. Would settle it: further louvers' faces; a flanged cutout of another profile; bridge reliefs on a sheet of another thickness; a bead with unequal height and radius.
-149. **CATIA K-factor formula.** Which quantities CATIA's `DINNormaFormula` binds, read as K = ½ − ¼·log10(min(100, max(5t/r, 1))) (§6.6). The body text read with its arguments as t and r does not fit; the second argument's binding is inferred, and the law's clamps at r/t of 0.05 and 5 are not read on a stored part. Decides the CATIA decoder's translation of the formula into the K-factor's expression; until then the law stated. Would settle it: the formula's relation record read for its argument bindings; a part with r/t above 5 or below 0.05.
-150. **SolidWorks bend table in general.** That a SolidWorks part's stored bend table reads as §6.6 states on every part, what its angle column measures, and how a bend between its values is read (§6.6). A sheet-metal record governed by a stored table has method byte 4 with an evaluated cell; the table's blocks and its cell set against flat strips are read; stored tables include bend allowance grids by gauge and bend deduction grids by thickness, angle, and radius. Where a table's cells do not change with the angle, the angle column's measure and the law between values are not read, and SolidWorks' page says only that the software interpolates between thicknesses and between angles. Decides the SolidWorks decoder's `BendTable.angle` and `lookup`; until then `angle: None` and no axis of `lookup`. Would settle it: a part whose table's cells vary with the angle, its bends of two angles set against their flat strips.
-151. **NX neutral factor in general.** That an NX sheet-metal part's flat length follows its neutral-factor expression and not its stored formula text on every flat (§6.6). A flat solid beside its formed body follows the factor; no part known to the project is saved with its allowance method set to a formula or a table. Decides the NX decoder's `KFactor`; until then as §6.6 states. Would settle it: an NX sheet-metal part saved with a formula or table method, its flat set against each.
-152. **Bend zone codes below Rule H1's threshold.** That Creo's `order_ptr.flip` bit 128 and the Inventor Fold's slot-0 value 2 are `FixedSide` (§6.6). Creo bits 64, 128, and 256 and Inventor slot-0 values 0, 1, and 2 are read (§6.6); `FixedSide` does not meet Rule H1's threshold. Decides the Creo and Inventor decoders' `zone`; until then the mappings §6.6 states. Would settle it: further Creo bends of bit 128 and Inventor folds of slot 0 = 2, each fixed flat's end set against the line.
-153. **NX unsew in general.** That an NX unsew by edge splits a sheet into two bodies that each keep a copy of the edge, and which side keeps the input body (§6.6). Its input lane, its two result entries (body identities and their group nodes), and the faces and edges of each body before and after it are read; that the operand is an edge is read from its node id; a set of edges that leaves the sheet in one piece or in more than two, and which piece keeps the input body among more than two, are not read. Decides the NX decoder's `Unsew` and its outputs' order; until then as §6.6 states. Would settle it: an unsew of a sheet whose two sides were made in the other order, its bodies set against the input.
-154. **Decal image orientation.** That a Fusion decal's image runs with its top toward +V, so that texture v = 0 is its top row, as the right-handed frames of its unmirrored decals imply (§6.4). The frames, flags, and texture coordinates are read; no image's content is set against its placement, so which row the stored v places at which end of V is not read. Decides the Fusion decoder's `frame` y; until then +V. Would settle it: a decal of an image whose top and bottom differ, on a planar face, exported or rendered, set against its texture coordinates.
-155. **Relative cylinder in general.** That Fusion's relative cylinder is the smallest cylinder about its axis that holds the model and that its radial offset grows the radius, on every setup (§7.2). On a part round about its axis the smallest cylinder and the larger cross extent coincide; the offset's side is inferred; an older setup form caches no diameter. Decides the Fusion decoder's `RelativeCylinder`; until then as §7.2 states. Would settle it: a relative-cylinder setup on a part that is not round about its axis, with a radial offset, set against a toolpath that reaches the stock's outer radius.
-156. **Creo workcell heads and axis readings.** That a Creo workcell's two tool tables are two heads or turrets; that axis bit 21 on a mill-turn workcell states two rotary axes, and on a two-turret lathe its second turret; and which of codes 188 and 189 is the rotary letter (§7.6). On a mill, two rotary axes follow bit 21, one bit 22, and without a bit one axis explains the tool directions (§7.6); bit 21 is set on mill-turn records whose tool table is named for five axes; codes 188 and 189 are equal where stored and follow no stored motion. Two tables are read as two heads from a drawing's names and the turning models that hold them, and no sequence's tool is set against its table; a mill-turn's count is inferred from the mills' bits and the named records; type word 9 is read as two turrets with no named record. Decides the Creo decoder's `rotary_axes` for a mill-turn and its pockets' `turret`; until then as §7.6 states, and codes 188 and 189 stay machine parameters. Would settle it: a mill-turn sequence whose tool comes from the second table, its toolpath set against the second head's frame; a 4-axis workcell whose codes 188 and 189 differ.
-157. **Fusion link and transition feeds in a posted program.** That a posted Fusion program feeds code-5 moves at `noEngagementFeedrate` and code-4 moves at `tool_feedTransition` where those differ from the cutting feed (§7.5, §7.8). Both bindings are typed from the vendor's posts; no stored toolpath and no posted program shows either applied. The current vendor posts (Fanuc, Haas, Siemens 840D, Heidenhain) feed code 4 from `tool_feedTransition` where the operation holds it and from the cutting feed where it does not, and the older stock post knows only the cutting feed; no stored motion record holds a feed. Decides no type: it confirms the Fusion decoder's `Link` and `Transition` bindings; until then as §7.5 and §7.8 state. Would settle it: the `noEngagementFeedrate` of operations whose toolpaths hold code 5, set against their cutting feeds; then a posted program of an operation whose `tool_feedTransition` differs from its cutting feed and whose toolpath holds code 4, or of one whose `noEngagementFeedrate` differs from its cutting feed.
-158. **Creo identical pattern ended on a surface.** Whether a Creo identical pattern (`pat_type` bit 32) recomputes a member's end where the seed is extruded up to a surface (§6.5). A bit-32 member holds copies of the leader's intersection edges and none of its own, and the members' stored surfaces are the leader's moved rigidly; where the seed is extruded up to a surface, a member's end plane may lie apart from the moved leader's while its edge rows are copies. Decides whether the Creo decoder states `Identical` for a bit-32 pattern whose seed ends on a surface; until then `Identical`, as §6.5 states. Would settle it: a bit-32 pattern of an extrude up to a surface that is not parallel to the pattern's direction, its members' end faces set against the seed's.
-159. **NX draft from the start limit in general.** That NX's from-edge draft class is `DraftNeutral::Start`, the cross-section at the start limit being the profile, on every extrude (§6.3). Where the start limit lies away from the section, the side face meets the profile at the start limit, where a draft from the section does not, and lies (h − start)·tan θ off it past the start (§6.3); where the start is at the section plane, `Start` and `Origin` give one body. Decides the NX decoder's `ExtrudeDraft.neutral` for that class; until then `Start`. Would settle it: further from-edge drafts whose start limit lies away from their section, of other angles, their side faces set against their profile at the start limit.
-160. **NX face region rule in general.** That NX's region-boundary face rule is the face form of `SelectionRule::Region`, a seed face with `domain: Containing(point)` and the boundary loops, on every pick (§5.8). Each pick resolves to the face under its seed point, its boundary track rows close, and the boundary may take the whole face or cut it. Decides the NX decoder's `Region` for a face rule; until then as §5.8 states. Would settle it: an NX 10 file's second item parsed, and its `OFFSET_REGION` records joined to their collectors; then a face rule whose boundary cuts several faces.
-161. **NX region rule tolerance.** That the length an NX region rule stores is a copy of its file's distance tolerance, so that `tolerances.linear` stands for it and the rule needs no field (§5.8). A sketch region rule and a face pick store their file's section tolerance T; a track reference names one line, arc, or spline; the links between a region's curves lie within T. Links on arcs whose frame the reader does not take and on splines are not read; that curves within T meet is consistent with the links and is not separated from a smaller threshold. Decides whether the NX decoder states a tolerance on a `Region`; until then it states none, and a rule whose length differs from its section's keeps it in the selection's native record. Would settle it: the links on arcs and splines read; then a region rule saved with a gap tolerance other than the part's.
-162. **Adjusting pattern construction by application.** Which construction, `ModelSoFar` or `ModelBefore`, the adjusting pattern of Fusion and Inventor (adjust) and of NX (variational) uses (§6.5). Where a pattern's fillets and to-face ends touch only geometry made before the pattern, both constructions give the same faces; an NX meeting record may leave incomplete instances that are not the build-order prefix `ModelSoFar` leaves; CATIA keep specifications is `ModelSoFar` (§6.5). Which NX byte is the variational method is not established (one candidate byte, contradicted by a label), and the NX seed list is not resolved. Decides those decoders' `against`, and when a writer to those formats is free of the loss §6.5 names; until then `against: None`, and a writer is free of the loss where its second test holds. Would settle it: NX pattern records put through the meeting test; per application, a pattern whose seed ends on geometry another instance makes.
-163. **SolidWorks ruled-surface record.** That a SolidWorks ruled surface's record closes as read: its type the u32 after the distance, 0 to 4 in the order of the API's codes (tangent to surface, normal to surface, tapered to vector, perpendicular to vector, sweep), its distance and angle the display dimensions D1 and D2, and three option words b, c, and d (§6.6). Type 2 records are those whose surfaces are inclined to a direction; c, set only on type 2, is read as the tapered type's direction flip (inferred); d is trim and knit (inferred: a record with several faces and d = 1 makes fewer bodies than faces, and one with d = 0 keeps its faces apart); b is 0 at a corner with a gap, which is `Open` (A.42). That b is connecting surfaces rests on d's reading and on a cleared corner (A.42); types 0 and 3 do not meet Rule H1's threshold. Decides the SolidWorks decoder's ruled-surface type and options; until then the type as read, and the three words as `sldprt:ruled_option_b`, `sldprt:ruled_option_c`, and `sldprt:ruled_option_d`. Would settle it: a ruled surface saved with trim and knit cleared, and one with connecting surfaces cleared, their words set against the default's.
-164. **SolidWorks fill record fields.** That a SolidWorks fill record's mark is the u32 after the `moPMarkRecord_c` tag of its body head, and that an item's flag byte states the item's kind and its contact (§6.6). The mark is a mark id of configuration 0's deltas; the flag byte's high nibble is 1 on items that hold a body edge and 0 on those that hold a sketch or curve; its low nibble takes 0, 1, and 2 on edge items, read as contact, tangent, and curvature from its domain, no face normal being compared (inferred); tail byte a+10 is not read. Decides the SolidWorks decoder's reading of a fill's state and of its edges' continuity; until then the mark as read, and the low nibble and a+10 native options. Would settle it: the patch's normals along each edge item set against the adjoining face's, by low nibble.
-165. **SolidWorks fillet option block.** That the three varying positions of a SolidWorks fillet's option block are tangent propagation (+0), keep features (+16), and attachment edges (+37, inverted) (§6.4). Against the API export, +0 equals tangent propagation, +16 keep features, and +37 is 0 where attachment edges are set and nonzero where not; no other position varies; +37 can take a value other than 0 and 1, attachment edges does not meet Rule H1's threshold, and a record whose block is not located is not read. Decides the SolidWorks decoder's `Propagation`, `BlendControls.keep_features`, and attachment edges; until then +0 and +16 as read, and +37 as the native option `sldprt:attachment_edges`. Would settle it: records whose block is not located, read for their block; then a fillet saved with attachment edges set, its byte set against 0.
-166. **Fusion hem side in general.** That Fusion's hem flip byte is 0 `HemSide::SelectedEdgeFace` and 1 `OppositeFace`, and that the picked edge decides the fold where the wall's growth side differs, on every hem (§6.6). Every vertex an unflipped hem makes lies above the sheet face that holds its picked edge, and every vertex of a flipped hem beyond the opposite face; a hem on an edge flange folds over the picked edge's face and away from the growth side. `OppositeFace`, and the picked-edge rule against the growth-side rule, do not meet Rule H1's threshold. Decides the Fusion decoder's `Hem.side`; until then the mapping §6.6 states. Would settle it: further flipped hems, and hems on walls whose picked edge does not lie on the growth face, their vertices set against the picked edge's face.
-167. **Inventor bend-table deduction above 90° in general.** That an Inventor bend-table cell above 90° of deflection is a deduction between flanges measured to the outer tangent planes, `FlangeMeasure::OuterSharpThenTangent`, and that the table's angle column is the opening angle, on every part (§6.6). A bend zone above 90° has the flat width of the tangent-plane measure, where flanges measured to the outer sharp do not fit; the opening angle is read from the shape of a table's values and from Autodesk's page; a table symmetric about 90°, or a flat holding only bends of 90°, does not test the angle column's measure. Decides the Inventor decoder's `BendTableValue` and `BendTable.angle`; until then `Deduction { flanges: Some(OuterSharpThenTangent) }` and `Opening`. Would settle it: further Inventor parts with a table rule, a flat pattern, and bends above 90°; a part whose table is not symmetric about 90° and whose flat holds a bend off 90°.
-168. **Inventor bend equation readings.** That an Inventor equation rule's flanges are measured as a table's are, that its `ref` codes 3 and 2 are the opening angle and the deflection, and that the two flags of a range record are its bounds' inclusion (§6.6). The rule records and `kind` 1 and 4 are read from what their expressions compute; a common rule's expressions subtract the two setbacks of Inventor's table unfolding, term for term. The flange measure is inferred from that rule's expressions, the `ref` codes from expressions, and the flags from the stored ranges covering the angles with no overlap; none is set against an unfolding. Decides the Inventor decoder's `BendEquations`; until then `Compensation { flanges: Some(OuterSharpThenTangent) }` for a rule with that rule's ranges and `flanges: None` for any other, with `ref` and the flags as read. Would settle it: an Inventor part with a flat pattern under an equation rule, its bend zones' widths set against the rule's expressions.
-169. **Creo wall readings below Rule H1's threshold.** That a Creo wall of `misc_choice[0]` bit 512 is `ExtendWall`; that an attached bit-2 wall is a `ContourFlange` of `width: Full`; that an unattached bit-2 wall ends at the far end of its instruction-4487 edge; that an attached bit-8 wall is a `ContourFlange` of `width: FromReference`; that an attached wall with neither bit has its free ends on the sharp of its sketch face's side, its `Flange.outline`, and states no `angle`, its outline sketch's plane being the construction through the attach edge at an angle to the base wall whose dimension binds the type-205 dimension, stated where the plane's stored position agrees, and otherwise the dimension kept as the native option `creo:wall_angle`, which a writer of another format charges as `export:parameter.flattened`; and that a Creo flange stated without an `outline` takes `angle` as 180° less the type-205 dimension's magnitude (§6.6). A face of a bit-512 wall lies on the plane its instruction 4438 names. A bit-2 wall holds no width dimension of type 62, which bit-8 walls hold; an attached bit-2 wall spans its attach edge, flush with the edge's ends or between vertices that earlier features placed, never short of it; an unattached bit-2 wall's far end lies at the far end of its 4487 edge, and no stored dimension equals the extent; the 4487 edge is an earlier feature's, read from the hidden edge the later features leave. A bit-8 wall starts in its sketch plane at the instruction-4488 point and runs its type-62 width against the sketch's normal, the 4488 point being a datum point made just before an attached wall; instruction 10 names no edge on an attached bit-8 wall, and its 4487 edge holds the wall's span. An outline wall's free ends lie on the sharp of the sketch face's side, not on the bend's tangent line (§6.6); the type-205 dimension is ±90 or the angle between the walls; the outline sketch's plane holds the attach edge and lies at the stored type-205 angle to a plane through the edge, the base wall's own face or an earlier feature's coplanar plane; the attach edge is the sharp on the sketch face's side, inner or outer; the stored sign is the right-hand turn about the edge's stored direction, with an exception no reading explains, and a writer to Creo re-emits the stored sign (§6.6). An outline wall with no section, no bend pair read, neither face identified, or its bend not identified stays `Native`; a wall that stores no attach edge, or fits two placements, keeps `creo:wall_angle`. Decides the Creo decoder's `ExtendWall`, a bit-2 wall's `width` and `extent`, an attached bit-8 wall's `width`, a wall's `outline`, and the plane construction that binds its type-205 dimension; until then the mapping §6.6 states under Rule H1, and `SheetMetalKind::Native("creo:wall")` where the stored faces do not agree. Would settle it: attached bit-2 walls' end planes set against the ends of their attach edges; bit-8 walls whose 4487 edge does not resolve, read against their faces; native outline walls' sections and bend pairs read; bit-512 walls in further parts; binary Creo files searched for outline walls, their sketch planes set against their type-205 dimensions.
-170. **Angle sense outside Creo's outline-flange walls.** Whether each source's stored construction angles turn in §5.9's positive sense, the right-hand turn about the axis's stored direction, which a decoder states where a construction's stored `resolved` agrees with it and otherwise keeps as the source's form (§5.9). The Creo outline-flange wall's stored sign follows the sense with an exception (B.169); no construction angle of another source, and no other Creo construction angle, is set against the sense. Decides, per source, whether its decoder states an angle input in §5.9's sense directly or through `Dimension::Negated` where no `resolved` is stored; until then the input's relation is `Native` under the source's name with the stored value there (§5.9). Would settle it: per source, the construction angle inputs that store a `resolved`, each set against the positive sense.
-171. **Decal flags and frame normal.** That a Fusion decal's second flag byte reverses its width and its third its height, so that a frame with x along −U and y along −V and a `mirrored` that is the exclusive or of the two bytes states a decal that sets the third; and that the frame's z is the faces' outward normal at its origin (§6.4). The width runs along −U where the second byte is set, and the height is reversed where the third is; N is U × V, and the origin lies on the mesh surface. Neither flag meets Rule H1's threshold, and N is not set against the face's normal at the origin. Decides the Fusion decoder's `frame` and `mirrored`; until then as §6.4 states. Would settle it: the direction of u on decals that set the second byte; N set against the B-rep face's normal at the origin; then a decal flipped vertically in Fusion, its record set against the default's.
-172. **Fusion lead, lift, and ramp bindings below Rule H1's threshold.** That Fusion's `entry_perpendicular` and `exit_perpendicular` bind `Lead.line_turn`, `Perpendicular` where true and `Tangent` where false, on a lead whose line meets an arc; the link length below which `Linking.lift` does not raise a stay-down link; which radius a pocket strategy adds to `PlungeStrategy.start_above`; and what the adaptive lead arcs that do not sit at `leadRadius` follow (§7.3). With the flag true the line is perpendicular to the cut on a lead with no arc and runs along the arc's radius on one with an arc, and with it false the line is tangent or in line; a stay-down link under a `liftHeight` above 0 rises exactly `liftHeight` or not at all, the unlifted being the short links, at a boundary of 0.48 of the tool diameter (inferred); a pocket operation may lift none of its links; a pocket strategy's first ramp does not start at the top plus the clearance, a ramp that starts higher exceeding it by the lead-in radius, and a ramp may start below the top; many adaptive lead arcs off `leadRadius` match no numeric setting of their operation, a constant 1.583 mm arc occurring with tools of 2 to 16 mm. The line with an arc does not meet Rule H1's threshold; the length limit is inferred; where the two lead radii are equal, which one the ramp adds is not separated. Decides the Fusion decoder's bindings of the three settings and of `arc_radius` on adaptive clearing; until then as §7.3 states. Would settle it: ramps that start below the top set against their stock and model tops; an operation of a strategy other than chamfering with the flag true and a lead arc; a pocket operation whose two lead radii differ; off-radius arcs set against the strategy's fixed shapes by tool diameter.
-173. **Fusion toolpath attribute readings.** That a Fusion `kind 1` record standing before a cycle's first move, with no parameter after it, is a unit tag a writer can regenerate; how engraving groups its passes into `family` values; and the order of the table that opens a toolpath (§7.8). Such records stand in deep-drilling and chip-breaking cycles; one (`family`, `level`) record stands before each cutting run; every other `kind` precedes a cycle parameter and is the unit class of that parameter. The bare `kind 1` records are read by inference; the engraving grouping does not meet Rule H1's threshold; the opening table's order is a guess. Decides which attributes a Fusion decoder keeps and a Fusion writer regenerates, and no type (Rule N case (b), §7.8); until then the decoder keeps those records and the opening table as attributes. Would settle it: the bare `kind 1` records set against the dwell their cycles write; further engraving toolpaths' passes set against their `family` values.
-174. **SolidWorks chamfer loop selection.** That a loop in a SolidWorks chamfer's third selection list decodes to the loop's edges (§6.4). The third list holds loops, `moCompLoop_c` objects or a class with an escaped index; the loops' edges are not joined to the chamfered faces, so the reading is inferred from the rosters, which size on edges. Decides the SolidWorks decoder's chamfer selection; until then the loop's edges. Would settle it: chamfer records' loops joined to the body's edges, set against the chamfer faces.
-175. **SolidWorks sweep end flags.** That the two words of a SolidWorks sweep's closing object change no geometry a writer of another format builds (§6.3). At an end that stores 1 with the profile oblique to a planar path, the stored section stays as sketched, as under 0; no file labels the words, and a sweep with guide curves and a 1 is not read. Decides that the decoder keeps them as `sldprt:sweep_start_tangency` and `sldprt:sweep_end_tangency`, which a SolidWorks writer returns unchanged; until then that reading. Would settle it: a sweep with guide curves saved with the start and end set to normal to path and to none.
-176. **NX curve copies the decoder does not read.** That NX `EXTRACT_STRING` records decode as `Extract` of curves, with a `TransformBodies` copy where one holds an `XFORM`, on every record (§6.5). The outputs lie on their inputs within 1e-6 mm, or are the stored transform of them, a third flag marking a reflection (inferred); some records fit no reading; records in the legacy container's grammar are not parsed, and arc frames are not taken. Decides the NX decoder's `Extract` and `TransformBodies` for those records; until then each where its outputs agree, else native. Would settle it: legacy-container records parsed and set against their outputs; the collectors of records that fit no reading joined to their source parts.
-177. **Creo rolled bend line face.** That a Creo rolled bend's `line_face` is read as for an angle bend (§6.6). A roll stores no instruction 403 and so no signed angle; a roll that turns away from the section's facing (toward −z of the section) does so as a positive angle bend does; whether a roll can turn the other way, and where that would be stored, is not read. Decides the Creo decoder's `line_face` for a roll; until then stated only where the stored cylinders agree. Would settle it: a rolled bend that turns toward the section's facing.
-178. **Inventor shared-edge bends.** That an Inventor bend of option pair (2, 1) on one edge is `ConnectBetween::SharedEdge` in every file (§6.6). The stored edge lies between two outer sheet faces of one body; each bend adds two coaxial cylinders of the stored radius and that plus the thickness, the outer one tangent to both outer faces. Decides the Inventor decoder's `SharedEdge`; until then stated where the stored bend's faces replace the corner so, else `SheetMetalKind::Native("inventor:bend")` with the edge, radius, and option pair kept. Would settle it: a shared-edge bend at another angle.
-179. **Fusion wrap setting.** That Fusion's `doWrap` binds the wrapping §7.5 states for rotary operations, with its radius from the stream's `axisSubstitutionRadius` (§7.5). The toolpath carries an `axisSubstitutionRadius` attribute where the setting is true and not where it is false; the radius's meaning is inferred. Decides the Fusion decoder's wrap; until then a named process parameter. Would settle it: true toolpaths' coordinates set against the radius.
-180. **Rips below Rule H1's threshold.** The rip readings that do not meet Rule H1's threshold (§6.6): Creo's surface rip removes the picked wall, no face of the rip covering the middle of the picked face's box, its new faces on its plane, and a rip that names a side wall is not read face by face; Inventor's single-point cut is the face's ruling through the point, from points at fractions 0 and 0.5, and its point-to-point cut a line; a SolidWorks sketch rip cuts one wall through the sheet, centred on its line; Creo's sketched rip is `Projected`, its chain carried along the sketch's normal and the sheet split there with zero width, its section's flip fields recording no choice; and Inventor's `KerfSide::Right`. Decides each decoder's `Rip`; until then stated where the stored result agrees, else `Native` with the picks kept. Would settle it: Creo side-wall rips read face by face; per format, further rips of each kind set against their results.
-181. **Creo axis-control readings.** The Creo readings under `ToolAxisControl` that do not meet Rule H1's threshold (§7.3). `AlongRuling` holds except near the ends, where past the face's u range the axis stays in the tangent plane and turns off the ruling; `NormalToSurface` holds on bit-21 sequences whose instruction 966 has offset 1.0, where fixed-axis sequences have offset 0, so the offset is read as a flag (guessed); coded parameters 100, 101, 236, and 259 are 0 where stored; `InPlane` holds, the rotary axis the model's z; `ThroughLine`'s axis meets the line at the foot of the perpendicular from the tool's contact point, and at a right angle where the faces are parallel to the line, where the two coincide, with axes on one parallel-face toolpath passing through one point (not explained); the sequence's edge rows bound the region the tool covers, one ball radius inset. No plane oblique to the model's axes is read. Decides the Creo decoder's `tool_axis`; until then each arm where the stored toolpath agrees, else the operation's native settings. Would settle it: a flank-milling sequence whose toolpath departs from the ruling; a 4-axis sequence on an oblique plane; a through-line sequence of another design on faces oblique to its line.
-182. **SolidWorks conversion old layout.** That the counted list of the old Convert to Sheet Metal layout holds pairs of face references, and what they are (§6.6). Each element is two topology references built like the fixed face's, tag occurrences exactly twice the count, the outer class `moCompFace_c` (inferred); the pairs are not joined to the body, so whether they are bends is unknown. Decides whether the decoder states `Convert` from `ConvertFrom::Faces` with `bends` empty; until then `Native("sldprt:convert_v1")` with the face pairs kept. Would settle it: the pairs joined to the stored body's faces.
-183. **Fusion conversion's second pick.** That the second pick of a Fusion conversion is the face opposite the first at the thickness (§6.6). The first pick is the face under the stored point, which is `fixed`; the second is inferred to lie at exactly the thickness. Decides how the decoder keeps it; until then the source setting `f3d:convert_second_face`, `thickness` coming from the rule. Would settle it: conversions' second picks' faces set against the first.
-184. **Creo tolerance codes of text-section files, and the fit count.** Which code of a Creo text-section file is nominal-only, and how many Creo dimensions store a fit class (§5.12, §8.1). On binary files the codes are read: 1 nominal, 2 plus-minus, 3 limits, 4 symmetric, 8 symmetric superscript, joined to the file's own attributes, and the decoder states `Deviations` with `lower` = −slot 0 and `upper` = slot 1 on codes 2, 3, 4, and 8 (§5.12). A text-section file carries no attribute oracle (no `PTC_*` rows), and three numberings fit every text-section reading (the binary order; codes 1 and 3 swapped; the TOOLKIT order counted from 1, which binary files reject), under each of which codes 2 and 4 state a tolerance; the general tolerance's per-decimals rule does not separate them. A dimension with a fit class matches its stored table cell; whether a fit's deviations are `Cell` or `Own` is decided by the files' stored ISO 286 tables set against the published cells (§5.12). Decides the Creo decoder's `tolerance` on codes 1 and 3 of text-section files and its count of fits; until then it states `Deviations` on codes 2 and 4 there and no `tolerance` on codes 1 and 3, except on a record whose class matches its table cell, which states its `Fit` (§5.12), keeping the code as `creo:tol_type` and, where it states none, the slots as `creo:tol_slot_1` and `creo:tol_slot_2`. Two decoder defects stand beside these: Creo 4 saves write the limit attributes as deviations, not absolute limits, and the positive value lane decodes the prefixes `54` and `58` wrongly (0.195625 for 0.18). Would settle it: a part saved by Creo both as a text-section file and as a binary file, its dimensions' codes compared; stored records with a fit class matched against their tables; each stored table's cells set against ISO 286's.
-185. **Computed member names.** That a configuration's name computed by a table formula is stated as its cached text (§5.14). SolidWorks and Inventor table cells may compute the configuration's name by concatenation, each formula reading cells of its own row, with cached texts; an Inventor table's part-number cells that compute its member-name cell's text are `PartNumber::ConfigurationName` (§5.11), so only its name cells stay text. A name that drifts from its formula is not read. Decides the decoders' `ConfigurationRef::Named`; until then the cached string, the formula in the table's native record. Would settle it: a table whose name formula reads a cell that another configuration changes.
-186. **Creo family-table records that are not configurations.** That the Creo family-table records below state no configuration of the part (§5.14): hidden instance objects (`inst_hidden` 1, names ending `#AF<n>`), hidden columns of type 14 and type 15, and tables of user-defined-feature groups. A hidden object is the copy of a model cut by an assembly feature, its `model_db` rows assemblies, and every hidden object's name carries `#`; type 14 marks such a part; type 15 is bookkeeping of simplified representations; a group table's rows are variants of the group, which a placed group names. Type 15's cells are not set against the representations. Decides that the Creo decoder mints no `DesignConfiguration` from them; until then that reading. Would settle it: a part with two simplified representations and a type-15 column, its cells set against them.
-187. **Fusion empty part-number cell.** That an empty Fusion part-number cell is the rule that the configuration's part number is its name (§5.11, §5.14). Where the cell is empty the document's part number is the row's name, in the property archive and in the Design stream; a file that stores such a cell's row data holds `Option: 0` with the row's name, where a cell with typed text holds `Option: 1`. Where no row is renamed, a stored flag that follows the configuration's name is not separated from stored text equal to it. Decides the Fusion decoder's `part_number`; until then `PartNumber::ConfigurationName` for an empty cell, inferred. Would settle it: a table of two rows with empty part-number cells, one row renamed after the cells were set, each configuration's stored part number.
-188. **Fusion pattern compute words.** That two payload words of a Fusion pattern hold its compute option (optimized, identical, adjust) and its pattern object (faces, features, bodies) (§6.5). The two words are read against the patterns' labels only. Decides the Fusion decoder's `method` and operand kind; until then that reading. Would settle it: one pattern saved under each compute option.
-189. **Flange extent readings below Rule H1's threshold.** The flange extent readings that do not meet Rule H1's threshold (§6.6): Inventor's Width extent with a reference point is `FlangeWidth::FromReference`, a record may hold a point and a width and no offset, and the face or plane the user picked is not in the record; Fusion's contour flange marks a symmetric extent, `Span::Symmetric` with `measure: Some(PerSide)`, by two head words of 1 (inferred), and a one-sided extent's side is stated only where the profile sketch's plane is read; Fusion's two-distance records are `Span::Between` with both distances, one to each side of the sketch plane, and where the two distances are equal, which of `Span`'s ends `AlongDistance` takes is not separated; and SolidWorks' open base flanges, whose extent block is read against the flange's end caps, its mid-plane form `Span::Symmetric` with `measure: Some(Total)` and its two-direction form `Between` with two depths. Where Inventor stores the picked face or plane is not read. Decides those decoders' `width` and `extent`; until then each where the stored footprint or faces agree, the native option `f3d:contour_flange_extent` for a Fusion symmetric record whose faces do not agree, `Native("f3d:ContourFlange")` for a Fusion record whose side is not read, and `Native("sldprt:base_flange")` for a SolidWorks record whose caps disagree, that keeps no cap of its own, whose caps no witness scores, or whose faces are not checked. Would settle it: further Width flanges with a reference, and their picked face; further symmetric Fusion contour flanges; a Fusion two-distance flange of unequal distances; SolidWorks blocks' faces set against their caps; further SolidWorks two-direction base flanges.
-190. **CATIA keep specifications and fix together.** Two CATIA readings that do not meet Rule H1's threshold (§6.5, §6.7): keep specifications is `Adjust { against: Some(ModelSoFar) }`: its carrier is `DesignIntent` 2, and its meaning is inferred by elimination of the dialog's other options; `ModelSoFar` is inferred from the stored build order where the pattern stores per-instance copies, and is not read where it stores no build order; `DesignIntent` 1 is `Identical` (inferred); and a fix-together group is a `RigidGroup` whose members keep their stored placements, since its record stores no pose, a record may carry an unread Boolean, and a record's member list may not be read. Decides the CATIA decoder's `against`, the Boolean's reading, and those records' members; until then `ModelSoFar` where the pattern stores its build, else `None`, the Boolean kept as the group's native option, and a record whose members are not read `FeatureOperation::Native` of kind `catia:FixTogether`. Would settle it: a keep-specifications pattern with no stored build, saved with an instance that ends on another; a fix-together group whose Boolean differs.
-191. **NX break corners below Rule H1's threshold.** That an NX break corner whose stored faces are cylinders is `CornerBreak::Round`, a radius `size` tangent to both edges that meet at the corner, and which stored value states the round (§6.6). Such a record builds rounds at the stored size through the thickness; a candidate method bit differs between two rounds, so it is not the shape; the picks are thickness edges where the pick-to-corner relation is read, and a record that holds one pick against several broken corners of a cutout is, under Rule H1, `SheetMetalKind::Native("nx:break_corner")`. No stored value is shown to state the round (the chamfer break is A.56). Decides the NX decoder's `shape`; until then `Round` where the stored faces are cylinders, else `CornerBreak::Native("nx:break_corner")` with the method byte kept. Would settle it: further break corners set against their faces.
-192. **Fusion pass fields under Rule H1.** That Fusion's pass settings build what §7.5 binds them to on the toolpaths where the stored path does not show it (§7.5): `nullPass` true (`repeat_final_pass`); `cornerMode` `roll` and `sharp` (`corners`); `doRoughingPasses` and `doFinishingPasses` true (`roughing_passes`, `finishing_passes`); `transitionType` `curve` (`PassTransition::Arc`); `maximumRoughingSteps` on contour toolpaths with roughing on (`roughing_pass_count`); `tabWidth`, `tabHeight`, `tabShape` `triangular`, rising over half of `tabWidth` and raised over the tool's diameter at the top, `tabPositioning` `tabCount`, the centres at (i + ½) L / n along the tool-centre path, and `distance` with `tabDistance` on straight edges (`tabs`); and the chamfer depth (`chamfer`) (§7.5). A toolpath set to one of these values may lack the run, arc, junction, or tab its value names, and what such a toolpath does instead is not read. Decides the Fusion decoder's pass fields; until then each stated where the stored toolpath shows the feature it names, else `None` with the setting kept as a named process parameter. Would settle it: per toolpath that lacks its feature, the operation's other settings and its geometry set against the run it lacks.
-193. **SolidWorks base flanges the record does not separate.** Which kind a SolidWorks base flange (`moSMBaseFlange_c`) is where its profile is a later sketch or its record's shape does not say, the extent and the thickness's side of an open one whose extent block is not read, the side of a base bend's radius where its faces are not read, and whether the contour's start that the thickness flag is read against is the start of the sketch's stored chain (§6.6). The profile reference resolves to its sketch; a record closed by its shape is a `Wall`, an open one a `ContourFlange`, and a record with one child and a depth of its own has no extent equal to `D2`; an open record's extent block may be absent where it stores no `D2` of its own or is of an older layout. `D1` is the bend's inner or outer radius, the radius on the profile's side of the bend, and by a separate clause, inferred, the inner radius where the profile has a sketched arc at the vertex though it lies on the outer face. The u32 47 bytes before the extent block's marker is 0 where the profile lies on one family of side faces and 1 on the other, 0 being the right of the contour run from the flange's first end face, and that start is the start of the sketch's stored chain where it is unambiguous (§6.6). Open: a profile that is a later sketch, whose reference the framing cannot number; the one-child records' kind; the open records' blocks not read, and with them their extents and thickness flags; the profile-side rule, which a SolidWorks writer uses to choose the radius it writes as `D1`, fails on blockless bends whose faces are read; that the contour's start is the stored chain's start does not meet Rule H1's threshold, and the decoder, which reads the sketch's points and drops its lines, reads the profile's chain against the first end face only where the start is unambiguous, a reading the SolidWorks writer also needs to write the flag. Decides the SolidWorks decoder's kind, `extent`, a bend's `radius_side` where its faces are not read, and `thickness`'s `side`; until then a record whose kind the decoder cannot read, a one-child record, and an open record whose block is not read are `Native("sldprt:base_flange")`, `D1` is always the bend's radius, its side stated from the cylinder `D1` equals where both cylinders are read (`Inside` or `Outside`, blockless bends `Inside` among them), and a bend whose `D1` equals neither cylinder makes its flange `Native("sldprt:base_flange")`; the thickness's `side` is stated where the block is read, the faces give the wall's side, and the profile's chain is read against the first end face, the flag is kept as the native option `sldprt:thickness_reverse` wherever the block is read, and `side` is `None` elsewhere, which a writer does not default (§2.4). Would settle it: the feature stream walked as a whole CArchive, which numbers a later sketch's reference, and with it the unread blocks read; the one-child records' profile sketches' segments read for closure; the contour's start set against the stored chain's start on further records whose start is unambiguous; the decoder's sketch reader extended to the lines, so that `side` is stated on the records whose faces give it.
-194. **Creo walls in binary files.** Which kinds the Creo walls of binary files are, by the mapping §6.6 states for text-section walls (§6.6). The tools that read text-section walls read no binary records, so binary walls' bits, sections, dimensions, and surfaces are not read. Decides the Creo decoder's kinds for binary walls; until then the mapping §6.6 states, each arm where the stored faces agree. Would settle it: binary walls' `misc_choice[0]` bits, sections, and dimensions read from the binary records, then set against their surfaces as text-section walls are.
-195. **Creo corner rows the decoder misreads.** The Creo decoder's reading of the type-38 and type-41 rows of a round's corners, of its tori's origins, of the tokens its tables lack, of spline point arrays, of edge rows, and of where a row ends (§6.4). With these readings every two-set junction face reads and fits an arm. Type-38 and type-41 rows read past the envelope body's `e3`, twelve local-system slots and two radii or three `fillet_srf` splines, where the decoder stops at the `e3`; on decoder-placed tori and spheres the cylinders' lane gives the same carrier, the same axis with one origin coordinate negated, or other coordinates, and with the stored reading code-7 tori lie about a listed piece's axis, where with the decoder's many lie on no surface's axis; the fillet reader misframes splines, stops at the openers `a4` and `34 xx yy`, and misreads isolated tokens; the short-float prefixes `1a`, `33`, `39` and the openers `00`, `39` are missing from the decoder's tables, and a junction face may lie on its neighbour's carrier and be no surface of the round, so the decoder may emit it as a face on that carrier. The positive seven-byte lattice for openers `4c` to `59` and `b2` is not `0x3f75 + p` but `3fb1` for `4c`, `3fb5` for `4d`, `0x3f72 + p` for `4e` to `53`, `0x3f73 + p` for `54` to `57`, `0x3f74 + p` for `58` and `59`, and `bfde` for `b2`, fitted on frames; it adds orthonormal frames, loses none, and agrees with the decoder on the slots both read; `41` is an eight-byte form of high byte `bf`, `37` one of `3c`, and `4b` a seven-byte form of `3f b0`; `1b`, `34`, and `20` are three-byte forms of `3c`, `bc`, and `3d`, and `1f` and `38` three-byte near-zero forms; a frame reader bounded at the next row head, resynchronising after an opener it lacks, reads each row's own frame where an unbounded reader takes the next row's. The lattice holds in spline point arrays too, not in parameter arrays, and there loses no row and removes most off-support centre samples; `36` is a seven-byte near-zero form, its high byte fixed by no stored row known to the project; the pcurve lane needs the constant-with-tail forms `01 K b b` and `02 K b b b`, the near-zero forms `21 26 3f`, `27 40 22`, `19 23 37 3c 1e 32`, and `1a 33 20 39`, and `a4` as seven bytes under `bf c0`, with which junction-to-end edge rows read; the edge reader keeps a row's tail only within 400 bytes of its head, which loses spline edge rows of up to 20 KB, and a tail kept anywhere before the next row head closes every visible wrapped loop; opener `0d` reads 0.25 on a torus where the decoder's lane reads it as −1 and gives a radius of 1.0. Open: tori whose coordinates differ otherwise; none of these readings is in the decoder. Decides the Creo decoder's reading of corner rows, spline point arrays, edge rows, and row ends; until then `Native("creo:12")` or `Native("creo:7")` where a junction face is not placed (§6.4). Would settle it: the decoder run with each reading, its placed corners and edges set against the rows read by hand.
-196. **Fusion rigid groups joined through tables.** How the Fusion decoder joins a rigid group's members to the occurrences and poses its tables hold (§6.7). A member's final transform comes from an operation table, or from a placement record where no table reaches it; a table whose final entry holds no matrix gives the identity; a placement record equals the table's pose where the table has one entry and may differ where it has more, so it is a member's pose only where no table reaches the occurrence; record `1ABFB679` is an older snapshot, not a member's pose; a listing may name an occurrence the file does not hold. Open: groups whose members no table touches, among them groups whose stream's tables the reader does not parse; copies of one group that lie apart even from tables; none of the join rules is in the decoder. Decides the Fusion decoder's `RigidGroup` members and their occurrences' poses; until then each group with the members that resolve, an unresolved listing kept in the group's `native_options` (§6.7). Would settle it: the table forms the reader cannot parse, read; the decoder run with the join rules, each group's frame set against its members' tables.
-197. **Fusion rigid groups' scope contents and names.** That the scope of each rigid group refers to occurrence references and nothing else, how many members each lists, and which store a name, which §6.7 reads (§6.7). A group's scope refers only to occurrence references, from two members to hundreds; a group's name is usually empty and sometimes a user's text; the members and their tables are B.196's. The scope contents and names are not read over the same groups whose members the decoder joins. Decides that the Fusion decoder's `RigidGroup` holds what each group stores, and its name where one is stored; until then as §6.7 states. Would settle it: over the groups the decoder joins, each scope's referenced records, member count, and name, read together.
-198. **Creo corner arms below Rule H1's threshold.** The Creo corner cases of §6.4 that do not meet Rule H1's threshold (§6.4): `RollingBall`'s r, R₁, R₂ case with R₁ and R₂ unequal, and its third face, the ball on the larger piece and on the face the pieces roll on, which `RollingBall`'s definition includes; the three-set r, R, R case on fillet corner faces; one listed set, code 12 `RollingBall` on junction faces, code 7 `SweptAround` on junction torus rows, and code-7 records `Continue`; code 4's `Continue` across unequal ends; three-set code-7 `SweptAround` against an extruded curve and with a constant ball; and `against` empty on two-set r, R, R sweeps that border another feature's cylinder their ball does not touch, `radius` binding the round they continue, and holding the outer cylinder alone on the one-set fillet. Each is read against the stored corner faces at every centre, as §6.4 gives. Decides the Creo decoder's corner arms; until then each arm where the stored corner faces meet its test and `Native("creo:<code>")` otherwise (§6.4). Would settle it: per case, a corner of that case in a further design, read and graded.
-199. **Fusion turning, thread, helix, link, and probe bindings below Rule H1's threshold.** The Fusion bindings of §7.3 and §7.5 that do not meet Rule H1's threshold (§7.3, §7.5): `Operation.radii` from the turning radial modes, the outer clearance, the retract, and the inner clearance; `RadiusFrom::Positions` on grooving passes, each plunge at its point's radius and on the side its `side` states, bound to `sideAlignment`, stated only where a toolpath agrees, and on a pass with no toolpath `RadiusFrom::Native` with the mode, below the floor of Rule H1's untestable-arm clause (§3.1); `StockInner` on solid stocks; `Operation.axial`, `AxialFrom::StockFront` at its setup's WCS origin, so not separated from the origin, the contact point on reached back limits and facing front limits, finishing front limits not separating it from the profile's own start, the cutting edge on back limits, and the offset's sign on reached non-zero offsets; the lead's `from_axis`, `helical`, flat lead lengths, and `line_turn`'s `Angle` with its `from`, to the cut or to the spindle axis at tapered joins and on moves where the two references give one move; `line_turn`'s `along`, roughing and facing entries `Backward` and exits `Forward` in the axis's terms, and finishing moves `Forward` in the cut's terms where not square, `along` read only from a toolpath current against the settings, a stale one giving `None`; the link's `pull_out`, and `pass_clearance` axially and radially; `helix_rise` with the ramp angle and with the pitch; turning `thread_depth` and `thread_infeed_angle`; `axial_offset`, `angular_stepover`, `intermediate_stepdown`, and `stepdown_count`; turning profile finishing's `roughing_pass_count`; a `chamfer2d` width of 0 as `ChamferCut { width: 0, tip_offset }`, and the chamfer settings of a contour or trace with `doChamfer` and a width of 0 kept as named process parameters, such a toolpath storing a tip offset of 0 and cutting at the pass's own level (inferred); `bottom_up`, `turning_side`, turning stock to leave radially and axially, `finalStepdown`, and turning `depthOfCut`; `helix_taper`; and `probe_at`. Each is read against the stored toolpaths. Decides each binding of the Fusion decoder; until then the bindings §7.3 and §7.5 state, each where the stored toolpath agrees, under Rule H1. Would settle it: per setting, operations that vary it alone.
-200. **CATIA union-trim references.** The CATIA decoder's reading of a union trim's operands, picks, and stored inputs (§6.5). A label record carries its spec list after either the marker `32e1` or `32cc`, so a reader that looks only after `32e1` reads no spec list where a file uses `32cc`; the field reader places the generic fields `ResultIN` (the first operand) and `ResultOUT` (the result) in pick lists, and keeps only a field's first token, so it can read one of a shell's several removed faces; the cell tables and label records give the operands, the pick, and the stored inputs. None of these readings is in the decoder. Decides the CATIA decoder's `UnionTrim` operands, the picks it keeps in `native_options`, and the inputs a rebuild reads; until then the trim's references from the cell tables and label records. Would settle it: the decoder's field reader run with both markers and every token of a field over union trims' files, its operands and picks set against the cell tables.
-201. **CATIA union trims stated untested.** Whether each CATIA union trim's stored result is the split that `BooleanOp::UnionTrim`'s plane-enclosure rule gives on its operands, which the CATIA decoder states on every union trim under Rule H1's clause for a rule the decoder cannot test (§3.1): the file does not store either operand's solid as it stood before the trim, and testing the rule takes a rebuild of both operands from their own features and a split of the two (§6.5). Built and split outside the decoder, plane enclosure decides each one-operand piece (§6.5); no decoder rebuilds the operands or splits them. Decides whether a trim's stated arm agrees with its stored result; until then the decoder states `UnionTrim` on every trim, the rule holding on every one-operand piece and every trim that stores a result, across the designs that clause's floor needs (the design count inferred), with the picks in `native_options`, and a writer of another format writes the stored result unless it can evaluate the split (§3.4, lowering step 3; §6.5). Would settle it: union trims' operands rebuilt from their features, each trim's split set against its stored result.
-202. **Fusion rest source below Rule H1's threshold.** That Fusion's rest source binds `Technology.rest` (§7.5). Fusion `useRestMachining` true with `restMaterialSource` `previousOperations` is `EarlierOperations`, and with `job` `SetupStock`, read from the source alone: `restMaterialPrevious`, `restMaterialUnion`, and `restMaterialFromJob` are stored by the document's schema version, always true, true, and false, and the separating toolpath's operation stores them, so they are source settings; Autodesk's Fusion help defines both sources. Every earlier operation and the previous operation alone differ only where, inside the stock, the previous operation alone would have the tool slotting; `EarlierOperations` does not meet Rule H1's threshold, and a decoder cannot run the stock check that separates the readings; `SetupStock` is typed from the vendor's page, its toolpaths showing only that earlier operations are ignored, and none separating it from no rest machining; which stock the setup starts from where its stock mode takes the preceding setup's result is not read; the turning binding is inferred. Decides the Fusion decoder's `rest`; until then as §7.5 states. Would settle it: a setup of three operations whose third rests on material the first cleared and the second did not reach, inside the stock, its toolpath set against both readings; a turning rest toolpath set against the setup's earlier operations.
-203. **Decoders' tolerance codes of SolidWorks, Inventor, and CATIA.** The readings by which the SolidWorks, Inventor, and CATIA decoders state a model dimension's `tolerance` (§5.12). SolidWorks' kinds are calibrated on DimXpert annotations: two deviations, symmetric, and kind 1 a basic dimension, the feature-tree `D11` read as basic by inference from the hole it locates, kinds 8 and 9 named by the vendor's order of kinds alone, and kind-7 records with no designation and no deviations stating none. Inventor's code 2 or 3 goes with one designation record in the parameter's segment, joined by shared segment and one-to-one count and not by a decoded pointer, and the two codes are not separated. CATIA writes a slot `E8` for 0.0 and never an explicit binary64 0.0 (in `Range` and `Tolerance` fields), so its records with one slot set state `Deviations` with a lower deviation of 0, inferred, and its enabled records with both slots zero (`E8`) state none. Open: the SolidWorks calibration rests on annotation records, some symmetric ones off, in designs not counted (B.204), whose oracle, the Inventor-decoded PMI of the same test cases, the project holds; kinds 8 and 9 rest on the vendor's order; Inventor's link and codes do not meet Rule H1's threshold; where a record stores a hole and a shaft designation, which one the dimension sizes is read from the stored order, the first being the dimension's own, which is inferred: the Inventor record's `hole_fit` slot comes before its `shaft_fit` slot, a pair of the two (`H7` and `h7`, with zero deviations) is an annotation's, and no model dimension known to the project stores one (§5.12, §8). Decides each decoder's `tolerance`; until then as §5.12 states: the SolidWorks kinds under Rule H1 where the file stores an annotation of the dimension, the kind and values kept as `sldprt:tolerance` where it disagrees; where it stores none, a fit with a designation, `Fit` with `deviations` `Cell` where they are ISO 286's cell at its nominal and `Own` otherwise, and on every other kind no `tolerance`, the kind and values kept as `sldprt:tolerance`, since no kind meets the floor of Rule H1's clause for a rule the decoder cannot test (§3.1) (kinds 5 and 6 are A.5); none on a kind-2 record that holds 0 and 0; and on Inventor, `Fit` with `source: None` and `deviations` `Cell` on a fit at ANSI B4.1's cell and `Own` otherwise, whose designation stays typed (B.205). Would settle it: a SolidWorks part saved with each tolerance kind on one dimension; Inventor parts with two toleranced parameters in one segment, and with each code, the records compared.
-204. **SolidWorks kind 2 calibration's design count.** How many designs the DimXpert records span on which SolidWorks's tolerance kind 2 reads as two deviations, `a` the upper and `b` the lower, which decides whether the reading meets the floor of Rule H1's clause for a rule the decoder cannot test: 9 in 10 of the stored results, in at least 3 distinct designs (§3.1, §5.12). The kind-2 DimXpert annotation records are set against the Inventor-decoded PMI of the same test cases; the feature-tree kind-2 records the reading would govern hold deviations or 0 and 0, none shown with an annotation of its dimension; the design count behind the annotation records is not counted. Decides the SolidWorks decoder's `tolerance` on a kind-2 feature record with no annotation: at 3 designs or more, `Deviations` with `a` the upper and `b` the lower, stated under the clause with its count and design count; until then no `tolerance`, the kind and values kept as `sldprt:tolerance` (§5.12). No type depends on it. Would settle it: the kind-2 records joined again to the Inventor-decoded PMI of the same SolidWorks parts, counted by test case.
-205. **Inventor fits whose deviations match no table read.** What the stored deviations of an Inventor fit record are where they equal no table cell read, another standard's cell or values the user typed, which decides whether the Inventor decoder states their deviations `Own`, the user's, kept through an edit, or `Cell` against another standard's table, cleared by one (§5.12). Each record's designation and deviations are read against the ANSI B4.1 cell at its nominal; no record names its standard. Decides the Inventor decoder's `deviations` arm on such a record; until then `Fit` with the designation typed, `source: None`, and `deviations: Own` with the stored values, a record at ANSI B4.1's cell stating `Cell` (§5.12). Would settle it: an Inventor part saved with one fit under each standard Inventor offers, its stored deviations set against the tables.
-206. **A SolidWorks PMI dimension's decimal key.** The SolidWorks decoder's reading of a PMI dimension's `decimals`, the key a rule by decimals looks the dimension up by (§8, §8.1). The DimXpert dimension records store `BlockToleranceDecimalPlaces`, and SolidWorks semantic dimension records (`DimSemData`) store the displayed places `valPrecision`, with `tolPrecision` for the tolerance. The decoder reads `decimals` from the DimXpert record's `BlockToleranceDecimalPlaces`, and keeps `valPrecision` as `sldprt:val_precision` in the annotation's `source_settings` (case (b), §8). Open: a `DimSemData` record is not joined to the DimXpert dimension or the feature dimension a decoder states, so a PMI dimension read from a semantic record alone has no key read; and no stored dimension known to the project shows the block table applied, since no SolidWorks dimension stores a default deviation (§8.1). Decides the SolidWorks decoder's `decimals` on a PMI dimension with no DimXpert record; until then it states `decimals` from the DimXpert record and `None` where there is none (§8). Would settle it: the `DimSemData` records of SolidWorks parts joined to their DimXpert dimensions by value and kind, each `valPrecision` set against its `BlockToleranceDecimalPlaces` and the drawing's displayed places.
-207. **Creo corner and patch rows no reader frames.** The Creo readings that §6.4's corners and blend patches rest on and that no reader frames or agrees on (§6.4). A junction row with an implicit count stays unframed, its walk stopping at the openers `40`, `07`, `e7`, `1e`, and `04` inside spline arrays; a type-40 `splsrf` junction row is not framed; sphere rows' frame blocks stop at the openers `1e`, `04`, or `e7` or at a `local_sys` head, their sphere tails read; type-44 rows that are `against` for fillets read as a planar two-point cubic, extruded, which the ball stays clear of, and frame as rows on one and as columns on another; inside spline arrays `4b` is seven bytes under `3f b0`, not `3f c0`, and `a4` seven bytes under `bf c0`, not `bf cf`, which give unit tangents; on the patch records `1e` is eight bytes under `bc`, `1c` a four-byte near-zero form in a plane's frame, a named cylinder row's axis its local system's column 3, where the format document's cross-product rule gives the wrong axis, `ruled_srf` rows positional replays of the prototype's local system, height, and two arcs, a plane row's `e3` found only at a token boundary, and a cylinder of R 276.625 that a reader reads as R 2; the patch faces' stored derivative arrays read several ways, so their tangency to the end piece is not read; faces that one reader counts as on the plane in `against` and another reads as not tangent to it are `Native("creo:12")` either way (§6.4). The straight-fillet distance and the tagged plane frame are reader faults, and a cylinder from these readings counts only where a fit confirms it. Open: the rows above unframed; the patches' tangency to their end pieces; the decoder's own reading of the faces readers disagree on. Decides the Creo decoder's frames for these rows; until then the corners they carry are `Native("creo:12")` or `Native("creo:7")` with their stored faces, and the code-2 records with patches `Native("creo:2")` (§6.4). Would settle it: the implicit-count and type-40 rows read with a framing that closes their walks; the type-44 frames set against the faces they carry; the patch faces' derivative arrays read one way that agrees on every sample; the faces readers disagree on graded with the decoder's reader.
-208. **Document names outside SolidWorks.** What the document name of a definition stored as a file is in formats other than SolidWorks, which `source_name` and `PartNumber::DocumentName` read (§5.11, §8.1). For SolidWorks the name without its extension is inferred from a design-table cell equal to the file's stem. A Creo file name carries two suffixes (`name.prt.3`), so "without its extension" has two readings there, and no other format's stored name is set against its file. Decides each decoder's `source_name` outside SolidWorks; until then §8.1's rule as stated. Would settle it: per format, the stored strings that name a definition's own file (a design-table cell, an assembly's reference, a drawing's model reference) set against the file's name.
-209. **Fusion bend and unfold readings.** The Fusion readings of a bend's angle sign and stationary face and of an unfold's references (§6.6). A bend's angle keeps its sign, and what a negative angle bends is not established; one of a bend's face groups is read as its stationary face, and an unfold's reference groups as its bend faces and its stationary face and its control as selected or all bends, none set against a stored state. Decides the Fusion decoder's `angle` on a bend with a negative angle, `fixed_side`, and the unfold's `fixed` and `bends`; until then `angle: None` with `f3d:bend_angle`, `fixed_side: None` with `f3d:bend_stationary`, and `Unread` picks with the stored references in `Selection.native` and `f3d:unfold_all_bends`. Would settle it: bends of one line with angles of each sign and each side kept, and unfolds with selected and all bends, their stored faces set against the readings.
-210. **Fusion path pattern readings.** The Fusion readings of a path pattern's reordered settings record and of a role-`0x4` seed (§6.5). The decoder reads a settings record of the reordered form at the offsets of the 267-byte form, so its distance-type, flip, and orientation bytes are read on an assumption; it reads a role-`0x4` seed member's compact identity as a feature index, which can also match a topology identity. Decides the Fusion decoder's spacing, `sides`, and `orientation` for the reordered form, and its pick of such a seed; until then `Spacing::Native("f3d:path_spacing")`, `sides: None`, and `orientation: None` with the count, the distance, and the bytes as native options, and a `Native` pick with the seed's stored identity. Would settle it: reordered-form patterns saved with the count, the distance type, the flip, and the orientation changed alone, and feature and face seeds whose identities collide.
-211. **Fusion contour flange readings.** The Fusion readings of a contour flange's thickness side and of its bend radius where it stores no `BendRadius` (§6.6). The decoder reads Fusion's API's documented SideOne default as the profile's left, and the linked rule's first entry as the inside bend radius; neither is set against a stored state. Decides the Fusion decoder's side of `thickness` and its `bend.radius`; until then `side: None`, and `bend.radius: None` with the native option `f3d:contour_flange_rule_radius`. Would settle it: contour flanges saved with the thickness side and the rule's radius changed alone, their stored faces set against the readings.
-212. **Fusion rule K-factor.** Which stored value of a Fusion sheet-metal rule is its K-factor (§6.6). The decoder reads it as the finite scalar that opens the rule's material trailer, before the material name; no stored file sets that scalar against the K-factor the rule was saved with or against a governed bend's flat length. Decides the Fusion decoder's `allowance`, `BendAllowance::KFactor` from that scalar; until then `allowance: None` with the native option `f3d:rule_k_factor`. Would settle it: rules saved with the K-factor changed alone, the scalar set against the value set, and the flat lengths of their governed bends set against it.
-213. **Bare numbers beside a quantity where the source declares a unit.** Whether a bare number that is an operand beside a quantity, in an NX formula or in a Creo relation that creates a parameter with a declared unit, is read in the declared unit or in the part's unit, and whether Creo's units-sensitivity setting for relations changes it (§5.13). The decoder reads the declared unit under Rule H1. NX stores no evaluated value for a formula, and no Creo parameter the decoder reads from a stored file known to the project declares a unit, so neither reading is tested, and such a tree is `Source` until the reading meets Rule H1's floor. Would settle it: an NX part whose formula adds a bare number to a parameter of another unit and drives a dimension, set against its geometry; a Creo model whose relation declares a unit on a parameter that a dimension then reads, set against the dimension's stored value.
-214. **A reference to a parameter of another document.** How CATIA, NX, SolidWorks, and FreeCAD store a reference to a parameter of a document that was not read. No stored file known to the project holds one. Open: whether CATIA and NX hold it as a local parameter with its own declared type and stored value (a CATIA external parameter, an NX interpart expression), and whether a SolidWorks assembly's equation manager stores a number beside a component's dimension that a line reads, as it does beside the part's own. Decides whether the decoder states the reference as a source parameter's whole expression or mints the parameter, and whether a minted parameter has a `value` (§5.12, §5.13); until then a decoder states what its file shows, and mints a parameter with no `value` where the source names the reference inside a longer expression. Would settle it: per format, one file that reads a parameter of another document, decoded without that document.
-215. **Expression-bound properties not yet read.** An NX part attribute linked to an expression (§5.12): no stored file shows that the attribute's type and the expression's value are stored, so a decoder does not mint this parameter from that link. A Rhino user-text formula (`%<…>%`) is `AttributeValue::String` until a stored file shows what it evaluates to. Would settle it: an NX part whose attribute is linked to an expression, its attribute record read against the expression's stored value; a Rhino model whose user-text formula's value is known.
-216. **Evaluation order of `and` and `or`.** Whether CATIA, Creo, NX, and FreeCAD skip the right operand of `and` or `or` once the left decides the result (§5.13). `docs/formats/catia.md` reads CATIA's as skipping; no stored file known to the project holds a guard whose skipped operand fails, so the reading is untested, and no reading is made for the others. Decides whether a decoder translates `a and b` as `if(a, b, false)` and `a or b` as `if(a, true, b)`. Until then `and` and `or` translate as themselves, and an expression whose skipped operand fails in the document's evaluation keeps the cache the source stores. Would settle it: per format, a stored file whose `and` or `or` guards an operand that fails at the stored inputs, with the expression's stored cache, or a vendor page that states the order.
-217. **Fusion split tool extension law.** By which law Fusion continues a cut whose tool stops inside the target (§6.5). Decides `ToolExtension::Extended.method` for Fusion; until then `None`. Would settle it: a stored split whose tool is a freeform face that ends inside the target, its added edges read against the tool's carrier.
-218. **Creo hole intersect id.** The `geometry1_id` of a type-76 instruction on a Creo assembly hole whose display level is top level and that no `ASMCUT_COPY` names itself. On an assembly cut the same level stores that id as the copy's key. No feature of the participant's part carries it. Decides what the id names (§6.7); until then the participant is `Instances` and the id is the feature's native option `creo:intersect_id`. Would settle it: one such hole whose id joins a record of the assembly or of the part.
-219. **Creo pattern member with no intersect instruction.** That a member of a patterned Creo assembly feature that holds no intersect instruction cuts its leader's participants, at the leader's levels (§6.7). Under `pat_type` bit 8 the `ASMCUT_COPY` that names the leader holds the surfaces of every member, a member with no instruction among them. No stored file known to the project holds such a member under another pattern option, or under a leader with a part-level participant. Decides the participants the Creo decoder states for such a member; until then the leader's. Would settle it: a patterned assembly cut with a part-level participant, saved under each regeneration option, with the participant's part.
+99. **Fusion reads written archives.** Whether Fusion opens a cadmpeg-written archive and whether it opens one whose design stream holds no timeline item, and which states a Fusion feature edit uses (no CAM record names a design state). Stored files show what Fusion writes, not what it reads back. Decides whether an F3D writer can write a feature whose input state the document lacks; until then Fusion is a target that holds no feature without its state, and the writer uses the form the caller chooses (§3.4). Would settle it: a written archive opened in Fusion, and a feature edit on a written document whose input state is absent.
+100. **Parasolid chains accepted.** Whether SolidWorks and NX accept a Parasolid delta chain built from neutral states. Stored chains show what the applications write, not what they accept. Decides whether those writers write earlier states or the current partition only; until then the current partition only (§3.4). Would settle it: a written chain opened in each application.
+101. **NX plane flip and offset.** Whether NX moves a plane's offset along the flipped or the unflipped normal (NXOpen `Plane` has `Flip` beside `OffsetFlip` and `OffsetExpression`). A plane's constraint is an object embedded in its operation record, whose class names its kind (offset, centre, coincident, Frenet, tangent, or two); an offset constraint's option bytes are a pair that varies together, (1, 0) or (2, 1), and an independent byte, 1 or 0; the distance is no stored number in its file but an expression reference. Which byte is `Flip` and which `OffsetFlip` is not read, and no plane is joined to a stored frame. Decides the order of the NX decoder's `Flip` and `Translate` steps (§5.9); until then such a plane keeps them in `mode.native_options` (`nx:Flip`, `nx:OffsetFlip`, `nx:OffsetExpression`), with its geometry in `resolved`. Would settle it: in a file that holds both values of the pair, an offset plane joined to the stored frame of a sketch placed on it, set against its reference's plane and its expression's value.
+102. **Sign and remainder.** Fusion and Inventor `sign(0)`, and `%` with a negative operand. No stored expression known to the project calls `sign` or uses `%`. Decides their translation: `sign` as `if(x > 0[u], 1, 0)` or `if(x >= 0[u], 1, 0)`, and `%` as the truncating `mod` or as `a - floor(a / b) * b`; until then both stay `Source` (§5.13). Would settle it: one stored parameter whose expression is `sign(x)` with x zero, and one `a % b` with one negative operand, each with its cached value.
+103. **Trig conventions.** NX's `tan` and `rad` and the unit NX inverse trig returns; the unit SolidWorks inverse trig returns; and SolidWorks' unit where its equation manager states no angular mode. NX `sin`, `cos`, and `deg` work in degrees (§5.13); NX stores no evaluated value for a formula expression; NX's `tan`, `rad`, and `arctan` drive no read geometry, and no SolidWorks equation known to the project calls a trig function. Decides whether those calls translate; until then they stay `Source` (§5.13). Would settle it: a SolidWorks equation that calls `sin` or `arcsin`, set against its cached value, in a manager without the angular-mode byte for the first fact; an NX part whose `tan` or inverse-trig result drives a dimension, set against its geometry, which would also test the degree reading of `sin` and `cos`.
+104. **CATIA silhouette order.** How CATIA silhouettes order several outputs of one source (`SilhouetteGeomSet`). Each output heads a report header whose one member has no key and no reference, so no output is linked to a cell of its source; the output curves are sketch-level curves the decoder does not read, so their positions cannot be set against the source. Decides CATIA `Derivation.piece` numbering; until then the order of the stored records (§6.1). Would settle it: one silhouette of a cylinder whose two output lines are decoded in sketch coordinates.
+105. **FreeCAD prism vertex.** Whether a FreeCAD prism and regular polygon put their first vertex on the frame's x axis (inferred from `PrimitiveFeature.cpp`, which steps the radius vector about z). In FreeCAD 1.1.4 a 5-sided prism of circumradius 10 has a base vertex at (10, 0, 0), and a regular polygon starts at (10, 0). Decides how the FreeCAD decoder states their placement (§6.3, §6.6); until then the inferred convention. Would settle it: a stored FreeCAD prism and regular polygon, their shapes set against the convention.
+106. **Inventor selector secondary array.** What the second array of an Inventor edge selector holds beyond its modifier tags, and whether a selector a writer creates needs it (§5.7). It never shares a value with the generator array, and every value is a feature older than the selector; modifier tags on the side and end faces explain some values; many values never name the edge's neighbourhood in any state, have no live name at the stamp state, or belong to features that insert no name in any stored state; no rule tried reproduces it. Decides whether a writer to Inventor can write an edge selector, whose key must also name a matched attribute stamped on the edge in a stored state (§3.4); until then the array stays in the pick's native name, and a writer to Inventor writes an edge pick in the unresolved-reference form. Would settle it: a file whose history holds the edit that removed the geometry of an extrusion that inserts no name in any stored state.
+107. **Copy names.** How sources name extract and transform copies other than a SolidWorks Move/Copy Body: the field of a SolidWorks Surface Cut copy hop, and the copy names of NX, CATIA, Creo, and Fusion. A SolidWorks copy hop (`moCopySurfIdRep_c`) names the copying feature as its producer; a Move/Copy Body's field is the copy's step, 1 to the copy count (§5.7, §6.5); a Surface Cut's field is constant per feature, and the Surface Cut consumes its original faces, so its field has nothing to be compared with. Decides where decoders state `Instance { feature, instance, of }` for those copies (§5.7); until then their copy names stay in `NameEntry.native`. Would settle it: a Surface Cut whose original face survives, its field set against the faces; per format, a copy's names set against its source faces.
+108. **One-direction thin side.** Which side of an open profile SolidWorks one-direction thin (`ThinWallType` 0, with 1 its reverse) puts the wall on, and which side of its profile CATIA's `ThickThin1` lies on, with what CATIA's `NeutralFiber` does. A SolidWorks open wall's faces are two `FromSktEnt` and two `ThinOffset` planes at the thickness, so the wall's side is stored; the byte at +22 after `moThinSpec_c` is not shown to be the wall type; the open chain's segment order and line directions are not framed, so both sides fit. A CATIA thin wall is `ThickThin1` + `ThickThin2` thick; the profile circles' radii are not read, so the side is not. Decides SolidWorks' `WallSide::Left` or `Right`, the order of CATIA's `Thickness::Offsets`, and `NeutralFiber` as `Thickness::Symmetric`; until then `WallSide::Native` (`sldprt:one_direction`, `sldprt:one_direction_reverse`) and `Thickness::Native("catia:ThickThin")` with `catia:ThickThin1`, `catia:ThickThin2`, and `catia:NeutralFiber` (§6). Would settle it: for SolidWorks open-profile thin walls, the sketch's line array framed and each wall's side set against the chain's direction crossed with the profile normal, the chain reversed as the control; for CATIA, a two-pad file's sketch circles decoded, its walls' radii set against them, and a `NeutralFiber` set.
+109. **Keep-angle laws.** Whether SolidWorks follow path, Fusion perpendicular, Inventor path, and CATIA keep angle give one frame on a non-planar path, and whether any equals FreeCAD's corrected Frenet. A Fusion sweep with an identifiable cap is perpendicular, and the option's field is not located (its two varying bytes vary among perpendicular sweeps); a non-planar Fusion sweep that runs into another body keeps no end cap. Decides each decoder's mapping to `FollowPath` or `MinimumTwist`; until then `FollowPath` (§6.3). Would settle it: per source, a sweep along a path with torsion whose section is not symmetric about the path and ends in a free cap; for Fusion's option field, one parallel sweep.
+110. **NX symmetric extent.** NX's symmetric extrude measure in files last saved in a release from NX 12 to NX 1926, and in NX 10 files (§6). `LIMITS_SYMMETRIC` is total in NX 1934 and later and per side in NX 9 and NX 11 (§6); a file first saved in NX 12 and last in NX 2027 reads as total, and whether NX converts an old value on load is not read. Decides the NX decoder's `measure` for those releases; until then `None`, with the stored number unconverted, which only an NX writer writes (§2.4). Would settle it: a symmetric extrude in a file last saved in NX 12 to NX 1926, its caps set against its value; an NX 10 body made by one symmetric extrude.
+111. **Coil triangle placement.** Which point of a coil's triangle `SectionPlacement` `Inside` and `Outside` put on the helix (§6.3). The section-position word lies at an offset that depends on the record form (92, 88, 220, 216); a polygon section fills the radial band the word names (inside D/2 − d to D/2, centre D/2 − d/2 to D/2 + d/2, outside D/2 to D/2 + d), two helicoids at the band's edges. Which of the triangle's vertices and sides lie on the band's edges is not read from its faces. Decides a writer's lowering of such a coil (§3.4); until then step 3. Would settle it: triangular coils' start caps, their vertex radii set against D/2.
+112. **NX alignment code 3.** Whether NX through-curves alignment 3 is arc length (§6.3). Records of the older grammar store each option less one in their u32 values. A record of value 3 whose members have equal length has arc-length parameterized surfaces, where arc length and parameter coincide. Decides the NX decoder's `ArcLength`; until then `CouplingMode::Native("nx:alignment:3")`. Would settle it: a record of value 3 whose sections' members differ in length.
+113. **NX inner-loop taper.** That NX tapers a drafted extrude's inner loops `WithOuter` on every extrude (§6.3). Coaxial outer and hole cone pairs grow in one direction with a constant wall thickness, and face drafts give the opposite sense under the same reader; the decoder joins no face to its feature, so a hole cut by a second drafted extrude of the same angle is not excluded. Decides the NX decoder's `ExtrudeDraft.holes`; until then `WithOuter`. Would settle it: the face-to-feature join, each coaxial outer and hole cone pair's faces set against their extrude.
+114. **NX edge draft faces.** Whether the entries of an NX draft record's list are the faces it tilts or its stationary edges, and which records are edge drafts (§6.4). In a `DRAFT` operation of class `TAPER_PARMS` the list length equals the number of faces the draft owns; its entries are reference objects of the feature section beside the operation, which carry no class, and whose partition tag, carried by some entries and not others within one list, names no current face or edge. On a chain of one edge per face the counts cannot tell faces from edges; the draft type is not separated in the shared record. Decides whether the NX decoder states `DraftSet.faces` or leaves it `None`; until then `None`, with the list's size and order in the native record. Would settle it: the feature section's class table, or the tag replayed against the partition state before the draft; one edge draft whose stationary chain has more or fewer edges than the faces it drafts.
+115. **Inventor face-draft mode 3.** Whether Inventor face-draft mode 3's face is a fixed plane or a parting tool (§6.4). A mode-3 draft turns its drafted faces about their edges on the selected face's plane and keeps the face count, mode 2's drafts serving as the control for the hinge; mode 3 names its face by a face item. Where no drafted face crosses the selected face's plane, the input on which a parting tool splits it and a fixed plane does not is absent. Decides `neutral` against `parting`; until then the mode and its face stay native options of the draft (§6.4). Would settle it: a mode-3 draft whose drafted face crosses the selected face's plane, its faces after set against one turned face or two.
+116. **CATIA chordal chamfer.** Whether CATIA applies its chordal chamfer's Width = Length / cos(Angle) on faces that do not meet at a right angle, or measures the face's true width. No chamfer ribbon known to the project holds a value in `ChordalLength` or `Height`, whose `Mode` is 1 or 2. Decides the CATIA decoder's `WidthAngle` on such edges (§6.4); until then `ChamferSize::Native`. Would settle it: a chordal chamfer on faces that meet off a right angle, its stored face width set against both readings.
+117. **NX percent stations.** Whether an NX percent radius station measures the whole chain or its own edge, by release (a Siemens article's summary says the whole chain from NX 11.0.1). No decoded variable-radius blend with percent stations is known to the project. Decides the NX decoder's `Along` for percent stations by release; until then `Along::Chain`. Would settle it: a two-edge variable blend, its stored radius at the station set against both readings.
+118. **Spotface on a curved face.** Where an Inventor spotface's depth is measured on a start face that is not flat. On a plane, the bore runs from the spotface floor, so its blind depth is measured from the floor. Decides the Inventor decoder's `Spotface` depth on such a face (§6.4); until then the stored depth. Would settle it: a spotface on a cylindrical start face, its floor set against the face.
+119. **Trimmed bottom on an inclined face.** Whether a CATIA trimmed hole ends on a bounding face inclined to its axis, or in a flat bottom normal to it (§6.4). A located bore ends where it leaves the body, on a face normal to its axis, where both readings give one end. Decides how a writer of another codec writes `Trimmed`; until then the bore ends on its bounding face. Would settle it: one trimmed hole ending on an inclined plane or a curved face inside the material.
+120. **SolidWorks circular pattern field.** The second field of SolidWorks `CirPattern2(P, k, m, n)`, which takes the value 0 where read. Decides the decoder's mapping; until then `m` is the Direction 2 index, at coordinate −m (§6.5). Would settle it: a circular pattern with a Direction 2 instance.
+121. **Template members.** What a CATIA user-feature instance whose `UdfBlackBox` flag takes another value stores, and Inventor iFeatures in general (§6.5). Both store their members as ordinary features (§6.5); the CATIA flag stores atom 3, and whether another value stores a black box with no members is not read. Decides whether the CATIA decoder lists members or one `Stored` member for another value; until then the flag stays `catia:udf_black_box`. Would settle it: an instance whose `UdfBlackBox` atom differs, with its member records present or absent; Inventor iFeatures of further designs.
+122. **Creo template prompts.** How Creo pairs a group's `gp_keys` prompts with its `new_refs` inputs. An order join does not align them. Decides which `TemplateInput` each Creo prompt names; until then the roles are `None`. Would settle it: each prompt's text set against the kind of the reference it would bind.
+123. **CATIA line-sweep angles.** The zero of CATIA's reference-surface angle (the documentation measures it from the projected surface normal) and of its reference-curve and centre-and-angles angles, which `LineMode::Surface.from`, `LineMode::Curve.from`, and `CircleMode::CenterAngles.from` state (§6.6). The stored modes and fields are read; the reference-surface sweeps' surfaces are not sampled. Decides those three `from` fields; until then `from: None`. Would settle it: reference-surface sweeps' surfaces sampled at a station against both zeros, through the report's join to their result surfaces; a line sweep of the reference-curve mode and a circle sweep of the centre-and-angles mode with a nonzero angle.
+124. **CATIA corner pieces.** Which piece of each element a CATIA corner that trims keeps (§6.6). Each result lists cells that modify one input cell each; the wires are not decoded as geometry, so the kept pieces are not set against the tangency points; tangent continuity gives one assembly, which is inferred. Decides how a writer of another codec writes `Corner` with `trim`; until then the tangent-continuous pieces. Would settle it: one trimming corner's wire decoded, its pieces set against the tangency points.
+125. **Creo bend angle.** That a Creo bend's angle dimension is its deflection on every bend (§6.6). A non-right bend's flange face turns by its dimension, not by the included angle; a 90° bend gives one result under both readings. Decides the Creo decoder's `angle`; until then the deflection. Would settle it: Creo bends of other non-right angles with stored flats.
+126. **K-factor table segment of the SheetMetal add-on.** The SheetMetal add-on's new unfolder looks up a `Linear` table by searching for the bracketing segment with `while r_over_t <= values[i]`, which picks the first segment for every ratio inside a table of three or more rows, so it extrapolates that segment (§6.6). This holds at `v0.2.60-beta` and at master `c505f5ea`, and every version returns the last row's K-factor above the table. Open: whether a release of the new unfolder corrects the search, and which unfolder produced a stored flat pattern, which no file records. Decides a FreeCAD writer's output for a `Linear` table; until then it writes the table and charges a loss naming the rule where a governed bend's ratio lies inside the table beyond its first segment. Would settle it: the add-on's next release run on the same table.
+127. **Assembly feature effect.** The effect of an NX assembly cut, and of Inventor assembly features in general (§6.7). An Inventor participant's part keeps its uncut body while the assembly carrier holds the cut one, and a feature on an NX promoted body changes the referencing part's copy only (§6.7). Decides the effect of an NX assembly cut's participants; until then `None`, or `Instances` where the decoder finds per-instance bodies. Would settle it: one NX assembly with an assembly cut, its target part's stored body set against the assembly's.
+128. **SolidWorks coordinate mate.** Whether SolidWorks' coordinate mate class (`moMateCoordinate`) also stores coincidences of origins and coordinate systems, with their axes aligned (§6.7). The class stores a coincident mate whose two operands are component sketch points, with no coordinate-system or origin class in it. Decides the mapping of the class with other operands; until then `Coincident` of two `Point` connectors, and a class whose operands are frames stays `JointKind::Native`. Would settle it: a mate between two coordinate systems with axes aligned, its record set against a point-to-point one.
+129. **NX CAM geometry and setups.** Whether an NX operation's geometry adds to or replaces its geometry group's, and whether NX means one setup per MCS or one per MCS and WORKPIECE pair. The machine and carrier nodes of NX CAM files are read, not their geometry groups. Decides `ProcessGeometry.combine` for NX (§7.7) and how the NX decoder forms setups; until then `combine: None`, and one setup per MCS. Would settle it: NX CAM files that declare setups, their operations' geometry set against their groups'.
+130. **Fusion profile-loop order.** The side-token order of the Fusion profile forms §3.4's rule does not cover: loops with inner loops, trimmed pieces, circles and splines, the second side of a two-sided or symmetric extrude, and revolves; and whether the rule's start curve is the one with the largest id or the newest. The rule holds on single-loop extrudes and base flanges; the largest id and the newest curve coincide where read. Decides whether a Fusion writer names those forms' side faces; until then it names caps and the forms the rule covers, and a feature that picks another side face, or an edge beside one, is a feature whose names it cannot produce (§3.4). Would settle it: loops with inner loops, trimmed pieces, and circles, and revolves, joined the same way; a sketch whose newest curve does not carry the largest id.
+131. **SolidWorks face ordinals.** The rule that assigns `n` in `Fillet(F, n)`, field `a` of `WzdHole(H, a, b)`, and the name SolidWorks accepts on a face that no rule names. `n` usually runs over 1 to N, N the selected edge count or larger, and follows neither the API edge order nor the face node order, nor throughout the stored selection order; `b` identifies the hole's position (faces of one `b` share one axis, and different values have different axes); `a` varies with the face kind; the shell's rule is settled (§5.7). Decides whether a SolidWorks writer names fillet and Hole Wizard faces and picks them by name; until then their picks are written in the unresolved-reference form (§3.4). Would settle it: the pre-fillet state from the deltas, its selection's edge order set against `n`; each `a` set against its hole's profile elements.
+132. **CATIA limit-curve circle mode.** That CATIA stores the limit-curve-and-tangency-surface circle subtype, `TangentLimitRadius`, as mode 10 (§6.6). A mode-10 sweep's operands are one curve, one reference surface, a radius, and two relimiting angles, which no other subtype has; its surface is not sampled against the reference surface. Decides the CATIA decoder's `CircleMode` for stored 10; until then `TangentLimitRadius`. Would settle it: a mode-10 sweep's surface sampled at a station against its reference surface and limit curve.
+133. **Dome surface.** The surface SolidWorks builds for a dome over a circular face and in its elliptical and continuous forms (§6.4). A default convex dome over an outline that is not a circle is a degree-5 B-spline cap whose highest point lies `height` above the face plane, at the outline box's centre in the surface's frame, fitting no sphere and no radial profile of the peak. Decides a writer's lowering of a dome to a target's spherical or ellipsoidal cap; until then step 3 (§3.4). Would settle it: a dome over a circular face and an elliptical dome, their cap surfaces' types and radii read from the partition.
+134. **Flex laws.** How SolidWorks flex varies a twist or a taper between the trim planes, what a taper factor scales, which trim plane a stretch keeps, and whether material beyond the trims moves rigidly. No part known to the project declares a class whose name contains `flex`. Decides a writer's lowering of `Flex` (§6.5); until then step 3 (§3.4). Would settle it: one part with a flex of each kind, its states before and after the flex compared at three stations along the triad's z axis.
+135. **Fusion hole tokens on few faces.** That Fusion tokens 7 and 8 are a counterbore's wall and floor and selector-2 token 10 a countersink's cone on every hole, that token 2 names a flat bottom as 4 and 5 do, and which tokens name the faces of tapered, spotface, and counterdrill heads (§5.7). Token 7 marks cylinders and token 8 planes of counterbore holes, and token 10 cones; the token-7 cylinder's radius is the counterbore radius, not the bore radius, and the token-10 cone's angle the stored head angle; the token-2 face lies at its hole's stored depth, its outward normal against the drilling direction. Decides the Fusion decoder's `Hole` roles for those tokens; until then the roles §5.7 states, and a token no rule maps is `Other` with its code. Would settle it: counterbore and countersink holes' token-7 radii and token-10 angles set against their stored head parameters; token-2 faces set against their holes' stored form; one Fusion hole of each other head form.
+136. **Fusion flange and hem forms.** That Fusion stores the flange height datum as the API value plus one (1 `InnerSharp`, 2 `OuterSharp`), and that teardrop and rolled hems are as §6.6 states (§6.6). A code-1 flange's free end lies at the inner sharp's reading and a code-2 one's at the outer sharp's, where swapped labels predict the reverse; the teardrop's fold radius, return tilt, and end gap, and the rolled hem's arc, follow their values. Decides the Fusion decoder's `height_datum` codes and hem forms; until then the mappings §6.6 states. Would settle it: flanges whose heights are read against their solids; teardrop and rolled hems of other values.
+137. **SolidWorks pierce on an interior crossing.** That a SolidWorks pierce relation (code 40) puts its point where its curve crosses the sketch plane where that crossing is not the curve's end (§6.1). The point lies on the curve at its crossing of the sketch plane, and a projection reading does not fit; where the crossing is the path's start, crossing and end coincide. Decides the SolidWorks decoder's mapping of code 40; until then `Pierce`. Would settle it: a pierce whose curve crosses the plane at an interior point, as a profile sketch placed part way along a sweep path.
+138. **SolidWorks inner-loop taper.** That SolidWorks tapers a drafted profile's inner loops `WithRegion` in every design (§6.3). Inner-loop faces of a drafted cut or boss have the outer faces' sign of n·d, where `WithOuter` predicts the opposite. Decides the SolidWorks decoder's `ExtrudeDraft.holes`; until then `WithRegion`. Would settle it: drafted extrudes with holes in further designs.
+139. **Fusion draft sign, and inner loops of other sources.** That a positive Fusion `TaperAngle` widens the outer loop of an extrude that adds material on every feature; the sign and inner-loop taper of a drafted Fusion cut; and how Inventor and Creo taper the inner loops of a drafted extrude (§6.3). A drafted Fusion extrude that adds material tapers its concentric outer and hole walls `WithRegion`, not `WithOuter`, by face-name attribution, and its positive angle widens the outer loop; a holed Fusion cut keeps only its hole walls. Decides the Fusion decoder's sign and a cut's `draft`, and the Inventor and Creo decoders' `ExtrudeDraft.holes`; until then the Fusion decoder negates the angle of an extrude that adds material and states `WithRegion`, keeps a cut's angles as `f3d:TaperAngle` and `f3d:Side2TaperAngle`, and Inventor and Creo state `None`. Would settle it: further drafted Fusion extrudes that add material and a drafted cut with an island, their walls attributed by name; per source, an Inventor or Creo drafted extrude with a hole, its inner faces' sign of n·d set against the outer faces'.
+140. **Fusion operation settings below Rule H1's threshold.** The Fusion bindings of §7.3 and §7.5 that do not meet Rule H1's threshold or rest on one value: `finishingStepover` with `numberOfFinishingStepovers`, `stockToLeave` (a `pocket2d` finishing pass, and `adaptive2d` wall passes bounded by it), `verticalStockToLeave`, `numberOfFinishingStepdowns` above 1, `entry_sweep` (one value, 90°, at which a sweep and its supplement coincide), and pocket clearing's `maximumStepover` (an evened bound, never equal); `HeightFrom::ModelTop`, `closed_pass_overlap` from `finishingOverlap`, `PassTransition::Line` and `None`, `reduce_feed` from `useFeedOptimization`, and `HoleDepth` (where same-hole pairs share a bottom mode and the tip term, so `break_through` without `tip_through` is not shown). Decides each binding of the Fusion decoder; until then the bindings §7.3 and §7.5 state, the ones listed here where the stored toolpath agrees. Would settle it: per setting, operations that vary it alone.
+141. **Inventor coil rotation in general.** That Inventor's coil flag `ClockwiseRotation`, the slot-3 Boolean of the coil's property record, is true for a right-handed coil in every file (§6.3). A helical face joined to its coil, its helix fitted with both ends on the end-cap centres, is right-handed where the flag is true and left-handed where it is false; the other Booleans do not separate them. Decides the Inventor decoder's `hand`; until then `Right` where the flag is true and `Left` where it is false. Would settle it: a coil of another save version or with a reversed axis, its helical face set against the flag.
+142. **Fusion to-face holes.** That a Fusion hole with extent control 1 whose last construction group names a face is a to-face limit and not through all (§6.4). Its bore ends on the named face, at the exact intersection radius on a spherical face; where the body does not continue past the face, through all gives the same bore. Decides that mapping; until then `ToGeometry` on the face (§6.4). Would settle it: a control-1 hole with a face operand past whose face the body continues along its axis.
+143. **Support trimming in general.** That a CATIA blend limit storing 2 in `TrimSupport` puts its support in the result (§6.3, `Section.trim_support`). The report of a blend whose limits store 2 lists new cells that are copies of its supports' faces among its result's cells, and a blend at the default lists none; where the supports were cut at the limit curve before the blend, the two readings agree. Decides the CATIA decoder's `trim_support`; until then `Some(true)` where a limit stores 2. Would settle it: a blend that trims supports not cut before it.
+144. **STEP directed-location order by producer.** Which producers write a `DIRECTED_DIMENSIONAL_LOCATION` with the origin as the relating shape aspect, as ISO 10303 defines it (§8). An ST-Developer file names its relating aspect `ORIGIN`; a CATIA V5 export may store as related the datum face its own presentation draws as the origin; an Open CASCADE file's relating aspect is the shared base of a baseline chain. Decides whether a STEP decoder reads a producer's order as stored; until then it reads every file as ISO 10303 defines. Would settle it: directed locations from further CATIA V5 exports and from other producers, each set against its drawn origin symbol.
+145. **Creo spherical equation curves in general.** That a Creo spherical curve from equation (`csys_type` 4, instruction 4134, `rho`, `theta`, `phi` assigned) measures `theta` from the frame's +z axis and `phi` about z from x toward y, in degrees (§6.6). `theta` from −z with `phi` clockwise gives the same point set, and only a sweep's start at t = 0 puts `theta`'s zero at +z. Decides the Creo decoder's reading of the spherical form; until then the stated convention. Would settle it: a spherical curve from equation whose curve, or a feature built on it, stores points, set against the convention.
+146. **NX swept interpolation in general.** That NX Swept's interpolation byte 02 is `Linear` and 04 `Smooth` on every record, and that bytes 6 and 7 of the option array do not carry the interpolation (§6.3). The label `SKIN` is shared by swept, ruled, and bounded-plane records, whose class the owning section's class list gives. Bytes 6 and 7 differ between the 02 and 04 records as byte 2 does, and a record may store 04 with the bytes 6 and 7 of an 02 record. Decides which byte the NX decoder reads for `section_law`; until then byte 2, with bytes 6 and 7 kept as native options. Would settle it: a record of three or more sections whose bytes 6 and 7 do not follow byte 2, with its surfaces read.
+147. **Pipe section turn below Rule H1's threshold.** That a Fusion pipe's section turns as `SectionTurn::PathPlane` and `ZStart` state on every pipe (§6.3). `PathPlane` holds on a triangular pipe on a straight path, and `ZStart` on a square pipe on a path that leaves its plane, from a start set by the model's z axis; neither arm meets Rule H1's threshold; on a path of body edges the transport is not read; a triangle's apex side is A.12. Decides the Fusion decoder's `turn`; until then the arms where the stored faces agree, else `None`. Would settle it: square pipes on spatial sketch paths; a pipe on body edges, its section at several stations.
+148. **NX symmetric-angle draft in general.** That NX's `TAPER_SYMMETRIC` draft is one angle applied from the section plane toward both limits in every file (§6.3). Stored cones and cap circles of a legacy-release file follow the profile circles under that reading, with the limits from the records. Decides the NX decoder's `ExtrudeDraft` for that class; until then both angles the class's. Would settle it: a symmetric-angle draft in a file of a later release, of another angle, its cap circles set against its profile.
+149. **Rhino loft style carrier.** That value 9 of a Rhino loft's history record states its style, its values 0 and 2 being the styles RhinoCommon's `LoftType` numbers so, and the other fields of the record as read, on every loft (§6.3). Each loft's end rows and knot steps rebuild from its sections (`ChordLength`, `SqrtChordLength`; §6.3); the record's antecedent list is not always in loft order, and value 100 gives the order; the natural end shape does not fit values 14 and 15; value 10 is read as the simplify mode from its position only; whether the `SqrtChordLength` rule belongs to the style or to the Rhino 4 release that wrote it is A.18. Decides the Rhino decoder's `style`; until then the mapping §6.3 states, each arm where its rebuild gives the stored net, else `Native`. Would settle it: a `SqrtChordLength` loft written by a later Rhino; lofts saved in each style.
+150. **SolidWorks translate surface in general.** That a SolidWorks offset-from-surface end with its translate word set is `Translated` on every end (§6). Ends whose targets are not planes perpendicular to the direction separate the two readings; the face-layout block's word positions are inferred by alignment with the normal layout. Decides the SolidWorks decoder's `Translated`; until then as §6 states. Would settle it: an offset-from-surface end on a tilted plane saved with translate set, its end face set against the target.
+151. **NX general pattern in general.** That an NX general pattern with point locations is `Points` with its from-point as `reference` in every design (§6.5). Such a pattern has identity rotations and every instance on a stored cylinder of the seed's radius. Decides the NX decoder's general layout; until then `Points`. Would settle it: general patterns of point locations in further designs, their instances' faces set against the translations.
+152. **NX single output carrier.** Which stored value of an NX pattern record states single output (§6.5). A `Multi Instance Output` pattern record's child list holds one kind-02 child for its declared instances, where a multi-output record holds one kind-03 child per instance; among the unassigned fields only the reference-point lane count separates the two forms (5 on a single-output record, 2 or 3 on the others), besides a file edit stamp and the symmetric flag. Decides the NX decoder's and writer's reading of `nx:single_output`; until then the form is read from the child list, and the lane count stays native. Would settle it: further single-output patterns, their lane counts set against 5.
+153. **SolidWorks fill optimize on other boundaries.** What a SolidWorks fill with optimize set builds over a boundary that is not four-sided, two-sided, or planar (§6.6). Tail byte a+6 set gives a degree-3 B-surface patch and clear a degree-5 one; a set fill over five edges that closes a solid is a degree-3 surface that does not lie on its own boundary. Decides what the SolidWorks decoder states for `simplified` there; until then the decoder states the flag, and a writer of another codec charges a loss for a set patch over such a boundary (§6.6). Would settle it: optimized fills over five or more edges, their patches set against their boundaries.
+154. **CATIA stamp forms in general.** That the CATIA louver, flanged cutout, bridge relief, and bead read as §6.6 states on every stamp (§6.6). Decides the CATIA decoder's `Louver`, its flanged-cutout `ExtrudedHole`, `relief_length`, and `Bead`; until then as §6.6 states. Would settle it: further louvers' faces; a flanged cutout of another profile; bridge reliefs on a sheet of another thickness; a bead with unequal height and radius.
+155. **CATIA K-factor formula.** Which quantities CATIA's `DINNormaFormula` binds, read as K = ½ − ¼·log10(min(100, max(5t/r, 1))) (§6.6). The body text read with its arguments as t and r does not fit; the second argument's binding is inferred, and the law's clamps at r/t of 0.05 and 5 are not read on a stored part. Decides the CATIA decoder's translation of the formula into the K-factor's expression; until then the law stated. Would settle it: the formula's relation record read for its argument bindings; a part with r/t above 5 or below 0.05.
+156. **SolidWorks bend table in general.** That a SolidWorks part's stored bend table reads as §6.6 states on every part, what its angle column measures, and how a bend between its values is read (§6.6). A sheet-metal record governed by a stored table has method byte 4 with an evaluated cell; the table's blocks and its cell set against flat strips are read; stored tables include bend allowance grids by gauge and bend deduction grids by thickness, angle, and radius. Where a table's cells do not change with the angle, the angle column's measure and the law between values are not read, and SolidWorks' page says only that the software interpolates between thicknesses and between angles. Decides the SolidWorks decoder's `BendTable.angle` and `lookup`; until then `angle: None` and no axis of `lookup`. Would settle it: a part whose table's cells vary with the angle, its bends of two angles set against their flat strips.
+157. **NX neutral factor in general.** That an NX sheet-metal part's flat length follows its neutral-factor expression and not its stored formula text on every flat (§6.6). A flat solid beside its formed body follows the factor; no part known to the project is saved with its allowance method set to a formula or a table. Decides the NX decoder's `KFactor`; until then as §6.6 states. Would settle it: an NX sheet-metal part saved with a formula or table method, its flat set against each.
+158. **Bend zone codes below Rule H1's threshold.** That Creo's `order_ptr.flip` bit 128 and the Inventor Fold's slot-0 value 2 are `FixedSide` (§6.6). Creo bits 64, 128, and 256 and Inventor slot-0 values 0, 1, and 2 are read (§6.6); `FixedSide` does not meet Rule H1's threshold. Decides the Creo and Inventor decoders' `zone`; until then the mappings §6.6 states. Would settle it: further Creo bends of bit 128 and Inventor folds of slot 0 = 2, each fixed flat's end set against the line.
+159. **NX unsew in general.** That an NX unsew by edge splits a sheet into two bodies that each keep a copy of the edge, and which side keeps the input body (§6.6). Its input lane, its two result entries (body identities and their group nodes), and the faces and edges of each body before and after it are read; that the operand is an edge is read from its node id; a set of edges that leaves the sheet in one piece or in more than two, and which piece keeps the input body among more than two, are not read. Decides the NX decoder's `Unsew` and its outputs' order; until then as §6.6 states. Would settle it: an unsew of a sheet whose two sides were made in the other order, its bodies set against the input.
+160. **Decal image orientation.** That a Fusion decal's image runs with its top toward +V, so that texture v = 0 is its top row, as the right-handed frames of its unmirrored decals imply (§6.4). The frames, flags, and texture coordinates are read; no image's content is set against its placement, so which row the stored v places at which end of V is not read. Decides the Fusion decoder's `frame` y; until then +V. Would settle it: a decal of an image whose top and bottom differ, on a planar face, exported or rendered, set against its texture coordinates.
+161. **Relative cylinder in general.** That Fusion's relative cylinder is the smallest cylinder about its axis that holds the model and that its radial offset grows the radius, on every setup (§7.2). On a part round about its axis the smallest cylinder and the larger cross extent coincide; the offset's side is inferred; an older setup form caches no diameter. Decides the Fusion decoder's `RelativeCylinder`; until then as §7.2 states. Would settle it: a relative-cylinder setup on a part that is not round about its axis, with a radial offset, set against a toolpath that reaches the stock's outer radius.
+162. **Creo workcell heads and axis readings.** That a Creo workcell's two tool tables are two heads or turrets; that axis bit 21 on a mill-turn workcell states two rotary axes, and on a two-turret lathe its second turret; and which of codes 188 and 189 is the rotary letter (§7.6). On a mill, two rotary axes follow bit 21, one bit 22, and without a bit one axis explains the tool directions (§7.6); bit 21 is set on mill-turn records whose tool table is named for five axes; codes 188 and 189 are equal where stored and follow no stored motion. Two tables are read as two heads from a drawing's names and the turning models that hold them, and no sequence's tool is set against its table; a mill-turn's count is inferred from the mills' bits and the named records; type word 9 is read as two turrets with no named record. Decides the Creo decoder's `rotary_axes` for a mill-turn and its pockets' `turret`; until then as §7.6 states, and codes 188 and 189 stay machine parameters. Would settle it: a mill-turn sequence whose tool comes from the second table, its toolpath set against the second head's frame; a 4-axis workcell whose codes 188 and 189 differ.
+163. **Fusion link and transition feeds in a posted program.** That a posted Fusion program feeds code-5 moves at `noEngagementFeedrate` and code-4 moves at `tool_feedTransition` where those differ from the cutting feed (§7.5, §7.8). Both bindings are typed from the vendor's posts; no stored toolpath and no posted program shows either applied. The current vendor posts (Fanuc, Haas, Siemens 840D, Heidenhain) feed code 4 from `tool_feedTransition` where the operation holds it and from the cutting feed where it does not, and the older stock post knows only the cutting feed; no stored motion record holds a feed. Decides no type: it confirms the Fusion decoder's `Link` and `Transition` bindings; until then as §7.5 and §7.8 state. Would settle it: the `noEngagementFeedrate` of operations whose toolpaths hold code 5, set against their cutting feeds; then a posted program of an operation whose `tool_feedTransition` differs from its cutting feed and whose toolpath holds code 4, or of one whose `noEngagementFeedrate` differs from its cutting feed.
+164. **Creo identical pattern ended on a surface.** Whether a Creo identical pattern (`pat_type` bit 32) recomputes a member's end where the seed is extruded up to a surface (§6.5). A bit-32 member holds copies of the leader's intersection edges and none of its own, and the members' stored surfaces are the leader's moved rigidly; where the seed is extruded up to a surface, a member's end plane may lie apart from the moved leader's while its edge rows are copies. Decides whether the Creo decoder states `Identical` for a bit-32 pattern whose seed ends on a surface; until then `Identical`, as §6.5 states. Would settle it: a bit-32 pattern of an extrude up to a surface that is not parallel to the pattern's direction, its members' end faces set against the seed's.
+165. **NX draft from the start limit in general.** That NX's from-edge draft class is `DraftNeutral::Start`, the cross-section at the start limit being the profile, on every extrude (§6.3). Where the start limit lies away from the section, the side face meets the profile at the start limit, where a draft from the section does not, and lies (h − start)·tan θ off it past the start (§6.3); where the start is at the section plane, `Start` and `Origin` give one body. Decides the NX decoder's `ExtrudeDraft.neutral` for that class; until then `Start`. Would settle it: further from-edge drafts whose start limit lies away from their section, of other angles, their side faces set against their profile at the start limit.
+166. **NX face region rule in general.** That NX's region-boundary face rule is the face form of `SelectionRule::Region`, a seed face with `domain: Containing(point)` and the boundary loops, on every pick (§5.8). Each pick resolves to the face under its seed point, its boundary track rows close, and the boundary may take the whole face or cut it. Decides the NX decoder's `Region` for a face rule; until then as §5.8 states. Would settle it: an NX 10 file's second item parsed, and its `OFFSET_REGION` records joined to their collectors; then a face rule whose boundary cuts several faces.
+167. **NX region rule tolerance.** That the length an NX region rule stores is a copy of its file's distance tolerance, so that `tolerances.linear` stands for it and the rule needs no field (§5.8). A sketch region rule and a face pick store their file's section tolerance T; a track reference names one line, arc, or spline; the links between a region's curves lie within T. Links on arcs whose frame the reader does not take and on splines are not read; that curves within T meet is consistent with the links and is not separated from a smaller threshold. Decides whether the NX decoder states a tolerance on a `Region`; until then it states none, and a rule whose length differs from its section's keeps it in the selection's native record. Would settle it: the links on arcs and splines read; then a region rule saved with a gap tolerance other than the part's.
+168. **Adjusting pattern construction by application.** Which construction, `ModelSoFar` or `ModelBefore`, the adjusting pattern of Fusion and Inventor (adjust) and of NX (variational) uses (§6.5). Where a pattern's fillets and to-face ends touch only geometry made before the pattern, both constructions give the same faces; an NX meeting record may leave incomplete instances that are not the build-order prefix `ModelSoFar` leaves; CATIA keep specifications is `ModelSoFar` (§6.5). Which NX byte is the variational method is not established (one candidate byte, contradicted by a label), and the NX seed list is not resolved. Decides those decoders' `against`, and when a writer to those formats is free of the loss §6.5 names; until then `against: None`, and a writer is free of the loss where its second test holds. Would settle it: NX pattern records put through the meeting test; per application, a pattern whose seed ends on geometry another instance makes.
+169. **SolidWorks ruled-surface record.** That a SolidWorks ruled surface's record closes as read: its type the u32 after the distance, 0 to 4 in the order of the API's codes (tangent to surface, normal to surface, tapered to vector, perpendicular to vector, sweep), its distance and angle the display dimensions D1 and D2, and three option words b, c, and d (§6.6). Type 2 records are those whose surfaces are inclined to a direction; c, set only on type 2, is read as the tapered type's direction flip (inferred); d is trim and knit (inferred: a record with several faces and d = 1 makes fewer bodies than faces, and one with d = 0 keeps its faces apart); b is 0 at a corner with a gap, which is `Open` (A.42). That b is connecting surfaces rests on d's reading and on a cleared corner (A.42); types 0 and 3 do not meet Rule H1's threshold. Decides the SolidWorks decoder's ruled-surface type and options; until then the type as read, and the three words as `sldprt:ruled_option_b`, `sldprt:ruled_option_c`, and `sldprt:ruled_option_d`. Would settle it: a ruled surface saved with trim and knit cleared, and one with connecting surfaces cleared, their words set against the default's.
+170. **SolidWorks fill record fields.** That a SolidWorks fill record's mark is the u32 after the `moPMarkRecord_c` tag of its body head, and that an item's flag byte states the item's kind and its contact (§6.6). The mark is a mark id of configuration 0's deltas; the flag byte's high nibble is 1 on items that hold a body edge and 0 on those that hold a sketch or curve; its low nibble takes 0, 1, and 2 on edge items, read as contact, tangent, and curvature from its domain, no face normal being compared (inferred); tail byte a+10 is not read. Decides the SolidWorks decoder's reading of a fill's state and of its edges' continuity; until then the mark as read, and the low nibble and a+10 native options. Would settle it: the patch's normals along each edge item set against the adjoining face's, by low nibble.
+171. **SolidWorks fillet option block.** That the three varying positions of a SolidWorks fillet's option block are tangent propagation (+0), keep features (+16), and attachment edges (+37, inverted) (§6.4). Against the API export, +0 equals tangent propagation, +16 keep features, and +37 is 0 where attachment edges are set and nonzero where not; no other position varies; +37 can take a value other than 0 and 1, attachment edges does not meet Rule H1's threshold, and a record whose block is not located is not read. Decides the SolidWorks decoder's `Propagation`, `BlendControls.keep_features`, and attachment edges; until then +0 and +16 as read, and +37 as the native option `sldprt:attachment_edges`. Would settle it: records whose block is not located, read for their block; then a fillet saved with attachment edges set, its byte set against 0.
+172. **Fusion hem side in general.** That Fusion's hem flip byte is 0 `HemSide::SelectedEdgeFace` and 1 `OppositeFace`, and that the picked edge decides the fold where the wall's growth side differs, on every hem (§6.6). Every vertex an unflipped hem makes lies above the sheet face that holds its picked edge, and every vertex of a flipped hem beyond the opposite face; a hem on an edge flange folds over the picked edge's face and away from the growth side. `OppositeFace`, and the picked-edge rule against the growth-side rule, do not meet Rule H1's threshold. Decides the Fusion decoder's `Hem.side`; until then the mapping §6.6 states. Would settle it: further flipped hems, and hems on walls whose picked edge does not lie on the growth face, their vertices set against the picked edge's face.
+173. **Inventor bend-table deduction above 90° in general.** That an Inventor bend-table cell above 90° of deflection is a deduction between flanges measured to the outer tangent planes, `FlangeMeasure::OuterSharpThenTangent`, and that the table's angle column is the opening angle, on every part (§6.6). A bend zone above 90° has the flat width of the tangent-plane measure, where flanges measured to the outer sharp do not fit; the opening angle is read from the shape of a table's values and from Autodesk's page; a table symmetric about 90°, or a flat holding only bends of 90°, does not test the angle column's measure. Decides the Inventor decoder's `BendTableValue` and `BendTable.angle`; until then `Deduction { flanges: Some(OuterSharpThenTangent) }` and `Opening`. Would settle it: further Inventor parts with a table rule, a flat pattern, and bends above 90°; a part whose table is not symmetric about 90° and whose flat holds a bend off 90°.
+174. **Inventor bend equation readings.** That an Inventor equation rule's flanges are measured as a table's are, that its `ref` codes 3 and 2 are the opening angle and the deflection, and that the two flags of a range record are its bounds' inclusion (§6.6). The rule records and `kind` 1 and 4 are read from what their expressions compute; a common rule's expressions subtract the two setbacks of Inventor's table unfolding, term for term. The flange measure is inferred from that rule's expressions, the `ref` codes from expressions, and the flags from the stored ranges covering the angles with no overlap; none is set against an unfolding. Decides the Inventor decoder's `BendEquations`; until then `Compensation { flanges: Some(OuterSharpThenTangent) }` for a rule with that rule's ranges and `flanges: None` for any other, with `ref` and the flags as read. Would settle it: an Inventor part with a flat pattern under an equation rule, its bend zones' widths set against the rule's expressions.
+175. **Creo wall readings below Rule H1's threshold.** That a Creo wall of `misc_choice[0]` bit 512 is `ExtendWall`; that an attached bit-2 wall is a `ContourFlange` of `width: Full`; that an unattached bit-2 wall ends at the far end of its instruction-4487 edge; that an attached bit-8 wall is a `ContourFlange` of `width: FromReference`; that an attached wall with neither bit has its free ends on the sharp of its sketch face's side, its `Flange.outline`, and states no `angle`, its outline sketch's plane being the construction through the attach edge at an angle to the base wall whose dimension binds the type-205 dimension, stated where the plane's stored position agrees, and otherwise the dimension kept as the native option `creo:wall_angle`, which a writer of another format charges as `export:parameter.flattened`; and that a Creo flange stated without an `outline` takes `angle` as 180° less the type-205 dimension's magnitude (§6.6). A face of a bit-512 wall lies on the plane its instruction 4438 names. A bit-2 wall holds no width dimension of type 62, which bit-8 walls hold; an attached bit-2 wall spans its attach edge, flush with the edge's ends or between vertices that earlier features placed, never short of it; an unattached bit-2 wall's far end lies at the far end of its 4487 edge, and no stored dimension equals the extent; the 4487 edge is an earlier feature's, read from the hidden edge the later features leave. A bit-8 wall starts in its sketch plane at the instruction-4488 point and runs its type-62 width against the sketch's normal, the 4488 point being a datum point made just before an attached wall; instruction 10 names no edge on an attached bit-8 wall, and its 4487 edge holds the wall's span. An outline wall's free ends lie on the sharp of the sketch face's side, not on the bend's tangent line (§6.6); the type-205 dimension is ±90 or the angle between the walls; the outline sketch's plane holds the attach edge and lies at the stored type-205 angle to a plane through the edge, the base wall's own face or an earlier feature's coplanar plane; the attach edge is the sharp on the sketch face's side, inner or outer; the stored sign is the right-hand turn about the edge's stored direction, with an exception no reading explains, and a writer to Creo re-emits the stored sign (§6.6). An outline wall with no section, no bend pair read, neither face identified, or its bend not identified stays `Native`; a wall that stores no attach edge, or fits two placements, keeps `creo:wall_angle`. Decides the Creo decoder's `ExtendWall`, a bit-2 wall's `width` and `extent`, an attached bit-8 wall's `width`, a wall's `outline`, and the plane construction that binds its type-205 dimension; until then the mapping §6.6 states under Rule H1, and `SheetMetalKind::Native("creo:wall")` where the stored faces do not agree. Would settle it: attached bit-2 walls' end planes set against the ends of their attach edges; bit-8 walls whose 4487 edge does not resolve, read against their faces; native outline walls' sections and bend pairs read; bit-512 walls in further parts; binary Creo files searched for outline walls, their sketch planes set against their type-205 dimensions.
+176. **Angle sense outside Creo's outline-flange walls.** Whether each source's stored construction angles turn in §5.9's positive sense, the right-hand turn about the axis's stored direction, which a decoder states where a construction's stored `resolved` agrees with it and otherwise keeps as the source's form (§5.9). The Creo outline-flange wall's stored sign follows the sense with an exception (B.175); no construction angle of another source, and no other Creo construction angle, is set against the sense. Decides, per source, whether its decoder states an angle input in §5.9's sense directly or through `Dimension::Negated` where no `resolved` is stored; until then the input's relation is `Native` under the source's name with the stored value there (§5.9). Would settle it: per source, the construction angle inputs that store a `resolved`, each set against the positive sense.
+177. **Decal flags and frame normal.** That a Fusion decal's second flag byte reverses its width and its third its height, so that a frame with x along −U and y along −V and a `mirrored` that is the exclusive or of the two bytes states a decal that sets the third; and that the frame's z is the faces' outward normal at its origin (§6.4). The width runs along −U where the second byte is set, and the height is reversed where the third is; N is U × V, and the origin lies on the mesh surface. Neither flag meets Rule H1's threshold, and N is not set against the face's normal at the origin. Decides the Fusion decoder's `frame` and `mirrored`; until then as §6.4 states. Would settle it: the direction of u on decals that set the second byte; N set against the B-rep face's normal at the origin; then a decal flipped vertically in Fusion, its record set against the default's.
+178. **Fusion lead, lift, and ramp bindings below Rule H1's threshold.** That Fusion's `entry_perpendicular` and `exit_perpendicular` bind `Lead.line_turn`, `Perpendicular` where true and `Tangent` where false, on a lead whose line meets an arc; the link length below which `Linking.lift` does not raise a stay-down link; which radius a pocket strategy adds to `PlungeStrategy.start_above`; and what the adaptive lead arcs that do not sit at `leadRadius` follow (§7.3). With the flag true the line is perpendicular to the cut on a lead with no arc and runs along the arc's radius on one with an arc, and with it false the line is tangent or in line; a stay-down link under a `liftHeight` above 0 rises exactly `liftHeight` or not at all, the unlifted being the short links, at a boundary of 0.48 of the tool diameter (inferred); a pocket operation may lift none of its links; a pocket strategy's first ramp does not start at the top plus the clearance, a ramp that starts higher exceeding it by the lead-in radius, and a ramp may start below the top; many adaptive lead arcs off `leadRadius` match no numeric setting of their operation, a constant 1.583 mm arc occurring with tools of 2 to 16 mm. The line with an arc does not meet Rule H1's threshold; the length limit is inferred; where the two lead radii are equal, which one the ramp adds is not separated. Decides the Fusion decoder's bindings of the three settings and of `arc_radius` on adaptive clearing; until then as §7.3 states. Would settle it: ramps that start below the top set against their stock and model tops; an operation of a strategy other than chamfering with the flag true and a lead arc; a pocket operation whose two lead radii differ; off-radius arcs set against the strategy's fixed shapes by tool diameter.
+179. **Fusion toolpath attribute readings.** That a Fusion `kind 1` record standing before a cycle's first move, with no parameter after it, is a unit tag a writer can regenerate; how engraving groups its passes into `family` values; and the order of the table that opens a toolpath (§7.8). Such records stand in deep-drilling and chip-breaking cycles; one (`family`, `level`) record stands before each cutting run; every other `kind` precedes a cycle parameter and is the unit class of that parameter. The bare `kind 1` records are read by inference; the engraving grouping does not meet Rule H1's threshold; the opening table's order is a guess. Decides which attributes a Fusion decoder keeps and a Fusion writer regenerates, and no type (Rule N case (b), §7.8); until then the decoder keeps those records and the opening table as attributes. Would settle it: the bare `kind 1` records set against the dwell their cycles write; further engraving toolpaths' passes set against their `family` values.
+180. **SolidWorks chamfer loop selection.** That a loop in a SolidWorks chamfer's third selection list decodes to the loop's edges (§6.4). The third list holds loops, `moCompLoop_c` objects or a class with an escaped index; the loops' edges are not joined to the chamfered faces, so the reading is inferred from the rosters, which size on edges. Decides the SolidWorks decoder's chamfer selection; until then the loop's edges. Would settle it: chamfer records' loops joined to the body's edges, set against the chamfer faces.
+181. **SolidWorks sweep end flags.** That the two words of a SolidWorks sweep's closing object change no geometry a writer of another format builds (§6.3). At an end that stores 1 with the profile oblique to a planar path, the stored section stays as sketched, as under 0; no file labels the words, and a sweep with guide curves and a 1 is not read. Decides that the decoder keeps them as `sldprt:sweep_start_tangency` and `sldprt:sweep_end_tangency`, which a SolidWorks writer returns unchanged; until then that reading. Would settle it: a sweep with guide curves saved with the start and end set to normal to path and to none.
+182. **NX curve copies the decoder does not read.** That NX `EXTRACT_STRING` records decode as `Extract` of curves, with a `TransformBodies` copy where one holds an `XFORM`, on every record (§6.5). The outputs lie on their inputs within 1e-6 mm, or are the stored transform of them, a third flag marking a reflection (inferred); some records fit no reading; records in the legacy container's grammar are not parsed, and arc frames are not taken. Decides the NX decoder's `Extract` and `TransformBodies` for those records; until then each where its outputs agree, else native. Would settle it: legacy-container records parsed and set against their outputs; the collectors of records that fit no reading joined to their source parts.
+183. **Creo rolled bend line face.** That a Creo rolled bend's `line_face` is read as for an angle bend (§6.6). A roll stores no instruction 403 and so no signed angle; a roll that turns away from the section's facing (toward −z of the section) does so as a positive angle bend does; whether a roll can turn the other way, and where that would be stored, is not read. Decides the Creo decoder's `line_face` for a roll; until then stated only where the stored cylinders agree. Would settle it: a rolled bend that turns toward the section's facing.
+184. **Inventor shared-edge bends.** That an Inventor bend of option pair (2, 1) on one edge is `ConnectBetween::SharedEdge` in every file (§6.6). The stored edge lies between two outer sheet faces of one body; each bend adds two coaxial cylinders of the stored radius and that plus the thickness, the outer one tangent to both outer faces. Decides the Inventor decoder's `SharedEdge`; until then stated where the stored bend's faces replace the corner so, else `SheetMetalKind::Native("inventor:bend")` with the edge, radius, and option pair kept. Would settle it: a shared-edge bend at another angle.
+185. **Fusion wrap setting.** That Fusion's `doWrap` binds the wrapping §7.5 states for rotary operations, with its radius from the stream's `axisSubstitutionRadius` (§7.5). The toolpath carries an `axisSubstitutionRadius` attribute where the setting is true and not where it is false; the radius's meaning is inferred. Decides the Fusion decoder's wrap; until then a named process parameter. Would settle it: true toolpaths' coordinates set against the radius.
+186. **Rips below Rule H1's threshold.** The rip readings that do not meet Rule H1's threshold (§6.6): Creo's surface rip removes the picked wall, no face of the rip covering the middle of the picked face's box, its new faces on its plane, and a rip that names a side wall is not read face by face; Inventor's single-point cut is the face's ruling through the point, from points at fractions 0 and 0.5, and its point-to-point cut a line; a SolidWorks sketch rip cuts one wall through the sheet, centred on its line; Creo's sketched rip is `Projected`, its chain carried along the sketch's normal and the sheet split there with zero width, its section's flip fields recording no choice; and Inventor's `KerfSide::Right`. Decides each decoder's `Rip`; until then stated where the stored result agrees, else `Native` with the picks kept. Would settle it: Creo side-wall rips read face by face; per format, further rips of each kind set against their results.
+187. **Creo axis-control readings.** The Creo readings under `ToolAxisControl` that do not meet Rule H1's threshold (§7.3). `AlongRuling` holds except near the ends, where past the face's u range the axis stays in the tangent plane and turns off the ruling; `NormalToSurface` holds on bit-21 sequences whose instruction 966 has offset 1.0, where fixed-axis sequences have offset 0, so the offset is read as a flag (guessed); coded parameters 100, 101, 236, and 259 are 0 where stored; `InPlane` holds, the rotary axis the model's z; `ThroughLine`'s axis meets the line at the foot of the perpendicular from the tool's contact point, and at a right angle where the faces are parallel to the line, where the two coincide, with axes on one parallel-face toolpath passing through one point (not explained); the sequence's edge rows bound the region the tool covers, one ball radius inset. No plane oblique to the model's axes is read. Decides the Creo decoder's `tool_axis`; until then each arm where the stored toolpath agrees, else the operation's native settings. Would settle it: a flank-milling sequence whose toolpath departs from the ruling; a 4-axis sequence on an oblique plane; a through-line sequence of another design on faces oblique to its line.
+188. **SolidWorks conversion old layout.** That the counted list of the old Convert to Sheet Metal layout holds pairs of face references, and what they are (§6.6). Each element is two topology references built like the fixed face's, tag occurrences exactly twice the count, the outer class `moCompFace_c` (inferred); the pairs are not joined to the body, so whether they are bends is unknown. Decides whether the decoder states `Convert` from `ConvertFrom::Faces` with `bends` empty; until then `Native("sldprt:convert_v1")` with the face pairs kept. Would settle it: the pairs joined to the stored body's faces.
+189. **Fusion conversion's second pick.** That the second pick of a Fusion conversion is the face opposite the first at the thickness (§6.6). The first pick is the face under the stored point, which is `fixed`; the second is inferred to lie at exactly the thickness. Decides how the decoder keeps it; until then the source setting `f3d:convert_second_face`, `thickness` coming from the rule. Would settle it: conversions' second picks' faces set against the first.
+190. **Creo tolerance codes of text-section files, and the fit count.** Which code of a Creo text-section file is nominal-only, and how many Creo dimensions store a fit class (§5.12, §8.1). On binary files the codes are read: 1 nominal, 2 plus-minus, 3 limits, 4 symmetric, 8 symmetric superscript, joined to the file's own attributes, and the decoder states `Deviations` with `lower` = −slot 0 and `upper` = slot 1 on codes 2, 3, 4, and 8 (§5.12). A text-section file carries no attribute oracle (no `PTC_*` rows), and three numberings fit every text-section reading (the binary order; codes 1 and 3 swapped; the TOOLKIT order counted from 1, which binary files reject), under each of which codes 2 and 4 state a tolerance; the general tolerance's per-decimals rule does not separate them. A dimension with a fit class matches its stored table cell; whether a fit's deviations are `Cell` or `Own` is decided by the files' stored ISO 286 tables set against the published cells (§5.12). Decides the Creo decoder's `tolerance` on codes 1 and 3 of text-section files and its count of fits; until then it states `Deviations` on codes 2 and 4 there and no `tolerance` on codes 1 and 3, except on a record whose class matches its table cell, which states its `Fit` (§5.12), keeping the code as `creo:tol_type` and, where it states none, the slots as `creo:tol_slot_1` and `creo:tol_slot_2`. Two decoder defects stand beside these: Creo 4 saves write the limit attributes as deviations, not absolute limits, and the positive value lane decodes the prefixes `54` and `58` wrongly (0.195625 for 0.18). Would settle it: a part saved by Creo both as a text-section file and as a binary file, its dimensions' codes compared; stored records with a fit class matched against their tables; each stored table's cells set against ISO 286's.
+191. **Computed member names.** That a configuration's name computed by a table formula is stated as its cached text (§5.14). SolidWorks and Inventor table cells may compute the configuration's name by concatenation, each formula reading cells of its own row, with cached texts; an Inventor table's part-number cells that compute its member-name cell's text are `PartNumber::ConfigurationName` (§5.11), so only its name cells stay text. A name that drifts from its formula is not read. Decides the decoders' `ConfigurationRef::Named`; until then the cached string, the formula in the table's native record. Would settle it: a table whose name formula reads a cell that another configuration changes.
+192. **Creo family-table records that are not configurations.** That the Creo family-table records below state no configuration of the part (§5.14): hidden instance objects (`inst_hidden` 1, names ending `#AF<n>`), hidden columns of type 14 and type 15, and tables of user-defined-feature groups. A hidden object is the copy of a model cut by an assembly feature, its `model_db` rows assemblies, and every hidden object's name carries `#`; type 14 marks such a part; type 15 is bookkeeping of simplified representations; a group table's rows are variants of the group, which a placed group names. Type 15's cells are not set against the representations. Decides that the Creo decoder mints no `DesignConfiguration` from them; until then that reading. Would settle it: a part with two simplified representations and a type-15 column, its cells set against them.
+193. **Fusion empty part-number cell.** That an empty Fusion part-number cell is the rule that the configuration's part number is its name (§5.11, §5.14). Where the cell is empty the document's part number is the row's name, in the property archive and in the Design stream; a file that stores such a cell's row data holds `Option: 0` with the row's name, where a cell with typed text holds `Option: 1`. Where no row is renamed, a stored flag that follows the configuration's name is not separated from stored text equal to it. Decides the Fusion decoder's `part_number`; until then `PartNumber::ConfigurationName` for an empty cell, inferred. Would settle it: a table of two rows with empty part-number cells, one row renamed after the cells were set, each configuration's stored part number.
+194. **Fusion pattern compute words.** That two payload words of a Fusion pattern hold its compute option (optimized, identical, adjust) and its pattern object (faces, features, bodies) (§6.5). The two words are read against the patterns' labels only. Decides the Fusion decoder's `method` and operand kind; until then that reading. Would settle it: one pattern saved under each compute option.
+195. **Flange extent readings below Rule H1's threshold.** The flange extent readings that do not meet Rule H1's threshold (§6.6): Inventor's Width extent with a reference point is `FlangeWidth::FromReference`, a record may hold a point and a width and no offset, and the face or plane the user picked is not in the record; Fusion's contour flange marks a symmetric extent, `Span::Symmetric` with `measure: Some(PerSide)`, by two head words of 1 (inferred), and a one-sided extent's side is stated only where the profile sketch's plane is read; Fusion's two-distance records are `Span::Between` with both distances, one to each side of the sketch plane, and where the two distances are equal, which of `Span`'s ends `AlongDistance` takes is not separated; and SolidWorks' open base flanges, whose extent block is read against the flange's end caps, its mid-plane form `Span::Symmetric` with `measure: Some(Total)` and its two-direction form `Between` with two depths. Where Inventor stores the picked face or plane is not read. Decides those decoders' `width` and `extent`; until then each where the stored footprint or faces agree, the native option `f3d:contour_flange_extent` for a Fusion symmetric record whose faces do not agree, `Native("f3d:ContourFlange")` for a Fusion record whose side is not read, and `Native("sldprt:base_flange")` for a SolidWorks record whose caps disagree, that keeps no cap of its own, whose caps no witness scores, or whose faces are not checked. Would settle it: further Width flanges with a reference, and their picked face; further symmetric Fusion contour flanges; a Fusion two-distance flange of unequal distances; SolidWorks blocks' faces set against their caps; further SolidWorks two-direction base flanges.
+196. **CATIA keep specifications and fix together.** Two CATIA readings that do not meet Rule H1's threshold (§6.5, §6.7): keep specifications is `Adjust { against: Some(ModelSoFar) }`: its carrier is `DesignIntent` 2, and its meaning is inferred by elimination of the dialog's other options; `ModelSoFar` is inferred from the stored build order where the pattern stores per-instance copies, and is not read where it stores no build order; `DesignIntent` 1 is `Identical` (inferred); and a fix-together group is a `RigidGroup` whose members keep their stored placements, since its record stores no pose, a record may carry an unread Boolean, and a record's member list may not be read. Decides the CATIA decoder's `against`, the Boolean's reading, and those records' members; until then `ModelSoFar` where the pattern stores its build, else `None`, the Boolean kept as the group's native option, and a record whose members are not read `FeatureOperation::Native` of kind `catia:FixTogether`. Would settle it: a keep-specifications pattern with no stored build, saved with an instance that ends on another; a fix-together group whose Boolean differs.
+197. **NX break corners below Rule H1's threshold.** That an NX break corner whose stored faces are cylinders is `CornerBreak::Round`, a radius `size` tangent to both edges that meet at the corner, and which stored value states the round (§6.6). Such a record builds rounds at the stored size through the thickness; a candidate method bit differs between two rounds, so it is not the shape; the picks are thickness edges where the pick-to-corner relation is read, and a record that holds one pick against several broken corners of a cutout is, under Rule H1, `SheetMetalKind::Native("nx:break_corner")`. No stored value is shown to state the round (the chamfer break is A.56). Decides the NX decoder's `shape`; until then `Round` where the stored faces are cylinders, else `CornerBreak::Native("nx:break_corner")` with the method byte kept. Would settle it: further break corners set against their faces.
+198. **Fusion pass fields under Rule H1.** That Fusion's pass settings build what §7.5 binds them to on the toolpaths where the stored path does not show it (§7.5): `nullPass` true (`repeat_final_pass`); `cornerMode` `roll` and `sharp` (`corners`); `doRoughingPasses` and `doFinishingPasses` true (`roughing_passes`, `finishing_passes`); `transitionType` `curve` (`PassTransition::Arc`); `maximumRoughingSteps` on contour toolpaths with roughing on (`roughing_pass_count`); `tabWidth`, `tabHeight`, `tabShape` `triangular`, rising over half of `tabWidth` and raised over the tool's diameter at the top, `tabPositioning` `tabCount`, the centres at (i + ½) L / n along the tool-centre path, and `distance` with `tabDistance` on straight edges (`tabs`); and the chamfer depth (`chamfer`) (§7.5). A toolpath set to one of these values may lack the run, arc, junction, or tab its value names, and what such a toolpath does instead is not read. Decides the Fusion decoder's pass fields; until then each stated where the stored toolpath shows the feature it names, else `None` with the setting kept as a named process parameter. Would settle it: per toolpath that lacks its feature, the operation's other settings and its geometry set against the run it lacks.
+199. **SolidWorks base flanges the record does not separate.** Which kind a SolidWorks base flange (`moSMBaseFlange_c`) is where its profile is a later sketch or its record's shape does not say, the extent and the thickness's side of an open one whose extent block is not read, the side of a base bend's radius where its faces are not read, and whether the contour's start that the thickness flag is read against is the start of the sketch's stored chain (§6.6). The profile reference resolves to its sketch; a record closed by its shape is a `Wall`, an open one a `ContourFlange`, and a record with one child and a depth of its own has no extent equal to `D2`; an open record's extent block may be absent where it stores no `D2` of its own or is of an older layout. `D1` is the bend's inner or outer radius, the radius on the profile's side of the bend, and by a separate clause, inferred, the inner radius where the profile has a sketched arc at the vertex though it lies on the outer face. The u32 47 bytes before the extent block's marker is 0 where the profile lies on one family of side faces and 1 on the other, 0 being the right of the contour run from the flange's first end face, and that start is the start of the sketch's stored chain where it is unambiguous (§6.6). Open: a profile that is a later sketch, whose reference the framing cannot number; the one-child records' kind; the open records' blocks not read, and with them their extents and thickness flags; the profile-side rule, which a SolidWorks writer uses to choose the radius it writes as `D1`, fails on blockless bends whose faces are read; that the contour's start is the stored chain's start does not meet Rule H1's threshold, and the decoder, which reads the sketch's points and drops its lines, reads the profile's chain against the first end face only where the start is unambiguous, a reading the SolidWorks writer also needs to write the flag. Decides the SolidWorks decoder's kind, `extent`, a bend's `radius_side` where its faces are not read, and `thickness`'s `side`; until then a record whose kind the decoder cannot read, a one-child record, and an open record whose block is not read are `Native("sldprt:base_flange")`, `D1` is always the bend's radius, its side stated from the cylinder `D1` equals where both cylinders are read (`Inside` or `Outside`, blockless bends `Inside` among them), and a bend whose `D1` equals neither cylinder makes its flange `Native("sldprt:base_flange")`; the thickness's `side` is stated where the block is read, the faces give the wall's side, and the profile's chain is read against the first end face, the flag is kept as the native option `sldprt:thickness_reverse` wherever the block is read, and `side` is `None` elsewhere, which a writer does not default (§2.4). Would settle it: the feature stream walked as a whole CArchive, which numbers a later sketch's reference, and with it the unread blocks read; the one-child records' profile sketches' segments read for closure; the contour's start set against the stored chain's start on further records whose start is unambiguous; the decoder's sketch reader extended to the lines, so that `side` is stated on the records whose faces give it.
+200. **Creo walls in binary files.** Which kinds the Creo walls of binary files are, by the mapping §6.6 states for text-section walls (§6.6). The tools that read text-section walls read no binary records, so binary walls' bits, sections, dimensions, and surfaces are not read. Decides the Creo decoder's kinds for binary walls; until then the mapping §6.6 states, each arm where the stored faces agree. Would settle it: binary walls' `misc_choice[0]` bits, sections, and dimensions read from the binary records, then set against their surfaces as text-section walls are.
+201. **Creo corner rows the decoder misreads.** The Creo decoder's reading of the type-38 and type-41 rows of a round's corners, of its tori's origins, of the tokens its tables lack, of spline point arrays, of edge rows, and of where a row ends (§6.4). With these readings every two-set junction face reads and fits an arm. Type-38 and type-41 rows read past the envelope body's `e3`, twelve local-system slots and two radii or three `fillet_srf` splines, where the decoder stops at the `e3`; on decoder-placed tori and spheres the cylinders' lane gives the same carrier, the same axis with one origin coordinate negated, or other coordinates, and with the stored reading code-7 tori lie about a listed piece's axis, where with the decoder's many lie on no surface's axis; the fillet reader misframes splines, stops at the openers `a4` and `34 xx yy`, and misreads isolated tokens; the short-float prefixes `1a`, `33`, `39` and the openers `00`, `39` are missing from the decoder's tables, and a junction face may lie on its neighbour's carrier and be no surface of the round, so the decoder may emit it as a face on that carrier. The positive seven-byte lattice for openers `4c` to `59` and `b2` is not `0x3f75 + p` but `3fb1` for `4c`, `3fb5` for `4d`, `0x3f72 + p` for `4e` to `53`, `0x3f73 + p` for `54` to `57`, `0x3f74 + p` for `58` and `59`, and `bfde` for `b2`, fitted on frames; it adds orthonormal frames, loses none, and agrees with the decoder on the slots both read; `41` is an eight-byte form of high byte `bf`, `37` one of `3c`, and `4b` a seven-byte form of `3f b0`; `1b`, `34`, and `20` are three-byte forms of `3c`, `bc`, and `3d`, and `1f` and `38` three-byte near-zero forms; a frame reader bounded at the next row head, resynchronising after an opener it lacks, reads each row's own frame where an unbounded reader takes the next row's. The lattice holds in spline point arrays too, not in parameter arrays, and there loses no row and removes most off-support centre samples; `36` is a seven-byte near-zero form, its high byte fixed by no stored row known to the project; the pcurve lane needs the constant-with-tail forms `01 K b b` and `02 K b b b`, the near-zero forms `21 26 3f`, `27 40 22`, `19 23 37 3c 1e 32`, and `1a 33 20 39`, and `a4` as seven bytes under `bf c0`, with which junction-to-end edge rows read; the edge reader keeps a row's tail only within 400 bytes of its head, which loses spline edge rows of up to 20 KB, and a tail kept anywhere before the next row head closes every visible wrapped loop; opener `0d` reads 0.25 on a torus where the decoder's lane reads it as −1 and gives a radius of 1.0. Open: tori whose coordinates differ otherwise; none of these readings is in the decoder. Decides the Creo decoder's reading of corner rows, spline point arrays, edge rows, and row ends; until then `Native("creo:12")` or `Native("creo:7")` where a junction face is not placed (§6.4). Would settle it: the decoder run with each reading, its placed corners and edges set against the rows read by hand.
+202. **Fusion rigid groups joined through tables.** How the Fusion decoder joins a rigid group's members to the occurrences and poses its tables hold (§6.7). A member's final transform comes from an operation table, or from a placement record where no table reaches it; a table whose final entry holds no matrix gives the identity; a placement record equals the table's pose where the table has one entry and may differ where it has more, so it is a member's pose only where no table reaches the occurrence; record `1ABFB679` is an older snapshot, not a member's pose; a listing may name an occurrence the file does not hold. Open: groups whose members no table touches, among them groups whose stream's tables the reader does not parse; copies of one group that lie apart even from tables; none of the join rules is in the decoder. Decides the Fusion decoder's `RigidGroup` members and their occurrences' poses; until then each group with the members that resolve, an unresolved listing kept in the group's `native_options` (§6.7). Would settle it: the table forms the reader cannot parse, read; the decoder run with the join rules, each group's frame set against its members' tables.
+203. **Fusion rigid groups' scope contents and names.** That the scope of each rigid group refers to occurrence references and nothing else, how many members each lists, and which store a name, which §6.7 reads (§6.7). A group's scope refers only to occurrence references, from two members to hundreds; a group's name is usually empty and sometimes a user's text; the members and their tables are B.202's. The scope contents and names are not read over the same groups whose members the decoder joins. Decides that the Fusion decoder's `RigidGroup` holds what each group stores, and its name where one is stored; until then as §6.7 states. Would settle it: over the groups the decoder joins, each scope's referenced records, member count, and name, read together.
+204. **Creo corner arms below Rule H1's threshold.** The Creo corner cases of §6.4 that do not meet Rule H1's threshold (§6.4): `RollingBall`'s r, R₁, R₂ case with R₁ and R₂ unequal, and its third face, the ball on the larger piece and on the face the pieces roll on, which `RollingBall`'s definition includes; the three-set r, R, R case on fillet corner faces; one listed set, code 12 `RollingBall` on junction faces, code 7 `SweptAround` on junction torus rows, and code-7 records `Continue`; code 4's `Continue` across unequal ends; three-set code-7 `SweptAround` against an extruded curve and with a constant ball; and `against` empty on two-set r, R, R sweeps that border another feature's cylinder their ball does not touch, `radius` binding the round they continue, and holding the outer cylinder alone on the one-set fillet. Each is read against the stored corner faces at every centre, as §6.4 gives. Decides the Creo decoder's corner arms; until then each arm where the stored corner faces meet its test and `Native("creo:<code>")` otherwise (§6.4). Would settle it: per case, a corner of that case in a further design, read and graded.
+205. **Fusion turning, thread, helix, link, and probe bindings below Rule H1's threshold.** The Fusion bindings of §7.3 and §7.5 that do not meet Rule H1's threshold (§7.3, §7.5): `Operation.radii` from the turning radial modes, the outer clearance, the retract, and the inner clearance; `RadiusFrom::Positions` on grooving passes, each plunge at its point's radius and on the side its `side` states, bound to `sideAlignment`, stated only where a toolpath agrees, and on a pass with no toolpath `RadiusFrom::Native` with the mode, below the floor of Rule H1's untestable-arm clause (§3.1); `StockInner` on solid stocks; `Operation.axial`, `AxialFrom::StockFront` at its setup's WCS origin, so not separated from the origin, the contact point on reached back limits and facing front limits, finishing front limits not separating it from the profile's own start, the cutting edge on back limits, and the offset's sign on reached non-zero offsets; the lead's `from_axis`, `helical`, flat lead lengths, and `line_turn`'s `Angle` with its `from`, to the cut or to the spindle axis at tapered joins and on moves where the two references give one move; `line_turn`'s `along`, roughing and facing entries `Backward` and exits `Forward` in the axis's terms, and finishing moves `Forward` in the cut's terms where not square, `along` read only from a toolpath current against the settings, a stale one giving `None`; the link's `pull_out`, and `pass_clearance` axially and radially; `helix_rise` with the ramp angle and with the pitch; turning `thread_depth` and `thread_infeed_angle`; `axial_offset`, `angular_stepover`, `intermediate_stepdown`, and `stepdown_count`; turning profile finishing's `roughing_pass_count`; a `chamfer2d` width of 0 as `ChamferCut { width: 0, tip_offset }`, and the chamfer settings of a contour or trace with `doChamfer` and a width of 0 kept as named process parameters, such a toolpath storing a tip offset of 0 and cutting at the pass's own level (inferred); `bottom_up`, `turning_side`, turning stock to leave radially and axially, `finalStepdown`, and turning `depthOfCut`; `helix_taper`; and `probe_at`. Each is read against the stored toolpaths. Decides each binding of the Fusion decoder; until then the bindings §7.3 and §7.5 state, each where the stored toolpath agrees, under Rule H1. Would settle it: per setting, operations that vary it alone.
+206. **CATIA union-trim references.** The CATIA decoder's reading of a union trim's operands, picks, and stored inputs (§6.5). A label record carries its spec list after either the marker `32e1` or `32cc`, so a reader that looks only after `32e1` reads no spec list where a file uses `32cc`; the field reader places the generic fields `ResultIN` (the first operand) and `ResultOUT` (the result) in pick lists, and keeps only a field's first token, so it can read one of a shell's several removed faces; the cell tables and label records give the operands, the pick, and the stored inputs. None of these readings is in the decoder. Decides the CATIA decoder's `UnionTrim` operands, the picks it keeps in `native_options`, and the inputs a rebuild reads; until then the trim's references from the cell tables and label records. Would settle it: the decoder's field reader run with both markers and every token of a field over union trims' files, its operands and picks set against the cell tables.
+207. **CATIA union trims stated untested.** Whether each CATIA union trim's stored result is the split that `BooleanOp::UnionTrim`'s plane-enclosure rule gives on its operands, which the CATIA decoder states on every union trim under Rule H1's clause for a rule the decoder cannot test (§3.1): the file does not store either operand's solid as it stood before the trim, and testing the rule takes a rebuild of both operands from their own features and a split of the two (§6.5). Built and split outside the decoder, plane enclosure decides each one-operand piece (§6.5); no decoder rebuilds the operands or splits them. Decides whether a trim's stated arm agrees with its stored result; until then the decoder states `UnionTrim` on every trim, the rule holding on every one-operand piece and every trim that stores a result, across the designs that clause's floor needs (the design count inferred), with the picks in `native_options`, and a writer of another format writes the stored result unless it can evaluate the split (§3.4, lowering step 3; §6.5). Would settle it: union trims' operands rebuilt from their features, each trim's split set against its stored result.
+208. **Fusion rest source below Rule H1's threshold.** That Fusion's rest source binds `Technology.rest` (§7.5). Fusion `useRestMachining` true with `restMaterialSource` `previousOperations` is `EarlierOperations`, and with `job` `SetupStock`, read from the source alone: `restMaterialPrevious`, `restMaterialUnion`, and `restMaterialFromJob` are stored by the document's schema version, always true, true, and false, and the separating toolpath's operation stores them, so they are source settings; Autodesk's Fusion help defines both sources. Every earlier operation and the previous operation alone differ only where, inside the stock, the previous operation alone would have the tool slotting; `EarlierOperations` does not meet Rule H1's threshold, and a decoder cannot run the stock check that separates the readings; `SetupStock` is typed from the vendor's page, its toolpaths showing only that earlier operations are ignored, and none separating it from no rest machining; which stock the setup starts from where its stock mode takes the preceding setup's result is not read; the turning binding is inferred. Decides the Fusion decoder's `rest`; until then as §7.5 states. Would settle it: a setup of three operations whose third rests on material the first cleared and the second did not reach, inside the stock, its toolpath set against both readings; a turning rest toolpath set against the setup's earlier operations.
+209. **Decoders' tolerance codes of SolidWorks, Inventor, and CATIA.** The readings by which the SolidWorks, Inventor, and CATIA decoders state a model dimension's `tolerance` (§5.12). SolidWorks' kinds are calibrated on DimXpert annotations: two deviations, symmetric, and kind 1 a basic dimension, the feature-tree `D11` read as basic by inference from the hole it locates, kinds 8 and 9 named by the vendor's order of kinds alone, and kind-7 records with no designation and no deviations stating none. Inventor's code 2 or 3 goes with one designation record in the parameter's segment, joined by shared segment and one-to-one count and not by a decoded pointer, and the two codes are not separated. CATIA writes a slot `E8` for 0.0 and never an explicit binary64 0.0 (in `Range` and `Tolerance` fields), so its records with one slot set state `Deviations` with a lower deviation of 0, inferred, and its enabled records with both slots zero (`E8`) state none. Open: the SolidWorks calibration rests on annotation records, some symmetric ones off, in designs not counted (B.210), whose oracle, the Inventor-decoded PMI of the same test cases, the project holds; kinds 8 and 9 rest on the vendor's order; Inventor's link and codes do not meet Rule H1's threshold; where a record stores a hole and a shaft designation, which one the dimension sizes is read from the stored order, the first being the dimension's own, which is inferred: the Inventor record's `hole_fit` slot comes before its `shaft_fit` slot, a pair of the two (`H7` and `h7`, with zero deviations) is an annotation's, and no model dimension known to the project stores one (§5.12, §8). Decides each decoder's `tolerance`; until then as §5.12 states: the SolidWorks kinds under Rule H1 where the file stores an annotation of the dimension, the kind and values kept as `sldprt:tolerance` where it disagrees; where it stores none, a fit with a designation, `Fit` with `deviations` `Cell` where they are ISO 286's cell at its nominal and `Own` otherwise, and on every other kind no `tolerance`, the kind and values kept as `sldprt:tolerance`, since no kind meets the floor of Rule H1's clause for a rule the decoder cannot test (§3.1) (kinds 5 and 6 are A.5); none on a kind-2 record that holds 0 and 0; and on Inventor, `Fit` with `source: None` and `deviations` `Cell` on a fit at ANSI B4.1's cell and `Own` otherwise, whose designation stays typed (B.211). Would settle it: a SolidWorks part saved with each tolerance kind on one dimension; Inventor parts with two toleranced parameters in one segment, and with each code, the records compared.
+210. **SolidWorks kind 2 calibration's design count.** How many designs the DimXpert records span on which SolidWorks's tolerance kind 2 reads as two deviations, `a` the upper and `b` the lower, which decides whether the reading meets the floor of Rule H1's clause for a rule the decoder cannot test: 9 in 10 of the stored results, in at least 3 distinct designs (§3.1, §5.12). The kind-2 DimXpert annotation records are set against the Inventor-decoded PMI of the same test cases; the feature-tree kind-2 records the reading would govern hold deviations or 0 and 0, none shown with an annotation of its dimension; the design count behind the annotation records is not counted. Decides the SolidWorks decoder's `tolerance` on a kind-2 feature record with no annotation: at 3 designs or more, `Deviations` with `a` the upper and `b` the lower, stated under the clause with its count and design count; until then no `tolerance`, the kind and values kept as `sldprt:tolerance` (§5.12). No type depends on it. Would settle it: the kind-2 records joined again to the Inventor-decoded PMI of the same SolidWorks parts, counted by test case.
+211. **Inventor fits whose deviations match no table read.** What the stored deviations of an Inventor fit record are where they equal no table cell read, another standard's cell or values the user typed, which decides whether the Inventor decoder states their deviations `Own`, the user's, kept through an edit, or `Cell` against another standard's table, cleared by one (§5.12). Each record's designation and deviations are read against the ANSI B4.1 cell at its nominal; no record names its standard. Decides the Inventor decoder's `deviations` arm on such a record; until then `Fit` with the designation typed, `source: None`, and `deviations: Own` with the stored values, a record at ANSI B4.1's cell stating `Cell` (§5.12). Would settle it: an Inventor part saved with one fit under each standard Inventor offers, its stored deviations set against the tables.
+212. **A SolidWorks PMI dimension's decimal key.** The SolidWorks decoder's reading of a PMI dimension's `decimals`, the key a rule by decimals looks the dimension up by (§8, §8.1). The DimXpert dimension records store `BlockToleranceDecimalPlaces`, and SolidWorks semantic dimension records (`DimSemData`) store the displayed places `valPrecision`, with `tolPrecision` for the tolerance. The decoder reads `decimals` from the DimXpert record's `BlockToleranceDecimalPlaces`, and keeps `valPrecision` as `sldprt:val_precision` in the annotation's `source_settings` (case (b), §8). Open: a `DimSemData` record is not joined to the DimXpert dimension or the feature dimension a decoder states, so a PMI dimension read from a semantic record alone has no key read; and no stored dimension known to the project shows the block table applied, since no SolidWorks dimension stores a default deviation (§8.1). Decides the SolidWorks decoder's `decimals` on a PMI dimension with no DimXpert record; until then it states `decimals` from the DimXpert record and `None` where there is none (§8). Would settle it: the `DimSemData` records of SolidWorks parts joined to their DimXpert dimensions by value and kind, each `valPrecision` set against its `BlockToleranceDecimalPlaces` and the drawing's displayed places.
+213. **Creo corner and patch rows no reader frames.** The Creo readings that §6.4's corners and blend patches rest on and that no reader frames or agrees on (§6.4). A junction row with an implicit count stays unframed, its walk stopping at the openers `40`, `07`, `e7`, `1e`, and `04` inside spline arrays; a type-40 `splsrf` junction row is not framed; sphere rows' frame blocks stop at the openers `1e`, `04`, or `e7` or at a `local_sys` head, their sphere tails read; type-44 rows that are `against` for fillets read as a planar two-point cubic, extruded, which the ball stays clear of, and frame as rows on one and as columns on another; inside spline arrays `4b` is seven bytes under `3f b0`, not `3f c0`, and `a4` seven bytes under `bf c0`, not `bf cf`, which give unit tangents; on the patch records `1e` is eight bytes under `bc`, `1c` a four-byte near-zero form in a plane's frame, a named cylinder row's axis its local system's column 3, where the format document's cross-product rule gives the wrong axis, `ruled_srf` rows positional replays of the prototype's local system, height, and two arcs, a plane row's `e3` found only at a token boundary, and a cylinder of R 276.625 that a reader reads as R 2; the patch faces' stored derivative arrays read several ways, so their tangency to the end piece is not read; faces that one reader counts as on the plane in `against` and another reads as not tangent to it are `Native("creo:12")` either way (§6.4). The straight-fillet distance and the tagged plane frame are reader faults, and a cylinder from these readings counts only where a fit confirms it. Open: the rows above unframed; the patches' tangency to their end pieces; the decoder's own reading of the faces readers disagree on. Decides the Creo decoder's frames for these rows; until then the corners they carry are `Native("creo:12")` or `Native("creo:7")` with their stored faces, and the code-2 records with patches `Native("creo:2")` (§6.4). Would settle it: the implicit-count and type-40 rows read with a framing that closes their walks; the type-44 frames set against the faces they carry; the patch faces' derivative arrays read one way that agrees on every sample; the faces readers disagree on graded with the decoder's reader.
+214. **Document names outside SolidWorks.** What the document name of a definition stored as a file is in formats other than SolidWorks, which `source_name` and `PartNumber::DocumentName` read (§5.11, §8.1). For SolidWorks the name without its extension is inferred from a design-table cell equal to the file's stem. A Creo file name carries two suffixes (`name.prt.3`), so "without its extension" has two readings there, and no other format's stored name is set against its file. Decides each decoder's `source_name` outside SolidWorks; until then §8.1's rule as stated. Would settle it: per format, the stored strings that name a definition's own file (a design-table cell, an assembly's reference, a drawing's model reference) set against the file's name.
+215. **Fusion bend and unfold readings.** The Fusion readings of a bend's angle sign and stationary face and of an unfold's references (§6.6). A bend's angle keeps its sign, and what a negative angle bends is not established; one of a bend's face groups is read as its stationary face, and an unfold's reference groups as its bend faces and its stationary face and its control as selected or all bends, none set against a stored state. Decides the Fusion decoder's `angle` on a bend with a negative angle, `fixed_side`, and the unfold's `fixed` and `bends`; until then `angle: None` with `f3d:bend_angle`, `fixed_side: None` with `f3d:bend_stationary`, and `Unread` picks with the stored references in `Selection.native` and `f3d:unfold_all_bends`. Would settle it: bends of one line with angles of each sign and each side kept, and unfolds with selected and all bends, their stored faces set against the readings.
+216. **Fusion path pattern readings.** The Fusion readings of a path pattern's reordered settings record and of a role-`0x4` seed (§6.5). The decoder reads a settings record of the reordered form at the offsets of the 267-byte form, so its distance-type, flip, and orientation bytes are read on an assumption; it reads a role-`0x4` seed member's compact identity as a feature index, which can also match a topology identity. Decides the Fusion decoder's spacing, `sides`, and `orientation` for the reordered form, and its pick of such a seed; until then `Spacing::Native("f3d:path_spacing")`, `sides: None`, and `orientation: None` with the count, the distance, and the bytes as native options, and a `Native` pick with the seed's stored identity. Would settle it: reordered-form patterns saved with the count, the distance type, the flip, and the orientation changed alone, and feature and face seeds whose identities collide.
+217. **Fusion contour flange readings.** The Fusion readings of a contour flange's thickness side and of its bend radius where it stores no `BendRadius` (§6.6). The decoder reads Fusion's API's documented SideOne default as the profile's left, and the linked rule's first entry as the inside bend radius; neither is set against a stored state. Decides the Fusion decoder's side of `thickness` and its `bend.radius`; until then `side: None`, and `bend.radius: None` with the native option `f3d:contour_flange_rule_radius`. Would settle it: contour flanges saved with the thickness side and the rule's radius changed alone, their stored faces set against the readings.
+218. **Fusion rule K-factor.** Which stored value of a Fusion sheet-metal rule is its K-factor (§6.6). The decoder reads it as the finite scalar that opens the rule's material trailer, before the material name; no stored file sets that scalar against the K-factor the rule was saved with or against a governed bend's flat length. Decides the Fusion decoder's `allowance`, `BendAllowance::KFactor` from that scalar; until then `allowance: None` with the native option `f3d:rule_k_factor`. Would settle it: rules saved with the K-factor changed alone, the scalar set against the value set, and the flat lengths of their governed bends set against it.
+219. **Bare numbers beside a quantity where the source declares a unit.** Whether a bare number that is an operand beside a quantity, in an NX formula or in a Creo relation that creates a parameter with a declared unit, is read in the declared unit or in the part's unit, and whether Creo's units-sensitivity setting for relations changes it (§5.13). The decoder reads the declared unit under Rule H1. NX stores no evaluated value for a formula, and no Creo parameter the decoder reads from a stored file known to the project declares a unit, so neither reading is tested, and such a tree is `Source` until the reading meets Rule H1's floor. Would settle it: an NX part whose formula adds a bare number to a parameter of another unit and drives a dimension, set against its geometry; a Creo model whose relation declares a unit on a parameter that a dimension then reads, set against the dimension's stored value.
+220. **A reference to a parameter of another document.** How CATIA, NX, SolidWorks, and FreeCAD store a reference to a parameter of a document that was not read. No stored file known to the project holds one. Open: whether CATIA and NX hold it as a local parameter with its own declared type and stored value (a CATIA external parameter, an NX interpart expression), and whether a SolidWorks assembly's equation manager stores a number beside a component's dimension that a line reads, as it does beside the part's own. Decides whether the decoder states the reference as a source parameter's whole expression or mints the parameter, and whether a minted parameter has a `value` (§5.12, §5.13); until then a decoder states what its file shows, and mints a parameter with no `value` where the source names the reference inside a longer expression. Would settle it: per format, one file that reads a parameter of another document, decoded without that document.
+221. **Expression-bound properties not yet read.** An NX part attribute linked to an expression (§5.12): no stored file shows that the attribute's type and the expression's value are stored, so a decoder does not mint this parameter from that link. A Rhino user-text formula (`%<…>%`) is `AttributeValue::String` until a stored file shows what it evaluates to. Would settle it: an NX part whose attribute is linked to an expression, its attribute record read against the expression's stored value; a Rhino model whose user-text formula's value is known.
+222. **Evaluation order of `and` and `or`.** Whether CATIA, Creo, NX, and FreeCAD skip the right operand of `and` or `or` once the left decides the result (§5.13). `docs/formats/catia.md` reads CATIA's as skipping; no stored file known to the project holds a guard whose skipped operand fails, so the reading is untested, and no reading is made for the others. Decides whether a decoder translates `a and b` as `if(a, b, false)` and `a or b` as `if(a, true, b)`. Until then `and` and `or` translate as themselves, and an expression whose skipped operand fails in the document's evaluation keeps the cache the source stores. Would settle it: per format, a stored file whose `and` or `or` guards an operand that fails at the stored inputs, with the expression's stored cache, or a vendor page that states the order.
+223. **Fusion split tool extension law.** By which law Fusion continues a cut whose tool stops inside the target (§6.5). Decides `ToolExtension::Extended.method` for Fusion; until then `None`. Would settle it: a stored split whose tool is a freeform face that ends inside the target, its added edges read against the tool's carrier.
+224. **Creo hole intersect id.** The `geometry1_id` of a type-76 instruction on a Creo assembly hole whose display level is top level and that no `ASMCUT_COPY` names itself. On an assembly cut the same level stores that id as the copy's key. No feature of the participant's part carries it. Decides what the id names (§6.7); until then the participant is `Instances` and the id is the feature's native option `creo:intersect_id`. Would settle it: one such hole whose id joins a record of the assembly or of the part.
+225. **Creo pattern member with no intersect instruction.** That a member of a patterned Creo assembly feature that holds no intersect instruction cuts its leader's participants, at the leader's levels (§6.7). Under `pat_type` bit 8 the `ASMCUT_COPY` that names the leader holds the surfaces of every member, a member with no instruction among them. No stored file known to the project holds such a member under another pattern option, or under a leader with a part-level participant. Decides the participants the Creo decoder states for such a member; until then the leader's. Would settle it: a patterned assembly cut with a part-level participant, saved under each regeneration option, with the participant's part.
 
 ## Annex A. Record types stated by schema
 
 Each type below is given by the JSON Schema of its wire form, generated from the reference implementation when this document was released and frozen with it; a change to it is a change of wire (§3.6). Each type's description states every condition a reader enforces on its values (§2.8). §5.6 states the evaluation of the analytic, NURBS, polyline, and placed carriers. A procedural definition is stated by its fields: this document states no evaluation for it beyond the solved carrier its record caches (D23).
+
+### `BlendCrossSection`
+
+```json
+{
+  "description": "Cross-section family of a procedural blend.",
+  "oneOf": [
+    {
+      "description": "Constant-radius circular cross-section.",
+      "type": "string",
+      "const": "circular"
+    },
+    {
+      "description": "Conic (non-circular quadric) cross-section.",
+      "type": "string",
+      "const": "conic"
+    },
+    {
+      "description": "Free-form polynomial cross-section.",
+      "type": "string",
+      "const": "polynomial"
+    }
+  ]
+}
+```
+
+### `BlendRadiusLaw`
+
+```json
+{
+  "description": "Radius law for a procedural blend.",
+  "oneOf": [
+    {
+      "description": "Constant blend radius along the whole spine.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "constant"
+        },
+        "signed_radius": {
+          "description": "Signed radius, in document length units; sign selects the support offset side.",
+          "$ref": "#/$defs/Length"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "signed_radius"
+      ]
+    },
+    {
+      "description": "Radius varying linearly from `start` to `end` along the spine.",
+      "type": "object",
+      "properties": {
+        "end": {
+          "description": "Signed radius at the spine end, in document length units.",
+          "$ref": "#/$defs/Length"
+        },
+        "kind": {
+          "type": "string",
+          "const": "linear"
+        },
+        "start": {
+          "description": "Signed radius at the spine start, in document length units.",
+          "$ref": "#/$defs/Length"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "start",
+        "end"
+      ]
+    },
+    {
+      "description": "Radius varying along the spine per an explicit law curve.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Curve whose parameterization gives the signed radius along the spine.",
+          "$ref": "#/$defs/NurbsCurve"
+        },
+        "kind": {
+          "type": "string",
+          "const": "law"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "curve"
+      ]
+    }
+  ]
+}
+```
+
+### `BlendSupport`
+
+```json
+{
+  "description": "One oriented support of a procedural blend.",
+  "type": "object",
+  "properties": {
+    "reversed": {
+      "description": "Selects the opposite surface-normal side when true.",
+      "type": "boolean"
+    },
+    "surface": {
+      "description": "The support surface.",
+      "$ref": "#/$defs/SurfaceId"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "surface",
+    "reversed"
+  ]
+}
+```
+
+### `CacheContract`
+
+```json
+{
+  "description": "The cache contract of a construction that has both a legacy and a\nrevision-gated layout: the tolerance is stated in exactly one of them.",
+  "oneOf": [
+    {
+      "description": "Legacy layout, which states its own solved-cache tolerance.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract, absent when the record stated none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "legacy"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Revision-gated layout, which states the tolerance in its cache form.",
+      "type": "object",
+      "properties": {
+        "form": {
+          "description": "Revision-gated form.",
+          "$ref": "#/$defs/RevisionSurfaceForm"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "form"
+      ]
+    }
+  ]
+}
+```
+
+### `CacheContract2`
+
+```json
+{
+  "description": "The cache contract of a construction that has both a legacy and a\nrevision-gated layout: the tolerance is stated in exactly one of them.",
+  "oneOf": [
+    {
+      "description": "Legacy layout, which states its own solved-cache tolerance.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract, absent when the record stated none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "legacy"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Revision-gated layout, which states the tolerance in its cache form.",
+      "type": "object",
+      "properties": {
+        "form": {
+          "description": "Revision-gated form.",
+          "$ref": "#/$defs/LoftRevisionForm"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "form"
+      ]
+    }
+  ]
+}
+```
+
+### `CacheContract3`
+
+```json
+{
+  "description": "The cache contract of a construction that has both a legacy and a\nrevision-gated layout: the tolerance is stated in exactly one of them.",
+  "oneOf": [
+    {
+      "description": "Legacy layout, which states its own solved-cache tolerance.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract, absent when the record stated none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "legacy"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Revision-gated layout, which states the tolerance in its cache form.",
+      "type": "object",
+      "properties": {
+        "form": {
+          "description": "Revision-gated form.",
+          "$ref": "#/$defs/SweepRevisionForm"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "form"
+      ]
+    }
+  ]
+}
+```
+
+### `CacheContract4`
+
+```json
+{
+  "description": "The cache contract of a construction that has both a legacy and a\nrevision-gated layout: the tolerance is stated in exactly one of them.",
+  "oneOf": [
+    {
+      "description": "Legacy layout, which states its own solved-cache tolerance.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract, absent when the record stated none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "legacy"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Revision-gated layout, which states the tolerance in its cache form.",
+      "type": "object",
+      "properties": {
+        "form": {
+          "description": "Revision-gated form.",
+          "$ref": "#/$defs/RollingBallConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "form"
+      ]
+    }
+  ]
+}
+```
+
+### `CacheContract5`
+
+```json
+{
+  "description": "The cache contract of a construction that has both a legacy and a\nrevision-gated layout: the tolerance is stated in exactly one of them.",
+  "oneOf": [
+    {
+      "description": "Legacy layout, which states its own solved-cache tolerance.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract, absent when the record stated none.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "legacy"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Revision-gated layout, which states the tolerance in its cache form.",
+      "type": "object",
+      "properties": {
+        "form": {
+          "description": "Revision-gated form.",
+          "$ref": "#/$defs/CacheFirstCurveForm"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "form"
+      ]
+    }
+  ]
+}
+```
+
+### `CacheFirstCurveForm`
+
+```json
+{
+  "description": "Cache-first shared-context fields absent from the context-first layout.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared context enum.",
+      "$ref": "#/$defs/RevisionCacheForm2"
+    },
+    "extension": {
+      "description": "Native integer ASM extension following the discontinuity arrays.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer selecting the cache-first layout.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "solved_range": {
+      "description": "Optional solved-curve interval endpoints; absent endpoints inherit the\nsolved NURBS domain.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "support_bounds": {
+      "description": "Optional U/V bound fields following each ordered support surface.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "maxItems": 4,
+        "minItems": 4
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "revision",
+    "cache",
+    "support_bounds",
+    "solved_range",
+    "extension"
+  ]
+}
+```
+
+### `CompositeCurveSegment`
+
+```json
+{
+  "description": "One directed child use in a composite curve.",
+  "type": "object",
+  "properties": {
+    "curve": {
+      "description": "Referenced child curve carrier.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "same_sense": {
+      "description": "Whether the child parameter direction is retained.",
+      "type": "boolean"
+    },
+    "transition": {
+      "description": "Required continuity from the preceding segment to this segment.",
+      "$ref": "#/$defs/CompositeCurveTransition"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "curve",
+    "same_sense",
+    "transition"
+  ]
+}
+```
+
+### `CompositeCurveSegments`
+
+```json
+{
+  "description": "Non-empty ordered child uses of a composite curve.",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/CompositeCurveSegment"
+  }
+}
+```
+
+### `CompositeCurveTransition`
+
+```json
+{
+  "description": "STEP composite-curve transition continuity.",
+  "oneOf": [
+    {
+      "description": "No positional continuity is asserted.",
+      "type": "string",
+      "const": "discontinuous"
+    },
+    {
+      "description": "Positional continuity.",
+      "type": "string",
+      "const": "continuous"
+    },
+    {
+      "description": "Positional and tangent continuity.",
+      "type": "string",
+      "const": "cont_same_gradient"
+    },
+    {
+      "description": "Positional, tangent, and curvature continuity.",
+      "type": "string",
+      "const": "cont_same_gradient_same_curvature"
+    }
+  ]
+}
+```
+
+### `CompoundComponent`
+
+```json
+{
+  "description": "One component and its native construction scalar.",
+  "type": "object",
+  "properties": {
+    "component": {
+      "description": "Component geometry or its resolved identity.",
+      "$ref": "#/$defs/SurfaceId"
+    },
+    "parameter": {
+      "description": "Scalar paired with this component.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "parameter",
+    "component"
+  ]
+}
+```
+
+### `CompoundComponent2`
+
+```json
+{
+  "description": "One component and its native construction scalar.",
+  "type": "object",
+  "properties": {
+    "component": {
+      "description": "Component geometry or its resolved identity.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "parameter": {
+      "description": "Scalar paired with this component.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "parameter",
+    "component"
+  ]
+}
+```
+
+### `CompoundLoftConstruction`
+
+```json
+{
+  "description": "Complete native compound-loft construction graph.",
+  "type": "object",
+  "properties": {
+    "flags": {
+      "description": "Two flags before the tail kind.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "scales": {
+      "description": "Present scales, up to the five native slots.",
+      "$ref": "#/$defs/CompoundLoftScales_5"
+    },
+    "tail": {
+      "description": "Kind-specific trailing graph.",
+      "$ref": "#/$defs/CompoundLoftTail"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "scales",
+    "flags",
+    "tail"
+  ]
+}
+```
+
+### `CompoundLoftDirection`
+
+```json
+{
+  "description": "Direction carrier in the zero-kind compound-loft tail.",
+  "oneOf": [
+    {
+      "description": "Inline direction vector. This form has no native selector.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "vector"
+        },
+        "value": {
+          "description": "Stored direction.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "BS3 direction curve and its nonzero native selector.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Stored curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "kind": {
+          "type": "string",
+          "const": "curve"
+        },
+        "selector": {
+          "description": "Exact nonzero native selector retained for byte-faithful export.",
+          "type": "integer",
+          "format": "int64",
+          "not": {
+            "const": 0
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "curve",
+        "selector"
+      ]
+    }
+  ]
+}
+```
+
+### `CompoundLoftScale`
+
+```json
+{
+  "description": "Complete `_readScaleClLoft` payload.",
+  "type": "object",
+  "properties": {
+    "auxiliaries": {
+      "description": "Ordered BS3 auxiliary curves.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CurveId"
+      }
+    },
+    "members": {
+      "description": "Ordered scale members.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CompoundLoftScaleMember"
+      }
+    },
+    "path": {
+      "description": "Scale path curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "tail": {
+      "description": "Two native trailing integers.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "members",
+    "path",
+    "auxiliaries",
+    "tail"
+  ]
+}
+```
+
+### `CompoundLoftScaleMember`
+
+```json
+{
+  "description": "One member of a compound-loft scale block.",
+  "type": "object",
+  "properties": {
+    "curve": {
+      "description": "Member curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "data": {
+      "description": "Native loft constraint data.",
+      "$ref": "#/$defs/LoftProfileData"
+    },
+    "type_code": {
+      "description": "Native member integer.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "type_code",
+    "curve",
+    "data"
+  ]
+}
+```
+
+### `CompoundLoftScales_3`
+
+```json
+{
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/CompoundLoftScale"
+  },
+  "maxItems": 3
+}
+```
+
+### `CompoundLoftScales_5`
+
+```json
+{
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/CompoundLoftScale"
+  },
+  "maxItems": 5
+}
+```
+
+### `CompoundLoftTail`
+
+```json
+{
+  "description": "Structurally selected tail of `cl_loft_spl_sur`.",
+  "oneOf": [
+    {
+      "description": "Native kind `6` tail.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "BS3 tail curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "direction": {
+          "description": "Stored direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "flags": {
+          "description": "Two leading flags.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "six"
+        },
+        "parameter_range": {
+          "description": "Native parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "scale": {
+          "description": "Required scale block.",
+          "$ref": "#/$defs/CompoundLoftScale"
+        },
+        "selector": {
+          "description": "Native integer following the scale.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "flags",
+        "scale",
+        "selector",
+        "direction",
+        "parameter_range",
+        "curve"
+      ]
+    },
+    {
+      "description": "Native kind `7` tail.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Stored direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "first_flag": {
+          "description": "First flag.",
+          "type": "boolean"
+        },
+        "first_scale": {
+          "description": "First optional scale block.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CompoundLoftScale"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "seven"
+        },
+        "second_flag": {
+          "description": "Second flag.",
+          "type": "boolean"
+        },
+        "second_scale": {
+          "description": "Required second scale block.",
+          "$ref": "#/$defs/CompoundLoftScale"
+        },
+        "selector": {
+          "description": "Native selector integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "trailing_flags": {
+          "description": "Two trailing flags.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "first_flag",
+        "second_flag",
+        "second_scale",
+        "selector",
+        "direction",
+        "trailing_flags"
+      ]
+    },
+    {
+      "description": "Native kind `0` tail.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Vector or BS3 curve with its derived native selector.",
+          "$ref": "#/$defs/CompoundLoftDirection"
+        },
+        "flags": {
+          "description": "Two leading flags.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "zero"
+        },
+        "trailing_flags": {
+          "description": "Two trailing flags.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "flags",
+        "direction",
+        "trailing_flags"
+      ]
+    }
+  ]
+}
+```
+
+### `CurveOffsetCoordinate`
+
+```json
+{
+  "description": "A one-based coordinate of a curve-offset distance function.",
+  "type": "integer",
+  "format": "uint8",
+  "maximum": 255,
+  "minimum": 0
+}
+```
+
+### `CurveOffsetDistanceLaw`
+
+```json
+{
+  "description": "Variable signed distance law for a planar curve offset.",
+  "oneOf": [
+    {
+      "description": "Linear interpolation between two distance controls.",
+      "type": "object",
+      "properties": {
+        "basis": {
+          "description": "Independent-variable interpretation.",
+          "$ref": "#/$defs/CurveOffsetLawBasis"
+        },
+        "control_range": {
+          "description": "Ordered arc-length or neutral carrier-parameter controls.",
+          "$ref": "#/$defs/IncreasingParameterInterval"
+        },
+        "distances": {
+          "description": "Ordered signed distances in document length units.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "linear"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "basis",
+        "distances",
+        "control_range"
+      ]
+    },
+    {
+      "description": "One coordinate of another curve defines the signed distance.",
+      "type": "object",
+      "properties": {
+        "basis": {
+          "description": "Independent-variable interpretation.",
+          "$ref": "#/$defs/CurveOffsetLawBasis"
+        },
+        "coordinate": {
+          "description": "One-based coordinate number on `function`.",
+          "$ref": "#/$defs/CurveOffsetCoordinate"
+        },
+        "function": {
+          "description": "Curve carrying the distance function.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "function_parameter_offset": {
+          "description": "Function parameter at zero source parameter or arc length.",
+          "type": "number",
+          "format": "double"
+        },
+        "function_parameter_scale": {
+          "description": "Function-parameter change per neutral source parameter or length unit.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "coordinate"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "function",
+        "coordinate",
+        "basis",
+        "function_parameter_offset",
+        "function_parameter_scale"
+      ]
+    }
+  ]
+}
+```
+
+### `CurveOffsetLawBasis`
+
+```json
+{
+  "description": "Independent variable used by a curve-offset distance law.",
+  "oneOf": [
+    {
+      "description": "Distance measured along the source curve from the offset interval start.",
+      "type": "string",
+      "const": "arc_length"
+    },
+    {
+      "description": "Native source-curve parameter.",
+      "type": "string",
+      "const": "parameter"
+    }
+  ]
+}
+```
+
+### `CurveOffsetRange`
+
+```json
+{
+  "description": "Parameter interval and optional variable-distance law of a curve offset.",
+  "oneOf": [
+    {
+      "description": "Constant-distance offset over a retained source interval.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "uniform"
+        },
+        "parameter_range": {
+          "description": "Parameter interval on the source curve.",
+          "$ref": "#/$defs/IncreasingParameterInterval"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameter_range"
+      ]
+    },
+    {
+      "description": "Variable-distance offset over the interval used by its law.",
+      "type": "object",
+      "properties": {
+        "distance_law": {
+          "description": "Variable signed-distance law.",
+          "$ref": "#/$defs/CurveOffsetDistanceLaw"
+        },
+        "kind": {
+          "type": "string",
+          "const": "variable"
+        },
+        "parameter_range": {
+          "description": "Parameter interval on the source curve.",
+          "$ref": "#/$defs/IncreasingParameterInterval"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameter_range",
+        "distance_law"
+      ]
+    }
+  ]
+}
+```
+
+### `DeformableCurveData`
+
+```json
+{
+  "description": "Discriminator-specific payload of a deformable native intcurve.",
+  "oneOf": [
+    {
+      "description": "Mode 8 vector field followed by ordered scalar pairs.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "vector_field"
+        },
+        "parameter_pairs": {
+          "description": "Ordered pairs from the mode-8 scalar table.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          }
+        },
+        "vectors": {
+          "description": "Four ordered native vectors.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "vectors",
+        "parameter_pairs"
+      ]
+    },
+    {
+      "description": "Mode 3 fixed deformation payload.",
+      "type": "object",
+      "properties": {
+        "frame_flags": {
+          "description": "Two flags following the frame scalar.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "frame_parameter": {
+          "description": "Scalar following the trailing frame.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "mode3"
+        },
+        "leading_flags": {
+          "description": "Three flags following the leading scalar.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "leading_parameter": {
+          "description": "Scalar following the leading vectors.",
+          "type": "number",
+          "format": "double"
+        },
+        "leading_vectors": {
+          "description": "Four vectors at the start of the payload.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "parameters": {
+          "description": "Three ordered scalars following the frame flags.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "trailing_flags": {
+          "description": "Five flags following the ordered scalars.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 5,
+          "minItems": 5
+        },
+        "trailing_parameter": {
+          "description": "Final scalar before the trailing integer.",
+          "type": "number",
+          "format": "double"
+        },
+        "trailing_point": {
+          "description": "Position following the leading flags.",
+          "$ref": "#/$defs/Point3"
+        },
+        "trailing_value": {
+          "description": "Integer closing the mode-3 payload.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "trailing_vectors": {
+          "description": "Two vectors following the position.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "leading_vectors",
+        "leading_parameter",
+        "leading_flags",
+        "trailing_point",
+        "trailing_vectors",
+        "frame_parameter",
+        "frame_flags",
+        "parameters",
+        "trailing_flags",
+        "trailing_parameter",
+        "trailing_value"
+      ]
+    }
+  ]
+}
+```
+
+### `DeformableCurveSource`
+
+```json
+{
+  "description": "Source slot of a deformable native intcurve.",
+  "oneOf": [
+    {
+      "description": "Source geometry resolved to a neutral curve carrier.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Curve being deformed.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "kind": {
+          "type": "string",
+          "const": "curve"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "curve"
+      ]
+    },
+    {
+      "description": "Native intcurve reference whose target is absent from the active subtype table.",
+      "type": "object",
+      "properties": {
+        "flag": {
+          "description": "Boolean stored before the reference scope.",
+          "type": "boolean"
+        },
+        "index": {
+          "description": "Integer stored by the native `ref` subtype.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "native_reference"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "flag",
+        "index"
+      ]
+    }
+  ]
+}
+```
+
+### `DeformableSurfaceConstruction`
+
+```json
+{
+  "description": "Complete native deformable-surface construction.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Cache contract: the revision-gated fields surrounding the support and\nshared surface tail, or the legacy solved-cache tolerance this\nconstruction states instead.",
+      "$ref": "#/$defs/CacheContract"
+    },
+    "data": {
+      "description": "Discriminator-selected deformation data.",
+      "$ref": "#/$defs/DeformableSurfaceData"
+    },
+    "discontinuities": {
+      "description": "Six ordered solved-surface discontinuity arrays.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "discontinuity_flag": {
+      "description": "Native discontinuity tail flag.",
+      "type": "boolean"
+    },
+    "support": {
+      "description": "Surface being deformed.",
+      "$ref": "#/$defs/SurfaceId"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "support",
+    "data",
+    "cache",
+    "discontinuities",
+    "discontinuity_flag"
+  ]
+}
+```
+
+### `DeformableSurfaceData`
+
+```json
+{
+  "description": "Structurally selected deformable-surface payload.",
+  "oneOf": [
+    {
+      "description": "Mode-6 full embedded deformation payload.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Embedded deformation curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "first_parameter": {
+          "description": "First scalar after the flag.",
+          "type": "number",
+          "format": "double"
+        },
+        "flag": {
+          "description": "Native support-side flag.",
+          "type": "boolean"
+        },
+        "frames": {
+          "description": "Two ordered full vector frames.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DeformableVectorFrame"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "full"
+        },
+        "leading_flags": {
+          "description": "Three leading flags.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "leading_parameter": {
+          "description": "Leading deformation scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "leading_vectors": {
+          "description": "Four leading deformation vectors.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "native_id": {
+          "description": "Native long after the support.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "second_parameter": {
+          "description": "Second scalar after the optional long.",
+          "type": "number",
+          "format": "double"
+        },
+        "selector": {
+          "description": "Native selector before the secondary support.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "surface": {
+          "description": "Secondary embedded support surface.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "trailing_value": {
+          "description": "Native trailing long.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "version_value": {
+          "description": "Version-gated ASM long when present.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "leading_vectors",
+        "leading_parameter",
+        "leading_flags",
+        "selector",
+        "surface",
+        "native_id",
+        "flag",
+        "first_parameter",
+        "second_parameter",
+        "curve",
+        "frames",
+        "trailing_value"
+      ]
+    },
+    {
+      "description": "Mode-5 surface-and-curve deformation payload.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Embedded deformation curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "first_parameter": {
+          "description": "First native scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "flag": {
+          "description": "Native leading flag.",
+          "type": "boolean"
+        },
+        "flags": {
+          "description": "Three frame flags.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "frame_parameter": {
+          "description": "Frame scalar after the vectors.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "surface_curve"
+        },
+        "native_id": {
+          "description": "Native long identifier.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "parameter_triples": {
+          "description": "Counted ordered scalar triples.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 3,
+            "minItems": 3
+          }
+        },
+        "second_parameter": {
+          "description": "Second native scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "selector": {
+          "description": "Native selector integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "surface": {
+          "description": "Secondary embedded support surface.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "vectors": {
+          "description": "Four ordered deformation vectors.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "surface",
+        "native_id",
+        "flag",
+        "first_parameter",
+        "selector",
+        "second_parameter",
+        "curve",
+        "vectors",
+        "frame_parameter",
+        "flags",
+        "parameter_triples"
+      ]
+    },
+    {
+      "description": "Mode-1 deformation frame with counted parameter triples.",
+      "type": "object",
+      "properties": {
+        "frame": {
+          "description": "Shared full deformation frame.",
+          "$ref": "#/$defs/DeformableSurfaceFrame"
+        },
+        "kind": {
+          "type": "string",
+          "const": "plain"
+        },
+        "parameter_triples": {
+          "description": "Ordered native scalar triples.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 3,
+            "minItems": 3
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "frame",
+        "parameter_triples"
+      ]
+    },
+    {
+      "description": "Mode-3 deformation frame with a guide scalar.",
+      "type": "object",
+      "properties": {
+        "frame": {
+          "description": "Shared full deformation frame.",
+          "$ref": "#/$defs/DeformableSurfaceFrame"
+        },
+        "guide_parameter": {
+          "description": "Native guide scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "guided"
+        },
+        "selector": {
+          "description": "Native guide selector.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "frame",
+        "selector",
+        "guide_parameter"
+      ]
+    },
+    {
+      "description": "Mode-8 minimal four-vector scaffold.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "minimal"
+        },
+        "selector": {
+          "description": "Native trailing selector.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "vectors": {
+          "description": "Four ordered deformation vectors.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "vectors",
+        "selector"
+      ]
+    },
+    {
+      "description": "Revision-gated mode-3 deformation payload.",
+      "type": "object",
+      "properties": {
+        "frame_flags": {
+          "description": "Two flags following the trailing frame scalar.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "frame_parameter": {
+          "description": "Scalar following the trailing vectors.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision_mode3"
+        },
+        "leading_flags": {
+          "description": "Three flags following the leading scalar.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "leading_parameter": {
+          "description": "Scalar following the leading vectors.",
+          "type": "number",
+          "format": "double"
+        },
+        "leading_vectors": {
+          "description": "Four leading deformation vectors.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "parameters": {
+          "description": "Three ordered scalar parameters following the trailing frame.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "trailing_flags": {
+          "description": "Five flags following the ordered scalar parameters.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 5,
+          "minItems": 5
+        },
+        "trailing_parameter": {
+          "description": "Scalar preceding the payload's final integer.",
+          "type": "number",
+          "format": "double"
+        },
+        "trailing_point": {
+          "description": "Position anchoring the trailing frame.",
+          "$ref": "#/$defs/Point3"
+        },
+        "trailing_value": {
+          "description": "Integer closing the revision mode-3 payload.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "trailing_vectors": {
+          "description": "Two vectors following the trailing point.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "leading_vectors",
+        "leading_parameter",
+        "leading_flags",
+        "trailing_point",
+        "trailing_vectors",
+        "frame_parameter",
+        "frame_flags",
+        "parameters",
+        "trailing_flags",
+        "trailing_parameter",
+        "trailing_value"
+      ]
+    }
+  ]
+}
+```
+
+### `DeformableSurfaceFrame`
+
+```json
+{
+  "description": "Shared frame payload of deformable-surface modes 1 and 3.",
+  "type": "object",
+  "properties": {
+    "leading_flags": {
+      "description": "Three leading frame flags.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 3,
+      "minItems": 3
+    },
+    "leading_parameter": {
+      "description": "Leading frame scalar.",
+      "type": "number",
+      "format": "double"
+    },
+    "leading_vectors": {
+      "description": "Four leading deformation vectors.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Vector3"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    },
+    "point": {
+      "description": "Native model-space frame point.",
+      "$ref": "#/$defs/Point3"
+    },
+    "secondary_flags": {
+      "description": "Two secondary frame flags.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "secondary_parameter": {
+      "description": "Secondary frame scalar.",
+      "type": "number",
+      "format": "double"
+    },
+    "secondary_vectors": {
+      "description": "Three secondary deformation vectors.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Vector3"
+      },
+      "maxItems": 3,
+      "minItems": 3
+    },
+    "trailing_flags": {
+      "description": "Five trailing frame flags.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 5,
+      "minItems": 5
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "leading_vectors",
+    "leading_parameter",
+    "leading_flags",
+    "secondary_vectors",
+    "secondary_parameter",
+    "secondary_flags",
+    "point",
+    "trailing_flags"
+  ]
+}
+```
+
+### `DeformableVectorFrame`
+
+```json
+{
+  "description": "Four-vector frame used by full deformable surfaces.",
+  "type": "object",
+  "properties": {
+    "flags": {
+      "description": "Three ordered flags.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 3,
+      "minItems": 3
+    },
+    "parameter": {
+      "description": "Frame scalar.",
+      "type": "number",
+      "format": "double"
+    },
+    "vectors": {
+      "description": "Four ordered vectors.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Vector3"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "vectors",
+    "parameter",
+    "flags"
+  ]
+}
+```
+
+### `EdgeOffsetDiscriminator`
+
+```json
+{
+  "description": "Native edge-offset blend-value sub-discriminator.",
+  "type": "integer",
+  "format": "int64"
+}
+```
+
+### `ExactSpline`
+
+```json
+{
+  "description": "Mutually exclusive legacy and revision-gated exact-spline layouts.",
+  "oneOf": [
+    {
+      "description": "Legacy solved-cache layout with ordered U/V ranges.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this layout states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "extension": {
+          "description": "Native ASM extension integer following the ranges.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "legacy"
+        },
+        "ranges": {
+          "description": "Ordered U and V parameter ranges.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ranges",
+        "extension"
+      ]
+    },
+    {
+      "description": "Revision-gated layout with optional interval bounds and shared form.",
+      "type": "object",
+      "properties": {
+        "extension": {
+          "description": "Native ASM extension enum following the intervals.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "form": {
+          "description": "Required revision-gated form.",
+          "$ref": "#/$defs/RevisionSurfaceForm"
+        },
+        "intervals": {
+          "description": "Two optional-bound parameter intervals in wire order.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "intervals",
+        "extension",
+        "form"
+      ]
+    }
+  ]
+}
+```
+
+### `FinitePoint2`
+
+```json
+{
+  "description": "A parameter-space point with finite coordinates.",
+  "type": "object",
+  "properties": {
+    "u": {
+      "description": "U parameter.",
+      "type": "number",
+      "format": "double"
+    },
+    "v": {
+      "description": "V parameter.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "u",
+    "v"
+  ]
+}
+```
+
+### `FinitePoint3`
+
+```json
+{
+  "description": "A model-space point with finite coordinates.",
+  "$ref": "#/$defs/Point3"
+}
+```
+
+### `FiniteVector3`
+
+```json
+{
+  "description": "A displacement with finite components, including zero.",
+  "$ref": "#/$defs/Vector3"
+}
+```
+
+### `G2BlendConstruction`
+
+```json
+{
+  "description": "Full native G2 blend construction graph.",
+  "type": "object",
+  "properties": {
+    "center_curve": {
+      "description": "Center or transition curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "center_flag": {
+      "description": "Native center tail integer.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "center_parameters": {
+      "description": "Ordered center-curve scalars.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "discontinuities": {
+      "description": "Three ordered ASM discontinuity arrays.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 3,
+      "minItems": 3
+    },
+    "first": {
+      "description": "First side common fields.",
+      "$ref": "#/$defs/G2BlendSide"
+    },
+    "first_shape": {
+      "description": "First-side singularity payload.",
+      "$ref": "#/$defs/G2BlendFirstShape"
+    },
+    "parameter_ranges": {
+      "description": "Native U and V intervals.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "maxItems": 2,
+        "minItems": 2
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "second": {
+      "description": "Second side common fields.",
+      "$ref": "#/$defs/G2BlendSide"
+    },
+    "second_exact_surface": {
+      "description": "Exact second-side spline support.",
+      "$ref": "#/$defs/SurfaceId"
+    },
+    "singularity": {
+      "description": "Native first-side singularity enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "trailing_parameters": {
+      "description": "Four ordered trailing scalars.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "first",
+    "singularity",
+    "first_shape",
+    "second",
+    "second_exact_surface",
+    "center_curve",
+    "center_parameters",
+    "center_flag",
+    "parameter_ranges",
+    "trailing_parameters",
+    "discontinuities"
+  ]
+}
+```
+
+### `G2BlendFirstShape`
+
+```json
+{
+  "description": "Singularity-specific payload of the first G2 blend side.",
+  "oneOf": [
+    {
+      "description": "Full singularity with an optional BS3 support surface.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "full"
+        },
+        "support": {
+          "description": "Exact BS3 support and fit tolerance, when serialized.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/G2BlendFullSupport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Non-singular nine-scalar frame and tertiary pcurve.",
+      "type": "object",
+      "properties": {
+        "coefficients": {
+          "description": "Ordered native frame scalars.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 9,
+          "minItems": 9
+        },
+        "extension": {
+          "description": "Optional intervening native token.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LoftBridgeToken"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "none"
+        },
+        "pcurve": {
+          "description": "Tertiary BS2 pcurve, absent for `nullbs`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PcurveGeometry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tolerance": {
+          "description": "Native fit tolerance.",
+          "$ref": "#/$defs/FitTolerance"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "coefficients",
+        "tolerance"
+      ]
+    }
+  ]
+}
+```
+
+### `G2BlendFullSupport`
+
+```json
+{
+  "description": "Exact support surface and fit tolerance of a full G2 first-side shape.",
+  "type": "object",
+  "properties": {
+    "surface": {
+      "description": "Exact BS3 support surface.",
+      "$ref": "#/$defs/SurfaceId"
+    },
+    "tolerance": {
+      "description": "Fit tolerance of the support, in document length units.",
+      "$ref": "#/$defs/FitTolerance"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "surface",
+    "tolerance"
+  ]
+}
+```
+
+### `G2BlendSide`
+
+```json
+{
+  "description": "Common carrier fields of one G2 blend side.",
+  "type": "object",
+  "properties": {
+    "curve": {
+      "description": "Primary side curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "direction": {
+      "description": "Native side direction.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "label": {
+      "description": "Native side label.",
+      "type": "string"
+    },
+    "pcurves": {
+      "description": "First and second ordered BS2 pcurves; each may be `nullbs`.",
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/PcurveGeometry"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "surface": {
+      "description": "Primary support surface.",
+      "$ref": "#/$defs/SurfaceId"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "label",
+    "surface",
+    "curve",
+    "pcurves",
+    "direction"
+  ]
+}
+```
+
+### `HelixPathConstruction`
+
+```json
+{
+  "description": "Finite circular path of a helix surface.",
+  "type": "object",
+  "properties": {
+    "angle_range": {
+      "description": "Native helix angle interval.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "apex_factor": {
+      "description": "Native apex taper factor.",
+      "type": "number",
+      "format": "double"
+    },
+    "axis": {
+      "description": "Helix axis direction.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "center": {
+      "description": "Helix center in model space.",
+      "$ref": "#/$defs/Point3"
+    },
+    "major": {
+      "description": "Major radial axis vector.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "minor": {
+      "description": "Minor radial axis vector.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "pitch": {
+      "description": "Axial advance of one turn, as a vector.",
+      "$ref": "#/$defs/Vector3"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "angle_range",
+    "center",
+    "major",
+    "minor",
+    "pitch",
+    "apex_factor",
+    "axis"
+  ]
+}
+```
+
+### `HelixSurfaceConstruction`
+
+```json
+{
+  "description": "Complete helix-surface construction with finite native intervals.",
+  "type": "object",
+  "properties": {
+    "angle_range": {
+      "description": "Native profile parameter interval.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "dimension_range": {
+      "description": "Native path angle interval.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "path": {
+      "description": "Circular path of the helix surface.",
+      "$ref": "#/$defs/HelixPathConstruction"
+    },
+    "profile": {
+      "description": "Profile swept along the path.",
+      "$ref": "#/$defs/HelixSurfaceProfile"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "angle_range",
+    "dimension_range",
+    "path",
+    "profile"
+  ]
+}
+```
+
+### `HelixSurfaceProfile`
+
+```json
+{
+  "description": "Profile-specific tail of a helix surface.",
+  "oneOf": [
+    {
+      "description": "Circular profile swept along the helix.",
+      "type": "object",
+      "properties": {
+        "angle": {
+          "description": "Native angle stored before the path, in radians.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "circle"
+        },
+        "radius": {
+          "description": "Signed circular profile radius.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "angle",
+        "radius"
+      ]
+    },
+    {
+      "description": "Linear profile swept along the helix.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Profile direction coefficients: `x` and `y` scale the path's rotated\nmajor and minor vectors, and `z` is a length along the path axis.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "line"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "direction"
+      ]
+    }
+  ]
+}
+```
+
+### `IntcurveSupportContext`
+
+```json
+{
+  "description": "Shared support surfaces, UV curves, interval, and discontinuity arrays of a native intcurve.",
+  "type": "object",
+  "properties": {
+    "discontinuities": {
+      "description": "Ordered discontinuity arrays.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 3,
+      "minItems": 3
+    },
+    "parameter_range": {
+      "description": "Solved-curve interval.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "sides": {
+      "description": "Ordered support sides.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/IntcurveSupportSide"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "sides",
+    "parameter_range",
+    "discontinuities"
+  ]
+}
+```
+
+### `IntcurveSupportSide`
+
+```json
+{
+  "description": "One paired surface and parameter-space curve in an intcurve construction.",
+  "type": "object",
+  "properties": {
+    "pcurve": {
+      "description": "UV curve on `surface`, absent for the native `nullbs` sentinel.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SupportPcurve"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "surface": {
+      "description": "Supporting surface, absent for the native `null_surface` sentinel.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SurfaceId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false
+}
+```
+
+### `LawCurveVersionForm`
+
+```json
+{
+  "description": "Version-stamp prefix and unbounded interval carried by the stamped\n`law_int_cur` serializer form.",
+  "type": "object",
+  "properties": {
+    "parameter_range": {
+      "description": "Solved-curve interval endpoints; `None` records an unbounded bound.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "post_enum": {
+      "description": "Native enum following the version stamp.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "stamp": {
+      "description": "Serializer version stamp emitted after the subtype name.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "stamp",
+    "post_enum",
+    "parameter_range"
+  ]
+}
+```
+
+### `LawExpression`
+
+```json
+{
+  "description": "One native law-expression node.",
+  "oneOf": [
+    {
+      "description": "Zero-payload spelling of the native null law.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "null"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Serializer-preserved textual law expression.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "text"
+        },
+        "value": {
+          "description": "Exact text stored in the native law slot.",
+          "$ref": "#/$defs/NonBlankString"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Tagged integer constant.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "integer"
+        },
+        "value": {
+          "description": "Stored integer value.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Tagged double constant.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "double"
+        },
+        "value": {
+          "description": "Stored scalar value.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Tagged model-space point constant.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "point"
+        },
+        "value": {
+          "description": "Stored point value.",
+          "$ref": "#/$defs/Point3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Tagged direction-vector constant.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "vector"
+        },
+        "value": {
+          "description": "Stored vector value.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Inline transform-law payload.",
+      "type": "object",
+      "properties": {
+        "enums": {
+          "description": "Three ordered transform enums.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "kind": {
+          "type": "string",
+          "const": "transform"
+        },
+        "scalars": {
+          "description": "Thirteen ordered transform scalars.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 13,
+          "minItems": 13
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "scalars",
+        "enums"
+      ]
+    },
+    {
+      "description": "Vector-serialized transform-law payload: four ordered vectors, a scale,\nand three flags, in place of the thirteen-scalar/three-enum form.",
+      "type": "object",
+      "properties": {
+        "flags": {
+          "description": "Three ordered transform flags.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "kind": {
+          "type": "string",
+          "const": "transform_vec"
+        },
+        "scale": {
+          "description": "Trailing transform scale.",
+          "type": "number",
+          "format": "double"
+        },
+        "vectors": {
+          "description": "Four ordered transform vectors.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "vectors",
+        "scale",
+        "flags"
+      ]
+    },
+    {
+      "description": "Curve-backed edge law.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Referenced curve carrier.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "endpoints": {
+          "description": "Optional parameter endpoints following the curve in a revision-gated encoding.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "edge"
+        },
+        "parameters": {
+          "description": "Two native curve parameters.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "curve",
+        "parameters"
+      ]
+    },
+    {
+      "description": "Spline-law payload.",
+      "type": "object",
+      "properties": {
+        "controls": {
+          "description": "Ordered spline-law controls.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "kind": {
+          "type": "string",
+          "const": "spline"
+        },
+        "knots": {
+          "description": "Ordered spline-law knots.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "native_id": {
+          "description": "Native spline-law integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "point": {
+          "description": "Native model-space point.",
+          "$ref": "#/$defs/Point3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "native_id",
+        "knots",
+        "controls",
+        "point"
+      ]
+    },
+    {
+      "description": "Algebraic operator and its recursively framed operands.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "algebraic"
+        },
+        "operands": {
+          "description": "Ordered operands.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LawExpression"
+          }
+        },
+        "operator": {
+          "description": "Native operator token.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "operator",
+        "operands"
+      ]
+    }
+  ]
+}
+```
+
+### `LawFormula`
+
+```json
+{
+  "description": "One recursively framed native law formula.",
+  "oneOf": [
+    {
+      "description": "The native null law, with no variables.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "null"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Named formula and its ordered recursive variables.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "named"
+        },
+        "name": {
+          "description": "Native formula name.",
+          "$ref": "#/$defs/NonBlankString"
+        },
+        "variables": {
+          "description": "Ordered recursive variables.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LawExpression"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "name",
+        "variables"
+      ]
+    }
+  ]
+}
+```
+
+### `LawSurfaceConstruction`
+
+```json
+{
+  "description": "Complete recursive construction stored by a native law spline surface.",
+  "type": "object",
+  "properties": {
+    "additional": {
+      "description": "Ordered counted auxiliary laws referenced by the primary law.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LawFormula"
+      }
+    },
+    "discontinuities": {
+      "description": "Six ordered discontinuity arrays from the standard surface tail.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "parameter_ranges": {
+      "description": "Legacy U and V parameter intervals; absent from modern layouts.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "maxItems": 2,
+        "minItems": 2
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "primary": {
+      "description": "Primary recursive surface law.",
+      "$ref": "#/$defs/LawFormula"
+    },
+    "tail": {
+      "description": "Standard surface-tail mode and its mode-specific fields.",
+      "$ref": "#/$defs/LawSurfaceTail"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "primary",
+    "additional",
+    "tail",
+    "discontinuities"
+  ]
+}
+```
+
+### `LawSurfaceTail`
+
+```json
+{
+  "description": "Mode-specific payload of a native law surface's standard surface tail.",
+  "oneOf": [
+    {
+      "description": "Selector 0; the surface record carries a solved NURBS cache, whose fit\ncontract this tail states.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Fit contract of the solved cache this tail requires.",
+          "$ref": "#/$defs/LegacyCache"
+        },
+        "kind": {
+          "type": "string",
+          "const": "full"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "cache"
+      ]
+    },
+    {
+      "description": "Selector 1; compact parameter summaries replace the solved cache.",
+      "type": "object",
+      "properties": {
+        "closures": {
+          "description": "Ordered U and V closure enums.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "fit_tolerance": {
+          "description": "Native model-space fit tolerance.",
+          "$ref": "#/$defs/FitTolerance"
+        },
+        "kind": {
+          "type": "string",
+          "const": "summary"
+        },
+        "parameters": {
+          "description": "Ordered U and V parameter summaries.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "singularities": {
+          "description": "Ordered U and V singularity enums.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameters",
+        "fit_tolerance",
+        "closures",
+        "singularities"
+      ]
+    },
+    {
+      "description": "Selector 2; exact parameter intervals and boundary classifications.",
+      "type": "object",
+      "properties": {
+        "closures": {
+          "description": "Ordered U and V closure enums.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "none"
+        },
+        "parameter_ranges": {
+          "description": "Ordered U and V parameter intervals.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "singularities": {
+          "description": "Ordered U and V singularity enums.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameter_ranges",
+        "closures",
+        "singularities"
+      ]
+    },
+    {
+      "description": "Selector 3; no mode-specific payload.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "historical"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Selector 4; no mode-specific payload.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "optimal"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    }
+  ]
+}
+```
+
+### `LegacyCache`
+
+```json
+{
+  "description": "Fit contract of a solved cache that the construction states itself, used by\nconstructions with no revision-gated [`RevisionCacheForm`].",
+  "type": "object",
+  "properties": {
+    "fit_tolerance": {
+      "description": "Fit tolerance of the solved cache.",
+      "$ref": "#/$defs/FitTolerance"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "fit_tolerance"
+  ]
+}
+```
+
+### `LegacyExtensionFlags`
+
+```json
+{
+  "description": "Admitted conditional flag shapes in the pre-revision offset-surface layout.",
+  "oneOf": [
+    {
+      "description": "The compact `offsur` layout has no extension flag.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "absent"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "The extension gate is false, so no dependent flags follow it.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "disabled"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "The extension gate is true and carries its required flag and optional\nlater-revision flag.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "enabled"
+        },
+        "secondary": {
+          "description": "Required flag following the true extension gate.",
+          "type": "boolean"
+        },
+        "tertiary": {
+          "description": "Optional flag admitted by the later legacy layout.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "secondary"
+      ]
+    }
+  ]
+}
+```
+
+### `LoftBridgeToken`
+
+```json
+{
+  "description": "Token retained from the variable bridge preceding a loft solved cache.",
+  "oneOf": [
+    {
+      "description": "Native boolean token.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "boolean"
+        },
+        "value": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Native integer token.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "integer"
+        },
+        "value": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Native double token.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "double"
+        },
+        "value": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Native string token.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "text"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Native enum token.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "enum"
+        },
+        "value": {
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    }
+  ]
+}
+```
+
+### `LoftMemberForm`
+
+```json
+{
+  "description": "Type-selected fields of one loft profile member.",
+  "oneOf": [
+    {
+      "description": "Support-surface form. Legacy layouts can use type zero; revision-gated\nlayouts select this form with a nonzero type code.",
+      "type": "object",
+      "properties": {
+        "asm_extension": {
+          "description": "ASM extension integer when the stream version carries it.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "direction": {
+          "description": "Optional direction selected by the second native flag.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vector3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_flag": {
+          "description": "First native constraint flag.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "support"
+        },
+        "pcurve": {
+          "description": "UV curve on the support, absent for `nullbs`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PcurveGeometry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "subdata": {
+          "description": "Native constraint table.",
+          "$ref": "#/$defs/LoftSubdata"
+        },
+        "support_bounds": {
+          "description": "Optional U/V bound fields following the support surface in the\nrevision-gated encoding.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "surface": {
+          "description": "Constraint support surface, absent for the native `null_surface`\nsentinel.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type_code": {
+          "description": "Native member type discriminator.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "type_code",
+        "support_bounds",
+        "first_flag",
+        "subdata"
+      ]
+    },
+    {
+      "description": "Revision-gated type-zero form with two nullable UV curve slots.",
+      "type": "object",
+      "properties": {
+        "asm_extension": {
+          "description": "ASM extension integer when the stream version carries it.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "direction": {
+          "description": "Optional direction selected by the second native flag.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vector3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "pcurve_pair"
+        },
+        "pcurve": {
+          "description": "First UV curve slot, absent for `nullbs`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PcurveGeometry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "secondary_pcurve": {
+          "description": "Second UV curve slot, absent for `nullbs`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PcurveGeometry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "subdata": {
+          "description": "Native constraint table.",
+          "$ref": "#/$defs/LoftSubdata"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "subdata"
+      ]
+    }
+  ]
+}
+```
+
+### `LoftPath`
+
+```json
+{
+  "description": "Native path data attached to one loft section entry.",
+  "type": "object",
+  "properties": {
+    "auxiliaries": {
+      "description": "Ordered auxiliary BS3 curves.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CurveId"
+      }
+    },
+    "flag": {
+      "description": "Native path tail integer.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "path": {
+      "description": "Primary path curve and its optional endpoints, absent for `null_curve`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/LoftPathCurve"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "auxiliaries",
+    "flag"
+  ]
+}
+```
+
+### `LoftPathCurve`
+
+```json
+{
+  "description": "One referenced curve together with its optional native parameter bounds.",
+  "type": "object",
+  "properties": {
+    "curve": {
+      "description": "Referenced curve carrier.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "endpoints": {
+      "description": "Optional parameter endpoints following the curve in a revision-gated encoding.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "curve"
+  ]
+}
+```
+
+### `LoftProfileData`
+
+```json
+{
+  "description": "The complete constraint payload of a classic loft or skin profile.\n\nEvery field the classic form carries is required and every field it cannot\ncarry is absent from the type, so the revision-gated `support_bounds` and\nthe type-zero `secondary_pcurve` are unknown keys here rather than values a\nreader has to refuse.",
+  "type": "object",
+  "properties": {
+    "asm_extension": {
+      "description": "ASM extension integer preceding the subdata.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "direction": {
+      "description": "Optional direction selected by the second native flag.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Vector3"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "first_flag": {
+      "description": "First native constraint flag.",
+      "type": "boolean"
+    },
+    "pcurve": {
+      "description": "Nullable parameter curve on the support.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "subdata": {
+      "description": "Native constraint table.",
+      "$ref": "#/$defs/LoftSubdata"
+    },
+    "surface": {
+      "description": "Required support surface.",
+      "$ref": "#/$defs/SurfaceId"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "surface",
+    "first_flag",
+    "asm_extension",
+    "subdata"
+  ]
+}
+```
+
+### `LoftProfileMember`
+
+```json
+{
+  "description": "One curve member of a loft profile.",
+  "type": "object",
+  "properties": {
+    "form": {
+      "description": "Structurally selected surface-side constraint form.",
+      "$ref": "#/$defs/LoftMemberForm"
+    },
+    "profile": {
+      "description": "Profile curve and its revision-gated parameter endpoints.",
+      "$ref": "#/$defs/LoftPathCurve"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "profile",
+    "form"
+  ]
+}
+```
+
+### `LoftRevisionForm`
+
+```json
+{
+  "description": "Revision-gated `loft_spl_sur` form fields.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
+    },
+    "discontinuities": {
+      "description": "Six ordered discontinuity arrays following the fit tolerance.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "flags": {
+      "description": "Four booleans following the parameter intervals.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    },
+    "ints": {
+      "description": "Two integers preceding the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "tail_flag": {
+      "description": "Boolean terminating the shared tail.",
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "revision",
+    "flags",
+    "ints",
+    "cache",
+    "discontinuities",
+    "tail_flag"
+  ]
+}
+```
+
+### `LoftSection`
+
+```json
+{
+  "description": "Ordered native loft section.",
+  "type": "object",
+  "properties": {
+    "entries": {
+      "description": "Ordered entries in the section.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LoftSectionEntry"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "entries"
+  ]
+}
+```
+
+### `LoftSectionEntry`
+
+```json
+{
+  "description": "One parameterized entry in a native loft section.",
+  "type": "object",
+  "properties": {
+    "parameter": {
+      "description": "Native section parameter.",
+      "type": "number",
+      "format": "double"
+    },
+    "path": {
+      "description": "Native path data.",
+      "$ref": "#/$defs/LoftPath"
+    },
+    "profile": {
+      "description": "Ordered profile members.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LoftProfileMember"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "parameter",
+    "profile",
+    "path"
+  ]
+}
+```
+
+### `LoftSubdata`
+
+```json
+{
+  "description": "Native loft constraint table with structurally consistent dimensions.",
+  "oneOf": [
+    {
+      "description": "Type 211 stores exactly one leading pair and no column pairs.",
+      "type": "object",
+      "properties": {
+        "dimensions": {
+          "description": "Native row/column header values. They do not count this form's payload.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "type211"
+        },
+        "row": {
+          "description": "The sole leading scalar pair.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "dimensions",
+        "row"
+      ]
+    },
+    {
+      "description": "All other table types store rows of one shared column width.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "table"
+        },
+        "rows": {
+          "description": "Table rows, all of one column width.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LoftSubdataRow"
+          }
+        },
+        "type_code": {
+          "description": "Native loft table type code.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "type_code",
+        "rows"
+      ]
+    }
+  ]
+}
+```
+
+### `LoftSubdataRow`
+
+```json
+{
+  "description": "One scalar row in native loft subdata.",
+  "type": "object",
+  "properties": {
+    "columns": {
+      "description": "Ordered per-column scalar pairs; empty for subdata type 211.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "maxItems": 2,
+        "minItems": 2
+      }
+    },
+    "extra": {
+      "description": "Trailing scalar pair stored by the revision-gated row encoding.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "parameters": {
+      "description": "Leading ordered scalar pair.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "parameters",
+    "columns"
+  ]
+}
+```
+
+### `NetSurfaceConstruction`
+
+```json
+{
+  "description": "Complete native `net_spl_sur` construction graph.",
+  "type": "object",
+  "properties": {
+    "directions": {
+      "description": "Four ordered frame directions.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Vector3"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    },
+    "discontinuities": {
+      "description": "Six ordered solved-surface discontinuity arrays.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "discontinuity_flag": {
+      "description": "Native discontinuity tail flag.",
+      "type": "boolean"
+    },
+    "flag": {
+      "description": "Native frame integer.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "formulas": {
+      "description": "Four ordered parameter laws.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LawFormula"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    },
+    "frame_parameters": {
+      "description": "Twelve ordered frame scalars.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 12,
+      "minItems": 12
+    },
+    "sections": {
+      "description": "Two ordered loft-section graphs.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LoftSection"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "sections",
+    "frame_parameters",
+    "flag",
+    "directions",
+    "formulas",
+    "discontinuities",
+    "discontinuity_flag"
+  ]
+}
+```
+
+### `NonEmptyMembers`
+
+```json
+{
+  "description": "A nonempty sequence of members in source order.\n\nThe members stay contiguous: the sequence is read through slice patterns\nand slice methods. The mint refuses an empty list, `push` only grows, and\n`DerefMut` hands out `&mut [T]`, which cannot shorten the sequence, so no\nreader has to ask whether a member is there.",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/Point3"
+  },
+  "minItems": 1
+}
+```
+
+### `NonEmptyMembers2`
+
+```json
+{
+  "description": "A nonempty sequence of members in source order.\n\nThe members stay contiguous: the sequence is read through slice patterns\nand slice methods. The mint refuses an empty list, `push` only grows, and\n`DerefMut` hands out `&mut [T]`, which cannot shorten the sequence, so no\nreader has to ask whether a member is there.",
+  "type": "array",
+  "items": {
+    "$ref": "#/$defs/PolylineVertex"
+  },
+  "minItems": 1
+}
+```
+
+### `NurbsCurve`
+
+```json
+{
+  "description": "A NURBS curve knot/pole payload.",
+  "type": "object",
+  "properties": {
+    "degree": {
+      "description": "Curve degree.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "knots": {
+      "description": "Full knot vector.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      }
+    },
+    "periodic": {
+      "description": "Whether the curve is periodic.",
+      "type": "boolean"
+    },
+    "poles": {
+      "description": "Poles in parameter order, with the curve's rational form.",
+      "$ref": "#/$defs/NurbsPoles3"
+    }
+  },
+  "required": [
+    "degree",
+    "knots",
+    "poles",
+    "periodic"
+  ]
+}
+```
+
+### `NurbsPoleGrid`
+
+```json
+{
+  "description": "The control grid of a NURBS surface, stating the surface's rational form.\n\nA rational pole carries its weight in its own row, so a weight grid that\ndoes not cover the pole grid has no spelling.\n\nTransposition requires admission as a [`NurbsSurface`].\n\n```compile_fail\nuse cadmpeg_ir::geometry::nurbs::NurbsPoleGrid;\nlet mut grid = NurbsPoleGrid::Polynomial { rows: Vec::new() };\ngrid.transpose();\n```",
+  "oneOf": [
+    {
+      "description": "A polynomial surface: its poles carry no weight.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "polynomial"
+        },
+        "rows": {
+          "description": "Control grid rows: `rows[i][j]` is pole `(i, j)`.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/Point3"
+            }
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "rows"
+      ]
+    },
+    {
+      "description": "A rational surface: every pole carries its weight.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "rational"
+        },
+        "rows": {
+          "description": "Control grid rows: `rows[i][j]` is pole `(i, j)`.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/WeightedPole3"
+            }
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "rows"
+      ]
+    }
+  ]
+}
+```
+
+### `NurbsPoles3`
+
+```json
+{
+  "description": "The poles of a NURBS curve, stating the curve's rational form.\n\nA rational pole carries its weight in its own row, so a weight list that\ndoes not cover the poles has no spelling, and \"the curve is polynomial\" has\nexactly one spelling.",
+  "oneOf": [
+    {
+      "description": "A polynomial curve: its poles carry no weight.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "polynomial"
+        },
+        "points": {
+          "description": "Poles in parameter order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Point3"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "points"
+      ]
+    },
+    {
+      "description": "A rational curve: every pole carries its weight.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "rational"
+        },
+        "points": {
+          "description": "Pole rows in parameter order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WeightedPole3"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "points"
+      ]
+    }
+  ]
+}
+```
+
+### `NurbsSurface`
+
+```json
+{
+  "description": "A tensor-product NURBS surface.\n\nThe control grid is stored as rows: the outer index is u, the inner index\nis v, so the grid states both pole counts. `weights == None` denotes a\nnon-rational surface.",
+  "type": "object",
+  "properties": {
+    "cache_fit_tolerance": {
+      "description": "Fit tolerance of the source approximation cache, in model length units.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FitTolerance"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "normal_reversed": {
+      "description": "Whether the carrier's oriented normal is opposite `Pu × Pv`.",
+      "type": "boolean"
+    },
+    "poles": {
+      "description": "Control grid rows, with the surface's rational form.",
+      "$ref": "#/$defs/NurbsPoleGrid"
+    },
+    "u_degree": {
+      "description": "Degree in the u parametric direction.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "u_knots": {
+      "description": "Full knot vector in u.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      }
+    },
+    "u_periodic": {
+      "description": "Whether the surface is periodic in u.",
+      "type": "boolean"
+    },
+    "v_degree": {
+      "description": "Degree in the v parametric direction.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "v_knots": {
+      "description": "Full knot vector in v.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      }
+    },
+    "v_periodic": {
+      "description": "Whether the surface is periodic in v.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "u_degree",
+    "v_degree",
+    "u_knots",
+    "v_knots",
+    "poles",
+    "normal_reversed",
+    "u_periodic",
+    "v_periodic"
+  ]
+}
+```
+
+### `OffsetExtension`
+
+```json
+{
+  "description": "Mutually exclusive pre-revision and revision-gated offset layouts.",
+  "oneOf": [
+    {
+      "description": "Pre-revision conditional flag sequence.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this layout states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "flags": {
+          "description": "Conditional flag sequence in its positional wire form.",
+          "$ref": "#/$defs/LegacyExtensionFlags"
+        },
+        "kind": {
+          "type": "string",
+          "const": "legacy"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "flags"
+      ]
+    },
+    {
+      "description": "Revision-gated fields with the required four-boolean carrier run.",
+      "type": "object",
+      "properties": {
+        "form": {
+          "description": "Revision-gated form whose carrier run is exactly four booleans.",
+          "$ref": "#/$defs/RevisionSurfaceForm2"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "form"
+      ]
+    }
+  ]
+}
+```
+
+### `OffsetSide`
+
+```json
+{
+  "description": "Orientation carrier of a planar curve offset.",
+  "oneOf": [
+    {
+      "description": "Unit plane normal defining the positive offset side.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "plane_normal"
+        },
+        "normal": {
+          "description": "Unit plane normal.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "normal"
+      ]
+    },
+    {
+      "description": "Explicit offset direction, optionally constrained to a support surface.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Nonzero offset direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "direction"
+        },
+        "support": {
+          "description": "Support surface within which the offset is measured.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "direction"
+      ]
+    }
+  ]
+}
+```
+
+### `ParametricSurfaceCurveFlags`
+
+```json
+{
+  "description": "Two terminating flags carried only by a parametric surface curve.",
+  "type": "object",
+  "properties": {
+    "flag": {
+      "description": "Support-slot selector.",
+      "type": "boolean"
+    },
+    "second_flag": {
+      "description": "Optional later-revision terminating flag.",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "flag"
+  ]
+}
+```
+
+### `PcurveGeometry`
+
+```json
+{
+  "description": "The shape of a parameter-space (u, v) curve on a surface.",
+  "oneOf": [
+    {
+      "description": "A straight line in parameter space.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Parameter-space line direction.",
+          "$ref": "#/$defs/Point2"
+        },
+        "kind": {
+          "type": "string",
+          "const": "line"
+        },
+        "origin": {
+          "description": "Parameter-space line origin.",
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "origin",
+        "direction"
+      ]
+    },
+    {
+      "description": "Polar angle and axial coordinate of a first-order harmonic spatial curve.",
+      "type": "object",
+      "properties": {
+        "axial_cos": {
+          "description": "Cosine axial coefficient.",
+          "type": "number",
+          "format": "double"
+        },
+        "axial_origin": {
+          "description": "Constant axial coefficient.",
+          "type": "number",
+          "format": "double"
+        },
+        "axial_sin": {
+          "description": "Sine axial coefficient.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "polar_harmonic"
+        },
+        "radial_center": {
+          "description": "Constant radial coefficient.",
+          "$ref": "#/$defs/Point2"
+        },
+        "radial_cos": {
+          "description": "Cosine radial coefficient.",
+          "$ref": "#/$defs/Point2"
+        },
+        "radial_sin": {
+          "description": "Sine radial coefficient.",
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "radial_center",
+        "radial_cos",
+        "radial_sin",
+        "axial_origin",
+        "axial_cos",
+        "axial_sin"
+      ]
+    },
+    {
+      "description": "Polar angle and axial coordinate obtained from a rational NURBS vector.",
+      "type": "object",
+      "properties": {
+        "degree": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "kind": {
+          "type": "string",
+          "const": "polar_nurbs"
+        },
+        "knots": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "periodic": {
+          "type": "boolean"
+        },
+        "poles": {
+          "$ref": "#/$defs/PolarNurbsPoles"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "degree",
+        "knots",
+        "poles",
+        "periodic"
+      ]
+    },
+    {
+      "description": "Great-circle locus in a sphere's azimuth/latitude parameter chart.",
+      "type": "object",
+      "properties": {
+        "azimuth_origin": {
+          "description": "Azimuth at the parameter origin.",
+          "type": "number",
+          "format": "double"
+        },
+        "azimuth_rate": {
+          "description": "Azimuth change for one unit of parameter.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "spherical_great_circle"
+        },
+        "plane_phase": {
+          "description": "Phase of the great-circle plane.",
+          "type": "number",
+          "format": "double"
+        },
+        "plane_slope": {
+          "description": "Slope of the great-circle plane.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "azimuth_origin",
+        "azimuth_rate",
+        "plane_phase",
+        "plane_slope"
+      ]
+    },
+    {
+      "description": "Full circle in parameter space.",
+      "type": "object",
+      "properties": {
+        "center": {
+          "description": "Parameter-space circle center.",
+          "$ref": "#/$defs/Point2"
+        },
+        "kind": {
+          "type": "string",
+          "const": "circle"
+        },
+        "radius": {
+          "description": "Circle radius in parameter space.",
+          "type": "number",
+          "format": "double"
+        },
+        "x_axis": {
+          "description": "First parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        },
+        "y_axis": {
+          "description": "Second parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "x_axis",
+        "y_axis",
+        "radius"
+      ]
+    },
+    {
+      "description": "Full ellipse in parameter space.",
+      "type": "object",
+      "properties": {
+        "center": {
+          "description": "Parameter-space ellipse center.",
+          "$ref": "#/$defs/Point2"
+        },
+        "kind": {
+          "type": "string",
+          "const": "ellipse"
+        },
+        "major_radius": {
+          "description": "Major semiaxis radius in parameter space.",
+          "type": "number",
+          "format": "double"
+        },
+        "minor_radius": {
+          "description": "Minor semiaxis radius in parameter space.",
+          "type": "number",
+          "format": "double"
+        },
+        "x_axis": {
+          "description": "First parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        },
+        "y_axis": {
+          "description": "Second parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "x_axis",
+        "y_axis",
+        "major_radius",
+        "minor_radius"
+      ]
+    },
+    {
+      "description": "General first-order harmonic curve in parameter space.",
+      "type": "object",
+      "properties": {
+        "center": {
+          "description": "Constant parameter-space coefficient.",
+          "$ref": "#/$defs/Point2"
+        },
+        "cosine": {
+          "description": "Cosine parameter-space coefficient.",
+          "$ref": "#/$defs/Point2"
+        },
+        "kind": {
+          "type": "string",
+          "const": "harmonic"
+        },
+        "sine": {
+          "description": "Sine parameter-space coefficient.",
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "cosine",
+        "sine"
+      ]
+    },
+    {
+      "description": "Parabola in parameter space.",
+      "type": "object",
+      "properties": {
+        "focal_distance": {
+          "description": "Distance from the vertex to the focus, in parameter space.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "parabola"
+        },
+        "vertex": {
+          "description": "Parameter-space parabola vertex.",
+          "$ref": "#/$defs/Point2"
+        },
+        "x_axis": {
+          "description": "First parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        },
+        "y_axis": {
+          "description": "Second parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "vertex",
+        "x_axis",
+        "y_axis",
+        "focal_distance"
+      ]
+    },
+    {
+      "description": "Hyperbola in parameter space.",
+      "type": "object",
+      "properties": {
+        "center": {
+          "description": "Parameter-space hyperbola center.",
+          "$ref": "#/$defs/Point2"
+        },
+        "kind": {
+          "type": "string",
+          "const": "hyperbola"
+        },
+        "major_radius": {
+          "description": "Transverse semiaxis radius in parameter space.",
+          "type": "number",
+          "format": "double"
+        },
+        "minor_radius": {
+          "description": "Conjugate semiaxis radius in parameter space.",
+          "type": "number",
+          "format": "double"
+        },
+        "x_axis": {
+          "description": "First parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        },
+        "y_axis": {
+          "description": "Second parameter-space axis.",
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "x_axis",
+        "y_axis",
+        "major_radius",
+        "minor_radius"
+      ]
+    },
+    {
+      "description": "General first-order hyperbolic curve in parameter space.",
+      "type": "object",
+      "properties": {
+        "center": {
+          "description": "Constant parameter-space coefficient.",
+          "$ref": "#/$defs/Point2"
+        },
+        "cosine": {
+          "description": "Hyperbolic-cosine parameter-space coefficient.",
+          "$ref": "#/$defs/Point2"
+        },
+        "kind": {
+          "type": "string",
+          "const": "hyperbolic"
+        },
+        "sine": {
+          "description": "Hyperbolic-sine parameter-space coefficient.",
+          "$ref": "#/$defs/Point2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "cosine",
+        "sine"
+      ]
+    },
+    {
+      "description": "A free-form NURBS curve in parameter space (control points are (u, v)).",
+      "type": "object",
+      "properties": {
+        "degree": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "kind": {
+          "type": "string",
+          "const": "nurbs"
+        },
+        "knots": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "periodic": {
+          "type": "boolean"
+        },
+        "poles": {
+          "$ref": "#/$defs/PcurveNurbsPoles"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "degree",
+        "knots",
+        "poles",
+        "periodic"
+      ]
+    },
+    {
+      "description": "Affine replica of a parent pcurve in the same parameter space.",
+      "type": "object",
+      "properties": {
+        "basis": {
+          "description": "Exact parent pcurve and its parameterization.",
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        "kind": {
+          "type": "string",
+          "const": "transformed"
+        },
+        "transform": {
+          "description": "Two-dimensional affine map from parent coordinates to replica coordinates.",
+          "$ref": "#/$defs/Transform2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "basis",
+        "transform"
+      ]
+    },
+    {
+      "description": "Parameter restriction of an exact basis pcurve.",
+      "type": "object",
+      "properties": {
+        "basis": {
+          "description": "Curve this curve trims.",
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        "kind": {
+          "type": "string",
+          "const": "trimmed"
+        },
+        "parameter_range": {
+          "description": "Native parameter interval retained from the basis.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "same_sense": {
+          "description": "Whether the trim follows increasing basis parameters.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameter_range",
+        "same_sense",
+        "basis"
+      ]
+    },
+    {
+      "description": "Signed planar offset of an exact basis pcurve.",
+      "type": "object",
+      "properties": {
+        "basis": {
+          "description": "Curve this curve is offset from.",
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        "distance": {
+          "description": "Signed parameter-space offset distance.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "offset"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "distance",
+        "basis"
+      ]
+    }
+  ]
+}
+```
+
+### `PcurveNurbs`
+
+```json
+{
+  "description": "Checked two-dimensional NURBS payload for pcurves and sketch curves.",
+  "type": "object",
+  "properties": {
+    "degree": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "knots": {
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      }
+    },
+    "periodic": {
+      "type": "boolean"
+    },
+    "poles": {
+      "$ref": "#/$defs/PcurveNurbsPoles"
+    }
+  },
+  "required": [
+    "degree",
+    "knots",
+    "poles",
+    "periodic"
+  ]
+}
+```
+
+### `PcurveNurbsPoles`
+
+```json
+{
+  "description": "The poles of a parameter-space NURBS curve.",
+  "oneOf": [
+    {
+      "description": "A polynomial pcurve: its poles carry no weight.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "polynomial"
+        },
+        "points": {
+          "description": "Poles in parameter order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Point2"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "points"
+      ]
+    },
+    {
+      "description": "A rational pcurve: every pole carries its weight.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "rational"
+        },
+        "points": {
+          "description": "Pole rows in parameter order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WeightedPole2"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "points"
+      ]
+    }
+  ]
+}
+```
+
+### `Point2`
+
+```json
+{
+  "description": "A point in 2D surface parameter (u, v) space.",
+  "type": "object",
+  "properties": {
+    "u": {
+      "description": "U parameter.",
+      "type": "number",
+      "format": "double"
+    },
+    "v": {
+      "description": "V parameter.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "u",
+    "v"
+  ]
+}
+```
+
+### `Point3`
+
+```json
+{
+  "description": "A point in 3D model space, in the document's length unit.",
+  "type": "object",
+  "properties": {
+    "x": {
+      "description": "X coordinate.",
+      "type": "number",
+      "format": "double"
+    },
+    "y": {
+      "description": "Y coordinate.",
+      "type": "number",
+      "format": "double"
+    },
+    "z": {
+      "description": "Z coordinate.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "x",
+    "y",
+    "z"
+  ]
+}
+```
+
+### `PolarNurbsPole`
+
+```json
+{
+  "description": "One paired radial and axial pole of a polar parameter-space NURBS.",
+  "type": "object",
+  "properties": {
+    "axial": {
+      "description": "Axial pole value.",
+      "type": "number",
+      "format": "double"
+    },
+    "radial": {
+      "description": "Euclidean radial-plane pole.",
+      "$ref": "#/$defs/Point2"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "radial",
+    "axial"
+  ]
+}
+```
+
+### `PolarNurbsPoles`
+
+```json
+{
+  "description": "The poles of a polar parameter-space NURBS curve.",
+  "oneOf": [
+    {
+      "description": "A polynomial polar curve: its poles carry no weight.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "polynomial"
+        },
+        "poles": {
+          "description": "Poles in parameter order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PolarNurbsPole"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "poles"
+      ]
+    },
+    {
+      "description": "A rational polar curve: every pole carries its weight.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "rational"
+        },
+        "poles": {
+          "description": "Pole rows in parameter order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WeightedPolarNurbsPole"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "poles"
+      ]
+    }
+  ]
+}
+```
+
+### `PolygonalSurface`
+
+```json
+{
+  "description": "Source-native polygonal surface with an explicit chordal error bound.",
+  "type": "object",
+  "properties": {
+    "chordal_deflection": {
+      "type": "number",
+      "format": "double"
+    },
+    "triangles": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "maxItems": 3,
+        "minItems": 3
+      }
+    },
+    "vertices": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Point3"
+      }
+    }
+  },
+  "required": [
+    "vertices",
+    "triangles",
+    "chordal_deflection"
+  ]
+}
+```
+
+### `PolylineSamples`
+
+```json
+{
+  "description": "The samples of a polyline, with or without source parameters.\n\nA parameterized polyline carries one parameter per sample in the sample\nrow, so a parameter list that does not match the sample count has no\nspelling.",
+  "oneOf": [
+    {
+      "description": "Samples the source did not parameterize.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "unparameterized"
+        },
+        "points": {
+          "description": "Ordered model-space samples.",
+          "$ref": "#/$defs/NonEmptyMembers"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "points"
+      ]
+    },
+    {
+      "description": "Samples the source parameterized.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "parameterized"
+        },
+        "vertices": {
+          "description": "Ordered samples, each with its source parameter.",
+          "$ref": "#/$defs/NonEmptyMembers2"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "vertices"
+      ]
+    }
+  ]
+}
+```
+
+### `PolylineVertex`
+
+```json
+{
+  "description": "One polyline sample with the source parameter recorded at it.",
+  "type": "object",
+  "properties": {
+    "parameter": {
+      "description": "Source parameter at this sample.",
+      "type": "number",
+      "format": "double"
+    },
+    "point": {
+      "description": "Model-space sample.",
+      "$ref": "#/$defs/Point3"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "parameter",
+    "point"
+  ]
+}
+```
+
+### `PositiveI64`
+
+```json
+{
+  "description": "A positive value in a native signed 64-bit integer lane.",
+  "type": "integer",
+  "format": "int64"
+}
+```
+
+### `ProceduralCurveDefinition`
+
+```json
+{
+  "description": "Neutral semantics for a procedural curve.",
+  "oneOf": [
+    {
+      "description": "An exact native intcurve whose solved NURBS cache is authoritative.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "exact"
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Curve defined by recursive native law formulas.",
+      "type": "object",
+      "properties": {
+        "additional": {
+          "description": "Counted additional recursive law formulas.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LawFormula"
+          }
+        },
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "context": {
+          "description": "Shared support surfaces, UV curves, interval, and discontinuities.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "extension": {
+          "description": "Native ASM extension integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "law"
+        },
+        "primary": {
+          "description": "Primary recursive law formula.",
+          "$ref": "#/$defs/LawFormula"
+        },
+        "version": {
+          "description": "Version-stamped serializer form, absent for the legacy layout.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LawCurveVersionForm"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "context",
+        "extension",
+        "primary",
+        "additional"
+      ]
+    },
+    {
+      "description": "Ordered compound of native child curves with construction parameters.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "components": {
+          "description": "Component curves in construction order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CompoundComponent2"
+          }
+        },
+        "kind": {
+          "type": "string",
+          "const": "compound"
+        },
+        "parameters": {
+          "description": "Finite leading and per-component construction parameters.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameters",
+        "components"
+      ]
+    },
+    {
+      "description": "Circular or conical helix around an axis.",
+      "type": "object",
+      "properties": {
+        "angle_range": {
+          "description": "Native helix angle interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "apex_factor": {
+          "description": "Native apex taper factor.",
+          "type": "number",
+          "format": "double"
+        },
+        "axis": {
+          "description": "Helix axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "center": {
+          "description": "Helix center in model space.",
+          "$ref": "#/$defs/Point3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "helix"
+        },
+        "major": {
+          "description": "Major radial axis vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "minor": {
+          "description": "Minor radial axis vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "pitch": {
+          "description": "Axial advance of one turn, as a vector.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "angle_range",
+        "center",
+        "major",
+        "minor",
+        "pitch",
+        "apex_factor",
+        "axis"
+      ]
+    },
+    {
+      "description": "Intersection of two support surfaces.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "context": {
+          "description": "Shared surfaces, UV curves, interval, and discontinuity metadata.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "discontinuity_flag": {
+          "description": "Native boolean following the discontinuity arrays.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "intersection"
+        }
+      },
+      "required": [
+        "kind",
+        "context",
+        "discontinuity_flag"
+      ]
+    },
+    {
+      "description": "Tolerance-bounded intersection relation selected by topology endpoints.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "construction": {
+          "description": "Distinct supports and finite endpoint bounds.",
+          "$ref": "#/$defs/TolerantIntersectionConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "tolerant_intersection"
+        },
+        "parameterization": {
+          "description": "Atomic neutral parameterization established by validated support charts.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TolerantIntersectionParameterization"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Intersection constrained by a third ordered support surface.",
+      "type": "object",
+      "properties": {
+        "context": {
+          "description": "Shared support surfaces, UV curves, interval, and discontinuity arrays.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "kind": {
+          "type": "string",
+          "const": "three_surface_intersection"
+        },
+        "selector": {
+          "description": "Native branch selector code.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "third": {
+          "description": "Third support side of the intersection.",
+          "$ref": "#/$defs/IntcurveSupportSide"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context",
+        "selector",
+        "third"
+      ]
+    },
+    {
+      "description": "Surface-related curve whose native subtype has no tail beyond the shared prefix.",
+      "type": "object",
+      "properties": {
+        "family": {
+          "description": "Native family, support context, and optional cache-first tail.",
+          "$ref": "#/$defs/SurfaceCurveFamily"
+        },
+        "kind": {
+          "type": "string",
+          "const": "surface_curve"
+        }
+      },
+      "required": [
+        "kind",
+        "family"
+      ]
+    },
+    {
+      "description": "Silhouette of a cast surface in a light direction.",
+      "type": "object",
+      "properties": {
+        "cast_surface": {
+          "description": "Surface whose silhouette is constructed.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "context": {
+          "description": "Shared first two support pairs.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "kind": {
+          "type": "string",
+          "const": "silhouette"
+        },
+        "light_direction": {
+          "description": "Native model-space light direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "silhouette": {
+          "description": "Standard, parametric, or taper silhouette semantics.",
+          "$ref": "#/$defs/SilhouetteKind"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context",
+        "silhouette",
+        "cast_surface",
+        "light_direction"
+      ]
+    },
+    {
+      "description": "Curve offset relative to a surface parameterization.",
+      "type": "object",
+      "properties": {
+        "base": {
+          "description": "Embedded base curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "base_endpoints": {
+          "description": "Optional parameter endpoints following the embedded base curve in\nthe cache-first layout.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "base_range": {
+          "description": "Native interval on `base`.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "base_u_range": {
+          "description": "Native U interval on the base surface.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "base_v_range": {
+          "description": "Native V interval on the base surface.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "cache": {
+          "description": "Cache contract: the cache-first shared-context fields, or the legacy\nsolved-cache tolerance the context-first layout states instead.",
+          "$ref": "#/$defs/CacheContract5"
+        },
+        "context": {
+          "description": "Shared first two support pairs.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "discontinuity_flag": {
+          "description": "Native boolean following the discontinuity arrays.",
+          "type": "boolean"
+        },
+        "distance": {
+          "description": "Signed model-space offset distance.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "surface_offset"
+        },
+        "scale": {
+          "description": "Native unscaled parameter scale.",
+          "type": "number",
+          "format": "double"
+        },
+        "shift": {
+          "description": "Native unscaled parameter shift.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context",
+        "discontinuity_flag",
+        "base_u_range",
+        "base_v_range",
+        "base",
+        "base_range",
+        "base_endpoints",
+        "cache",
+        "distance",
+        "shift",
+        "scale"
+      ]
+    },
+    {
+      "description": "Blend spring guide between two support sides.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Native direction code.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "spring"
+        },
+        "layout": {
+          "description": "Native spring record layout.",
+          "$ref": "#/$defs/SpringLayout"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "layout",
+        "direction"
+      ]
+    },
+    {
+      "description": "Deformation of an embedded source curve.",
+      "type": "object",
+      "properties": {
+        "cache_first": {
+          "description": "Cache-first serializer fields surrounding the solved curve cache.",
+          "$ref": "#/$defs/CacheFirstCurveForm"
+        },
+        "context": {
+          "description": "Shared cache-first support context.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "data": {
+          "description": "Discriminator-specific deformation payload.",
+          "$ref": "#/$defs/DeformableCurveData"
+        },
+        "kind": {
+          "type": "string",
+          "const": "deformable"
+        },
+        "source": {
+          "description": "Curve being deformed or its unresolved native reference.",
+          "$ref": "#/$defs/DeformableCurveSource"
+        },
+        "source_parameter_range": {
+          "description": "Optional native bounds following the source curve.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context",
+        "cache_first",
+        "source",
+        "source_parameter_range",
+        "data"
+      ]
+    },
+    {
+      "description": "Projection of a source curve onto a support surface.",
+      "type": "object",
+      "properties": {
+        "context": {
+          "description": "Shared support surfaces, UV curves, interval, and discontinuity arrays.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "discontinuity_flag": {
+          "description": "Native boolean following the discontinuity arrays.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "projection"
+        },
+        "source": {
+          "description": "Curve being projected.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "tail": {
+          "description": "Native projection tail.",
+          "$ref": "#/$defs/ProjectionTail"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context",
+        "discontinuity_flag",
+        "source",
+        "tail"
+      ]
+    },
+    {
+      "description": "Offset from a source curve.",
+      "type": "object",
+      "properties": {
+        "distance": {
+          "description": "Signed offset distance, in document length units.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "offset"
+        },
+        "range": {
+          "description": "Retained parameter range, with its distance law when variable.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CurveOffsetRange"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "side": {
+          "description": "Exclusive plane-normal or explicit-direction carrier.",
+          "$ref": "#/$defs/OffsetSide"
+        },
+        "source": {
+          "description": "Curve this curve is offset from.",
+          "$ref": "#/$defs/CurveId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "source",
+        "distance",
+        "side"
+      ]
+    },
+    {
+      "description": "Free-space 3D offset using a reference direction.",
+      "type": "object",
+      "properties": {
+        "distance": {
+          "description": "Signed offset distance.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "spatial_offset"
+        },
+        "reference_direction": {
+          "description": "Reference direction controlling the offset frame.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "self_intersect": {
+          "description": "Whether the source classifies the result as self-intersecting.",
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
+        },
+        "source": {
+          "description": "Curve being offset.",
+          "$ref": "#/$defs/CurveId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "source",
+        "distance",
+        "reference_direction"
+      ]
+    },
+    {
+      "description": "Intersection of two surfaces after applying independent signed offsets.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "context": {
+          "description": "Shared surfaces, UV curves, interval, and discontinuity metadata.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "discontinuity_flag": {
+          "description": "Native boolean following the discontinuity arrays.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "two_sided_offset"
+        },
+        "offsets": {
+          "description": "Signed offset distance for each support side, in document length units.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context",
+        "discontinuity_flag",
+        "offsets"
+      ]
+    },
+    {
+      "description": "Free-space vector offset of a source curve over a parameter interval.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "type": "string",
+          "const": "vector_offset"
+        },
+        "offset": {
+          "description": "Model-space offset vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "parameter_range": {
+          "description": "Native parameter interval on the source curve.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "roles": {
+          "description": "Integer codes attached to the two native roles.",
+          "$ref": "#/$defs/VectorOffsetRoles"
+        },
+        "source": {
+          "description": "Curve being offset.",
+          "$ref": "#/$defs/CurveId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "source",
+        "parameter_range",
+        "offset",
+        "roles"
+      ]
+    },
+    {
+      "description": "A parameter sub-range of a parent curve.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "type": "string",
+          "const": "subset"
+        },
+        "parameter_range": {
+          "description": "Native parameter interval retained from the parent.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "sense": {
+          "description": "Whether the subset follows increasing parent parameters.",
+          "type": "boolean"
+        },
+        "source": {
+          "description": "Parent curve being restricted.",
+          "$ref": "#/$defs/CurveId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "source",
+        "parameter_range",
+        "sense"
+      ]
+    },
+    {
+      "description": "Affine replica of a curve carrier, retaining the parent curve's\nparameter range and parameterization.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "replica"
+        },
+        "source": {
+          "description": "Curve being replicated.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "transform": {
+          "description": "Affine map from the parent curve coordinates to this curve.",
+          "$ref": "#/$defs/Transform"
+        }
+      },
+      "required": [
+        "kind",
+        "source",
+        "transform"
+      ]
+    },
+    {
+      "description": "Spine or center curve of a blend surface.",
+      "type": "object",
+      "properties": {
+        "blend_surface": {
+          "description": "The blend surface this curve is the spine of, when known.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "blend_spine"
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Preserved construction without a neutral interpretation.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "unknown"
+        },
+        "native_kind": {
+          "description": "Source construction-family discriminator, when known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "record": {
+          "description": "Reference to the preserved raw source record, when retained.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UnknownId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    }
+  ]
+}
+```
+
+### `ProceduralSurfaceDefinition`
+
+```json
+{
+  "description": "Neutral semantics for a procedural surface.",
+  "oneOf": [
+    {
+      "description": "Exact native NURBS surface with retained parameter fields.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "exact"
+        },
+        "spline": {
+          "description": "Exact spline surface.",
+          "$ref": "#/$defs/ExactSpline"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "spline"
+      ]
+    },
+    {
+      "description": "Ordered native compound of a solved surface and component surfaces.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "components": {
+          "description": "Component surfaces in construction order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CompoundComponent"
+          }
+        },
+        "kind": {
+          "type": "string",
+          "const": "compound"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "components"
+      ]
+    },
+    {
+      "description": "Exact rectangular restriction of an embedded support surface.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "sub_surface"
+        },
+        "parameter_ranges": {
+          "description": "Finite U and V parameter intervals, each with its endpoints in stored order.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "support": {
+          "description": "Embedded support surface whose parameterization is retained.",
+          "$ref": "#/$defs/SurfaceId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "support",
+        "parameter_ranges"
+      ]
+    },
+    {
+      "description": "Taper of a support surface around a reference curve.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Cache contract: the revision-gated form, or the legacy\nsolved-cache tolerance this construction states instead.",
+          "$ref": "#/$defs/CacheContract"
+        },
+        "kind": {
+          "type": "string",
+          "const": "taper"
+        },
+        "parameter": {
+          "description": "Native taper parameter or draft magnitude.",
+          "type": "number",
+          "format": "double"
+        },
+        "pcurve": {
+          "description": "UV curve on the support, absent for `nullbs`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PcurveGeometry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reference": {
+          "description": "Reference curve on the support.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "support": {
+          "description": "Base surface being tapered.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "taper": {
+          "description": "Subtype-specific taper tail.",
+          "$ref": "#/$defs/TaperSurfaceKind"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "support",
+        "reference",
+        "parameter",
+        "taper",
+        "cache"
+      ]
+    },
+    {
+      "description": "Native loft defined by two section graphs and closure contracts.",
+      "type": "object",
+      "properties": {
+        "bridge": {
+          "description": "Native bridge tokens in source order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LoftBridgeToken"
+          }
+        },
+        "cache": {
+          "description": "Cache contract: the revision-gated loft form, or the legacy solved-cache tolerance this construction states instead.",
+          "$ref": "#/$defs/CacheContract2"
+        },
+        "closures": {
+          "description": "Native closure codes of the two parameter directions.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "loft"
+        },
+        "mode": {
+          "description": "Native loft mode code.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "parameters": {
+          "description": "Spline surface parameters.",
+          "$ref": "#/$defs/SplineSurfaceParameters"
+        },
+        "sections": {
+          "description": "The two loft sections.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LoftSection"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "singularities": {
+          "description": "Native singularity codes of the two parameter directions.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sections",
+        "parameters",
+        "closures",
+        "singularities",
+        "mode",
+        "bridge",
+        "cache"
+      ]
+    },
+    {
+      "description": "Native compound-loft construction.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "construction": {
+          "description": "Compound loft construction.",
+          "$ref": "#/$defs/CompoundLoftConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "compound_loft"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Revision-gated compound-loft construction.",
+      "type": "object",
+      "properties": {
+        "construction": {
+          "description": "Complete native revision-gated compound-loft graph.",
+          "$ref": "#/$defs/RevisionCompoundLoftConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision_compound_loft"
+        }
+      },
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Native scaled compound-loft construction.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "construction": {
+          "description": "Scaled compound loft construction.",
+          "$ref": "#/$defs/ScaledCompoundLoftConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "scaled_compound_loft"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Native skinned spline surface.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "construction": {
+          "description": "Skin surface construction.",
+          "$ref": "#/$defs/SkinSurfaceConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "skin"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Native surface defined by recursive law formulas.",
+      "type": "object",
+      "properties": {
+        "construction": {
+          "description": "Law surface construction.",
+          "$ref": "#/$defs/LawSurfaceConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "law"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Native curve-network spline surface.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "construction": {
+          "description": "Net surface construction.",
+          "$ref": "#/$defs/NetSurfaceConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "net"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Native curvature-continuous two-sided blend.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "construction": {
+          "description": "G2 blend construction.",
+          "$ref": "#/$defs/G2BlendConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "g2_blend"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Revision-gated curvature-continuous blend in the variable-blend side\nlayout.",
+      "type": "object",
+      "properties": {
+        "construction": {
+          "description": "Complete native revision-gated G2 construction graph.",
+          "$ref": "#/$defs/RevisionG2BlendConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision_g2_blend"
+        }
+      },
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Native variable-radius two-sided blend.",
+      "type": "object",
+      "properties": {
+        "construction": {
+          "description": "Variable blend construction.",
+          "$ref": "#/$defs/VariableBlendConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "variable_blend"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Native vertex-blend patch.",
+      "type": "object",
+      "properties": {
+        "construction": {
+          "description": "Vertex blend construction.",
+          "$ref": "#/$defs/VertexBlendConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "vertex_blend"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Translation of a directrix along a direction.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Cache contract: the revision-gated form, or the legacy\nsolved-cache tolerance this construction states instead.\nThe directrix parameter interval is `parameter_interval`.",
+          "$ref": "#/$defs/CacheContract"
+        },
+        "direction": {
+          "description": "Length-bearing sweep direction, in document length units.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "directrix": {
+          "description": "Curve swept along `direction` to form the surface.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "kind": {
+          "type": "string",
+          "const": "extrusion"
+        },
+        "native_position": {
+          "description": "Native model-space position following the sweep direction, when carried.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Point3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parameter_interval": {
+          "description": "Native source directrix parameter interval, when carried by the\nsource. The neutral surface-carrier interval is in\n`ProceduralSurface::record_bounds`.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "directrix",
+        "direction",
+        "cache"
+      ]
+    },
+    {
+      "description": "Unbounded linear sweep of a directrix.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Length-bearing sweep vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "directrix": {
+          "description": "Curve swept along `direction`.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "kind": {
+          "type": "string",
+          "const": "linear_sweep"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "directrix",
+        "direction"
+      ]
+    },
+    {
+      "description": "Revolution of a directrix about an axis.",
+      "type": "object",
+      "properties": {
+        "angular_interval": {
+          "description": "Angular start and end parameters, in radians.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "angular_parameter_interval": {
+          "description": "Surface-parameter interval that maps affinely to\n`angular_interval`. Absence means the surface parameter is already\nthe revolution angle in radians.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "axis_direction": {
+          "description": "Direction of the revolution axis, with norm within `1e-9` of one.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "axis_origin": {
+          "description": "A point on the revolution axis, with finite coordinates.",
+          "$ref": "#/$defs/Point3"
+        },
+        "cache": {
+          "description": "Cache contract: the revision-gated form, or the legacy\nsolved-cache tolerance this construction states instead.\nThe profile curve's optional endpoints are `reference_endpoints`.",
+          "$ref": "#/$defs/CacheContract"
+        },
+        "directrix": {
+          "description": "Curve revolved about the axis to form the surface.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "kind": {
+          "type": "string",
+          "const": "revolution"
+        },
+        "parameter_interval": {
+          "description": "Native source directrix parameter start and end values, when\ncarried by the source representation. The neutral surface-carrier\ninterval is in `ProceduralSurface::record_bounds`.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "transposed": {
+          "description": "Whether the source parameter directions are transposed.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "directrix",
+        "axis_origin",
+        "axis_direction",
+        "angular_interval",
+        "transposed",
+        "cache"
+      ]
+    },
+    {
+      "description": "Full revolution of a directrix about an axis.",
+      "type": "object",
+      "properties": {
+        "axis_direction": {
+          "description": "Unit revolution-axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "axis_origin": {
+          "description": "Point on the revolution axis.",
+          "$ref": "#/$defs/Point3"
+        },
+        "directrix": {
+          "description": "Curve revolved about the axis.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "kind": {
+          "type": "string",
+          "const": "axis_revolution"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "directrix",
+        "axis_origin",
+        "axis_direction"
+      ]
+    },
+    {
+      "description": "Sum of two ordered curves from a base point.",
+      "type": "object",
+      "properties": {
+        "basepoint": {
+          "description": "Surface base point.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "cache": {
+          "description": "Cache contract: the revision-gated form, or the legacy\nsolved-cache tolerance this construction states instead.",
+          "$ref": "#/$defs/CacheContract"
+        },
+        "first": {
+          "description": "First curve, varying in the first surface parameter.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "kind": {
+          "type": "string",
+          "const": "sum"
+        },
+        "second": {
+          "description": "Second curve, varying in the second surface parameter.",
+          "$ref": "#/$defs/CurveId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "first",
+        "second",
+        "basepoint",
+        "cache"
+      ]
+    },
+    {
+      "description": "Sweep of a profile along a spine.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "sweep"
+        },
+        "native": {
+          "description": "Native sweep construction, when the source carries one.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SweepSurfaceConstruction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profile": {
+          "description": "Curve swept along the spine.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "spine": {
+          "description": "Curve the profile follows.",
+          "$ref": "#/$defs/CurveId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "profile",
+        "spine"
+      ]
+    },
+    {
+      "description": "T-spline face with its shared subtransform program.",
+      "type": "object",
+      "properties": {
+        "construction": {
+          "description": "Complete native T-spline wrapper construction.",
+          "$ref": "#/$defs/TSplineSurfaceConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "t_spline"
+        }
+      },
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Surface generated along an inline circular or linear helix path.",
+      "type": "object",
+      "properties": {
+        "construction": {
+          "description": "Complete native helix-surface construction.",
+          "$ref": "#/$defs/HelixSurfaceConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "helix"
+        }
+      },
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Native deformable spline surface.",
+      "type": "object",
+      "properties": {
+        "construction": {
+          "description": "Deformable surface construction.",
+          "$ref": "#/$defs/DeformableSurfaceConstruction"
+        },
+        "kind": {
+          "type": "string",
+          "const": "deformable"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "construction"
+      ]
+    },
+    {
+      "description": "Offset from a support surface.",
+      "type": "object",
+      "properties": {
+        "distance": {
+          "description": "Signed offset distance, in document length units.",
+          "type": "number",
+          "format": "double"
+        },
+        "extension": {
+          "description": "Legacy conditional extension flags or the revision-gated form.",
+          "$ref": "#/$defs/OffsetExtension"
+        },
+        "kind": {
+          "type": "string",
+          "const": "offset"
+        },
+        "linear_support_extension": {
+          "description": "Whether the support continues as ruled linear strips outside its\nactive NURBS rectangle.",
+          "type": "boolean"
+        },
+        "support": {
+          "description": "Surface this surface is offset from.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "u_sense": {
+          "description": "Native U parameter-direction sense enum, when carried.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        },
+        "v_sense": {
+          "description": "Native V parameter-direction sense enum, when carried.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "support",
+        "distance",
+        "linear_support_extension",
+        "extension"
+      ]
+    },
+    {
+      "description": "Rectangular parameter sub-range of a support surface.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "type": "string",
+          "const": "subset"
+        },
+        "parameter_ranges": {
+          "description": "U and V parameter endpoints in the support parameterization.\n\nThe endpoint order is significant for cyclic and reversed\ntrims. A producer that does not carry direction metadata may\nleave the sense fields absent and use increasing endpoints.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "support": {
+          "description": "Surface being restricted.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "u_sense": {
+          "description": "Whether the trimmed surface U direction agrees with the support.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "v_sense": {
+          "description": "Whether the trimmed surface V direction agrees with the support.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "support",
+        "parameter_ranges"
+      ]
+    },
+    {
+      "description": "Affine replica of a surface carrier, retaining the parent surface\nconstruction and its parameter domain.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "replica"
+        },
+        "source": {
+          "description": "Surface being replicated.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "transform": {
+          "description": "Affine map from the parent surface coordinates to this surface.",
+          "$ref": "#/$defs/Transform"
+        }
+      },
+      "required": [
+        "kind",
+        "source",
+        "transform"
+      ]
+    },
+    {
+      "description": "Parallel offset from a support surface.",
+      "type": "object",
+      "properties": {
+        "distance": {
+          "description": "Signed offset distance.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "parallel_offset"
+        },
+        "self_intersect": {
+          "description": "Whether the source classifies the result as self-intersecting.",
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
+        },
+        "support": {
+          "description": "Surface being offset.",
+          "$ref": "#/$defs/SurfaceId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "support",
+        "distance"
+      ]
+    },
+    {
+      "description": "Self-intersecting torus with an explicitly selected outer or inner sheet.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "degenerate_torus"
+        },
+        "select_outer": {
+          "description": "Whether the outer sheet is selected at the self-intersection.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "select_outer"
+      ]
+    },
+    {
+      "description": "Surface domain bounded by ordered curves on a supporting surface.",
+      "type": "object",
+      "properties": {
+        "boundaries": {
+          "description": "Boundary curves on the support.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CurveId"
+          }
+        },
+        "boundary_pcurves": {
+          "description": "Parameter-space carriers used by surface-curve boundary segments.\n\nThese are separate from `boundaries`: one STEP surface curve can\ncarry both a model-space curve and pcurves on the support surface.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PcurveId"
+          }
+        },
+        "implicit_outer": {
+          "description": "Whether the support's natural outer boundary is implicit.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "curve_bounded"
+        },
+        "support": {
+          "description": "Supporting surface whose parameterization defines the domain.",
+          "$ref": "#/$defs/SurfaceId"
+        }
+      },
+      "required": [
+        "kind",
+        "support",
+        "boundaries",
+        "boundary_pcurves",
+        "implicit_outer"
+      ]
+    },
+    {
+      "description": "Ruled surface joining two directrices.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first": {
+          "description": "First bounding curve of the ruled surface.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "kind": {
+          "type": "string",
+          "const": "ruled"
+        },
+        "second": {
+          "description": "Second bounding curve of the ruled surface.",
+          "$ref": "#/$defs/CurveId"
+        }
+      },
+      "required": [
+        "kind",
+        "first",
+        "second"
+      ]
+    },
+    {
+      "description": "Rolling-ball or law-driven blend between two support surfaces.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Cache contract: the native rolling-ball construction, which states its\nown cache form, or the legacy solved-cache tolerance stated instead.",
+          "$ref": "#/$defs/CacheContract4"
+        },
+        "cross_section": {
+          "description": "Blend cross-section form.",
+          "$ref": "#/$defs/BlendCrossSection"
+        },
+        "kind": {
+          "type": "string",
+          "const": "blend"
+        },
+        "radius": {
+          "description": "Blend radius law.",
+          "$ref": "#/$defs/BlendRadiusLaw"
+        },
+        "spine": {
+          "description": "Spine curve, when the source resolves one.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CurveId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "supports": {
+          "description": "Blend support sides.",
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/BlendSupport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "supports",
+        "radius",
+        "cross_section",
+        "cache"
+      ]
+    },
+    {
+      "description": "Rolling-ball surface defined by aligned quintic value/derivative jets.",
+      "type": "object",
+      "properties": {
+        "degree": {
+          "description": "Polynomial degree of each scalar channel.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "kind": {
+          "type": "string",
+          "const": "rolling_ball_jet"
+        },
+        "stations": {
+          "description": "Ordered station data.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RollingBallJetStation"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "degree",
+        "stations"
+      ]
+    },
+    {
+      "description": "Preserved construction without a neutral interpretation.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this construction states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "unknown"
+        },
+        "record": {
+          "description": "Reference to the preserved raw source record, when retained.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UnknownId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ]
+    }
+  ]
+}
+```
+
+### `ProjectionRole`
+
+```json
+{
+  "description": "Support selected by a ranged projection tail.",
+  "oneOf": [
+    {
+      "description": "First support surface.",
+      "type": "string",
+      "const": "surf1"
+    },
+    {
+      "description": "Second support surface.",
+      "type": "string",
+      "const": "surf2"
+    }
+  ]
+}
+```
+
+### `ProjectionTail`
+
+```json
+{
+  "description": "Mutually exclusive tail forms of a native projected intcurve.",
+  "oneOf": [
+    {
+      "description": "The ASM flag is followed immediately by the subtype close.",
+      "type": "object",
+      "properties": {
+        "flag": {
+          "description": "Native ASM projection flag.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "early_close"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "flag"
+      ]
+    },
+    {
+      "description": "The ASM flag is followed by a retained source interval and role text.",
+      "type": "object",
+      "properties": {
+        "flag": {
+          "description": "Native ASM projection flag.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "ranged"
+        },
+        "parameter_range": {
+          "description": "Native parameter interval on the projected source curve.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "role": {
+          "description": "Projection support role.",
+          "$ref": "#/$defs/ProjectionRole"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "flag",
+        "parameter_range",
+        "role"
+      ]
+    }
+  ]
+}
+```
+
+### `RevisionCacheForm`
+
+```json
+{
+  "description": "Mutually exclusive payloads of a revision-gated approximation cache.",
+  "oneOf": [
+    {
+      "description": "A solved cache followed by its carrier-specific cache contract.",
+      "type": "object",
+      "properties": {
+        "fit_tolerance": {
+          "description": "Carrier-specific solved-cache contract.",
+          "$ref": "#/$defs/FitTolerance"
+        },
+        "kind": {
+          "type": "string",
+          "const": "solved_cache"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "fit_tolerance"
+      ]
+    },
+    {
+      "description": "Parameterization stored in place of a solved cache.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "parameterization"
+        },
+        "u_closure": {
+          "description": "U closure enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "u_interval": {
+          "description": "U parameter interval, an ordered `[lo, hi]` pair of optional bounds.\n`None` is a false bound-presence flag.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "u_singularity": {
+          "description": "U singularity enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "v_closure": {
+          "description": "V closure enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "v_interval": {
+          "description": "V parameter interval, an ordered `[lo, hi]` pair of optional bounds.\n`None` is a false bound-presence flag.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "v_singularity": {
+          "description": "V singularity enum.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "u_interval",
+        "v_interval",
+        "u_closure",
+        "v_closure",
+        "u_singularity",
+        "v_singularity"
+      ]
+    }
+  ]
+}
+```
+
+### `RevisionCacheForm2`
+
+```json
+{
+  "description": "Mutually exclusive payloads of a revision-gated approximation cache.",
+  "oneOf": [
+    {
+      "description": "A solved cache followed by its carrier-specific cache contract.",
+      "type": "object",
+      "properties": {
+        "fit_tolerance": {
+          "description": "Carrier-specific solved-cache contract.",
+          "$ref": "#/$defs/FitTolerance"
+        },
+        "kind": {
+          "type": "string",
+          "const": "solved_cache"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "fit_tolerance"
+      ]
+    },
+    {
+      "description": "Parameterization stored in place of a solved cache.",
+      "type": "object",
+      "properties": {
+        "closed_form": {
+          "description": "Closed-form enum following the interval.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "interval": {
+          "description": "Curve interval, an ordered `[lo, hi]` pair of optional bounds. `None` is\na false bound-presence flag.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "parameterization"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "interval",
+        "closed_form"
+      ]
+    }
+  ]
+}
+```
+
+### `RevisionCompoundLoftConstruction`
+
+```json
+{
+  "description": "Complete native revision-gated `cl_loft_spl_sur` construction. The\nrevision layout is cache-first: the revision integer and shared\nrevision-gated surface tail precede the construction fields.",
+  "type": "object",
+  "properties": {
+    "base_path": {
+      "description": "Path data of the leading scale block.",
+      "$ref": "#/$defs/LoftPath"
+    },
+    "base_profile": {
+      "description": "Leading unparameterized scale block: ordered profile members and path.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LoftProfileMember"
+      }
+    },
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
+    },
+    "direction": {
+      "description": "Direction carrier selected by the kind-zero direction tag.",
+      "$ref": "#/$defs/CompoundLoftDirection"
+    },
+    "discontinuities": {
+      "description": "Six ordered discontinuity arrays following the fit tolerance.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "entries": {
+      "description": "Counted parameterized entries; the native parameter trails each\nentry's fields.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LoftSectionEntry"
+      }
+    },
+    "flags": {
+      "description": "Two flags following the entries.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "kind_flags": {
+      "description": "Two flags opening the kind-zero payload.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "tail": {
+      "description": "Trailing bounds and their dependent BS3 curve.",
+      "$ref": "#/$defs/RevisionCompoundLoftTail"
+    },
+    "tail_flag": {
+      "description": "Boolean terminating the shared tail.",
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "revision",
+    "cache",
+    "discontinuities",
+    "tail_flag",
+    "base_profile",
+    "base_path",
+    "entries",
+    "flags",
+    "kind_flags",
+    "direction",
+    "tail"
+  ]
+}
+```
+
+### `RevisionCompoundLoftTail`
+
+```json
+{
+  "description": "Trailing parameter bounds of a revision compound loft.\nBoth bounds select a trailing curve; all other forms contain no curve.",
+  "oneOf": [
+    {
+      "description": "Neither parameter bound is present.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "unbounded"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Only the lower parameter bound is present.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "lower_bound"
+        },
+        "lower": {
+          "description": "Lower parameter bound.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "lower"
+      ]
+    },
+    {
+      "description": "Only the upper parameter bound is present.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "upper_bound"
+        },
+        "upper": {
+          "description": "Upper parameter bound.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "upper"
+      ]
+    },
+    {
+      "description": "Both parameter bounds and their selected curve.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Curve selected by the complete parameter pair.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "interval": {
+          "description": "Ordered lower and upper parameter bounds.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "curve"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "interval",
+        "curve"
+      ]
+    }
+  ]
+}
+```
+
+### `RevisionG2BlendConstruction`
+
+```json
+{
+  "description": "Complete native revision-gated `g2_blend_spl_sur` construction. The\nrevision layout stores the two support sides in the variable-blend side\nlayout and ends with the shared revision-gated surface tail.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
+    },
+    "center": {
+      "description": "Stored center curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "center_range": {
+      "description": "Optional native center-curve parameter endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "discontinuities": {
+      "description": "Six ordered discontinuity arrays following the fit tolerance.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "leading_parameters": {
+      "description": "Two native scalars following the revision integer.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "radii": {
+      "description": "Two signed blend radii in document length units.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "radius_selector": {
+      "description": "Integer-valued optional-radius selector following the radii.",
+      "$ref": "#/$defs/RollingBallRadiusSelector"
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "shape_length": {
+      "description": "Native length before the solved shape, in document units.",
+      "type": "number",
+      "format": "double"
+    },
+    "shape_parameter": {
+      "description": "Native scalar before the solved shape.",
+      "type": "number",
+      "format": "double"
+    },
+    "shape_prefix": {
+      "description": "Native integer before the solved shape.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "shape_tail": {
+      "description": "Native integer immediately before the shared tail.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "sides": {
+      "description": "Two ordered support-side graphs in the variable-blend side layout.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RollingBallSide"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "tail_extensions": {
+      "description": "Three ASM integers following the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "maxItems": 3,
+      "minItems": 3
+    },
+    "tail_flag": {
+      "description": "Boolean terminating the shared tail.",
+      "type": "boolean"
+    },
+    "u_range": {
+      "description": "Native optional U interval endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "v_range": {
+      "description": "Native optional V interval endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "revision",
+    "leading_parameters",
+    "sides",
+    "center",
+    "center_range",
+    "radii",
+    "radius_selector",
+    "u_range",
+    "v_range",
+    "shape_prefix",
+    "shape_parameter",
+    "shape_length",
+    "shape_tail",
+    "cache",
+    "discontinuities",
+    "tail_flag",
+    "tail_extensions"
+  ]
+}
+```
+
+### `RevisionSurfaceForm`
+
+```json
+{
+  "description": "Shared fields of a revision-gated spline-surface form: the revision\ninteger, optional support bounds and reference-curve endpoints, a\ncarrier-specific boolean run, and the shared tail enum, discontinuity\narrays, tail boolean, and post-tail boolean run.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
+    },
+    "discontinuities": {
+      "description": "Six ordered discontinuity arrays following the fit tolerance.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "flags": {
+      "description": "Carrier-specific boolean run preceding the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      }
+    },
+    "reference_endpoints": {
+      "description": "Optional parameter endpoints following the embedded reference curve.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "second_endpoints": {
+      "description": "Optional parameter endpoints following a second embedded curve, used\nby two-curve carriers such as `sum_spl_sur`.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "support_bounds": {
+      "description": "Optional U/V bound fields following the support surface.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    },
+    "tail_flag": {
+      "description": "Boolean terminating the shared tail.",
+      "type": "boolean"
+    },
+    "trailing_flags": {
+      "description": "Boolean run following the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "revision",
+    "support_bounds",
+    "reference_endpoints",
+    "second_endpoints",
+    "flags",
+    "cache",
+    "discontinuities",
+    "tail_flag",
+    "trailing_flags"
+  ]
+}
+```
+
+### `RevisionSurfaceForm2`
+
+```json
+{
+  "description": "Shared fields of a revision-gated spline-surface form: the revision\ninteger, optional support bounds and reference-curve endpoints, a\ncarrier-specific boolean run, and the shared tail enum, discontinuity\narrays, tail boolean, and post-tail boolean run.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
+    },
+    "discontinuities": {
+      "description": "Six ordered discontinuity arrays following the fit tolerance.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "flags": {
+      "description": "Carrier-specific boolean run preceding the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    },
+    "reference_endpoints": {
+      "description": "Optional parameter endpoints following the embedded reference curve.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "second_endpoints": {
+      "description": "Optional parameter endpoints following a second embedded curve, used\nby two-curve carriers such as `sum_spl_sur`.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "support_bounds": {
+      "description": "Optional U/V bound fields following the support surface.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 4,
+      "minItems": 4
+    },
+    "tail_flag": {
+      "description": "Boolean terminating the shared tail.",
+      "type": "boolean"
+    },
+    "trailing_flags": {
+      "description": "Boolean run following the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "revision",
+    "support_bounds",
+    "reference_endpoints",
+    "second_endpoints",
+    "flags",
+    "cache",
+    "discontinuities",
+    "tail_flag",
+    "trailing_flags"
+  ]
+}
+```
+
+### `RevisionSurfaceParameterization`
+
+```json
+{
+  "description": "Parameterization carried by tail-enum form `2` of the shared revision-gated\nspline-surface tail. This form stores no approximation cache and no fit\ntolerance; it stores the two parameter intervals followed by four enums, in\nthe order the fields appear below.",
+  "type": "object",
+  "properties": {
+    "u_closure": {
+      "description": "U closure enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "u_interval": {
+      "description": "U parameter interval, an ordered `[lo, hi]` pair of optional bounds.\n`None` is a false bound-presence flag.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "u_singularity": {
+      "description": "U singularity enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "v_closure": {
+      "description": "V closure enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "v_interval": {
+      "description": "V parameter interval, an ordered `[lo, hi]` pair of optional bounds.\n`None` is a false bound-presence flag.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "v_singularity": {
+      "description": "V singularity enum.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "u_interval",
+    "v_interval",
+    "u_closure",
+    "v_closure",
+    "u_singularity",
+    "v_singularity"
+  ]
+}
+```
+
+### `RollingBallConstruction`
+
+```json
+{
+  "description": "Complete byte-backed rolling-ball or three-surface blend context.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
+    },
+    "discontinuities": {
+      "description": "Six ordered ASM discontinuity arrays closing the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "offsets": {
+      "description": "Two signed support offsets in document length units.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "parameters": {
+      "description": "Two ordered trailing scalars.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "radius_selector": {
+      "description": "Optional-radius selector field.",
+      "$ref": "#/$defs/RollingBallRadiusSelector2"
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "shape_prefix": {
+      "description": "Native integer preceding the trailing scalars.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "sides": {
+      "description": "Two ordered primary support sides.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RollingBallSide"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "slice": {
+      "description": "Stored slice or center curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "slice_range": {
+      "description": "Optional native slice-curve parameter endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "tail": {
+      "description": "Native long following the trailing scalars.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "tail_extensions": {
+      "description": "Three ASM integers preceding the subtype close.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "maxItems": 3,
+      "minItems": 3
+    },
+    "tail_flag": {
+      "description": "Native Boolean closing the shared tail.",
+      "type": "boolean"
+    },
+    "third": {
+      "description": "Third side present only for `sss_blend_spl_sur`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RollingBallThirdSide"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "u_range": {
+      "description": "Native optional U interval endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "v_range": {
+      "description": "Native optional V interval endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "revision",
+    "sides",
+    "slice",
+    "slice_range",
+    "offsets",
+    "radius_selector",
+    "u_range",
+    "v_range",
+    "shape_prefix",
+    "parameters",
+    "tail",
+    "cache",
+    "discontinuities",
+    "tail_flag",
+    "tail_extensions"
+  ]
+}
+```
+
+### `RollingBallJetDerivative`
+
+```json
+{
+  "description": "One derivative row for the four channels of a rolling-ball jet.",
+  "type": "object",
+  "properties": {
+    "angle": {
+      "description": "Derivative of the signed opening angle.",
+      "type": "number",
+      "format": "double"
+    },
+    "center": {
+      "description": "Derivative of the rolling-ball center.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "first_limit": {
+      "description": "Derivative of the first limiting point.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "second_limit": {
+      "description": "Derivative of the second limiting point.",
+      "$ref": "#/$defs/Vector3"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "first_limit",
+    "second_limit",
+    "center",
+    "angle"
+  ]
+}
+```
+
+### `RollingBallJetSite`
+
+```json
+{
+  "description": "One aligned knot site of an exact rolling-ball surface jet.",
+  "type": "object",
+  "properties": {
+    "angle": {
+      "description": "Signed opening angle at the knot, in radians.",
+      "type": "number",
+      "format": "double"
+    },
+    "center": {
+      "description": "Rolling-ball center at the knot.",
+      "$ref": "#/$defs/Point3"
+    },
+    "first_derivative": {
+      "description": "First parameter derivative of all four value channels.",
+      "$ref": "#/$defs/RollingBallJetDerivative"
+    },
+    "first_limit": {
+      "description": "First limiting point at the knot.",
+      "$ref": "#/$defs/Point3"
+    },
+    "second_derivative": {
+      "description": "Second parameter derivative of all four value channels.",
+      "$ref": "#/$defs/RollingBallJetDerivative"
+    },
+    "second_limit": {
+      "description": "Second limiting point at the knot.",
+      "$ref": "#/$defs/Point3"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "first_limit",
+    "second_limit",
+    "center",
+    "angle",
+    "first_derivative",
+    "second_derivative"
+  ]
+}
+```
+
+### `RollingBallJetStation`
+
+```json
+{
+  "description": "One parameter station of a rolling-ball jet, with its complete value rows.",
+  "type": "object",
+  "properties": {
+    "knot": {
+      "description": "Native spine parameter.",
+      "type": "number",
+      "format": "double"
+    },
+    "multiplicity": {
+      "description": "Multiplicity of this parameter in the native knot vector.",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "site": {
+      "description": "Values and derivatives at this parameter.",
+      "$ref": "#/$defs/RollingBallJetSite"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "knot",
+    "multiplicity",
+    "site"
+  ]
+}
+```
+
+### `RollingBallRadiusSelector`
+
+```json
+{
+  "description": "Native optional-radius selector in a rolling-ball construction.",
+  "oneOf": [
+    {
+      "description": "The construction states no radius.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "none"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Explicit native selector scalar.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "value"
+        },
+        "value": {
+          "description": "Stored scalar value.",
+          "$ref": "#/$defs/PositiveI64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    }
+  ]
+}
+```
+
+### `RollingBallRadiusSelector2`
+
+```json
+{
+  "description": "Native optional-radius selector in a rolling-ball construction.",
+  "oneOf": [
+    {
+      "description": "The construction states no radius.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "none"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Explicit native selector scalar.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "value"
+        },
+        "value": {
+          "description": "Stored scalar value.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    }
+  ]
+}
+```
+
+### `RollingBallSide`
+
+```json
+{
+  "description": "One complete native rolling-ball support side.",
+  "type": "object",
+  "properties": {
+    "curve": {
+      "description": "Side curve and bounds, absent for `null_curve`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RollingBallSupportCurve"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "extension": {
+      "description": "Native extension integer and nullable tertiary pcurve.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RollingBallSideExtension"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "location": {
+      "description": "Native model-space side location.",
+      "$ref": "#/$defs/Point3"
+    },
+    "pcurve": {
+      "description": "Primary BS2 pcurve, absent for `nullbs`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "secondary_pcurve": {
+      "description": "ASM secondary BS2 pcurve, absent for `nullbs`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "support_kind": {
+      "description": "Geometry role selected by the support-side discriminator.",
+      "$ref": "#/$defs/VariableBlendSupportKind"
+    },
+    "surface": {
+      "description": "Primary support surface and bounds, absent for `null_surface`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RollingBallSupportSurface"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "support_kind",
+    "location"
+  ]
+}
+```
+
+### `RollingBallSideExtension`
+
+```json
+{
+  "description": "The optional rolling-ball extension clause.",
+  "type": "object",
+  "properties": {
+    "pcurve": {
+      "description": "Tertiary BS2 pcurve, absent for `nullbs`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "value": {
+      "description": "Native integer introducing the clause.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "value"
+  ]
+}
+```
+
+### `RollingBallSupportCurve`
+
+```json
+{
+  "description": "A present rolling-ball side curve and its native parameter bounds.",
+  "type": "object",
+  "properties": {
+    "curve": {
+      "description": "Side curve or embedded geometry.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "parameter_range": {
+      "description": "Optional native parameter endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "curve",
+    "parameter_range"
+  ]
+}
+```
+
+### `RollingBallSupportSurface`
+
+```json
+{
+  "description": "A present rolling-ball support surface and its native UV bounds.",
+  "type": "object",
+  "properties": {
+    "parameter_ranges": {
+      "description": "Optional native U and V endpoints.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "maxItems": 2,
+        "minItems": 2
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "surface": {
+      "description": "Support surface or embedded geometry.",
+      "$ref": "#/$defs/SurfaceId"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "surface",
+    "parameter_ranges"
+  ]
+}
+```
+
+### `RollingBallThirdSide`
+
+```json
+{
+  "description": "Third support graph appended by `sss_blend_spl_sur`.",
+  "type": "object",
+  "properties": {
+    "curve": {
+      "description": "Third side curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "direction": {
+      "description": "Native side vector.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "extension": {
+      "description": "Native ASM integer following the secondary pcurve.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "flag": {
+      "description": "Final ASM flag.",
+      "type": "boolean"
+    },
+    "label": {
+      "description": "Native side label.",
+      "type": "string"
+    },
+    "pcurve": {
+      "description": "Primary BS2 pcurve, absent for `nullbs`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "secondary_pcurve": {
+      "description": "ASM secondary BS2 pcurve, absent for `nullbs`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "surface": {
+      "description": "Third support surface.",
+      "$ref": "#/$defs/SurfaceId"
+    },
+    "tertiary_pcurve": {
+      "description": "ASM tertiary BS2 pcurve, absent for `nullbs`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "label",
+    "surface",
+    "curve",
+    "direction",
+    "extension",
+    "flag"
+  ]
+}
+```
+
+### `ScaledCompoundLoftBranch`
+
+```json
+{
+  "description": "Structurally selected middle branch of a scaled compound loft.",
+  "oneOf": [
+    {
+      "description": "Extended branch ending in a direction vector.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Stored direction vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "first_scale": {
+          "description": "Optional first scale block.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CompoundLoftScale"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "const": "extended_vector"
+        },
+        "second_scale": {
+          "description": "Required second scale block.",
+          "$ref": "#/$defs/CompoundLoftScale"
+        },
+        "selector": {
+          "description": "Native selector integer.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "second_scale",
+        "selector",
+        "direction"
+      ]
+    },
+    {
+      "description": "Extended branch ending in a singularity and curve.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Stored BS3 curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "flag": {
+          "description": "Native branch flag.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "extended_curve"
+        },
+        "scale": {
+          "description": "Optional scale block.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CompoundLoftScale"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "singularity": {
+          "description": "Native singularity enum.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "flag",
+        "singularity",
+        "curve"
+      ]
+    },
+    {
+      "description": "Direct vector-or-curve branch.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Vector or BS3 curve with its derived native selector.",
+          "$ref": "#/$defs/CompoundLoftDirection"
+        },
+        "flag": {
+          "description": "Native branch flag.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "direct"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "flag",
+        "direction"
+      ]
+    }
+  ]
+}
+```
+
+### `ScaledCompoundLoftConstruction`
+
+```json
+{
+  "description": "Complete native scaled compound-loft construction graph.",
+  "type": "object",
+  "properties": {
+    "branch": {
+      "description": "Structurally selected middle branch.",
+      "$ref": "#/$defs/ScaledCompoundLoftBranch"
+    },
+    "discontinuities": {
+      "description": "Six ordered discontinuity arrays.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "discontinuity_flag": {
+      "description": "Native discontinuity tail flag.",
+      "type": "boolean"
+    },
+    "flags": {
+      "description": "Two native flags preceding the selector.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "scales": {
+      "description": "Present leading scales within the three native slots.",
+      "$ref": "#/$defs/CompoundLoftScales_3"
+    },
+    "selector": {
+      "description": "Native integer preceding the middle branch.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "shape": {
+      "description": "Singularity-selected solved-shape payload.",
+      "$ref": "#/$defs/ScaledCompoundLoftShape"
+    },
+    "singularity": {
+      "description": "Native leading singularity enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "tail_curve": {
+      "description": "Native trailing BS3 curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "tail_directions": {
+      "description": "Two native trailing vectors.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Vector3"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "tail_kind": {
+      "description": "Native trailing kind integer.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "tail_singularity": {
+      "description": "Native trailing singularity enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "trailing_flags": {
+      "description": "Two trailing branch flags.",
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "singularity",
+    "shape",
+    "discontinuities",
+    "discontinuity_flag",
+    "scales",
+    "flags",
+    "selector",
+    "branch",
+    "trailing_flags",
+    "tail_kind",
+    "tail_directions",
+    "tail_singularity",
+    "tail_curve"
+  ]
+}
+```
+
+### `ScaledCompoundLoftShape`
+
+```json
+{
+  "description": "Initial solved-shape branch of a scaled compound loft.",
+  "oneOf": [
+    {
+      "description": "A solved NURBS cache follows the singularity enum.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "full"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "The cache is replaced by two intervals and two scalar arrays.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "none"
+        },
+        "parameter_ranges": {
+          "description": "Two ordered native intervals.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "parameters": {
+          "description": "Two ordered native scalar arrays.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameter_ranges",
+        "parameters"
+      ]
+    }
+  ]
+}
+```
+
+### `SilhouetteKind`
+
+```json
+{
+  "description": "Native silhouette construction family and its exclusive tail fields.",
+  "oneOf": [
+    {
+      "description": "Standard implicit silhouette.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "standard"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Parametric silhouette.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "parametric"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Draft/taper silhouette with an explicit factor.",
+      "type": "object",
+      "properties": {
+        "draft_factor": {
+          "description": "Native unscaled draft factor.",
+          "$ref": "#/$defs/FiniteReal"
+        },
+        "kind": {
+          "type": "string",
+          "const": "taper"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "draft_factor"
+      ]
+    }
+  ]
+}
+```
+
+### `SkinSurfaceConstruction`
+
+```json
+{
+  "description": "Complete native `skin_spl_sur` construction graph.",
+  "type": "object",
+  "properties": {
+    "count": {
+      "description": "Native leading count.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "direction": {
+      "description": "Stored direction vector.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "discontinuities": {
+      "description": "Six ordered solved-surface discontinuity arrays.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "discontinuity_flag": {
+      "description": "Native discontinuity tail flag.",
+      "type": "boolean"
+    },
+    "formula": {
+      "description": "Recursive parametric law.",
+      "$ref": "#/$defs/LawFormula"
+    },
+    "layout": {
+      "description": "Structurally selected skin payload.",
+      "$ref": "#/$defs/SkinSurfaceLayout"
+    },
+    "parameter": {
+      "description": "Native leading scalar.",
+      "type": "number",
+      "format": "double"
+    },
+    "parameter_curve": {
+      "description": "Trailing curve after the formula.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "surface_boolean": {
+      "description": "Native `SURF_BOOL` enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "surface_direction": {
+      "description": "Native `SURF_DIR` enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "surface_normal": {
+      "description": "Native `SURF_NORM` enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "trailing_parameter": {
+      "description": "Native scalar before the formula.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "surface_boolean",
+    "surface_normal",
+    "surface_direction",
+    "count",
+    "parameter",
+    "layout",
+    "direction",
+    "trailing_parameter",
+    "formula",
+    "parameter_curve",
+    "discontinuities",
+    "discontinuity_flag"
+  ]
+}
+```
+
+### `SkinSurfaceLayout`
+
+```json
+{
+  "description": "Structurally selected native skin payload.",
+  "oneOf": [
+    {
+      "description": "Expanded sequence of profile curves and loft constraints.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "profiles"
+        },
+        "path": {
+          "description": "Trailing path curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "profiles": {
+          "description": "Ordered profile entries.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SkinSurfaceProfile"
+          }
+        },
+        "tail": {
+          "description": "Two native trailing integers.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "profiles",
+        "path",
+        "tail"
+      ]
+    },
+    {
+      "description": "Compact curve/subdata form.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Primary curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "first_tail": {
+          "description": "Integer after the subdata.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "inner_count": {
+          "description": "Native compact-layout inner integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "compact"
+        },
+        "second_tail": {
+          "description": "Final compact-layout integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "secondary_curve": {
+          "description": "Secondary curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "subdata": {
+          "description": "Native loft subdata.",
+          "$ref": "#/$defs/LoftSubdata"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "inner_count",
+        "curve",
+        "subdata",
+        "first_tail",
+        "secondary_curve",
+        "second_tail"
+      ]
+    }
+  ]
+}
+```
+
+### `SkinSurfaceProfile`
+
+```json
+{
+  "description": "One profile entry in the expanded skin layout.",
+  "type": "object",
+  "properties": {
+    "curve": {
+      "description": "Profile curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "data": {
+      "description": "Native loft constraint data.",
+      "$ref": "#/$defs/LoftProfileData"
+    },
+    "type_code": {
+      "description": "Native profile type integer.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "type_code",
+    "curve",
+    "data"
+  ]
+}
+```
+
+### `SolvedCurveGeometry`
+
+```json
+{
+  "description": "The analytic or free-form shape of a 3D curve carrier established without a\nconstruction.",
+  "oneOf": [
+    {
+      "description": "Infinite line.",
+      "type": "object",
+      "properties": {
+        "direction": {
+          "description": "Line direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "line"
+        },
+        "origin": {
+          "description": "Line origin.",
+          "$ref": "#/$defs/Point3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "origin",
+        "direction"
+      ]
+    },
+    {
+      "description": "Full circle.",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "center": {
+          "description": "Circle center.",
+          "$ref": "#/$defs/Point3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "circle"
+        },
+        "radius": {
+          "description": "Circle radius.",
+          "type": "number",
+          "format": "double"
+        },
+        "ref_direction": {
+          "description": "Frame reference direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "axis",
+        "ref_direction",
+        "radius"
+      ]
+    },
+    {
+      "description": "Ellipse.",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "center": {
+          "description": "Ellipse center.",
+          "$ref": "#/$defs/Point3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "ellipse"
+        },
+        "major_direction": {
+          "description": "Major-axis direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "major_radius": {
+          "description": "Major semiaxis radius.",
+          "type": "number",
+          "format": "double"
+        },
+        "minor_radius": {
+          "description": "Minor semiaxis radius.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "axis",
+        "major_direction",
+        "major_radius",
+        "minor_radius"
+      ]
+    },
+    {
+      "description": "Parabola in STEP conic form.",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "focal_distance": {
+          "description": "Distance from the vertex to the focus.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "parabola"
+        },
+        "major_direction": {
+          "description": "Major-axis direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "vertex": {
+          "description": "Parabola vertex.",
+          "$ref": "#/$defs/Point3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "vertex",
+        "axis",
+        "major_direction",
+        "focal_distance"
+      ]
+    },
+    {
+      "description": "Hyperbola in STEP conic form.",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "center": {
+          "description": "Hyperbola center.",
+          "$ref": "#/$defs/Point3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "hyperbola"
+        },
+        "major_direction": {
+          "description": "Major-axis direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "major_radius": {
+          "description": "Transverse semiaxis radius.",
+          "type": "number",
+          "format": "double"
+        },
+        "minor_radius": {
+          "description": "Conjugate semiaxis radius.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "axis",
+        "major_direction",
+        "major_radius",
+        "minor_radius"
+      ]
+    },
+    {
+      "description": "A curve collapsed to one model-space point at a topological singularity.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "degenerate"
+        },
+        "point": {
+          "description": "Point the curve degenerates to.",
+          "$ref": "#/$defs/Point3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "point"
+      ]
+    },
+    {
+      "description": "Ordered child curves joined into one bounded carrier.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "composite"
+        },
+        "segments": {
+          "description": "Ordered curve uses and their continuity contracts.",
+          "$ref": "#/$defs/CompositeCurveSegments"
+        },
+        "self_intersect": {
+          "description": "Whether the source classifies the complete curve as self-intersecting.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "segments"
+      ]
+    },
+    {
+      "description": "Free-form NURBS curve.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "nurbs"
+        }
+      },
+      "$ref": "#/$defs/NurbsCurve",
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Source-native polyline with an explicit chordal error bound.",
+      "type": "object",
+      "properties": {
+        "chordal_deflection": {
+          "description": "Maximum chordal deviation recorded by the source.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "polyline"
+        },
+        "samples": {
+          "description": "The polyline's sample rows.",
+          "$ref": "#/$defs/PolylineSamples"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "samples",
+        "chordal_deflection"
+      ]
+    },
+    {
+      "description": "Exact affine placement of an inline basis curve.",
+      "type": "object",
+      "properties": {
+        "basis": {
+          "description": "Unplaced basis geometry with unchanged parameterization.",
+          "$ref": "#/$defs/SolvedCurveGeometry"
+        },
+        "kind": {
+          "type": "string",
+          "const": "transformed"
+        },
+        "transform": {
+          "description": "Affine map from basis coordinates to model coordinates.",
+          "$ref": "#/$defs/Transform"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "basis",
+        "transform"
+      ]
+    },
+    {
+      "description": "Native curve carrier whose shape is not decoded.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "unknown"
+        },
+        "record": {
+          "description": "Retained native record containing the curve carrier.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UnknownId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    }
+  ]
+}
+```
+
+### `SolvedSurfaceGeometry`
+
+```json
+{
+  "description": "Analytic, NURBS, or opaque surface geometry established without a\nconstruction.",
+  "oneOf": [
+    {
+      "description": "Infinite plane through `origin` with the given `normal`.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "plane"
+        },
+        "normal": {
+          "description": "Plane normal.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "origin": {
+          "description": "Plane origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "u_axis": {
+          "description": "First in-plane axis, perpendicular to `normal`.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "origin",
+        "normal",
+        "u_axis"
+      ]
+    },
+    {
+      "description": "Right circular cylinder of the given `radius` about the axis line.",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "cylinder"
+        },
+        "origin": {
+          "description": "Cylinder frame origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "radius": {
+          "description": "Cylinder radius.",
+          "type": "number",
+          "format": "double"
+        },
+        "ref_direction": {
+          "description": "Frame reference direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "origin",
+        "axis",
+        "ref_direction",
+        "radius"
+      ]
+    },
+    {
+      "description": "Right elliptical cone. `radius` is the major radius at `origin`;\n`ratio` is the minor-to-major radius ratio; `half_angle` is the major\nhalf-angle between the axis and the cone surface, in radians.",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "half_angle": {
+          "description": "Half angle of the cone, in radians.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "cone"
+        },
+        "origin": {
+          "description": "Cone frame origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "radius": {
+          "description": "Cross-section radius at the origin.",
+          "type": "number",
+          "format": "double"
+        },
+        "ratio": {
+          "description": "Ratio of the minor to the major cross-section radius.",
+          "type": "number",
+          "format": "double"
+        },
+        "ref_direction": {
+          "description": "Frame reference direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "origin",
+        "axis",
+        "ref_direction",
+        "radius",
+        "ratio",
+        "half_angle"
+      ]
+    },
+    {
+      "description": "Sphere.",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "center": {
+          "description": "Sphere center.",
+          "$ref": "#/$defs/Point3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "sphere"
+        },
+        "radius": {
+          "description": "Signed sphere radius.",
+          "type": "number",
+          "format": "double"
+        },
+        "ref_direction": {
+          "description": "Frame reference direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "axis",
+        "ref_direction",
+        "radius"
+      ]
+    },
+    {
+      "description": "Torus. `major_radius` is the distance from `center` to the tube center;\n`minor_radius` is the tube radius.",
+      "type": "object",
+      "properties": {
+        "axis": {
+          "description": "Frame axis direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "center": {
+          "description": "Torus center.",
+          "$ref": "#/$defs/Point3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "torus"
+        },
+        "major_radius": {
+          "description": "Distance from the center to the tube center.",
+          "type": "number",
+          "format": "double"
+        },
+        "minor_radius": {
+          "description": "Signed tube radius.",
+          "type": "number",
+          "format": "double"
+        },
+        "ref_direction": {
+          "description": "Frame reference direction, perpendicular to `axis`.",
+          "$ref": "#/$defs/Vector3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "center",
+        "axis",
+        "ref_direction",
+        "major_radius",
+        "minor_radius"
+      ]
+    },
+    {
+      "description": "Free-form NURBS surface.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "nurbs"
+        }
+      },
+      "$ref": "#/$defs/NurbsSurface",
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Source-native polygonal surface with an explicit chordal error bound.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "polygonal"
+        }
+      },
+      "$ref": "#/$defs/PolygonalSurface",
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Exact affine placement of an inline basis surface.",
+      "type": "object",
+      "properties": {
+        "basis": {
+          "description": "Unplaced basis geometry with unchanged parameterization.",
+          "$ref": "#/$defs/SolvedSurfaceGeometry"
+        },
+        "kind": {
+          "type": "string",
+          "const": "transformed"
+        },
+        "transform": {
+          "description": "Affine map from basis coordinates to model coordinates.",
+          "$ref": "#/$defs/Transform"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "basis",
+        "transform"
+      ]
+    },
+    {
+      "description": "Surface geometry that has no typed neutral representation.\n\n`record` links to retained source bytes when available.\n\nA [`Surface`] carrying this variant should have entity exactness\n[`Exactness::Unknown`](crate::provenance::Exactness::Unknown) in the\ndocument's [`Annotations`](crate::annotations::Annotations): the shape was\nnot established, so nothing about it is byte-exact or derived.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "unknown"
+        },
+        "record": {
+          "description": "Link to the preserved raw record, when the decoder kept the bytes.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UnknownId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    }
+  ]
+}
+```
+
+### `SplineSurfaceParameters`
+
+```json
+{
+  "description": "Parameter fields carried by exact and loft spline-surface constructions.",
+  "oneOf": [
+    {
+      "description": "Ordered semantic U and V intervals in the legacy layout.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "ordered_ranges"
+        },
+        "ranges": {
+          "description": "Ordered U and V intervals.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "ranges"
+      ]
+    },
+    {
+      "description": "Two parameter intervals in a revision-gated layout, each stored as an\nordered `[lo, hi]` pair of optional bounds. For exact and t-spline\nsurfaces these are the surface's unextended (pre-extension) parameter\nranges; for loft surfaces they are wrap ranges, where a reversed pair\n(`lo > hi`) encodes an empty interval (no wrap). `None` is a false\nbound-presence flag.",
+      "type": "object",
+      "properties": {
+        "intervals": {
+          "description": "Two parameter intervals in serialized field order.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "revision_ranges"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "intervals"
+      ]
+    }
+  ]
+}
+```
+
+### `SpringLayout`
+
+```json
+{
+  "description": "Mutually exclusive spring construction layouts.",
+  "oneOf": [
+    {
+      "description": "Support-first layout with inline null-carrier replacement ranges.",
+      "type": "object",
+      "properties": {
+        "cache": {
+          "description": "Solved-cache fit contract this layout states itself.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LegacyCache"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "discontinuities": {
+          "description": "Three ordered discontinuity arrays.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            }
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "discontinuity_flag": {
+          "description": "Native boolean following the discontinuity arrays.",
+          "type": "boolean"
+        },
+        "first_pcurve": {
+          "description": "First pcurve or its null replacement range.",
+          "$ref": "#/$defs/SpringPcurve"
+        },
+        "kind": {
+          "type": "string",
+          "const": "context_first"
+        },
+        "parameter_range": {
+          "description": "Native solved-curve parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "second_pcurve": {
+          "description": "Nullable second pcurve slot.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PcurveGeometry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "supports": {
+          "description": "Two ordered support slots.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SpringSupport"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "supports",
+        "first_pcurve",
+        "parameter_range",
+        "discontinuities",
+        "discontinuity_flag"
+      ]
+    },
+    {
+      "description": "Cache-first layout, which carries no inline replacement ranges or\ncontext-first discontinuity flag.",
+      "type": "object",
+      "properties": {
+        "context": {
+          "description": "Shared support context following the solved cache.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "form": {
+          "description": "Cache-first serializer fields.",
+          "$ref": "#/$defs/CacheFirstCurveForm"
+        },
+        "kind": {
+          "type": "string",
+          "const": "cache_first"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context",
+        "form"
+      ]
+    }
+  ]
+}
+```
+
+### `SpringPcurve`
+
+```json
+{
+  "description": "First pcurve slot in a context-first spring construction.",
+  "oneOf": [
+    {
+      "description": "Resolved parameter-space curve.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "pcurve"
+        },
+        "value": {
+          "$ref": "#/$defs/PcurveGeometry"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Native interval stored in place of `nullbs`.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "range"
+        },
+        "value": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    }
+  ]
+}
+```
+
+### `SpringSupport`
+
+```json
+{
+  "description": "One support slot in a context-first spring construction.",
+  "oneOf": [
+    {
+      "description": "Resolved support surface.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "surface"
+        },
+        "value": {
+          "$ref": "#/$defs/SurfaceId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Native U/V ranges stored in place of `null_surface`.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "ranges"
+        },
+        "value": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number",
+              "format": "double"
+            },
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    }
+  ]
+}
+```
+
+### `SubtypeTableIndex`
+
+```json
+{
+  "description": "A non-negative native subtype-table index.",
+  "type": "integer",
+  "format": "int64"
+}
+```
+
+### `SupportPcurve`
+
+```json
+{
+  "description": "A parameter-space support curve and its optional affine parameter map.",
+  "type": "object",
+  "properties": {
+    "geometry": {
+      "description": "UV curve carried by the support side.",
+      "$ref": "#/$defs/PcurveGeometry"
+    },
+    "parameter_range": {
+      "description": "Directed pcurve interval corresponding to the solved interval.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DirectedParameterRange"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "geometry"
+  ]
+}
+```
+
+### `SurfaceCurveCacheFirst`
+
+```json
+{
+  "description": "Cache-first surface-curve tail paired with its family-specific flags.",
+  "type": "object",
+  "properties": {
+    "flags": {
+      "description": "Flags admitted by the selected surface-curve family.",
+      "type": "boolean"
+    },
+    "form": {
+      "description": "Family-independent cache-first fields.",
+      "$ref": "#/$defs/SurfaceCurveTail"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "form",
+    "flags"
+  ]
+}
+```
+
+### `SurfaceCurveCacheFirst2`
+
+```json
+{
+  "description": "Cache-first surface-curve tail paired with its family-specific flags.",
+  "type": "object",
+  "properties": {
+    "flags": {
+      "description": "Flags admitted by the selected surface-curve family.",
+      "$ref": "#/$defs/ParametricSurfaceCurveFlags"
+    },
+    "form": {
+      "description": "Family-independent cache-first fields.",
+      "$ref": "#/$defs/SurfaceCurveTail"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "form",
+    "flags"
+  ]
+}
+```
+
+### `SurfaceCurveFamily`
+
+```json
+{
+  "description": "Native surface-curve family with its support context and optional\ncache-first form.",
+  "oneOf": [
+    {
+      "description": "Blend edge curve whose construction details live on its blend support.",
+      "type": "object",
+      "properties": {
+        "context": {
+          "description": "Shared support context.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "kind": {
+          "type": "string",
+          "const": "blend"
+        },
+        "tail": {
+          "description": "Cache-first fields, when this is not the prefix-first layout.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceCurveCacheFirst"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context"
+      ]
+    },
+    {
+      "description": "Curve constrained to a support surface.",
+      "type": "object",
+      "properties": {
+        "context": {
+          "description": "Shared support context.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "kind": {
+          "type": "string",
+          "const": "surface_constrained"
+        },
+        "tail": {
+          "description": "Cache-first fields, when this is not the prefix-first layout.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceCurveCacheFirst"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context"
+      ]
+    },
+    {
+      "description": "Parametric curve on a support surface.",
+      "type": "object",
+      "properties": {
+        "context": {
+          "description": "Shared support context.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "kind": {
+          "type": "string",
+          "const": "parametric"
+        },
+        "tail": {
+          "description": "Cache-first fields with the parametric-only second flag.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceCurveCacheFirst2"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context"
+      ]
+    },
+    {
+      "description": "Skin curve on a support surface.",
+      "type": "object",
+      "properties": {
+        "context": {
+          "description": "Shared support context.",
+          "$ref": "#/$defs/IntcurveSupportContext"
+        },
+        "kind": {
+          "type": "string",
+          "const": "skin"
+        },
+        "tail": {
+          "description": "Cache-first fields, when this is not the prefix-first layout.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SurfaceCurveCacheFirst"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "context"
+      ]
+    }
+  ]
+}
+```
+
+### `SurfaceCurveTail`
+
+```json
+{
+  "description": "Family-independent tail fields carried by a cache-first surface curve.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared context enum.",
+      "$ref": "#/$defs/RevisionCacheForm2"
+    },
+    "extension": {
+      "description": "Native integer following the discontinuity arrays.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer opening the cache-first layout.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "solved_range": {
+      "description": "Optional solved-curve interval endpoints; absent endpoints inherit the\nsolved NURBS domain.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "support_bounds": {
+      "description": "Optional U/V bound fields following each ordered support surface.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "maxItems": 4,
+        "minItems": 4
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "extension",
+    "revision",
+    "cache",
+    "support_bounds",
+    "solved_range"
+  ]
+}
+```
+
+### `SweepRevisionForm`
+
+```json
+{
+  "description": "Revision-gated `sweep_sur` form fields.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/RevisionCacheForm"
+    },
+    "path_endpoints": {
+      "description": "Optional parameter endpoints following the embedded path curve.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "primary_flag": {
+      "description": "Boolean replacing the pre-revision primary enum.",
+      "type": "boolean"
+    },
+    "profile_endpoints": {
+      "description": "Optional parameter endpoints following the embedded profile curve.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "revision",
+    "primary_flag",
+    "profile_endpoints",
+    "path_endpoints",
+    "cache"
+  ]
+}
+```
+
+### `SweepSurfaceConstruction`
+
+```json
+{
+  "description": "Complete native `sweep_spl_sur` construction graph.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Cache contract: the revision-gated form, or the legacy solved-cache\ntolerance this construction states instead.",
+      "$ref": "#/$defs/CacheContract3"
+    },
+    "discontinuities": {
+      "description": "Six ordered solved-surface discontinuity arrays.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "discontinuity_flag": {
+      "description": "Native discontinuity tail flag.",
+      "type": "boolean"
+    },
+    "layout": {
+      "description": "Structurally selected sweep layout.",
+      "$ref": "#/$defs/SweepSurfaceLayout"
+    },
+    "primary_kind": {
+      "description": "Leading native sweep enum.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "primary_kind",
+    "cache",
+    "layout",
+    "discontinuities",
+    "discontinuity_flag"
+  ]
+}
+```
+
+### `SweepSurfaceLayout`
+
+```json
+{
+  "description": "Structurally selected native sweep payload.",
+  "oneOf": [
+    {
+      "description": "Profile-first modern ASM sweep layout.",
+      "type": "object",
+      "properties": {
+        "directions": {
+          "description": "Five ordered frame directions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 5,
+          "minItems": 5
+        },
+        "formulas": {
+          "description": "Three ordered parametric laws.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LawFormula"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "kind": {
+          "type": "string",
+          "const": "profile_first"
+        },
+        "origin": {
+          "description": "Native model-space frame origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "parameters": {
+          "description": "Four ordered native frame scalars.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "secondary_kind": {
+          "description": "Second native sweep enum.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "secondary_kind",
+        "directions",
+        "origin",
+        "parameters",
+        "formulas"
+      ]
+    },
+    {
+      "description": "Explicit sweep layout whose trajectory is controlled by a formula.",
+      "type": "object",
+      "properties": {
+        "directions": {
+          "description": "Three ordered sweep frame directions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "formula": {
+          "description": "Parametric trajectory formula.",
+          "$ref": "#/$defs/LawFormula"
+        },
+        "formula_flag": {
+          "description": "Native formula-side boolean.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string",
+          "const": "explicit_formula"
+        },
+        "mode": {
+          "description": "Native explicit-layout integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "origin": {
+          "description": "Sweep frame origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "path_parameter": {
+          "description": "Native trajectory scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "path_range": {
+          "description": "Path parameter interval in model length units.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "profile_frame": {
+          "description": "Optional explicit profile frame.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/Point3"
+            },
+            {
+              "$ref": "#/$defs/Vector3"
+            }
+          ]
+        },
+        "profile_range": {
+          "description": "Profile parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "trailing_flag": {
+          "description": "Native trailing boolean.",
+          "type": "boolean"
+        },
+        "trajectory_flag": {
+          "description": "Native trajectory boolean.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "mode",
+        "profile_range",
+        "origin",
+        "directions",
+        "trajectory_flag",
+        "path_range",
+        "path_parameter",
+        "formula_flag",
+        "formula",
+        "trailing_flag"
+      ]
+    },
+    {
+      "description": "Explicit sweep layout controlled by an auxiliary guide curve.",
+      "type": "object",
+      "properties": {
+        "directions": {
+          "description": "Three ordered sweep frame directions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "guide_curve": {
+          "description": "Auxiliary guide curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "guide_flags": {
+          "description": "Two guide-side booleans.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "guide_modes": {
+          "description": "Two native guide integers.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "guide_parameters": {
+          "description": "Six ordered guide scalars.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 6,
+          "minItems": 6
+        },
+        "guide_range": {
+          "description": "Guide parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "explicit_guide"
+        },
+        "mode": {
+          "description": "Native explicit-layout integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "origin": {
+          "description": "Sweep frame origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "path_parameter": {
+          "description": "Native trajectory scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "path_range": {
+          "description": "Path parameter interval in model length units.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "profile_frame": {
+          "description": "Optional explicit profile frame.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/Point3"
+            },
+            {
+              "$ref": "#/$defs/Vector3"
+            }
+          ]
+        },
+        "profile_range": {
+          "description": "Profile parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "trailing_flags": {
+          "description": "Three trailing guide booleans.",
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "trajectory_flag": {
+          "description": "Native trajectory boolean.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "mode",
+        "profile_range",
+        "origin",
+        "directions",
+        "trajectory_flag",
+        "path_range",
+        "path_parameter",
+        "guide_flags",
+        "guide_curve",
+        "guide_range",
+        "guide_modes",
+        "guide_parameters",
+        "trailing_flags"
+      ]
+    },
+    {
+      "description": "Explicit sweep layout controlled by a support surface.",
+      "type": "object",
+      "properties": {
+        "auxiliary_curve": {
+          "description": "Optional auxiliary curve.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CurveId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "directions": {
+          "description": "Three ordered sweep frame directions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "kind": {
+          "type": "string",
+          "const": "explicit_surface"
+        },
+        "legacy_flag": {
+          "description": "Legacy pre-219 trailing boolean when present.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "mode": {
+          "description": "Native explicit-layout integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "origin": {
+          "description": "Sweep frame origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "path_parameter": {
+          "description": "Native trajectory scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "path_range": {
+          "description": "Path parameter interval in model length units.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "profile_frame": {
+          "description": "Optional explicit profile frame.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/Point3"
+            },
+            {
+              "$ref": "#/$defs/Vector3"
+            }
+          ]
+        },
+        "profile_range": {
+          "description": "Profile parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "singularity": {
+          "description": "Native singularity enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "support_flag": {
+          "description": "Native support-side boolean.",
+          "type": "boolean"
+        },
+        "support_surface": {
+          "description": "Support surface controlling the sweep.",
+          "$ref": "#/$defs/SurfaceId"
+        },
+        "trajectory_flag": {
+          "description": "Native trajectory boolean.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "mode",
+        "profile_range",
+        "origin",
+        "directions",
+        "trajectory_flag",
+        "path_range",
+        "path_parameter",
+        "singularity",
+        "support_surface",
+        "support_flag"
+      ]
+    },
+    {
+      "description": "Explicit-prefix sweep layout controlled by recursive laws.",
+      "type": "object",
+      "properties": {
+        "directions": {
+          "description": "Three ordered sweep frame directions.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 3,
+          "minItems": 3
+        },
+        "first_law": {
+          "description": "Leading recursive sweep law.",
+          "$ref": "#/$defs/LawExpression"
+        },
+        "first_mode": {
+          "description": "Native integer after the leading law.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "first_range": {
+          "description": "First law parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "formula": {
+          "description": "Parametric trajectory formula.",
+          "$ref": "#/$defs/LawFormula"
+        },
+        "formula_mode": {
+          "description": "Native integer before the formula.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "law_driven"
+        },
+        "law_direction": {
+          "description": "Native law direction.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "mode": {
+          "description": "Native explicit-layout integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "origin": {
+          "description": "Sweep frame origin.",
+          "$ref": "#/$defs/Point3"
+        },
+        "path_flag": {
+          "description": "Native path boolean.",
+          "type": "boolean"
+        },
+        "path_mode": {
+          "description": "Native path integer.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "path_parameter": {
+          "description": "Native path scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "path_range": {
+          "description": "Path parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "profile_frame": {
+          "description": "Optional explicit profile frame.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/Point3"
+            },
+            {
+              "$ref": "#/$defs/Vector3"
+            }
+          ]
+        },
+        "profile_range": {
+          "description": "Profile parameter interval.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "second_law": {
+          "description": "Trailing recursive sweep law.",
+          "$ref": "#/$defs/LawExpression"
+        },
+        "second_law_flag": {
+          "description": "Native second-law boolean.",
+          "type": "boolean"
+        },
+        "trailing_flag": {
+          "description": "Native trailing boolean.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "mode",
+        "profile_range",
+        "origin",
+        "directions",
+        "first_law",
+        "first_mode",
+        "first_range",
+        "law_direction",
+        "path_mode",
+        "path_flag",
+        "path_range",
+        "path_parameter",
+        "second_law_flag",
+        "second_law",
+        "formula_mode",
+        "formula",
+        "trailing_flag"
+      ]
+    }
+  ]
+}
+```
+
+### `TSplineSubtransform`
+
+```json
+{
+  "description": "Native T-spline subtransform storage form.",
+  "oneOf": [
+    {
+      "description": "Inline line-oriented T-spline program and companion values.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "inline"
+        },
+        "program": {
+          "description": "Line-oriented topology and geometry program.",
+          "type": "string"
+        },
+        "separator": {
+          "description": "Optional native separator boolean.",
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
+        },
+        "values": {
+          "description": "Companion values program.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "program",
+        "values"
+      ]
+    },
+    {
+      "description": "Resolved reference to an earlier subtype-table entry.",
+      "type": "object",
+      "properties": {
+        "index": {
+          "description": "Native subtype-table index.",
+          "$ref": "#/$defs/SubtypeTableIndex"
+        },
+        "kind": {
+          "type": "string",
+          "const": "reference"
+        },
+        "resolved": {
+          "description": "Resolved shared program.",
+          "$ref": "#/$defs/inline"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "index",
+        "resolved"
+      ]
+    }
+  ]
+}
+```
+
+### `TSplineSurfaceConstruction`
+
+```json
+{
+  "description": "Complete native `t_spl_sur` wrapper.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Cache contract: the revision-gated form, or the legacy solved-cache\ntolerance this construction states instead. The revision layout stores\nthe shared tail first, then four optional parameter values\n(`support_bounds`), the type code as an enum, the nested subtransform\nscope, and the trailing integer.",
+      "$ref": "#/$defs/CacheContract"
+    },
+    "discontinuities": {
+      "description": "Six ordered solved-surface discontinuity arrays.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "discontinuity_flag": {
+      "description": "Native discontinuity tail flag.",
+      "type": "boolean"
+    },
+    "parameter_ranges": {
+      "description": "Ordered U and V native parameter intervals.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        },
+        "maxItems": 2,
+        "minItems": 2
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "subtransform": {
+      "description": "Inline or referenced shared subtransform object.",
+      "$ref": "#/$defs/TSplineSubtransform"
+    },
+    "trailing_value": {
+      "description": "Native trailing integer.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "type_code": {
+      "description": "Native T-spline type integer.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "parameter_ranges",
+    "type_code",
+    "subtransform",
+    "trailing_value",
+    "discontinuities",
+    "discontinuity_flag",
+    "cache"
+  ]
+}
+```
+
+### `TaperSurfaceKind`
+
+```json
+{
+  "description": "Subtype-specific tail of a native taper spline surface.",
+  "oneOf": [
+    {
+      "description": "Standard taper without a subtype-specific tail.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "standard"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Orthogonal taper with a native sense flag.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "orthogonal"
+        },
+        "sense": {
+          "description": "Native orientation sense.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "sense"
+      ]
+    },
+    {
+      "description": "Edge taper with a model-space draft vector.",
+      "type": "object",
+      "properties": {
+        "draft": {
+          "description": "Native draft vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "edge"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "draft"
+      ]
+    },
+    {
+      "description": "Shadow taper with a pre-factored draft angle.",
+      "type": "object",
+      "properties": {
+        "cosine": {
+          "description": "Stored draft-angle cosine.",
+          "type": "number",
+          "format": "double"
+        },
+        "draft": {
+          "description": "Native draft vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "shadow"
+        },
+        "sine": {
+          "description": "Stored draft-angle sine.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "draft",
+        "sine",
+        "cosine"
+      ]
+    },
+    {
+      "description": "Ruled taper with a pre-factored angle and factor.",
+      "type": "object",
+      "properties": {
+        "cosine": {
+          "description": "Stored draft-angle cosine.",
+          "type": "number",
+          "format": "double"
+        },
+        "draft": {
+          "description": "Native draft vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "factor": {
+          "description": "Native ruled-taper factor.",
+          "type": "number",
+          "format": "double"
+        },
+        "kind": {
+          "type": "string",
+          "const": "ruled"
+        },
+        "sine": {
+          "description": "Stored draft-angle sine.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "draft",
+        "sine",
+        "cosine",
+        "factor"
+      ]
+    },
+    {
+      "description": "Swept taper with a pre-factored draft angle.",
+      "type": "object",
+      "properties": {
+        "cosine": {
+          "description": "Stored draft-angle cosine.",
+          "type": "number",
+          "format": "double"
+        },
+        "draft": {
+          "description": "Native draft vector.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "kind": {
+          "type": "string",
+          "const": "swept"
+        },
+        "sine": {
+          "description": "Stored draft-angle sine.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "draft",
+        "sine",
+        "cosine"
+      ]
+    }
+  ]
+}
+```
+
+### `TolerantIntersectionConstruction`
+
+```json
+{
+  "description": "Finite endpoint witnesses and distinct supports of a tolerant intersection.",
+  "type": "object",
+  "properties": {
+    "endpoints": {
+      "description": "Model-space endpoint witnesses.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Point3"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "supports": {
+      "description": "Distinct support surfaces of the intersection.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SurfaceId"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "tolerance": {
+      "description": "Finite non-negative intersection tolerance.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "supports",
+    "endpoints",
+    "tolerance"
+  ]
+}
+```
+
+### `TolerantIntersectionParameterization`
+
+```json
+{
+  "description": "Complete neutral parameterization of one topology-bounded intersection.",
+  "type": "object",
+  "properties": {
+    "parameter_range": {
+      "description": "Common finite solved-curve interval.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "pcurves": {
+      "description": "Coincident support charts in support order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PcurveGeometry"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "pcurves",
+    "parameter_range"
+  ]
+}
+```
+
+### `UnitVector3`
+
+```json
+{
+  "description": "A direction with unit length within the analytic frame tolerance.",
+  "type": "object",
+  "properties": {
+    "x": {
+      "description": "X component.",
+      "type": "number",
+      "format": "double"
+    },
+    "y": {
+      "description": "Y component.",
+      "type": "number",
+      "format": "double"
+    },
+    "z": {
+      "description": "Z component.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "x",
+    "y",
+    "z"
+  ]
+}
+```
+
+### `VariableBlendBareCrossSection`
+
+```json
+{
+  "description": "Native zero-width variable-blend cross-section selectors whose framing is\nestablished while their geometric laws remain unclassified.",
+  "oneOf": [
+    {
+      "description": "Native selector `2`.",
+      "type": "string",
+      "const": "Selector2"
+    },
+    {
+      "description": "Native selector `4`.",
+      "type": "string",
+      "const": "Selector4"
+    },
+    {
+      "description": "Native selector `5`.",
+      "type": "string",
+      "const": "Selector5"
+    },
+    {
+      "description": "Native selector `6`.",
+      "type": "string",
+      "const": "Selector6"
+    }
+  ]
+}
+```
+
+### `VariableBlendCache`
+
+```json
+{
+  "description": "Approximation state and its dependent fit contract for a variable blend.",
+  "oneOf": [
+    {
+      "description": "A nonzero approximation-current flag with an active fit contract.",
+      "type": "object",
+      "properties": {
+        "fit_tolerance": {
+          "description": "Fit tolerance in document length units.",
+          "$ref": "#/$defs/FitTolerance"
+        },
+        "kind": {
+          "type": "string",
+          "const": "current"
+        },
+        "shape_prefix": {
+          "description": "Native approximation-current flag.",
+          "type": "integer",
+          "format": "int64",
+          "not": {
+            "const": 0
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "shape_prefix",
+        "fit_tolerance"
+      ]
+    },
+    {
+      "description": "A zero approximation-current flag without an active fit contract.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "stale"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Parameterization in place of a solved cache.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "parameterization"
+        },
+        "parameterization": {
+          "description": "Surface parameterization.",
+          "$ref": "#/$defs/RevisionSurfaceParameterization"
+        },
+        "shape_prefix": {
+          "description": "Native approximation-current flag, independent of the parameterization.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "shape_prefix",
+        "parameterization"
+      ]
+    }
+  ]
+}
+```
+
+### `VariableBlendConstruction`
+
+```json
+{
+  "description": "Complete native variable-radius blend construction graph.",
+  "type": "object",
+  "properties": {
+    "cache": {
+      "description": "Approximation-cache form selected by the shared tail enum.",
+      "$ref": "#/$defs/VariableBlendCache"
+    },
+    "convexity": {
+      "description": "Blend convexity.",
+      "$ref": "#/$defs/VariableBlendConvexity"
+    },
+    "cross_section": {
+      "description": "Cross-section clause following the complete radius-law sequence.\nAbsence denotes an elided default circular section; an explicit\ncircular clause remains distinct.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VariableBlendCrossSection"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "discontinuities": {
+      "description": "Six ordered ASM discontinuity arrays closing the shared tail.",
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "maxItems": 6,
+      "minItems": 6
+    },
+    "offsets": {
+      "description": "Two signed support offsets in document length units.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "post_curve": {
+      "description": "Native post-shape BS3 curve, absent for `nullbs`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CurveId"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "post_pcurve": {
+      "description": "Native post-shape BS2 pcurve, absent for `nullbs`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "post_range": {
+      "description": "Native optional post-shape interval endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "radii": {
+      "description": "Structurally selected radius-control payloads.",
+      "$ref": "#/$defs/VariableBlendRadii"
+    },
+    "render_mode": {
+      "description": "Solved-surface representation.",
+      "$ref": "#/$defs/VariableBlendRenderMode"
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer following the subtype name.",
+      "$ref": "#/$defs/PositiveI64"
+    },
+    "secondary_curve": {
+      "description": "Secondary curve and its bounds, absent for `null_curve`.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RollingBallSupportCurve"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "shape_length": {
+      "description": "Achieved fit tolerance for the surface cache, in document units.",
+      "type": "number",
+      "format": "double"
+    },
+    "shape_parameter": {
+      "description": "Requested fit tolerance for the surface cache.",
+      "type": "number",
+      "format": "double"
+    },
+    "shape_tail": {
+      "description": "Native integer immediately before the shared tail's enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "sides": {
+      "description": "Two ordered support-side graphs in the rolling-ball side layout.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/RollingBallSide"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "slice": {
+      "description": "Stored slice curve.",
+      "$ref": "#/$defs/CurveId"
+    },
+    "slice_range": {
+      "description": "Optional native slice-curve parameter endpoints.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "subtype": {
+      "description": "Native surface subtype selecting the variable-blend behavior class.",
+      "$ref": "#/$defs/VariableBlendSurfaceSubtype"
+    },
+    "tail_extensions": {
+      "description": "Three ASM integers following the tail Boolean.",
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "format": "int64"
+      },
+      "maxItems": 3,
+      "minItems": 3
+    },
+    "tail_flag": {
+      "description": "Native Boolean following the discontinuity arrays.",
+      "type": "boolean"
+    },
+    "u_range": {
+      "description": "Support-side parameter interval `(T0, T1)`; both bounds present in\nevery instance.",
+      "type": "array",
+      "items": {
+        "type": "number",
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    },
+    "v_lower": {
+      "description": "Second interval: a lower bound with an unbounded-above marker,\nencoded as `(T lo, F)` and decoding to `[Some(lo), None]`. The `F`\nupper-bound marker is an interval bound, not a standalone Boolean.",
+      "type": [
+        "number",
+        "null"
+      ],
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "subtype",
+    "revision",
+    "sides",
+    "slice",
+    "slice_range",
+    "offsets",
+    "radii",
+    "u_range",
+    "shape_parameter",
+    "shape_length",
+    "shape_tail",
+    "cache",
+    "discontinuities",
+    "tail_flag",
+    "tail_extensions",
+    "convexity",
+    "render_mode",
+    "post_range"
+  ]
+}
+```
+
+### `VariableBlendConvexity`
+
+```json
+{
+  "description": "Convexity selected for a variable-radius blend surface.",
+  "oneOf": [
+    {
+      "description": "The blend bends toward the support intersection.",
+      "type": "string",
+      "const": "convex"
+    },
+    {
+      "description": "The blend bends away from the support intersection.",
+      "type": "string",
+      "const": "concave"
+    }
+  ]
+}
+```
+
+### `VariableBlendCrossSection`
+
+```json
+{
+  "description": "Cross-section clause following the variable-radius laws.",
+  "oneOf": [
+    {
+      "description": "Circular section with no additional parameters.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "circular"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Thumbweight-controlled section with two ordered shape parameters.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "thumbweights"
+        },
+        "parameters": {
+          "description": "Ordered native shape parameters.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameters"
+      ]
+    },
+    {
+      "description": "Rounded chamfer with an optional independent rounding-radius law.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "rounded_chamfer"
+        },
+        "radius": {
+          "description": "Rounding-radius law; absent when the clause stores `no_radius`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VariableBlendValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Curvature-continuous round with two ordered shape parameters.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "g2_round"
+        },
+        "parameters": {
+          "description": "Ordered native shape parameters.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "parameters"
+      ]
+    },
+    {
+      "description": "A zero-width native selector whose record framing is known but whose\ngeometric cross-section law is not classified.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "unclassified_bare"
+        },
+        "selector": {
+          "description": "Exact numeric selector retained from the native record.",
+          "$ref": "#/$defs/VariableBlendBareCrossSection"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "selector"
+      ]
+    }
+  ]
+}
+```
+
+### `VariableBlendInterpolationPoint`
+
+```json
+{
+  "description": "One interpolation control point in a variable blend-value law.",
+  "type": "object",
+  "properties": {
+    "location": {
+      "description": "Model-space control location.",
+      "$ref": "#/$defs/Point3"
+    },
+    "normal": {
+      "description": "Control normal.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "parameter": {
+      "description": "Law parameter.",
+      "type": "number",
+      "format": "double"
+    },
+    "radius": {
+      "description": "Radius in document length units.",
+      "type": "number",
+      "format": "double"
+    },
+    "tangents": {
+      "description": "Optional first and second derivative scalars.",
+      "type": "array",
+      "items": {
+        "type": [
+          "number",
+          "null"
+        ],
+        "format": "double"
+      },
+      "maxItems": 2,
+      "minItems": 2
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "parameter",
+    "radius",
+    "tangents",
+    "location",
+    "normal"
+  ]
+}
+```
+
+### `VariableBlendRadii`
+
+```json
+{
+  "description": "Radius-law payloads of a variable blend.",
+  "oneOf": [
+    {
+      "description": "One radius law controls both support sides.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "single"
+        },
+        "value": {
+          "description": "Shared radius law.",
+          "$ref": "#/$defs/VariableBlendValue"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Each support side has an independent radius law.",
+      "type": "object",
+      "properties": {
+        "first": {
+          "description": "First support-side radius law.",
+          "$ref": "#/$defs/VariableBlendValue"
+        },
+        "kind": {
+          "type": "string",
+          "const": "two"
+        },
+        "second": {
+          "description": "Second support-side radius law.",
+          "$ref": "#/$defs/VariableBlendValue"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "first",
+        "second"
+      ]
+    }
+  ]
+}
+```
+
+### `VariableBlendRenderMode`
+
+```json
+{
+  "description": "Solved-surface representation selected for a variable-radius blend.",
+  "oneOf": [
+    {
+      "description": "The solved surface is the rolling-ball envelope.",
+      "type": "string",
+      "const": "rolling_ball_envelope"
+    },
+    {
+      "description": "The solved surface is a rolling-ball snapshot.",
+      "type": "string",
+      "const": "rolling_ball_snapshot"
+    }
+  ]
+}
+```
+
+### `VariableBlendSupportKind`
+
+```json
+{
+  "description": "Geometry role selected by a variable-blend support-side discriminator.",
+  "oneOf": [
+    {
+      "description": "Support defined by a cosine curve.",
+      "type": "string",
+      "const": "cosine_curve"
+    },
+    {
+      "description": "Support defined by a general curve.",
+      "type": "string",
+      "const": "curve"
+    },
+    {
+      "description": "Support defined by a point curve.",
+      "type": "string",
+      "const": "point_curve"
+    },
+    {
+      "description": "Support defined by a surface.",
+      "type": "string",
+      "const": "surface"
+    },
+    {
+      "description": "Support defined by a zero curve.",
+      "type": "string",
+      "const": "zero_curve"
+    }
+  ]
+}
+```
+
+### `VariableBlendSurfaceSubtype`
+
+```json
+{
+  "description": "Native variable-radius blend surface subtype.",
+  "oneOf": [
+    {
+      "description": "General variable-blend surface.",
+      "type": "string",
+      "const": "variable_blend"
+    },
+    {
+      "description": "Surface-to-surface variable blend.",
+      "type": "string",
+      "const": "surface_surface"
+    },
+    {
+      "description": "Curve-to-curve variable blend.",
+      "type": "string",
+      "const": "curve_curve"
+    },
+    {
+      "description": "Curve-to-surface variable blend.",
+      "type": "string",
+      "const": "curve_surface"
+    },
+    {
+      "description": "Free surface-curve variable blend.",
+      "type": "string",
+      "const": "surface_curve_free"
+    }
+  ]
+}
+```
+
+### `VariableBlendTerminal`
+
+```json
+{
+  "description": "Numeric or symbolic terminal of a functional blend-value law.",
+  "oneOf": [
+    {
+      "description": "Native double token.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "double"
+        },
+        "value": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    },
+    {
+      "description": "Native string token.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "text"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "value"
+      ]
+    }
+  ]
+}
+```
+
+### `VariableBlendValue`
+
+```json
+{
+  "description": "Complete recursive native `getBlendValues` payload.",
+  "type": "object",
+  "properties": {
+    "calibrated": {
+      "description": "Native calibrated enum.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "modern_flag": {
+      "description": "Native Boolean following the calibrated enum.",
+      "type": "boolean"
+    },
+    "payload": {
+      "description": "Type-specific payload with its native sub-discriminator.",
+      "$ref": "#/$defs/VariableBlendValuePayload"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "modern_flag",
+    "calibrated",
+    "payload"
+  ]
+}
+```
+
+### `VariableBlendValuePayload`
+
+```json
+{
+  "description": "Type-specific payload of a variable blend value.\n\nEach arm carries the native sub-discriminator it admits: the edge-offset\narm is one of two codes, so an edge-offset value with any other\nsub-discriminator has no spelling.",
+  "oneOf": [
+    {
+      "description": "Law-domain parameter range and two endpoint radii.",
+      "type": "object",
+      "properties": {
+        "discriminator": {
+          "description": "Native sub-discriminator preceding the calibrated enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "two_ends"
+        },
+        "parameters": {
+          "description": "Law-domain parameter range (lower, upper).",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "radii": {
+          "description": "Endpoint radii in document length units.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "discriminator",
+        "parameters",
+        "radii"
+      ]
+    },
+    {
+      "description": "Fixed-width branch: the parameter-range bounds and the chamfer width\nscalar, stored unscaled.",
+      "type": "object",
+      "properties": {
+        "discriminator": {
+          "description": "Native sub-discriminator preceding the calibrated enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "fixed_width"
+        },
+        "parameters": {
+          "description": "Parameter-range lower and upper bounds.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "width": {
+          "description": "Chamfer width.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "discriminator",
+        "parameters",
+        "width"
+      ]
+    },
+    {
+      "description": "Edge-offset branch.",
+      "type": "object",
+      "properties": {
+        "discriminator": {
+          "description": "Native sub-discriminator preceding the calibrated enum.",
+          "$ref": "#/$defs/EdgeOffsetDiscriminator"
+        },
+        "kind": {
+          "type": "string",
+          "const": "edge_offset"
+        },
+        "lengths": {
+          "description": "Ordered length payload in document units.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 1,
+          "minItems": 1
+        },
+        "scalars": {
+          "description": "Ordered native scalar payload.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "discriminator",
+        "scalars",
+        "lengths"
+      ]
+    },
+    {
+      "description": "Functional radius law carried by a BS2 pcurve.",
+      "type": "object",
+      "properties": {
+        "discriminator": {
+          "description": "Native sub-discriminator preceding the calibrated enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "function": {
+          "description": "Scalar function whose first coordinate is radius in document units.",
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        "kind": {
+          "type": "string",
+          "const": "functional"
+        },
+        "parameter": {
+          "description": "Leading scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "radius": {
+          "description": "Leading length in document units.",
+          "type": "number",
+          "format": "double"
+        },
+        "terminal": {
+          "description": "Numeric or symbolic terminal value.",
+          "$ref": "#/$defs/VariableBlendTerminal"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "discriminator",
+        "parameter",
+        "radius",
+        "function",
+        "terminal"
+      ]
+    },
+    {
+      "description": "Constant law followed by a recursive chamfer value.",
+      "type": "object",
+      "properties": {
+        "chamfer_type": {
+          "description": "Native chamfer-type enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "discriminator": {
+          "description": "Native sub-discriminator preceding the calibrated enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "kind": {
+          "type": "string",
+          "const": "constant"
+        },
+        "nested": {
+          "description": "Recursively nested blend value.",
+          "$ref": "#/$defs/VariableBlendValue"
+        },
+        "parameters": {
+          "description": "Ordered native scalars.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "radius": {
+          "description": "Radius in document length units.",
+          "type": "number",
+          "format": "double"
+        },
+        "variable_chamfer": {
+          "description": "Native variable-chamfer enum.",
+          "type": "integer",
+          "format": "int64"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "discriminator",
+        "parameters",
+        "radius",
+        "variable_chamfer",
+        "chamfer_type",
+        "nested"
+      ]
+    },
+    {
+      "description": "Interpolated radius law.",
+      "type": "object",
+      "properties": {
+        "discriminator": {
+          "description": "Native sub-discriminator preceding the calibrated enum.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "enum_count": {
+          "description": "Native extension enum, stored ahead of the radius-point count. It\ngates nothing; the payload ends at the last radius point.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "enum_tagged": {
+          "description": "Whether the extension enum is stored as a `0x15` enum token\n(revision-gated streams) rather than a `0x04` integer.",
+          "type": "boolean"
+        },
+        "function": {
+          "description": "Scalar function whose first coordinate is radius in document units.",
+          "$ref": "#/$defs/PcurveGeometry"
+        },
+        "kind": {
+          "type": "string",
+          "const": "interpolated"
+        },
+        "parameter": {
+          "description": "Leading scalar.",
+          "type": "number",
+          "format": "double"
+        },
+        "points": {
+          "description": "Counted radius-point array: each control carries a parameter,\nradius, two derivative scalars, a position, and a vector.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VariableBlendInterpolationPoint"
+          }
+        },
+        "radius": {
+          "description": "Leading radius in document length units.",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "discriminator",
+        "parameter",
+        "radius",
+        "function",
+        "enum_count",
+        "enum_tagged",
+        "points"
+      ]
+    }
+  ]
+}
+```
+
+### `Vector3`
+
+```json
+{
+  "description": "A 3D vector. Depending on context this may be a direction (often but not\nalways unit length) or a length-bearing displacement.",
+  "type": "object",
+  "properties": {
+    "x": {
+      "description": "X component.",
+      "type": "number",
+      "format": "double"
+    },
+    "y": {
+      "description": "Y component.",
+      "type": "number",
+      "format": "double"
+    },
+    "z": {
+      "description": "Z component.",
+      "type": "number",
+      "format": "double"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "x",
+    "y",
+    "z"
+  ]
+}
+```
+
+### `VectorOffsetRoles`
+
+```json
+{
+  "description": "Codes attached to the two native vector-offset roles.",
+  "type": "object",
+  "properties": {
+    "offset": {
+      "description": "Code of the offset role.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "source": {
+      "description": "Code of the source role.",
+      "type": "integer",
+      "format": "int64"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "source",
+    "offset"
+  ]
+}
+```
+
+### `VertexBlendBoundary`
+
+```json
+{
+  "description": "One boundary record in a native vertex-blend patch.",
+  "type": "object",
+  "properties": {
+    "boundary_type": {
+      "description": "Native cross flag. The wire form is a logical, so the value is the\ntag itself and no payload follows.",
+      "type": "boolean"
+    },
+    "fullness": {
+      "description": "Native fullness scalar.",
+      "type": "number",
+      "format": "double"
+    },
+    "geometry": {
+      "description": "Structurally selected boundary geometry.",
+      "$ref": "#/$defs/VertexBlendBoundaryGeometry"
+    },
+    "magic": {
+      "description": "Native magic direction with finite components, stored as read. It is a\ndirection, never a length, so it carries no unit scale.",
+      "$ref": "#/$defs/Vector3"
+    },
+    "u_smoothing": {
+      "description": "Native U-smoothing flag, a logical on the wire.",
+      "type": "boolean"
+    },
+    "v_smoothing": {
+      "description": "Native V-smoothing flag, a logical on the wire.",
+      "type": "boolean"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "boundary_type",
+    "magic",
+    "u_smoothing",
+    "v_smoothing",
+    "fullness",
+    "geometry"
+  ]
+}
+```
+
+### `VertexBlendBoundaryGeometry`
+
+```json
+{
+  "description": "Type-specific geometry of a vertex-blend boundary.",
+  "oneOf": [
+    {
+      "description": "Curve boundary with a circle/ellipse/unknown twist form.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Boundary curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "curve_endpoints": {
+          "description": "Optional native curve parameter endpoints stored by the\nrevision-gated layout.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "circle"
+        },
+        "parameters": {
+          "description": "Two ordered curve parameters.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "sense": {
+          "description": "Native sense flag, a logical on the wire.",
+          "type": "boolean"
+        },
+        "twists": {
+          "description": "Twist payload. Pre-revision layouts store model-space locations;\nthe revision-gated layout stores unscaled twist vectors.",
+          "$ref": "#/$defs/VertexBlendTwists"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "curve",
+        "curve_endpoints",
+        "twists",
+        "parameters",
+        "sense"
+      ]
+    },
+    {
+      "description": "Degenerate boundary at a model-space location.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "degenerate"
+        },
+        "location": {
+          "description": "Degenerate location.",
+          "$ref": "#/$defs/Point3"
+        },
+        "normals": {
+          "description": "Two ordered boundary normals.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Vector3"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "location",
+        "normals"
+      ]
+    },
+    {
+      "description": "Surface pcurve boundary.",
+      "type": "object",
+      "properties": {
+        "fit_tolerance": {
+          "description": "Parameter-space fit tolerance.",
+          "$ref": "#/$defs/FitTolerance"
+        },
+        "kind": {
+          "type": "string",
+          "const": "pcurve"
+        },
+        "pcurve": {
+          "description": "Native BS2 pcurve, absent for `nullbs`.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PcurveGeometry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sense": {
+          "description": "Native sense flag, a logical on the wire.",
+          "type": "boolean"
+        },
+        "support_bounds": {
+          "description": "Optional U/V bound fields stored after the support by the\nrevision-gated layout.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 4,
+          "minItems": 4
+        },
+        "surface": {
+          "description": "Support surface.",
+          "$ref": "#/$defs/SurfaceId"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "surface",
+        "support_bounds",
+        "sense",
+        "fit_tolerance"
+      ]
+    },
+    {
+      "description": "Planar boundary described by a normal and curve.",
+      "type": "object",
+      "properties": {
+        "curve": {
+          "description": "Boundary curve.",
+          "$ref": "#/$defs/CurveId"
+        },
+        "curve_endpoints": {
+          "description": "Optional native curve parameter endpoints stored by the\nrevision-gated layout.",
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "kind": {
+          "type": "string",
+          "const": "plane"
+        },
+        "normal": {
+          "description": "Plane normal.",
+          "$ref": "#/$defs/Vector3"
+        },
+        "parameters": {
+          "description": "Two ordered plane parameters.",
+          "type": "array",
+          "items": {
+            "type": "number",
+            "format": "double"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "normal",
+        "parameters",
+        "curve",
+        "curve_endpoints"
+      ]
+    }
+  ]
+}
+```
+
+### `VertexBlendConstruction`
+
+```json
+{
+  "description": "Complete native vertex-blend surface construction.",
+  "type": "object",
+  "properties": {
+    "boundaries": {
+      "description": "Ordered boundary records.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/VertexBlendBoundary"
+      }
+    },
+    "fit_tolerance": {
+      "description": "Native model-space fit tolerance.",
+      "$ref": "#/$defs/FitTolerance"
+    },
+    "grid_size": {
+      "description": "Native grid-size integer.",
+      "type": "integer",
+      "format": "int64"
+    },
+    "revision": {
+      "description": "Positive serializer-revision integer selecting the revision-gated\nlayout; absent from the pre-revision layout.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PositiveI64"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "boundaries",
+    "grid_size",
+    "fit_tolerance"
+  ]
+}
+```
+
+### `VertexBlendTwists`
+
+```json
+{
+  "description": "Twist payload selected by a vertex-blend circle form.",
+  "oneOf": [
+    {
+      "description": "Native form zero: no twist entries.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "none"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ]
+    },
+    {
+      "description": "Native form one: one twist entry.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "one"
+        },
+        "twist": {
+          "description": "The one twist entry.",
+          "$ref": "#/$defs/Point3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "twist"
+      ]
+    },
+    {
+      "description": "Native form three: two ordered twist entries.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "two"
+        },
+        "twists": {
+          "description": "The two ordered twist entries.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Point3"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "twists"
+      ]
+    }
+  ]
+}
+```
+
+### `WeightedPolarNurbsPole`
+
+```json
+{
+  "description": "One rational polar pole: its radial and axial halves and its weight.",
+  "type": "object",
+  "properties": {
+    "axial": {
+      "description": "Axial pole value.",
+      "type": "number",
+      "format": "double"
+    },
+    "radial": {
+      "description": "Euclidean radial-plane pole.",
+      "$ref": "#/$defs/Point2"
+    },
+    "weight": {
+      "description": "Rational weight at this pole.",
+      "$ref": "#/$defs/NonZeroReal"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "radial",
+    "axial",
+    "weight"
+  ]
+}
+```
+
+### `WeightedPole2`
+
+```json
+{
+  "description": "One rational pole in parameter space: its position and its weight.",
+  "type": "object",
+  "properties": {
+    "point": {
+      "description": "Pole position in parameter space.",
+      "$ref": "#/$defs/Point2"
+    },
+    "weight": {
+      "description": "Rational weight at this pole.",
+      "$ref": "#/$defs/NonZeroReal"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "point",
+    "weight"
+  ]
+}
+```
+
+### `WeightedPole3`
+
+```json
+{
+  "description": "One rational pole in model space: its position and its weight.",
+  "type": "object",
+  "properties": {
+    "point": {
+      "description": "Pole position in model space.",
+      "$ref": "#/$defs/Point3"
+    },
+    "weight": {
+      "description": "Rational weight at this pole.",
+      "$ref": "#/$defs/NonZeroReal"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "point",
+    "weight"
+  ]
+}
+```
+
+### `inline`
+
+```json
+{
+  "description": "An inline T-spline program and its non-empty companion values.",
+  "oneOf": [
+    {
+      "description": "Inline line-oriented T-spline program and companion values.",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "inline"
+        },
+        "program": {
+          "description": "Line-oriented topology and geometry program.",
+          "type": "string"
+        },
+        "separator": {
+          "description": "Optional native separator boolean.",
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "default": null
+        },
+        "values": {
+          "description": "Companion values program.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "program",
+        "values"
+      ]
+    }
+  ]
+}
+```
