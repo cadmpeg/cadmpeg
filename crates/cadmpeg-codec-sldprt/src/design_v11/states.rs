@@ -11,7 +11,7 @@
 //! has an evaluation with no content and status `Stale`; a stored partition so
 //! flagged is a stale state.
 //!
-//! The states between features are deferred to unit SW2b, which builds on
+//! The states between features are deferred to unit `SW2b`, which builds on
 //! the Parasolid reader's delta replay (unit PS-R, #1634). The replay is
 //! established: a partition's Deltas stream replays as data, mark by mark
 //! along the main line, to the node set of every earlier state (§3.1, Stored
