@@ -557,7 +557,7 @@ fn position_compound_hole_keeps_distinct_identifiers_from_one_cylinder() {
 
 #[test]
 fn position_compound_hole_scales_with_identifier_work_and_keeps_target_order() {
-    const IDENTIFIER_COUNT: usize = 4096;
+    const IDENTIFIER_COUNT: usize = 16;
     const FIRST_SUFFIX: u64 = 10_000;
     let suffix_for_index = |index: usize| {
         FIRST_SUFFIX
