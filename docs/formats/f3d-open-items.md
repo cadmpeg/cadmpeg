@@ -3549,16 +3549,6 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** `assembly.legacy-insert-frame-assumed` names the assumption that an unresolved occurrence uses its scope-local insertion frame as its current frame. `feature.component-insert-membership-assumed` separately names unresolved source membership. A decoded source binding takes precedence over this fallback. The public API separates [initial position](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence_initialTransform.htm) from [assembly-context position and orientation](https://help.autodesk.com/cloudhelp/ENU/Fusion-360-API/files/fusion_Occurrence_transform2.htm).
 
-### DR-796. Healed DeleteFace transitions that delete more faces than the group has members
-
-**Question.** Which deleted faces does a one-member healed `DeleteFace` group select when its transition deletes several faces?
-
-**Known.** A public RailCore II ZL design stores a healed `DeleteFace` whose role-`0x0000001000000000` group has one bounded-face member. Its single transition deletes four faces of the preceding state, three on planes and one on a cylinder, and updates seven other faces. The member's recipe has four nodes and binds to no complete face boundary of the preceding state. Its recipe references name two of the deleted faces and faces that the transition keeps.
-
-**Need.** The binding rule of this recipe form, or a stored field that separates the selected faces from the faces that healing removes.
-
-**Note.** The group stays native and the decoder reports `feature.face-selection-native`.
-
 ### DR-800. Short compact Coil controls
 
 **Question.** Which options do the two control bytes of the 454-byte ten-reference Coil scope encode?
