@@ -14,7 +14,7 @@ use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::{
-    Feature, FeatureDefinition, FeatureOperation, OperationFamily, StoredOrigin,
+    Feature, FeatureDefinition, FeatureOperation, Link, OperationFamily, StoredOrigin,
 };
 use cadmpeg_ir::design::ids::{ArrangementId, ContainerId};
 use cadmpeg_ir::design::refs::{Member, Position};
@@ -231,7 +231,12 @@ fn operation(feature: &LegacyFeature) -> Result<FeatureOperation, CodecError> {
                 origin: StoredOrigin::Base {},
             })
         }
-        LegacyOperation::StoredGeometry {} => return stored_outputs(feature),
+        LegacyOperation::StoredGeometry {} => {
+            return stored_outputs(feature, StoredOrigin::Base {}, "stored_geometry")
+        }
+        LegacyOperation::Unresolved {
+            family: UnresolvedFamily::LinkedFace,
+        } => return stored_outputs(feature, wave_link(), "LINKED_FACE"),
         LegacyOperation::Native { kind, .. } => return native(kind.as_str()),
         LegacyOperation::TreeNode { .. } | LegacyOperation::BaseFeature { .. } => {
             return native(kind.unwrap_or("base_feature"))
@@ -279,18 +284,37 @@ fn operation(feature: &LegacyFeature) -> Result<FeatureOperation, CodecError> {
     Ok(FeatureOperation::Unresolved { family })
 }
 
-/// A BREP operation whose result bodies the decoder resolves holds them as
-/// its own content.
-fn stored_outputs(feature: &LegacyFeature) -> Result<FeatureOperation, CodecError> {
+/// A feature defined by stored geometry whose result bodies the decoder
+/// resolves holds them as its own content. Its bodies are a value of the
+/// design, so where they are not resolved the feature keeps its NX kind.
+fn stored_outputs(
+    feature: &LegacyFeature,
+    origin: StoredOrigin,
+    kind: &str,
+) -> Result<FeatureOperation, CodecError> {
     let outputs = feature.evaluation.outputs();
     if outputs.is_empty() {
-        return native(feature.source_tag.as_deref().unwrap_or("stored_geometry"));
+        return native(feature.source_tag.as_deref().unwrap_or(kind));
     }
     Ok(FeatureOperation::Stored {
         bodies: Some(Vec::clone(outputs)),
         tessellations: Vec::new(),
-        origin: StoredOrigin::Base {},
+        origin,
     })
+}
+
+/// A WAVE link is a frozen copy of geometry in another part that keeps its
+/// link. The decoder reads none of the link's fields.
+fn wave_link() -> StoredOrigin {
+    StoredOrigin::Linked(Box::new(Link {
+        source: None,
+        document: None,
+        transform: None,
+        scale: None,
+        associative: None,
+        state: None,
+        native_ref: None,
+    }))
 }
 
 const fn unresolved_family(family: UnresolvedFamily) -> Option<OperationFamily> {
@@ -312,16 +336,16 @@ const fn unresolved_family(family: UnresolvedFamily) -> Option<OperationFamily> 
         UnresolvedFamily::Revolve => OperationFamily::Revolve,
         UnresolvedFamily::Combine => OperationFamily::Combine,
         UnresolvedFamily::Fillet => OperationFamily::Fillet,
-        UnresolvedFamily::ExtractFace
-        | UnresolvedFamily::CopyFace
-        | UnresolvedFamily::LinkedFace => OperationFamily::Extract,
+        UnresolvedFamily::ExtractFace | UnresolvedFamily::CopyFace => OperationFamily::Extract,
         UnresolvedFamily::Draft => OperationFamily::Draft,
         UnresolvedFamily::DeleteFace => OperationFamily::DeleteFaces,
         UnresolvedFamily::MoveFace => OperationFamily::MoveFaces,
         UnresolvedFamily::MirrorFace => OperationFamily::Pattern,
         UnresolvedFamily::SubdivisionBody => OperationFamily::Form,
         UnresolvedFamily::MoveObject => OperationFamily::TransformBodies,
-        UnresolvedFamily::Brep | UnresolvedFamily::TopologyOptimization => return None,
+        UnresolvedFamily::LinkedFace
+        | UnresolvedFamily::Brep
+        | UnresolvedFamily::TopologyOptimization => return None,
     })
 }
 

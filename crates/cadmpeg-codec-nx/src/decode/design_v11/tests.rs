@@ -324,6 +324,20 @@ fn operations_keep_their_family_or_their_nx_kind() {
             origin: StoredOrigin::Base {},
         }
     );
+    let mut extract = feature(
+        "extract",
+        0,
+        LegacyOperation::Unresolved {
+            family: UnresolvedFamily::ExtractFace,
+        },
+    );
+    extract.source_tag = Some("EXTRACT_FACE".to_owned());
+    assert_eq!(
+        operation(&extract).unwrap(),
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Extract
+        }
+    );
     let mut snapshot = feature(
         "snapshot",
         0,
@@ -336,6 +350,57 @@ fn operations_keep_their_family_or_their_nx_kind() {
         operation(&snapshot).unwrap(),
         FeatureOperation::Native {
             kind: NonBlankString::new("nx:MASTER SNAPSHOT BODY").unwrap(),
+            native_options: BTreeMap::new(),
+            source_settings: BTreeMap::new(),
+        }
+    );
+}
+
+fn wave_face_link(outputs: Vec<BodyId>) -> LegacyFeature {
+    let mut link = feature(
+        "link",
+        0,
+        LegacyOperation::Unresolved {
+            family: UnresolvedFamily::LinkedFace,
+        },
+    );
+    link.source_tag = Some("LINKED_FACE".to_owned());
+    link.evaluation = FeatureEvaluation::new(
+        link.evaluation.definition().clone(),
+        DistinctMembers::try_from(outputs).unwrap(),
+    );
+    link
+}
+
+#[test]
+fn a_wave_face_link_is_a_linked_stored_copy() {
+    let mut ir = CadIr::empty();
+    ir.geometry.bodies = vec![body("1")];
+    ir.model.features = vec![wave_face_link(vec![body("1").id])];
+    project_ir(&mut ir);
+    let [feature] = ir.design.features.as_slice() else {
+        panic!("one feature");
+    };
+    let FeatureOperation::Stored {
+        bodies: Some(bodies),
+        tessellations,
+        origin: StoredOrigin::Linked(link),
+    } = &feature.definition.operation
+    else {
+        panic!("a linked stored copy");
+    };
+    assert_eq!(bodies, &[body("1").id]);
+    assert!(tessellations.is_empty());
+    assert_eq!(serde_json::to_value(link).unwrap(), serde_json::json!({}));
+    assert_eq!(design_findings(&ir), Vec::<String>::new());
+}
+
+#[test]
+fn a_wave_face_link_with_unresolved_bodies_keeps_its_nx_kind() {
+    assert_eq!(
+        operation(&wave_face_link(Vec::new())).unwrap(),
+        FeatureOperation::Native {
+            kind: NonBlankString::new("nx:LINKED_FACE").unwrap(),
             native_options: BTreeMap::new(),
             source_settings: BTreeMap::new(),
         }
