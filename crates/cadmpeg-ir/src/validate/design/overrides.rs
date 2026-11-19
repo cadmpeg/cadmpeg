@@ -86,9 +86,14 @@ impl Found {
     }
 }
 
+/// The relative difference below which two literal reals are equal when it
+/// exceeds the document's tolerances.
+const LITERAL_RELATIVE_TOLERANCE: f64 = 1e-9;
+
 fn close(left: &Value, right: &Value, tolerance: f64) -> bool {
     let reals = |left: f64, right: f64| {
-        (left - right).abs() <= tolerance.max(1e-9 * left.abs().max(right.abs()))
+        (left - right).abs()
+            <= tolerance.max(LITERAL_RELATIVE_TOLERANCE * left.abs().max(right.abs()))
     };
     match (left, right) {
         (Value::F64(left), Value::F64(right)) => reals(*left, *right),
