@@ -279,22 +279,52 @@ fn design_linked_case(
     links: &[(i64, i64)],
     in_state: bool,
 ) -> Option<i64> {
+    design_linked_clauses_case(design_id, selector, links, &[in_state])
+}
+
+/// `design_linked_case` for an operand with one face clause for each entry
+/// of `clauses_in_state`, in order.
+fn design_linked_clauses_case(
+    design_id: &str,
+    selector: u32,
+    links: &[(i64, i64)],
+    clauses_in_state: &[bool],
+) -> Option<i64> {
+    const CLAUSE_BYTES: u64 = 12;
     let relation = |owner_ref, member_refs| AsmHistoricalRelation {
         owner_ref,
         member_refs,
     };
     let (scope, _, mut operands, _) = body_recipe_history_fixture();
-    let faces: &[&str] = if in_state {
-        &["f3d:brep:entity#70", "f3d:brep:entity#80"]
-    } else {
-        &["f3d:brep:entity#99"]
-    };
-    for reference in operands[0].reference_bindings_mut() {
-        *reference.candidate_faces = faces
-            .iter()
-            .map(|face| cadmpeg_ir::ids::FaceId::mint(*face).expect("identity grammar"))
-            .collect();
-    }
+    let mut draft = operands.remove(0).into_draft();
+    let first = draft.references[0].clone();
+    draft.references = clauses_in_state
+        .iter()
+        .zip(0u64..)
+        .map(|(&in_state, ordinal)| {
+            let faces: &[&str] = if in_state {
+                &["f3d:brep:entity#70", "f3d:brep:entity#80"]
+            } else {
+                &["f3d:brep:entity#99"]
+            };
+            let mut reference = first.clone();
+            reference.design_reference_offset += ordinal * CLAUSE_BYTES;
+            reference.form_offset += ordinal * CLAUSE_BYTES;
+            reference.candidate_faces = faces
+                .iter()
+                .map(|face| cadmpeg_ir::ids::FaceId::mint(*face).expect("identity grammar"))
+                .collect();
+            reference
+        })
+        .collect();
+    let added = (u64::try_from(clauses_in_state.len()).unwrap() - 1) * CLAUSE_BYTES;
+    draft.nested_record_index_offset += added;
+    draft.asset_id_offset += added;
+    draft.context_id_offset += added;
+    operands.insert(
+        0,
+        crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(draft).unwrap(),
+    );
     let topology = AsmHistoricalTopology {
         bodies: vec![7, 8],
         regions: vec![71, 81],
@@ -488,6 +518,27 @@ fn a_body_recipe_design_link_shared_by_two_bodies_or_by_none_selects_no_body() {
     assert_eq!(design_linked_case("308", 6, &[(7, 6), (8, 6)], true), None);
     assert_eq!(design_linked_case("308", 7, &[(7, 5), (8, 6)], true), None);
     assert_eq!(design_linked_case("301", 6, &[(7, 5), (8, 6)], true), None);
+}
+
+#[test]
+fn a_body_recipe_whose_face_clauses_partly_reach_the_state_ignores_its_design_link() {
+    let links = [(7, 5), (8, 6)];
+    assert_eq!(
+        design_linked_clauses_case("308", 6, &links, &[true, true]),
+        Some(8)
+    );
+    assert_eq!(
+        design_linked_clauses_case("308", 6, &links, &[false, false]),
+        Some(8)
+    );
+    assert_eq!(
+        design_linked_clauses_case("308", 6, &links, &[true, false]),
+        None
+    );
+    assert_eq!(
+        design_linked_clauses_case("308", 6, &links, &[false, true]),
+        None
+    );
 }
 
 #[test]
