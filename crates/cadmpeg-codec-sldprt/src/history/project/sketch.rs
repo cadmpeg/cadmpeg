@@ -30,6 +30,7 @@ pub(super) fn project_split_face(feature: &Feature) -> Option<FeatureDefinition>
     Some(FeatureDefinition::Operation(FeatureOperation::SplitFace {
         targets: FaceSelection::Unresolved,
         tool: SplitFaceTool::Path(PathRef::Native(native.to_owned())),
+        method: cadmpeg_ir::features::surfaces::SplitFaceMethod::default(),
     }))
 }
 
