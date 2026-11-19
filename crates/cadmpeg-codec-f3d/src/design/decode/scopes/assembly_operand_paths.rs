@@ -17,6 +17,7 @@ use crate::layout::assembly_wide_operand_path_identity_locator as wide_identity;
 use crate::layout::assembly_wide_operand_path_locator as wide_locator;
 use crate::layout::assembly_wide_operand_path_matrix_locator as wide_matrix;
 use crate::layout::captured_position_v4_identity_locator as v4_identity;
+use crate::layout::captured_position_v4_path_wrapper as v4_wrapper;
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
@@ -32,6 +33,7 @@ use std::collections::HashMap;
 pub(super) type StreamTypes<'a> = HashMap<u64, (&'a str, u32)>;
 
 const RETAINED_BYTES_PER_SOURCE_BYTE: u64 = 16;
+pub(super) const POSITION_PATH_WRAPPER_TYPE_GUID: &str = "FF415D89-A1DB-44AC-B824-E9A772B86ED4";
 
 pub(super) fn exact_assembly_operand_paths(
     bytes: &[u8],
@@ -548,12 +550,22 @@ fn exact_assembly_operand_path_envelope(
         } else {
             path_wrapper::LEN
         };
+        let zero_marker_position_wrapper = earlier_identity
+            && path_spans.len() == 1
+            && bytes.get(wrapper_at.checked_add(v4_wrapper::MARKER)?)
+                == Some(&v4_wrapper::MARKER_VALUE)
+            && stream_types
+                .get(&u64::from(wrapper_record_index))
+                .is_some_and(|(guid, version)| {
+                    *version == 1 && guid.eq_ignore_ascii_case(POSITION_PATH_WRAPPER_TYPE_GUID)
+                });
         if variable_reference && wrapper_class_tag != "397"
             || bytes.get(
                 wrapper_at.checked_add(path_wrapper::ZERO_RUN_10)?
                     ..wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)?,
             )? != [0; 10]
-            || bytes.get(wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)?) != Some(&1)
+            || (bytes.get(wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_BYTE)?) != Some(&1)
+                && !zero_marker_position_wrapper)
             || View::u32_le_at(
                 bytes,
                 wrapper_at.checked_add(path_wrapper::CONSTANT_ONE_WORD)?,
