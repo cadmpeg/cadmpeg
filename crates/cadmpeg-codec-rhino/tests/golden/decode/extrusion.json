@@ -413,7 +413,26 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "rhino:object:body#record-000000-offset-177.caps"
+          ],
+          "bom_properties": {},
+          "id": "rhino:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": [
+            "rhino:object:tessellation#record-000000-offset-177.cache-0"
+          ]
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],
