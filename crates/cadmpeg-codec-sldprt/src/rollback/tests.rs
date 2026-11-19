@@ -255,3 +255,11 @@ fn an_unreconciled_map_takes_the_token_whose_records_name_the_most_marks() {
         "no feature records the initial mark"
     );
 }
+
+#[test]
+fn a_token_whose_heads_mostly_miss_the_main_line_names_no_record() {
+    let marks = chain(&[4, 2, 1]);
+    let sequence = [2, 3, 4, 5].map(|value| tagged(0x30, value));
+    let stream = resolved(&[sequence.concat(), tagged(0x2b, 4)]);
+    assert_eq!(token_naming_marks(&stream, None, &marks), Some(0x2b));
+}

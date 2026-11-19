@@ -57,7 +57,8 @@ pub(crate) enum Unread {
     /// The configuration's class map does not reconcile with its feature
     /// stream, and no single class token opens the records of its marks.
     ClassMapUnreconciled,
-    /// The class map declares no `moPMarkRecord_c`.
+    /// The class map declares no `moPMarkRecord_c`, and no single class token
+    /// opens the records of the marks.
     NoMarkClass,
     /// The feature stream holds no `moPMarkRecord_c` record.
     NoMarkRecord,
@@ -88,7 +89,11 @@ impl std::fmt::Display for Unread {
                 "the configuration's class map does not reconcile with its feature stream, and no \
                  single class token opens records of its marks",
             ),
-            Self::NoMarkClass => write!(f, "the class map declares no {MARK_CLASS}"),
+            Self::NoMarkClass => write!(
+                f,
+                "the class map declares no {MARK_CLASS}, and no single class token opens records of \
+                 its marks"
+            ),
             Self::NoMarkRecord => write!(f, "the feature stream holds no {MARK_CLASS} record"),
             Self::AfterLastFeature { current, last } => write!(
                 f,
@@ -182,6 +187,7 @@ pub(crate) fn read(
         Some(map) => map
             .iter()
             .find_map(|(index, name)| (name == MARK_CLASS).then_some(*index))
+            .or_else(|| token_naming_marks(resolved, None, &chain))
             .ok_or(Unread::NoMarkClass),
         None => token_naming_marks(resolved, count, &chain).ok_or(Unread::ClassMapUnreconciled),
     };
@@ -244,11 +250,11 @@ pub(crate) fn mark_chain(records: &DeltasRecords<'_>) -> Option<MarkChain> {
     })
 }
 
-/// The class index of `moPMarkRecord_c` where the class map does not
-/// reconcile: among the indices below the stream's map `count`, where the
-/// stream states one, the one whose class tokens open the most record heads
-/// naming distinct main-line marks after the initial one. `None` where no
-/// index or several do.
+/// The class index of `moPMarkRecord_c` where the class map does not name it:
+/// among the indices below the stream's map `count`, where one bounds them,
+/// and whose record heads mostly name main-line marks after the initial one,
+/// the one whose record heads name the most distinct such marks. `None` where
+/// no index or several do.
 pub(crate) fn token_naming_marks(
     stream: &[u8],
     count: Option<u32>,
@@ -258,7 +264,7 @@ pub(crate) fn token_naming_marks(
         Some((_, later)) if !later.is_empty() => later,
         _ => chain.main.as_slice(),
     };
-    let mut named = BTreeMap::<u32, BTreeSet<u32>>::new();
+    let mut named = BTreeMap::<u32, Named>::new();
     for at in RESOLVED_FEATURES_HEAD..stream.len() {
         let Some(word) = View::u16_le_at(stream, at) else {
             break;
@@ -275,19 +281,33 @@ pub(crate) fn token_naming_marks(
         if index == 0 || count.is_some_and(|count| index >= count) {
             continue;
         }
-        if let Some(mark) = record_mark(stream, body).filter(|mark| marks.contains(mark)) {
-            named.entry(index).or_default().insert(mark);
+        if let Some(mark) = record_mark(stream, body) {
+            let named = named.entry(index).or_default();
+            named.heads += 1;
+            if marks.contains(&mark) {
+                named.heads_on_main += 1;
+                named.marks.insert(mark);
+            }
         }
     }
-    let most = named.values().map(BTreeSet::len).max()?;
+    named.retain(|_, named| 2 * named.heads_on_main > named.heads);
+    let most = named.values().map(|named| named.marks.len()).max()?;
     let mut leaders = named
         .iter()
-        .filter(|(_, marks)| marks.len() == most)
+        .filter(|(_, named)| named.marks.len() == most)
         .map(|(index, _)| *index);
     match (leaders.next(), leaders.next()) {
         (Some(index), None) => Some(index),
         _ => None,
     }
+}
+
+/// The record heads one class token opens.
+#[derive(Default)]
+struct Named {
+    heads: usize,
+    heads_on_main: usize,
+    marks: BTreeSet<u32>,
 }
 
 /// The mark of the record head at `body`, where the bytes there have its form.
