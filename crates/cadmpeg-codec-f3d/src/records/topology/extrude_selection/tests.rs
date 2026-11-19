@@ -170,3 +170,24 @@ fn typed_selection_group_offsets_use_the_wide_reference_stride() {
     with_variant.variant = Some(false);
     assert!(super::DesignExtrudeSelectionGroup::try_from(with_variant).is_err());
 }
+
+/// A plain-reference group without the variant byte ends its tail one byte
+/// earlier.
+#[test]
+fn plain_selection_group_without_variant_ends_one_byte_earlier() {
+    let mut wire = selection_group_wire();
+    wire.variant = None;
+    wire.paired_byte_offset = 110;
+    let group = super::DesignExtrudeSelectionGroup::try_from(wire.clone()).expect("plain group");
+    assert!(!group.typed_references);
+    assert_eq!(group.variant, None);
+    assert_eq!(group.paired_byte_offset(), 110);
+    assert!(serde_json::to_value(&group)
+        .unwrap()
+        .get("variant")
+        .is_none());
+
+    let mut variant_offset = wire;
+    variant_offset.paired_byte_offset = 111;
+    assert!(super::DesignExtrudeSelectionGroup::try_from(variant_offset).is_err());
+}
