@@ -706,6 +706,42 @@ impl DesignExtrudePrologue {
         }
     }
 
+    pub(crate) fn legacy_class_330_blind_cut(start: u64, direction_reversed: bool) -> Option<Self> {
+        use cadmpeg_core::decode::u64_from_index;
+
+        use crate::layout::current_extrude_operation_fields as fields;
+        use crate::layout::legacy_class_330_blind_cut_extrude_frame as frame;
+        use crate::layout::offset_23_extrude_prologue as prefix;
+
+        let absolute = |offset| start.checked_add(u64_from_index(offset));
+        let operation_field = |offset| absolute(prefix::OPERATION + offset);
+        Some(Self::ReferenceAware {
+            reference: None,
+            operation: DesignExtrudeOperation::Cut,
+            operation_offset: absolute(prefix::OPERATION)?,
+            direction_face_extend_values: [1, 2],
+            side_extent_discriminators: [1, 0],
+            side_extent_discriminator_offsets: [
+                absolute(frame::FIRST_SIDE_EXTENT)?,
+                absolute(frame::SECOND_SIDE_EXTENT)?,
+            ],
+            first_side_target_ordinal: None,
+            distance_tail: None,
+            opaque_distance_word: None,
+            extent: DesignExtrudeExtent::OneSidedDistance,
+            direction_face_extend_offsets: [
+                operation_field(fields::DIRECTION)?,
+                operation_field(fields::FACE_EXTEND)?,
+            ],
+            direction_reversed,
+            direction_reversed_offset: operation_field(fields::DIRECTION_REVERSED)?,
+            solid_operation: true,
+            solid_operation_offset: operation_field(fields::GEOMETRY_KIND)?,
+            start: DesignExtrudeStart::ProfilePlane,
+            start_offset: operation_field(fields::START_SUPPORT)?,
+        })
+    }
+
     /// Shifted legacy profile-plane form whose first side ends at a face.
     pub(crate) fn is_legacy_shifted_to_face(self) -> bool {
         matches!(

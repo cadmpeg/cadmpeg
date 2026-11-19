@@ -75,11 +75,17 @@ fn design_stream_contains_entry(stream: &str, entry: &str) -> bool {
     ids::native_scope_matches(stream, entry)
 }
 
-/// Admit the empty reference table used by a legacy Combine tool operand.
 fn body_recipe_reference_table_is_admitted(
-    scope: Option<&records::feature::scope::DesignParameterScope>,
+    scope: Option<&DesignParameterScope>,
     operand: &records::topology::body_recipe::DesignBodyRecipeOperand,
 ) -> bool {
+    if operand.has_legacy_cut_frame() {
+        return operand.owner.group().is_some_and(|(group, _)| {
+            scope.and_then(|scope| {
+                scope.legacy_class_330_body_recipe_close(group, operand.record_index())
+            }) == Some(operand.next_record_index())
+        });
+    }
     !operand.references().is_empty()
         || matches!(
             operand.owner,
@@ -493,10 +499,10 @@ fn valid_sketch_profile_region_selection(
     let selection_index_matches = profile.record_index.checked_add(3)
         == Some(selection.record_index)
         || (profile.record_index.checked_add(2) == Some(selection.record_index)
-            && profile.scope_reference_ordinal == 1
+            && scope.legacy_class_330_profile_member_ordinal()
+                == Some(profile.scope_reference_ordinal)
             && profile.class_tag.as_str() == "272"
-            && profile.paired_class_tag().as_str() == "262"
-            && scope.is_legacy_class_330_symmetric_distance());
+            && profile.paired_class_tag().as_str() == "262");
     if !selection_index_matches
         || selection.byte_offset <= profile.paired_byte_offset()
         || selection.region_count_offset != expected_region_count_offset
@@ -3671,6 +3677,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 == 1
         };
         let valid = match scope.extrude_prologue() {
+            Some(_) if scope.is_legacy_class_330_blind_cut() => true,
             Some(prologue) if through_all::matches_scope(scope) => {
                 through_all::valid_prologue(scope, prologue)
             }
