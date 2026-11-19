@@ -107,6 +107,10 @@ impl Inputs<'_> {
             "mirror" => self.mirror(record, dependencies),
             "sweep" => self.sweep(record, dependencies),
             "coil" => self.coil(record),
+            "delete_face" => Some(json!({"kind": "delete_face", "value": {
+                "faces": picked(record, "faces", "face_names")?,
+                "heal": record.get("heal").and_then(Value::as_bool) != Some(false),
+            }})),
             "offset_face" => Some(json!({"kind": "move_face", "value": {
                 "faces": picked(record, "faces", "face_names")?,
                 "motion": {

@@ -445,6 +445,8 @@ fn the_operation_families_carry_their_semantics() {
              "section_size": "1", "start_angle": "90 deg", "operation": "new_body"},
             {"id": 19, "name": "PathPattern", "suppressed": false, "type": "pattern", "features": [1],
              "pattern": {"type": "path", "path_sketch": 13, "path": ["l1"], "count": "4", "spacing": "30", "extent": true}},
+            {"id": 20, "name": "Open", "suppressed": false, "type": "delete_face",
+             "faces": [[1.0, 2.0, 3.0]], "face_names": ["F1:top"], "heal": false},
             {"id": 18, "name": "Raise", "suppressed": false, "type": "offset_face",
              "faces": [[7.0, 15.0, 10.0]], "face_names": ["F1:top"], "distance": "2"}
         ]
@@ -477,6 +479,7 @@ fn the_operation_families_carry_their_semantics() {
             "loft",
             "coil",
             "pattern",
+            "delete_face",
             "move_face"
         ]
     );
@@ -638,6 +641,90 @@ fn named_views_and_hidden_occurrences_are_presentation() {
         .find(|row| row["id"].as_str().unwrap().ends_with("#2"))
         .unwrap();
     assert_eq!(hidden["visible"], false);
+}
+
+#[test]
+fn an_earlier_design_decodes_through_the_upgrade() {
+    let document = json!({
+        "format": "solidcraft/5",
+        "name": "Old",
+        "units": "mm",
+        "params": [],
+        "features": [
+            {"id": 1, "name": "S", "suppressed": false, "type": "sketch",
+             "plane": {"type": "origin", "name": "XZ"},
+             "sketch": {"points": [{"id": "origin", "pos": [0.0, 0.0], "fixed": true},
+                                   {"id": "c", "pos": [0.0, 0.0]}],
+                        "curves": [{"id": "c1", "type": "circle", "c": 1, "r": 2.0}], "constraints": []}},
+            {"id": 2, "name": "E", "suppressed": false, "type": "extrude", "sketch": 1,
+             "profiles": {"type": "all"}, "operation": "new_body",
+             "extent": {"distance": "10", "direction": "negative", "distance2": "4"}}
+        ]
+    });
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let result = SolidcraftCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    // The old XZ plane keeps its frame: x along +X, y along +Z.
+    let sketch = serde_json::to_value(&result.ir().model.sketches[0]).unwrap();
+    assert_eq!(
+        sketch["placement"]["frame"]["normal"],
+        json!({"x": 0.0, "y": -1.0, "z": 0.0})
+    );
+    // The negative direction of a two-sided extrude was ignored, and the
+    // second side followed the first across the plane.
+    let features = features(&bytes);
+    let extrude = &features[1]["definition"]["value"]["value"];
+    assert_eq!(extrude["direction"], json!({"kind": "profile_normal"}));
+    assert_eq!(
+        extrude["extent"],
+        json!({"kind": "two_sided",
+               "first": {"termination": {"kind": "blind", "length": 10.0}},
+               "second": {"termination": {"kind": "blind", "length": 4.0}}})
+    );
+    assert!(!loss_codes(&bytes).contains(&"solidcraft/history.features-undecoded".to_owned()));
+}
+
+#[test]
+fn a_current_two_sided_extrude_keeps_the_side_of_each_distance() {
+    let extrude = |direction: &str, distance: &str, follows: bool| {
+        let mut extent = json!({"distance": distance, "direction": direction, "distance2": "4"});
+        if follows {
+            extent["second_follows_first"] = json!(true);
+        }
+        let document = json!({
+            "format": "solidcraft/57", "name": "T", "units": "mm", "params": [],
+            "features": [
+                {"id": 1, "name": "S", "suppressed": false, "type": "sketch",
+                 "plane": {"type": "origin", "name": "XY"},
+                 "sketch": {"points": [{"id": "origin", "pos": [0.0, 0.0], "fixed": true},
+                                       {"id": "c", "pos": [0.0, 0.0]}],
+                            "curves": [{"id": "c1", "type": "circle", "c": 1, "r": 2.0}], "constraints": []}},
+                {"id": 2, "name": "E", "suppressed": false, "type": "extrude", "sketch": 1,
+                 "profiles": {"type": "all"}, "operation": "new_body", "extent": extent}
+            ]
+        });
+        let features = features(&serde_json::to_vec(&document).unwrap());
+        features[1]["definition"]["value"]["value"].clone()
+    };
+    let negative = extrude("negative", "10", false);
+    assert_eq!(
+        negative["direction"],
+        json!({"kind": "reversed_profile_normal"})
+    );
+    assert_eq!(negative["extent"]["second"]["termination"]["length"], 4.0);
+    // A negative distance turns its own side over: the extrude has no
+    // neutral two-sided form, because both sides lie against the normal.
+    assert_eq!(
+        extrude("positive", "-10", false)["kind"],
+        "solidcraft:extrude"
+    );
+    // An older design's second side follows the first across the plane.
+    let follows = extrude("positive", "-10", true);
+    assert_eq!(
+        follows["direction"],
+        json!({"kind": "reversed_profile_normal"})
+    );
 }
 
 #[test]

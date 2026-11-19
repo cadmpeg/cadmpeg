@@ -637,9 +637,9 @@ These gaps remain:
 | Dialect                          | Read                   | Write |
 | -------------------------------- | ---------------------- | ----- |
 | `solidcraft:container-1-v57`     | L5                     | none  |
-| `solidcraft:container-1-v1-56`   | L1                     | none  |
+| `solidcraft:container-1-v1-56`   | L5                     | none  |
 | `solidcraft:json-v57`            | L5                     | none  |
-| `solidcraft:json-v1-56`          | L1                     | none  |
+| `solidcraft:json-v1-56`          | L5                     | none  |
 | `solidcraft:drawing-container-1` | detected               | none  |
 | `solidcraft:unknown`             | unclassified-recovered | none  |
 
@@ -650,7 +650,7 @@ The codec selects the encoding from the first bytes, reads the container marker 
 These gaps remain:
 
 - Body transfers between components, holes, threads, drafts, splits, sheet-metal, plastic, frame, and surface features, and the other families past the typed ones are native operations with their scalar fields (`solidcraft/history.features-undecoded`). So are a variable-radius fillet, a pattern about a model edge or a construction axis, a path pattern whose copies turn, a mirror that joins its copies, a sweep with a guide, twist, taper, or scale, a loft with rails, a coil on a sketch profile, and a plane that depends on the model. Edge and face operands are native selections of picks and persistent names, not resolved topology.
-- The history of an earlier document format is retained without decoding, because that format reads through migrations that the codec does not apply (`solidcraft/history.features-undecoded`).
+- The history of an earlier document format decodes through the upgrade steps that change what the codec reads. The steps that mark stored names (the legacy mark of a face name and the piece order of a split) are not applied, so a name that an earlier design stored is retained as it was written.
 - Sketch pattern, arc-length, slot, circle-distance, linear-diameter, offset, pierce, and point-along relations are native relations (`solidcraft/history.sketch-constraint-native`). A relation on a spline control point or an ellipse axis end has no neutral locus and stays in the retained document. Sketch profiles are not computed.
 - Fit splines, conics, and weighted or periodic splines have no sketch entity (`solidcraft/history.sketch-curve-untyped`). A sketch on a datum or a midplane is unplaced (`solidcraft/history.sketch-plane-unresolved`).
 - The model states before the final state are retained without decoding (`solidcraft/cache.model-undecoded`). A design without the cache carries no evaluated geometry (`solidcraft/cache.model-absent`).

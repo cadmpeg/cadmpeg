@@ -52,18 +52,130 @@
       "drawings": [],
       "feature_input_topologies": [],
       "feature_result_topologies": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "primitive",
+              "value": {
+                "op": "new_body",
+                "placement": [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ]
+                ],
+                "solid": {
+                  "height": 5.0,
+                  "kind": "box",
+                  "length": 20.0,
+                  "width": 10.0
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "solidcraft:design:feature#1",
+          "name": "Box1",
+          "ordinal": 0,
+          "outputs": [],
+          "product_definition": "solidcraft:design:product#0",
+          "source_content": [],
+          "source_properties": {},
+          "source_tag": "box",
+          "suppressed": false
+        }
+      ],
       "history_bodies": [],
       "mass_properties": [],
-      "occurrences": [],
-      "parameters": [],
+      "occurrences": [
+        {
+          "id": "solidcraft:design:occurrence#root",
+          "name": "Block",
+          "ordinal": 0,
+          "parent": {
+            "kind": "root"
+          },
+          "prototype": {
+            "definition": "solidcraft:design:product#0",
+            "kind": "local"
+          },
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ],
+          "transform": [
+            [
+              1.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              1.0,
+              0.0,
+              0.0
+            ],
+            [
+              0.0,
+              0.0,
+              1.0,
+              0.0
+            ]
+          ]
+        }
+      ],
+      "parameters": [
+        {
+          "dependencies": [],
+          "expression": "20 mm",
+          "id": "solidcraft:design:parameter#w",
+          "name": "w",
+          "ordinal": 0,
+          "properties": {
+            "unit": "mm"
+          },
+          "value": {
+            "kind": "length",
+            "value": 20.0
+          }
+        }
+      ],
       "physical_materials": [],
       "physics_scenes": [],
       "pmi": [],
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "solidcraft:design:product#0",
+          "kind": "part",
+          "label": "Block",
+          "sketches": [],
+          "source_name": "Block",
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],
@@ -171,30 +283,6 @@
         "code": {
           "kind": "namespaced",
           "value": {
-            "code": "history.parameters-undecoded",
-            "kind": "record_not_typed",
-            "namespace": "solidcraft"
-          }
-        },
-        "message": "1 parameter records are retained without decoding",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "document.section-undecoded",
-            "kind": "record_not_typed",
-            "namespace": "solidcraft"
-          }
-        },
-        "message": "document sections retained without decoding: appearances",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
             "code": "cache.model-absent",
             "kind": "missing_geometry_stream",
             "namespace": "solidcraft",
@@ -202,18 +290,6 @@
           }
         },
         "message": "the container carries no model cache: its geometry exists only as the evaluation of its feature history",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "history.features-undecoded",
-            "kind": "feature_history_retained",
-            "namespace": "solidcraft"
-          }
-        },
-        "message": "1 feature records of an earlier document format are retained without decoding: their format is read through migrations that this decoder does not apply",
         "severity": "warning"
       }
     ],

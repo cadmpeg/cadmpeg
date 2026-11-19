@@ -43,6 +43,7 @@ mod history;
 mod inspect;
 mod look;
 mod loss;
+mod migrate;
 mod package;
 mod source;
 

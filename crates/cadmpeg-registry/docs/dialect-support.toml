@@ -1239,8 +1239,14 @@ solidcraft/cache.model-absent"""
 
 [[support]]
 dialect = "solidcraft:container-1-v1-56"
-read = "L1"
+read = "L5"
 write = "none"
+reason = """
+L2, L3, and the geometry criteria of L5 are inapplicable: a container of an
+earlier format carries no model cache, so its geometry is the evaluation of
+its feature history. The document upgrades to the current format before its
+history decodes, as on the json-v1-56 row. design-container-v20.sc pins the
+row"""
 
 [[support]]
 dialect = "solidcraft:json-v57"
@@ -1255,8 +1261,16 @@ row. design-json-v57.sc pins the row"""
 
 [[support]]
 dialect = "solidcraft:json-v1-56"
-read = "L1"
+read = "L5"
 write = "none"
+reason = """
+L2, L3, and the geometry criteria of L5 are inapplicable: a plain JSON
+design holds no model cache and no geometry record. The document upgrades to
+the current format before its history decodes: the appearance records, the
+joint flip, the XZ frame, the direction and the second side of a two-sided
+extrude, and the feature ids of pattern seeds and construction planes. The
+steps that only mark stored names are not applied.
+design-json-v13-legacy-tag.sc pins the row"""
 
 [[support]]
 dialect = "solidcraft:drawing-container-1"

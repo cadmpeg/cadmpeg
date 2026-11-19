@@ -296,3 +296,22 @@ The sections `metadata`, `plugin_data`, `render`, `favorites`,
 `sheet`, `parts`, `text_params`, `param_comments`, `print_faces`,
 `body_components`, `body_offsets`, `notes`, `canvases`, and `point_clouds`
 are application data that a rewrite keeps as the section.
+
+### 3.10 Earlier formats
+
+A design of an earlier format reads through one upgrade step for each format
+it passes. Most steps add a field that older designs leave at its default.
+The steps that change what a reader sees are: format 3, the appearances of a
+body are looks, not bare colours; format 4, a joint's `flip` has the opposite
+sense; format 5, a feature of a design with components lists its
+`participants`; format 6, the XZ origin plane has the normal +Y, and an older
+reference keeps the frame with the x axis along +X and the y axis along +Z;
+format 28, a two-sided extrude follows its `direction`; format 40, the seeds
+of a pattern or mirror and a construction plane reference are feature ids; and
+format 51, the second distance of a two-sided extrude stays on its own side
+unless `second_follows_first` is set.
+
+A two-sided extrude has the sides `first` (against the normal for a negative
+`direction`) and `second` of `distance2`. A distance keeps its side whatever
+its sign, so an extrude whose sides do not lie on the two sides of the sketch
+plane has no neutral two-sided form.

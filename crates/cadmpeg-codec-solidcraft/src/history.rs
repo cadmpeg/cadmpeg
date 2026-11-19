@@ -104,11 +104,14 @@ struct Walk<'w, 'c> {
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     document: &Map<String, Value>,
+    version: u32,
     outputs: &BTreeMap<u64, Vec<BodyId>>,
     components: &BTreeMap<u64, Vec<BodyId>>,
     ir: &mut CadIr,
 ) -> Result<Outcome, CodecError> {
     let mut outcome = Outcome::default();
+    let migrated = crate::migrate::upgrade(version, document);
+    let document = migrated.as_ref().unwrap_or(document);
     let Some(features) = document.get("features").and_then(Value::as_array) else {
         return Ok(outcome);
     };
@@ -235,6 +238,7 @@ const TYPED: &[&str] = &[
     "construction_plane",
     "coil",
     "offset_face",
+    "delete_face",
 ];
 
 impl Walk<'_, '_> {
@@ -711,7 +715,40 @@ fn extrude(
         if second == 0.0 {
             return None;
         }
-        json!({"kind": "two_sided", "first": termination(distance)?, "second": blind(second.abs())})
+        match distance {
+            Some(first) => {
+                // Direction fixes the sides, and a sign only turns its own
+                // side over; the second side follows the first across the
+                // sketch plane only for a design that says so.
+                let negative = extent.get("direction").and_then(Value::as_str) == Some("negative");
+                let first = if negative { -first } else { first };
+                let follows =
+                    extent.get("second_follows_first").and_then(Value::as_bool) == Some(true);
+                let other = if follows {
+                    if first < 0.0 {
+                        second
+                    } else {
+                        -second
+                    }
+                } else if negative {
+                    second
+                } else {
+                    -second
+                };
+                if other < 0.0 && first > 0.0 {
+                    reversed = false;
+                    json!({"kind": "two_sided", "first": blind(first), "second": blind(-other)})
+                } else if other > 0.0 && first < 0.0 {
+                    reversed = true;
+                    json!({"kind": "two_sided", "first": blind(-first), "second": blind(other)})
+                } else {
+                    return None;
+                }
+            }
+            None => {
+                json!({"kind": "two_sided", "first": termination(distance)?, "second": blind(second.abs())})
+            }
+        }
     } else {
         json!({"kind": "one_sided", "side": termination(distance)?})
     };

@@ -46,16 +46,11 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     let mut losses = source.opening_losses();
     losses.extend(classification.loss());
     losses.extend(audit.losses);
-    // An earlier format reads its records through the migrations to the
-    // current one, which this decoder does not apply: its history stays
-    // retained.
-    let current = source.header().is_some_and(|header| {
-        header
-            .tag
-            .version()
-            .is_some_and(|version| version >= crate::dialect::CURRENT_FORMAT)
-    });
-    let decodes_history = current && ctx.depth() >= DecodeDepth::Design;
+    // An earlier format is upgraded to the current one before its history
+    // decodes; a document whose format tag is not a design format keeps its
+    // history retained.
+    let version = source.header().and_then(|header| header.tag.version());
+    let decodes_history = version.is_some() && ctx.depth() >= DecodeDepth::Design;
     let mut attributes = BTreeMap::new();
     if let Some(header) = source.header() {
         if let Some(name) = &header.name {
@@ -108,16 +103,9 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         }
     }
     if let Some(document) = &source.document {
-        if !current && document.header.features > 0 {
-            losses.push(SolidcraftLossCode::HistoryUndecoded.note(format!(
-                "{} feature records of an earlier document format are retained without \
-                 decoding: their format is read through migrations that this decoder does not \
-                 apply",
-                document.header.features
-            )));
-        } else if decodes_history {
+        if let (Some(version), true) = (version, decodes_history) {
             let outcome =
-                crate::history::decode(ctx, &document.object, &outputs, &owners, &mut ir)?;
+                crate::history::decode(ctx, &document.object, version, &outputs, &owners, &mut ir)?;
             losses.extend(outcome.losses);
             crate::look::views(&document.object, &mut ir)?;
         }
