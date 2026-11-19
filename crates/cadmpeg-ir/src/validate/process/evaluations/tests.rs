@@ -203,7 +203,7 @@ fn a_state_feature_is_a_removal_states_feature_of_the_scope() {
 }
 
 #[test]
-fn a_material_removal_feature_is_named_by_at_most_one_removal_state() {
+fn a_material_removal_feature_is_named_by_removal_states_of_one_operation() {
     let mut ir = document();
     ir.design.features[0].definition.operation = FeatureOperation::MaterialRemoval;
     for (key, operation) in [("removal-drill", "drill"), ("removal-mill", "mill")] {
@@ -219,7 +219,31 @@ fn a_material_removal_feature_is_named_by_at_most_one_removal_state() {
     ir.process
         .states
         .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-    assert_error(&ir, "material-removal feature is named by 2 removal states");
+    assert_error(
+        &ir,
+        "material-removal feature is named by removal states of 2 operations: test:process:operation#drill, test:process:operation#mill",
+    );
+}
+
+#[test]
+fn removal_states_of_one_operation_in_several_configurations_name_one_feature() {
+    let mut ir = document();
+    ir.design.features[0].definition.operation = FeatureOperation::MaterialRemoval;
+    for (key, configuration) in [("removal-base", "base"), ("removal-large", "large")] {
+        let mut removal = state(
+            key,
+            ProcessStateOf::Removal(id("operation", "mill")),
+            ProcessBase::Design(StateBase::Empty),
+        );
+        removal.configuration = Some(design::id("configuration", configuration));
+        removal.content = None;
+        removal.feature = Some(design::feature("extrude"));
+        ir.process.states.push(removal);
+    }
+    ir.process
+        .states
+        .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    assert_no_process_finding(&ir);
 }
 
 #[test]
