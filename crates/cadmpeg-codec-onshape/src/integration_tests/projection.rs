@@ -6,6 +6,7 @@ use serde_json::{json, Value};
 
 use crate::reader::{self, id, query, topology};
 use crate::test_support::projection::{base_fixture, changed, changed_fixture, selected};
+use crate::test_support::review::parameter;
 use crate::test_support::{fixture, Report};
 
 fn read(bytes: &[u8]) -> (Value, Report) {
@@ -1466,5 +1467,443 @@ fn face_plane_tangential_origins_and_rotated_local_geometry_keep_attachment_nati
                 .any(|l| l.code.to_string() == "onshape/history.not-supported"));
             crate::test_support::review::validate(result);
         }
+    }
+}
+
+fn stored_region_boundaries(close_hole: bool) -> Vec<u8> {
+    changed(|response| {
+        response["features"][0]["constraints"] = json!([]);
+        let mut resolved = query::resolved(selected(response)).unwrap();
+        let template = resolved["disambiguationData"][0]["entities"][0][0].clone();
+        response["features"][0]["entities"] = json!([
+            {"btType":"BTMSketchCurve-4","entityId":"outer","geometry":{
+                "btType":"BTCurveGeometryCircle-115","radius":0.01}},
+            {"btType":if close_hole {"BTMSketchCurve-4"} else {"BTMSketchCurveSegment-155"},
+                "entityId":"hole","startParam":0.0,"endParam":std::f64::consts::PI,
+                "geometry":{"btType":"BTCurveGeometryCircle-115","radius":0.003}}
+        ]);
+        resolved["disambiguationData"][0]["entities"] = json!([("outer", 1), ("hole", -1)]
+            .into_iter()
+            .map(|(name, side)| {
+                let mut edge = template.clone();
+                edge["derivedFrom"]["sketchEntityId"] = json!(name);
+                json!([edge, side])
+            })
+            .collect::<Vec<_>>());
+        replace_query(selected(response), &resolved);
+    })
+}
+
+#[test]
+fn stored_closed_boundaries_prove_region_hole_containment() {
+    for clockwise in [false, true] {
+        let bytes = changed_fixture(&stored_region_boundaries(true), |response| {
+            for entity in response["features"][0]["entities"].as_array_mut().unwrap() {
+                entity["geometry"]["clockwise"] = json!(clockwise);
+            }
+            if clockwise {
+                let mut query = query::resolved(selected(response)).unwrap();
+                for boundary in query["disambiguationData"][0]["entities"]
+                    .as_array_mut()
+                    .unwrap()
+                {
+                    boundary[1] = json!(-boundary[1].as_i64().unwrap());
+                }
+                replace_query(selected(response), &query);
+            }
+        });
+        let result = crate::test_support::review::decode(&bytes);
+        let wire = crate::test_support::review::wire(&result);
+        let feature = &wire["model"]["features"][1]["definition"]["value"];
+        assert_eq!(feature["kind"], "extrude", "{:?}", result.report().losses);
+        let region = &feature["value"]["profile"]["value"]["value"]["regions"][0];
+        assert_eq!(region["outer_boundary"].as_array().unwrap().len(), 1);
+        assert_eq!(region["hole_boundaries"].as_array().unwrap().len(), 1);
+        crate::test_support::review::validate(result);
+    }
+    let bytes = changed_fixture(&stored_region_boundaries(true), |response| {
+        response["features"][0]["entities"]
+            .as_array_mut()
+            .unwrap()
+            .truncate(1);
+        response["features"][0]["entities"][0]["geometry"]["clockwise"] = json!(true);
+        let mut query = query::resolved(selected(response)).unwrap();
+        query["disambiguationData"][0]["entities"]
+            .as_array_mut()
+            .unwrap()
+            .truncate(1);
+        query["disambiguationData"][0]["entities"][0][1] = json!(-1);
+        replace_query(selected(response), &query);
+    });
+    let result = crate::test_support::review::decode(&bytes);
+    let wire = crate::test_support::review::wire(&result);
+    assert_eq!(
+        wire["model"]["features"][1]["definition"]["value"]["kind"],
+        "extrude",
+        "{:?}",
+        result.report().losses
+    );
+    crate::test_support::review::validate(result);
+}
+
+#[test]
+fn a_missing_closed_hole_boundary_refuses_region_construction() {
+    let result = crate::test_support::review::decode(&stored_region_boundaries(false));
+    let wire = crate::test_support::review::wire(&result);
+    assert_eq!(
+        wire["model"]["features"][1]["definition"]["value"]["kind"],
+        "native"
+    );
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code.to_string() == "onshape/history.not-supported"
+            && loss.message.contains("boundary is open")
+    }));
+    crate::test_support::review::validate(result);
+}
+
+fn stored_attachment() -> Vec<u8> {
+    crate::test_support::review::edit(
+        &face_sketch_bundle([0.0, 0.0, 1.0], true),
+        |path, response| {
+            if path.ends_with("features.json") {
+                response["features"][2]["plane"] = json!({
+                    "origin":{"x":0.04,"y":0.07,"z":0.005},
+                    "normal":{"x":0.0,"y":0.0,"z":1.0},
+                    "x":{"x":0.0,"y":1.0,"z":0.0}
+                });
+            }
+        },
+    )
+}
+
+#[test]
+fn stored_attachment_plane_and_x_axis_keep_the_full_frame_typed() {
+    for sense in [1.0, -1.0] {
+        let bytes = crate::test_support::review::edit(&stored_attachment(), |path, response| {
+            if path.ends_with("features.json") {
+                response["features"][2]["plane"]["normal"]["z"] = json!(sense);
+            }
+        });
+        let result = crate::test_support::review::decode(&bytes);
+        let wire = crate::test_support::review::wire(&result);
+        assert_eq!(
+            wire["model"]["features"][2]["definition"]["value"]["kind"],
+            "sketch",
+            "{:?}",
+            result.report().losses
+        );
+        let sketches = wire["model"]["sketches"].as_array().unwrap();
+        let frame = &sketches
+            .iter()
+            .find(|sketch| sketch["id"] == id("sketch", "side-sketch"))
+            .unwrap()["placement"]["frame"];
+        assert_eq!(frame["origin"], topology::point([40.0, 70.0, 5.0]));
+        assert_eq!(frame["normal"], topology::point([0.0, 0.0, sense]));
+        assert_eq!(frame["u_axis"], topology::point([0.0, 1.0, 0.0]));
+        assert_eq!(
+            wire["model"]["features"][2]["dependencies"],
+            json!([id("feature", "raised-plate")])
+        );
+        crate::test_support::review::validate(result);
+    }
+}
+
+#[test]
+fn absent_stored_attachment_datums_refuse_the_frame_with_its_named_loss() {
+    for missing in ["plane", "origin", "normal", "x"] {
+        let bytes = crate::test_support::review::edit(&stored_attachment(), |path, response| {
+            if path.ends_with("features.json") {
+                let sketch = &mut response["features"][2];
+                if missing == "plane" {
+                    sketch.as_object_mut().unwrap().remove("plane");
+                } else {
+                    sketch["plane"].as_object_mut().unwrap().remove(missing);
+                }
+            }
+        });
+        let result = crate::test_support::review::decode(&bytes);
+        let wire = crate::test_support::review::wire(&result);
+        assert_eq!(
+            wire["model"]["features"][2]["definition"]["value"]["kind"],
+            "native"
+        );
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.to_string() == "onshape/history.not-supported"));
+        crate::test_support::review::validate(result);
+    }
+}
+
+fn stored_thin(open: bool, flip: bool, reversed: bool) -> Vec<u8> {
+    crate::test_support::review::edit(&fixture("plate-fillet"), |path, response| {
+        if !path.ends_with("features.json") {
+            return;
+        }
+        response["features"].as_array_mut().unwrap().truncate(2);
+        let sketch = &mut response["features"][0];
+        sketch["constraints"] = json!([]);
+        if open {
+            sketch["entities"].as_array_mut().unwrap().truncate(1);
+            if reversed {
+                sketch["entities"][0]["geometry"]["pntX"] = json!(0.02);
+                sketch["entities"][0]["geometry"]["dirX"] = json!(-1.0);
+            }
+        } else {
+            sketch["entities"] = json!([{"btType":"BTMSketchCurve-4","entityId":"circle","geometry":{
+                "btType":"BTCurveGeometryCircle-115","radius":0.005,"clockwise":reversed}}]);
+        }
+        let feature = &mut response["features"][1];
+        parameter(feature, "bodyType")["value"] = json!("THIN");
+        let profile = parameter(feature, "entities");
+        profile["parameterId"] = json!("wallShape");
+        let query = json!({"entityType":"EDGE","historyType":"CREATION","queryType":"SKETCH_ENTITY",
+            "operationId":["Base sketch.wireOp"],"sketchEntityId":if open {"line0"} else {"circle"}});
+        profile["queries"] = json!([{}]);
+        replace_query(&mut profile["queries"][0], &query);
+        feature["parameters"].as_array_mut().unwrap().extend([
+            json!({"parameterId":"domain","value":"MODEL"}),
+            json!({"parameterId":"midplane","value":false}),
+            json!({"parameterId":"flipWall","value":flip}),
+            json!({"parameterId":"oppositeDirection","value":false}),
+            json!({"parameterId":"thickness","expression":"0.3 mm"}),
+            json!({"parameterId":"thickness1","expression":"0.3 mm"}),
+            json!({"parameterId":"thickness2","expression":"0 mm"}),
+        ]);
+    })
+}
+
+#[test]
+fn stored_thin_domain_has_a_product_scope_and_one_container_membership() {
+    for open in [false, true] {
+        for symmetric in [false, true] {
+            let bytes = crate::test_support::review::edit(
+                &stored_thin(open, false, false),
+                |path, response| {
+                    if path.ends_with("features.json") {
+                        crate::test_support::review::parameter(
+                            &mut response["features"][1],
+                            "midplane",
+                        )["value"] = json!(symmetric);
+                    }
+                },
+            );
+            let result = crate::test_support::review::decode(&bytes);
+            let wire = crate::test_support::review::wire(&result);
+            assert_eq!(
+                wire["model"]["features"][1]["definition"]["value"]["kind"],
+                "extrude",
+                "{:?}",
+                result.report().losses
+            );
+            assert_eq!(result.ir().design.features.len(), 1);
+            assert_eq!(result.ir().design.containers.len(), 1);
+            assert_eq!(result.ir().design.scopes.len(), 1);
+            assert_eq!(
+                wire["design"]["containers"][0]["value"]["members"],
+                json!([{"kind":"feature","value":id("feature", "Plate")}])
+            );
+            assert_eq!(
+                wire["design"]["scopes"][0]["definition"],
+                wire["model"]["product_definitions"][0]["id"]
+            );
+            assert_eq!(
+                wire["design"]["scopes"][0]["current"][0]["bodies"],
+                wire["model"]["product_definitions"][0]["bodies"]
+            );
+            assert_eq!(
+                wire["design"]["scopes"][0]["current"][0]["at"],
+                json!({"kind":"after","value":{"kind":"feature","value":id("feature", "Plate")}})
+            );
+            crate::test_support::review::validate(result);
+        }
+    }
+    let bytes = crate::test_support::review::edit(&fixture("plate-fillet"), |path, response| {
+        if path.ends_with("features.json") {
+            response["features"].as_array_mut().unwrap().truncate(2);
+            response["features"][0]["entities"].as_array_mut().unwrap().push(json!({"btType":"BTMSketchPoint-158","entityId":"unselected-point","x":0.03,"y":0.04}));
+            let feature = &mut response["features"][1];
+            parameter(feature, "bodyType")["value"] = json!("THIN");
+            parameter(feature, "entities")["parameterId"] = json!("wallShape");
+            feature["parameters"].as_array_mut().unwrap().extend([
+                json!({"parameterId":"domain","value":"MODEL"}),
+                json!({"parameterId":"midplane","value":true}),
+                json!({"parameterId":"flipWall","value":false}),
+                json!({"parameterId":"oppositeDirection","value":false}),
+                json!({"parameterId":"thickness","expression":"0.3 mm"}),
+            ]);
+        }
+    });
+    let result = crate::test_support::review::decode(&bytes);
+    assert_eq!(
+        result.ir().design.features.len(),
+        1,
+        "{:?}",
+        result.report().losses
+    );
+    crate::test_support::review::validate(result);
+}
+
+#[test]
+fn absent_stored_thin_domain_refuses_the_scoped_construction() {
+    let bytes =
+        crate::test_support::review::edit(&stored_thin(true, false, false), |path, response| {
+            if path.ends_with("features.json") {
+                response["features"][1]["parameters"]
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|parameter| parameter["parameterId"] != "domain");
+            }
+        });
+    let result = crate::test_support::review::decode(&bytes);
+    assert!(result.ir().design.features.is_empty());
+    assert!(result.ir().design.containers.is_empty());
+    assert!(result.ir().design.scopes.is_empty());
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "onshape/extrude.thin-not-supported"));
+    crate::test_support::review::validate(result);
+}
+
+#[test]
+fn stored_open_thin_side_follows_the_stored_line_direction_and_flip() {
+    for open in [false, true] {
+        let bytes = crate::test_support::review::edit(
+            &stored_thin(open, false, false),
+            |path, response| {
+                if path.ends_with("features.json") {
+                    crate::test_support::review::parameter(
+                        &mut response["features"][1],
+                        "thickness2",
+                    )["expression"] = json!("0.3 mm");
+                }
+            },
+        );
+        let result = crate::test_support::review::decode(&bytes);
+        let wire = crate::test_support::review::wire(&result);
+        assert_eq!(
+            wire["design"]["features"][0]["definition"]["operation"]["value"]["output"]["body"]
+                ["thickness"],
+            json!({"kind":"symmetric","value":{"kind":"literal","value":0.6}})
+        );
+        crate::test_support::review::validate(result);
+    }
+    for reversed in [false, true] {
+        for flip in [false, true] {
+            for second_side in [false, true] {
+                let bytes = crate::test_support::review::edit(
+                    &stored_thin(true, flip, reversed),
+                    |path, response| {
+                        if path.ends_with("features.json") && second_side {
+                            parameter(&mut response["features"][1], "thickness1")["expression"] =
+                                json!("0 mm");
+                            parameter(&mut response["features"][1], "thickness2")["expression"] =
+                                json!("0.3 mm");
+                        }
+                    },
+                );
+                let result = crate::test_support::review::decode(&bytes);
+                let wire = crate::test_support::review::wire(&result);
+                assert_eq!(
+                    result.ir().design.features.len(),
+                    1,
+                    "{:?}",
+                    result.report().losses
+                );
+                assert_eq!(
+                    wire["design"]["features"][0]["definition"]["operation"]["value"]["output"]
+                        ["body"]["thickness"]["value"]["side"]["kind"],
+                    if flip ^ second_side { "left" } else { "right" }
+                );
+                crate::test_support::review::validate(result);
+            }
+        }
+    }
+    for clockwise in [false, true] {
+        for flip in [false, true] {
+            let result = crate::test_support::review::decode(&stored_thin(false, flip, clockwise));
+            let wire = crate::test_support::review::wire(&result);
+            assert_eq!(
+                result.ir().design.features.len(),
+                1,
+                "{:?}",
+                result.report().losses
+            );
+            assert_eq!(
+                wire["design"]["features"][0]["definition"]["operation"]["value"]["output"]["body"]
+                    ["thickness"]["value"]["side"]["kind"],
+                if flip ^ clockwise {
+                    "inside"
+                } else {
+                    "outside"
+                }
+            );
+            crate::test_support::review::validate(result);
+        }
+    }
+    let bytes =
+        crate::test_support::review::edit(&stored_thin(true, false, false), |path, response| {
+            if path.ends_with("features.json") {
+                response["features"][0]["entities"][0]["geometry"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("dirY");
+            }
+        });
+    let result = crate::test_support::review::decode(&bytes);
+    assert_eq!(
+        result.ir().design.features.len(),
+        1,
+        "{:?}",
+        result.report().losses
+    );
+    crate::test_support::review::validate(result);
+}
+
+#[test]
+fn absent_stored_thin_side_or_direction_refuses_the_wall() {
+    for missing in [
+        "midplane",
+        "flipWall",
+        "oppositeDirection",
+        "thickness2",
+        "direction",
+        "clockwise",
+    ] {
+        let bytes = crate::test_support::review::edit(
+            &stored_thin(missing != "clockwise", false, false),
+            |path, response| {
+                if !path.ends_with("features.json") {
+                    return;
+                }
+                if missing == "direction" {
+                    response["features"][0]["entities"][0]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("geometry");
+                } else if missing == "clockwise" {
+                    response["features"][0]["entities"][0]["geometry"]
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("clockwise");
+                } else {
+                    response["features"][1]["parameters"]
+                        .as_array_mut()
+                        .unwrap()
+                        .retain(|parameter| parameter["parameterId"] != missing);
+                }
+            },
+        );
+        let result = crate::test_support::review::decode(&bytes);
+        assert!(result.ir().design.features.is_empty());
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code.to_string() == "onshape/extrude.thin-not-supported"));
+        crate::test_support::review::validate(result);
     }
 }

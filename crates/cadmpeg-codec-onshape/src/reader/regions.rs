@@ -197,7 +197,6 @@ pub(super) fn profile(
             if !matches!(side.as_i64(), Some(-1 | 1)) {
                 return Err("a sketch-region boundary has no resolved side".into());
             }
-            outside &= side.as_i64() == Some(-1);
             kind(edge, "EDGE", "IMPRINT")?;
             if operation(edge, ".imprint")? != native {
                 return Err("a sketch-region boundary belongs to another sketch".into());
@@ -247,6 +246,7 @@ pub(super) fn profile(
             )?;
             resolved.side =
                 side.as_i64().ok_or("boundary side is missing")? * if clockwise { -1 } else { 1 };
+            outside &= resolved.side == -1;
             let key = (entity_id, resolved.range.map(f64::to_bits));
             if !selected.insert(key) {
                 return Err("a sketch-region boundary repeats a source curve; its trimmed intervals are ambiguous".into());
@@ -394,7 +394,6 @@ struct Edge {
     a: [f64; 2],
     b: [f64; 2],
     range: [f64; 2],
-    area: f64,
     closed: bool,
     geometry: Value,
     side: i64,
@@ -411,11 +410,11 @@ impl Edge {
                 .ok_or("a sketch-region endpoint is missing")?;
             Ok([super::number(point, "u")?, super::number(point, "v")?])
         };
-        let (a, b, range, area, closed) = match text(geometry, "kind")? {
+        let (a, b, range, closed) = match text(geometry, "kind")? {
             "line" => {
                 let a = point("start")?;
                 let b = point("end")?;
-                (a, b, [0.0, 1.0], cross(a, b), false)
+                (a, b, [0.0, 1.0], false)
             }
             kind @ ("circle" | "arc") => {
                 let [cx, cy] = point("center")?;
@@ -436,10 +435,7 @@ impl Edge {
                 let at = |t: f64| [cx + radius * t.cos(), cy + radius * t.sin()];
                 let a = at(from);
                 let b = if kind == "circle" { a } else { at(to) };
-                let [ax, ay] = a;
-                let [bx, by] = b;
-                let area = cx * (by - ay) - cy * (bx - ax) + radius * radius * (to - from);
-                (a, b, [from, to], area, kind == "circle")
+                (a, b, [from, to], kind == "circle")
             }
             "ellipse" => {
                 let [cx, cy] = point("center")?;
@@ -469,10 +465,7 @@ impl Edge {
                 };
                 let a = at(from);
                 let b = if bounds.is_none() { a } else { at(to) };
-                let [ax, ay] = a;
-                let [bx, by] = b;
-                let area = cx * (by - ay) - cy * (bx - ax) + major * minor * (to - from);
-                (a, b, [from, to], area, bounds.is_none())
+                (a, b, [from, to], bounds.is_none())
             }
             _ => {
                 return Err(
@@ -481,7 +474,7 @@ impl Edge {
                 )
             }
         };
-        if !area.is_finite() || a.iter().chain(&b).any(|n| !n.is_finite()) {
+        if a.iter().chain(&b).any(|n| !n.is_finite()) {
             return Err("the sketch-region boundary exceeds the finite range".into());
         }
         Ok(Self {
@@ -489,7 +482,6 @@ impl Edge {
             a,
             b,
             range,
-            area,
             closed,
             geometry: geometry.clone(),
             side: 1,
@@ -748,7 +740,6 @@ fn region(mut edges: Vec<Edge>) -> Mapping<Value> {
         let reverse = first.side < 0;
         let start = if reverse { first.b } else { first.a };
         let mut end = if reverse { first.a } else { first.b };
-        let mut area = if reverse { -first.area } else { first.area };
         let mut closed = first.closed;
         let mut boundary = vec![(first, reverse)];
         while !closed {
@@ -765,26 +756,19 @@ fn region(mut edges: Vec<Edge>) -> Mapping<Value> {
             let edge = edges.remove(*index);
             let reverse = edge.side < 0;
             end = if reverse { edge.a } else { edge.b };
-            area += if reverse { -edge.area } else { edge.area };
             boundary.push((edge, reverse));
             closed = distance(start, end) <= roundoff;
         }
-        if !area.is_finite() || area.abs() <= roundoff * roundoff {
-            return Err("the sketch-region boundary has no resolved enclosed area".into());
-        }
-        let ring = Ring {
-            edges: boundary,
-            area,
-        };
+        let ring = Ring { edges: boundary };
         admit_ring(&ring, roundoff)?;
         rings.push(ring);
     }
-    let outer_indices: Vec<_> = rings
-        .iter()
-        .enumerate()
-        .filter(|(_, r)| r.area > 0.0)
-        .map(|(i, _)| i)
-        .collect();
+    let mut outer_indices = Vec::new();
+    for (index, ring) in rings.iter().enumerate() {
+        if ring.counterclockwise()? {
+            outer_indices.push(index);
+        }
+    }
     let [outer_index] = outer_indices.as_slice() else {
         return Err("the directed sketch region needs one outer loop".into());
     };
@@ -953,12 +937,74 @@ fn ray_crosses_segment([x, y]: [f64; 2], [ax, ay]: [f64; 2], [bx, by]: [f64; 2])
 
 struct Ring {
     edges: Vec<(Edge, bool)>,
-    area: f64,
 }
 
 impl Ring {
     fn boundary(&self) -> Vec<Value> {
         self.edges.iter().map(|(e, r)| e.boundary(*r)).collect()
+    }
+
+    fn counterclockwise(&self) -> Mapping<bool> {
+        let mut turns = 0.0;
+        let mut previous = None;
+        let mut first = None;
+        let angle = |a: [f64; 2], b: [f64; 2]| -> Mapping<f64> {
+            let normalize = |[x, y]: [f64; 2]| -> Mapping<[f64; 2]> {
+                let scale = x.abs().max(y.abs());
+                if !scale.is_finite() || scale == 0.0 {
+                    return Err("the stored curve has no finite tangent direction".into());
+                }
+                Ok([x / scale, y / scale])
+            };
+            let a = normalize(a)?;
+            let b = normalize(b)?;
+            Ok(cross(a, b).atan2(dot(a, b)))
+        };
+        for (edge, reverse) in &self.edges {
+            let (mut start, mut end, mut turn) = if let Some(conic) = edge.conic()? {
+                let (a, b) = conic.vectors();
+                let tangent = |t: f64| {
+                    [
+                        -a[0] * t.sin() + b[0] * t.cos(),
+                        -a[1] * t.sin() + b[1] * t.cos(),
+                    ]
+                };
+                let [from, to] = edge.range;
+                if to <= from || to - from > std::f64::consts::TAU {
+                    return Err("the closed boundary has an unresolved curve direction".into());
+                }
+                let start = tangent(from);
+                let end = tangent(to);
+                let turn = if edge.closed {
+                    std::f64::consts::TAU
+                } else {
+                    angle(start, end)?.rem_euclid(std::f64::consts::TAU)
+                };
+                (start, end, turn)
+            } else {
+                let tangent = [edge.b[0] - edge.a[0], edge.b[1] - edge.a[1]];
+                (tangent, tangent, 0.0)
+            };
+            if *reverse {
+                (start, end) = (end.map(|v| -v), start.map(|v| -v));
+                turn = -turn;
+            }
+            if let Some(previous) = previous {
+                turns += angle(previous, start)?;
+            } else {
+                first = Some(start);
+            }
+            turns += turn;
+            previous = Some(end);
+        }
+        turns += angle(
+            previous.ok_or("empty closed boundary")?,
+            first.ok_or("empty closed boundary")?,
+        )?;
+        if !turns.is_finite() || turns.abs() < std::f64::consts::PI {
+            return Err("the closed boundary has an unresolved curve direction".into());
+        }
+        Ok(turns > 0.0)
     }
 
     fn contains(&self, [point_x, point_y]: [f64; 2]) -> Mapping<bool> {
@@ -1029,8 +1075,7 @@ impl Ring {
                 if (da > 0.0) == (db > 0.0) || da == 0.0 && *lo != from || db == 0.0 && *hi != to {
                     continue;
                 }
-                let middle = (lo + hi) * 0.5;
-                let rising = -ay * middle.sin() + by * middle.cos() > 0.0;
+                let rising = yb > ya;
                 let parameter = if rising {
                     phase - level.acos()
                 } else {
@@ -1069,7 +1114,6 @@ fn source_loops(sketch: &str, model: &Model, budget: &mut Budget) -> Mapping<Loo
     while let Some(first) = edges.pop() {
         let start = first.a;
         let mut end = first.b;
-        let mut area = first.area;
         let mut closed = first.closed || distance(start, end) <= roundoff;
         let mut members = vec![(first, false)];
         while !closed {
@@ -1094,18 +1138,23 @@ fn source_loops(sketch: &str, model: &Model, budget: &mut Budget) -> Mapping<Loo
             };
             let edge = edges.remove(*index);
             end = if *reverse { edge.a } else { edge.b };
-            area += if *reverse { -edge.area } else { edge.area };
             members.push((edge, *reverse));
             closed = distance(start, end) <= roundoff;
         }
-        if !area.is_finite() {
-            return Err("the outside sketch region has no finite source-loop area".into());
-        }
-        if closed && area != 0.0 {
-            rings.push(Ring {
-                edges: members,
-                area: area.abs(),
-            });
+        let retraced_lines = members.len() < 3
+            && members
+                .iter()
+                .all(|(edge, _)| edge.geometry.get("kind").and_then(Value::as_str) == Some("line"));
+        if closed && !retraced_lines {
+            let ring = Ring { edges: members };
+            budget.work(
+                ring.edges
+                    .len()
+                    .checked_mul(ring.edges.len())
+                    .ok_or(BUDGET_LOSS)?,
+            )?;
+            admit_ring(&ring, roundoff)?;
+            rings.push(ring);
         } else {
             open.extend(members.into_iter().map(|(edge, _)| edge));
         }
@@ -1176,17 +1225,27 @@ fn exterior_region(
         let mut nested = false;
         for (j, other) in rings.iter().enumerate() {
             budget.work(1)?;
-            if other.area > ring.area && other.area < outer.area {
-                budget.work(other.edges.len())?;
-            }
-            if j != i
-                && j != index
-                && other.area > ring.area
-                && other.area < outer.area
-                && other.contains(point)?
-            {
-                nested = true;
-                break;
+            if j != i && j != index {
+                budget.work(
+                    other
+                        .edges
+                        .len()
+                        .checked_mul(ring.edges.len())
+                        .ok_or(BUDGET_LOSS)?,
+                )?;
+                budget.work(
+                    outer
+                        .edges
+                        .len()
+                        .checked_add(other.edges.len())
+                        .ok_or(BUDGET_LOSS)?,
+                )?;
+                admit_separate_rings(other, ring)?;
+                let other_point = other.edges.first().ok_or(refused)?.0.a;
+                if outer.contains(other_point)? && other.contains(point)? {
+                    nested = true;
+                    break;
+                }
             }
         }
         if !nested {
@@ -1308,7 +1367,7 @@ mod tests {
         if reverse {
             edges.reverse();
         }
-        Ring { edges, area: PI }
+        Ring { edges }
     }
 
     #[test]
@@ -1342,7 +1401,6 @@ mod tests {
             };
             let ring = Ring {
                 edges: vec![(edge("closed", g), false)],
-                area: PI,
             };
             assert!(ring.contains([0.0, 0.0]).unwrap());
             assert!(!ring.contains([-3.0, 0.0]).unwrap());
@@ -1371,7 +1429,6 @@ mod tests {
             );
             let ring = Ring {
                 edges: vec![(arc, reverse), (chord, reverse)],
-                area: 1.0,
             };
             for y in heights {
                 assert!(!ring.contains([-6.0, y]).unwrap());

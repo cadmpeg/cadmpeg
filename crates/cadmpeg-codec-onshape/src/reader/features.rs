@@ -42,7 +42,7 @@ pub(super) fn enabled(feature: &Value, key: &str) -> Mapping<bool> {
     }
     required_boolean(feature, key)
 }
-fn required_boolean(feature: &Value, key: &str) -> Mapping<bool> {
+pub(super) fn required_boolean(feature: &Value, key: &str) -> Mapping<bool> {
     parameter(feature, key)?
         .get("value")
         .and_then(Value::as_bool)
@@ -133,6 +133,17 @@ pub(super) fn queries<'a>(feature: &'a Value, key: &str) -> Mapping<&'a [Value]>
         Err(format!("{key} has no resolved queries"))
     } else {
         Ok(list)
+    }
+}
+
+fn present_scope(feature: &Value, key: &str) -> Mapping<bool> {
+    if rows(feature, "parameters")?
+        .iter()
+        .any(|parameter| parameter.get("parameterId").and_then(Value::as_str) == Some(key))
+    {
+        Ok(!rows(parameter(feature, key)?, "queries")?.is_empty())
+    } else {
+        Ok(false)
     }
 }
 
@@ -415,6 +426,8 @@ pub(super) fn report_evaluated_variables(
 pub(super) fn dependencies(
     source: &Value,
     definition: &Value,
+    ordinal: usize,
+    inputs: &topology::Inputs<'_>,
     model: &Model,
 ) -> Mapping<Vec<String>> {
     let mut result = Vec::new();
@@ -422,13 +435,13 @@ pub(super) fn dependencies(
         return Ok(result);
     }
     let operation = definition.pointer("/value/kind").and_then(Value::as_str);
-    let reference = |native: &str| -> Mapping<Option<String>> {
+    if operation == Some("sketch") && sketch::built_in_frame(source) {
+        return Ok(result);
+    }
+    let reference = |native: &str| -> Mapping<String> {
         let feature = id("feature", native);
         if model.features.iter().any(|f| f.id.as_str() == feature) {
-            return Ok(Some(feature));
-        }
-        if operation == Some("sketch") && matches!(native, "Top" | "Front" | "Right") {
-            return Ok(None);
+            return Ok(feature);
         }
         Err(format!(
             "feature dependency {native:?} is unresolved before this feature"
@@ -445,12 +458,36 @@ pub(super) fn dependencies(
     };
     for parameter in parameters {
         let key = text(parameter, "parameterId")?;
+        if operation == Some("extrude")
+            && key == "endBound"
+            && value(source, "endBound") == Some("UP_TO_NEXT")
+        {
+            let faces = definition
+                .pointer("/value/value/extent/side/termination/face/value/faces")
+                .and_then(Value::as_array)
+                .ok_or("UP_TO_NEXT producer selection is missing")?;
+            for face in faces {
+                let producer = inputs.producer(
+                    ordinal,
+                    face.as_str().ok_or("UP_TO_NEXT target id is missing")?,
+                    topology::OperandKind::Face,
+                )?;
+                let feature = reference(&producer)?;
+                if !result.contains(&feature) {
+                    result.push(feature);
+                }
+            }
+            continue;
+        }
         let consumed = match operation {
             Some("sketch") => key == "sketchPlane",
             Some("extrude") => {
-                key == "entities"
-                    || key == "endBoundEntityFace"
-                        && value(source, "endBound") == Some("UP_TO_SURFACE")
+                key == if value(source, "bodyType") == Some("THIN") {
+                    "wallShape"
+                } else {
+                    "entities"
+                } || key == "endBoundEntityFace"
+                    && value(source, "endBound") == Some("UP_TO_SURFACE")
                     || key == "booleanScope" && value(source, "operationType") != Some("NEW")
             }
             Some("revolve") => {
@@ -464,26 +501,58 @@ pub(super) fn dependencies(
         if !consumed {
             continue;
         }
-        if let Some(queries) = parameter.get("queries").and_then(Value::as_array) {
-            for source in queries {
-                let query = super::query::resolved(source).unwrap_or_else(|_| source.clone());
-                if let Some(native) = query.get("featureId").and_then(Value::as_str) {
-                    if let Some(feature) = reference(native)? {
-                        if !result.contains(&feature) {
-                            result.push(feature);
-                        }
-                    }
+        for source in rows(parameter, "queries")? {
+            let query = if source
+                .get("queryString")
+                .and_then(Value::as_str)
+                .is_some_and(|text| text.contains("qCompressed("))
+            {
+                super::query::resolved(source)?
+            } else {
+                source.clone()
+            };
+            let mut producers = Vec::new();
+            if query.get("featureId").is_some() {
+                producers.push(text(&query, "featureId")?.to_owned());
+            }
+            if query.get("operationId").is_some() {
+                for operation in rows(&query, "operationId")? {
+                    let (native, _) = operation
+                        .as_str()
+                        .and_then(|operation| operation.rsplit_once('.'))
+                        .ok_or("feature dependency operation is unresolved")?;
+                    producers.push(native.to_owned());
                 }
-                if let Some(operations) = query.get("operationId").and_then(Value::as_array) {
-                    for operation in operations.iter().filter_map(Value::as_str) {
-                        if let Some((native, _)) = operation.rsplit_once('.') {
-                            if let Some(feature) = reference(native)? {
-                                if !result.contains(&feature) {
-                                    result.push(feature);
-                                }
-                            }
-                        }
+            }
+            if query.get("deterministicIds").is_some() && producers.is_empty() {
+                let kind = match (operation, key) {
+                    (Some("extrude" | "revolve"), "booleanScope") | (Some("hole"), "scope") => {
+                        topology::OperandKind::Body
                     }
+                    (Some("sketch"), "sketchPlane") | (Some("extrude"), "endBoundEntityFace") => {
+                        topology::OperandKind::Face
+                    }
+                    _ => topology::OperandKind::Edge,
+                };
+                for native in rows(&query, "deterministicIds")? {
+                    producers.push(
+                        inputs.producer(
+                            ordinal,
+                            native
+                                .as_str()
+                                .ok_or("feature dependency deterministic id must be a string")?,
+                            kind,
+                        )?,
+                    );
+                }
+            }
+            if producers.is_empty() {
+                return Err("feature dependency has no resolved producer".into());
+            }
+            for producer in producers {
+                let feature = reference(&producer)?;
+                if !result.contains(&feature) {
+                    result.push(feature);
                 }
             }
         }
@@ -548,12 +617,7 @@ pub(super) fn map(
     if enabled(feature, "symmetric")? && text(feature, "featureType")? != "extrude" {
         return Err("symmetric extents for this feature are not supported yet".into());
     }
-    let scoped = if parameter(feature, "booleanScope")
-        .ok()
-        .and_then(|p| p.get("queries"))
-        .and_then(Value::as_array)
-        .is_some_and(|queries| !queries.is_empty())
-    {
+    let scoped = if present_scope(feature, "booleanScope")? {
         let state = inputs.load(ordinal, feature)?;
         state.whole_body_scope(feature)?;
         Some(state)
@@ -607,15 +671,21 @@ pub(super) fn map(
             ))
         }
         "extrude" => {
-            if value(feature, "bodyType") == Some("THIN") {
-                return Err(
-                    "thin extrusion design scope and directed wall sides are unresolved".into(),
-                );
-            }
-            if value(feature, "bodyType") != Some("SOLID") {
+            let thin = value(feature, "bodyType") == Some("THIN");
+            if !matches!(value(feature, "bodyType"), Some("SOLID" | "THIN")) {
                 return Err("non-solid extrudes are not supported yet".into());
             }
-            let profile = profile(feature, "entities", model, inputs)?;
+            let profile = profile(
+                feature,
+                if thin { "wallShape" } else { "entities" },
+                model,
+                inputs,
+            )?;
+            let profile = if thin {
+                super::thin::profile(profile, model)?
+            } else {
+                profile
+            };
             if enabled(feature, "symmetric")? && value(feature, "endBound") != Some("BLIND") {
                 return Err("symmetric extrudes with this bound are not supported yet".into());
             }
@@ -633,7 +703,7 @@ pub(super) fn map(
                 }
                 Some("UP_TO_NEXT") => {
                     let state = scoped.map_or_else(|| inputs.load(ordinal, feature), Ok)?;
-                    let face = state.next_face()?;
+                    let face = state.next_face(feature, &profile, model)?;
                     state.require_planes(&face)?;
                     push(&mut model.feature_input_topologies, state.row.clone())?;
                     json!({"kind": "to_face", "face": face})
@@ -823,12 +893,7 @@ fn hole(
         model,
         inputs,
     )?;
-    if parameter(feature, "scope")
-        .ok()
-        .and_then(|p| p.get("queries"))
-        .and_then(Value::as_array)
-        .is_some_and(|a| !a.is_empty())
-    {
+    if present_scope(feature, "scope")? {
         inputs
             .load(ordinal, feature)?
             .whole_body_scope_key(feature, "scope")?;
@@ -857,7 +922,7 @@ fn hole(
     if let (Some(standard), Some(fields)) = (standard, construction.as_object_mut()) {
         fields.insert(
             "specification".into(),
-            specification(feature, standard, tapped, through, model, unresolved)?,
+            specification(feature, standard, tapped, model, unresolved)?,
         );
     }
     let mut operation = json!({"profile": profile, "profile_filter": "points",
@@ -888,7 +953,6 @@ fn specification(
     feature: &Value,
     standard: &Value,
     tapped: bool,
-    through: bool,
     model: &Model,
     unresolved: &BTreeSet<String>,
 ) -> Mapping<Value> {
@@ -930,7 +994,7 @@ fn specification(
         }
         return Ok(clearance);
     }
-    let depth = if through || enabled(feature, "isTappedThrough")? {
+    let depth = if enabled(feature, "isTappedThrough")? {
         json!({"kind": "hole_depth"})
     } else {
         json!({"kind": "blind", "depth": length(feature, "tappedDepth", model, unresolved)?})

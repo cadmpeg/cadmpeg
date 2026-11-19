@@ -14,10 +14,17 @@ use super::{
     id, number, optional_rows, push, query as compressed, rows, text, topology, Mapping,
 };
 const ORIGIN_ID: &str = "IB";
-fn frame(feature: &Value, model: &Model, face: &dyn Fn(&str) -> Mapping<Value>) -> Mapping<Value> {
+fn frame(feature: &Value, face: &dyn Fn(&str) -> Mapping<Value>) -> Mapping<Value> {
     let [query] = queries(feature, "sketchPlane")? else {
         return Err("multiple sketch planes are not supported yet".into());
     };
+    if query.get("deterministicIds").is_some() {
+        for native in rows(query, "deterministicIds")? {
+            if !native.is_string() {
+                return Err("a sketch face id is not a string".into());
+            }
+        }
+    }
     let deterministic = query
         .get("deterministicIds")
         .and_then(Value::as_array)
@@ -26,7 +33,8 @@ fn frame(feature: &Value, model: &Model, face: &dyn Fn(&str) -> Mapping<Value>) 
         let [native] = deterministic.map(Vec::as_slice).unwrap_or_default() else {
             return Err("a sketch on more than one face is not supported yet".into());
         };
-        face(native.as_str().ok_or("a sketch face id is not a string")?)
+        let support = face(native.as_str().ok_or("a sketch face id is not a string")?)?;
+        attachment_frame(feature, &support)
     };
     let plane = if query
         .get("queryString")
@@ -35,13 +43,17 @@ fn frame(feature: &Value, model: &Model, face: &dyn Fn(&str) -> Mapping<Value>) 
     {
         let resolved = compressed::resolved(query)?;
         if resolved.get("queryType").and_then(Value::as_str) == Some("CAP_FACE") {
-            return cap_frame(&resolved, model).or_else(|reason| {
-                if deterministic.is_some() {
-                    face_frame()
-                } else {
-                    Err(reason)
-                }
-            });
+            if text(&resolved, "entityType")? != "FACE"
+                || text(&resolved, "historyType")? != "CREATION"
+            {
+                return Err("the cap attachment query has no stored face creation".into());
+            }
+            super::boolean_field(&resolved, "isStart")?;
+            return if deterministic.is_some() {
+                face_frame()
+            } else {
+                stored_frame(feature)
+            };
         }
         if resolved.get("queryType").and_then(Value::as_str) != Some("DUMMY") {
             if resolved.get("entityType").and_then(Value::as_str) != Some("FACE") {
@@ -90,12 +102,83 @@ fn frame(feature: &Value, model: &Model, face: &dyn Fn(&str) -> Mapping<Value>) 
         "Right" => ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
         _ => return Err("this sketch plane has no resolved in-plane frame".into()),
     };
+    let support = json!({"origin": topology::point([0.0; 3]), "normal": topology::point(normal), "u_axis": topology::point(u_axis)});
+    if feature.get("plane").is_some() {
+        attachment_frame(feature, &support)
+    } else {
+        Ok(support)
+    }
+}
+
+pub(super) fn built_in_frame(feature: &Value) -> bool {
+    let Ok([query]) = queries(feature, "sketchPlane") else {
+        return false;
+    };
+    if query
+        .get("queryString")
+        .and_then(Value::as_str)
+        .is_some_and(|text| text.contains("qCompressed("))
+        && !compressed::resolved(query)
+            .is_ok_and(|query| query.get("queryType").and_then(Value::as_str) == Some("DUMMY"))
+    {
+        return false;
+    }
+    frame(feature, &|_| Err("historical face".into())).is_ok()
+}
+
+fn stored_frame(feature: &Value) -> Mapping<Value> {
+    let plane = feature
+        .get("plane")
+        .ok_or("the stored plane and x axis leave the sketch attachment translation and rotation unresolved")?;
+    let origin = topology::vector(
+        plane
+            .get("origin")
+            .ok_or("the sketch attachment origin is missing")?,
+        1000.0,
+    )?;
+    let normal = topology::unit(topology::vector(
+        plane
+            .get("normal")
+            .ok_or("the sketch attachment normal is missing")?,
+        1.0,
+    )?)?;
+    let x = topology::unit(topology::vector(
+        plane
+            .get("x")
+            .ok_or("the sketch attachment stored x axis is missing")?,
+        1.0,
+    )?)?;
+    let dot: f64 = x.into_iter().zip(normal).map(|(a, b)| a * b).sum();
+    if dot.abs() > 64.0 * f64::EPSILON {
+        return Err("the stored sketch x axis is not in its plane".into());
+    }
     Ok(
-        json!({"origin": topology::point([0.0; 3]), "normal": topology::point(normal), "u_axis": topology::point(u_axis)}),
+        json!({"origin":topology::point(origin),"normal":topology::point(normal),"u_axis":topology::point(x)}),
     )
 }
-fn cap_frame(_query: &Value, _model: &Model) -> Mapping<Value> {
-    Err("the cap face leaves the sketch attachment translation and rotation unresolved".into())
+
+fn attachment_frame(feature: &Value, support: &Value) -> Mapping<Value> {
+    let frame = stored_frame(feature)?;
+    let read = |row: &Value, key| {
+        topology::vector(row.get(key).ok_or("attachment datum is missing")?, 1.0)
+    };
+    let origin = read(&frame, "origin")?;
+    let normal = read(&frame, "normal")?;
+    let support_origin = read(support, "origin")?;
+    let support_normal = read(support, "normal")?;
+    let dot = |a: [f64; 3], b: [f64; 3]| a.into_iter().zip(b).map(|(a, b)| a * b).sum::<f64>();
+    let scale = origin
+        .into_iter()
+        .chain(support_origin)
+        .map(f64::abs)
+        .fold(1.0_f64, f64::max);
+    let roundoff = 64.0 * f64::EPSILON;
+    if (dot(normal, support_normal).abs() - 1.0).abs() > roundoff
+        || dot(topology::sub(origin, support_origin), support_normal).abs() > roundoff * scale
+    {
+        return Err("the stored sketch attachment frame contradicts its planar face".into());
+    }
+    Ok(frame)
 }
 
 fn point(u: f64, v: f64) -> Value {
@@ -249,7 +332,7 @@ pub(super) fn map(
     }
     let native = text(feature, "featureId")?;
     let sketch_id = id("sketch", native);
-    let plane = frame(feature, model, &|face| {
+    let plane = frame(feature, &|face| {
         inputs.load(ordinal, feature)?.face_frame(face)
     })?;
     let mut loci = BTreeMap::new();
@@ -423,6 +506,27 @@ fn projected_origin(plane: &Value) -> Mapping<[f64; 2]> {
     Ok([0.0 - dot(origin, u), 0.0 - dot(origin, v)])
 }
 
+pub(super) struct ConstraintOutput {
+    pub entities: usize,
+    pub constraints: usize,
+    pub parameters: usize,
+}
+
+pub(super) fn constraint_output(constraint: &Value) -> Mapping<ConstraintOutput> {
+    let (entities, constraints, parameters) = match text(constraint, "constraintType")? {
+        "MIDPOINT" => (1, 3, 0),
+        "LENGTH" | "DISTANCE" | "RADIUS" | "DIAMETER" | "ANGLE" => (0, 1, 1),
+        "HORIZONTAL" | "VERTICAL" | "FIX" | "PARALLEL" | "PERPENDICULAR" | "TANGENT" | "EQUAL"
+        | "CONCENTRIC" | "COINCIDENT" => (0, 1, 0),
+        kind => return Err(format!("{kind} sketch constraints are not supported yet")),
+    };
+    Ok(ConstraintOutput {
+        entities,
+        constraints,
+        parameters,
+    })
+}
+
 fn constraint_row(
     constraint: &Value,
     native: &str,
@@ -432,6 +536,7 @@ fn constraint_row(
     model: &mut Model,
     unresolved: &BTreeSet<String>,
 ) -> Mapping<Value> {
+    constraint_output(constraint)?;
     let kind = text(constraint, "constraintType")?;
     let cid = id(
         "constraint",

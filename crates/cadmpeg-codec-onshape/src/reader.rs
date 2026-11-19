@@ -7,6 +7,7 @@ mod features;
 pub(super) mod query;
 mod regions;
 mod sketch;
+mod thin;
 pub(super) mod topology;
 
 use serde_json::{json, Value};
@@ -267,35 +268,37 @@ fn admit_history(
             .map_err(Error::Decode)
     };
     let entities = count("entities")?;
-    let constraints = count("constraints")?;
     let parameters = count("parameters")?;
-    let auxiliary = constraints
-        .checked_mul(3)
-        .ok_or_else(|| Error::Decode("history count overflow".into()))?;
-    let total = entities
-        .checked_add(auxiliary)
-        .and_then(|n| n.checked_add(parameters))
-        .and_then(|n| n.checked_add(2))
-        .ok_or_else(|| Error::Decode("history count overflow".into()))?;
+    let mut generated_entities = entities;
+    let mut generated_constraints = 0usize;
+    let mut generated_parameters = parameters;
+    let add = |left: usize, right: usize| {
+        left.checked_add(right)
+            .ok_or_else(|| Error::Decode("history count overflow".into()))
+    };
+    for constraint in optional_rows(feature, "constraints").map_err(Error::Decode)? {
+        if let Ok(output) = sketch::constraint_output(constraint) {
+            generated_entities = add(generated_entities, output.entities)?;
+            generated_constraints = add(generated_constraints, output.constraints)?;
+            generated_parameters = add(generated_parameters, output.parameters)?;
+        }
+    }
+    let total = add(
+        add(
+            add(generated_entities, generated_constraints)?,
+            generated_parameters,
+        )?,
+        2,
+    )?;
     ctx.charge_entities(
         cadmpeg_core::decode::u64_from_index(total),
         "Onshape history admission",
     )?;
     reserve_history(&mut model.features, 1)?;
     reserve_history(&mut model.sketches, 1)?;
-    reserve_history(
-        &mut model.sketch_entities,
-        entities
-            .checked_add(constraints)
-            .ok_or_else(|| Error::Decode("history count overflow".into()))?,
-    )?;
-    reserve_history(&mut model.sketch_constraints, constraints)?;
-    reserve_history(
-        &mut model.parameters,
-        parameters
-            .checked_add(constraints)
-            .ok_or_else(|| Error::Decode("history count overflow".into()))?,
-    )?;
+    reserve_history(&mut model.sketch_entities, generated_entities)?;
+    reserve_history(&mut model.sketch_constraints, generated_constraints)?;
+    reserve_history(&mut model.parameters, generated_parameters)?;
     Ok(())
 }
 
@@ -426,6 +429,7 @@ pub(super) fn read(
     } else {
         std::collections::BTreeMap::new()
     };
+    let original_design_features = model.ir.design.features.len();
     let mut seen = std::collections::BTreeSet::new();
     let mut unresolved_variables = std::collections::BTreeSet::new();
     for (ordinal, feature) in features.iter().enumerate() {
@@ -466,6 +470,12 @@ pub(super) fn read(
             }
         }
         admit_history(ctx, feature, &mut model.ir.model)?;
+        if features::value(feature, "bodyType") == Some("THIN") {
+            ctx.charge_entities(3, "Onshape thin design admission")?;
+            reserve_history(&mut model.ir.design.features, 1)?;
+            reserve_history(&mut model.ir.design.containers, 1)?;
+            reserve_history(&mut model.ir.design.scopes, 1)?;
+        }
         let sizes = (
             model.ir.model.sketches.len(),
             model.ir.model.sketch_entities.len(),
@@ -496,7 +506,27 @@ pub(super) fn read(
                     definition.clone(),
                 )
                 .map_err(|e| format!("the resolved construction is not supported yet ({e})"))?;
-                dependencies = features::dependencies(feature, &definition, &model.ir.model)?;
+                dependencies = features::dependencies(
+                    feature,
+                    &definition,
+                    ordinal,
+                    &inputs,
+                    &model.ir.model,
+                )?;
+                if features::value(feature, "bodyType") == Some("THIN")
+                    && feature.get("featureType").and_then(Value::as_str) == Some("extrude")
+                {
+                    thin::owner(&model.ir)?;
+                    let design = thin::feature(
+                        feature,
+                        &definition,
+                        &model.ir.model,
+                        &inputs,
+                        ordinal,
+                        &unresolved_variables,
+                    )?;
+                    push(&mut model.ir.design.features, design)?;
+                }
                 Ok(definition)
             })
         };
@@ -601,6 +631,9 @@ pub(super) fn read(
             row["suppressed"] = json!(suppressed);
         }
         push(&mut model.ir.model.features, row).map_err(Error::Decode)?;
+    }
+    if model.ir.design.features.len() > original_design_features {
+        thin::install_scope(&mut model.ir).map_err(Error::Decode)?;
     }
     annotate(&mut model, features)?;
     report

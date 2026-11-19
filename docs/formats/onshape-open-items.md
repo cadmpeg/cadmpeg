@@ -12,41 +12,29 @@ Conflict: An omitted quantity unit permits several scales.
 
 Note: Unresolved quantities retain their feature as Native with `history.not-supported`.
 
-## ONSHAPE-002 — Face sketch attachment frames
-
-Question: Which source fields establish a sketch attachment origin and in-plane axis on a historical face or extrusion cap?
-
-Known: A plane establishes a normal and a normal offset. A built-in plane establishes a complete sketch frame.
-
-Need: The source attachment translation, rotation and sense rules.
-
-Conflict: Translated and rotated sketch frames can share one plane.
-
-Note: Unresolved attachments retain their feature as Native with `history.not-supported`.
-
 ## ONSHAPE-003 — Exact next-face coverage
 
-Question: Which source topology forms permit an exact common first-intersection proof for `UP_TO_NEXT`?
+Question: Which stored source operands identify the resolved `UP_TO_NEXT` target for curved profiles and multiple candidate faces?
 
-Known: A next-face termination needs coverage of the complete selected region and the first face along every travel ray.
+Known: One stored planar target with a closed convex line boundary establishes exact first intersection and complete coverage for a closed convex line profile.
 
-Need: Exact region coverage and intersection predicates for the admitted analytic carriers.
+Need: Stored target-identity and boundary encodings for curved carriers and competing faces.
 
 Conflict: Finite boundary samples can miss a narrow recess or an uncovered interior.
 
-Note: `UP_TO_NEXT` retains its feature as Native with `history.not-supported`.
+Note: Unresolved `UP_TO_NEXT` forms retain their feature as Native with `history.not-supported`.
 
-## ONSHAPE-004 — Thin wall sides and scope
+## ONSHAPE-004 — Thin sides of mixed curve groups
 
-Question: How do directed source curves and `flipWall` establish wall sides and a complete design scope?
+Question: Which source query fields establish the shared material side of a mixed curve group?
 
-Known: `midplane` selects a symmetric thickness. `thickness1` and `thickness2` carry two offsets. Open curves require directed left and right sides. A design feature belongs to one container in a product scope.
+Known: Explicit wall flags and a stored line direction or closed carrier sense establish symmetric walls and one-curve sides.
 
-Need: The directed side mapping and complete design references for open and closed profiles.
+Need: The selection order, orientation and join rules for mixed carrier groups.
 
-Conflict: Inside and outside require a closed material boundary.
+Conflict: Different carrier directions can assign opposite material sides within one group.
 
-Note: Thin extrusions retain their feature as Native with `extrude.thin-not-supported`.
+Note: Unresolved thin forms retain their feature as Native with `extrude.thin-not-supported`.
 
 ## ONSHAPE-005 — Omitted hole construction facts
 

@@ -90,6 +90,36 @@ region carries connected, closed, directed boundary loops. A hole lies
 inside its outer loop. Boundary interiors are disjoint. Directed sides
 select the material side of each boundary.
 Region selections can restrict the parameter interval of an exact curve.
+Loop closure follows stored curve endpoints and parameter intervals. Analytic
+intersection and containment of closed boundaries establish hole nesting.
+Directed carrier turns establish loop sense.
+
+A sketch's optional `plane` object stores its attachment frame. `origin` uses
+metres; `normal` and `x` store its normal and x axis. The axes are orthogonal.
+A referenced planar face and the stored attachment frame are coplanar. The
+stored origin retains tangential translation. The stored x axis retains
+in-plane rotation. The normal carries the attachment sense.
+
+Thin extrusions select curves through `wallShape` in the `MODEL` domain.
+Explicit `midplane`, `flipWall` and `oppositeDirection` fields establish wall
+placement. `midplane` selects a symmetric `thickness`. Otherwise,
+`thickness1` lies on the directed curve's right and `thickness2` on its left;
+`flipWall` exchanges the sides. Line directions and parameter intervals
+establish their directed paths. A closed circular or elliptical carrier's
+`clockwise` field establishes its sense. The `MODEL` domain binds the
+feature to its Part Studio model.
+
+A single planar target with a closed convex line boundary admits an exact
+`UP_TO_NEXT` intersection for a closed convex line profile. Each positive
+ray-plane intersection lies within all target boundary half-planes.
+Convexity extends coverage across the complete profile. The target plane,
+line carriers, endpoints and coedge directions are stored in the rollback.
+
+A present `booleanScope` or `scope` parameter has a `queries` array. A nonempty
+scope list identifies target bodies at the consuming rollback. An empty
+list retains the implicit scope. `endStyle` selects the bore termination.
+`isTappedThrough` selects thread termination: `true` uses the bore depth;
+`false` uses the finite `tappedDepth` quantity.
 
 A query can carry explicit deterministic IDs or a literal
 `query=qCompressed(1.0,<JSON string>,id);`. `%` starts the compact value
