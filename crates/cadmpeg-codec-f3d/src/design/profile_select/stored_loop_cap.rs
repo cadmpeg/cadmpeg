@@ -59,6 +59,14 @@ pub(super) fn certified_regions_bounded_by(
     let PlanarProfileRef::SketchRegions { regions, .. } = &candidate else {
         return Ok(None);
     };
+    if !cap_regions::overlap::regions_are_disjoint(
+        regions,
+        scoped.entities,
+        scoped.linear_tolerance,
+        scoped.ctx,
+    )? {
+        return Ok(None);
+    }
     let mut coincident_boundary = false;
     for pieces in curves {
         if pieces.iter().any(|curve| bounds_region(regions, curve)) {

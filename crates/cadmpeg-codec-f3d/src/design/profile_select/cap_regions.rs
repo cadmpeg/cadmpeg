@@ -26,6 +26,7 @@
 //! reports `feature.profile-cap-outline-assumed`.
 
 pub(super) mod compact;
+pub(super) mod overlap;
 pub(super) mod spatial;
 
 use std::collections::HashSet;
@@ -456,7 +457,7 @@ pub(super) fn cap_profile_selection(
             }
         }
     }
-    let selection = trimmed_selection(&sampled, &selected);
+    let selection = trimmed_selection(&sampled, &selected, tolerance);
     if selection.is_some() {
         if outline_assumed {
             work.note_cap_outline_assumed();
@@ -715,7 +716,7 @@ fn removed_regions(
     {
         return Ok(None);
     }
-    let selection = trimmed_selection(&sampled, &selected);
+    let selection = trimmed_selection(&sampled, &selected, tolerance);
     if selection.is_some() {
         if beyond_profile {
             work.note_cut_regions_beyond_profile();
@@ -732,7 +733,25 @@ fn removed_regions(
 fn trimmed_selection(
     sampled: &[Sampled<'_>],
     selected: &[usize],
+    tolerance: f64,
 ) -> Option<ResolvedProfileSelection> {
+    let rings: Vec<Vec<&[Point2]>> = selected
+        .iter()
+        .map(|index| {
+            std::iter::once(sampled[*index].region.polyline.as_slice())
+                .chain(
+                    sampled[*index]
+                        .nested
+                        .iter()
+                        .map(|nested| sampled[*nested].region.polyline.as_slice()),
+                )
+                .collect()
+        })
+        .collect();
+    let points: Vec<_> = selected.iter().map(|index| sampled[*index].point).collect();
+    if !overlap::interiors_are_disjoint(&rings, &points, tolerance) {
+        return None;
+    }
     let mut out = Vec::new();
     for &index in selected {
         let region = &sampled[index];
@@ -1424,6 +1443,12 @@ fn polygon_area(ring: &[Point2]) -> f64 {
         * 0.5
 }
 
+fn clearance(point: Point2, ring: &[Point2]) -> f64 {
+    (0..ring.len())
+        .map(|i| point_segment_distance(point, (ring[i], ring[(i + 1) % ring.len()])))
+        .fold(f64::INFINITY, f64::min)
+}
+
 /// Each region with a point well inside it, outside the regions nested in it.
 /// `None` when a region has no such point.
 fn sample_regions(regions: &[AtomicSketchRegion], tolerance: f64) -> Option<Vec<Sampled<'_>>> {
@@ -1431,11 +1456,6 @@ fn sample_regions(regions: &[AtomicSketchRegion], tolerance: f64) -> Option<Vec<
         .iter()
         .map(|region| polygon_area(&region.polyline).abs())
         .collect();
-    let clearance = |point: Point2, ring: &[Point2]| -> f64 {
-        (0..ring.len())
-            .map(|i| point_segment_distance(point, (ring[i], ring[(i + 1) % ring.len()])))
-            .fold(f64::INFINITY, f64::min)
-    };
     let inside = |inner: &[Point2], outer: &[Point2]| {
         inner
             .iter()
