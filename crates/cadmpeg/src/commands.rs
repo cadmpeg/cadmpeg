@@ -62,8 +62,8 @@ pub(crate) fn print_load_notice(document: &LoadedDocument) {
 pub(crate) struct ConversionArgs {
     /// Decode and export loss refusal.
     pub(crate) losses: LossPolicy,
-    /// Permit export when validation reports errors.
-    pub(crate) allow_errors: bool,
+    /// Refuse export when validation reports an error in what the output writes.
+    pub(crate) reject_errors: bool,
     /// Decode at full depth whatever depth the output format needs.
     pub(crate) full_decode: bool,
     /// CAD output destination and its overwrite policy.
@@ -484,7 +484,7 @@ pub(crate) fn convert(
     let result = (|| {
         let policy = ConversionPolicy {
             losses: conversion.losses,
-            allow_errors: conversion.allow_errors,
+            reject_errors: conversion.reject_errors,
             destination: conversion.destination.clone(),
         };
         let selection = TargetSelection::resolve(to, policy.destination.path())?;
