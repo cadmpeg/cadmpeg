@@ -28,7 +28,7 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::boundary_fill::BoundaryFillCell;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::hash::digest::Sha256Digest;
-use cadmpeg_ir::ids::{AppearanceId, UnknownId};
+use cadmpeg_ir::ids::{AppearanceId, ProductDefinitionId, UnknownId};
 
 use crate::loss::SldprtLossCode;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -321,6 +321,14 @@ fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
     }
 }
 
+/// The root definition of a part file: the part it holds at its top.
+pub(crate) fn root_definition_id() -> ProductDefinitionId {
+    ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "model", "product-definition"),
+        cadmpeg_ir::identity_key!("root"),
+    )
+}
+
 fn decode_result(
     ctx: &DecodeContext<'_>,
     decode_digest: Sha256Digest,
@@ -342,6 +350,11 @@ fn decode_result(
         source_fidelity.retain_unknown_records("source", [source_image])?;
     }
     retention.apply(&mut source_fidelity)?;
+    ir.state_root_definition(
+        ctx,
+        root_definition_id(),
+        cadmpeg_ir::products::ExternalDocument::default(),
+    )?;
     stamp_local_digests(ctx, &mut ir)?;
     Ok(Decoded {
         ir,

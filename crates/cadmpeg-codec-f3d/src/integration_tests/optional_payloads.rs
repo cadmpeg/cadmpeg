@@ -161,7 +161,11 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
                 .expect("the loss names the stub");
             // No product definition stands for this document, so no record
             // contains the entry.
-            assert!(decoded.ir().model.product_definitions.is_empty());
+            assert!(cadmpeg_ir::products::stated_definitions(
+                &decoded.ir().model.product_definitions
+            )
+            .next()
+            .is_none());
             assert!(stub.links.is_empty());
             let retained = decoded
                 .source_fidelity()
