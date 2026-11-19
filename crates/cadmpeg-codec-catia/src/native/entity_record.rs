@@ -5,6 +5,7 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 
 use cadmpeg_core::decode::u64_from_index;
 
+use super::feature_tree::CatiaCompactClass;
 use super::{
     entity_suffix_framing, entity_suffix_value, CatiaConstraintRange, CatiaDefinitionChainValue,
     CatiaDefinitionSchemaSelection, CatiaDefinitionValue, CatiaEntityReference,
@@ -83,6 +84,8 @@ pub(crate) struct CatiaEntityRecord {
     pub(crate) body: CatiaEntityRecordBody,
     /// Definition selectors resolved against the containing graph's source schema.
     pub(crate) definition_schema_selections: Vec<CatiaDefinitionSchemaSelection>,
+    /// Class named by the tag of a compact definition prefix.
+    pub(crate) compact_class: Option<CatiaCompactClass>,
     /// Stored identity used by object-record owner and payload references.
     pub(crate) entity_id: u32,
     /// Value selectors resolved against the containing graph's source schema.
@@ -381,6 +384,12 @@ pub(super) struct CatiaEntityRecordWire {
     definition_prefix: NativeBytes<Vec<u8>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     definition_schema_selections: Vec<CatiaDefinitionSchemaSelection>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_compact_class"
+    )]
+    compact_class: Option<CatiaCompactClass>,
     entity_id: u32,
     definition_suffix: NativeBytes<Vec<u8>>,
     value_len: u64,
@@ -624,6 +633,7 @@ impl CatiaEntityRecordWire {
             definition_len,
             definition_prefix: (definition_prefix).into(),
             definition_schema_selections: value.definition_schema_selections,
+            compact_class: value.compact_class,
             entity_id: value.entity_id,
             definition_suffix: (definition_suffix).into(),
             value_len,
@@ -774,6 +784,7 @@ impl TryFrom<CatiaEntityRecordWire> for CatiaEntityRecord {
             lead: wire.lead,
             body,
             definition_schema_selections: wire.definition_schema_selections,
+            compact_class: wire.compact_class,
             entity_id: wire.entity_id,
             value_schema_selections: wire.value_schema_selections,
             object_production,
@@ -872,6 +883,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_inline_body,
     cadmpeg_ir::native::bytes::NativeBytes<Vec<u8>>,
     "inline_body"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_compact_class,
+    CatiaCompactClass,
+    "compact_class"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_relation_expression,
