@@ -1477,6 +1477,30 @@ Parsed by:
 | 1 | 2 | `mirror` | `u16` | little | spec | row control |
 | 3 | 2 | `leading_repeats` | `u16` | little | spec | leading-repeat count for command `05` |
 
+## `surface_weight_symmetric_03_prefix`
+
+Spec §6.1 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `command` | `u8` | little | spec | Command `01` with row control `0003` or `0007` · value `1` |
+| 1 | 2 | `control` | `u16` | little | spec | Command `01` with row control `0003` or `0007` · value `3` |
+
+## `surface_weight_symmetric_07_prefix`
+
+Spec §6.1 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `command` | `u8` | little | spec | Command `01` with row control `0003` or `0007` · value `1` |
+| 1 | 2 | `control` | `u16` | little | spec | Command `01` with row control `0003` or `0007` · value `7` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

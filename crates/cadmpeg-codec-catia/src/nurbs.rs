@@ -168,6 +168,12 @@ impl LaneRefusals {
         )));
     }
 
+    pub(crate) fn push_surface_weights_inferred(&mut self, source: usize) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometrySurfaceWeightsInferred.note(format!(
+            "For the rational A5 surface at offset {source}, interpreted extended row controls as reflected-column masks and command-05 leading repeats; these control meanings are inferred."
+        )));
+    }
+
     pub(crate) fn push_parameter_map_pcurve_accuracy(&mut self, source: usize, tolerance: f64) {
         self.notes.push(
             crate::loss::CatiaLossCode::GeometryParameterMapAccuracyInferred.note(format!(
