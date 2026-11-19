@@ -214,6 +214,21 @@ fn assembly_losses_belong_to_the_product_domain() {
 }
 
 #[test]
+fn process_losses_belong_to_the_process_category() {
+    let kind = LossKind::shared(LossTaxonomy::ProcessRecordOmitted);
+    assert_eq!(kind.category(), LossCategory::Process);
+    assert_eq!(LossCategory::Process.to_string(), "process");
+    assert_eq!(
+        serde_json::to_value(LossCategory::Process).unwrap(),
+        serde_json::Value::String("process".to_owned())
+    );
+    assert_eq!(
+        serde_json::from_value::<LossCategory>(serde_json::json!("process")).unwrap(),
+        LossCategory::Process
+    );
+}
+
+#[test]
 fn noncanonical_source_syntax_is_a_strict_rejectable_warning() {
     let kind = LossKind::shared(LossTaxonomy::NoncanonicalSourceSyntax);
     assert_eq!(

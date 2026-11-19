@@ -121,12 +121,13 @@ fn legacy_extrude_group_accepts_its_independent_empty_tail_record() {
     indexed_header(&mut bytes, *b"262", header.record_index);
 
     let parse = |bytes: &[u8]| {
-        super::super::parse_construction_operand_group_with_offsets(
+        super::super::parse_construction_operand_group_in_stream(
             bytes,
             &scope,
             0,
             &header,
             Some(&std::cell::OnceCell::new()),
+            None,
         )
     };
     assert!(matches!(
