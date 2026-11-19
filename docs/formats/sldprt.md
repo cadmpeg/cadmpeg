@@ -2880,8 +2880,10 @@ Code 72 names fillet and chamfer faces alike; which edge takes which ordinal is
 not known. A cap's region is nonzero on each cap of an end with several
 regions, and mostly 0 on the one cap of an end with one; the rule that assigns
 it is not known. Some code-81 caps carry 1 as their third field; what it states
-is not known, and such a cap is `Other("sldprt:81")`. The sketch entity id, the
-producer and the timestamp are allocations: they stay in the native name.
+is not known, and such a cap is `Other("sldprt:81")`. The producer and the
+timestamp are allocations: they stay in the native name. The sketch entity id
+stays there too, and the name states no generating entity, because that it is
+the sketch segment's id is not established.
 Wrapping classes are `moLPatternSurfIdRep_c` (57: two instance indices),
 `moCirPatternSurfIdRep2_c` (124: instance, 0), `moCurvePatternSurfIdRep_c` (54:
 instance, 0), `moMirPatternSurfIdRep_c` (59: none), `moMirPatternSurfIdRep2_c`

@@ -15,10 +15,14 @@
 //! class: a side swept from a sketch entity, a start or end cap with its
 //! region as index, a fillet or chamfer face with its ordinal as index, a
 //! feature-scoped set that names no role; every other class is a role whose
-//! meaning is not established, `Other("sldprt:<class>")`. The producer id,
-//! time stamp and sketch-entity id are allocations and stay in the native
-//! name. A face whose producer is no feature of the document, and a body,
-//! whose list is one identity that names no feature, have no structured name.
+//! meaning is not established, `Other("sldprt:<class>")`. The producer id and
+//! time stamp are allocations and stay in the native name. The sketch-entity
+//! id also stays there, and the name states no generator: that it is the
+//! sketch segment's id is not established. A face whose producer is no
+//! feature of the document, one the state does not depend on, or one whose
+//! source id several history records carry, and a body, whose list is one
+//! identity that names no feature, keep their native name and have no
+//! structured name.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -120,7 +124,8 @@ impl<'a> Names<'a> {
     /// The name entries of `bodies` and of the faces of `topology` that
     /// belong to them. A face whose producer is a feature `depends` does not
     /// admit, one the state does not depend on (§5.7, Order), or whose source
-    /// id several history records carry, has no entry.
+    /// id several history records carry, keeps its native name and has no
+    /// structured name.
     pub(super) fn entries(
         &self,
         topology: &Topology,
@@ -150,8 +155,7 @@ impl<'a> Names<'a> {
                 Some(Producer::Feature(feature)) if depends(feature) => {
                     Some(face_name(feature, code, fields))
                 }
-                None | Some(Producer::Node) => None,
-                Some(Producer::Feature(_) | Producer::Ambiguous) => continue,
+                _ => None,
             };
             table.insert(
                 EntityRef::Face(face.clone()),

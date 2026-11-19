@@ -42,9 +42,11 @@ use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
 use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::{ConfigurationId, FeatureId};
 use cadmpeg_ir::ids::{BodyId, Identity, ProductDefinitionId};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::schema::{EntityKind, EntitySchema};
 
 use super::names::Names;
+use crate::loss::SldprtLossCode;
 
 /// The scope whose configurations' states are stated.
 pub(super) struct Scope<'a> {
@@ -59,13 +61,17 @@ pub(super) struct Scope<'a> {
 }
 
 /// The evaluation of each configuration that is not active and whose state
-/// the source stores or flags, and the number of records they hold. Only a
-/// decode ceiling fails the projection.
+/// the source stores or flags, and the number of records they hold. A
+/// configuration whose stored bodies share ids with the current bodies has
+/// no evaluation, because its records cannot be told from the current
+/// state's, and charges a note to `losses`; only a decode ceiling fails the
+/// projection.
 pub(super) fn configuration_states(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     scope: &Scope<'_>,
     names: &Names<'_>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<(Vec<Evaluation>, usize), CodecError> {
     let current = scope.current.iter().collect::<HashSet<_>>();
     let (at, depended) = end_of_tree(scope);
@@ -105,7 +111,20 @@ pub(super) fn configuration_states(
                     },
                 })
             }
-            Some(_) => continue,
+            Some(bodies) => {
+                let shared = bodies
+                    .iter()
+                    .filter(|body| current.contains(body))
+                    .map(BodyId::as_str)
+                    .collect::<Vec<_>>();
+                losses.push(SldprtLossCode::ConfigStateUnstated.note(format!(
+                    "configuration {}: its stored bodies share {} id(s) with the current bodies ({}); its state is not stated.",
+                    configuration.id,
+                    shared.len(),
+                    shared.join(", ")
+                )));
+                continue;
+            }
             None if stale => None,
             None => continue,
         };

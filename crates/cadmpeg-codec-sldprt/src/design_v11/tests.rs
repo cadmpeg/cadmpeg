@@ -755,6 +755,30 @@ fn a_face_whose_producer_is_no_feature_keeps_only_its_native_name() {
     assert_no_design_findings(&ir);
 }
 
+#[test]
+fn a_face_whose_producer_id_several_records_carry_keeps_only_its_native_name() {
+    let ir = decode(&with_history(
+        sldprt_with_body(&identified_triangle(&[72, 7, 0x6523_4178, 0, 3], 41)),
+        br#"<Keywords Name="Bracket">
+    <Extrusion Name="Boss" Type="BossExtrude" id="7">
+        <Sketch Name="Sketch1" Type="ProfileFeature" id="7"/>
+    </Extrusion>
+</Keywords>"#,
+        &[],
+    ));
+    let face = &ir.geometry.faces[0];
+    assert_eq!(
+        ir.design
+            .names
+            .entries()
+            .get(&EntityRef::Face(face.id.clone())),
+        Some(&NameEntry {
+            name: None,
+            native: Some(native_name(&[72, 7, 0x6523_4178, 0, 3])),
+        })
+    );
+}
+
 const TWO_CONFIGURATIONS: &[u8] = br#"<Keywords Name="Bracket">
     <Configuration Name="First" SourceIndex="0"/>
     <Configuration Name="Second" SourceIndex="1"/>
@@ -856,4 +880,81 @@ fn a_configuration_flagged_for_rebuild_without_a_partition_is_stale() {
     assert_eq!(evaluation.status, EvaluationStatus::Stale);
     assert!(evaluation.content.is_none());
     assert_no_design_findings(&ir);
+}
+
+#[test]
+fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
+    use std::collections::HashMap;
+
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+
+    use crate::loss::SldprtLossCode;
+
+    let mut source = with_history(
+        crate::test_support::container::sldprt_with_colliding_sites(),
+        TWO_CONFIGURATIONS,
+        &[],
+    );
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<swSolidWorks><swModel swConfigurationName="Second"/></swSolidWorks>"#,
+    ));
+    let ir = decode(&source);
+    let [scope] = ir.design.scopes.as_slice() else {
+        panic!("one scope");
+    };
+    let [Container::Ordered { id: timeline, .. }] = ir.design.containers.as_slice() else {
+        panic!("one timeline: {:#?}", ir.design.containers);
+    };
+    // The current state as `active_partition_bodies` falls back to it when
+    // the active partition is unresolved: every decoded body, so the other
+    // configuration's stored bodies are among the current ones.
+    let every_body = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<Vec<_>>();
+    let features = HashMap::new();
+    let names = super::names::Names::new(
+        super::Persistent {
+            faces: &[],
+            bodies: &[],
+        },
+        &[],
+        &features,
+    );
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let mut losses = Vec::new();
+    let (evaluations, records) = super::states::configuration_states(
+        &ctx,
+        &ir,
+        &super::states::Scope {
+            definition: &scope.definition,
+            timeline,
+            features: &ir.design.features,
+            configurations: &ir.design.configurations,
+            active: scope.active_configuration.as_ref(),
+            current: &every_body,
+        },
+        &names,
+        &mut losses,
+    )
+    .unwrap();
+    assert!(evaluations.is_empty(), "{evaluations:#?}");
+    assert_eq!(records, 0);
+    let first = ir
+        .design
+        .configurations
+        .iter()
+        .find(|configuration| configuration.name == "First")
+        .unwrap();
+    let [note] = losses.as_slice() else {
+        panic!("one loss: {losses:#?}");
+    };
+    assert_eq!(note.code, SldprtLossCode::ConfigStateUnstated.kind());
+    assert!(note.message.contains(&first.id.to_string()), "{note:#?}");
 }
