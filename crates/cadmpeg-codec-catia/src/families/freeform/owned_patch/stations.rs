@@ -263,6 +263,44 @@ fn map_parameter(relation: &Class25SourceRelation, axis: usize, t: f64) -> Optio
     }
 }
 
+pub(super) fn sampled_line_station(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+    [map, curve, incidence]: [usize; 3],
+    resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
+    refusal: &mut LaneRefusals,
+) -> Option<f64> {
+    let record = records.get(curve)?;
+    if (record.family(), record.class()) != (Family::B, 0x18) {
+        return None;
+    }
+    let mapping = map_record(bytes, records.get(map)?)?;
+    let [spline, line] = operands(&mapping, map, resolve)?;
+    if spline == line || line != curve {
+        return None;
+    }
+    let t = map_station(bytes, records, incidence, map, spline, resolve)?;
+    if !(mapping.target_range.lower()..=mapping.target_range.upper()).contains(&t) {
+        return None;
+    }
+    let parameter = interpolate_sampled_station(&mapping.source, t)?;
+    refusal.push_sampled_endpoint_station_inferred(incidence, map, parameter);
+    Some(parameter)
+}
+
+fn interpolate_sampled_station(relation: &Class25SourceRelation, t: f64) -> Option<f64> {
+    let Class25SourceRelation::Sampled { samples, .. } = relation else {
+        return None;
+    };
+    let (a, b) = samples
+        .pairs()
+        .zip(samples.pairs().skip(1))
+        .find(|(a, b)| a[0] <= t && t <= b[0])?;
+    let fraction = cadmpeg_ir::math::parameter_fraction(t, a[0], b[0])?.get();
+    let parameter = (b[1] - a[1]).mul_add(fraction, a[1]);
+    parameter.is_finite().then_some(parameter)
+}
+
 fn map_station(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
@@ -302,6 +340,7 @@ fn map_station(
     arc_parameter(local, tail[9], &knots, first_arc, extrapolation_sites)
 }
 
+/// Resolve a circle endpoint through the edge selector's affine chart map.
 pub(super) fn mapped_circle_endpoint(
     bytes: &[u8],
     records: &[ConsolidatedRecord],

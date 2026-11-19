@@ -25,6 +25,37 @@ pub(super) fn recover(face: &DecodedFace<'_>, edges: &BTreeMap<usize, &Use>) -> 
         return None;
     }
     let bounds = carrier.bounds()?;
+    recover_on_chart(face, edges, bounds).or_else(|| {
+        let expanded = ruled_trim_bounds(face, bounds)?;
+        recover_on_chart(face, edges, expanded)
+    })
+}
+
+fn ruled_trim_bounds(face: &DecodedFace<'_>, bounds: [[f64; 2]; 2]) -> Option<[[f64; 2]; 2]> {
+    if !matches!(face.carrier, Carrier::Ruled(_)) {
+        return None;
+    }
+    let [u_range, mut v_range] = bounds;
+    for ring in std::iter::once(&face.outer).chain(&face.inner) {
+        for trim in &ring.trims {
+            for step in 0..=TRIM_STEPS {
+                let [u, v] = trim.uv(trim.sample(step, true))?;
+                if (u_range[0]..=u_range[1]).contains(&u) {
+                    v_range[0] = v_range[0].min(v);
+                    v_range[1] = v_range[1].max(v);
+                }
+            }
+        }
+    }
+    (v_range != bounds[1]).then_some([u_range, v_range])
+}
+
+fn recover_on_chart(
+    face: &DecodedFace<'_>,
+    edges: &BTreeMap<usize, &Use>,
+    bounds: [[f64; 2]; 2],
+) -> Option<Patch> {
+    let carrier = &face.carrier;
     let solved = if matches!(carrier, Carrier::Plane(_)) {
         carrier.solved([[0.0; 2]; 2], false)?
     } else {

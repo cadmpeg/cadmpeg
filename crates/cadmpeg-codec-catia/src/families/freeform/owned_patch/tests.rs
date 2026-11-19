@@ -93,3 +93,19 @@ fn sheet_rolling_bridge_admits_first_middle_control_one() {
     bytes[17] = 0x01;
     assert!(super::bridge_radius(&bytes, true).is_none());
 }
+
+#[test]
+fn sheet_rolling_bridge_accepts_the_alternate_terminal_with_ordered_controls() {
+    let mut bytes = vec![0x85, 0x15, 0x11, 0x0d, 0x09, 0x05, 0x11, 0x05];
+    bytes.extend(2.0_f64.to_le_bytes());
+    bytes.extend([0x01, 0x03]);
+    bytes.extend([0; 8]);
+    bytes.extend([0x01, 0x09]);
+    assert_eq!(
+        super::bridge_radius(&bytes, true).map(|(_, radius)| radius),
+        Some(2.0)
+    );
+    assert!(super::bridge_radius(&bytes, false).is_none());
+    bytes[17] = 0x05;
+    assert!(super::bridge_radius(&bytes, true).is_none());
+}

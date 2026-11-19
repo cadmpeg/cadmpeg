@@ -181,7 +181,7 @@ fn owned_sheet_reports_a_fitted_extrusion() {
     );
     let (_, offset) = chart.offset(&offset_bytes).expect("unit directrix offset");
     let surface = chart
-        .surface(&offset, |u| Some(Point3::new(u, 0.0, -1.0)))
+        .surface(&offset, offset.from, |u| Some(Point3::new(u, 0.0, -1.0)))
         .expect("fit the extrusion directrix");
     let carrier = Carrier::Extrusion(Box::new(surface));
     let mut patches = two_face_sheet();
@@ -221,7 +221,7 @@ fn owned_sheet_reports_actual_rolling_ball_rail_movement() {
     let u = [jet.sites[0].knot.get(), jet.sites[1].knot.get()];
     let radius = 1.000_000_2;
     let chart_end = jet.chart_v_end;
-    let carrier = Carrier::rolling_ball_at_radius(jet, radius, chart_end)
+    let carrier = Carrier::rolling_ball_at_radius(jet, radius, chart_end, None)
         .expect("rolling-ball carrier with adjusted rails");
     let Carrier::OwnedRollingBall { ref definition, .. } = carrier else {
         panic!("owned rolling-ball carrier");

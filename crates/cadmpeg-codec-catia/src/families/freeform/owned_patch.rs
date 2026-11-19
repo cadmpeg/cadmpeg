@@ -141,10 +141,14 @@ fn bridge_radius(bytes: &[u8], sheet: bool) -> Option<(AllocationReference, f64)
     }
     let radius = tail.f64_le()?;
     let controls = tail.take(2)?;
+    let zero = tail.take(8)?;
+    let terminal = tail.take(2)?;
+    let valid_terminal =
+        terminal == [0x01, 0x05] || sheet && controls == [0x01, 0x03] && terminal == [0x01, 0x09];
     if (!sheet && controls != [0x03, 0x05])
         || (sheet && !matches!(controls, [0x01 | 0x03 | 0x05, 0x03 | 0x05]))
-        || tail.take(8)? != [0; 8]
-        || tail.take(2)? != [0x01, 0x05]
+        || zero != [0; 8]
+        || !valid_terminal
         || tail.remaining() != 0
         || !radius.is_finite()
         || radius <= 0.0

@@ -18,7 +18,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::{FiniteReal, NonZeroReal};
-use cadmpeg_ir::units::FiniteVector;
+use cadmpeg_ir::units::{FiniteVector, UnitVector3};
 
 const EPS_GUIDE_DIRECTION_UNIT: f64 = 1.0e-9;
 const EPS_ROLLING_BALL_RADIUS: f64 = 1.0e-9;
@@ -26,6 +26,7 @@ const EPS_ROLLING_BALL_ANGLE: f64 = 1.0e-9;
 const EPS_OWNED_ROLLING_BALL_RADIUS: f64 = 5.0e-7;
 const EPS_OWNED_ROLLING_BALL_ANGLE: f64 = 5.0e-7;
 const COLLAPSED_RAIL_TOLERANCE_MM: f64 = 0.00005;
+const CONSTRUCTION_RAIL_PROJECTION_MM: f64 = 0.000002;
 
 /// A decoded common-form or consolidated freeform NURBS surface.
 #[derive(Debug, Clone)]
@@ -512,6 +513,8 @@ pub(in crate::families) struct A5FreeformCurve {
     /// Knot-aligned jet samples.
     pub(in crate::families) sites: Vec<A5FreeformJet>,
     pub(in crate::families) chart_v_end: f64,
+    pub(in crate::families) extended_v_end: Option<f64>,
+    construction_rail_shift_mm: f64,
 }
 
 impl A5FreeformCurve {
@@ -544,7 +547,7 @@ impl A5FreeformCurve {
         mut self,
         radius: f64,
     ) -> Option<(ProceduralSurfaceDefinition, f64)> {
-        let mut max_shift_mm = 0.0_f64;
+        let mut max_shift_mm = self.construction_rail_shift_mm;
         for sample in &mut self.sites {
             let site = &mut sample.site;
             let center = site.center.get();
@@ -1162,20 +1165,38 @@ pub(in crate::families) fn a5_freeform_curves_from_records(
     data: &[u8],
     records: &[ConsolidatedRecord],
 ) -> Vec<A5FreeformCurve> {
-    a5_rolling_curves(data, records, false).collect()
+    a5_rolling_curves(data, records, false, None).collect()
 }
 
 pub(in crate::families) fn a5_owned_rolling_curves<'a>(
     data: &'a [u8],
     records: &'a [ConsolidatedRecord],
 ) -> impl Iterator<Item = A5FreeformCurve> + 'a {
-    a5_rolling_curves(data, records, true)
+    a5_rolling_curves(data, records, true, None).filter(|jet| jet.extended_v_end.is_none())
+}
+
+pub(in crate::families) fn a5_extended_rolling_curve(
+    data: &[u8],
+    record: &ConsolidatedRecord,
+) -> Option<A5FreeformCurve> {
+    a5_rolling_curves(data, std::slice::from_ref(record), true, None)
+        .find(|jet| jet.extended_v_end.is_some())
+}
+
+pub(in crate::families) fn a5_rolling_curve_on_construction_radius(
+    data: &[u8],
+    record: &ConsolidatedRecord,
+    radius: f64,
+) -> Option<A5FreeformCurve> {
+    a5_rolling_curves(data, std::slice::from_ref(record), true, Some(radius))
+        .find(|jet| jet.extended_v_end.is_none())
 }
 
 fn a5_rolling_curves<'a>(
     data: &'a [u8],
     records: &'a [ConsolidatedRecord],
     owned: bool,
+    construction_radius: Option<f64>,
 ) -> impl Iterator<Item = A5FreeformCurve> + 'a {
     records
         .iter()
@@ -1187,11 +1208,16 @@ fn a5_rolling_curves<'a>(
                 end: record.range()?.end,
                 header_token: record.header_token(),
             };
-            parse_a5_curve(data, frame, owned)
+            parse_a5_curve(data, frame, owned, construction_radius)
         })
 }
 
-fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame, owned: bool) -> Option<A5FreeformCurve> {
+fn parse_a5_curve(
+    data: &[u8],
+    frame: ConsolidatedFrame,
+    owned: bool,
+    construction_radius: Option<f64>,
+) -> Option<A5FreeformCurve> {
     let ConsolidatedFrame {
         pos,
         payload,
@@ -1200,7 +1226,7 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame, owned: bool) -> Option<
     } = frame;
     data.get(frame.payload..frame.end)?;
 
-    let (count, knot_start, block_start, block_bytes, chart_v_end) = (|| {
+    let (count, knot_start, block_start, block_bytes, (chart_v_end, extended_v_end)) = (|| {
         if data.get(pos) == Some(&0xa5) {
             let header_byte = u8::try_from(header_token).ok()?;
             a5_int(header_byte)?;
@@ -1246,6 +1272,7 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame, owned: bool) -> Option<
         Some((count, knot_start, at, block_bytes, chart_v_end))
     })()?;
     let mut sites = Vec::new();
+    let mut construction_rail_shift_mm = 0.0_f64;
 
     for index in 0..count {
         let offset = index * 80;
@@ -1257,7 +1284,13 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame, owned: bool) -> Option<
         ) else {
             return None;
         };
-        let site = rolling_ball_site(positions, owned)?;
+        let site = if let Some(radius) = construction_radius {
+            let (site, shift) = project_rolling_ball_rails(positions, radius)?;
+            construction_rail_shift_mm = construction_rail_shift_mm.max(shift);
+            site
+        } else {
+            rolling_ball_site(positions, owned)?
+        };
         sites.push(A5FreeformJet {
             knot,
             site,
@@ -1270,6 +1303,8 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame, owned: bool) -> Option<
         header_token,
         sites,
         chart_v_end,
+        extended_v_end,
+        construction_rail_shift_mm,
     })
 }
 
@@ -1281,7 +1316,7 @@ fn a5_rolling_ball_tail(
     count: usize,
     knot_range: [f64; 2],
     owned: bool,
-) -> Option<f64> {
+) -> Option<(f64, Option<f64>)> {
     use crate::layout::{
         rolling_ball_tail_prefix as prefix, rolling_ball_tail_unmapped_suffix as suffix,
     };
@@ -1289,6 +1324,8 @@ fn a5_rolling_ball_tail(
     let no_map_length = prefix::LEN + suffix::LEN;
     let repeated_length = no_map_length + 8;
     let extended_length = repeated_length + 2;
+    let mapped_length = repeated_length.checked_add(count.checked_mul(24)?)?;
+    let mapped_sheet = owned && data.len() == mapped_length.checked_add(2)?;
     let sheet_limits = owned && data.len() == extended_length;
     let current = read_f64_array::<5>(data, prefix::PARAMETERS)?.map(FiniteReal::get);
     let maximal_v = read_f64_array::<2>(data, prefix::MAXIMAL_V)?.map(FiniteReal::get);
@@ -1296,13 +1333,14 @@ fn a5_rolling_ball_tail(
         || current[0] >= current[1]
         || current[2] >= current[3]
         || current[4] <= 0.0
-        || (!sheet_limits && current[3].to_bits() != current[4].to_bits())
+        || (!sheet_limits && !mapped_sheet && current[3].to_bits() != current[4].to_bits())
         || maximal_v[0] > current[2]
         || maximal_v[1] < current[3]
     {
         return None;
     }
     let mut trimmed_u = [false; 2];
+    let mut extended_v_end = None;
     let mut at = match data.len() {
         length
             if length == no_map_length
@@ -1311,8 +1349,9 @@ fn a5_rolling_ball_tail(
         {
             let branch = data.get(prefix::LEN + suffix::BRANCH..prefix::LEN + suffix::MAXIMAL_U)?;
             if length == extended_length {
+                let doubled_span = sheet_limits && branch.starts_with(&[0x01, 0x00]);
                 if branch.len() != suffix::BRANCH_VALUE.len()
-                    || branch[0..2] != suffix::BRANCH_VALUE[0..2]
+                    || (!doubled_span && branch[0..2] != suffix::BRANCH_VALUE[0..2])
                     || branch[2] > 1
                     || branch[3] > 1
                     || branch[4..6] != suffix::BRANCH_VALUE[4..6]
@@ -1320,13 +1359,19 @@ fn a5_rolling_ball_tail(
                 {
                     return None;
                 }
+                if doubled_span {
+                    if current[2] != 0.0 || current[3] != 2.0 * current[4] {
+                        return None;
+                    }
+                    extended_v_end = Some(current[3]);
+                }
                 trimmed_u = [sheet_limits && branch[2] == 1, branch[3] == 1];
             } else if branch != suffix::BRANCH_VALUE {
                 return None;
             }
             prefix::LEN + suffix::MAXIMAL_U
         }
-        length if length == repeated_length.checked_add(count.checked_mul(24)?)? => {
+        length if length == mapped_length || mapped_sheet => {
             if data.get(prefix::LEN..prefix::LEN + 2) != Some(&[0x01, 0x01]) {
                 return None;
             }
@@ -1355,9 +1400,15 @@ fn a5_rolling_ball_tail(
     let mut v_end = current[4];
     if data.len() != no_map_length {
         let terminal_v = f64_le(data, at)?.get();
-        if sheet_limits {
+        if mapped_sheet {
+            if current[2] != 0.0 || terminal_v != current[3] {
+                return None;
+            }
             v_end = terminal_v;
-            if terminal_v <= 0.0 {
+            extended_v_end = Some(current[3]);
+        } else if sheet_limits {
+            v_end = terminal_v;
+            if terminal_v <= 0.0 || (extended_v_end.is_some() && terminal_v != current[4]) {
                 return None;
             }
         } else if terminal_v.to_bits() != current[4].to_bits() {
@@ -1365,10 +1416,53 @@ fn a5_rolling_ball_tail(
         }
         at += 8;
     }
-    if data.len() == extended_length {
+    if mapped_sheet && data.get(at..) != Some(&[0, 0][..]) {
+        return None;
+    }
+    if data.len() == extended_length || mapped_sheet {
         at += 2;
     }
-    (at == data.len()).then_some(v_end)
+    (at == data.len()).then_some((v_end, extended_v_end))
+}
+
+fn project_rolling_ball_rails(
+    values: [FiniteReal; 10],
+    radius: f64,
+) -> Option<(RollingBallSite, f64)> {
+    let first = FinitePoint3::from_coordinates(values[0], values[1], values[2]);
+    let second = FinitePoint3::from_coordinates(values[3], values[4], values[5]);
+    let center = FinitePoint3::from_coordinates(values[6], values[7], values[8]);
+    let theta = values[9];
+    if !radius.is_finite() || radius <= 0.0 || !(0.0..=std::f64::consts::PI).contains(&theta.get())
+    {
+        return None;
+    }
+    let first_direction =
+        UnitVector3::normalized_by_largest_component(first.get().vector_from(center.get()))?;
+    let axis = *first_direction.as_raw();
+    let limit1 = FinitePoint3::new(center.get().translated(axis, radius))?;
+    let limit2 = if theta.get() == 0.0 {
+        limit1
+    } else {
+        let radial = second.get().vector_from(center.get());
+        let transverse =
+            UnitVector3::normalized_by_largest_component(radial - axis.scale(radial.dot(axis)))?;
+        let (sin, cos) = theta.get().sin_cos();
+        let direction = axis.scale(cos) + transverse.as_raw().scale(sin);
+        FinitePoint3::new(center.get().translated(direction, radius))?
+    };
+    let shift = first
+        .distance(limit1.get())
+        .max(second.distance(limit2.get()));
+    (shift <= CONSTRUCTION_RAIL_PROJECTION_MM).then_some((
+        RollingBallSite {
+            limit1,
+            limit2,
+            center,
+            theta,
+        },
+        shift,
+    ))
 }
 
 fn rolling_ball_site(values: [FiniteReal; 10], owned: bool) -> Option<RollingBallSite> {

@@ -40,7 +40,7 @@ impl Extrusion {
         let limits = [view.f64_le()?, view.f64_le()?];
         let indices = view.take(2)?;
         if !limits.iter().all(|v| v.is_finite() && *v >= 0.0)
-            || !indices.iter().all(|index| *index % 4 == 1)
+            || !indices.iter().all(|index| matches!(*index % 4, 1 | 3))
             || !view.is_empty()
         {
             return None;
@@ -71,25 +71,48 @@ impl Extrusion {
                 .into_iter()
                 .zip(self.bounds[0])
                 .all(|(a, b)| near(a, b))
-            || result[0] < from[0] - BOUND_AGREEMENT
-            || result[1] > from[1] + BOUND_AGREEMENT
+            || result[1] - result[0] > from[1] - from[0] + BOUND_AGREEMENT
         {
             return None;
         }
         Some((source, DirectrixOffset { from, distance }))
     }
 
+    pub(super) fn with_bounds(&self, bounds: [[f64; 2]; 2]) -> Self {
+        Self {
+            directrix: self.directrix,
+            direction: self.direction,
+            bounds,
+        }
+    }
+
+    pub(super) fn extends_source(&self, offset: &DirectrixOffset) -> bool {
+        self.bounds[0][0] < offset.from[0] - BOUND_AGREEMENT
+            || self.bounds[0][1] > offset.from[1] + BOUND_AGREEMENT
+    }
+
     pub(super) fn surface(
         &self,
         offset: &DirectrixOffset,
+        knot_domain: [f64; 2],
         point: impl Fn(f64) -> Option<Point3>,
     ) -> Option<NurbsSurface> {
+        let domain = if self.extends_source(offset) {
+            knot_domain
+        } else {
+            offset.from
+        };
+        if self.bounds[0][0] < domain[0] - BOUND_AGREEMENT
+            || self.bounds[0][1] > domain[1] + BOUND_AGREEMENT
+        {
+            return None;
+        }
         let axis = *self.direction.as_raw();
         let curve = fit_edge_with_error(
             self.bounds[0],
             |t| {
-                let a = point((t - TANGENT_STEP).max(offset.from[0]))?;
-                let b = point((t + TANGENT_STEP).min(offset.from[1]))?;
+                let a = point((t - TANGENT_STEP).max(domain[0]))?;
+                let b = point((t + TANGENT_STEP).min(domain[1]))?;
                 let unit =
                     UnitVector3::normalized_by_largest_component(b.vector_from(a).cross(axis))?;
                 let p = point(t)?.translated(*unit.as_raw(), offset.distance);

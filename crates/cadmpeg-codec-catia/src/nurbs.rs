@@ -131,6 +131,19 @@ impl LaneRefusals {
         );
     }
 
+    pub(crate) fn push_sampled_endpoint_station_inferred(
+        &mut self,
+        incidence: usize,
+        map: usize,
+        parameter: f64,
+    ) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyEndpointStationReadingInferred.note(format!(
+                "For incidence allocation {incidence} and map allocation {map}, interpolated endpoint parameter {parameter} between adjacent native map samples."
+            )),
+        );
+    }
+
     pub(crate) fn push_shared_boundary_reconciled(
         &mut self,
         [vertex, seed, retry, replaced]: [usize; 4],

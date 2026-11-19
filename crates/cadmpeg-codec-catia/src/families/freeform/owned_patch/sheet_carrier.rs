@@ -35,6 +35,9 @@ pub(super) enum Carrier<'a> {
     OwnedRollingBall {
         definition: Box<Cow<'a, ProceduralSurfaceDefinition>>,
         chart_end: f64,
+        native_v_upper: Option<f64>,
+        variable_radius: bool,
+        result_bounds: Option<[[f64; 2]; 2]>,
         max_rail_shift_mm: f64,
     },
     Cylinder(SpatialCylinder),
@@ -50,16 +53,42 @@ pub(super) enum Carrier<'a> {
 }
 
 impl Carrier<'_> {
+    pub(super) fn has_cropped_rolling_result(&self) -> bool {
+        matches!(self, Self::OwnedRollingBall { result_bounds: Some([_, [lo, _]]), .. } if *lo != 0.0)
+    }
+
     pub(super) fn rolling_ball_at_radius(
         jet: A5FreeformCurve,
         radius: f64,
         chart_end: f64,
+        result_bounds: Option<[[f64; 2]; 2]>,
     ) -> Option<Self> {
+        let native_v_upper = jet.extended_v_end;
         let (definition, max_rail_shift_mm) = jet.definition_at_radius(radius)?;
         Some(Self::OwnedRollingBall {
             definition: Box::new(Cow::Owned(definition)),
             chart_end,
+            native_v_upper,
+            variable_radius: false,
+            result_bounds,
             max_rail_shift_mm,
+        })
+    }
+
+    pub(super) fn extended_rolling_ball(jet: A5FreeformCurve) -> Option<Self> {
+        let upper = jet.extended_v_end?;
+        let first = &jet.sites.first()?.site;
+        let radius = first.limit1.distance(first.center.get());
+        let chart_end = jet.chart_v_end;
+        Self::rolling_ball_at_radius(jet.clone(), radius, chart_end, None).or_else(|| {
+            Some(Self::OwnedRollingBall {
+                definition: Box::new(Cow::Owned(jet.definition()?)),
+                chart_end,
+                native_v_upper: Some(upper),
+                variable_radius: true,
+                result_bounds: None,
+                max_rail_shift_mm: 0.0,
+            })
         })
     }
 
@@ -71,12 +100,19 @@ impl Carrier<'_> {
                 else {
                     return None;
                 };
+                let upper = match self {
+                    Self::OwnedRollingBall {
+                        native_v_upper: Some(upper),
+                        ..
+                    } => *upper,
+                    _ => radius,
+                };
                 Some([
                     [
                         jet.stations().first()?.knot.get(),
                         jet.stations().last()?.knot.get(),
                     ],
-                    [0.0, radius],
+                    [0.0, upper],
                 ])
             }
             Self::Cylinder(cylinder) => Some(cylinder.bounds),
@@ -193,9 +229,19 @@ impl Carrier<'_> {
         match self {
             Self::RollingBall(..) | Self::OwnedRollingBall { .. } => {
                 let (definition, _) = self.rolling_definition()?;
-                eval::rolling_ball_jet_point(definition, u, v)
-                    .ok()
-                    .map(FinitePoint3::get)
+                let end = self.extended_rolling_span().unwrap_or(1.0);
+                let point = if matches!(
+                    self,
+                    Self::OwnedRollingBall {
+                        variable_radius: true,
+                        ..
+                    }
+                ) {
+                    eval::variable_rolling_ball_jet_point_on_span(definition, u, v, end)
+                } else {
+                    eval::rolling_ball_jet_point_on_span(definition, u, v, end)
+                };
+                point.ok().map(FinitePoint3::get)
             }
             Self::Ruled(ruled) => ruled.point(u, v),
             Self::OffsetTensor(surface, _, distance) => {
@@ -218,14 +264,31 @@ impl Carrier<'_> {
         }
     }
 
+    fn extended_rolling_span(&self) -> Option<f64> {
+        match self {
+            Self::OwnedRollingBall {
+                native_v_upper: Some(upper),
+                chart_end,
+                ..
+            } => Some(upper * chart_end.recip()),
+            _ => None,
+        }
+    }
+
     pub(super) fn rolling_boundary_gap(&self, u: f64, v: f64) -> Option<f64> {
         let (definition, _) = self.rolling_definition()?;
         let [u, s] = self.point([u, v]);
+        if let Some(end) = self.extended_rolling_span() {
+            return (0.0..=end).contains(&s).then_some(0.0);
+        }
         eval::rolling_ball_jet_boundary_gap(definition, u, s).ok()
     }
 
     pub(super) fn evaluate_rolling_extension(&self, u: f64, v: f64) -> Option<Point3> {
         let (definition, _) = self.rolling_definition()?;
+        if self.extended_rolling_span().is_some() {
+            return self.evaluate([u, v]);
+        }
         eval::rolling_ball_jet_extended_point(definition, u, v, MAX_ROLLING_EXTENSION_MM)
             .ok()
             .map(FinitePoint3::get)
@@ -255,6 +318,9 @@ impl Carrier<'_> {
         match self {
             Self::RollingBall(..) | Self::OwnedRollingBall { .. } => {
                 let (definition, _) = self.rolling_definition()?;
+                if self.extended_rolling_span().is_some() {
+                    return self.solve_rolling_extension(limits);
+                }
                 let adaptive = || {
                     surface_fit::rolling(
                         definition,
@@ -526,11 +592,12 @@ impl SpatialCylinder {
         let mut interval = || IncreasingParameterInterval::new([view.f64_le()?, view.f64_le()?]);
         let u = interval()?.endpoints();
         let v = interval()?.endpoints();
-        let angle_scale = match (view.u8()?, view.f64_le()?) {
-            (3, shift) if near(shift, cylinder_range_origin(radius.get(), u)) => {
+        let angle_scale = match view.u8()? {
+            3 if near(view.f64_le()?, cylinder_range_origin(radius.get(), u)) => {
                 radius.get().recip()
             }
-            (6, factor) if factor.is_finite() && factor > 0.0 => factor / radius.get(),
+            6 => PositiveLength::new(view.f64_le()?)?.get() / radius.get(),
+            7 if u[0] == 0.0 => radius.get().recip(),
             _ => return None,
         };
         if !view.is_empty()
@@ -645,6 +712,17 @@ mod tests {
         let chart = Carrier::Cylinder(cylinder);
         assert_eq!(chart.scale(), [2.0, 1.0]);
         assert_eq!(chart.bounds(), Some([[0.0, 1.0], [-2.0, 2.0]]));
+        let mut compact = bytes[..bytes.len() - 9].to_vec();
+        let u_offset = compact.len() - 32;
+        compact[u_offset..u_offset + 8].copy_from_slice(&0.0_f64.to_le_bytes());
+        compact.push(7);
+        let compact_chart =
+            Carrier::Cylinder(SpatialCylinder::read(&compact).expect("valid arc-length cylinder"));
+        assert_eq!(compact_chart.scale(), [2.0, 1.0]);
+        assert_eq!(compact_chart.bounds(), Some([[0.0, 1.0], [-2.0, 2.0]]));
+        compact.push(0);
+        assert!(SpatialCylinder::read(&compact).is_none());
+
         bytes[24] ^= 0x01;
         assert!(SpatialCylinder::read(&bytes).is_none());
     }

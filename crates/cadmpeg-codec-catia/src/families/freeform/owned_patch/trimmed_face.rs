@@ -17,7 +17,10 @@ use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use cadmpeg_ir::units::FinitePoint2;
 
-use crate::families::a5a8::records::{a5_owned_rolling_curves, a5_ruled_guides_from_records};
+use crate::families::a5a8::records::{
+    a5_extended_rolling_curve, a5_owned_rolling_curves, a5_rolling_curve_on_construction_radius,
+    a5_ruled_guides_from_records,
+};
 use crate::families::b2::records::{
     b2_circles_from_records, b2_spheres_from_records, owned_cone_charts, owned_edge_nodes,
     owned_parameter_points, owned_torus_charts, B2ParameterPointPayload,
@@ -70,6 +73,7 @@ struct Trim {
     primary_stations: [Option<f64>; 2],
     sphere_circle: Option<trim_curves::SphereCircle>,
     alternate_line: Option<LinePcurve>,
+    symmetric_line: bool,
     inferred_accuracy: Option<InferredEdgeAccuracy>,
 }
 
@@ -145,7 +149,7 @@ where
                     }
                     (0x21, Family::B, 0x2c) => {
                         let chart = Extrusion::read(bytes, bounds)?;
-                        self.offset_extrusion(ir, index, &chart, carriers, refusal)
+                        self.offset_extrusion(ir, index, &chart, None, carriers, refusal)
                     }
                     (0x01, Family::B, 0x31) => {
                         let (reference, distance) = offset_cache(bytes, bounds)?;
@@ -174,43 +178,39 @@ where
                         })
                     }
                     (0x19, Family::A, 0x32) => {
-                        if bounds[1][0] != 0.0 {
-                            return None;
-                        }
                         let basis = (self.resolve)(support, bridge.support)?;
-                        let chart_end = bounds[1][1];
+                        let native =
+                            a5_owned_rolling_curves(self.bytes, std::slice::from_ref(target))
+                                .next()?;
+                        let chart_end = native.chart_v_end;
+                        let support_radius = self.rolling_support_radius(basis)?;
                         let cached = (self.physical)(target.byte_offset())
                             .and_then(|position| carriers.get(&position));
-                        let mut native = None;
-                        for distance in [bridge.distance, -bridge.distance] {
-                            let Some(radius) = self.rolling_support_radius(basis, distance) else {
+                        for radius in [
+                            support_radius + bridge.distance,
+                            support_radius - bridge.distance,
+                        ] {
+                            if !radius.is_finite() || radius <= 0.0 {
                                 continue;
-                            };
+                            }
                             if let Some(definition) =
                                 cached.and_then(|&i| rolling_ball(ir, i, radius))
                             {
                                 return Some(Carrier::OwnedRollingBall {
                                     definition: Box::new(Cow::Borrowed(definition)),
                                     chart_end,
+                                    native_v_upper: None,
+                                    variable_radius: false,
+                                    result_bounds: Some(bounds),
                                     max_rail_shift_mm: 0.0,
                                 });
                             }
-                            let jet = match &native {
-                                Some(jet) => jet,
-                                None => native.insert(
-                                    a5_owned_rolling_curves(
-                                        self.bytes,
-                                        std::slice::from_ref(target),
-                                    )
-                                    .next()?,
-                                ),
-                            };
-                            if !super::near(jet.chart_v_end, chart_end) {
-                                return None;
-                            }
-                            if let Some(carrier) =
-                                Carrier::rolling_ball_at_radius(jet.clone(), radius, chart_end)
-                            {
+                            if let Some(carrier) = Carrier::rolling_ball_at_radius(
+                                native.clone(),
+                                radius,
+                                chart_end,
+                                Some(bounds),
+                            ) {
                                 return Some(carrier);
                             }
                         }
@@ -263,7 +263,10 @@ where
                 let carrier = (self.resolve)(support, allocation_reference(bytes, &mut at)?)?;
                 for _ in 0..2 {
                     let target = (self.resolve)(support, allocation_reference(bytes, &mut at)?)?;
-                    if !matches!(self.records[target].class(), 0x27 | 0x29 | 0x38) {
+                    let record = &self.records[target];
+                    if !matches!(record.class(), 0x27 | 0x29 | 0x30 | 0x38)
+                        && (record.family(), record.class()) != (Family::B, 0x2e)
+                    {
                         return None;
                     }
                 }
@@ -289,6 +292,14 @@ where
                 self.analytic_result(carrier, class)
             }
             (Family::B, 0x37) => {
+                if bytes.first() == Some(&0x87) {
+                    return self.extended_rolling_carrier(support, bytes);
+                }
+                if bytes.first() == Some(&0x88) {
+                    return self
+                        .mapped_rolling_carrier(support, bytes)
+                        .or_else(|| self.mapped_sphere_carrier(support, bytes));
+                }
                 if let Some((reference, radius)) = bridge_radius(bytes, true) {
                     let carrier = self.records.get((self.resolve)(support, reference)?)?;
                     if carrier.family() != Family::A || carrier.class() != 0x32 {
@@ -300,10 +311,17 @@ where
                     {
                         return Some(Carrier::RollingBall(definition, radius));
                     }
-                    let jet = a5_owned_rolling_curves(self.bytes, std::slice::from_ref(carrier))
-                        .next()?;
-                    let v_end = jet.chart_v_end;
-                    return Carrier::rolling_ball_at_radius(jet, radius, v_end);
+                    let build = |jet: crate::families::a5a8::records::A5FreeformCurve| {
+                        let v_end = jet.chart_v_end;
+                        Carrier::rolling_ball_at_radius(jet, radius, v_end, None)
+                    };
+                    return a5_owned_rolling_curves(self.bytes, std::slice::from_ref(carrier))
+                        .next()
+                        .and_then(build)
+                        .or_else(|| {
+                            a5_rolling_curve_on_construction_radius(self.bytes, carrier, radius)
+                                .and_then(build)
+                        });
                 }
                 let (reference, class, radius) = analytic_bridge(bytes)?;
                 let carrier = self.records.get((self.resolve)(support, reference)?)?;
@@ -337,6 +355,7 @@ where
         ir: &CadIr,
         result: usize,
         chart: &Extrusion,
+        trim_bounds: Option<[[f64; 2]; 2]>,
         carriers: &BTreeMap<usize, usize>,
         refusal: &mut LaneRefusals,
     ) -> Option<Carrier<'_>> {
@@ -364,11 +383,31 @@ where
         }
         let carrier = self.carrier(ir, base, carriers, refusal)?;
         let uv = consolidated_jet_pcurve(&curve, &ConsolidatedCarrierChart::Identity, refusal)?;
-        let surface = chart.surface(&offset, |t| {
+        let trim_chart = trim_bounds.map(|bounds| chart.with_bounds(bounds));
+        let chart = trim_chart.as_ref().unwrap_or(chart);
+        let knot_domain = [
+            curve.sites.first()?.knot.get(),
+            curve.sites.last()?.knot.get(),
+        ];
+        let extended_base = match &carrier {
+            Carrier::OffsetTensor(surface, _, distance)
+                if trim_chart.is_some() || chart.extends_source(&offset) =>
+            {
+                let bounds = Carrier::Tensor(surface).bounds()?;
+                Some(Carrier::OffsetTensor(surface, bounds, *distance))
+            }
+            _ => None,
+        };
+        let surface = chart.surface(&offset, knot_domain, |t| {
             let p = eval::decode::pcurve_uv(EvaluationAdmission::Standard, &uv, t)
                 .ok()?
                 .get();
-            carrier.evaluate(clamp_chart(&carrier, [p.u, p.v])?)
+            let uv = [p.u, p.v];
+            if let Some(point) = clamp_chart(&carrier, uv).and_then(|uv| carrier.evaluate(uv)) {
+                return Some(point);
+            }
+            let full = extended_base.as_ref()?;
+            full.evaluate(clamp_chart(full, uv)?)
         })?;
         Some(Carrier::Extrusion(Box::new(surface)))
     }
@@ -396,29 +435,145 @@ where
         None
     }
 
-    fn rolling_support_radius(&self, mut support: usize, mut distance: f64) -> Option<f64> {
+    fn extended_rolling_carrier(&self, support: usize, bytes: &[u8]) -> Option<Carrier<'_>> {
+        let mut at = 1;
+        let reference = allocation_reference(bytes, &mut at)?;
+        let record = self.records.get((self.resolve)(support, reference)?)?;
+        for classes in [
+            &[0x2e, 0x38][..],
+            &[0x27, 0x30],
+            &[0x18, 0x20],
+            &[0x18, 0x20],
+            &[0x2e, 0x37, 0x38],
+            &[0x18, 0x20],
+        ] {
+            let reference = allocation_reference(bytes, &mut at)?;
+            let target = self.records.get((self.resolve)(support, reference)?)?;
+            if target.family() != Family::B || !classes.contains(&target.class()) {
+                return None;
+            }
+        }
+        if !matches!(
+            bytes.get(at..)?,
+            [
+                0x11,
+                0x0d,
+                3 | 5,
+                3 | 5,
+                3 | 5,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                1,
+                5
+            ]
+        ) {
+            return None;
+        }
+        Carrier::extended_rolling_ball(a5_extended_rolling_curve(self.bytes, record)?)
+    }
+
+    fn mapped_rolling_carrier(&self, support: usize, bytes: &[u8]) -> Option<Carrier<'_>> {
+        let mut at = 1;
+        let reference = allocation_reference(bytes, &mut at)?;
+        let record = self.records.get((self.resolve)(support, reference)?)?;
+        for (families, classes) in [
+            (&[Family::B][..], &[0x30, 0x37][..]),
+            (&[Family::A], &[0x34]),
+            (&[Family::A, Family::B], &[0x20]),
+            (&[Family::A, Family::B], &[0x20]),
+            (&[Family::A], &[0x15]),
+            (&[Family::B], &[0x48]),
+            (&[Family::A], &[0x48]),
+        ] {
+            let reference = allocation_reference(bytes, &mut at)?;
+            let target = self.records.get((self.resolve)(support, reference)?)?;
+            if !families.contains(&target.family()) || !classes.contains(&target.class()) {
+                return None;
+            }
+        }
+        let [0x11, 0x09, 3 | 5, 3 | 5, zero @ .., 1, 5] = bytes.get(at..)? else {
+            return None;
+        };
+        if zero != [0; 8] {
+            return None;
+        }
+        let jet = a5_extended_rolling_curve(self.bytes, record)?;
+        (jet.extended_v_end == Some(jet.chart_v_end)).then_some(())?;
+        Carrier::extended_rolling_ball(jet)
+    }
+
+    fn mapped_sphere_carrier(&self, support: usize, bytes: &[u8]) -> Option<Carrier<'_>> {
+        let mut at = 1;
+        let first = allocation_reference(bytes, &mut at)?;
+        let result = self.records.get((self.resolve)(support, first)?)?;
+        if (result.family(), result.class()) != (Family::B, 0x2a) {
+            return None;
+        }
+        for expected in [
+            (Family::B, 0x30),
+            (Family::B, 0x37),
+            (Family::B, 0x04),
+            (Family::B, 0x18),
+            (Family::A, 0x15),
+            (Family::B, 0x48),
+            (Family::A, 0x48),
+        ] {
+            let reference = allocation_reference(bytes, &mut at)?;
+            let record = self.records.get((self.resolve)(support, reference)?)?;
+            if (record.family(), record.class()) != expected {
+                return None;
+            }
+        }
+        let [0x0d, 0x09, 3 | 5, 3 | 5, zero @ .., 5, 9] = bytes.get(at..)? else {
+            return None;
+        };
+        if zero != [0; 8] {
+            return None;
+        }
+        Some(Carrier::Sphere(
+            b2_spheres_from_records(self.bytes, std::slice::from_ref(result)).next()?,
+        ))
+    }
+
+    fn rolling_support_radius(&self, mut support: usize) -> Option<f64> {
         let mut visited = BTreeSet::new();
-        while visited.insert(support) {
+        let mut offsets = Vec::new();
+        let mut radius = loop {
+            if !visited.insert(support) {
+                return None;
+            }
             let record = self.records.get(support)?;
             let bytes = payload(self.bytes, record)?;
             match (record.family(), record.class()) {
-                (Family::B, 0x37) => {
-                    let (_, radius) = bridge_radius(bytes, true)?;
-                    let radius = radius + distance;
-                    return (radius.is_finite() && radius > 0.0).then_some(radius);
-                }
+                (Family::B, 0x37) => break bridge_radius(bytes, true)?.1,
                 (Family::B, 0x30) => {
                     let bridge = offset_bridge(bytes)?;
-                    if bridge.kind != 0x19 {
+                    let result = self.records.get((self.resolve)(support, bridge.result)?)?;
+                    if bridge.kind != 0x19 || (result.family(), result.class()) != (Family::A, 0x32)
+                    {
                         return None;
                     }
-                    distance += bridge.distance;
+                    offsets.push((bridge.distance, result));
                     support = (self.resolve)(support, bridge.support)?;
                 }
                 _ => return None,
             }
+        };
+        for (distance, result) in offsets.into_iter().rev() {
+            let native =
+                a5_owned_rolling_curves(self.bytes, std::slice::from_ref(result)).next()?;
+            radius = [radius + distance, radius - distance]
+                .into_iter()
+                .filter(|radius| radius.is_finite() && *radius > 0.0)
+                .find(|radius| native.clone().definition_at_radius(*radius).is_some())?;
         }
-        None
+        Some(radius)
     }
 
     fn analytic_result(&self, index: usize, class: u8) -> Option<Carrier<'_>> {
@@ -472,6 +627,7 @@ where
         at: &mut usize,
         carrier: &Carrier<'_>,
         refusal: &mut LaneRefusals,
+        sampled_vertex: Option<usize>,
     ) -> Option<Trim> {
         let p = (self.resolve)(owner, allocation_reference(bytes, at)?)?;
         let edge = self.target(owner, bytes, at, 0x5e)?;
@@ -494,14 +650,15 @@ where
         let mut extrapolation_sites = 0;
         let mut sphere_circle = None;
         let mut alternate_line = None;
+        let mut symmetric_line = false;
         let (mut pcurve, mut range, source_range) = match self.records[p].class() {
             0x18 => {
-                let (points, source_range, alternative) =
+                let (points, source_range, alternative, symmetric) =
                     owned_parameter_points(self.bytes, records)
                         .next()
                         .and_then(|line| {
                             let [a, b] = line.axis_line().or_else(|| {
-                                if line.control != 0x0e {
+                                if !matches!(line.control, 0x0d | 0x0e) {
                                     return None;
                                 }
                                 let B2ParameterPointPayload::Scalar { value } = line.payload else {
@@ -512,17 +669,40 @@ where
                                     Carrier::Cylinder(_) => carrier.bounds()?,
                                     _ => return None,
                                 };
-                                let [lo, hi] = bounds[0];
-                                Some([[lo, value.get()], [hi, value.get()]])
+                                let axis = usize::from(line.control & 3 == 1);
+                                Some(bounds[axis].map(|varying| {
+                                    if axis == 1 {
+                                        [value.get(), varying]
+                                    } else {
+                                        [varying, value.get()]
+                                    }
+                                }))
                             })?;
                             let index = usize::from(line.control & 3 == 1);
-                            Some(([a, b], [a[index], b[index]], None))
+                            Some(([a, b], [a[index], b[index]], None, false))
                         })
                         .or_else(|| {
-                            oblique_line(payload(self.bytes, &records[0])?, carrier.bounds()?)
+                            if !matches!(carrier, Carrier::Cylinder(_))
+                                || compact_line_control(self.bytes, &records[0])? != 0x1d
+                            {
+                                return None;
+                            }
+                            let [_, axial] = carrier.bounds()?;
+                            Some((axial.map(|v| [0.0, v]), axial, None, false))
+                        })
+                        .or_else(|| {
+                            oblique_line(
+                                payload(self.bytes, &records[0])?,
+                                carrier.bounds()?,
+                                matches!(
+                                    carrier,
+                                    Carrier::RollingBall(..) | Carrier::OwnedRollingBall { .. }
+                                ),
+                            )
                         })?;
                 let line = line_geometry(points)?;
                 alternate_line = alternative.and_then(line_geometry);
+                symmetric_line = symmetric;
                 (PcurveGeometry::Line(line), [0.0, 1.0], source_range)
             }
             0x20 => {
@@ -552,7 +732,8 @@ where
             0x21 => {
                 let (pcurve, range) = trim_curves::spline(payload(self.bytes, &records[0])?)?;
                 if let PcurveGeometry::Nurbs { nurbs } = &pcurve {
-                    let full = [*nurbs.knots().first()?, *nurbs.knots().last()?];
+                    let knots = nurbs.knots();
+                    let full = [*knots.first()?, *knots.last()?];
                     if full != range {
                         extended_spline_range = Some(full);
                     }
@@ -725,6 +906,24 @@ where
                     } else {
                         mapped_station(&mut primary_stations[endpoint], true, refusal)
                     }
+                })
+                .or_else(|| {
+                    let vertex = sampled_vertex?;
+                    if !domain.line || (self.physical)(self.records[index].byte_offset())? != vertex
+                    {
+                        return None;
+                    }
+                    let map = resolve_edge(0, node.curve_ref)?;
+                    let t = stations::sampled_line_station(
+                        self.bytes,
+                        self.records,
+                        [map, p, station?],
+                        &self.resolve,
+                        refusal,
+                    )?;
+                    primary_stations[endpoint] =
+                        Some((t - source_range[0]) / (source_range[1] - source_range[0]));
+                    Some(t)
                 })?;
             if matches!(pcurve, PcurveGeometry::Line(_)) {
                 Some((t - source_range[0]) / (source_range[1] - source_range[0]))
@@ -733,8 +932,9 @@ where
             }
         });
         if let Some(circle) = sphere_circle {
-            stations = stations.map(|t| t.map(|t| circle.chart_station(t)));
-            primary_stations = primary_stations.map(|t| t.map(|t| circle.chart_station(t)));
+            stations = stations.map(|station| station.map(|t| circle.chart_station(t)));
+            primary_stations =
+                primary_stations.map(|station| station.map(|t| circle.chart_station(t)));
         }
         if domain.line {
             let [lo, hi] = stations
@@ -779,8 +979,57 @@ where
             primary_stations,
             sphere_circle,
             alternate_line,
+            symmetric_line,
             inferred_accuracy,
         })
+    }
+
+    fn extrusion_ring_carrier(
+        &self,
+        ir: &CadIr,
+        support: usize,
+        owner: usize,
+        current: [[f64; 2]; 2],
+        carriers: &BTreeMap<usize, usize>,
+        refusal: &mut LaneRefusals,
+    ) -> Option<Carrier<'_>> {
+        let ring = self.records.get(owner)?;
+        let bytes = payload(self.bytes, ring)?;
+        let (refs, mut at) = match (ring.family(), *bytes.first()?) {
+            (Family::A, 0x08) => (usize::from(*bytes.get(1)?), 2),
+            (_, lead) => (usize::from(lead.checked_sub(0x80)?), 1),
+        };
+        if refs < 5 || refs % 2 != 1 {
+            return None;
+        }
+        for _ in 0..refs {
+            allocation_reference(bytes, &mut at)?;
+        }
+        let bounds = ring_tail(bytes.get(at..)?, refs / 2, false)?
+            .bounds()?
+            .chart;
+        if current
+            .into_iter()
+            .zip(bounds)
+            .all(|([a, b], [lo, hi])| lo >= a - CHART_SLACK && hi <= b + CHART_SLACK)
+        {
+            return None;
+        }
+        let record = self.records.get(support)?;
+        if (record.family(), record.class()) != (Family::B, 0x30) {
+            return None;
+        }
+        let bridge = offset_bridge(payload(self.bytes, record)?)?;
+        if bridge.kind != 0x21 {
+            return None;
+        }
+        let result = (self.resolve)(support, bridge.result)?;
+        let target = self.records.get(result)?;
+        if (target.family(), target.class()) != (Family::B, 0x2c) {
+            return None;
+        }
+        let chart = Extrusion::read(payload(self.bytes, target)?, bridge.bounds)?;
+        self.offset_extrusion(ir, result, &chart, Some(bounds), carriers, refusal)
     }
 
     pub(super) fn decode<'a>(
@@ -808,6 +1057,12 @@ where
             return None;
         }
         let carrier = self.carrier(ir, support, carriers, refusal)?;
+        let carrier = if matches!(carrier, Carrier::Extrusion(_)) {
+            self.extrusion_ring_carrier(ir, support, owner, carrier.bounds()?, carriers, refusal)
+                .unwrap_or(carrier)
+        } else {
+            carrier
+        };
         let outer = self.ring(owner, support, &carrier, false, refusal)?;
         let inner = inner
             .into_iter()
@@ -843,16 +1098,79 @@ where
         if refs % 2 != 1 || count < 2 {
             return None;
         }
-        let trims = (0..count)
-            .map(|_| self.trim(owner, bytes, &mut at, carrier, refusal))
+        let rolling = matches!(
+            carrier,
+            Carrier::RollingBall(..) | Carrier::OwnedRollingBall { .. }
+        );
+        let mut positions = Vec::new();
+        let mut trims = (0..count)
+            .map(|_| {
+                if rolling {
+                    positions.push(at);
+                }
+                self.trim(owner, bytes, &mut at, carrier, refusal, None)
+            })
             .collect::<Option<Vec<_>>>()?;
         if (self.resolve)(owner, allocation_reference(bytes, &mut at)?)? != support {
             return None;
         }
         let tail = bytes.get(at..)?;
         let bounds = ring_tail(tail, count, inner)?.bounds();
+        if matches!(carrier, Carrier::Cylinder(_)) {
+            let controls =
+                |trim: &Trim| compact_line_control(self.bytes, &self.records[trim.source]);
+            if trims.iter().any(|trim| controls(trim) == Some(0x1d)) {
+                let [_, axial] = carrier.bounds()?;
+                restore_cylinder_lower_trim(&mut trims, axial, controls)?;
+            }
+        }
+        if rolling {
+            for i in 0..trims.len() {
+                let j = (i + 1) % trims.len();
+                let Some((vertex, a, b)) = split_line_junction(&trims[i], &trims[j]) else {
+                    continue;
+                };
+                let refit = |index, refusal: &mut LaneRefusals| {
+                    let mut at = positions[index];
+                    self.trim(owner, bytes, &mut at, carrier, refusal, Some(vertex))
+                };
+                let (Some(first), Some(second)) = (refit(i, refusal), refit(j, refusal)) else {
+                    continue;
+                };
+                let point = |trim: &Trim, endpoint: usize| {
+                    carrier.evaluate(clamp_chart(
+                        carrier,
+                        trim.uv(trim.primary_stations[endpoint]?)?,
+                    )?)
+                };
+                if point(&first, a)
+                    .zip(point(&second, b))
+                    .is_some_and(|(p, q)| p.distance(q) <= GAP_MM)
+                {
+                    trims[i] = first;
+                    trims[j] = second;
+                }
+            }
+        }
         Some(Ring { trims, bounds })
     }
+}
+
+fn split_line_junction(first: &Trim, second: &Trim) -> Option<(usize, usize, usize)> {
+    if first.source != second.source || !matches!(first.pcurve, PcurveGeometry::Line(_)) {
+        return None;
+    }
+    let mut pairs = first.vertices.iter().enumerate().filter_map(|(a, vertex)| {
+        let b = second.vertices.iter().position(|other| other == vertex)?;
+        Some((*vertex, a, b))
+    });
+    let (vertex, a, b) = pairs.next()?;
+    (pairs.next().is_none()
+        && first.stations[a].is_none()
+        && second.stations[b].is_none()
+        && first.stations[1 - a].is_some()
+        && second.stations[1 - b].is_some())
+    .then_some((vertex, a, b))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -930,18 +1248,22 @@ pub(super) struct DecodedFace<'a> {
     inner: Vec<Ring>,
 }
 
+fn contains_model_vertices(bounds: Option<RingBounds>, sides: &[Use]) -> bool {
+    bounds.is_none_or(|bounds| {
+        sides.iter().flat_map(|side| side.vertices).all(|(_, p)| {
+            [p.x, p.y, p.z]
+                .into_iter()
+                .zip(bounds.model)
+                .all(|(coordinate, [lo, hi])| {
+                    coordinate >= lo - GAP_MM && coordinate <= hi + GAP_MM
+                })
+        })
+    })
+}
+
 impl Ring {
     fn contains_vertices(&self, sides: &[Use]) -> bool {
-        self.bounds.is_none_or(|bounds| {
-            sides.iter().flat_map(|side| side.vertices).all(|(_, p)| {
-                [p.x, p.y, p.z]
-                    .into_iter()
-                    .zip(bounds.model)
-                    .all(|(coordinate, [lo, hi])| {
-                        coordinate >= lo - GAP_MM && coordinate <= hi + GAP_MM
-                    })
-            })
-        })
+        contains_model_vertices(self.bounds, sides)
     }
 
     fn patch(
@@ -958,6 +1280,7 @@ impl Ring {
                 vertices,
                 shared_surface,
                 transverse_recovery: TransverseRecovery::None,
+                bounds: self.bounds,
             };
             let patch = fit(ir, carrier, face, member, trims, &context)?;
             self.contains_vertices(&patch.sides).then_some(patch)
@@ -1102,6 +1425,7 @@ impl DecodedFace<'_> {
                     vertices,
                     shared_surface: None,
                     transverse_recovery,
+                    bounds: self.outer.bounds,
                 };
                 let patch = fit(
                     ir,
@@ -1126,10 +1450,30 @@ impl DecodedFace<'_> {
         ir: &CadIr,
         vertices: Option<&BTreeMap<usize, Point3>>,
     ) -> Option<Patch> {
-        let carrier = &self.carrier;
-        let mut patch =
-            self.outer
-                .patch(ir, carrier, self.face_pos, self.member, vertices, None)?;
+        let expanded;
+        let (carrier, mut patch) = if let Some(patch) = self.outer.patch(
+            ir,
+            &self.carrier,
+            self.face_pos,
+            self.member,
+            vertices,
+            None,
+        ) {
+            (&self.carrier, patch)
+        } else {
+            let Carrier::OffsetTensor(surface, bounds, distance) = &self.carrier else {
+                return None;
+            };
+            let full = Carrier::Tensor(surface).bounds()?;
+            if full == *bounds {
+                return None;
+            }
+            expanded = Carrier::OffsetTensor(surface, full, *distance);
+            let patch =
+                self.outer
+                    .patch(ir, &expanded, self.face_pos, self.member, vertices, None)?;
+            (&expanded, patch)
+        };
         let outer_end = patch.sides.len();
         for ring in &self.inner {
             let member = Member {
@@ -1208,10 +1552,64 @@ fn line_geometry([a, b]: LineEndpoints) -> Option<LinePcurve> {
     .ok()
 }
 
+fn compact_line_control(bytes: &[u8], record: &ConsolidatedRecord) -> Option<u8> {
+    if (record.family(), record.class()) != (Family::B, 0x18) {
+        return None;
+    }
+    let bytes = payload(bytes, record)?;
+    let mut at = 0;
+    compact_int(bytes, &mut at)?;
+    let [control, scalars @ ..] = bytes.get(at..)? else {
+        return None;
+    };
+    matches!((*control, scalars.len()), (0x1d, 0) | (0x12, 16)).then_some(*control)
+}
+
+fn restore_cylinder_lower_trim(
+    trims: &mut [Trim],
+    [lower, upper]: [f64; 2],
+    control: impl Fn(&Trim) -> Option<u8>,
+) -> Option<()> {
+    let [a, b, c, d] = trims else {
+        return None;
+    };
+    let mut ring = [a, b, c, d];
+    let lower_index = ring.iter().position(|trim| control(trim) == Some(0x12))?;
+    ring.rotate_left(lower_index);
+    let [lower_trim, side_a, upper_trim, side_b] = ring;
+    if ![&*side_a, &*side_b]
+        .iter()
+        .any(|trim| control(trim) == Some(0x1d))
+    {
+        return None;
+    }
+    let [u0, 0.0] = lower_trim.uv(0.0)? else {
+        return None;
+    };
+    let [u1, 0.0] = lower_trim.uv(1.0)? else {
+        return None;
+    };
+    for t in [0.0, 1.0] {
+        if upper_trim.uv(t)?[1] != upper {
+            return None;
+        }
+    }
+    for side in [side_a, side_b] {
+        let [u0, v0] = side.uv(0.0)?;
+        let [u1, v1] = side.uv(1.0)?;
+        if u0 != u1 || !([v0, v1] == [lower, upper] || [v1, v0] == [lower, upper]) {
+            return None;
+        }
+    }
+    lower_trim.pcurve = PcurveGeometry::Line(line_geometry([[u0, lower], [u1, lower]])?);
+    Some(())
+}
+
 fn oblique_line(
     bytes: &[u8],
     bounds: [[f64; 2]; 2],
-) -> Option<(LineEndpoints, [f64; 2], Option<LineEndpoints>)> {
+    cropped_result: bool,
+) -> Option<(LineEndpoints, [f64; 2], Option<LineEndpoints>, bool)> {
     let mut at = 0;
     compact_int(bytes, &mut at)?;
     let mut view = View::over_retained(bytes.get(at..)?);
@@ -1262,7 +1660,9 @@ fn oblique_line(
     Some((
         ends(1.0),
         range,
-        matches!(control, 0x40 | 0x80).then(|| ends(-1.0)),
+        (matches!(control, 0x40 | 0x80) || cropped_result && matches!(control, 0x48 | 0x88))
+            .then(|| ends(-1.0)),
+        matches!(control, 0x48 | 0x88),
     ))
 }
 
@@ -1615,6 +2015,17 @@ fn extend_sphere_circles(trims: &mut [Trim], [lo, hi]: [f64; 2]) -> Option<()> {
     Some(())
 }
 
+fn repeated_implicit_line(trims: &[Trim]) -> bool {
+    trims.iter().any(|trim| {
+        trim.alternate_line.is_some()
+            && trims
+                .iter()
+                .filter(|other| other.source == trim.source)
+                .nth(1)
+                .is_some()
+    })
+}
+
 fn fit(
     ir: &CadIr,
     carrier: &Carrier<'_>,
@@ -1626,19 +2037,24 @@ fn fit(
     let try_fit = |trims: &[Trim], recover| {
         fit_with_alternate_lines(ir, carrier, face, member, trims, context, recover)
     };
-    if let Some(patch) = try_fit(trims, false) {
-        return Some(patch);
+    let mut bounded = trims.to_vec();
+    if bound_collinear_joints(&mut bounded) {
+        if let Some(patch) = try_fit(&bounded, false) {
+            return Some(patch);
+        }
+    }
+    let cropped = carrier.has_cropped_rolling_result();
+    if !cropped {
+        if let Some(patch) = try_fit(trims, false) {
+            return Some(patch);
+        }
     }
     let mut mapped = trims.to_vec();
     let mut changed = false;
     for trim in &mut mapped {
-        if !matches!(trim.pcurve, PcurveGeometry::Line(_)) {
-            changed |= apply_mapped_range(trim);
-        }
-    }
-    for trim in &mut mapped {
-        if matches!(trim.pcurve, PcurveGeometry::Line(_))
-            && trims
+        if cropped
+            || !matches!(trim.pcurve, PcurveGeometry::Line(_))
+            || trims
                 .iter()
                 .filter(|other| other.source == trim.source)
                 .nth(1)
@@ -1648,16 +2064,66 @@ fn fit(
         }
     }
     if changed {
-        if let Some(patch) = try_fit(&mapped, false) {
+        if let Some(patch) = try_fit(&mapped, false).or_else(|| try_fit(&mapped, true)) {
             return Some(patch);
         }
     }
-    if changed {
-        if let Some(patch) = try_fit(&mapped, true) {
-            return Some(patch);
+    if cropped {
+        try_fit(trims, false).or_else(|| try_fit(trims, true))
+    } else {
+        try_fit(trims, true)
+    }
+}
+
+fn bound_collinear_joints(trims: &mut [Trim]) -> bool {
+    let mut changed = false;
+    for i in 0..trims.len() {
+        let j = (i + 1) % trims.len();
+        let sides = [&trims[i], &trims[j]];
+        if !sides
+            .iter()
+            .all(|side| matches!(side.pcurve, PcurveGeometry::Line(_)))
+        {
+            continue;
+        }
+        let Some(vertex) = sides[0]
+            .vertices
+            .iter()
+            .find(|vertex| sides[1].vertices.contains(vertex))
+        else {
+            continue;
+        };
+        if sides.iter().all(|side| {
+            side.vertices
+                .iter()
+                .zip(side.stations)
+                .any(|(id, station)| id == vertex && station.is_some())
+        }) {
+            continue;
+        }
+        let mapped_ends = sides.map(|side| {
+            let range = side.mapped_range?;
+            Some([side.uv(range[0])?, side.uv(range[1])?])
+        });
+        let [Some(a), Some(b)] = mapped_ends else {
+            continue;
+        };
+        let da = delta(a[0], a[1]);
+        let db = delta(b[0], b[1]);
+        if det(da, db).abs() > PARALLEL_SINE * da[0].hypot(da[1]) * db[0].hypot(db[1]) {
+            continue;
+        }
+        let shared_ends = a
+            .into_iter()
+            .flat_map(|p| b.map(|q| delta(p, q)))
+            .filter(|d| d[0].hypot(d[1]) <= UV_JOIN)
+            .count();
+        if shared_ends == 1 {
+            changed |= apply_mapped_range(&mut trims[i]);
+            changed |= apply_mapped_range(&mut trims[j]);
         }
     }
-    try_fit(trims, true)
+    changed
 }
 
 fn apply_mapped_range(trim: &mut Trim) -> bool {
@@ -1682,9 +2148,68 @@ struct RingFit<'a> {
     vertices: Option<&'a BTreeMap<usize, Point3>>,
     shared_surface: Option<&'a SolvedSurfaceGeometry>,
     transverse_recovery: TransverseRecovery,
+    bounds: Option<RingBounds>,
 }
 
 fn fit_with_alternate_lines(
+    ir: &CadIr,
+    carrier: &Carrier<'_>,
+    face: usize,
+    member: Member,
+    trims: &[Trim],
+    context: &RingFit<'_>,
+    recover: bool,
+) -> Option<Patch> {
+    const MAX_ALTERNATE_LINES: usize = 4;
+    if !carrier.has_cropped_rolling_result() && !repeated_implicit_line(trims) {
+        return fit_with_independent_lines(ir, carrier, face, member, trims, context, recover);
+    }
+    let checked = |trims| {
+        fit_ring(ir, carrier, face, member, trims, context, recover)
+            .filter(|patch| contains_model_vertices(context.bounds, &patch.sides))
+    };
+
+    if let Some(patch) = checked(trims.to_vec()) {
+        return Some(patch);
+    }
+    let choices = trims
+        .iter()
+        .filter(|trim| trim.alternate_line.is_some())
+        .map(|trim| trim.source)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    if choices.len() > MAX_ALTERNATE_LINES {
+        return None;
+    }
+    let mut solution = None;
+    'candidate: for mask in 1..(1usize << choices.len()) {
+        let mut ring = trims.to_vec();
+        for (lane, source) in choices.iter().enumerate() {
+            if mask & (1 << lane) != 0 {
+                for trim in ring.iter_mut().filter(|trim| trim.source == *source) {
+                    let Some(line) = trim.alternate_line else {
+                        continue 'candidate;
+                    };
+                    trim.pcurve = PcurveGeometry::Line(line);
+                }
+            }
+        }
+
+        if let Some(patch) = checked(ring) {
+            if let Some(prior) = &solution {
+                if !same_patch_boundary(prior, &patch) {
+                    return None;
+                }
+            } else {
+                solution = Some(patch);
+            }
+        }
+    }
+    solution
+}
+
+fn fit_with_independent_lines(
     ir: &CadIr,
     carrier: &Carrier<'_>,
     face: usize,
@@ -1708,6 +2233,7 @@ fn fit_with_alternate_lines(
     let choices = trims
         .iter()
         .enumerate()
+        .filter(|(_, trim)| !trim.symmetric_line)
         .filter_map(|(i, trim)| Some((i, trim.alternate_line?)))
         .collect::<Vec<_>>();
     if choices.len() > MAX_ALTERNATE_LINES {
@@ -1722,12 +2248,70 @@ fn fit_with_alternate_lines(
             }
         }
         if let Some(patch) = fit_ring(ir, carrier, face, member, ring, context, recover) {
-            if solution.replace(patch).is_some() {
-                return None;
+            if let Some(prior) = &solution {
+                if !same_patch_boundary(prior, &patch) {
+                    return None;
+                }
+            } else {
+                solution = Some(patch);
             }
         }
     }
     solution
+}
+
+fn same_patch_boundary(first: &Patch, second: &Patch) -> bool {
+    first.sides.len() == second.sides.len()
+        && first.inner_starts == second.inner_starts
+        && first.sides.iter().all(|a| {
+            let Some(b) = second.sides.iter().find(|b| b.edge == a.edge) else {
+                return false;
+            };
+            let same = a.vertices[0].0 == b.vertices[0].0 && a.vertices[1].0 == b.vertices[1].0;
+            let reversed = a.vertices[0].0 == b.vertices[1].0 && a.vertices[1].0 == b.vertices[0].0;
+            if same == reversed || (a.forward == b.forward) != same {
+                return false;
+            }
+            if !a.vertices.iter().all(|(id, point)| {
+                b.vertices
+                    .iter()
+                    .any(|(other, p)| id == other && point.distance(*p) <= GAP_MM)
+            }) {
+                return false;
+            }
+            (0..=TRIM_STEPS).all(|step| {
+                let fraction = f64::from(step) / f64::from(TRIM_STEPS);
+                let a = curve_point(
+                    &a.curve,
+                    interval_parameter(a.curve.full_knot_endpoints().endpoints(), fraction),
+                );
+                let b = curve_point(
+                    &b.curve,
+                    interval_parameter(
+                        b.curve.full_knot_endpoints().endpoints(),
+                        if same { fraction } else { 1.0 - fraction },
+                    ),
+                );
+                a.zip(b).is_some_and(|(a, b)| a.distance(b) <= GAP_MM)
+            })
+        })
+}
+
+fn joint_matches_station(
+    trim: &Trim,
+    endpoint: usize,
+    parameter: f64,
+    world: impl Fn([f64; 2]) -> Option<Point3>,
+) -> bool {
+    let Some(anchor) = trim.stations[endpoint]
+        .and_then(|t| trim.uv(t))
+        .and_then(&world)
+    else {
+        return true;
+    };
+    trim.uv(parameter)
+        .and_then(world)
+        .is_some_and(|point| point.distance(anchor) <= GAP_MM)
 }
 
 fn fit_ring(
@@ -1789,7 +2373,20 @@ fn fit_ring(
             |uv| native_point(chart(uv)?),
             recover,
         )
+        .or_else(|| {
+            if !matches!(carrier, Carrier::Plane(_)) {
+                return None;
+            }
+            joint_recovery::planar_station_join(
+                [&trims[i], &trims[j]],
+                [usize::from(topological[i]), usize::from(!topological[j])],
+                point,
+                |uv| native_point(chart(uv)?),
+            )
+        })
     };
+    let mut paired_vertices = BTreeSet::new();
+    let mut tensor_station_vertices = BTreeSet::new();
     let joints = if trims.len() == 2 {
         two_edge_joints(
             &trims,
@@ -1805,18 +2402,71 @@ fn fit_ring(
                     trims[i].stations[usize::from(topological[i])],
                     trims[j].stations[usize::from(!topological[j])],
                 ];
-                witnessed(i, j)
+                let candidate = witnessed(i, j)
+                    .or_else(|| {
+                        let pair = joint_recovery::primary_spline_join(
+                            [&trims[i], &trims[j]],
+                            [usize::from(topological[i]), usize::from(!topological[j])],
+                            |uv| native_point(chart(uv)?),
+                        );
+                        if pair.is_some() {
+                            paired_vertices.insert(trims[i].vertices[usize::from(topological[i])]);
+                        }
+                        pair
+                    })
                     .or_else(|| {
                         join_at_station([&trims[i], &trims[j]], [ends[i], ends[j]], stations)
+                    })
+                    .or_else(|| {
+                        if !matches!(
+                            carrier,
+                            Carrier::Tensor(..)
+                                | Carrier::CachedTensor(..)
+                                | Carrier::OffsetTensor(..)
+                        ) {
+                            return None;
+                        }
+                        let pair = joint_recovery::tensor_station_join(
+                            [&trims[i], &trims[j]],
+                            stations,
+                            |uv| native_point(chart(uv)?),
+                        );
+                        if pair.is_some() {
+                            let vertex = trims[i].vertices[usize::from(topological[i])];
+                            paired_vertices.insert(vertex);
+                            tensor_station_vertices.insert(vertex);
+                        }
+                        pair
+                    })
+                    .or_else(|| {
+                        if !matches!(carrier, Carrier::OffsetTensor(..)) {
+                            return None;
+                        }
+                        let sides = [&trims[i], &trims[j]];
+                        if !sides.iter().zip(stations).all(|(side, station)| {
+                            side.mapped_range.is_some_and(|range| {
+                                station.is_some_and(|t| (range[0]..=range[1]).contains(&t))
+                            })
+                        }) {
+                            return None;
+                        }
+                        joint_recovery::world_join(sides, stations, |uv| native_point(chart(uv)?))
                     })
                     .or_else(|| join(&trims[i], &trims[j], ends[i], ends[j]))
                     .or_else(|| pole_join(carrier, [ends[i], ends[j]], [&trims[i], &trims[j]]))
                     .or_else(|| joint_recovery::anchored([&trims[i], &trims[j]], stations))
                     .or_else(|| joint_recovery::crossing([&trims[i], &trims[j]], stations))
                     .or_else(|| {
-                        joint_recovery::world_join([&trims[i], &trims[j]], stations, |uv| {
-                            native_point(chart(uv)?)
-                        })
+                        let world = |uv| native_point(chart(uv)?);
+                        if carrier.has_cropped_rolling_result() {
+                            joint_recovery::bounded_world_join(
+                                [&trims[i], &trims[j]],
+                                stations,
+                                world,
+                            )
+                        } else {
+                            joint_recovery::world_join([&trims[i], &trims[j]], stations, world)
+                        }
                     })
                     .or_else(|| {
                         joint_recovery::extended_join(
@@ -1834,9 +2484,52 @@ fn fit_ring(
                             native_point(chart(uv)?)
                         })
                     })
+                    .or_else(|| {
+                        if !matches!(
+                            carrier,
+                            Carrier::RollingBall(..) | Carrier::OwnedRollingBall { .. }
+                        ) {
+                            return None;
+                        }
+                        joint_recovery::mapped_endpoint_join(
+                            [&trims[i], &trims[j]],
+                            [usize::from(topological[i]), usize::from(!topological[j])],
+                            |uv| native_point(chart(uv)?),
+                        )
+                    });
+                candidate
             })
             .collect::<Option<Vec<_>>>()?
     };
+    if matches!(carrier, Carrier::Sphere(_)) || repeated_implicit_line(&trims) {
+        for (index, trim) in trims.iter().enumerate() {
+            let reflected = trim
+                .sphere_circle
+                .is_some_and(|circle| circle.equator_reflected);
+            let repeated_line = (trim.symmetric_line || matches!(carrier, Carrier::Cylinder(_)))
+                && trim.alternate_line.is_some()
+                && trims
+                    .iter()
+                    .filter(|other| other.source == trim.source)
+                    .nth(1)
+                    .is_some();
+            if !reflected && !repeated_line {
+                continue;
+            }
+            let entry = joints[(index + joints.len() - 1) % joints.len()][1];
+            let exit = joints[index][0];
+            for (endpoint, parameter) in if topological[index] {
+                [(0, entry), (1, exit)]
+            } else {
+                [(1, entry), (0, exit)]
+            } {
+                if !joint_matches_station(trim, endpoint, parameter, |uv| native_point(chart(uv)?))
+                {
+                    return None;
+                }
+            }
+        }
+    }
     let mut chart_order = Vec::new();
     for (index, trim) in trims.iter_mut().enumerate() {
         let entry = joints[(index + joints.len() - 1) % joints.len()][1];
@@ -1900,6 +2593,7 @@ fn fit_ring(
         }
         None => carrier.solved(limits, recover)?,
     };
+
     let surface = SurfaceGeometry::Solved(solved.clone());
     let forward = member.forward != carrier.reversed();
     let flip = (area > 0.0) != forward;
@@ -2009,6 +2703,32 @@ fn fit_ring(
         }
         sides.push(side);
     }
+    for vertex in paired_vertices {
+        let points = sides
+            .iter()
+            .flat_map(|side| &side.vertices)
+            .filter(|(id, _)| *id == vertex)
+            .map(|(_, point)| *point)
+            .collect::<Vec<_>>();
+        let [first, second] = points.as_slice() else {
+            return None;
+        };
+        let midpoint = Point3::new(
+            first.x.midpoint(second.x),
+            first.y.midpoint(second.y),
+            first.z.midpoint(second.z),
+        );
+        if first.distance(midpoint) > GAP_MM || second.distance(midpoint) > GAP_MM {
+            return None;
+        }
+        for side in &mut sides {
+            for (id, point) in &mut side.vertices {
+                if *id == vertex {
+                    *point = midpoint;
+                }
+            }
+        }
+    }
     if flip {
         sides.reverse();
     }
@@ -2041,6 +2761,7 @@ fn fit_ring(
 mod tests {
     use super::{line_at, ring_tail, RingBounds, RingTail};
 
+    mod carriers;
     mod recovery;
 
     #[test]
@@ -2074,7 +2795,7 @@ mod tests {
             .carrier(&ir, 10, &carriers, &mut refusal)
             .expect("fixture plane");
         let trim = source
-            .trim(0, &[0x0b, 0x17], &mut 0, &carrier, &mut refusal)
+            .trim(0, &[0x0b, 0x17], &mut 0, &carrier, &mut refusal, None)
             .expect("mapped spline trim");
         assert_eq!(trim.stations, [Some(7.0), Some(7.5)]);
         assert_eq!(trim.primary_stations, [None, None]);
@@ -2111,7 +2832,7 @@ mod tests {
             .carrier(&ir, 10, &carriers, &mut refusal)
             .expect("fixture plane");
         let trim = source
-            .trim(0, &[0x0b, 0x17], &mut 0, &carrier, &mut refusal)
+            .trim(0, &[0x0b, 0x17], &mut 0, &carrier, &mut refusal, None)
             .expect("mapped spline trim");
         assert_eq!(trim.stations, [Some(5.0), Some(6.0)]);
         assert_eq!(trim.primary_stations, [None, None]);

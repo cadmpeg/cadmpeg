@@ -2857,7 +2857,7 @@ anchor = "| `+49` | `f32le[2]` | counted owner Cartesian Z bounds |"
 name = "eight_reference_construction_tail"
 kind = "byte"
 section = "6.4"
-anchor = "An eight-reference B-family class-`37` construction payload"
+anchor = "An eight-reference B-family class-`37` rolling-ball construction payload"
 size = 14
 
 [[record.field]]
