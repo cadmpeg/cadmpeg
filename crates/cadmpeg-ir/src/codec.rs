@@ -259,7 +259,9 @@ impl DecodeResult {
     }
 
     /// Builds a result by stamping the document's source classification onto
-    /// the report body, then canonicalizing the IR and source fidelity.
+    /// the report body, then canonicalizing the IR and source fidelity: every
+    /// arena sorted by id, then every one-spelling rule in its canonical form
+    /// (§3.1).
     ///
     /// A document without source metadata yields an unclassified report for
     /// `format`, the codec's registry format. The document records the scope
@@ -295,6 +297,7 @@ impl DecodeResult {
             None => FormatIdentity::unclassified(format.as_str().to_owned()),
         };
         ir.finalize();
+        crate::design::normalize::normalize(&mut ir)?;
         Ok(Self {
             ir,
             report: DecodeReport::from_body(classification, body),

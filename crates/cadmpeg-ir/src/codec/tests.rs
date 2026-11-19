@@ -242,6 +242,31 @@ impl CodecBackend for ForeignIdentityCodec {
 }
 
 #[test]
+fn the_decode_wrapper_normalizes_a_spelling_the_decoder_left() {
+    let mut ir = unit_cube().unwrap();
+    let dimension = crate::pmi::PmiDimension {
+        modifiers: vec![crate::pmi::DimensionModifier::Other(
+            "Statistical".to_owned(),
+        )],
+        ..crate::pmi::PmiDimension::new(crate::pmi::PmiDimensionKind::Size)
+    };
+    ir.model.pmi.push(crate::pmi::PmiAnnotation::new(
+        crate::ids::PmiId::try_from("test:codec:pmi#size".to_owned()).unwrap(),
+        Vec::new(),
+        crate::pmi::PmiDefinition::Dimension(dimension),
+    ));
+    let result = decode_result(ir);
+    let crate::pmi::PmiDefinition::Dimension(dimension) = &result.ir().model.pmi[0].definition
+    else {
+        panic!("a dimension");
+    };
+    assert_eq!(
+        dimension.modifiers,
+        [crate::pmi::DimensionModifier::Statistical]
+    );
+}
+
+#[test]
 fn the_sealed_wrapper_reports_the_backend_format() {
     assert_eq!(Codec::id(&ForeignIdentityCodec), FormatId::new("selected"));
     let arena = cadmpeg_core::decode::DecodeArena::new();

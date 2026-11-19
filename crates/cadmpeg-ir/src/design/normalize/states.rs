@@ -1,0 +1,277 @@
+// SPDX-License-Identifier: Apache-2.0
+//! The positions of §5.3 and the instance-target `state` of §8.
+//!
+//! `After(Container(c))` of an ordered container `c` is the state at `c`'s
+//! rollback position, so an evaluation's `of`, a state base, a current state,
+//! and a `StateRef` name that state through its member: `Start(c)` before
+//! `c`'s first member, else the position after the member before the
+//! rollback. A target into a state that `state: None` reaches has
+//! `state: None`.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::declared_measures::DeclaredTarget;
+use crate::design::container::{Container, Rollback};
+use crate::design::evaluation::StateBase;
+use crate::design::ids::ContainerId;
+use crate::design::refs::{Evaluated, Member, Position, StateRef};
+use crate::document::{Design, Model};
+use crate::features::ConfigurationId;
+use crate::physics::solver::SolverValue;
+use crate::pmi::PmiDefinition;
+use crate::references::InstanceTarget;
+
+/// What the position and target rules read of the design, gathered before
+/// any record changes.
+#[derive(Debug, Default)]
+pub(super) struct States {
+    /// The position each ordered container's `After(Container(c))` names,
+    /// by the container's id.
+    rollbacks: BTreeMap<String, Position>,
+    /// The scope that holds each member, by its definition's id.
+    scopes: BTreeMap<Member, String>,
+    /// The active configuration of each scope and the positions of its
+    /// current states, in their one spelling.
+    current: BTreeMap<String, (Option<ConfigurationId>, Vec<Position>)>,
+}
+
+impl States {
+    pub(super) fn new(design: &Design) -> Self {
+        let containers: BTreeMap<&str, &Container> = design
+            .containers
+            .iter()
+            .map(|container| (container.id().as_str(), container))
+            .collect();
+        let rollbacks = containers
+            .keys()
+            .filter_map(|&id| {
+                rollback_position(&containers, id).map(|position| (id.to_owned(), position))
+            })
+            .collect();
+        let mut states = Self {
+            rollbacks,
+            scopes: BTreeMap::new(),
+            current: BTreeMap::new(),
+        };
+        for scope in &design.scopes {
+            let definition = scope.definition.as_str();
+            let mut stack: Vec<&str> = scope.roots.iter().map(ContainerId::as_str).collect();
+            let mut seen = BTreeSet::new();
+            while let Some(id) = stack.pop() {
+                if !seen.insert(id) {
+                    continue;
+                }
+                let Some(container) = containers.get(id) else {
+                    continue;
+                };
+                states
+                    .scopes
+                    .entry(Member::Container(container.id().clone()))
+                    .or_insert_with(|| definition.to_owned());
+                let members: Vec<&Member> = match container {
+                    Container::Ordered { members, .. } => members.iter().collect(),
+                    Container::Unordered { members, .. } => members.iter().collect(),
+                };
+                for member in members {
+                    states
+                        .scopes
+                        .entry(member.clone())
+                        .or_insert_with(|| definition.to_owned());
+                    if let Member::Container(inner) = member {
+                        stack.push(inner.as_str());
+                    }
+                }
+            }
+            let positions = scope
+                .current
+                .iter()
+                .map(|current| {
+                    let mut at = current.at.clone();
+                    states.position(&mut at);
+                    at
+                })
+                .collect();
+            states.current.insert(
+                definition.to_owned(),
+                (scope.active_configuration.clone(), positions),
+            );
+        }
+        states
+    }
+
+    /// Spells a position through its member.
+    fn position(&self, position: &mut Position) {
+        if let Position::After(Member::Container(container)) = position {
+            if let Some(rollback) = self.rollbacks.get(container.as_str()) {
+                *position = rollback.clone();
+            }
+        }
+    }
+
+    fn state_ref(&self, state: &mut StateRef) {
+        if let Evaluated::State(position) = &mut state.of {
+            self.position(position);
+        }
+    }
+
+    /// Spells every evaluation's `of`, every state base, and every current
+    /// state's position through its member.
+    pub(super) fn normalize_design(&self, design: &mut Design) {
+        for evaluation in &mut design.evaluations {
+            if let Evaluated::State(position) = &mut evaluation.of {
+                self.position(position);
+            }
+            if let Some(content) = &mut evaluation.content {
+                if let StateBase::Current(position) = &mut content.base {
+                    self.position(position);
+                }
+            }
+        }
+        for scope in &mut design.scopes {
+            for current in &mut scope.current {
+                self.position(&mut current.at);
+            }
+        }
+    }
+
+    /// Spells every `StateRef` of the model records through its member, and
+    /// clears each instance target's `state` that names what `None` names.
+    pub(super) fn normalize_model(&self, model: &mut Model) {
+        for binding in &mut model.appearance_bindings {
+            self.target(&mut binding.target);
+        }
+        for attribute in &mut model.attributes {
+            self.target(&mut attribute.target);
+        }
+        for annotation in &mut model.pmi {
+            for target in &mut annotation.targets {
+                self.target(target);
+            }
+            match &mut annotation.definition {
+                PmiDefinition::DatumTarget { basis, .. } => {
+                    for target in basis {
+                        self.target(target);
+                    }
+                }
+                PmiDefinition::GeometricTolerance { zones, .. } => {
+                    for projection in zones.iter_mut().flat_map(|zone| &mut zone.projections) {
+                        for target in &mut projection.boundaries {
+                            self.target(target);
+                        }
+                        self.target(&mut projection.end);
+                    }
+                }
+                PmiDefinition::Datum { .. }
+                | PmiDefinition::DatumSystem { .. }
+                | PmiDefinition::Dimension(_)
+                | PmiDefinition::Presentation { .. } => {}
+            }
+        }
+        for layer in &mut model.presentation_layers {
+            for item in &mut layer.items {
+                self.target(item);
+            }
+        }
+        for properties in &mut model.mass_properties {
+            self.target(&mut properties.target);
+        }
+        for body in &mut model.rigid_bodies {
+            self.target(&mut body.target);
+        }
+        for collider in &mut model.colliders {
+            self.target(&mut collider.target);
+        }
+        for articulation in &mut model.articulations {
+            self.target(&mut articulation.root);
+        }
+        for settings in &mut model.solver_settings {
+            self.target(&mut settings.target);
+            for value in settings.values.values_mut() {
+                if let SolverValue::Targets { targets } = value {
+                    for target in targets {
+                        self.target(target);
+                    }
+                }
+            }
+        }
+        for tessellation in &mut model.tessellations {
+            if let Some(state) = &mut tessellation.state {
+                self.state_ref(state);
+            }
+        }
+        for measure in &mut model.declared_measures {
+            if let DeclaredTarget::State(state) = &mut measure.target {
+                self.state_ref(state);
+            }
+        }
+    }
+
+    /// Spells a target's `state` through its member, and clears it where it
+    /// names a current state of its scope in the configuration that
+    /// `state: None` reads: the configuration in use (`configuration` of
+    /// `None`), or, with no path, the scope's active configuration.
+    fn target<E>(&self, target: &mut InstanceTarget<E>) {
+        let Some(state) = &mut target.state else {
+            return;
+        };
+        self.state_ref(state);
+        let Evaluated::State(position) = &state.of else {
+            return;
+        };
+        let member = match position {
+            Position::Start(container) => Member::Container(container.clone()),
+            Position::After(member) => member.clone(),
+        };
+        let Some((active, positions)) = self
+            .scopes
+            .get(&member)
+            .and_then(|scope| self.current.get(scope))
+        else {
+            return;
+        };
+        let configuration_reads = state.configuration.is_none()
+            || (target.path.is_none() && state.configuration == *active);
+        if configuration_reads && positions.contains(position) {
+            target.state = None;
+        }
+    }
+}
+
+/// The position an ordered container's `After(Container(c))` names: its
+/// rollback position spelled through its member, following a member that is
+/// itself an ordered container. `None` for an unordered container, where a
+/// rollback names no member of its container, or where containers nest in a
+/// cycle.
+fn rollback_position(containers: &BTreeMap<&str, &Container>, id: &str) -> Option<Position> {
+    let mut id = id;
+    for _ in 0..=containers.len() {
+        let Container::Ordered {
+            id: container,
+            members,
+            rollback,
+            ..
+        } = containers.get(id)?
+        else {
+            return None;
+        };
+        let at = match rollback {
+            Rollback::End => members.len(),
+            Rollback::Before(member) => members.iter().position(|listed| listed == member)?,
+        };
+        let Some(before) = at.checked_sub(1) else {
+            return Some(Position::Start(container.clone()));
+        };
+        match &members[before] {
+            Member::Container(inner)
+                if matches!(
+                    containers.get(inner.as_str()),
+                    Some(Container::Ordered { .. })
+                ) =>
+            {
+                id = inner.as_str();
+            }
+            member => return Some(Position::After(member.clone())),
+        }
+    }
+    None
+}
