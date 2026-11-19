@@ -3,14 +3,136 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "creo:model:timeline#root",
+            "kind": "timeline",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "creo:model:feature#41"
+              },
+              {
+                "kind": "feature",
+                "value": "creo:model:feature#42"
+              },
+              {
+                "kind": "feature",
+                "value": "creo:model:feature#43"
+              },
+              {
+                "kind": "feature",
+                "value": "creo:model:feature#44"
+              },
+              {
+                "kind": "feature",
+                "value": "creo:model:feature#45"
+              }
+            ],
+            "rollback": {
+              "kind": "end"
+            }
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "fillet"
+              }
+            }
+          },
+          "id": "creo:model:feature#41",
+          "name": "Round id 41"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "native",
+              "value": {
+                "kind": "creo:Future Feature",
+                "native_options": {},
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "creo:model:feature#42",
+          "name": "Future Feature id 42"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "datum"
+              }
+            }
+          },
+          "id": "creo:model:feature#43",
+          "name": "Datum Plane id 43"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "draft"
+              }
+            }
+          },
+          "id": "creo:model:feature#44",
+          "name": "Draft id 44"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "native",
+              "value": {
+                "kind": "creo:ySurface",
+                "native_options": {},
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "creo:model:feature#45",
+          "name": "ySurface id 45"
+        }
+      ],
       "names": [],
       "parameters": [],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "creo:model:feature#45"
+                }
+              },
+              "bodies": [],
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "creo:model:product_definition#root",
+          "occurrences": {},
+          "roots": [
+            "creo:model:timeline#root"
+          ]
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -178,7 +300,23 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "creo:model:product_definition#root",
+          "instance_bodies": [],
+          "kind": "part",
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],
