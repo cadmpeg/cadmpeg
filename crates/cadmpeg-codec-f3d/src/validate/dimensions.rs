@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Validate Design dimension recipes, locus pairs and groups, and their frames.
 
-use super::Ctx;
+use super::{design_stream, push_constant_finding, Ctx};
+use crate::{design, records};
+use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_ir::report::check::{Check, Finding};
+use std::collections::HashSet;
 
 /// Validate dimension recipe records; returns the owned recipe ids.
 pub(super) fn validate_dimension_recipe_records<'a>(
