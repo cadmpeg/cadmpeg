@@ -159,9 +159,9 @@ fn parameter_tolerances_need_a_quantity() {
     angle.tolerance = Some(Tolerance::Fit {
         fit: LimitsAndFits {
             form_variance: "H".to_owned(),
-            zone_variance: "hole".to_owned(),
+            zone: crate::pmi::FitZone::Hole,
             grade: "7".to_owned(),
-            source: "ISO 286".to_owned(),
+            source: Some(crate::pmi::FitStandard::Iso286),
         },
         mate: None,
         deviations: None,

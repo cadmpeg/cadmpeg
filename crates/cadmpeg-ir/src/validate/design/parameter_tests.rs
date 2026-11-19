@@ -26,7 +26,7 @@ use crate::design::spreadsheet::Spreadsheet;
 use crate::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use crate::document::CadIr;
 use crate::ids::ProductDefinitionId;
-use crate::pmi::LimitsAndFits;
+use crate::pmi::{FitZone, LimitsAndFits};
 use crate::process::groups::{ProcessDefinition, ProcessOwner, ProcessParameter};
 use crate::products::{
     AngularGeneral, ExternalDocument, GeneralTolerance, LinearGeneral, LinearGeneralClass,
@@ -324,9 +324,9 @@ fn fit_designations_are_capital_letters_and_a_grade() {
     ir.design.parameters[0].tolerance = Some(Tolerance::Fit {
         fit: LimitsAndFits {
             form_variance: "h".into(),
-            zone_variance: String::new(),
+            zone: FitZone::Shaft,
             grade: String::new(),
-            source: String::new(),
+            source: None,
         },
         mate: None,
         deviations: None,

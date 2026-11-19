@@ -15,8 +15,11 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
     let records = DesignRecords::of(ir);
     let mut orders = std::collections::BTreeSet::new();
     for drawing in &ir.model.drawings {
-        let mut refs_valid =
-            all_ids.contains(&drawing.object) && all_ids.contains(&drawing.native_ref);
+        let mut refs_valid = all_ids.contains(&drawing.object)
+            && drawing
+                .native_ref
+                .as_deref()
+                .is_none_or(|native| all_ids.contains(native));
         if refs_valid {
             if let Some(id) = &drawing.template {
                 refs_valid = all_ids.contains(id.as_str());

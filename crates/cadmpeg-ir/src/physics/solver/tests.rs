@@ -2,7 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use super::{Dimension, SolverSettings, SolverTarget, SolverValue};
+use super::{SolverSettings, SolverTarget, SolverValue};
+use crate::design::units::Quantity;
 use crate::ids::{OccurrenceId, SolverSettingsId};
 use crate::products::JointId;
 use crate::scalar::FiniteReal;
@@ -21,14 +22,14 @@ fn settings() -> SolverSettings {
                 "physxJoint:armature".to_owned(),
                 SolverValue::Real {
                     value: FiniteReal::new(2.0).unwrap(),
-                    dimension: Dimension::new(2, 1, 0),
+                    dimension: Quantity::of(2, 1, 0, 0),
                 },
             ),
             (
                 "physxJoint:jointFriction".to_owned(),
                 SolverValue::Real {
                     value: FiniteReal::new(0.1).unwrap(),
-                    dimension: Dimension::NONE,
+                    dimension: Quantity::REAL,
                 },
             ),
             (
@@ -56,11 +57,11 @@ fn solver_settings_round_trip_through_json() {
     assert_eq!(json["target"]["entity"]["kind"], "joint");
     assert_eq!(
         json["values"]["physxJoint:armature"]["dimension"],
-        serde_json::json!({"length": 2, "mass": 1, "angle": 0})
+        serde_json::json!({"length": 2, "mass": 1, "angle": 0, "time": 0})
     );
     assert_eq!(
         json["values"]["physxJoint:jointFriction"]["dimension"],
-        serde_json::json!({"length": 0, "mass": 0, "angle": 0})
+        serde_json::json!({"length": 0, "mass": 0, "angle": 0, "time": 0})
     );
     assert_eq!(
         serde_json::from_value::<SolverSettings>(json).unwrap(),
@@ -69,10 +70,10 @@ fn solver_settings_round_trip_through_json() {
 }
 
 #[test]
-fn a_dimension_converts_by_the_powers_of_its_units() {
-    let torque_per_degree = Dimension::new(2, 1, -1);
-    let factor = torque_per_degree.factor(1000.0, 2.0, std::f64::consts::PI / 180.0);
-    let expected = 1000.0 * 1000.0 * 2.0 * 180.0 / std::f64::consts::PI;
+fn a_quantity_converts_by_the_powers_of_its_units() {
+    let torque_per_degree = Quantity::of(2, 1, -1, -2);
+    let factor = torque_per_degree.factor(1000.0, 2.0, std::f64::consts::PI / 180.0, 60.0);
+    let expected = 1000.0 * 1000.0 * 2.0 * 180.0 / std::f64::consts::PI / 3600.0;
     assert!((factor - expected).abs() <= expected * f64::EPSILON * 4.0);
-    assert_eq!(Dimension::NONE.factor(1000.0, 2.0, 3.0), 1.0);
+    assert_eq!(Quantity::REAL.factor(1000.0, 2.0, 3.0, 4.0), 1.0);
 }
