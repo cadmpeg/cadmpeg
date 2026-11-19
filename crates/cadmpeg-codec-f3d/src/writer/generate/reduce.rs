@@ -28,7 +28,9 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{EdgeId, PointId, VertexId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
-use cadmpeg_ir::topology::{Color, EdgeEnds, FaceLoops, LoopBoundary, Point, ShellMember, Vertex};
+use cadmpeg_ir::topology::{
+    Color, EdgeCarrier, EdgeEnds, FaceLoops, LoopBoundary, Point, ShellMember, Vertex,
+};
 use serde_json::Value;
 
 use crate::loss::F3dLossCode;
@@ -160,9 +162,11 @@ impl<'a> Reduction<'a> {
         self.strip_carrier_metadata();
         self.complete_vertex_free_edges()?;
         self.drop_pole_loops();
+        self.state_open_edge_ranges()?;
         self.write_attributes_in_their_native_form();
         self.reduce_procedural_carriers();
         self.drop_unwritable_pcurves();
+        self.allocate_appearance_guids();
         self.drop_unwritable_appearances();
         Ok(())
     }
@@ -436,6 +440,94 @@ impl<'a> Reduction<'a> {
         ));
     }
 
+    /// An open edge that states no parameter range spans its vertices; the
+    /// F3D edge record stores the range, so the writer states the vertices'
+    /// parameters on the carrier, the exact form of the same edge. An edge
+    /// whose vertices do not invert onto its carrier keeps no range.
+    fn state_open_edge_ranges(&mut self) -> Result<(), CodecError> {
+        let geometry = &self.ir.geometry;
+        let open = geometry
+            .edges
+            .iter()
+            .enumerate()
+            .filter(|(_, edge)| {
+                edge.param_range().is_none()
+                    && edge.curve().is_some()
+                    && edge
+                        .ends
+                        .as_ref()
+                        .is_some_and(|ends| ends.start != ends.end)
+            })
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        if open.is_empty() {
+            return Ok(());
+        }
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
+        let index = cadmpeg_ir::index::ModelIndex::new_model_only(&self.ir);
+        let points = geometry
+            .points
+            .iter()
+            .map(|point| (point.id.as_str(), point.position().get()))
+            .collect::<HashMap<_, _>>();
+        let positions = geometry
+            .vertices
+            .iter()
+            .filter_map(|vertex| Some((vertex.id.as_str(), *points.get(vertex.point.as_str())?)))
+            .collect::<HashMap<_, _>>();
+        let curves = geometry
+            .curves
+            .iter()
+            .map(|curve| (curve.id.as_str(), curve))
+            .collect::<HashMap<_, _>>();
+        let mut ranges = Vec::new();
+        for edge_index in open {
+            let edge = &geometry.edges[edge_index];
+            let (Some(curve), Some(ends)) = (edge.curve(), edge.ends.as_ref()) else {
+                continue;
+            };
+            let (Some(start), Some(end)) = (
+                positions.get(ends.start.as_str()),
+                positions.get(ends.end.as_str()),
+            ) else {
+                continue;
+            };
+            let invert = |point, seed| {
+                cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
+                    &ctx, &index, curve, point, seed,
+                )
+                .map(|parameter| parameter.map(cadmpeg_ir::scalar::FiniteReal::get))
+            };
+            let Some(first) = invert(*start, 0.0)? else {
+                continue;
+            };
+            let Some(mut last) = invert(*end, first)? else {
+                continue;
+            };
+            let periodic = curves.get(curve.as_str()).is_some_and(|curve| {
+                matches!(
+                    curve.geometry.solved(),
+                    Some(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_))
+                )
+            });
+            if last <= first && periodic {
+                last += std::f64::consts::TAU;
+            }
+            if last > first {
+                ranges.push((edge_index, curve.clone(), [first, last]));
+            }
+        }
+        drop(index);
+        let geometry = &mut self.ir.to_mut().geometry;
+        for (edge_index, curve, range) in ranges {
+            if let Ok(carrier) = EdgeCarrier::new(Some(curve), Some(range)) {
+                geometry.edges[edge_index].carrier = carrier;
+            }
+        }
+        Ok(())
+    }
+
     /// A loop that is one vertex at a surface singularity has no ASM record:
     /// the face's surface states the pole. Each such loop that is not a face's
     /// classified outer loop is dropped, with its vertex where nothing else
@@ -641,13 +733,38 @@ impl<'a> Reduction<'a> {
         geometry
             .pcurves
             .retain(|pcurve| !ids.contains(pcurve.id.as_str()));
-        let mut reported = HashSet::new();
+        let mut by_reason = std::collections::BTreeMap::<String, BTreeSet<String>>::new();
         for (id, error) in unwritable {
-            if reported.insert(id.clone()) {
-                self.losses
-                    .push(F3dLossCode::WriterPcurveOmitted.note(format!(
-                        "pcurve {id} was omitted and its coedge uses dropped: {error}"
-                    )));
+            by_reason
+                .entry(error.to_string())
+                .or_default()
+                .insert(id.to_string());
+        }
+        for (reason, ids) in by_reason {
+            self.losses.push(F3dLossCode::WriterPcurveOmitted.note(format!(
+                "{} pcurve(s) were omitted with their coedge uses, and Fusion recomputes them ({reason}): {}",
+                ids.len(),
+                ids.into_iter().collect::<Vec<_>>().join(", ")
+            )));
+        }
+    }
+
+    /// A Protein asset is keyed by a GUID. An appearance that states none (a
+    /// source of another format) takes one the writer allocates from its id,
+    /// the same for the same id on every write.
+    fn allocate_appearance_guids(&mut self) {
+        if self
+            .ir
+            .model
+            .appearances
+            .iter()
+            .all(|appearance| appearance.visual_guid.is_some() || appearance.asset_guid.is_some())
+        {
+            return;
+        }
+        for appearance in &mut self.ir.to_mut().model.appearances {
+            if appearance.visual_guid.is_none() && appearance.asset_guid.is_none() {
+                appearance.asset_guid = Some(allocated_guid(appearance.id.as_str()));
             }
         }
     }
@@ -752,20 +869,35 @@ impl<'a> Reduction<'a> {
             .namespace("f3d")
             .and_then(|namespace| crate::native::F3dNative::load(namespace).ok());
         let without_native = crate::native::F3dNative::default();
-        let mut unwritable = Vec::new();
-        let mut native_blamed = false;
-        for body in &bodies {
+        let writes = |group: &[String], native: &crate::native::F3dNative| {
             let mut alone = CadIr::empty();
             alone.tolerances = self.ir.tolerances;
-            alone.geometry = Reach::subset(&self.ir.geometry, &reach.from([body.as_str()]));
-            if writes_alone(&alone, native.as_ref().unwrap_or(&without_native), stage) {
+            alone.geometry = reach.subset(
+                &self.ir.geometry,
+                &reach.from(group.iter().map(String::as_str)),
+            );
+            writes_alone(&alone, native, stage)
+        };
+        // Bisect: a group that writes clears its bodies; a failing group is
+        // halved until each failing body stands alone.
+        let mut unwritable = Vec::new();
+        let mut native_blamed = false;
+        let mut pending = vec![bodies.as_slice()];
+        while let Some(group) = pending.pop() {
+            if writes(group, native.as_ref().unwrap_or(&without_native)) {
                 continue;
             }
-            if native.is_some() && writes_alone(&alone, &without_native, stage) {
-                native_blamed = true;
-            } else {
-                unwritable.push(body.clone());
+            if let [body] = group {
+                if native.is_some() && writes(group, &without_native) {
+                    native_blamed = true;
+                } else {
+                    unwritable.push(body.clone());
+                }
+                continue;
             }
+            let (first, second) = group.split_at(group.len() / 2);
+            pending.push(second);
+            pending.push(first);
         }
         if unwritable.is_empty() {
             if native_blamed {
@@ -1009,6 +1141,25 @@ fn omit_vertex_free_edge(geometry: &mut cadmpeg_ir::document::Topology, edge: &E
     true
 }
 
+/// A hyphenated GUID allocated from `id`: the first 16 bytes of its SHA-256.
+fn allocated_guid(id: &str) -> String {
+    use sha2::Digest as _;
+    let digest = sha2::Sha256::digest(id.as_bytes());
+    let hex = digest[..16].iter().fold(String::new(), |mut hex, byte| {
+        use std::fmt::Write as _;
+        write!(hex, "{byte:02x}").expect("a String takes every write");
+        hex
+    });
+    format!(
+        "{}-{}-{}-{}-{}",
+        &hex[..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..]
+    )
+}
+
 fn mentions(value: &Value, removed: &BTreeSet<String>) -> bool {
     match value {
         Value::String(text) => removed.contains(text),
@@ -1174,6 +1325,8 @@ fn procedural_reductions(ir: &CadIr) -> Vec<ProceduralReduction> {
 struct Reach {
     adjacency: HashMap<String, Vec<String>>,
     every: BTreeSet<String>,
+    /// Each record's arena (in [`for_each_geometry_arena`] order) and row.
+    rows: HashMap<String, (usize, usize)>,
 }
 
 macro_rules! for_each_geometry_arena {
@@ -1203,11 +1356,14 @@ impl Reach {
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
         let mut adjacency = HashMap::<String, Vec<String>>::new();
         let mut every = BTreeSet::new();
+        let mut rows = HashMap::new();
+        let mut arena_ordinal = 0usize;
         macro_rules! forward {
             ($($field:ident),*) => {$(
-                for row in &geometry.$field {
+                for (row_ordinal, row) in geometry.$field.iter().enumerate() {
                     let owner = row.id.as_str();
                     every.insert(owner.to_owned());
+                    rows.insert(owner.to_owned(), (arena_ordinal, row_ordinal));
                     row.visit_identity_references(&ctx, &mut |target| {
                         if target != owner {
                             adjacency.entry(owner.to_owned()).or_default().push(target.to_owned());
@@ -1215,6 +1371,7 @@ impl Reach {
                         Ok(())
                     })?;
                 }
+                arena_ordinal += 1;
             )*};
         }
         for_each_geometry_arena!(forward);
@@ -1229,7 +1386,11 @@ impl Reach {
             )*};
         }
         owned!(regions => body, shells => region, faces => shell, loops => face, coedges => owner_loop);
-        Ok(Self { adjacency, every })
+        Ok(Self {
+            adjacency,
+            every,
+            rows,
+        })
     }
 
     fn from<'b>(&self, bodies: impl IntoIterator<Item = &'b str>) -> HashSet<String> {
@@ -1248,20 +1409,35 @@ impl Reach {
         reachable
     }
 
-    /// The records of `geometry` in `reachable`.
+    /// The records of `geometry` in `reachable`, in arena order.
     fn subset(
+        &self,
         geometry: &cadmpeg_ir::document::Topology,
         reachable: &HashSet<String>,
     ) -> cadmpeg_ir::document::Topology {
+        let mut selected = Vec::<Vec<usize>>::new();
+        for id in reachable {
+            if let Some(&(arena, row)) = self.rows.get(id) {
+                if selected.len() <= arena {
+                    selected.resize_with(arena + 1, Vec::new);
+                }
+                selected[arena].push(row);
+            }
+        }
+        for rows in &mut selected {
+            rows.sort_unstable();
+        }
         let mut subset = cadmpeg_ir::document::Topology::default();
+        let mut arena = 0usize;
         macro_rules! copy {
             ($($field:ident),*) => {$(
-                subset.$field = geometry
-                    .$field
-                    .iter()
-                    .filter(|row| reachable.contains(row.id.as_str()))
-                    .cloned()
+                subset.$field = selected
+                    .get(arena)
+                    .into_iter()
+                    .flatten()
+                    .map(|&row| geometry.$field[row].clone())
                     .collect();
+                arena += 1;
             )*};
         }
         for_each_geometry_arena!(copy);
