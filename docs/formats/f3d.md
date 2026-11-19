@@ -3118,7 +3118,7 @@ The body entry is a record of type `ABA79BE7-D8D2-4C17-B59B-C2035E111F77`, type 
 | — | u64 | the `Extrude` scope's first persistent identity |
 | — | u8 | `0` |
 | — | u32 | `1` |
-| — | reference | nullable reference: `0`, or the eleven-byte form |
+| — | u8 | `0`, a null reference |
 | — | u8 | `0` |
 | — | header | paired indexed header, followed by nine zero bytes |
 
