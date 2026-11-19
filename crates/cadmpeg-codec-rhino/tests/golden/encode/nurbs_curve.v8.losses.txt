@@ -1,0 +1,1 @@
+{"code":{"kind":"namespaced","value":{"namespace":"rhino","code":"target.source-dialect-displaced","kind":"source_dialect_displaced","strict_floor":"warning"}},"severity":"warning","message":"source dialect rhino:archive-50 was displaced by target dialect rhino:archive-80; the source dialect identity is not preserved"}

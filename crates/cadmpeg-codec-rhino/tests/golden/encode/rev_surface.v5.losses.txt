@@ -1,0 +1,1 @@
+{"code":{"kind":"namespaced","value":{"namespace":"rhino","code":"writer.procedural-construction-reduced","kind":"procedural_reduced"}},"severity":"warning","message":"the archive states no procedural construction: 1 construction record(s) omitted, their carriers written from the solved cache: rhino:object:procedural-surface#record-000000-offset-177"}

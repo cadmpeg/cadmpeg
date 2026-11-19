@@ -370,29 +370,22 @@ fn brep_and_free_geometry_round_trip_in_one_archive() {
 }
 
 #[test]
-fn open_planar_solid_is_rejected_before_output() {
+fn open_planar_solid_omits_the_body() {
     let mut ir = adjacent_quad_sheet();
     ir.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(error.to_string().contains("incidence"));
-    assert_eq!(output, [0xaa]);
+    let body = ir.geometry.bodies[0].id.to_string();
+    let (bytes, losses) = super::write_reported(&ir, RhinoArchiveVersion::V8);
+    let message =
+        super::loss_naming(&losses, crate::loss::RhinoLossCode::WriterBodyOmitted, &body);
+    assert!(message.contains("incidence"), "{message}");
+    assert!(super::decoded(bytes).geometry.bodies.is_empty());
 }
 
 /// A stated tolerance finer than the Rhino Brep write route resolves.
 const EPS_BELOW_WRITE_BOUND: f64 = 1.0e-12;
 
-/// Decimal rendering of `EPS_BELOW_WRITE_BOUND` in a refusal message.
-const EPS_BELOW_WRITE_BOUND_TEXT: &str = "0.000000000001";
-
 #[test]
-fn sub_resolution_edge_tolerance_is_refused_before_output() {
+fn sub_resolution_edge_tolerance_is_checked_at_the_write_bound_and_reported() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
@@ -402,23 +395,18 @@ fn sub_resolution_edge_tolerance_is_refused_before_output() {
         cadmpeg_ir::scalar::PositiveReal::new(EPS_BELOW_WRITE_BOUND)
             .expect("positive finite tolerance"),
     );
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("a stated tolerance below the write bound must not be widened");
-    assert!(matches!(&error, cadmpeg_core::CodecError::InvalidInput(_)));
-    let message = error.to_string();
-    assert!(message.contains(EPS_BELOW_WRITE_BOUND_TEXT), "{message}");
-    assert!(message.contains("edge#polygon.0"), "{message}");
-    assert_eq!(output, [0xaa]);
+    let id = ir.geometry.edges[0].id.to_string();
+    assert!(id.contains("edge#polygon.0"));
+    let (bytes, losses) = super::write_reported(&ir, RhinoArchiveVersion::V8);
+    super::loss_naming(
+        &losses,
+        crate::loss::RhinoLossCode::WriterToleranceAdjusted,
+        &id,
+    );
+    assert_eq!(super::decoded(bytes).geometry.bodies.len(), 1);
 }
-
 #[test]
-fn sub_resolution_face_tolerance_is_refused_before_output() {
+fn sub_resolution_face_tolerance_is_checked_at_the_write_bound_and_reported() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
@@ -428,21 +416,16 @@ fn sub_resolution_face_tolerance_is_refused_before_output() {
         cadmpeg_ir::scalar::PositiveReal::new(EPS_BELOW_WRITE_BOUND)
             .expect("positive finite tolerance"),
     );
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("a stated tolerance below the write bound must not be widened");
-    assert!(matches!(&error, cadmpeg_core::CodecError::InvalidInput(_)));
-    let message = error.to_string();
-    assert!(message.contains(EPS_BELOW_WRITE_BOUND_TEXT), "{message}");
-    assert!(message.contains("face#polygon"), "{message}");
-    assert_eq!(output, [0xaa]);
+    let id = ir.geometry.faces[0].id.to_string();
+    assert!(id.contains("face#polygon"));
+    let (bytes, losses) = super::write_reported(&ir, RhinoArchiveVersion::V8);
+    super::loss_naming(
+        &losses,
+        crate::loss::RhinoLossCode::WriterToleranceAdjusted,
+        &id,
+    );
+    assert_eq!(super::decoded(bytes).geometry.bodies.len(), 1);
 }
-
 #[test]
 fn planar_solid_orientation_is_translation_and_scale_invariant() {
     use crate::writer::{model::WritableModel, planar_solid_orientation};

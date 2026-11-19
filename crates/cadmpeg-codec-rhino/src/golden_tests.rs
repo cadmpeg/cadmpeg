@@ -88,15 +88,23 @@ const ENCODE_TARGETS: [(&str, RhinoArchiveVersion); 2] = [
     ("v8", RhinoArchiveVersion::V8),
 ];
 
-/// The archive [`RhinoCodec`] produces for one target, or the refusal it
-/// reports.
+/// What one encode produced: the archive with the losses its report charges.
+#[derive(PartialEq)]
+struct Written {
+    archive: Vec<u8>,
+    /// One JSON line per loss, in report order.
+    losses: String,
+}
+
+/// The archive [`RhinoCodec`] produces for one target with its losses, or the
+/// refusal it reports. A produced archive must decode.
 ///
 /// The request is [`TargetRequest::Explicit`], which is what the golden name
 /// `<fixture>.v5.bin` states: this fixture written at archive 50, whatever the
 /// fixture's own archive word is. The `Inherit` path resolves against the source
 /// instead and so cannot be pinned per target; it is covered by the unit tests
 /// in `writer/tests/targets.rs`.
-fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<Vec<u8>, String>> {
+fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<Written, String>> {
     let decoded = EditableDecodeResult::from(
         RhinoCodec
             .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
@@ -108,9 +116,27 @@ fn encode_outcome(bytes: &[u8], version: RhinoArchiveVersion) -> Option<Result<V
         EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
         TargetRequest::Explicit(version.descriptor().id.as_str()),
     )
-    .and_then(|plan| plan.write_to(&mut encoded));
+    .and_then(|plan| {
+        let losses = plan.report().losses.clone();
+        plan.write_to(&mut encoded)?;
+        Ok(losses)
+    });
     Some(match written {
-        Ok(_) => Ok(encoded),
+        Ok(losses) => {
+            if let Err(error) = RhinoCodec.decode(
+                &mut Cursor::new(encoded.clone()),
+                &DecodeOptions::default(),
+            ) {
+                panic!("the {version:?} archive the encoder wrote does not decode: {error}");
+            }
+            Ok(Written {
+                archive: encoded,
+                losses: losses
+                    .iter()
+                    .map(|loss| serde_json::to_string(loss).expect("serialize loss") + "\n")
+                    .collect(),
+            })
+        }
         Err(error) => Err(error.to_string()),
     })
 }
@@ -123,15 +149,32 @@ fn check_encode_branch(fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<Stri
     for (name, bytes) in fixtures {
         for (target, version) in ENCODE_TARGETS {
             let archive = dir.join(format!("{name}.{target}.bin"));
+            let losses = dir.join(format!("{name}.{target}.losses.txt"));
             let refusal = dir.join(format!("{name}.{target}.err.txt"));
             match encode_outcome(bytes, version) {
                 None => {}
-                Some(Ok(written)) => {
+                Some(Ok(Written {
+                    archive: written,
+                    losses: written_losses,
+                })) => {
                     produced.insert(format!("{name}.{target}.bin"));
+                    produced.insert(format!("{name}.{target}.losses.txt"));
                     if update {
                         write_golden(&archive, &written);
+                        write_golden(&losses, written_losses.as_bytes());
                         remove_golden(&refusal);
                         continue;
+                    }
+                    match std::fs::read_to_string(&losses) {
+                        Ok(expected) if expected.replace("\r\n", "\n") == written_losses => {}
+                        Ok(_) => failures.push(format!(
+                            "fixture `{name}` target {target}: export losses differ from {}",
+                            losses.display()
+                        )),
+                        Err(error) => failures.push(format!(
+                            "fixture `{name}` target {target}: cannot read {} ({error}); regenerate with `{REGENERATE}`",
+                            losses.display()
+                        )),
                     }
                     match std::fs::read(&archive) {
                         Ok(expected) if expected == written => {}
@@ -152,6 +195,7 @@ fn check_encode_branch(fixtures: &[(String, Vec<u8>)], update: bool) -> Vec<Stri
                     if update {
                         write_golden(&refusal, written.as_bytes());
                         remove_golden(&archive);
+                        remove_golden(&losses);
                         continue;
                     }
                     match std::fs::read_to_string(&refusal) {

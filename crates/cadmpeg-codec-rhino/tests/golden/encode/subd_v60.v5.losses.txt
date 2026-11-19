@@ -1,0 +1,3 @@
+{"code":{"kind":"namespaced","value":{"namespace":"rhino","code":"output.empty","kind":"no_exportable_solids","strict_floor":"warning"}},"severity":"warning","message":"the written archive holds no object"}
+{"code":{"kind":"namespaced","value":{"namespace":"rhino","code":"target.source-dialect-displaced","kind":"source_dialect_displaced","strict_floor":"warning"}},"severity":"warning","message":"source dialect rhino:archive-60 was displaced by target dialect rhino:archive-50; the source dialect identity is not preserved"}
+{"code":{"kind":"namespaced","value":{"namespace":"export","code":"arena.omitted","kind":"subd_omitted","strict_floor":"warning"}},"severity":"warning","message":"the rhino write does not represent model arena `subds`: 1 record(s) omitted"}

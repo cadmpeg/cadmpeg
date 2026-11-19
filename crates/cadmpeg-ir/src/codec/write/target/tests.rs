@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::resolve_write_request;
+use super::{resolve_write_request, OffCatalogSource};
 use super::TargetRequest;
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
 use crate::CadIr;
@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 #[test]
 fn an_empty_native_catalog_has_no_format_identity_request() {
     let ir = CadIr::empty();
-    let error = resolve_write_request(&ir, TargetRequest::Inherit, TargetCatalog::empty("cadir"))
+    let error = resolve_write_request(&ir, TargetRequest::Inherit, TargetCatalog::empty("cadir"), OffCatalogSource::Preserved)
         .unwrap_err();
 
     let CodecError::UnsupportedTarget(refusal) = error else {
@@ -47,7 +47,7 @@ fn catalog_write_ir(source: Option<(&str, Option<&'static str>)>) -> CadIr {
 fn write_request_resolves_an_explicit_on_catalog_target() {
     let ir = catalog_write_ir(None);
     let resolved =
-        resolve_write_request(&ir, TargetRequest::Explicit("old"), CATALOG_WRITE_CATALOG).unwrap();
+        resolve_write_request(&ir, TargetRequest::Explicit("old"), CATALOG_WRITE_CATALOG, OffCatalogSource::Preserved).unwrap();
     assert_eq!(resolved.entry().unwrap().id.as_str(), "test:old");
     assert!(!resolved.preserves_source());
     assert!(!resolved.has_same_format_source());
@@ -62,6 +62,7 @@ fn write_request_refuses_an_unknown_explicit_target_with_the_catalog() {
         &ir,
         TargetRequest::Explicit("test:missing"),
         CATALOG_WRITE_CATALOG,
+    OffCatalogSource::Preserved,
     )
     .unwrap_err();
     let CodecError::UnsupportedTarget(refusal) = error else {
@@ -85,7 +86,7 @@ fn write_request_refuses_an_unknown_explicit_target_with_the_catalog() {
 fn write_request_inherit_with_a_cross_format_source_uses_the_default() {
     let ir = catalog_write_ir(Some(("other", Some("other:only"))));
     let resolved =
-        resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG).unwrap();
+        resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG, OffCatalogSource::Preserved).unwrap();
     assert_eq!(resolved.entry().unwrap().id.as_str(), "test:new");
     assert!(!resolved.preserves_source());
     assert!(!resolved.has_same_format_source());
@@ -97,7 +98,7 @@ fn write_request_inherit_with_a_cross_format_source_uses_the_default() {
 fn write_request_inherit_refuses_a_same_format_unrecorded_source() {
     let ir = catalog_write_ir(Some(("test", None)));
     let error =
-        resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG).unwrap_err();
+        resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG, OffCatalogSource::Preserved).unwrap_err();
 
     let CodecError::UnsupportedTarget(refusal) = error else {
         panic!("an unrecorded same-format source must produce a target refusal")
@@ -116,6 +117,7 @@ fn write_request_explicit_over_an_unrecorded_source_has_no_recorded_relation() {
         &ir,
         TargetRequest::Explicit("test:old"),
         CATALOG_WRITE_CATALOG,
+    OffCatalogSource::Preserved,
     )
     .unwrap();
 
@@ -130,7 +132,7 @@ fn write_request_explicit_over_an_unrecorded_source_has_no_recorded_relation() {
 fn write_request_inherit_preserves_a_same_format_catalog_source() {
     let ir = catalog_write_ir(Some(("test", Some("test:old"))));
     let resolved =
-        resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG).unwrap();
+        resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG, OffCatalogSource::Preserved).unwrap();
     assert_eq!(resolved.entry().unwrap().id.as_str(), "test:old");
     assert!(resolved.preserves_source());
     assert!(resolved.has_same_format_source());
@@ -142,7 +144,7 @@ fn write_request_inherit_preserves_a_same_format_catalog_source() {
 fn write_request_inherit_preserves_a_same_format_off_catalog_source() {
     let ir = catalog_write_ir(Some(("test", Some("test:future"))));
     let resolved =
-        resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG).unwrap();
+        resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG, OffCatalogSource::Preserved).unwrap();
     assert_eq!(resolved.entry(), None);
     assert_eq!(resolved.target_id().as_str(), "test:future");
     assert!(resolved.preserves_source());
@@ -152,12 +154,40 @@ fn write_request_inherit_preserves_a_same_format_off_catalog_source() {
 }
 
 #[test]
+fn write_request_inherit_displaces_an_off_catalog_source_without_replay() {
+    let ir = catalog_write_ir(Some(("test", Some("test:future"))));
+    let resolved = resolve_write_request(
+        &ir,
+        TargetRequest::Inherit,
+        CATALOG_WRITE_CATALOG,
+        OffCatalogSource::Displaced,
+    )
+    .unwrap();
+    assert_eq!(resolved.entry().unwrap().id.as_str(), "test:new");
+    assert_eq!(resolved.index(), Some(1));
+    assert!(!resolved.preserves_source());
+    assert!(resolved.has_same_format_source());
+    assert!(!resolved.source_preservation_eligible());
+    assert_eq!(
+        resolved.displaced_source(),
+        Some(&cadmpeg_core::dialect_id!("test:future"))
+    );
+    assert_eq!(
+        resolved.displacement_message().as_deref(),
+        Some(
+            "source dialect test:future was displaced by target dialect test:new; the source dialect identity is not preserved"
+        )
+    );
+}
+
+#[test]
 fn catalog_write_explicit_difference_returns_the_displaced_dialect() {
     let ir = catalog_write_ir(Some(("test", Some("test:old"))));
     let resolved = resolve_write_request(
         &ir,
         TargetRequest::Explicit("test:new"),
         CATALOG_WRITE_CATALOG,
+    OffCatalogSource::Preserved,
     )
     .unwrap();
     let entry = resolved.entry().expect("expected a catalog target");

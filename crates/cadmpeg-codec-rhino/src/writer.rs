@@ -2,9 +2,11 @@
 //! Native Rhino 3DM archive writing.
 
 use crate::mesh::FaceIndexWidth;
+use std::collections::BTreeSet;
 use std::io::{Seek, SeekFrom, Write};
 
 mod model;
+mod native;
 pub(crate) mod target;
 use model::{
     WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel, WritableObjectCurve,
@@ -14,37 +16,24 @@ use model::{
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::LoopBoundaryRole;
 use sha2::{Digest, Sha256};
 
 use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
+use crate::loss::RhinoLossCode;
 use crate::RhinoArchiveVersion;
 
 const EPS_WRITE_DEGENERATE: f64 = 1.0e-10;
 
-/// Returns the IR-stated linear tolerance that governs `owner`.
-///
-/// An absent per-entity tolerance defers to the document linear tolerance.
-/// Rhino Brep write routes compare evaluated geometry against this tolerance.
-/// A stated tolerance below `EPS_WRITE_DEGENERATE` is finer than the write
-/// route resolves, so the route refuses the document instead of widening the
-/// stated value.
-fn stated_write_tolerance(
-    stated: Option<cadmpeg_ir::scalar::PositiveReal>,
-    ir: &CadIr,
-    owner: &str,
-) -> Result<f64, CodecError> {
-    let (field, value) = stated.map_or_else(
-        || ("document linear tolerance", ir.tolerances.linear.get()),
-        |tolerance| ("tolerance", tolerance.get()),
-    );
-    if value >= EPS_WRITE_DEGENERATE {
-        return Ok(value);
-    }
-    Err(CodecError::InvalidInput(format!(
-        "{field} {value} of {owner} is finer than the Rhino Brep write bound {EPS_WRITE_DEGENERATE}"
-    )))
+/// The linear tolerance the Rhino Brep write route compares evaluated
+/// geometry against: the stated per-entity tolerance, else the document linear
+/// tolerance, at least `EPS_WRITE_DEGENERATE`.
+fn stated_write_tolerance(stated: Option<cadmpeg_ir::scalar::PositiveReal>, ir: &CadIr) -> f64 {
+    stated
+        .map_or_else(|| ir.tolerances.linear.get(), |tolerance| tolerance.get())
+        .max(EPS_WRITE_DEGENERATE)
 }
 
 trait WriteSeek: Write + Seek {}
@@ -120,25 +109,32 @@ fn is_support(source: Option<&cadmpeg_ir::SourceObjectAssociation>) -> bool {
         .is_some_and(|source| source.geometry_role == Some(cadmpeg_ir::SourceGeometryRole::Support))
 }
 
+/// Writes `ir` as a 3DM archive and returns the losses of what the archive
+/// does not state.
 fn write(
     ir: &CadIr,
     version: RhinoArchiveVersion,
     output: &mut dyn Write,
-) -> Result<(), CodecError> {
+) -> Result<Vec<LossNote>, CodecError> {
     let mut staged = tempfile::tempfile()?;
-    write_seekable(ir, version, &mut staged)?;
+    let losses = write_seekable(ir, version, &mut staged)?;
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, output)?;
-    Ok(())
+    Ok(losses)
 }
 
 fn write_seekable(
     ir: &CadIr,
     version: RhinoArchiveVersion,
     output: &mut dyn WriteSeek,
-) -> Result<(), CodecError> {
+) -> Result<Vec<LossNote>, CodecError> {
     let mut plan = prepare_write(ir, version)?;
-    write_archive_prefix(ir, version, output)?;
+    write_archive_prefix(
+        ir.tolerances.linear.get(),
+        plan.angular_tolerance,
+        version,
+        output,
+    )?;
     let table_start = output.stream_position()?;
     output.write_all(&TCODE_OBJECT_TABLE.to_le_bytes())?;
     output.write_all(&0_i64.to_le_bytes())?;
@@ -146,10 +142,7 @@ fn write_seekable(
 
     plan.brep_records.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut plan.brep_records, output)?;
-    for point in ir.geometry.points.iter().filter(|point| {
-        !plan.topology_points.contains(point.id.as_str())
-            && !is_support(point.source_object.as_ref())
-    }) {
+    for (point, display) in &plan.points {
         let position = point.position().get();
         let mut payload = vec![0x10];
         payload.extend(position.x.to_le_bytes());
@@ -160,12 +153,15 @@ fn write_seekable(
             POINT_CLASS,
             &payload,
             point.id.as_str(),
-            None,
-            None,
-            None,
+            *display,
         )?)?;
     }
     for group in &plan.point_groups {
+        let display = ObjectDisplay {
+            name: group.name.as_deref(),
+            color: group.color,
+            visible: group.visible,
+        };
         if group.points.len() == 1 {
             let point = group.points[0];
             let mut payload = vec![0x10];
@@ -177,9 +173,7 @@ fn write_seekable(
                 POINT_CLASS,
                 &payload,
                 &group.identity,
-                group.name.as_deref(),
-                group.color,
-                group.visible,
+                display,
             )?)?;
         } else {
             output.write_all(&attributed_object_record(
@@ -187,26 +181,22 @@ fn write_seekable(
                 POINT_CLOUD_CLASS,
                 &point_cloud_payload(&group.points)?,
                 &group.identity,
-                group.name.as_deref(),
-                group.color,
-                group.visible,
+                display,
             )?)?;
         }
     }
-    for (id, (class, payload)) in &plan.curves {
+    for (id, (class, payload), display) in &plan.curves {
         output.write_all(&attributed_object_record(
-            4, *class, payload, id, None, None, None,
+            4, *class, payload, id, *display,
         )?)?;
     }
-    for (id, (class, payload)) in &plan.surfaces {
+    for (id, (class, payload), display) in &plan.surfaces {
         output.write_all(&attributed_object_record(
-            8, *class, payload, id, None, None, None,
+            8, *class, payload, id, *display,
         )?)?;
     }
-    for mesh in &ir.model.tessellations {
-        let payload = mesh_payload(mesh, version)?;
-        output.write_all(&mesh_object_record(&payload, mesh.id.as_str())?)?;
-    }
+    plan.mesh_records.seek(SeekFrom::Start(0))?;
+    std::io::copy(&mut plan.mesh_records, output)?;
 
     output.write_all(&short_chunk(TCODE_ENDOFTABLE, 0))?;
     let table_end = output.stream_position()?;
@@ -217,11 +207,12 @@ fn write_seekable(
     output.write_all(&table(TCODE_HISTORY_RECORD_TABLE, &[])?)?;
     let final_size = archive_final_size(output.stream_position()?)?;
     output.write_all(&long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes())?)?;
-    Ok(())
+    Ok(plan.losses)
 }
 
 fn write_archive_prefix(
-    ir: &CadIr,
+    linear_tolerance: f64,
+    angular_tolerance: f64,
     version: RhinoArchiveVersion,
     output: &mut dyn WriteSeek,
 ) -> Result<(), CodecError> {
@@ -236,10 +227,7 @@ fn write_archive_prefix(
     )?)?;
     output.write_all(&table(
         TCODE_SETTINGS_TABLE,
-        &[units_record(
-            ir.tolerances.linear.get(),
-            ir.tolerances.angular.get(),
-        )?],
+        &[units_record(linear_tolerance, angular_tolerance)?],
     )?)?;
     for typecode in [
         TCODE_BITMAP_TABLE,
@@ -267,12 +255,76 @@ fn write_archive_prefix(
     Ok(())
 }
 
-struct BrepScope {
-    ir: CadIr,
-    points: std::collections::BTreeSet<String>,
-    surfaces: std::collections::BTreeSet<String>,
-    curves: std::collections::BTreeSet<String>,
-    pcurves: std::collections::BTreeSet<String>,
+/// The ids of the topology and carriers one or more Brep bodies own.
+#[derive(Default)]
+struct OwnedTopology {
+    regions: BTreeSet<String>,
+    shells: BTreeSet<String>,
+    faces: BTreeSet<String>,
+    loops: BTreeSet<String>,
+    coedges: BTreeSet<String>,
+    edges: BTreeSet<String>,
+    vertices: BTreeSet<String>,
+    points: BTreeSet<String>,
+    surfaces: BTreeSet<String>,
+    curves: BTreeSet<String>,
+    pcurves: BTreeSet<String>,
+}
+
+impl OwnedTopology {
+    fn kinds(&self) -> [(&'static str, &BTreeSet<String>); 11] {
+        [
+            ("region", &self.regions),
+            ("shell", &self.shells),
+            ("face", &self.faces),
+            ("loop", &self.loops),
+            ("coedge", &self.coedges),
+            ("edge", &self.edges),
+            ("vertex", &self.vertices),
+            ("point", &self.points),
+            ("surface", &self.surfaces),
+            ("curve", &self.curves),
+            ("pcurve", &self.pcurves),
+        ]
+    }
+
+    /// The first record `other` claims that `self` already owns.
+    fn shared_with(&self, other: &Self) -> Option<String> {
+        self.kinds()
+            .into_iter()
+            .zip(other.kinds())
+            .find_map(|((kind, owned), (_, claimed))| {
+                claimed
+                    .iter()
+                    .find(|id| owned.contains(*id))
+                    .map(|id| format!("its {kind} carrier {id} is shared with an earlier Brep object"))
+            })
+    }
+
+    fn extend(&mut self, other: Self) {
+        self.regions.extend(other.regions);
+        self.shells.extend(other.shells);
+        self.faces.extend(other.faces);
+        self.loops.extend(other.loops);
+        self.coedges.extend(other.coedges);
+        self.edges.extend(other.edges);
+        self.vertices.extend(other.vertices);
+        self.points.extend(other.points);
+        self.surfaces.extend(other.surfaces);
+        self.curves.extend(other.curves);
+        self.pcurves.extend(other.pcurves);
+    }
+}
+
+/// The Brep bodies of a document, each scoped to its own topology.
+struct BrepScopes {
+    /// One single-body document per writable Brep body.
+    scopes: Vec<CadIr>,
+    /// What every Sheet and Solid body owns, including the omitted ones.
+    owned: OwnedTopology,
+    /// Each body omitted because an earlier body owns one of its records, and
+    /// why.
+    shared: Vec<(String, String)>,
 }
 
 struct BrepPayload {
@@ -283,33 +335,91 @@ struct BrepPayload {
 /// A native class identifier and the payload encoded for it.
 type ClassPayload = ([u8; 16], Vec<u8>);
 
-struct WritePlan<'a> {
-    /// Each free curve's identity and encoded payload.
-    curves: Vec<(&'a str, ClassPayload)>,
-    /// Each free surface's identity and encoded payload.
-    surfaces: Vec<(&'a str, ClassPayload)>,
-    brep_records: std::fs::File,
-    topology_points: std::collections::BTreeSet<String>,
-    point_groups: Vec<PointGroup>,
+/// The display attributes an object record states.
+#[derive(Clone, Copy, Default)]
+struct ObjectDisplay<'a> {
+    name: Option<&'a str>,
+    color: Option<cadmpeg_ir::topology::Color>,
+    visible: Option<bool>,
 }
 
-fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
+impl<'a> ObjectDisplay<'a> {
+    /// The attributes of an object, and whether some stated attribute is not
+    /// written: a name with a null character, which Rhino strings cannot
+    /// state, a source layer outside `written_layers`, or an instance path.
+    fn admit(
+        name: Option<&'a str>,
+        color: Option<cadmpeg_ir::topology::Color>,
+        visible: Option<bool>,
+        source: Option<&'a cadmpeg_ir::SourceObjectAssociation>,
+        written_layers: &BTreeSet<String>,
+    ) -> (Self, bool) {
+        let name = name.or_else(|| source.and_then(|source| source.name.as_deref()));
+        let writable_name = name.filter(|name| !name.contains('\0'));
+        let display = Self {
+            name: writable_name,
+            color: color.or_else(|| source.and_then(|source| source.color)),
+            visible: visible.or_else(|| source.and_then(|source| source.visible)),
+        };
+        let reduced = writable_name != name
+            || source.is_some_and(|source| {
+                source
+                    .layer
+                    .as_ref()
+                    .is_some_and(|layer| !written_layers.contains(layer))
+                    || !source.instance_path.is_empty()
+            });
+        (display, reduced)
+    }
+}
+
+struct WritePlan<'a> {
+    /// The angular tolerance the archive states.
+    angular_tolerance: f64,
+    brep_records: std::fs::File,
+    /// Each standalone point and its attributes.
+    points: Vec<(&'a cadmpeg_ir::topology::Point, ObjectDisplay<'a>)>,
+    point_groups: Vec<PointGroup>,
+    /// Each free curve's identity, encoded payload and attributes.
+    curves: Vec<(&'a str, ClassPayload, ObjectDisplay<'a>)>,
+    /// Each free surface's identity, encoded payload and attributes.
+    surfaces: Vec<(&'a str, ClassPayload, ObjectDisplay<'a>)>,
+    mesh_records: std::fs::File,
+    losses: Vec<LossNote>,
+}
+
+/// The value of one item, or `None` with the loss that names its omission.
+///
+/// Errors that leave no output (I/O, a resource ceiling, a target refusal)
+/// end the write.
+fn admit<T>(
+    result: Result<T, CodecError>,
+    losses: &mut Vec<LossNote>,
+    code: RhinoLossCode,
+    item: std::fmt::Arguments<'_>,
+) -> Result<Option<T>, CodecError> {
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(
+            error @ (CodecError::ResourceLimit(_)
+            | CodecError::Io(_)
+            | CodecError::UnsupportedTarget(_)
+            | CodecError::InsufficientDepth { .. }),
+        ) => Err(error),
+        Err(error) => {
+            losses.push(code.note(format!("{item} was omitted: {error}")));
+            Ok(None)
+        }
+    }
+}
+
+fn brep_scopes(ir: &CadIr) -> BrepScopes {
     use cadmpeg_ir::topology::BodyKind;
-    use std::collections::BTreeSet;
 
     let geometry = &ir.geometry;
     let mut scopes = Vec::new();
-    let mut all_regions = BTreeSet::new();
-    let mut all_shells = BTreeSet::new();
-    let mut all_faces = BTreeSet::new();
-    let mut all_loops = BTreeSet::new();
-    let mut all_coedges = BTreeSet::new();
-    let mut all_edges = BTreeSet::new();
-    let mut all_vertices = BTreeSet::new();
-    let mut all_points = BTreeSet::new();
-    let mut all_surfaces = BTreeSet::new();
-    let mut all_curves = BTreeSet::new();
-    let mut all_pcurves = BTreeSet::new();
+    let mut owned = OwnedTopology::default();
+    let mut shared = Vec::new();
 
     for body in geometry
         .bodies
@@ -384,25 +494,23 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
             .filter(|vertex| vertices.contains(vertex.id.as_str()))
             .map(|vertex| vertex.point.as_str().to_owned())
             .collect::<BTreeSet<_>>();
-
-        for (owned, global, kind) in [
-            (&regions, &mut all_regions, "region"),
-            (&shells, &mut all_shells, "shell"),
-            (&faces, &mut all_faces, "face"),
-            (&loops, &mut all_loops, "loop"),
-            (&coedges, &mut all_coedges, "coedge"),
-            (&edges, &mut all_edges, "edge"),
-            (&vertices, &mut all_vertices, "vertex"),
-            (&points, &mut all_points, "point"),
-            (&surfaces, &mut all_surfaces, "surface"),
-            (&curves, &mut all_curves, "curve"),
-            (&pcurves, &mut all_pcurves, "pcurve"),
-        ] {
-            if owned.iter().any(|id| !global.insert(id.clone())) {
-                return Err(CodecError::NotImplemented(format!(
-                    "{kind} carrier is shared by multiple Brep objects"
-                )));
-            }
+        let body_owned = OwnedTopology {
+            regions,
+            shells,
+            faces,
+            loops,
+            coedges,
+            edges,
+            vertices,
+            points,
+            surfaces,
+            curves,
+            pcurves,
+        };
+        if let Some(reason) = owned.shared_with(&body_owned) {
+            shared.push((body.id.as_str().to_owned(), reason));
+            owned.extend(body_owned);
+            continue;
         }
 
         let mut scoped = CadIr::empty();
@@ -411,78 +519,77 @@ fn brep_scopes(ir: &CadIr) -> Result<Vec<BrepScope>, CodecError> {
         scoped.geometry.regions = geometry
             .regions
             .iter()
-            .filter(|entity| regions.contains(entity.id.as_str()))
+            .filter(|entity| body_owned.regions.contains(entity.id.as_str()))
             .cloned()
             .collect();
         scoped.geometry.shells = geometry
             .shells
             .iter()
-            .filter(|entity| shells.contains(entity.id.as_str()))
+            .filter(|entity| body_owned.shells.contains(entity.id.as_str()))
             .cloned()
             .collect();
         scoped.geometry.faces = geometry
             .faces
             .iter()
-            .filter(|entity| faces.contains(entity.id.as_str()))
+            .filter(|entity| body_owned.faces.contains(entity.id.as_str()))
             .cloned()
             .collect();
         scoped.geometry.loops = geometry
             .loops
             .iter()
-            .filter(|entity| loops.contains(entity.id.as_str()))
+            .filter(|entity| body_owned.loops.contains(entity.id.as_str()))
             .cloned()
             .collect();
         scoped.geometry.coedges = geometry
             .coedges
             .iter()
-            .filter(|entity| coedges.contains(entity.id.as_str()))
+            .filter(|entity| body_owned.coedges.contains(entity.id.as_str()))
             .cloned()
             .collect();
         scoped.geometry.edges = geometry
             .edges
             .iter()
-            .filter(|entity| edges.contains(entity.id.as_str()))
+            .filter(|entity| body_owned.edges.contains(entity.id.as_str()))
             .cloned()
             .collect();
         scoped.geometry.vertices = geometry
             .vertices
             .iter()
-            .filter(|entity| vertices.contains(entity.id.as_str()))
+            .filter(|entity| body_owned.vertices.contains(entity.id.as_str()))
             .cloned()
             .collect();
         scoped.geometry.points = geometry
             .points
             .iter()
-            .filter(|entity| points.contains(entity.id.as_str()))
+            .filter(|entity| body_owned.points.contains(entity.id.as_str()))
             .cloned()
             .collect();
         scoped.geometry.surfaces = geometry
             .surfaces
             .iter()
-            .filter(|entity| surfaces.contains(entity.id.as_str()))
+            .filter(|entity| body_owned.surfaces.contains(entity.id.as_str()))
             .cloned()
             .collect();
         scoped.geometry.curves = geometry
             .curves
             .iter()
-            .filter(|entity| curves.contains(entity.id.as_str()))
+            .filter(|entity| body_owned.curves.contains(entity.id.as_str()))
             .cloned()
             .collect();
         scoped.geometry.pcurves = geometry
             .pcurves
             .iter()
-            .filter(|entity| pcurves.contains(entity.id.as_str()))
+            .filter(|entity| body_owned.pcurves.contains(entity.id.as_str()))
             .cloned()
             .collect();
-        scopes.push(BrepScope {
-            ir: scoped,
-            points,
-            surfaces,
-            curves,
-            pcurves,
-        });
+        owned.extend(body_owned);
+        scopes.push(scoped);
     }
-    Ok(scopes)
+    BrepScopes {
+        scopes,
+        owned,
+        shared,
+    }
 }
 
 fn general_topology_ir(ir: &CadIr) -> CadIr {
@@ -557,230 +664,327 @@ fn prepare_write(
     ir: &CadIr,
     archive_version: RhinoArchiveVersion,
 ) -> Result<WritePlan<'_>, CodecError> {
+    use cadmpeg_ir::topology::BodyKind;
+
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
-    if ir.tolerances.angular.get() > std::f64::consts::PI {
-        return Err(CodecError::NotImplemented(
-            "Rhino angular tolerance must not exceed pi".into(),
-        ));
-    }
-    if ir
-        .native
-        .namespace("rhino")
-        .is_some_and(|namespace| !rewritable_generated_namespace(namespace))
-    {
-        return Err(CodecError::NotImplemented(
-            "Rhino native records require explicit survival handling".into(),
-        ));
-    }
-    let model = &ir.model;
     let geometry = &ir.geometry;
-    let unsupported = [
-        ("subds", geometry.subds.len()),
-        ("procedural_surfaces", geometry.procedural_surfaces.len()),
-        ("procedural_curves", geometry.procedural_curves.len()),
-        ("features", model.features.len()),
-        ("configurations", model.configurations.len()),
-        ("parameters", model.parameters.len()),
-        ("sketches", model.sketches.len()),
-        ("sketch_entities", model.sketch_entities.len()),
-        ("sketch_constraints", model.sketch_constraints.len()),
-        ("appearances", model.appearances.len()),
-        ("appearance_bindings", model.appearance_bindings.len()),
-        ("attributes", model.attributes.len()),
-    ]
-    .into_iter()
-    .filter(|(_, count)| *count != 0)
-    .map(|(name, _)| name)
-    .collect::<Vec<_>>();
-    if !unsupported.is_empty() {
-        return Err(CodecError::NotImplemented(format!(
-            "Rhino writer cannot yet represent arenas: {}",
-            unsupported.join(", ")
+    let mut losses = native::omission_losses(ir.native.namespace("rhino"));
+    let layers = native::regenerated_layers(ir.native.namespace("rhino"));
+    let mut reduced_attributes = Vec::new();
+    let mut objects = 0_usize;
+
+    let stated_angular = ir.tolerances.angular.get();
+    let angular_tolerance = stated_angular.min(std::f64::consts::PI);
+    if stated_angular > std::f64::consts::PI {
+        losses.push(RhinoLossCode::WriterToleranceAdjusted.note(format!(
+            "document angular tolerance {stated_angular} exceeds pi; the archive states pi"
         )));
     }
-    native_i32_count(
-        geometry.points.len(),
-        "point arena exceeds native counts".into(),
-    )?;
-    let breps = brep_scopes(ir)?;
-    let used_pcurves = breps
+    let mut constructions = geometry
+        .procedural_surfaces
         .iter()
-        .flat_map(|scope| scope.pcurves.iter())
-        .collect::<std::collections::BTreeSet<_>>();
-    if used_pcurves.len() != geometry.pcurves.len() {
-        return Err(CodecError::NotImplemented(
-            "pcurves without writable Brep coedge ownership are not writable".into(),
-        ));
+        .map(|record| record.id.as_str())
+        .chain(
+            geometry
+                .procedural_curves
+                .iter()
+                .map(|record| record.id.as_str()),
+        )
+        .collect::<Vec<_>>();
+    if !constructions.is_empty() {
+        constructions.sort_unstable();
+        losses.push(RhinoLossCode::WriterProceduralConstructionReduced.note(format!(
+            "the archive states no procedural construction: {} construction record(s) omitted; \
+             a carrier the write keeps is written from its solved cache: {}",
+            constructions.len(),
+            constructions.join(", ")
+        )));
     }
-    let topology_curves = breps
+
+    let breps = brep_scopes(ir);
+    for (body, reason) in &breps.shared {
+        losses.push(
+            RhinoLossCode::WriterBodyOmitted.note(format!("body {body} was omitted: {reason}")),
+        );
+    }
+    for body in geometry
+        .bodies
         .iter()
-        .flat_map(|scope| scope.curves.iter().cloned())
-        .collect::<std::collections::BTreeSet<_>>();
-    let topology_surfaces = breps
-        .iter()
-        .flat_map(|scope| scope.surfaces.iter().cloned())
-        .collect::<std::collections::BTreeSet<_>>();
-    let general = general_topology_ir(ir);
-    let scoped_count = |select: fn(&cadmpeg_ir::document::Topology) -> usize| {
-        breps
-            .iter()
-            .map(|scope| select(&scope.ir.geometry))
-            .sum::<usize>()
-            + select(&general.geometry)
-    };
-    if scoped_count(|geometry| geometry.bodies.len()) != geometry.bodies.len()
-        || scoped_count(|geometry| geometry.regions.len()) != geometry.regions.len()
-        || scoped_count(|geometry| geometry.shells.len()) != geometry.shells.len()
-        || scoped_count(|geometry| geometry.faces.len()) != geometry.faces.len()
-        || scoped_count(|geometry| geometry.loops.len()) != geometry.loops.len()
-        || scoped_count(|geometry| geometry.coedges.len()) != geometry.coedges.len()
-        || scoped_count(|geometry| geometry.edges.len()) != geometry.edges.len()
-        || scoped_count(|geometry| geometry.vertices.len()) != geometry.vertices.len()
+        .filter(|body| body.kind == BodyKind::Wire)
     {
-        return Err(CodecError::NotImplemented(
-            "orphan or unsupported topology is not writable".into(),
-        ));
-    }
-    let (mut topology_points, point_groups) = free_vertex_groups(&general)?;
-    for scope in &breps {
-        topology_points.extend(scope.points.iter().cloned());
-    }
-    let curves = geometry
-        .curves
-        .iter()
-        .filter(|curve| {
-            !topology_curves.contains(curve.id.as_str())
-                && !is_support(curve.source_object.as_ref())
-        })
-        .map(|curve| {
-            Ok((
-                curve.id.as_str(),
-                WritableObjectCurve::try_new(curve)?.payload()?,
-            ))
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    let surfaces = geometry
-        .surfaces
-        .iter()
-        .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
-        .map(|surface| {
-            Ok((
-                surface.id.as_str(),
-                WritableFaceSurface::try_new(surface)?.payload()?,
-            ))
-        })
-        .collect::<Result<Vec<_>, CodecError>>()?;
-    for mesh in &model.tessellations {
-        check_mesh(mesh)?;
+        losses.push(RhinoLossCode::WriterBodyOmitted.note(format!(
+            "body {} was omitted: {WIRE_BODY_REASON}",
+            body.id
+        )));
     }
     let mut brep_records = tempfile::tempfile()?;
-    for scope in &breps {
-        let body = &scope.ir.geometry.bodies[0];
-        let model = WritableModel::try_new(&scope.ir)?;
-        let payload = brep_payload(&ctx, &model, archive_version)?;
-        brep_records.write_all(&brep_object_record(
-            &payload,
-            body.id.as_str(),
-            body.name.as_deref(),
-            body.color,
-            body.visible,
-        )?)?;
+    let mut adjusted_tolerances = Vec::new();
+    for scope in &breps.scopes {
+        let body = &scope.geometry.bodies[0];
+        let (display, reduced) =
+            ObjectDisplay::admit(body.name.as_deref(), body.color, body.visible, None, &layers);
+        let record = admit(
+            WritableModel::try_new(scope).and_then(|model| {
+                brep_object_record(
+                    &brep_payload(&ctx, &model, archive_version)?,
+                    body.id.as_str(),
+                    display,
+                )
+            }),
+            &mut losses,
+            RhinoLossCode::WriterBodyOmitted,
+            format_args!("body {}", body.id),
+        )?;
+        if let Some(record) = record {
+            brep_records.write_all(&record)?;
+            objects += 1;
+            adjusted_tolerances.extend(sub_resolution_tolerances(scope));
+            if reduced {
+                reduced_attributes.push(body.id.as_str());
+            }
+        }
+    }
+    if !adjusted_tolerances.is_empty() {
+        adjusted_tolerances.sort_unstable();
+        losses.push(RhinoLossCode::WriterToleranceAdjusted.note(format!(
+            "{} edge or face tolerance(s) are finer than the Rhino Brep write bound \
+             {EPS_WRITE_DEGENERATE}; the write checked them at that bound and states them \
+             unchanged: {}",
+            adjusted_tolerances.len(),
+            adjusted_tolerances.join(", ")
+        )));
+    }
+
+    let general = general_topology_ir(ir);
+    let mut claimed = FreeVertexClaims::default();
+    let mut point_groups = Vec::new();
+    for body in &general.geometry.bodies {
+        let group = admit(
+            free_vertex_group(&general, body, &mut claimed, &layers),
+            &mut losses,
+            RhinoLossCode::WriterBodyOmitted,
+            format_args!("body {}", body.id),
+        )?;
+        if let Some((group, reduced)) = group {
+            if reduced {
+                reduced_attributes.push(body.id.as_str());
+            }
+            point_groups.push(group);
+        }
+    }
+    objects += point_groups.len();
+
+    let ids = |records: Vec<&str>| records.into_iter().map(str::to_owned).collect::<BTreeSet<_>>();
+    let general_regions = ids(general.geometry.regions.iter().map(|record| record.id.as_str()).collect());
+    let general_shells = ids(general.geometry.shells.iter().map(|record| record.id.as_str()).collect());
+    let general_vertices = ids(general.geometry.vertices.iter().map(|record| record.id.as_str()).collect());
+    let general_points = ids(general.geometry.points.iter().map(|record| record.id.as_str()).collect());
+    let mut orphans = Vec::new();
+    for (kind, ids) in [
+        (
+            "region",
+            unowned(
+                geometry.regions.iter().map(|record| record.id.as_str()),
+                &[&breps.owned.regions, &general_regions],
+            ),
+        ),
+        (
+            "shell",
+            unowned(
+                geometry.shells.iter().map(|record| record.id.as_str()),
+                &[&breps.owned.shells, &general_shells],
+            ),
+        ),
+        (
+            "face",
+            unowned(
+                geometry.faces.iter().map(|record| record.id.as_str()),
+                &[&breps.owned.faces],
+            ),
+        ),
+        (
+            "loop",
+            unowned(
+                geometry.loops.iter().map(|record| record.id.as_str()),
+                &[&breps.owned.loops],
+            ),
+        ),
+        (
+            "coedge",
+            unowned(
+                geometry.coedges.iter().map(|record| record.id.as_str()),
+                &[&breps.owned.coedges],
+            ),
+        ),
+        (
+            "edge",
+            unowned(
+                geometry.edges.iter().map(|record| record.id.as_str()),
+                &[&breps.owned.edges],
+            ),
+        ),
+        (
+            "vertex",
+            unowned(
+                geometry.vertices.iter().map(|record| record.id.as_str()),
+                &[&breps.owned.vertices, &general_vertices],
+            ),
+        ),
+        (
+            "pcurve",
+            unowned(
+                geometry.pcurves.iter().map(|record| record.id.as_str()),
+                &[&breps.owned.pcurves],
+            ),
+        ),
+    ] {
+        if !ids.is_empty() {
+            orphans.push(format!("{} {kind}(s): {}", ids.len(), ids.join(", ")));
+        }
+    }
+    if !orphans.is_empty() {
+        losses.push(RhinoLossCode::WriterTopologyOmitted.note(format!(
+            "topology no Sheet, Solid, or free-vertex body owns was omitted: {}",
+            orphans.join("; ")
+        )));
+    }
+
+    let mut points = Vec::new();
+    for point in geometry.points.iter().filter(|point| {
+        !breps.owned.points.contains(point.id.as_str())
+            && !general_points.contains(point.id.as_str())
+            && !is_support(point.source_object.as_ref())
+    }) {
+        let (display, reduced) =
+            ObjectDisplay::admit(None, None, None, point.source_object.as_ref(), &layers);
+        if reduced {
+            reduced_attributes.push(point.id.as_str());
+        }
+        points.push((point, display));
+    }
+    objects += points.len();
+
+    let mut curves = Vec::new();
+    for curve in geometry.curves.iter().filter(|curve| {
+        !breps.owned.curves.contains(curve.id.as_str()) && !is_support(curve.source_object.as_ref())
+    }) {
+        let payload = admit(
+            WritableObjectCurve::try_new(curve).and_then(|curve| curve.payload()),
+            &mut losses,
+            RhinoLossCode::WriterCurveOmitted,
+            format_args!("curve {}", curve.id),
+        )?;
+        if let Some(payload) = payload {
+            let (display, reduced) =
+                ObjectDisplay::admit(None, None, None, curve.source_object.as_ref(), &layers);
+            if reduced {
+                reduced_attributes.push(curve.id.as_str());
+            }
+            curves.push((curve.id.as_str(), payload, display));
+        }
+    }
+    objects += curves.len();
+
+    let mut surfaces = Vec::new();
+    for surface in geometry
+        .surfaces
+        .iter()
+        .filter(|surface| !breps.owned.surfaces.contains(surface.id.as_str()))
+    {
+        let payload = admit(
+            WritableFaceSurface::try_new(surface).and_then(WritableFaceSurface::payload),
+            &mut losses,
+            RhinoLossCode::WriterSurfaceOmitted,
+            format_args!("surface {}", surface.id),
+        )?;
+        if let Some(payload) = payload {
+            let (display, reduced) =
+                ObjectDisplay::admit(None, None, None, surface.source_object.as_ref(), &layers);
+            if reduced {
+                reduced_attributes.push(surface.id.as_str());
+            }
+            surfaces.push((surface.id.as_str(), payload, display));
+        }
+    }
+    objects += surfaces.len();
+
+    let mut mesh_records = tempfile::tempfile()?;
+    for mesh in &ir.model.tessellations {
+        let record = admit(
+            check_mesh(mesh)
+                .and_then(|()| mesh_payload(mesh, archive_version))
+                .and_then(|payload| mesh_object_record(&payload, mesh.id.as_str())),
+            &mut losses,
+            RhinoLossCode::WriterMeshOmitted,
+            format_args!("mesh {}", mesh.id),
+        )?;
+        if let Some(record) = record {
+            mesh_records.write_all(&record)?;
+            objects += 1;
+        }
+    }
+
+    if !reduced_attributes.is_empty() {
+        reduced_attributes.sort_unstable();
+        losses.push(RhinoLossCode::WriterObjectAttributesReduced.note(format!(
+            "{} object(s) state a source layer, an instance path, or a name with a null \
+             character, which the written object attributes omit: {}",
+            reduced_attributes.len(),
+            reduced_attributes.join(", ")
+        )));
+    }
+    if objects == 0 {
+        losses.push(
+            RhinoLossCode::WriterOutputEmpty.note("the written archive holds no object"),
+        );
     }
     Ok(WritePlan {
+        angular_tolerance,
+        brep_records,
+        points,
+        point_groups,
         curves,
         surfaces,
-        brep_records,
-        topology_points,
-        point_groups,
+        mesh_records,
+        losses,
     })
 }
 
-fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bool {
-    const REGENERATED: &[&str] = &[
-        "byte_spans",
-        "document_settings",
-        "layers",
-        "object_presentation",
-        "opaque_records",
-        "unknowns",
-    ];
-    if namespace
-        .arenas()
+/// The ids of `records` that none of `owners` holds, in sorted order.
+fn unowned<'a>(
+    records: impl Iterator<Item = &'a str>,
+    owners: &[&BTreeSet<String>],
+) -> Vec<&'a str> {
+    let mut ids = records
+        .filter(|id| !owners.iter().any(|owned| owned.contains(*id)))
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids
+}
+
+/// The edges and faces of a Brep scope whose stated tolerance is finer than
+/// the write bound.
+fn sub_resolution_tolerances(scope: &CadIr) -> Vec<&str> {
+    let document = scope.tolerances.linear.get();
+    let finer = |stated: Option<cadmpeg_ir::scalar::PositiveReal>| {
+        stated.map_or(document, cadmpeg_ir::scalar::PositiveReal::get) < EPS_WRITE_DEGENERATE
+    };
+    scope
+        .geometry
+        .edges
         .iter()
-        .any(|(name, records)| !records.is_empty() && !REGENERATED.contains(&name.as_str()))
-    {
-        return false;
-    }
-    let opaque = namespace.arenas().get("opaque_records");
-    let generated_comment = opaque.is_some_and(|records| {
-        records.iter().any(|record| {
-            let Ok(fields) = record.fields() else {
-                return false;
-            };
-            record.id() == "rhino:source:opaque#comment"
-                && fields.get("typecode").and_then(serde_json::Value::as_str) == Some("0x00000001")
-                && fields.get("data").and_then(serde_json::Value::as_str)
-                    == Some("AQAAAAcAAAAAAAAAY2FkbXBlZw==")
-        })
-    });
-    if (opaque.is_some() && !generated_comment)
-        || opaque.is_some_and(|records| {
-            records.iter().any(|record| {
-                !matches!(
-                    record
-                        .field("typecode")
-                        .as_ref()
-                        .and_then(serde_json::Value::as_str),
-                    Some("0x00000001" | "0xa0000026" | "0x20008031" | "0x20008050")
-                )
-            })
-        })
-    {
-        return false;
-    }
-    if namespace
-        .arenas()
-        .get("layers")
-        .is_some_and(|records| records.len() != 1 || !default_native_layer(&records[0]))
-    {
-        return false;
-    }
-    if namespace
-        .arenas()
-        .get("object_presentation")
-        .is_some_and(|records| {
-            records
+        .filter(|edge| finer(edge.tolerance))
+        .map(|edge| edge.id.as_str())
+        .chain(
+            scope
+                .geometry
+                .faces
                 .iter()
-                .any(|record| !default_native_presentation(record))
-        })
-    {
-        return false;
-    }
-    namespace.arenas().get("unknowns").is_none_or(|records| {
-        records.iter().all(|record| {
-            record
-                .field("links")
-                .as_ref()
-                .and_then(serde_json::Value::as_array)
-                .is_some_and(|links| {
-                    !links.is_empty()
-                        && links.iter().all(|link| {
-                            link.as_str().is_some_and(|link| {
-                                [
-                                    "rhino:object:body#",
-                                    "rhino:object:curve#",
-                                    "rhino:object:point#",
-                                    "rhino:object:surface#",
-                                    "rhino:object:tessellation#",
-                                ]
-                                .iter()
-                                .any(|prefix| link.starts_with(prefix))
-                            })
-                        })
-                })
-        })
-    })
+                .filter(|face| finer(face.tolerance))
+                .map(|face| face.id.as_str()),
+        )
+        .collect()
 }
 
 fn default_native_layer(record: &cadmpeg_ir::NativeRecord) -> bool {
@@ -1721,118 +1925,134 @@ struct PointGroup {
     visible: Option<bool>,
 }
 
-type PointGroups = (std::collections::BTreeSet<String>, Vec<PointGroup>);
+/// Why a body of wire edges is omitted while its edge curves are written.
+const WIRE_BODY_REASON: &str =
+    "Rhino states wire geometry as free curves; the body's edge curves are written as curve \
+     objects and its edge and vertex topology is not";
 
-fn free_vertex_groups(ir: &CadIr) -> Result<PointGroups, CodecError> {
-    use cadmpeg_ir::topology::BodyKind;
+/// The records earlier free-vertex bodies own.
+#[derive(Default)]
+struct FreeVertexClaims {
+    regions: BTreeSet<String>,
+    shells: BTreeSet<String>,
+    vertices: BTreeSet<String>,
+    points: BTreeSet<String>,
+}
 
+/// Admits one free-vertex body of `ir` as a point or point-cloud object, with
+/// whether some stated attribute is not written.
+///
+/// The body's records join `claimed` only when the body is admitted.
+fn free_vertex_group(
+    ir: &CadIr,
+    body: &cadmpeg_ir::topology::Body,
+    claimed: &mut FreeVertexClaims,
+    written_layers: &BTreeSet<String>,
+) -> Result<(PointGroup, bool), CodecError> {
     let geometry = &ir.geometry;
-    let mut regions = std::collections::BTreeSet::new();
-    let mut shells = std::collections::BTreeSet::new();
-    let mut vertices = std::collections::BTreeSet::new();
-    let mut points = std::collections::BTreeSet::new();
-    let mut groups = Vec::new();
-    for body in &geometry.bodies {
-        if body.kind != BodyKind::General
-            || geometry.body_regions(&body.id).count() != 1
-            || body.transform.is_some()
+    if geometry.body_regions(&body.id).count() != 1 || body.transform.is_some() {
+        return Err(CodecError::NotImplemented(format!(
+            "body {} is not a free-vertex body without placement",
+            body.id.as_str()
+        )));
+    }
+    let region = geometry
+        .regions
+        .iter()
+        .find(|region| region.body == body.id)
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("body {} region is missing", body.id.as_str()))
+        })?;
+    if region.shells.len() != 1 || claimed.regions.contains(region.id.as_str()) {
+        return Err(CodecError::malformed(format_args!(
+            "body {} region graph is invalid",
+            body.id.as_str()
+        )));
+    }
+    let shell = geometry
+        .shells
+        .iter()
+        .find(|shell| shell.id == region.shells[0])
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!("body {} shell is missing", body.id.as_str()))
+        })?;
+    if geometry.shell_faces(&shell.id).next().is_none() && shell.wire_edges().next().is_some() {
+        return Err(CodecError::NotImplemented(WIRE_BODY_REASON.into()));
+    }
+    if shell.region != region.id
+        || geometry.shell_faces(&shell.id).next().is_some()
+        || shell.wire_edges().next().is_some()
+        || shell.free_vertices().next().is_none()
+        || claimed.shells.contains(shell.id.as_str())
+    {
+        return Err(CodecError::malformed(format_args!(
+            "body {} shell graph is invalid",
+            body.id.as_str()
+        )));
+    }
+    let mut vertices = BTreeSet::new();
+    let mut points = BTreeSet::new();
+    let mut group = Vec::new();
+    for vertex_id in shell.free_vertices() {
+        let vertex = geometry
+            .vertices
+            .iter()
+            .find(|vertex| vertex.id == *vertex_id)
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("vertex {} is missing", vertex_id.as_str()))
+            })?;
+        if vertex.tolerance.is_some()
+            || claimed.vertices.contains(vertex.id.as_str())
+            || !vertices.insert(vertex.id.as_str().to_owned())
         {
             return Err(CodecError::NotImplemented(format!(
-                "body {} is not a free-vertex body without placement",
-                body.id.as_str()
+                "vertex {} has tolerance or multiple ownership",
+                vertex.id.as_str()
             )));
         }
-        check_object_attributes(body.id.as_str(), body.name.as_deref())?;
-        let region = geometry
-            .regions
+        let point = geometry
+            .points
             .iter()
-            .find(|region| region.body == body.id)
+            .find(|point| point.id == vertex.point)
             .ok_or_else(|| {
-                CodecError::malformed(format_args!("body {} region is missing", body.id.as_str()))
+                CodecError::malformed(format_args!("point {} is missing", vertex.point.as_str()))
             })?;
-        if region.body != body.id
-            || region.shells.len() != 1
-            || !regions.insert(region.id.as_str().to_owned())
+        if claimed.points.contains(point.id.as_str()) || !points.insert(point.id.as_str().to_owned())
         {
-            return Err(CodecError::malformed(format_args!(
-                "body {} region graph is invalid",
-                body.id.as_str()
+            return Err(CodecError::NotImplemented(format!(
+                "point {} is shared by multiple free vertices",
+                point.id.as_str()
             )));
         }
-        let shell = geometry
-            .shells
-            .iter()
-            .find(|shell| shell.id == region.shells[0])
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!("body {} shell is missing", body.id.as_str()))
-            })?;
-        if shell.region != region.id
-            || geometry.shell_faces(&shell.id).next().is_some()
-            || shell.wire_edges().next().is_some()
-            || shell.free_vertices().next().is_none()
-            || !shells.insert(shell.id.as_str().to_owned())
-        {
-            return Err(CodecError::malformed(format_args!(
-                "body {} shell graph is invalid",
-                body.id.as_str()
+        if is_support(point.source_object.as_ref()) {
+            return Err(CodecError::NotImplemented(format!(
+                "Rhino cannot write support point {} as a standalone free-vertex object",
+                point.id
             )));
         }
-        let mut group = Vec::new();
-        for vertex_id in shell.free_vertices() {
-            let vertex = geometry
-                .vertices
-                .iter()
-                .find(|vertex| vertex.id == *vertex_id)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!("vertex {} is missing", vertex_id.as_str()))
-                })?;
-            if vertex.tolerance.is_some() || !vertices.insert(vertex.id.as_str().to_owned()) {
-                return Err(CodecError::NotImplemented(format!(
-                    "vertex {} has tolerance or multiple ownership",
-                    vertex.id.as_str()
-                )));
-            }
-            let point = geometry
-                .points
-                .iter()
-                .find(|point| point.id == vertex.point)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "point {} is missing",
-                        vertex.point.as_str()
-                    ))
-                })?;
-            if !points.insert(point.id.as_str().to_owned()) {
-                return Err(CodecError::NotImplemented(format!(
-                    "point {} is shared by multiple free vertices",
-                    point.id.as_str()
-                )));
-            }
-            if is_support(point.source_object.as_ref()) {
-                return Err(CodecError::NotImplemented(format!(
-                    "Rhino cannot write support point {} as a standalone free-vertex object",
-                    point.id
-                )));
-            }
-            group.push(point.position().get());
-        }
-        groups.push(PointGroup {
+        group.push(point.position().get());
+    }
+    claimed.regions.insert(region.id.as_str().to_owned());
+    claimed.shells.insert(shell.id.as_str().to_owned());
+    claimed.vertices.extend(vertices);
+    claimed.points.extend(points);
+    let (display, reduced) = ObjectDisplay::admit(
+        body.name.as_deref(),
+        body.color,
+        body.visible,
+        None,
+        written_layers,
+    );
+    Ok((
+        PointGroup {
             points: group,
             identity: body.id.as_str().to_owned(),
-            name: body.name.clone(),
-            color: body.color,
-            visible: body.visible,
-        });
-    }
-    if regions.len() != geometry.regions.len()
-        || shells.len() != geometry.shells.len()
-        || vertices.len() != geometry.vertices.len()
-    {
-        return Err(CodecError::NotImplemented(
-            "orphan region, shell, or vertex topology is not writable".into(),
-        ));
-    }
-    Ok((points, groups))
+            name: display.name.map(str::to_owned),
+            color: display.color,
+            visible: display.visible,
+        },
+        reduced,
+    ))
 }
 
 fn check_frame(
@@ -2479,22 +2699,23 @@ fn attributed_object_record(
     class_uuid: [u8; 16],
     payload: &[u8],
     identity: &str,
-    name: Option<&str>,
-    color: Option<cadmpeg_ir::topology::Color>,
-    visible: Option<bool>,
+    display: ObjectDisplay<'_>,
 ) -> Result<Vec<u8>, CodecError> {
-    check_object_attributes(identity, name)?;
     framed_object_record(
         object_type,
         class_uuid,
         payload,
         None,
-        Some(object_attributes_payload(identity, name, color, visible)?),
+        Some(object_attributes_payload(
+            identity,
+            display.name,
+            display.color,
+            display.visible,
+        )?),
     )
 }
 
 fn mesh_object_record(payload: &MeshPayload, identity: &str) -> Result<Vec<u8>, CodecError> {
-    check_object_attributes(identity, None)?;
     framed_object_record(
         0x20,
         MESH_CLASS,
@@ -2507,17 +2728,19 @@ fn mesh_object_record(payload: &MeshPayload, identity: &str) -> Result<Vec<u8>, 
 fn brep_object_record(
     payload: &BrepPayload,
     identity: &str,
-    name: Option<&str>,
-    color: Option<cadmpeg_ir::topology::Color>,
-    visible: Option<bool>,
+    display: ObjectDisplay<'_>,
 ) -> Result<Vec<u8>, CodecError> {
-    check_object_attributes(identity, name)?;
     framed_object_record(
         0x10,
         BREP_CLASS,
         &payload.body,
         Some(&payload.direct),
-        Some(object_attributes_payload(identity, name, color, visible)?),
+        Some(object_attributes_payload(
+            identity,
+            display.name,
+            display.color,
+            display.visible,
+        )?),
     )
 }
 
@@ -2546,15 +2769,6 @@ fn framed_object_record(
     }
     body.extend(object_end);
     zero_crc_chunk(TCODE_OBJECT_RECORD, &body)
-}
-
-fn check_object_attributes(identity: &str, name: Option<&str>) -> Result<(), CodecError> {
-    if name.is_some_and(|value| value.contains('\0')) {
-        return Err(CodecError::NotImplemented(format!(
-            "object {identity} name contains a null character"
-        )));
-    }
-    Ok(())
 }
 
 fn object_attributes_payload(

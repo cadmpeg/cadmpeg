@@ -5,15 +5,14 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsSurface},
     pcurve::Pcurve,
-    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::{Body, BodyKind, Coedge, Edge, Face, Loop, Sense, Vertex};
 
 use super::{
-    admit_pcurve, check_frame, check_nurbs_curve, check_nurbs_surface, check_object_attributes,
-    close_point, generated_projected_brep_c2_curve, stated_write_tolerance, validate_nurbs_trim,
+    admit_pcurve, check_frame, check_nurbs_curve, check_nurbs_surface, close_point, generated_projected_brep_c2_curve, stated_write_tolerance, validate_nurbs_trim,
     EPS_WRITE_DEGENERATE,
 };
 
@@ -113,24 +112,19 @@ enum ObjectCurveGeometry<'a> {
 impl<'a> WritableObjectCurve<'a> {
     /// Admits a free curve with writable attributes and geometry.
     pub(super) fn try_new(curve: &'a cadmpeg_ir::geometry::Curve) -> Result<Self, CodecError> {
-        if curve.source_object.is_some() {
-            return Err(CodecError::NotImplemented(format!(
-                "curve {} source-object state is not writable",
-                curve.id.as_str()
-            )));
-        }
-        let geometry = match &curve.geometry {
-            CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle)) => {
+        let geometry = match curve.geometry.solved() {
+            Some(SolvedCurveGeometry::Circle(circle)) => {
                 check_frame(curve.id.as_str(), *circle.frame(), "circle")?;
                 ObjectCurveGeometry::Circle(circle)
             }
-            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+            Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 check_nurbs_curve(curve.id.as_str(), nurbs)?;
                 ObjectCurveGeometry::Nurbs(nurbs)
             }
-            _ => {
+            other => {
                 return Err(CodecError::NotImplemented(format!(
-                    "Rhino writer cannot represent curve {} as a native object",
+                    "Rhino writer cannot represent {} curve {} as a native object",
+                    curve_family(other),
                     curve.id.as_str()
                 )))
             }
@@ -158,6 +152,25 @@ impl<'a> WritableObjectCurve<'a> {
     }
 }
 
+/// The family name of a curve carrier, for a loss that names why it was not
+/// written.
+const fn curve_family(geometry: Option<&SolvedCurveGeometry>) -> &'static str {
+    match geometry {
+        None => "an unsolved procedural",
+        Some(SolvedCurveGeometry::Line(_)) => "a line",
+        Some(SolvedCurveGeometry::Circle(_)) => "a circle",
+        Some(SolvedCurveGeometry::Ellipse(_)) => "an ellipse",
+        Some(SolvedCurveGeometry::Parabola(_)) => "a parabola",
+        Some(SolvedCurveGeometry::Hyperbola(_)) => "a hyperbola",
+        Some(SolvedCurveGeometry::Degenerate(_)) => "a degenerate",
+        Some(SolvedCurveGeometry::Composite { .. }) => "a composite",
+        Some(SolvedCurveGeometry::Nurbs(_)) => "a NURBS",
+        Some(SolvedCurveGeometry::Polyline(_)) => "a polyline",
+        Some(SolvedCurveGeometry::Transformed(_)) => "a transformed",
+        Some(SolvedCurveGeometry::Unknown { .. }) => "an unknown",
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum WritableFaceSurface<'a> {
     Plane {
@@ -175,14 +188,8 @@ pub(super) enum WritableFaceSurface<'a> {
 
 impl<'a> WritableFaceSurface<'a> {
     pub(super) fn try_new(surface: &'a cadmpeg_ir::geometry::Surface) -> Result<Self, CodecError> {
-        if surface.source_object.is_some() {
-            return Err(CodecError::NotImplemented(format!(
-                "surface {} source-object state is not writable",
-                surface.id.as_str(),
-            )));
-        }
-        match &surface.geometry {
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) => {
+        match surface.geometry.solved() {
+            Some(SolvedSurfaceGeometry::Plane(plane)) => {
                 let origin = plane.origin().get();
                 let normal = plane.frame().axis().as_raw();
                 let u_axis = plane.frame().reference().as_raw();
@@ -193,7 +200,7 @@ impl<'a> WritableFaceSurface<'a> {
                     u_axis: *u_axis,
                 })
             }
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
+            Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
                 let pole_count = check_nurbs_surface(surface.id.as_str(), nurbs)?;
                 Ok(Self::Nurbs {
                     surface: nurbs,
@@ -309,7 +316,6 @@ impl<'a> WritableModel<'a> {
                 "Brep body placement is not writable".into(),
             ));
         }
-        check_object_attributes(body.id.as_str(), body.name.as_deref())?;
         let region = &geometry.regions[0];
         let shell = &geometry.shells[0];
         if region.body != body.id
@@ -426,12 +432,6 @@ impl<'a> WritableModel<'a> {
                     CodecError::malformed(format_args!("curve {} is missing", curve_id.as_str()))
                 })?;
             used_curves.insert(curve_id.as_str());
-            if curve.source_object.is_some() {
-                return Err(CodecError::NotImplemented(format!(
-                    "edge curve {} source-object state is not writable",
-                    curve.id.as_str()
-                )));
-            }
             let domain = edge
                 .param_range()
                 .ok_or_else(|| {
@@ -448,8 +448,8 @@ impl<'a> WritableModel<'a> {
                     edge.id.as_str()
                 )));
             }
-            let (geometry, expected_start, expected_end) = match &curve.geometry {
-                CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) => {
+            let (geometry, expected_start, expected_end) = match curve.geometry.solved() {
+                Some(SolvedCurveGeometry::Line(line)) => {
                     let origin = line.origin().get();
                     let direction = *line.direction().as_raw();
                     if (direction.norm() - 1.0).abs() > EPS_WRITE_DEGENERATE {
@@ -472,7 +472,7 @@ impl<'a> WritableModel<'a> {
                         ),
                     )
                 }
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
+                Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
                     check_nurbs_curve(curve.id.as_str(), nurbs)?;
                     let count = nurbs.control_points().len();
                     if nurbs.periodic()
@@ -529,7 +529,7 @@ impl<'a> WritableModel<'a> {
             let ends = super::edge_ends(edge)?;
             let start = resolve(&vertex_positions, ends.start.as_str())?;
             let end = resolve(&vertex_positions, ends.end.as_str())?;
-            let tolerance = stated_write_tolerance(edge.tolerance, ir, edge.id.as_str())?;
+            let tolerance = stated_write_tolerance(edge.tolerance, ir);
             if !close_point(vertices[start].point, expected_start, tolerance)
                 || !close_point(vertices[end].point, expected_end, tolerance)
             {
@@ -715,11 +715,7 @@ impl<'a> WritableModel<'a> {
                                 "coedge {} has no explicit pcurve", coedge.id.as_str(),
                             ))
                         })?;
-                        let face_tolerance = stated_write_tolerance(
-                            face.source.tolerance,
-                            ir,
-                            face.source.id.as_str(),
-                        )?;
+                        let face_tolerance = stated_write_tolerance(face.source.tolerance, ir);
                         validate_nurbs_trim(
                             surface, face_tolerance,
                             &edges[edge], coedge.sense, &pcurve,
@@ -845,7 +841,7 @@ impl<'a> WritableModel<'a> {
                     u_axis,
                 } => {
                     let tolerance =
-                        stated_write_tolerance(face.source.tolerance, ir, face.source.id.as_str())?;
+                        stated_write_tolerance(face.source.tolerance, ir);
                     let mut boundary = Vec::new();
                     for position in &loop_.coedges {
                         let coedge = &result.coedges[*position];

@@ -174,7 +174,7 @@ impl EncoderBackend for RhinoCodec {
     /// read.
     const NEEDS: DepthNeed = DepthNeed::AtLeast(DecodeDepth::Geometry);
     type Target = Catalog;
-    const TARGET: Catalog = Catalog::new(RhinoArchiveVersion::TARGETS, Some(3));
+    const TARGET: Catalog = Catalog::synthesis_only(RhinoArchiveVersion::TARGETS, 3);
 
     /// Synthesis-only encoder. An off-catalog Rhino source cannot be reproduced
     /// because 3DM has no retained-image path.
