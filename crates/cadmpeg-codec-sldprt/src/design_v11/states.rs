@@ -41,7 +41,7 @@ use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::{ConfigurationId, FeatureId};
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::schema::EntitySchema;
+use cadmpeg_ir::schema::{EntityKind, EntitySchema};
 
 use super::names::Names;
 use crate::loss::SldprtLossCode;
@@ -196,20 +196,18 @@ fn evaluation_id(configuration: &ConfigurationId) -> Option<EvaluationId> {
     EvaluationId::mint(format!("sldprt:model:evaluation#{key}")).ok()
 }
 
+/// The arena kind of a record slice.
+fn kind_of<T: EntitySchema>(_: &[T]) -> EntityKind {
+    T::KIND
+}
+
 macro_rules! topology_arenas {
     ($($field:ident),* $(,)?) => {
-        /// A `Topology` arena.
-        #[allow(non_camel_case_types)]
-        #[derive(Clone, Copy)]
-        enum Arena {
-            $($field,)*
-        }
-
         /// The records of a `Topology` by id, and the records that reference
         /// each of them.
         struct Reach<'g> {
             geometry: &'g Topology,
-            slots: HashMap<&'g str, (Arena, usize)>,
+            slots: HashMap<&'g str, (EntityKind, usize)>,
             referrers: HashMap<&'g str, Vec<&'g str>>,
         }
 
@@ -217,7 +215,7 @@ macro_rules! topology_arenas {
             fn new(ctx: &DecodeContext<'_>, geometry: &'g Topology) -> Result<Self, CodecError> {
                 let mut slots = HashMap::new();
                 $(for (at, record) in geometry.$field.iter().enumerate() {
-                    slots.entry(record.identity()).or_insert((Arena::$field, at));
+                    slots.entry(record.identity()).or_insert((kind_of(&geometry.$field), at));
                 })*
                 let mut reach = Self {
                     geometry,
@@ -245,7 +243,7 @@ macro_rules! topology_arenas {
                 id: &str,
                 found: &mut Vec<&'g str>,
             ) -> Result<(), CodecError> {
-                let Some(&(arena, at)) = self.slots.get(id) else {
+                let Some(&(kind, at)) = self.slots.get(id) else {
                     return Ok(());
                 };
                 let mut visit = |target: &str| {
@@ -254,9 +252,10 @@ macro_rules! topology_arenas {
                     }
                     Ok(())
                 };
-                match arena {
-                    $(Arena::$field => self.geometry.$field[at].visit_references(ctx, &mut visit),)*
-                }
+                $(if kind == kind_of(&self.geometry.$field) {
+                    return self.geometry.$field[at].visit_references(ctx, &mut visit);
+                })*
+                Ok(())
             }
 
             /// The records that belong to the state of `bodies`, each arena
