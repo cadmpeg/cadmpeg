@@ -22,13 +22,14 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
 use super::text::{quoted, real32, tuple32, Names};
-use super::{Writer, MILLIMETRES_PER_UNIT};
+use super::Writer;
 
 /// Name of the scope that holds physical materials and joints.
 pub(super) const PHYSICS: &str = "Physics";
-/// Scene-unit density per kilogram per cubic millimetre.
-fn density_scale() -> f64 {
-    MILLIMETRES_PER_UNIT.powi(3)
+/// Scene-unit density per kilogram per cubic millimetre, for `length`
+/// millimetres per scene unit.
+fn density_scale(length: f64) -> f64 {
+    length.powi(3)
 }
 
 /// The schemas and properties of one prim.
@@ -130,7 +131,7 @@ fn floats(values: &[f64]) -> String {
     )
 }
 
-fn mass_lines(mass: &MassProperties) -> Vec<String> {
+fn mass_lines(mass: &MassProperties, length: f64) -> Vec<String> {
     let mut lines = Vec::new();
     if let Some(value) = mass.mass {
         lines.push(format!("float physics:mass = {}", float(value.get())));
@@ -138,14 +139,14 @@ fn mass_lines(mass: &MassProperties) -> Vec<String> {
     if let Some(value) = mass.density {
         lines.push(format!(
             "float physics:density = {}",
-            float(value.get() * density_scale())
+            float(value.get() * density_scale(length))
         ));
     }
     if let Some(point) = mass.center_of_mass {
         let point = point.get();
         lines.push(format!(
             "point3f physics:centerOfMass = {}",
-            floats(&[point.x, point.y, point.z].map(|value| value / MILLIMETRES_PER_UNIT))
+            floats(&[point.x, point.y, point.z].map(|value| value / length))
         ));
     }
     if let Some(inertia) = &mass.inertia {
@@ -154,7 +155,7 @@ fn mass_lines(mass: &MassProperties) -> Vec<String> {
             floats(
                 &inertia
                     .moments
-                    .map(|moment| moment.get() / (MILLIMETRES_PER_UNIT * MILLIMETRES_PER_UNIT))
+                    .map(|moment| moment.get() / (length * length))
             )
         ));
         let axes = inertia
@@ -175,7 +176,8 @@ impl Plan {
             && self.materials.is_empty()
     }
 
-    pub(super) fn new(ir: &CadIr) -> Self {
+    /// The plan of `ir`, in scene units of `length` millimetres.
+    pub(super) fn new(ir: &CadIr, length: f64) -> Self {
         let model = &ir.model;
         let mut occurrences: BTreeMap<OccurrenceId, PrimPhysics> = BTreeMap::new();
         let mut bodies: BTreeMap<BodyId, PrimPhysics> = BTreeMap::new();
@@ -238,10 +240,7 @@ impl Plan {
                 let velocity = velocity.get();
                 lines.push(format!(
                     "vector3f physics:velocity = {}",
-                    floats(
-                        &[velocity.x, velocity.y, velocity.z]
-                            .map(|value| value / MILLIMETRES_PER_UNIT)
-                    )
+                    floats(&[velocity.x, velocity.y, velocity.z].map(|value| value / length))
                 ));
             }
             if let Some(velocity) = body.angular_velocity {
@@ -281,7 +280,11 @@ impl Plan {
             );
         }
         for mass in &model.mass_properties {
-            add(&mass.target.entity, "PhysicsMassAPI", mass_lines(mass));
+            add(
+                &mass.target.entity,
+                "PhysicsMassAPI",
+                mass_lines(mass, length),
+            );
         }
         let scope_path = String::new();
         for collider in &model.colliders {
@@ -328,7 +331,7 @@ impl Plan {
                 unwritten_settings += settings.values.len().max(1);
                 continue;
             }
-            let (schema, lines, unwritten) = super::physx::lines(settings);
+            let (schema, lines, unwritten) = super::physx::lines(settings, length);
             unwritten_settings += unwritten;
             let onto = |entry: &mut PrimPhysics| {
                 entry.0.push(schema.clone());
@@ -496,7 +499,7 @@ impl Writer<'_> {
         let [r0, r1, r2] = frame.affine_rows();
         self.out.line(&format!(
             "point3f physics:localPos{side} = {}",
-            floats(&[r0[3], r1[3], r2[3]].map(|value| value / MILLIMETRES_PER_UNIT))
+            floats(&[r0[3], r1[3], r2[3]].map(|value| value / self.millimetres_per_unit))
         ));
         self.out.line(&format!(
             "quatf physics:localRot{side} = {}",
@@ -670,7 +673,7 @@ impl Writer<'_> {
                     None,
                 ),
                 PairedJointKind::Slider { linear_limits, .. } => (
-                    limit(linear_limits, &|value| value / MILLIMETRES_PER_UNIT),
+                    limit(linear_limits, &|value| value / self.millimetres_per_unit),
                     None,
                 ),
                 PairedJointKind::Distance { distance } => ([None, None], *distance),
@@ -690,7 +693,7 @@ impl Writer<'_> {
             }
         }
         if let Some(distance) = distance {
-            let value = float(distance.get() / MILLIMETRES_PER_UNIT);
+            let value = float(distance.get() / self.millimetres_per_unit);
             self.out
                 .line(&format!("float physics:minDistance = {value}"));
             self.out
@@ -707,7 +710,7 @@ impl Writer<'_> {
             let rotation = matches!(drive.axis, DriveAxis::Rotation { .. });
             let degrees = 180.0 / std::f64::consts::PI;
             // See the reader for the inverse factors.
-            let millimetres = MILLIMETRES_PER_UNIT;
+            let millimetres = self.millimetres_per_unit;
             let (position, response, force) = if rotation {
                 (
                     degrees,
@@ -795,7 +798,7 @@ impl Writer<'_> {
                 coupled_joints,
                 ..
             } => (
-                ratio.map(|ratio| (ratio.get() * MILLIMETRES_PER_UNIT).to_degrees()),
+                ratio.map(|ratio| (ratio.get() * self.millimetres_per_unit).to_degrees()),
                 coupled_joints,
                 ["physics:ratio", "physics:hinge", "physics:prismatic"],
             ),
@@ -845,13 +848,13 @@ impl Writer<'_> {
                 let direction = cadmpeg_ir::math::Vector3::from(direction);
                 self.out.line(&format!(
                     "vector3f physics:gravityDirection = {}",
-                    floats(&[direction.x, direction.y, direction.z])
+                    floats(&self.turned([direction.x, direction.y, direction.z]))
                 ));
             }
             if let Some(magnitude) = scene.gravity_magnitude {
                 self.out.line(&format!(
                     "float physics:gravityMagnitude = {}",
-                    float(magnitude.get() / MILLIMETRES_PER_UNIT)
+                    float(magnitude.get() / self.millimetres_per_unit)
                 ));
             }
             for line in &settings_lines {
@@ -883,7 +886,9 @@ impl Writer<'_> {
             for (field, value) in [
                 (
                     "density",
-                    material.density.map(|value| value.get() * density_scale()),
+                    material
+                        .density
+                        .map(|value| value.get() * density_scale(self.millimetres_per_unit)),
                 ),
                 (
                     "staticFriction",
