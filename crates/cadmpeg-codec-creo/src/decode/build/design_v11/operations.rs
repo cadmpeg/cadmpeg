@@ -42,7 +42,7 @@ impl<'a> Stated<'a> {
                 .map(|sketch| {
                     let frame = match &sketch.plane {
                         SketchPlane::Placed(placement) => placement.resolved.as_ref(),
-                        _ => None,
+                        SketchPlane::Block => None,
                     };
                     (&sketch.id, frame)
                 })

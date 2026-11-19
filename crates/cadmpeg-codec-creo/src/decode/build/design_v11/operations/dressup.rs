@@ -72,7 +72,7 @@ pub(super) fn edges(
 ) -> Option<OrderedSelection> {
     match value {
         old::EdgeSelection::Resolved { edges, native } => by_ids(
-            edges.iter().map(|edge| edge.as_str()),
+            edges.iter().map(cadmpeg_ir::ids::EdgeId::as_str),
             names::EDGE,
             NameKind::Edge,
             native,
@@ -94,7 +94,7 @@ pub(super) fn faces(
 ) -> Option<SetSelection> {
     match value {
         old::FaceSelection::Resolved { faces, native } => by_ids(
-            faces.iter().map(|face| face.as_str()),
+            faces.iter().map(cadmpeg_ir::ids::FaceId::as_str),
             names::FACE,
             NameKind::Face,
             native,
@@ -284,7 +284,7 @@ fn hole(
                 resolved: Some(*position),
                 ..Construction::default()
             }),
-            _ => None,
+            HolePlacement::Axis { .. } => None,
         })
         .collect::<Option<Vec<_>>>()?;
     let drill_point = match kind {

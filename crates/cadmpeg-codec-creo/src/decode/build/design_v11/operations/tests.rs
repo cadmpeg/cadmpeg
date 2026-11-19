@@ -97,7 +97,7 @@ fn project(operation: &LegacyOperation) -> Option<FeatureOperation> {
     Some(projected)
 }
 
-fn extrude(direction: Value, extent: Value) -> LegacyOperation {
+fn extrude(direction: &Value, extent: &Value) -> LegacyOperation {
     legacy(
         "extrude",
         json!({
@@ -122,8 +122,8 @@ fn length(value: f64) -> Dimension<Length> {
 #[test]
 fn an_extrude_travels_along_its_section_normal_from_the_section_plane() {
     let operation = extrude(
-        json!({"kind": "explicit", "vector": [0.0, 0.0, -1.0]}),
-        json!({"kind": "one_sided", "side": blind(12.5)}),
+        &json!({"kind": "explicit", "vector": [0.0, 0.0, -1.0]}),
+        &json!({"kind": "one_sided", "side": blind(12.5)}),
     );
     let Some(FeatureOperation::Extrude(extrude)) = project(&operation) else {
         panic!("extrude");
@@ -159,8 +159,8 @@ fn an_extrude_travels_along_its_section_normal_from_the_section_plane() {
 #[test]
 fn a_second_side_is_measured_against_the_travel() {
     let operation = extrude(
-        json!({"kind": "explicit", "vector": [0.0, 0.0, 2.0]}),
-        json!({"kind": "two_sided", "first": blind(8.0), "second": blind(3.0)}),
+        &json!({"kind": "explicit", "vector": [0.0, 0.0, 2.0]}),
+        &json!({"kind": "two_sided", "first": blind(8.0), "second": blind(3.0)}),
     );
     let Some(FeatureOperation::Extrude(extrude)) = project(&operation) else {
         panic!("extrude");
@@ -183,8 +183,8 @@ fn a_second_side_is_measured_against_the_travel() {
 #[test]
 fn a_symmetric_depth_is_the_total() {
     let operation = extrude(
-        json!({"kind": "explicit", "vector": [0.0, 0.0, 1.0]}),
-        json!({"kind": "symmetric", "side": blind(6.0)}),
+        &json!({"kind": "explicit", "vector": [0.0, 0.0, 1.0]}),
+        &json!({"kind": "symmetric", "side": blind(6.0)}),
     );
     let Some(FeatureOperation::Extrude(extrude)) = project(&operation) else {
         panic!("extrude");
@@ -201,8 +201,8 @@ fn a_symmetric_depth_is_the_total() {
 #[test]
 fn a_travel_off_the_section_normal_or_a_drafted_side_is_unstated() {
     let operation = extrude(
-        json!({"kind": "explicit", "vector": [0.0, 1.0, 1.0]}),
-        json!({"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 4.0}, "draft": 0.1}}),
+        &json!({"kind": "explicit", "vector": [0.0, 1.0, 1.0]}),
+        &json!({"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 4.0}, "draft": 0.1}}),
     );
     let Some(FeatureOperation::Extrude(extrude)) = project(&operation) else {
         panic!("extrude");

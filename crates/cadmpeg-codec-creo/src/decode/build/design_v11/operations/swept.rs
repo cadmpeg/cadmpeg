@@ -246,7 +246,7 @@ pub(super) fn revolve(value: &LegacyOperation, stated: &Stated<'_>) -> Option<Fe
             } => (Some(profile), Some(axis), None, *solid),
             _ => return None,
         },
-        _ => return None,
+        old::RevolveConstruction::Resolved { .. } => return None,
     };
     let section = profile.and_then(|profile| selections::planar_profile(profile, stated));
     let axis = axis
