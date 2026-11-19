@@ -413,6 +413,7 @@ fn repro_document_size_does_not_consume_the_closure_limit() {
             crate::ids::PointId::mint(format!("synthetic:unrelated:point#{ordinal}")).unwrap();
         document.geometry.points.push(unrelated);
     }
+    document.finalize();
     assert!(serde_json::to_vec(&document).unwrap().len() > limit);
     let options = CutOptions {
         max_rows: rows,

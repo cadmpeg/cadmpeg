@@ -222,6 +222,42 @@ pub fn retain(value: &mut Value, rows: &[Row], keep: &BTreeSet<usize>) {
     }
 }
 
+/// Sort the rows of every arena of a document's JSON by id: the homes, each
+/// native namespace, and each state's delta. Stripping rewrites ids, and a
+/// document reads only with its arenas in strictly increasing order (§2.8).
+fn sort_arena_rows(document: &mut Value) {
+    fn sort_home(home: Option<&mut Value>) {
+        let Some(Value::Object(arenas)) = home else {
+            return;
+        };
+        for rows in arenas.values_mut() {
+            if let Value::Array(rows) = rows {
+                if rows
+                    .iter()
+                    .all(|row| row.get("id").is_some_and(Value::is_string))
+                {
+                    rows.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+                }
+            }
+        }
+    }
+    fn sort_deltas(states: Option<&mut Value>) {
+        for state in states.and_then(Value::as_array_mut).into_iter().flatten() {
+            sort_home(state.pointer_mut("/content/delta/records"));
+        }
+    }
+    for home in ["geometry", "model", "design", "process"] {
+        sort_home(document.get_mut(home));
+    }
+    if let Some(Value::Object(namespaces)) = document.get_mut("native") {
+        for namespace in namespaces.values_mut() {
+            sort_home(Some(namespace));
+        }
+    }
+    sort_deltas(document.pointer_mut("/design/evaluations"));
+    sort_deltas(document.pointer_mut("/process/states"));
+}
+
 /// Measure a bounded serialized document before validation.
 pub fn projection_size(document: &Document, options: &CutOptions) -> Result<usize, CodecError> {
     Ok(project(document, options)?.bytes.len())
@@ -317,11 +353,12 @@ pub fn cut_with_native(
             .as_ref()
             .map(crate::document::SourceMeta::format),
     )?;
-    let mut document: Document =
-        serde_json::from_str(&value.to_string()).map_err(CodecError::malformed)?;
+    let mut value = value;
     if finding.check != crate::report::check::Check::ArenaOrder {
-        document.finalize();
+        sort_arena_rows(&mut value);
     }
+    let document: Document =
+        serde_json::from_str(&value.to_string()).map_err(CodecError::malformed)?;
     let mut bundle = Bundle {
         document,
         signature,

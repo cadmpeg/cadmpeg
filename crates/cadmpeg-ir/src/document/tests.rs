@@ -275,8 +275,8 @@ fn tree_node_model() -> (
         Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole,
     };
 
-    let parent_id = FeatureId::mint("test:model:feature#parent").expect("identity grammar");
-    let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
+    let parent_id = FeatureId::mint("test:model:feature#1-parent").expect("identity grammar");
+    let child_id = FeatureId::mint("test:model:feature#2-child").expect("identity grammar");
     let parent = Feature {
         product_definition: None,
         id: parent_id.clone(),
@@ -410,9 +410,9 @@ fn feature_parent_wire_rejects_disagreement_with_tree_children() {
         Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole,
     };
 
-    let first_id = FeatureId::mint("test:model:feature#first").expect("identity grammar");
-    let second_id = FeatureId::mint("test:model:feature#second").expect("identity grammar");
-    let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
+    let first_id = FeatureId::mint("test:model:feature#1-first").expect("identity grammar");
+    let second_id = FeatureId::mint("test:model:feature#2-second").expect("identity grammar");
+    let child_id = FeatureId::mint("test:model:feature#3-child").expect("identity grammar");
     let model = Model {
         features: vec![
             Feature {
@@ -1084,8 +1084,8 @@ fn parent_only_wire_preserves_regeneration_without_tree_membership() {
         Feature, FeatureDefinition, FeatureId, FeatureOperation, FeatureTreeNodeRole,
     };
 
-    let parent_id = FeatureId::mint("test:model:feature#parent").expect("identity grammar");
-    let child_id = FeatureId::mint("test:model:feature#child").expect("identity grammar");
+    let parent_id = FeatureId::mint("test:model:feature#1-parent").expect("identity grammar");
+    let child_id = FeatureId::mint("test:model:feature#2-child").expect("identity grammar");
     let mut model = Model {
         features: vec![
             Feature {
