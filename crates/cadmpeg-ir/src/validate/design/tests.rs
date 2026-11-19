@@ -995,7 +995,7 @@ fn a_pick_is_checked_in_each_configuration_in_which_its_feature_is_active() {
 
 /// The bracket fixture with plane `b` of the part picking the bracket's XY
 /// plane through `context`.
-fn bracket_plane_through(context: Value) -> CadIr {
+fn bracket_plane_through(context: &Value) -> CadIr {
     let mut ir = bracket_plane_on_the_body_origin();
     let b = feature(
         "b",
@@ -1040,10 +1040,10 @@ fn a_pick_context_configuration_follows_the_configuration_ref_rule() {
         }
         json!({"kind": "occurrence", "value": [step]})
     };
-    assert_clean(&bracket_plane_through(definition(None)));
-    assert_clean(&bracket_plane_through(path(None)));
+    assert_clean(&bracket_plane_through(&definition(None)));
+    assert_clean(&bracket_plane_through(&path(None)));
     for context in [definition(Some(&nowhere)), path(Some(&nowhere))] {
-        let ir = bracket_plane_through(context);
+        let ir = bracket_plane_through(&context);
         assert!(reports(&ir, Severity::Error, &b), "{:#?}", findings(&ir));
     }
 }
@@ -1096,7 +1096,7 @@ fn a_datum_of_a_component_restates_the_components_principal_entity() {
 
 /// Planes `a` and `b`, with `b` offset from a rule selection of `terms`
 /// less `excluded`.
-fn rule_planes(terms: Vec<Value>, excluded: Vec<Value>) -> CadIr {
+fn rule_planes(terms: &[Value], excluded: &[Value]) -> CadIr {
     let mut features = planes();
     features[1] = feature(
         "b",
@@ -1117,12 +1117,12 @@ fn two_explicit_exclusions_with_equal_propagation_are_an_error() {
     let term = explicit(datum_pick("a"));
     let b = key("feature", "b");
     assert_clean(&rule_planes(
-        vec![term.clone()],
-        vec![explicit(principal("yz_plane"))],
+        std::slice::from_ref(&term),
+        &[explicit(principal("yz_plane"))],
     ));
     let ir = rule_planes(
-        vec![term],
-        vec![
+        &[term],
+        &[
             explicit(principal("yz_plane")),
             explicit(principal("xz_plane")),
         ],
@@ -1135,9 +1135,9 @@ fn a_native_rule_names_a_codec_of_lowercase_letters_and_digits() {
     let native =
         |text: &str| json!({"rule": {"kind": "native", "value": text}, "seeds": [datum_pick("a")]});
     let b = key("feature", "b");
-    assert_clean(&rule_planes(vec![native("f3d:chain")], Vec::new()));
+    assert_clean(&rule_planes(&[native("f3d:chain")], &[]));
     for text in ["F3D:chain", "f-3d:chain", "f3d :chain", "fcstd.v1:chain"] {
-        let ir = rule_planes(vec![native(text)], Vec::new());
+        let ir = rule_planes(&[native(text)], &[]);
         assert!(
             reports(&ir, Severity::Error, &b),
             "{text}: {:#?}",
