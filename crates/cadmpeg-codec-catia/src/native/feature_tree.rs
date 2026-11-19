@@ -17,11 +17,7 @@ const COMPACT_TAG_BASE: u8 = 0x34;
 /// Prefix-relative offset of the class tag in a compact definition prefix.
 const COMPACT_CLASS_OFFSET: usize = 2;
 
-const ROOT_CLASS: &str = "MechanicalPart";
-const CONTAINER_CLASSES: [&str; 4] = [ROOT_CLASS, "MechanicalTool", "HybridBody", "GSMTool"];
-const MEMBER_LIST_FIELD: &str = "_FtrList";
-const CURRENT_FEATURE_FIELD: &str = "CurrentFeature";
-const MAIN_TOOL_FIELD: &str = "MainTool";
+const CONTAINER_CLASSES: [&str; 4] = ["MechanicalPart", "MechanicalTool", "HybridBody", "GSMTool"];
 
 /// Class named by the one-byte tag of a compact definition prefix.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,6 +45,17 @@ pub(crate) struct CatiaCompactSegment {
     pub(crate) entry: String,
     /// UTF-8 field name stored by the entry.
     pub(crate) name: String,
+    /// Decoded segment value.
+    pub(crate) value: CatiaSegmentValue,
+}
+
+/// Value of one compact payload segment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) enum CatiaSegmentValue {
+    /// One entity token.
+    Token(CatiaFeatureReference),
+    /// Counted list of entity and persistent-identity token pairs, in stored order.
+    List(Vec<CatiaFeatureMember>),
 }
 
 /// Same-graph record selected by a stored entity identity.
@@ -67,7 +74,7 @@ pub(crate) struct CatiaFeatureTarget {
     pub(crate) class: Option<CatiaDesignClass>,
 }
 
-/// One single-reference segment of a container payload.
+/// One single-token segment value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct CatiaFeatureReference {
     /// Byte offset of the reference token within the payload.
@@ -83,7 +90,7 @@ pub(crate) struct CatiaFeatureReference {
     pub(crate) target: Option<CatiaFeatureTarget>,
 }
 
-/// One `_FtrList` member, in stored order.
+/// One list item, in stored order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct CatiaFeatureMember {
     /// Byte offset of the member's entity token within the payload.
@@ -125,27 +132,6 @@ pub(crate) struct CatiaFeatureContainer {
         deserialize_with = "deserialize_unsegmented_payload_offset"
     )]
     pub(crate) unsegmented_payload_offset: Option<u64>,
-    /// `_FtrList` members in stored order; absent when the list is unread.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_members"
-    )]
-    pub(crate) members: Option<Vec<CatiaFeatureMember>>,
-    /// Stored in-work object of the part root.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_current_feature"
-    )]
-    pub(crate) current_feature: Option<CatiaFeatureReference>,
-    /// Stored main body of the part root.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_main_tool"
-    )]
-    pub(crate) main_tool: Option<CatiaFeatureReference>,
 }
 
 /// Class of a compact definition prefix `00 <flags> <tag> <second>`.
@@ -228,10 +214,18 @@ struct Segmentation<'c> {
 /// Walk `<tag> <value>` segments up to the final `FE` run. A value is a
 /// counted list `<count> 81 (<entity> <persistent-id>){count}` or one integer
 /// token. The walk stops at the first byte no segment covers.
-fn segment(payload: &[u8], catalog: &CatiaCatalog) -> Segmentation<'_> {
-    let is_terminal = |at: usize| payload.get(at..).is_some_and(|rest| rest.iter().all(|&b| b == 0xfe));
-    let starts_segment =
-        |at: usize| is_terminal(at) || payload.get(at).is_some_and(|&tag| tag_entry(catalog, tag).is_some());
+fn segment<'c>(payload: &[u8], catalog: &'c CatiaCatalog) -> Segmentation<'c> {
+    let is_terminal = |at: usize| {
+        payload
+            .get(at..)
+            .is_some_and(|rest| rest.iter().all(|&b| b == 0xfe))
+    };
+    let starts_segment = |at: usize| {
+        is_terminal(at)
+            || payload
+                .get(at)
+                .is_some_and(|&tag| tag_entry(catalog, tag).is_some())
+    };
     let mut segments = Vec::new();
     let mut at = 0;
     loop {
@@ -312,7 +306,10 @@ pub(crate) fn derive(
         .iter()
         .map(|catalog| (catalog.id.as_str(), catalog))
         .collect::<HashMap<_, _>>();
-    let objects = graphs.iter().flat_map(|graph| &graph.records).collect::<Vec<_>>();
+    let objects = graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .collect::<Vec<_>>();
     let pairs = PairedRecords::new(entities, &objects);
     let mut containers = Vec::new();
     for graph in graphs {
@@ -353,62 +350,39 @@ pub(crate) fn derive(
                     class: entity.compact_class.as_ref().map(design_class),
                 }))
             };
-            let named = |name: &str| {
-                let mut matches = segmentation
-                    .segments
-                    .iter()
-                    .filter(move |segment| segment.entry.value == name);
-                let first = matches.next();
-                first.filter(|_| matches.next().is_none())
-            };
-            let members = match named(MEMBER_LIST_FIELD) {
-                Some(Segment {
-                    value: SegmentValue::List(items),
-                    ..
-                }) => {
-                    ctx.charge_entities(u64_from_index(items.len()), "admit CATIA feature-tree member")?;
-                    let mut members = Vec::with_capacity(items.len());
-                    for item in items {
-                        members.push(CatiaFeatureMember {
-                            payload_offset: u64_from_index(item.offset),
-                            entity_id: item.entity_id,
-                            persistent_id: item.persistent_id,
-                            target: target(item.entity_id)?,
-                        });
-                    }
-                    Some(members)
-                }
-                Some(_) => None,
-                None => segmentation
-                    .unsegmented
-                    .is_none()
-                    .then(Vec::new)
-                    .filter(|_| !has_entry(&segmentation, MEMBER_LIST_FIELD)),
-            };
-            let is_root = class.name == ROOT_CLASS;
-            let reference = |name: &str| -> Result<Option<CatiaFeatureReference>, CodecError> {
-                let Some(Segment {
-                    value: SegmentValue::Single { offset, value },
-                    ..
-                }) = named(name).filter(|_| is_root)
-                else {
-                    return Ok(None);
-                };
-                Ok(Some(CatiaFeatureReference {
-                    payload_offset: u64_from_index(*offset),
-                    entity_id: *value,
-                    target: target(*value)?,
-                }))
-            };
-            let current_feature = reference(CURRENT_FEATURE_FIELD)?;
-            let main_tool = reference(MAIN_TOOL_FIELD)?;
             let mut segments = Vec::with_capacity(segmentation.segments.len());
             for segment in &segmentation.segments {
+                let value = match &segment.value {
+                    &SegmentValue::Single { offset, value } => {
+                        CatiaSegmentValue::Token(CatiaFeatureReference {
+                            payload_offset: u64_from_index(offset),
+                            entity_id: value,
+                            target: target(value)?,
+                        })
+                    }
+                    SegmentValue::List(items) => {
+                        ctx.charge_entities(
+                            u64_from_index(items.len()),
+                            "admit CATIA feature-tree list item",
+                        )?;
+                        let mut members = Vec::with_capacity(items.len());
+                        for item in items {
+                            members.push(CatiaFeatureMember {
+                                payload_offset: u64_from_index(item.offset),
+                                entity_id: item.entity_id,
+                                persistent_id: item.persistent_id,
+                                target: target(item.entity_id)?,
+                            });
+                        }
+                        CatiaSegmentValue::List(members)
+                    }
+                };
                 segments.push(CatiaCompactSegment {
                     payload_offset: u64_from_index(segment.offset),
                     tag: segment.tag,
                     entry: retain_text(ctx, &segment.entry.id)?,
                     name: retain_text(ctx, &segment.entry.value)?,
+                    value,
                 });
             }
             containers.push(CatiaFeatureContainer {
@@ -423,20 +397,10 @@ pub(crate) fn derive(
                 class: design_class(class),
                 segments,
                 unsegmented_payload_offset: segmentation.unsegmented.map(u64_from_index),
-                members,
-                current_feature,
-                main_tool,
             });
         }
     }
     Ok(containers)
-}
-
-fn has_entry(segmentation: &Segmentation<'_>, name: &str) -> bool {
-    segmentation
-        .segments
-        .iter()
-        .any(|segment| segment.entry.value == name)
 }
 
 fn design_class(class: &CatiaCompactClass) -> CatiaDesignClass {
@@ -470,25 +434,10 @@ fn retain_text(ctx: &DecodeContext<'_>, value: &str) -> Result<String, CodecErro
 mod tests;
 
 cadmpeg_core::named_optional_field!(deserialize_target_class, CatiaDesignClass, "class");
-cadmpeg_core::named_optional_field!(
-    deserialize_reference_target,
-    CatiaFeatureTarget,
-    "target"
-);
+cadmpeg_core::named_optional_field!(deserialize_reference_target, CatiaFeatureTarget, "target");
 cadmpeg_core::named_optional_field!(deserialize_member_target, CatiaFeatureTarget, "target");
 cadmpeg_core::named_optional_field!(
     deserialize_unsegmented_payload_offset,
     u64,
     "unsegmented_payload_offset"
 );
-cadmpeg_core::named_optional_field!(
-    deserialize_members,
-    Vec<CatiaFeatureMember>,
-    "members"
-);
-cadmpeg_core::named_optional_field!(
-    deserialize_current_feature,
-    CatiaFeatureReference,
-    "current_feature"
-);
-cadmpeg_core::named_optional_field!(deserialize_main_tool, CatiaFeatureReference, "main_tool");
