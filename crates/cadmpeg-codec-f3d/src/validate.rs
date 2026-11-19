@@ -2880,14 +2880,23 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     generation.operand_path_locator_offsets();
                                 let first_start = paths[0].link().locator_byte_offset;
                                 let second_start = paths[1].link().locator_byte_offset;
+                                let counted_wrapper = variable_reference || wide_as_built || compact_as_built
+                                    || operand_frame_variant.is_some_and(
+                                        design::assembly::AssemblyOperandFrameVariant::is_wide_family,
+                                    );
                                 let envelope_ends = paths.each_ref().map(|path| {
-                                    let continuation_count = if variable_reference || wide_as_built || compact_as_built
-                                        || operand_frame_variant.is_some_and(
-                                            design::assembly::AssemblyOperandFrameVariant::is_wide_family,
-                                        ) {
-                                        path.link()
-                                            .wrapper_record_index
-                                            .checked_sub(path.link().locator_record_index)?
+                                    let link = path.link();
+                                    let skipped_index = (rigid_as_built || compact_as_built)
+                                        && design::assembly::typed_as_built_path_wrapper_gap(
+                                            link.locator_record_index,
+                                            path.record_index,
+                                            link.wrapper_record_index,
+                                            stream_types,
+                                        )
+                                        && path.two_keys_in_one_typed_record();
+                                    let continuation_count = if counted_wrapper && !skipped_index {
+                                        link.wrapper_record_index
+                                            .checked_sub(link.locator_record_index)?
                                             .checked_sub(2)?
                                     } else {
                                         0
@@ -5169,6 +5178,8 @@ fn validate_extrude_selection_groups(ctx: &Ctx<'_, '_>, findings: &mut Vec<Findi
 
 /// Validate construction operand groups and their role discriminators.
 fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    use crate::records::feature::scope::DesignFeatureKind;
+
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let scopes_by_index = &ctx.scopes_by_index;
@@ -5182,27 +5193,33 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             || frame.member_count_offset.checked_add(4),
             |member| member.offset.checked_add(10),
         );
-        let frame_valid = group
-            .byte_offset
-            .checked_add(
-                if scope.is_some_and(|scope| {
-                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
-                        || (scope.kind()
-                            == crate::records::feature::scope::DesignFeatureKind::SplitFace
-                            && group.role() == DesignOperandRole::ROLE_0X21)
-                        || (scope.kind()
-                            == crate::records::feature::scope::DesignFeatureKind::Split
-                            && matches!(
-                                group.role(),
-                                DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X21
-                            ))
-                }) {
-                    88
-                } else {
-                    21
-                },
+        let member_count_offset = frame.member_count_offset.checked_sub(group.byte_offset);
+        let kind = scope.map(|scope| scope.kind());
+        let prefixed_tool = matches!(
+            (kind.as_ref(), group.role()),
+            (
+                Some(DesignFeatureKind::SplitFace),
+                DesignOperandRole::ROLE_0X21
+            ) | (
+                Some(DesignFeatureKind::Split),
+                DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X21
             )
-            .is_some_and(|expected_offset| frame.member_count_offset == expected_offset)
+        );
+        let prefixed = kind == Some(DesignFeatureKind::SurfaceStitch) || prefixed_tool;
+        let compact_split_tool = kind == Some(DesignFeatureKind::Split)
+            && group.role() == DesignOperandRole::ROLE_0X21
+            && group.scope_reference_ordinal == 0
+            && !group.members().is_empty()
+            && frame.auxiliary_records.is_empty()
+            && frame.trailing_records().len() == 1
+            && !frame.variant
+            && !frame.closing_flag;
+        let compact_count = cadmpeg_core::decode::u64_from_index(
+            crate::layout::split_body_compact_group_prefix::MEMBER_COUNT,
+        );
+        let count_offset_valid = member_count_offset == Some(if prefixed { 88 } else { 21 })
+            || (compact_split_tool && member_count_offset == Some(compact_count));
+        let frame_valid = count_offset_valid
             && group.members().first().is_none_or(|member| {
                 frame
                     .member_count_offset
