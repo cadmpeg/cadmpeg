@@ -3592,6 +3592,9 @@ fn finish_decode(
                 appearance_transfer.transferred_packets(),
             )));
     }
+    if ctx.depth() >= cadmpeg_core::decode::DecodeDepth::Design {
+        crate::design_v11::project(ctx, &mut ir)?;
+    }
     native.store_owned(ctx, ir.native.namespace_mut("catia"))?;
     decode_result(
         ctx,
