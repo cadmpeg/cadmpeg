@@ -90,12 +90,13 @@ output, because that spelling is nearly always `--input-format` (alias
 `--from`) written as `--format`; pass `-o FILE` or, for a deliberate binary
 pipe, `--binary-stdout`.
 
-Conversion stops before export if the check finds errors in what the output
-writes. An error in data the output format does not carry, for example
-feature history in a STEP export, stays in the report and does not stop the
-write. `--allow-errors` writes the current result anyway. It leaves model data
-unchanged. Conversion writes the available output when decoding transfers no
-geometry and reports the decode and export losses.
+Conversion writes the output when the check finds errors, and the check report
+lists every finding. The check leaves model data unchanged. `--reject-errors`
+stops the conversion before export if the check finds errors in what the output
+writes. An error in data the output format does not carry, for example feature
+history in a STEP export, stays in the report and does not stop the write under
+`--reject-errors`. Conversion writes the available output when decoding
+transfers no geometry and reports the decode and export losses.
 
 `convert` decodes a native source only as deeply as the output needs: STEP,
 IGES, and Rhino output decodes geometry and skips design intent, so the decode
