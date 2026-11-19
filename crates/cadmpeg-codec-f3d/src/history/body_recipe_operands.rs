@@ -95,6 +95,7 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                 bodies_touching(topology, &face_slots.iter().collect::<Vec<_>>())
             }
             .map(Vec::into_iter);
+            let closures_read = body_slots.is_some();
             let mut complete_bodies = None;
             for position in bound {
                 let Some(operand) = operands.get_mut(position) else {
@@ -115,7 +116,8 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                     .iter()
                     .filter(|reference| !reference.preceding_body_slots.is_empty())
                     .count();
-                let design_link_applies = !operand.references().is_empty()
+                let design_link_applies = closures_read
+                    && !operand.references().is_empty()
                     && (reaching == 0 || reaching == operand.references().len());
                 if let Some(body) = design_link_applies
                     .then(|| design_linked_body_slot(operand, &recipes_by_id, topology))

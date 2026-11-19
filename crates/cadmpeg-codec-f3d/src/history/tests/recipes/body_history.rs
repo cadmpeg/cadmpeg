@@ -290,6 +290,18 @@ fn design_linked_clauses_case(
     links: &[(i64, i64)],
     clauses_in_state: &[bool],
 ) -> Option<i64> {
+    design_linked_topology_case(design_id, selector, links, clauses_in_state, |_| {})
+}
+
+/// `design_linked_clauses_case` with `edit` applied to the preceding-state
+/// topology.
+fn design_linked_topology_case(
+    design_id: &str,
+    selector: u32,
+    links: &[(i64, i64)],
+    clauses_in_state: &[bool],
+    edit: impl FnOnce(&mut AsmHistoricalTopology),
+) -> Option<i64> {
     const CLAUSE_BYTES: u64 = 12;
     let relation = |owner_ref, member_refs| AsmHistoricalRelation {
         owner_ref,
@@ -359,14 +371,16 @@ fn design_linked_clauses_case(
             .collect(),
         ..AsmHistoricalTopology::default()
     };
+    let mut preceding = topology.clone();
+    edit(&mut preceding);
     let history = crate::test_support::history::history(
         "history".into(),
         0,
         None,
         false,
         vec![
-            recipe_state(2, topology.clone(), Some(1)),
-            recipe_state(1, topology, None),
+            recipe_state(2, topology, Some(1)),
+            recipe_state(1, preceding, None),
         ],
     );
     let recipe = crate::records::recipes::ConstructionRecipe {
@@ -539,6 +553,19 @@ fn a_body_recipe_whose_face_clauses_partly_reach_the_state_ignores_its_design_li
         design_linked_clauses_case("308", 6, &links, &[false, true]),
         None
     );
+}
+
+#[test]
+fn a_body_recipe_ignores_its_design_link_when_the_state_has_an_unreadable_body_closure() {
+    let links = [(7, 5), (8, 6)];
+    for clauses in [&[true, false][..], &[false, false][..]] {
+        assert_eq!(
+            design_linked_topology_case("308", 6, &links, clauses, |topology| {
+                topology.body_regions.retain(|row| row.owner_ref != 7);
+            }),
+            None
+        );
+    }
 }
 
 #[test]
