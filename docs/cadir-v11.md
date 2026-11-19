@@ -332,32 +332,15 @@ A writer never fabricates a role.
 | Variant | Applies when |
 |---|---|
 | `UnsupportedTarget(TargetRefusal)` | the requested target names no catalog entry, the catalog has no default, or the writer holds no source bytes of its format and has no synthesis path; its `TargetRefusal` names which |
-| `OutputUnnamed { definition }` | an output the writer will produce has no name in `EncodeInput.outputs` (Encode sets, above); refused before anything is written |
+| `OutputUnnamed { definition: ProductDefinitionId }` | an output the writer will produce has no name in `EncodeInput.outputs` (Encode sets, above); refused before anything is written |
 | `InvalidInput(ValidatedFinding)` | the target is CADIR and the document breaks a condition of a checked type that serialization refuses (§2.8), a scope invariant (§2.1) or a depth bound (§2.5) among them: no CADIR text states such a value; only `cadmpeg_ir::validate` constructs the finding |
-| `ResourceLimit` | a session ceiling of the caller's `ResourceLimits` runs out |
-| `Io` | a write or seek on the destination fails; constructed only by `?` |
-| `StrictRejected(StrictWriteRejection)` | the completed export report holds an entry that `EncodeInput.strictness` refuses; it holds that report and the first such entry, and nothing is written |
+| `ResourceLimit(ResourceLimit)` | a session ceiling of the caller's `ResourceLimits` runs out |
+| `Io(std::io::Error)` | a write or seek on the destination fails; constructed only by `?` |
+| `StrictRejected(StrictWriteRejection)` | the completed export report holds an entry that `EncodeInput.strictness` refuses; its `StrictWriteRejection { report: Box<ExportReport>, entry: usize }` holds that report and the first such entry, and nothing is written |
 
 A request that names no target takes the catalog default. A field the writer writes that holds a non-finite number, or a value wider than its declared width in the writer's `CAPACITY_FIELDS`, is a value the target cannot hold. The writer degrades the value where it has a degraded form: a text cut at a character boundary to the field's width, with the length or count the format stores beside it rewritten to the cut. Otherwise it drops the record that holds the value, and each record that needs it, as §3.3 drops a record that needs a dropped record; a count the file cannot address drops the entities past it and writes the count it can. Where the value belongs to no record (a document tolerance, a field of the file's header), the writer writes the target's default for an unstated value (§2.4). Each charges `export:value.unwritable` naming the record or the field, and the finding (`cadmpeg_ir::validate` constructs a non-finite finding) or the width. A record the target cannot represent for another reason, a structural precondition of the writer among them, is converted, degraded, or dropped under Content the target cannot hold, with that section's loss. A record that a file needs is dropped with the records that need it and never refused for: an output from which every record was dropped is the target's empty file, with `export:output.empty`. Every other Error that validation finds in what the output writes, of `validate_neutral` or of the target codec's own validation, is written from the canonical side, with `export:record.invalid` naming the record, or the rule where the finding names no record. A check of a value the writer computed itself holds by construction or is a `debug_assert!` naming the invariant. A patch that cannot write an edit takes the next path (Paths). A catalog row the request names that the writer cannot reach from this document, where it can reach another, is written as a row it reaches, with `target.request-displaced` naming both. An `Inherit` target resolves per output file, from that file's source (`Storage::File.source`, else `CadIr.source` for the root's output); where that source's dialect is unrecorded, or is one the writer can neither reuse nor synthesize, it resolves to the catalog default and charges `target.source-dialect-displaced`.
 
-```rust
-pub struct Strictness {
-    pub pinned: bool,
-    pub floor: Option<Severity>,
-    pub codes: BTreeSet<NonBlankString>,
-}
-pub enum EncodeError {
-    UnsupportedTarget(TargetRefusal),
-    OutputUnnamed { definition: ProductDefinitionId },
-    InvalidInput(ValidatedFinding),
-    ResourceLimit(ResourceLimit),
-    Io(std::io::Error),
-    StrictRejected(StrictWriteRejection),
-}
-pub struct StrictWriteRejection { report: Box<ExportReport>, entry: usize }
-```
-
-`Strictness` refuses an entry of a completed report where its severity is at least `floor`; where its code, as §3.2 or its codec's format specification spells it, is in `codes`; or where `pinned` holds, the entry carries a strict floor (§3.2), and its severity reaches it. `pinned` does not apply to a decode at `Container` depth, whose losses are by request; `floor` and `codes` do. Decode, write, and measurement (§3.5) take the same type. The sealed wrappers of decode and write apply it to the completed report, before any byte reaches the destination, and no backend refuses on a report entry. Its default refuses nothing. Only the sealed encode wrapper constructs a `StrictWriteRejection`. `ExportReport.synthesis_cause` holds `PatchDeclined { reason }` only.
+A `Strictness { pinned: bool, floor: Option<Severity>, codes: BTreeSet<NonBlankString> }` refuses an entry of a completed report where its severity is at least `floor`; where its code, as §3.2 or its codec's format specification spells it, is in `codes`; or where `pinned` holds, the entry carries a strict floor (§3.2), and its severity reaches it. `pinned` does not apply to a decode at `Container` depth, whose losses are by request; `floor` and `codes` do. Decode, write, and measurement (§3.5) take the same type. The sealed wrappers of decode and write apply it to the completed report, before any byte reaches the destination, and no backend refuses on a report entry. Its default refuses nothing. Only the sealed encode wrapper constructs a `StrictWriteRejection`. `ExportReport.synthesis_cause` holds `PatchDeclined { reason }` only.
 
 ### 3.5 Caller policy (CLI)
 
