@@ -269,9 +269,10 @@ fn distinct_work_axis_members_with_equal_local_ids_keep_their_owners_images_and_
             panic!("axis")
         };
         assert!(neutral.geometry().is_some());
-        assert_eq!(neutral.inputs().len(), 1);
-        assert!(neutral.inputs()[0].reference.is_none());
-        assert!(neutral.inputs()[0].role.is_none());
+        assert!(
+            neutral.inputs().is_empty(),
+            "a cross-document input reference has no native name and no witness"
+        );
         assert_eq!(candidate.prefix.name, ReadField::Value(literal.to_owned()));
         assert_eq!(candidate.prefix.properties.len(), 2);
         for (property, (key, value)) in candidate.prefix.properties.iter().zip(properties) {

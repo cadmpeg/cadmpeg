@@ -398,7 +398,7 @@ fn two_point_rule_reads_the_point_data_endpoints() {
 }
 
 #[test]
-fn qualified_axis_input_keeps_the_solved_axis_without_binding_a_local_alias() {
+fn qualified_axis_input_keeps_the_solved_axis_and_states_no_input() {
     for reference_type in [12, 18] {
         let mut bytes = Vec::new();
         Carrier {
@@ -420,11 +420,11 @@ fn qualified_axis_input_keeps_the_solved_axis_without_binding_a_local_alias() {
         {
             assert!((actual - expected).abs() < 1.0e-12);
         }
-        let [local, qualified] = axis.inputs() else {
-            panic!("two input occurrences");
+        let [local] = axis.inputs() else {
+            panic!("one stated input");
         };
         assert!(local.reference.is_some() && local.role.is_none());
-        assert!(qualified.reference.is_none() && qualified.role.is_none());
+        assert!(read.has_loss(F3dLossCode::FeatureWorkAxisInputUnnamed));
         let Some(DesignWorkAxisSource::PointDirection { inputs, .. }) =
             &read.evidence.candidates[0].source
         else {
@@ -498,22 +498,22 @@ fn point_direction_work_axis_requires_the_registered_carrier_type() {
 }
 
 #[test]
-fn independently_valid_axis_components_survive_zero_direction_and_length_overflow() {
-    for (values, origin, direction) in [
-        ([1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0], true, false),
-        ([f64::MAX, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], false, true),
-        (
-            [1.0, 2.0, 3.0, f64::MAX, f64::MAX, 0.0, 0.0, 0.0],
-            true,
-            true,
-        ),
+fn an_axis_states_its_stored_line_whole_or_not_at_all() {
+    for (values, whole) in [
+        ([1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0], false),
+        ([f64::MAX, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0], false),
+        ([1.0, 2.0, 3.0, f64::MAX, f64::MAX, 0.0, 0.0, 0.0], true),
     ] {
         let mut bytes = Vec::new();
         Carrier::new(values, 19).write(&mut bytes);
         let read = read(&bytes, &carrier_types(1));
         let axis = read.axis().unwrap();
-        assert_eq!(axis.origin().is_some(), origin);
-        assert_eq!(axis.direction().is_some(), direction);
+        assert_eq!(axis.origin().is_some(), whole);
+        assert_eq!(axis.direction().is_some(), whole);
+        assert_eq!(
+            read.has_loss(F3dLossCode::FeatureWorkAxisGeometryUnrepresentable),
+            !whole
+        );
         assert_eq!(
             read.evidence.candidates[0].origin[0]
                 .value()
@@ -530,8 +530,9 @@ fn malformed_scalar_retains_later_fields_and_commits_one_real_unknown_part() {
     let mut bytes = Vec::new();
     Carrier::new([1.0, 2.0, 3.0, f64::NAN, 0.0, 1.0, -1.5, -1.0], 19).write(&mut bytes);
     let read = read(&bytes, &carrier_types(1));
-    assert!(read.axis().unwrap().origin().is_some());
+    assert!(read.axis().unwrap().origin().is_none());
     assert!(read.axis().unwrap().direction().is_none());
+    assert!(read.has_loss(F3dLossCode::FeatureWorkAxisPartialLineNative));
     assert!(
         matches!(&read.evidence.candidates[0].source, Some(DesignWorkAxisSource::PointDirection {point_parameters, reference_type: ReadField::Value(19), ..}) if point_parameters[0].value().is_some_and(|value| (value.get() + 1.5).abs() < 1.0e-12))
     );
@@ -621,8 +622,9 @@ fn repeated_operands_remain_separate_and_tiny_directions_keep_the_parent_boundar
     let mut bytes = Vec::new();
     Carrier::new([1.0, 2.0, 3.0, 1e-300, 0.0, 0.0, 0.0, 0.0], 19).write(&mut bytes);
     let read = read(&bytes, &carrier_types(1));
-    assert!(read.axis().unwrap().origin().is_some());
+    assert!(read.axis().unwrap().origin().is_none());
     assert!(read.axis().unwrap().direction().is_none());
+    assert!(read.has_loss(F3dLossCode::FeatureWorkAxisGeometryUnrepresentable));
     assert_eq!(
         read.evidence.candidates[0].displacement[0]
             .value()
@@ -855,7 +857,10 @@ fn work_axis_damaged_counts_keep_neutral_input_occurrences_and_native_fields() {
         bytes.extend_from_slice(&paired);
         let result = read(&bytes, &carrier_types(1));
         assert!(result.axis().unwrap().geometry().is_some());
-        assert_eq!(result.axis().unwrap().inputs().len(), 1);
+        assert_eq!(
+            result.axis().unwrap().inputs().len(),
+            usize::from(reference[0])
+        );
         let Some(DesignWorkAxisSource::PointDirection { inputs, .. }) =
             &result.evidence.candidates[0].source
         else {

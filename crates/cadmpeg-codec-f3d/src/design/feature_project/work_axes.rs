@@ -6,10 +6,14 @@ use crate::records::feature::work_axes::{
     AxisEndpointReading, AxisReferenceRun, DesignWorkAxisCandidate, DesignWorkAxisSource,
 };
 use cadmpeg_ir::design::construction::{
-    AnyConstruction, Construction, ConstructionInput, InputReference, InputRole, Relation, Subject,
+    ConstructionInput, InputReference, InputRole, Relation, Subject,
 };
 use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::names::{NativeName, NativeNameValue};
 use cadmpeg_ir::design::options::{NativeOption, NativeOptions};
+use cadmpeg_ir::design::selection::{
+    Anchor, Members, OrderedSelection, PickTarget, Picked, Picks, Witness,
+};
 use cadmpeg_ir::features::datums::DatumAxisDraft;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureDirection3, FinitePoint3};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -45,6 +49,44 @@ fn endpoint(readings: &[AxisEndpointReading]) -> Option<[f64; 3]> {
     eligible.next().is_none().then_some(first)
 }
 
+/// An input whose reference the decoder could not resolve: a `Native` pick
+/// named by the source's same-segment record reference, with the point the
+/// source stores for it as its witness.
+fn native_input(target: u64, position: Option<FinitePoint3>) -> Option<ConstructionInput> {
+    let pick = Picked {
+        target: PickTarget::Native { within: None },
+        context: None,
+        native: Some(NativeName {
+            codec: cadmpeg_core::nonblank_literal!("f3d").into(),
+            value: NativeNameValue::Integers(vec![i64::try_from(target).ok()?]),
+        }),
+        domain: None,
+        witness: position.map(|point| Witness {
+            point: Some(point),
+            direction: None,
+            endpoints: None,
+            frame: None,
+            curves: Vec::new(),
+            surface: None,
+            body: None,
+        }),
+        resolved: None,
+    };
+    Some(ConstructionInput {
+        role: None,
+        reference: Some(InputReference::Picks(OrderedSelection {
+            at: Anchor::Input,
+            picks: Picks::Named(Members::new(vec![pick]).ok()?),
+            native: None,
+        })),
+        value: None,
+        reversed: None,
+    })
+}
+
+/// The inputs of a reference run, with the stored point of each reference
+/// in run order. A reference that is not a readable same-segment record
+/// reference has no native name and no witness, so it states no input.
 fn inputs(
     candidate: &DesignWorkAxisCandidate,
     run: &AxisReferenceRun,
@@ -65,29 +107,32 @@ fn inputs(
     let inputs = run
         .references
         .iter()
-        .map(|reference| {
-            let position = reference
-                .local()
+        .filter_map(|reference| {
+            let local = reference.local();
+            let position = local
                 .filter(|(_, inline)| {
                     inline.is_none_or(|guid| guid.eq_ignore_ascii_case(POINT_DATA_TYPE_GUID))
                 })
                 .and_then(|(target, _)| u32::try_from(target).ok())
                 .and_then(|target| positions.get(&target).copied().flatten());
             points.push(position);
-            ConstructionInput {
-                role: None,
-                reference: position.and_then(point).map(|position| {
-                    InputReference::Built(Box::new(AnyConstruction::Point(Construction {
-                        resolved: Some(position),
-                        ..Default::default()
-                    })))
-                }),
-                value: None,
-                reversed: None,
-            }
+            native_input(local?.0, position.and_then(point))
         })
         .collect();
     (inputs, points)
+}
+
+/// Charges the input references of `run` that state no input.
+fn note_unnamed(
+    scope: &DesignParameterScope,
+    run: &AxisReferenceRun,
+    stated: usize,
+    losses: &mut Vec<LossNote>,
+) {
+    let unnamed = run.references.len().saturating_sub(stated);
+    if unnamed > 0 {
+        losses.push(F3dLossCode::FeatureWorkAxisInputUnnamed.note(format!("WorkAxis scope {} states no construction input for {unnamed} input reference(s) that are not readable same-segment record references and so have neither a native name nor a witness; they remain in its native evidence.", scope.id)));
+    }
 }
 
 fn scalar_option(
@@ -145,7 +190,7 @@ pub(super) fn project(
     let count = run.map_or(0, |v| v.references.len());
     let width = std::mem::size_of::<ConstructionInput>()
         + std::mem::size_of::<Option<[f64; 3]>>()
-        + std::mem::size_of::<AnyConstruction>();
+        + std::mem::size_of::<Picked>();
     let bytes = count
         .checked_mul(width)
         .ok_or_else(|| cadmpeg_core::CodecError::malformed("WorkAxis input allocation overflow"))?;
@@ -189,6 +234,7 @@ pub(super) fn project(
         }) => {
             geometry = *value_count == ReadField::Value(8) && values(reserved) == Some([0.0, 0.0]);
             let (known_inputs, points) = inputs(candidate, run);
+            note_unnamed(scope, run, known_inputs.len(), losses);
             axis.inputs = known_inputs;
             two_point = Some((
                 run.complete() && run.declared == ReadField::Value(2),
@@ -245,6 +291,7 @@ pub(super) fn project(
                 }
             }
             let (known_inputs, points) = inputs(candidate, run);
+            note_unnamed(scope, run, known_inputs.len(), losses);
             axis.inputs = known_inputs;
             parameters_zero = values(point_parameters) == Some([0.0, 0.0]);
             if point_parameters
@@ -341,19 +388,32 @@ pub(super) fn project(
         }
     }
     if geometry {
-        axis.origin = origin.and_then(point);
-        axis.direction = displacement.and_then(|value| {
+        let line_origin = origin.and_then(point);
+        let line_direction = displacement.and_then(|value| {
             let vector = Vector3::new(value[0], value[1], value[2]);
             (value[0].hypot(value[1]).hypot(value[2]) > f64::EPSILON)
                 .then(|| cadmpeg_ir::units::UnitVector3::normalized(vector))
                 .flatten()
                 .map(FeatureDirection3::from)
         });
-        if origin.is_some() && axis.origin.is_none()
-            || displacement.is_some() && axis.direction.is_none()
+        if origin.is_some() && line_origin.is_none()
+            || displacement.is_some() && line_direction.is_none()
         {
-            losses.push(F3dLossCode::FeatureWorkAxisGeometryUnrepresentable.note(format!("WorkAxis scope {} retains source geometry whose origin conversion or nonzero direction admission is unresolved; each representable component remains typed.", scope.id)));
+            losses.push(F3dLossCode::FeatureWorkAxisGeometryUnrepresentable.note(format!("WorkAxis scope {} states no solved line because its source origin conversion or nonzero direction admission is unresolved; the stored values remain in its native evidence.", scope.id)));
+        } else if origin.is_some() != displacement.is_some() {
+            losses.push(F3dLossCode::FeatureWorkAxisPartialLineNative.note(format!("WorkAxis scope {} states no solved line because only its {} was read; the part read remains in its native evidence.", scope.id, if origin.is_some() { "origin" } else { "direction" })));
         }
+        if let (Some(line_origin), Some(line_direction)) = (line_origin, line_direction) {
+            axis.origin = Some(line_origin);
+            axis.direction = Some(line_direction);
+        }
+    }
+    if axis.inputs.is_empty() && axis.origin.is_none() {
+        return Ok(FeatureDefinition::Operation(
+            DatumAxisDraft::default()
+                .into_operation()
+                .map_err(cadmpeg_core::CodecError::malformed)?,
+        ));
     }
     Ok(FeatureDefinition::Operation(
         axis.into_operation()
@@ -368,7 +428,7 @@ mod tests {
     use crate::records::feature::work_axes::{AxisEndpoint, DesignWorkAxisConstruction};
 
     #[test]
-    fn repeated_work_axis_inputs_keep_points_and_unresolved_conflicting_targets() {
+    fn repeated_work_axis_inputs_are_native_picks_witnessed_by_their_agreed_points() {
         let first = [1.0, 2.0, 3.0];
         let other = [4.0, 5.0, 6.0];
         for readings in [
@@ -432,24 +492,35 @@ mod tests {
             };
             assert_eq!(axis.inputs().len(), 4);
             for (index, input) in axis.inputs().iter().enumerate() {
-                assert!(input.role.is_none());
+                assert!(input.role.is_none() && input.value.is_none());
+                let Some(InputReference::Picks(selection)) = &input.reference else {
+                    panic!("a selection")
+                };
+                assert!(matches!(selection.at, Anchor::Input));
+                let Picks::Named(picks) = &selection.picks else {
+                    panic!("named picks")
+                };
+                let [pick] = picks.as_slice() else {
+                    panic!("one pick")
+                };
+                assert!(matches!(pick.target, PickTarget::Native { within: None }));
+                let target = if index % 2 == 0 { 42 } else { 43 };
+                assert_eq!(
+                    pick.native.as_ref().map(|name| &name.value),
+                    Some(&NativeNameValue::Integers(vec![target]))
+                );
+                let witness = pick.witness.as_ref().and_then(|witness| witness.point);
                 if index % 2 == 0 {
-                    let Some(InputReference::Built(value)) = &input.reference else {
-                        panic!("known point")
-                    };
-                    let AnyConstruction::Point(value) = value.as_ref() else {
-                        panic!("point construction")
-                    };
-                    assert_eq!(value.resolved.unwrap().get(), Point3::new(10.0, 20.0, 30.0));
+                    assert_eq!(witness.unwrap().get(), Point3::new(10.0, 20.0, 30.0));
                 } else {
-                    assert!(input.reference.is_none());
+                    assert!(witness.is_none(), "conflicting readings state no witness");
                 }
             }
         }
     }
 
     #[test]
-    fn source_less_solved_and_partial_native_values_project_without_a_source_archive() {
+    fn source_less_lines_project_whole_or_as_the_unresolved_family() {
         let real = |v| ReadField::Value(FiniteReal::new(v).unwrap());
         for (origin, direction) in [(true, true), (true, false), (false, true), (false, false)] {
             let candidate = DesignWorkAxisCandidate {
@@ -481,17 +552,18 @@ mod tests {
             let ctx = cadmpeg_test_support::service_decode_context();
             let definition = project(&ctx, &scope, &mut losses).unwrap();
             assert!(
-                losses.is_empty(),
+                losses.iter().all(|loss| loss.code
+                    == F3dLossCode::FeatureWorkAxisPartialLineNative.kind()),
                 "source-less values do not assert a damaged source carrier"
             );
-            if origin || direction {
+            assert_eq!(losses.len(), usize::from(origin != direction));
+            if origin && direction {
                 let cadmpeg_ir::features::FeatureOperation::DatumAxis { axis } =
                     definition.operation()
                 else {
-                    panic!("partial datum")
+                    panic!("datum axis")
                 };
-                assert_eq!(axis.origin().is_some(), origin);
-                assert_eq!(axis.direction().is_some(), direction);
+                assert!(axis.origin().is_some() && axis.direction().is_some());
             } else {
                 assert!(matches!(
                     definition.operation(),
