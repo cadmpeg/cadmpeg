@@ -635,8 +635,8 @@ sequences carrying the same identifier are ambiguous and are not surface rows.
 CADIR decision: where rows read from different streams of one namespace carry
 one `geom_id`, the native surface-row arena states the first row in the order
 the streams are read (CADIR §2.2). Each later row is read and not stated, and
-the decoder charges one `creo/container.surface-row-repeated` loss that names
-the row id and gives the row's stream and offset. The repeated id still types
+is charged one `creo/container.surface-row-repeated` loss that names the row
+id and gives the row's stream and offset. The repeated id still types
 no positional surface from either row.
 A nonzero `next_geom_ptr` may reference a rowless face use, so materialization of
 its target is not a row-acceptance condition.

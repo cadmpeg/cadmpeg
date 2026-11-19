@@ -749,7 +749,7 @@ impl RepeatedDataRecord {
                 cadmpeg_ir::SourceProvenance::in_stream(
                     "iges",
                     cadmpeg_ir::stream_name!("iges"),
-                    u64::try_from(self.span.start).unwrap_or(u64::MAX),
+                    cadmpeg_core::decode::u64_from_index(self.span.start),
                 )
                 .with_tag(format!("directory_entry:D{}", self.sequence)),
             )

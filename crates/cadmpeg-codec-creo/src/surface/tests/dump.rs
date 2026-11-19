@@ -271,7 +271,7 @@ fn decode_withholds_positional_line_extrusion_for_duplicate_surface_id() {
             .losses
             .iter()
             .filter(
-                |loss| loss.code.to_string() == "creo/container.surface-row-repeated"
+                |loss| loss.code == crate::loss::CreoLossCode::SurfaceRowRepeated.kind()
                     && loss.message.contains("creo:visibgeom:surface_row#7")
             )
             .count(),

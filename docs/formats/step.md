@@ -1110,7 +1110,7 @@ An open literal or comment provides no continuation boundary.
 CADIR decision: the first statement of a repeated instance name, in file
 order across all DATA sections, is the instance, and every reference by the
 name resolves to it (CADIR §2.2). Each later statement of the name is read
-and not stated: the decoder retains its exact source and charges one
+and not stated: its exact source is retained, and it is charged one
 `step/parse.record-omitted` loss that names the instance name and gives the
 copy's byte span. Where the first statement is unreadable, it is given up as
 its own part with the records that need it (CADIR §3.3), and no later
