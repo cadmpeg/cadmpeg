@@ -275,8 +275,9 @@
               "nx:s0:body#2"
             ],
             "bom_properties": {},
-            "id": "nx:model:product-definition#root",
+            "id": "nx:document:product-definition#root",
             "instance_bodies": [],
+            "kind": "part",
             "occurrences": [],
             "representations": [],
             "sketches": [],
@@ -488,6 +489,11 @@
             "fields": {
               "links": "derived"
             },
+            "kind": "entity"
+          },
+          "nx:document:product-definition#root": {
+            "entity": "derived",
+            "fields": {},
             "kind": "entity"
           },
           "nx:s0:blend#0": {

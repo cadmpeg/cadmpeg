@@ -178,8 +178,9 @@
               "nx:derived:point-body#0"
             ],
             "bom_properties": {},
-            "id": "nx:model:product-definition#root",
+            "id": "nx:document:product-definition#root",
             "instance_bodies": [],
+            "kind": "part",
             "occurrences": [],
             "representations": [],
             "sketches": [],
@@ -472,6 +473,11 @@
           },
           "nx:derived:point-vertex#0": {
             "entity": "inferred",
+            "fields": {},
+            "kind": "entity"
+          },
+          "nx:document:product-definition#root": {
+            "entity": "derived",
             "fields": {},
             "kind": "entity"
           },

@@ -1328,11 +1328,10 @@ fn decode_reports_untransferred_assembly_placement() {
         .unwrap();
 
     assert!(result.ir().model.occurrences.is_empty());
-    assert!(
-        cadmpeg_ir::products::stated_definitions(&result.ir().model.product_definitions)
-            .next()
-            .is_none()
-    );
+    assert!(matches!(
+        result.ir().model.product_definitions.as_slice(),
+        [root] if root.is_root() && root.occurrences.is_empty()
+    ));
     let namespace = result.ir().native.namespace("nx").unwrap();
     let placements: Vec<serde_json::Value> = namespace.arena_as("assembly_placements").unwrap();
     assert_eq!(placements.len(), 1);

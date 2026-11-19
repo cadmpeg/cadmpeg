@@ -114,8 +114,9 @@
           {
             "bodies": [],
             "bom_properties": {},
-            "id": "nx:model:product-definition#root",
+            "id": "nx:document:product-definition#root",
             "instance_bodies": [],
+            "kind": "part",
             "occurrences": [],
             "representations": [],
             "sketches": [],
@@ -375,6 +376,11 @@
     "source_fidelity": {
       "annotations": {
         "exactness": {
+          "nx:document:product-definition#root": {
+            "entity": "derived",
+            "fields": {},
+            "kind": "entity"
+          },
           "nx:om-entry-0:feature#equations-70": {
             "entity": "derived",
             "fields": {

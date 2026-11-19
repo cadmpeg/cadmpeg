@@ -68,8 +68,9 @@
           {
             "bodies": [],
             "bom_properties": {},
-            "id": "nx:model:product-definition#root",
+            "id": "nx:document:product-definition#root",
             "instance_bodies": [],
+            "kind": "part",
             "occurrences": [],
             "representations": [],
             "sketches": [],
@@ -199,7 +200,13 @@
     },
     "source_fidelity": {
       "annotations": {
-        "exactness": {},
+        "exactness": {
+          "nx:document:product-definition#root": {
+            "entity": "derived",
+            "fields": {},
+            "kind": "entity"
+          }
+        },
         "provenance": {}
       },
       "decode_digest": "7c6f7484fd2f6da2d7f43ab50702e0368b2990b7e9f0e90a363bea6bcecf78a6",

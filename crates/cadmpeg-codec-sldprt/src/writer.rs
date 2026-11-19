@@ -4546,6 +4546,9 @@ mod nurbs_write_tests {
             definition: cadmpeg_ir::PmiDefinition::Datum {
                 identification: "A".into(),
             },
+            native_ref: None,
+            native_options: cadmpeg_ir::design::options::NativeOptions::new(),
+            source_settings: cadmpeg_ir::design::options::NativeOptions::new(),
         });
         let hash = pmi_local_sha256(&ir).expect("PMI baseline hash");
         ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(

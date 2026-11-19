@@ -3,14 +3,60 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "sldprt:model:container#timeline",
+            "kind": "timeline",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "sldprt:model:feature#247:0"
+              }
+            ],
+            "rollback": {
+              "kind": "end"
+            }
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "sketch"
+              }
+            }
+          },
+          "id": "sldprt:model:feature#247:0",
+          "name": "Sketch1",
+          "native_ref": "sldprt:history:feature#247:0",
+          "suppressed": {
+            "kind": "literal",
+            "value": false
+          }
+        }
+      ],
       "names": [],
       "parameters": [],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [],
+          "definition": "sldprt:model:product-definition#root",
+          "occurrences": {},
+          "roots": [
+            "sldprt:model:container#timeline"
+          ]
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -118,6 +164,7 @@
           "bom_properties": {},
           "id": "sldprt:model:product-definition#root",
           "instance_bodies": [],
+          "kind": "part",
           "occurrences": [],
           "representations": [],
           "sketches": [],

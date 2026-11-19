@@ -68,8 +68,9 @@
           {
             "bodies": [],
             "bom_properties": {},
-            "id": "nx:model:product-definition#root",
+            "id": "nx:document:product-definition#root",
             "instance_bodies": [],
+            "kind": "part",
             "occurrences": [],
             "representations": [],
             "sketches": [],
@@ -293,7 +294,13 @@
     },
     "source_fidelity": {
       "annotations": {
-        "exactness": {},
+        "exactness": {
+          "nx:document:product-definition#root": {
+            "entity": "derived",
+            "fields": {},
+            "kind": "entity"
+          }
+        },
         "provenance": {
           "nx:om-data-block-control-forms:form#0": {
             "offset": 122,
