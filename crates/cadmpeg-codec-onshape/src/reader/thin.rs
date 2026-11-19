@@ -230,7 +230,33 @@ pub(super) fn feature(
     )
 }
 
-pub(super) fn install_scope(ir: &mut CadIr) -> Mapping<()> {
+pub(super) fn install_scope(ir: &mut CadIr, report: &mut super::Report) -> Mapping<()> {
+    for source in &ir.model.features {
+        if ir
+            .design
+            .features
+            .iter()
+            .any(|feature| feature.id == source.id)
+        {
+            continue;
+        }
+        report.push_coded(source.id.as_str(), crate::loss::OnshapeLossCode::DesignOperationNative,
+            "design timeline retains the native source operation; model history carries its decoded construction");
+        let mut row = json!({"id":source.id,"definition":{"operation":{"kind":"native","value":{"kind":"onshape:timeline-member","native_options":{},"source_settings":{}}}}});
+        if let Some(name) = &source.name {
+            row["name"] = json!(name);
+        }
+        if let Some(suppressed) = source.suppressed {
+            row["suppressed"] = json!({"kind":"literal","value":suppressed});
+        }
+        push(&mut ir.design.features, row)?;
+    }
+    ir.design.features.sort_by_key(|feature| {
+        ir.model
+            .features
+            .iter()
+            .position(|source| source.id == feature.id)
+    });
     let Some(last) = ir.design.features.last().map(|feature| feature.id.clone()) else {
         return Ok(());
     };

@@ -502,18 +502,26 @@ pub(super) fn dependencies(
             continue;
         }
         for source in rows(parameter, "queries")? {
-            let query = if source
+            let mut query = source.clone();
+            if source
                 .get("queryString")
                 .and_then(Value::as_str)
                 .is_some_and(|text| text.contains("qCompressed("))
             {
-                super::query::resolved(source)?
-            } else {
-                source.clone()
-            };
-            let mut producers = Vec::new();
+                let resolved = super::query::resolved(source)?;
+                for (key, value) in resolved
+                    .as_object()
+                    .ok_or("dependency query is not an object")?
+                {
+                    if query.get(key).is_some_and(|outer| outer != value) {
+                        return Err("feature dependency query fields contradict each other".into());
+                    }
+                    query[key] = value.clone();
+                }
+            }
+            let mut explicit = Vec::new();
             if query.get("featureId").is_some() {
-                producers.push(text(&query, "featureId")?.to_owned());
+                explicit.push(text(&query, "featureId")?.to_owned());
             }
             if query.get("operationId").is_some() {
                 for operation in rows(&query, "operationId")? {
@@ -521,29 +529,69 @@ pub(super) fn dependencies(
                         .as_str()
                         .and_then(|operation| operation.rsplit_once('.'))
                         .ok_or("feature dependency operation is unresolved")?;
-                    producers.push(native.to_owned());
+                    explicit.push(native.to_owned());
                 }
             }
-            if query.get("deterministicIds").is_some() && producers.is_empty() {
-                let kind = match (operation, key) {
-                    (Some("extrude" | "revolve"), "booleanScope") | (Some("hole"), "scope") => {
-                        topology::OperandKind::Body
+            let historical = match (operation, key) {
+                (Some("extrude" | "revolve"), "booleanScope") | (Some("hole"), "scope") => {
+                    Some(topology::OperandKind::Body)
+                }
+                (Some("sketch"), "sketchPlane") | (Some("extrude"), "endBoundEntityFace") => {
+                    Some(topology::OperandKind::Face)
+                }
+                (Some("fillet" | "chamfer"), "entities") => Some(topology::OperandKind::Edge),
+                (Some("revolve"), "axis")
+                    if query.get("queryType").and_then(Value::as_str) != Some("SKETCH_ENTITY") =>
+                {
+                    Some(topology::OperandKind::Edge)
+                }
+                _ => None,
+            };
+            let mut producers = Vec::new();
+            if let Some(kind) = historical.filter(|_| query.get("deterministicIds").is_some()) {
+                let ids = rows(&query, "deterministicIds")?;
+                if ids.is_empty() {
+                    return Err("feature dependency selection is empty".into());
+                }
+                for native in ids {
+                    let producer = inputs.producer(
+                        ordinal,
+                        native
+                            .as_str()
+                            .ok_or("feature dependency deterministic id must be a string")?,
+                        kind,
+                    )?;
+                    if explicit.iter().any(|named| named != &producer) {
+                        return Err(
+                            "feature dependency explicit producer contradicts stored topology"
+                                .into(),
+                        );
                     }
-                    (Some("sketch"), "sketchPlane") | (Some("extrude"), "endBoundEntityFace") => {
-                        topology::OperandKind::Face
-                    }
-                    _ => topology::OperandKind::Edge,
-                };
-                for native in rows(&query, "deterministicIds")? {
-                    producers.push(
-                        inputs.producer(
+                    producers.push(producer);
+                }
+            } else {
+                producers = explicit;
+            }
+            if matches!(operation, Some("fillet" | "chamfer")) {
+                let groups = definition
+                    .pointer("/value/value/groups")
+                    .and_then(Value::as_array)
+                    .ok_or("feature dependency blend groups are missing")?;
+                for group in groups {
+                    let edges = group
+                        .pointer("/edges/value/edges")
+                        .and_then(Value::as_array)
+                        .ok_or("feature dependency final edge selection is missing")?;
+                    for edge in edges {
+                        let producer = inputs.producer(
                             ordinal,
-                            native
-                                .as_str()
-                                .ok_or("feature dependency deterministic id must be a string")?,
-                            kind,
-                        )?,
-                    );
+                            edge.as_str().ok_or("selected edge id is missing")?,
+                            topology::OperandKind::Edge,
+                        )?;
+                        if !producers.contains(&producer) {
+                            producers.push(producer);
+                        }
+                    }
                 }
             }
             if producers.is_empty() {

@@ -69,9 +69,13 @@ fn bound_parts(states: &[(usize, &[(&str, &str)])], creators: &[usize]) -> Vec<u
     )
     .unwrap();
     let bundle = archive::Bundle::open(&ctx, view).unwrap();
-    let inputs =
-        topology::Inputs::new(&bundle, "partstudios/studio", "synthetic-microversion", &[])
-            .unwrap();
+    let inputs = topology::Inputs::new(
+        &bundle,
+        "partstudios/studio",
+        "synthetic-microversion",
+        &[],
+        &mut super::Report::default(),
+    );
     let bound = part_bodies(creators, &inputs, &model);
     assert!(bound
         .values()

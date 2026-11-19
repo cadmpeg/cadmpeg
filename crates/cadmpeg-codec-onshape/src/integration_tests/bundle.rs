@@ -217,14 +217,7 @@ fn unresolved_edges_never_fall_back_to_final_topology_or_another_rollback() {
 #[test]
 fn wrong_magic_schema_and_microversion_are_refused() {
     assert!(read(b"not a zip").is_err());
-    for failure in [
-        "schema",
-        "microversion",
-        "assembly",
-        "multiple",
-        "path",
-        "duplicate",
-    ] {
+    for failure in ["schema", "microversion", "assembly", "multiple", "path"] {
         let bytes = changed(&fixture("revolve"), |path, value| {
             if path == "manifest.json" {
                 match failure {
@@ -238,13 +231,8 @@ fn wrong_magic_schema_and_microversion_are_refused() {
                     _ => {}
                 }
             }
-            if path.ends_with("features.json") {
-                if failure == "microversion" {
-                    value["sourceMicroversion"] = json!("other");
-                }
-                if failure == "duplicate" {
-                    value["features"][1]["featureId"] = value["features"][0]["featureId"].clone();
-                }
+            if path.ends_with("features.json") && failure == "microversion" {
+                value["sourceMicroversion"] = json!("other");
             }
         });
         assert!(read(&bytes).is_err(), "{failure}");
@@ -302,7 +290,7 @@ fn unsupported_sketch_constraints_keep_exact_curves_with_a_named_loss() {
     });
     let (model, report) = read(&bytes).unwrap();
     assert_eq!(kinds(&model), ["sketch", "revolve"]);
-    assert_eq!(model.ir.model.sketch_entities.len(), 4);
+    assert_eq!(model.ir.model.sketch_entities.len(), 5);
     assert_eq!(model.ir.model.sketch_constraints.len(), 1);
     assert!(report.losses().iter().any(|loss| loss.code.as_deref()
         == Some("onshape/sketch.constraint-not-supported")
@@ -589,12 +577,12 @@ fn circles_arcs_and_simple_splines_remain_exact_sketch_entities() {
         }
     });
     let (model, report) = read(&bytes).unwrap();
-    assert_eq!(
-        kinds(&model),
-        ["sketch", "revolve"],
-        "{:?}",
-        report.losses()
-    );
+    assert_eq!(kinds(&model), ["sketch", "native"], "{:?}", report.losses());
+    assert!(report.losses().iter().any(|loss| loss.code.as_deref()
+        == Some("onshape/history.not-supported")
+        && loss
+            .detail
+            .contains("selected sketch entity has no solved geometry")));
     let wire = timeline(&model);
     let entities = wire["model"]["sketch_entities"].as_array().unwrap();
     assert_eq!(

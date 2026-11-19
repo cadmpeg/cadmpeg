@@ -27,7 +27,7 @@ fn read(bytes: &[u8]) -> (Value, Report) {
 
 // A deliberately simple literal encoder, independent of the fixture generator's
 // dictionary/reference encoder. Only synthetic records pass through this helper.
-fn compact(value: &Value) -> String {
+pub(super) fn compact(value: &Value) -> String {
     match value {
         Value::String(s) => format!("S{:x}${s}", s.len()),
         Value::Number(n) => {
@@ -55,7 +55,7 @@ fn compact(value: &Value) -> String {
     }
 }
 
-fn replace_query(query: &mut Value, value: &Value) {
+pub(super) fn replace_query(query: &mut Value, value: &Value) {
     query["queryString"] = json!(format!(
         "query=qCompressed(1.0,{},id);",
         serde_json::to_string(&format!("%{}", compact(value))).unwrap()
@@ -1636,7 +1636,7 @@ fn absent_stored_attachment_datums_refuse_the_frame_with_its_named_loss() {
     }
 }
 
-fn stored_thin(open: bool, flip: bool, reversed: bool) -> Vec<u8> {
+pub(super) fn stored_thin(open: bool, flip: bool, reversed: bool) -> Vec<u8> {
     crate::test_support::review::edit(&fixture("plate-fillet"), |path, response| {
         if !path.ends_with("features.json") {
             return;
@@ -1693,16 +1693,16 @@ fn stored_thin_domain_has_a_product_scope_and_one_container_membership() {
             let wire = crate::test_support::review::wire(&result);
             assert_eq!(
                 wire["model"]["features"][1]["definition"]["value"]["kind"],
-                "extrude",
+                "native",
                 "{:?}",
                 result.report().losses
             );
-            assert_eq!(result.ir().design.features.len(), 1);
+            assert_eq!(result.ir().design.features.len(), 2);
             assert_eq!(result.ir().design.containers.len(), 1);
             assert_eq!(result.ir().design.scopes.len(), 1);
             assert_eq!(
                 wire["design"]["containers"][0]["value"]["members"],
-                json!([{"kind":"feature","value":id("feature", "Plate")}])
+                json!([{"kind":"feature","value":id("feature", "Base sketch")},{"kind":"feature","value":id("feature", "Plate")}])
             );
             assert_eq!(
                 wire["design"]["scopes"][0]["definition"],
@@ -1738,7 +1738,7 @@ fn stored_thin_domain_has_a_product_scope_and_one_container_membership() {
     let result = crate::test_support::review::decode(&bytes);
     assert_eq!(
         result.ir().design.features.len(),
-        1,
+        2,
         "{:?}",
         result.report().losses
     );
@@ -1785,7 +1785,7 @@ fn stored_open_thin_side_follows_the_stored_line_direction_and_flip() {
         let result = crate::test_support::review::decode(&bytes);
         let wire = crate::test_support::review::wire(&result);
         assert_eq!(
-            wire["design"]["features"][0]["definition"]["operation"]["value"]["output"]["body"]
+            wire["design"]["features"][1]["definition"]["operation"]["value"]["output"]["body"]
                 ["thickness"],
             json!({"kind":"symmetric","value":{"kind":"literal","value":0.6}})
         );
@@ -1809,12 +1809,12 @@ fn stored_open_thin_side_follows_the_stored_line_direction_and_flip() {
                 let wire = crate::test_support::review::wire(&result);
                 assert_eq!(
                     result.ir().design.features.len(),
-                    1,
+                    2,
                     "{:?}",
                     result.report().losses
                 );
                 assert_eq!(
-                    wire["design"]["features"][0]["definition"]["operation"]["value"]["output"]
+                    wire["design"]["features"][1]["definition"]["operation"]["value"]["output"]
                         ["body"]["thickness"]["value"]["side"]["kind"],
                     if flip ^ second_side { "left" } else { "right" }
                 );
@@ -1828,12 +1828,12 @@ fn stored_open_thin_side_follows_the_stored_line_direction_and_flip() {
             let wire = crate::test_support::review::wire(&result);
             assert_eq!(
                 result.ir().design.features.len(),
-                1,
+                2,
                 "{:?}",
                 result.report().losses
             );
             assert_eq!(
-                wire["design"]["features"][0]["definition"]["operation"]["value"]["output"]["body"]
+                wire["design"]["features"][1]["definition"]["operation"]["value"]["output"]["body"]
                     ["thickness"]["value"]["side"]["kind"],
                 if flip ^ clockwise {
                     "inside"
@@ -1856,7 +1856,7 @@ fn stored_open_thin_side_follows_the_stored_line_direction_and_flip() {
     let result = crate::test_support::review::decode(&bytes);
     assert_eq!(
         result.ir().design.features.len(),
-        1,
+        2,
         "{:?}",
         result.report().losses
     );

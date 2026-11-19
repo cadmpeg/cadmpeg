@@ -9,8 +9,11 @@ pub(super) enum OnshapeLossCode {
     PartNotMatched,
     ConstraintNotSupported,
     ThinNotSupported,
+    ThinModelNotSupported,
+    DesignOperationNative,
     EmptyMember,
     SketchGeometryNotSupported,
+    RecordMalformed,
 }
 impl OnshapeLossCode {
     const fn code(self) -> &'static str {
@@ -20,8 +23,11 @@ impl OnshapeLossCode {
             Self::PartNotMatched => "history.part-not-matched",
             Self::ConstraintNotSupported => "sketch.constraint-not-supported",
             Self::ThinNotSupported => "extrude.thin-not-supported",
+            Self::ThinModelNotSupported => "extrude.thin-model-not-supported",
+            Self::DesignOperationNative => "history.design-operation-native",
             Self::EmptyMember => "container.empty-member",
             Self::SketchGeometryNotSupported => "sketch.geometry-not-supported",
+            Self::RecordMalformed => "record.malformed",
         }
     }
     pub(super) fn note(self, message: impl Into<String>) -> LossNote {

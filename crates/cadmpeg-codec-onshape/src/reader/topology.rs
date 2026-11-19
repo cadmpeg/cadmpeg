@@ -78,38 +78,53 @@ pub(crate) struct Inputs<'a> {
     pub(super) regions: std::cell::RefCell<super::regions::Recovery>,
 }
 
+fn rollback_indices(bundle: &Bundle<'_>, prefix: &str) -> Mapping<BTreeSet<usize>> {
+    let index = bundle
+        .json(&format!("{prefix}/bodydetails/index.json"))
+        .map_err(|_| "bodydetails/index.json is missing or unreadable; fetch a new bundle")?;
+    let entries = index
+        .as_array()
+        .or_else(|| index.get("indices").and_then(Value::as_array))
+        .filter(|rows| rows.len() <= super::ROWS)
+        .ok_or("the bodydetails index is missing or exceeds the rollback limit")?;
+    let mut indices = BTreeSet::new();
+    for entry in entries {
+        let ordinal = if let Some(ordinal) = entry.as_u64() {
+            usize::try_from(ordinal)
+                .map_err(|_| "a rollback index exceeds this platform's range")?
+        } else {
+            entry
+                .as_str()
+                .and_then(|path| path.strip_suffix(".json"))
+                .and_then(|i| i.parse::<usize>().ok())
+                .ok_or("a rollback index has no integer or file name")?
+        };
+        if !indices.insert(ordinal) {
+            return Err("the bodydetails index repeats a rollback index".into());
+        }
+    }
+    Ok(indices)
+}
+
 impl<'a> Inputs<'a> {
     pub(crate) fn new(
         bundle: &'a Bundle<'a>,
         prefix: &'a str,
         mid: &'a str,
         features: &'a [Value],
-    ) -> Mapping<Self> {
-        let index = bundle
-            .json(&format!("{prefix}/bodydetails/index.json"))
-            .map_err(|_| "bodydetails/index.json is missing or unreadable; fetch a new bundle")?;
-        let entries = index
-            .as_array()
-            .or_else(|| index.get("indices").and_then(Value::as_array))
-            .filter(|rows| rows.len() <= super::ROWS)
-            .ok_or("the bodydetails index is missing or exceeds the rollback limit")?;
-        let mut indices = BTreeSet::new();
-        for entry in entries {
-            let ordinal = if let Some(ordinal) = entry.as_u64() {
-                usize::try_from(ordinal)
-                    .map_err(|_| "a rollback index exceeds this platform's range")?
-            } else {
-                entry
-                    .as_str()
-                    .and_then(|path| path.strip_suffix(".json"))
-                    .and_then(|i| i.parse::<usize>().ok())
-                    .ok_or("a rollback index has no integer or file name")?
-            };
-            if !indices.insert(ordinal) {
-                return Err("the bodydetails index repeats a rollback index".into());
-            }
-        }
-        Ok(Self {
+        report: &mut super::Report,
+    ) -> Self {
+        let indices = rollback_indices(bundle, prefix).unwrap_or_else(|reason| {
+            report.push_coded(
+                "bodydetails index",
+                crate::loss::OnshapeLossCode::RecordMalformed,
+                format!(
+                    "{reason}; features that need rollback topology keep the final STEP geometry"
+                ),
+            );
+            BTreeSet::new()
+        });
+        Self {
             bundle,
             prefix,
             mid,
@@ -129,7 +144,7 @@ impl<'a> Inputs<'a> {
                 .collect(),
             provenance: std::cell::RefCell::default(),
             regions: std::cell::RefCell::default(),
-        })
+        }
     }
 
     pub(crate) fn sketch_entities(&self, sketch: &str) -> Mapping<&[Value]> {

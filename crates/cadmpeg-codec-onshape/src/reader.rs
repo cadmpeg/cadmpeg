@@ -262,13 +262,9 @@ fn admit_history(
     feature: &Value,
     model: &mut cadmpeg_ir::document::Model,
 ) -> Result<(), Error> {
-    let count = |key| {
-        optional_rows(feature, key)
-            .map(<[Value]>::len)
-            .map_err(Error::Decode)
-    };
-    let entities = count("entities")?;
-    let parameters = count("parameters")?;
+    let count = |key| optional_rows(feature, key).map_or(0, <[Value]>::len);
+    let entities = count("entities");
+    let parameters = count("parameters");
     let mut generated_entities = entities;
     let mut generated_constraints = 0usize;
     let mut generated_parameters = parameters;
@@ -276,7 +272,7 @@ fn admit_history(
         left.checked_add(right)
             .ok_or_else(|| Error::Decode("history count overflow".into()))
     };
-    for constraint in optional_rows(feature, "constraints").map_err(Error::Decode)? {
+    for constraint in optional_rows(feature, "constraints").unwrap_or(&[]) {
         if let Ok(output) = sketch::constraint_output(constraint) {
             generated_entities = add(generated_entities, output.entities)?;
             generated_constraints = add(generated_constraints, output.constraints)?;
@@ -357,7 +353,7 @@ pub(super) fn read(
     microversion(response, "sourceMicroversion", mid).map_err(Error::Decode)?;
     let features = rows(response, "features").map_err(Error::Decode)?;
     bundle.admit_topology(ctx)?;
-    let inputs = topology::Inputs::new(&bundle, &prefix, mid, features).map_err(Error::Decode)?;
+    let inputs = topology::Inputs::new(&bundle, &prefix, mid, features, report);
     let step_path = format!("{prefix}/export.step");
     let mut model = if bundle.contains(&step_path) {
         let source = bundle.view(&step_path)?;
@@ -430,15 +426,40 @@ pub(super) fn read(
         std::collections::BTreeMap::new()
     };
     let original_design_features = model.ir.design.features.len();
+    if features
+        .iter()
+        .any(|feature| features::value(feature, "bodyType") == Some("THIN"))
+    {
+        ctx.charge_entities(
+            cadmpeg_core::decode::u64_from_index(features.len()) + 2,
+            "Onshape thin timeline admission",
+        )?;
+        reserve_history(&mut model.ir.design.features, features.len())?;
+        reserve_history(&mut model.ir.design.containers, 1)?;
+        reserve_history(&mut model.ir.design.scopes, 1)?;
+    }
     let mut seen = std::collections::BTreeSet::new();
     let mut unresolved_variables = std::collections::BTreeSet::new();
     for (ordinal, feature) in features.iter().enumerate() {
-        let native = text(feature, "featureId").map_err(Error::Decode)?;
-        if !seen.insert(native) {
-            return Err(Error::Decode(
-                "Onshape feature ids repeat; fetch a new bundle".into(),
-            ));
-        }
+        let native = match text(feature, "featureId") {
+            Ok(native) if seen.insert(native) => native,
+            Ok(native) => {
+                report.push_coded(
+                    native,
+                    OnshapeLossCode::RecordMalformed,
+                    "a feature repeats an earlier feature id; omitted the feature",
+                );
+                continue;
+            }
+            Err(reason) => {
+                report.push_coded(
+                    &format!("feature #{ordinal}"),
+                    OnshapeLossCode::RecordMalformed,
+                    format!("{reason}; omitted the feature"),
+                );
+                continue;
+            }
+        };
         let feature_id = id("feature", native);
         let name = feature
             .get("name")
@@ -448,7 +469,7 @@ pub(super) fn read(
         let bindings: Vec<_> =
             if feature.get("featureType").and_then(Value::as_str) == Some("assignVariable") {
                 optional_rows(feature, "parameters")
-                    .map_err(Error::Decode)?
+                    .unwrap_or(&[])
                     .iter()
                     .filter(|p| p.get("parameterId").and_then(Value::as_str) == Some("name"))
                     .filter_map(|p| p.get("value").and_then(Value::as_str))
@@ -470,12 +491,6 @@ pub(super) fn read(
             }
         }
         admit_history(ctx, feature, &mut model.ir.model)?;
-        if features::value(feature, "bodyType") == Some("THIN") {
-            ctx.charge_entities(3, "Onshape thin design admission")?;
-            reserve_history(&mut model.ir.design.features, 1)?;
-            reserve_history(&mut model.ir.design.containers, 1)?;
-            reserve_history(&mut model.ir.design.scopes, 1)?;
-        }
         let sizes = (
             model.ir.model.sketches.len(),
             model.ir.model.sketch_entities.len(),
@@ -526,6 +541,9 @@ pub(super) fn read(
                         &unresolved_variables,
                     )?;
                     push(&mut model.ir.design.features, design)?;
+                    report.push_coded(name, OnshapeLossCode::ThinModelNotSupported,
+                        "model construction retains the native thin operation; design construction carries the proved wall operands");
+                    return Ok(self::definition("native", json!({"kind":"Onshape thin extrusion", "parameters":{}})));
                 }
                 Ok(definition)
             })
@@ -538,8 +556,15 @@ pub(super) fn read(
                         Some("newSketch" | "assignVariable")
                     )
                 {
-                    features::report_evaluated_variables(feature, &model.ir.model, report)
-                        .map_err(Error::Decode)?;
+                    if let Err(reason) =
+                        features::report_evaluated_variables(feature, &model.ir.model, report)
+                    {
+                        report.push_coded(
+                            name,
+                            OnshapeLossCode::RecordMalformed,
+                            format!("{reason}; evaluated variable facts are not reported"),
+                        );
+                    }
                 }
                 definition
             }
@@ -599,8 +624,15 @@ pub(super) fn read(
                 unresolved_variables.remove(*name);
             }
         }
-        let mut source_properties =
-            features::source_properties(feature, &definition).map_err(Error::Decode)?;
+        let mut source_properties = features::source_properties(feature, &definition)
+            .unwrap_or_else(|reason| {
+                report.push_coded(
+                    name,
+                    OnshapeLossCode::RecordMalformed,
+                    format!("{reason}; source properties are not retained"),
+                );
+                json!({})
+            });
         if definition.pointer("/value/kind").and_then(Value::as_str) == Some("extrude")
             && definition
                 .pointer("/value/value/extent/kind")
@@ -615,14 +647,21 @@ pub(super) fn read(
             .iter()
             .chain(part_bodies.get(&ordinal))
             .filter(|_| {
-                definition
-                    .pointer("/value/value/op")
-                    .and_then(Value::as_str)
-                    == Some("new_body")
-                    && matches!(
-                        definition.pointer("/value/kind").and_then(Value::as_str),
-                        Some("extrude" | "revolve")
-                    )
+                (model
+                    .ir
+                    .design
+                    .features
+                    .iter()
+                    .any(|design| design.id.as_str() == feature_id)
+                    && features::value(feature, "operationType") == Some("NEW"))
+                    || definition
+                        .pointer("/value/value/op")
+                        .and_then(Value::as_str)
+                        == Some("new_body")
+                        && matches!(
+                            definition.pointer("/value/kind").and_then(Value::as_str),
+                            Some("extrude" | "revolve")
+                        )
             })
             .cloned()
             .collect();
@@ -630,10 +669,23 @@ pub(super) fn read(
         if let Ok(suppressed) = suppressed {
             row["suppressed"] = json!(suppressed);
         }
-        push(&mut model.ir.model.features, row).map_err(Error::Decode)?;
+        if let Err(reason) = push(&mut model.ir.model.features, row) {
+            report.push_coded(
+                name,
+                OnshapeLossCode::RecordMalformed,
+                format!("{reason}; omitted the feature"),
+            );
+        }
     }
     if model.ir.design.features.len() > original_design_features {
-        thin::install_scope(&mut model.ir).map_err(Error::Decode)?;
+        if let Err(reason) = thin::install_scope(&mut model.ir, report) {
+            report.push_coded(
+                "thin timeline",
+                OnshapeLossCode::RecordMalformed,
+                format!("{reason}; the design timeline scope is not installed"),
+            );
+            model.ir.design.features.truncate(original_design_features);
+        }
     }
     annotate(&mut model, features)?;
     report
@@ -727,7 +779,9 @@ fn annotate(model: &mut Model, features: &[Value]) -> Result<(), Error> {
             .map_err(cadmpeg_core::CodecError::from)?;
     }
     for source in features {
-        let native = text(source, "featureId").map_err(Error::Decode)?;
+        let Ok(native) = text(source, "featureId") else {
+            continue;
+        };
         let sketch_id = id("sketch", native);
         if model
             .ir
@@ -736,7 +790,7 @@ fn annotate(model: &mut Model, features: &[Value]) -> Result<(), Error> {
             .iter()
             .any(|s| s.id.as_str() == sketch_id)
         {
-            let queries = features::queries(source, "sketchPlane").map_err(Error::Decode)?;
+            let queries = features::queries(source, "sketchPlane").unwrap_or(&[]);
             let inferred = queries.iter().all(|q| {
                 q.get("deterministicIds")
                     .and_then(Value::as_array)

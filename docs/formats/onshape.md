@@ -121,6 +121,12 @@ list retains the implicit scope. `endStyle` selects the bore termination.
 `isTappedThrough` selects thread termination: `true` uses the bore depth;
 `false` uses the finite `tappedDepth` quantity.
 
+Explicit feature and operation provenance refers to the producer of the
+selected geometry revision. Rollback transitions establish that revision's
+producer interval. The final consumed selection includes edges reached by
+tangent propagation. Compact fields and outer fields describe the same
+operand; outer deterministic IDs remain part of that operand.
+
 A query can carry explicit deterministic IDs or a literal
 `query=qCompressed(1.0,<JSON string>,id);`. `%` starts the compact value
 stream. `&<hex length>$<base64>` carries a zlib-compressed compact stream;

@@ -95,7 +95,7 @@ fn midpoint_expansion_refuses_the_history_budget_before_emission() {
     }
 }
 
-fn separated(kind: &str) -> Vec<u8> {
+pub(super) fn separated(kind: &str) -> Vec<u8> {
     let bytes = edit(&fixture("plate-fillet"), |path, response| {
         if path.ends_with("features.json") {
             let features = response["features"].as_array_mut().unwrap();
@@ -323,10 +323,8 @@ fn deterministic_historical_operands_keep_their_producer_across_an_independent_s
 fn deterministic_axis_with_an_unresolved_producer_stays_native() {
     let bytes = edit(&fixture("revolve"), |path, response| {
         if path.ends_with("features.json") {
-            parameter(&mut response["features"][1], "axis")["queries"][0]
-                .as_object_mut()
-                .unwrap()
-                .remove("featureId");
+            parameter(&mut response["features"][1], "axis")["queries"] =
+                json!([{"deterministicIds":["axis"],"featureId":"Ring sketch"}]);
         }
     });
     let result = decode(&bytes);

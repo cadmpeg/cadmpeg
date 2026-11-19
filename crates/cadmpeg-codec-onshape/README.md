@@ -20,3 +20,11 @@ and compressed default-plane regions. Their response data comes from the
 reader's code-authored generators. The STEP member is built from a synthetic
 CADIR solid with the cadmpeg STEP encoder. ZIP timestamps use the writer's
 fixed default. Tests require an offline process.
+
+Admitted thin walls use typed design operations and Native model companions.
+`onshape/extrude.thin-model-not-supported` names the model construction gap.
+The scoped design timeline includes every source feature. Native design members
+carry `onshape/history.design-operation-native`; the model rows retain their
+decoded constructions. Final STEP bodies bind after the complete timeline.
+Explicit historical provenance passes the stored rollback producer proof,
+including tangent-added edges.
