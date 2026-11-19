@@ -3220,7 +3220,7 @@ The two identities of a placement name the same entity, a record of the construc
 
 #### Records of a Base Feature design
 
-This subsection gives the records that a Design stream holds when its MetaStream header stores serializer magic `1234` and its timeline lists one `Base Feature` item that stores `N > 0` result bodies. Such a stream writes every reference in the eleven-byte plain form. Record indices are local to one Design `BulkStream`. The feature item tail, the paired scope record, the tracked-results table, the item-tail companion, the timeline context, the persistent-id table, and the origin of the previous subsection apply. The type table registers the types below in addition to the types of the previous subsection that these records name.
+This subsection gives the records that a Design stream holds when its MetaStream header stores serializer magic `1234` and its timeline lists one `Base Feature` item that stores `N > 0` result bodies. A reference to a record of the same segment is in the eleven-byte plain form. The cross-segment references are the exceptions, and the records that hold them say so: the one in the `549FBB80-B890-473E-A5C0-415D3D9BF4E6` record is 15 bytes wide (marker, u64, segment flag, segment index), and the component aggregate holds one more. Record indices are local to one Design `BulkStream`. The feature item tail, the paired scope record, the tracked-results table, the item-tail companion, the timeline context, the persistent-id table, and the origin of the previous subsection apply. The type table registers the types below in addition to the types of the previous subsection that these records name.
 
 | Type GUID | Base-type GUID | Version | Add-in | Role |
 |---|---|---|---|---|
@@ -3332,7 +3332,7 @@ The design body-reference record stores the body's node GUID, and the parameter 
 
 The members of `B65B5682-9355-44C7-8AFC-823058C4A36B` and of the owner collection are, in this order, the record of type `5D15E992-1E93-4D79-A553-10D2624148AE`, the `Base Feature` scope, and the result owner. The paired record of each member ends with a reference to the owner collection.
 
-The dependency table of type `B13113CC-031E-4F93-8240-C4C10728869F` stores, after the indexed header and nine zero bytes, `u8 1` at offset 20, or `u8 0` when it has no entry. Then follow two maps. Each map entry is a reference, u32 `m`, and `m` pairs of a reference and a u32 flag.
+The dependency table of type `B13113CC-031E-4F93-8240-C4C10728869F` stores, after the indexed header, ten zero bytes at offsets 11 through 20, then `u8 1` at offset 21, or `u8 0` when it has no entry. Then follow two maps, the first map's u32 count at offset 22. Each map entry is a reference, u32 `m`, and `m` pairs of a reference and a u32 flag.
 
 | Field | Type | Value in this design |
 |---|---|---|
