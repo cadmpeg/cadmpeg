@@ -833,6 +833,13 @@ fn an_earlier_design_decodes_through_the_upgrade() {
                "second": {"termination": {"kind": "blind", "length": 4.0}}})
     );
     assert!(!loss_codes(&bytes).contains(&"solidcraft/history.features-undecoded".to_owned()));
+    // The frame of the XZ plane came from the upgrade, so it is derived.
+    let result = cadmpeg_test_support::EditableDecodeResult::from(result);
+    let fidelity = serde_json::to_value(result.source_fidelity()).unwrap();
+    assert_eq!(
+        fidelity["annotations"]["exactness"]["solidcraft:design:sketch#1"]["fields"]["placement"],
+        "derived"
+    );
 }
 
 #[test]

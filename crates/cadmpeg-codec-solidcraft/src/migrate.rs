@@ -122,7 +122,8 @@ fn xz_frame(value: &mut Value) {
                         name.eq_ignore_ascii_case("XZ") || name.eq_ignore_ascii_case("FRONT")
                     });
             if old {
-                *value = json!({"type": "custom", "plane": {
+                // The marker says the frame came from the upgrade, not the document.
+                *value = json!({"type": "custom", "migrated": "XZ", "plane": {
                     "origin": [0, 0, 0], "x_dir": [1, 0, 0], "y_dir": [0, 0, 1]}});
             } else {
                 object.values_mut().for_each(xz_frame);

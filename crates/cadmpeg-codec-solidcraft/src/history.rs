@@ -354,6 +354,12 @@ impl Walk<'_, '_> {
         let frame = record
             .get("plane")
             .and_then(|plane| sketch::plane(plane, &self.scope, &self.planes, 0));
+        // A frame the upgrade of an earlier format wrote is derived from the
+        // format's own rule, so its placement says so.
+        let upgraded = record
+            .get("plane")
+            .and_then(|plane| plane.get("migrated"))
+            .is_some();
         if frame.is_none() {
             self.tally.planes += 1;
         }
@@ -376,6 +382,10 @@ impl Walk<'_, '_> {
         }))
         .map_err(malformed)?;
         self.ir.model.sketches.push(neutral);
+        if upgraded {
+            self.annotations
+                .field_exactness(&sketch_id, "placement", Exactness::Derived)?;
+        }
         let mut used = BTreeSet::new();
         let mut loci = constraints::Loci::default();
         let mut typed = BTreeSet::new();
