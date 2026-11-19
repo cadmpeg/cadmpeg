@@ -829,7 +829,7 @@ pub(in crate::families) fn attach(
                                 Some((plane_coedges[0], projected, curve_range, line.byte_offset()))
                             });
                         if let (None, class25::Class25Accuracy::Fitted { fit_tolerance, .. }) =
-                            (plane_projection_gap, map.accuracy)
+                            (plane_projection_gap, &map.accuracy)
                         {
                             plane_fit_tolerance = FitTolerance::try_new(fit_tolerance.get()).ok();
                         }
