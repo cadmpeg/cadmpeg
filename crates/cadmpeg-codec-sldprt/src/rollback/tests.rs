@@ -235,17 +235,22 @@ fn an_unreconciled_map_takes_the_token_whose_records_name_the_most_marks() {
         tagged(0x31, 1),
         tagged(0x2b, 11),
     ]);
-    assert_eq!(token_naming_marks(&stream, 0x40, &marks), Some(0x2b));
+    assert_eq!(token_naming_marks(&stream, Some(0x40), &marks), Some(0x2b));
     assert_eq!(
-        token_naming_marks(&stream, 0x2b, &marks),
+        token_naming_marks(&stream, Some(0x2b), &marks),
         None,
         "a token at or past the map count names no class of the configuration"
     );
+    assert_eq!(
+        token_naming_marks(&stream, None, &marks),
+        Some(0x2b),
+        "a stream that states no map count bounds no index"
+    );
     let tied = resolved(&[tagged(0x2b, 5), tagged(0x30, 8)]);
-    assert_eq!(token_naming_marks(&tied, 0x40, &marks), None);
+    assert_eq!(token_naming_marks(&tied, Some(0x40), &marks), None);
     let initial = resolved(&[tagged(0x31, 1)]);
     assert_eq!(
-        token_naming_marks(&initial, 0x40, &marks),
+        token_naming_marks(&initial, Some(0x40), &marks),
         None,
         "no feature records the initial mark"
     );

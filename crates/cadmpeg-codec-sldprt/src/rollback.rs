@@ -173,10 +173,12 @@ pub(crate) fn read(
     ) else {
         return Ok(Reading::Unread(Unread::NoFeatureStreams));
     };
-    let Some(count) = crate::archive::resolved_features_count(resolved) else {
-        return Ok(Reading::Unread(Unread::ClassMapUnreconciled));
+    let count = crate::archive::resolved_features_count(resolved);
+    let map = match count {
+        Some(count) => crate::archive::class_index_map(config, count, ctx)?,
+        None => None,
     };
-    let index = match crate::archive::class_index_map(config, count, ctx)? {
+    let index = match map {
         Some(map) => map
             .iter()
             .find_map(|(index, name)| (name == MARK_CLASS).then_some(*index))
@@ -243,10 +245,15 @@ pub(crate) fn mark_chain(records: &DeltasRecords<'_>) -> Option<MarkChain> {
 }
 
 /// The class index of `moPMarkRecord_c` where the class map does not
-/// reconcile: among the indices below the stream's map `count`, the one whose
-/// class tokens open the most record heads naming distinct main-line marks
-/// after the initial one. `None` where no index or several do.
-pub(crate) fn token_naming_marks(stream: &[u8], count: u32, chain: &MarkChain) -> Option<u32> {
+/// reconcile: among the indices below the stream's map `count`, where the
+/// stream states one, the one whose class tokens open the most record heads
+/// naming distinct main-line marks after the initial one. `None` where no
+/// index or several do.
+pub(crate) fn token_naming_marks(
+    stream: &[u8],
+    count: Option<u32>,
+    chain: &MarkChain,
+) -> Option<u32> {
     let marks = match chain.main.split_last() {
         Some((_, later)) if !later.is_empty() => later,
         _ => chain.main.as_slice(),
@@ -265,7 +272,7 @@ pub(crate) fn token_naming_marks(stream: &[u8], count: u32, chain: &MarkChain) -
             word if word & 0x8000 != 0 => (u32::from(word & 0x7fff), at + 2),
             _ => continue,
         };
-        if index == 0 || index >= count {
+        if index == 0 || count.is_some_and(|count| index >= count) {
             continue;
         }
         if let Some(mark) = record_mark(stream, body).filter(|mark| marks.contains(mark)) {
