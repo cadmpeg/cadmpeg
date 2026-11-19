@@ -217,7 +217,7 @@ fn exact_rectangular_pattern_direction(
     let length = paired_at.checked_sub(start)?;
     let shift = match (length, distance_type) {
         (frame::LEN, 8) => 0,
-        (spacing::LEN, 7) if bytes.get(start + spacing::SPACING_FLAG) == Some(&0) => 1,
+        (spacing::LEN, 7 | 10) if bytes.get(start + spacing::SPACING_FLAG) == Some(&0) => 1,
         (compact::LEN, 7) | (compact_extent::LEN, 8 | 10) => 0,
         _ => return None,
     };

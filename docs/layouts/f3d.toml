@@ -29997,7 +29997,6 @@ anchor = "The 221-byte spacing direction form"
 name = "distance_type"
 offset = 89
 type = "u32"
-value = 7
 source = "spec"
 anchor = "The 221-byte spacing direction form"
 

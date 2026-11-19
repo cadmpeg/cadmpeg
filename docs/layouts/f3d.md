@@ -9240,7 +9240,7 @@ Parsed by:
 | 25 | 24 | `origin` | `f64[3]` | little | spec | The 221-byte spacing direction form |
 | 49 | 24 | `displacement` | `f64[3]` | little | spec | The 221-byte spacing direction form |
 | 73 | 16 | `zero_run_16` | `bytes[16]` | little | spec | The 221-byte spacing direction form |
-| 89 | 4 | `distance_type` | `u32` | little | spec | The 221-byte spacing direction form · value `7` |
+| 89 | 4 | `distance_type` | `u32` | little | spec | The 221-byte spacing direction form |
 | 93 | 1 | `spacing_flag` | `u8` | little | spec | The 221-byte spacing direction form · value `0` |
 | 94 | 24 | `negative_ones` | `f64[3]` | little | spec | The 221-byte spacing direction form |
 | 118 | 4 | `selection_count` | `u32` | little | spec | The 221-byte spacing direction form |

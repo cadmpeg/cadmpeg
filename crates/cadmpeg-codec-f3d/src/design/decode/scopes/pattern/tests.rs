@@ -1556,6 +1556,7 @@ mod body_references;
 mod compact_extent;
 mod compact_spacing;
 mod direction_records;
+mod distance_type_ten;
 mod rectangular_instance_caps;
 
 fn spacing_payload() -> Vec<u8> {

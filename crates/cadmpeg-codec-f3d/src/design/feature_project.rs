@@ -7759,6 +7759,14 @@ fn project_rectangular_pattern_scalars(
             scope.id, record.record_index
         )));
     }
+    if direction.is_none() {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureRectangularPatternDirectionUnresolved.note(format!(
+                "RectangularPattern scope {} keeps its first direction unresolved: it has no admitted direction record or generated-instance run, or the two disagree.",
+                scope.id
+            )),
+        );
+    }
     if !dropped.is_empty() {
         losses.push(
             crate::loss::F3dLossCode::FeatureRectangularPatternPlacementNotTransferred.note(

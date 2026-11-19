@@ -1254,3 +1254,45 @@ fn a_flagged_direction_without_a_distribution_block_reads_an_extent_and_charges_
         );
     }
 }
+
+#[test]
+fn rectangular_pattern_without_a_direction_source_charges_the_unresolved_direction() {
+    let mut losses = Vec::new();
+    let definition =
+        project_rectangular_pattern_scalars(&rectangular_scope(), &[], &[], &[], &[], &mut losses)
+            .expect("one active direction");
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = &definition
+    else {
+        panic!("rectangular pattern definition");
+    };
+    assert!(matches!(
+        pattern.definition(),
+        PatternTransform::Linear {
+            direction: None,
+            ..
+        }
+    ));
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>(),
+        [crate::loss::F3dLossCode::FeatureRectangularPatternDirectionUnresolved.kind()]
+    );
+
+    let mut scope = rectangular_scope();
+    if let crate::records::feature::scope::DesignScopePayloadMut::RPattern(Some(construction)) =
+        scope.payload_mut()
+    {
+        let mut wire =
+            crate::records::feature::patterns::DesignRectangularPatternConstructionWire::from(
+                construction.clone(),
+            );
+        wire.directions = vec![direction_record(20, [2.0, 0.0, 0.0])];
+        *construction = DesignRectangularPatternConstruction::try_from(wire).unwrap();
+    }
+    let mut losses = Vec::new();
+    project_rectangular_pattern_scalars(&scope, &[], &[], &[], &[], &mut losses)
+        .expect("one active direction");
+    assert!(losses.is_empty());
+}
