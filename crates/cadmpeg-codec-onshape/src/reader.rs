@@ -304,7 +304,11 @@ pub(super) fn read(
     step_decoder: crate::StepDecoder,
     report: &mut Report,
 ) -> Result<Model, Error> {
-    let bundle = Bundle::open(ctx, root)?;
+    let mut bundle = Bundle::open(ctx, root)?;
+    if !ctx.container_only() {
+        bundle.admit_topology(ctx)?;
+    }
+    report.notes.append(&mut bundle.losses);
     let manifest = bundle.json("manifest.json")?;
     if manifest.get("schema").and_then(Value::as_str) != Some(SCHEMA) {
         return Err(Error::Decode(
@@ -349,40 +353,76 @@ pub(super) fn read(
         ));
     }
     let prefix = format!("partstudios/{eid}");
-    let response = bundle.json(&format!("{prefix}/features.json"))?;
-    microversion(response, "sourceMicroversion", mid).map_err(Error::Decode)?;
-    let features = rows(response, "features").map_err(Error::Decode)?;
-    bundle.admit_topology(ctx)?;
+    let history_path = format!("{prefix}/features.json");
+    let features = match bundle.json(&history_path) {
+        Ok(response) => {
+            microversion(response, "sourceMicroversion", mid).map_err(Error::Decode)?;
+            rows(response, "features").map_err(Error::Decode)?
+        }
+        Err(error) => {
+            report.push_coded(
+                &history_path,
+                OnshapeLossCode::HistoryNotSupported,
+                format!("{error}; feature history is missing"),
+            );
+            &[]
+        }
+    };
     let inputs = topology::Inputs::new(&bundle, &prefix, mid, features, report);
     let step_path = format!("{prefix}/export.step");
-    let mut model = if bundle.contains(&step_path) {
+    let step = if bundle.contains(&step_path) {
         let source = bundle.view(&step_path)?;
-        let _depth = ctx.enter_nested("Onshape STEP member")?;
-        let decoded = step_decoder(ctx, source)?;
-        let source_step = Some(
+        let decoded = ctx.run_part(|| {
+            let _depth = ctx.enter_nested("Onshape STEP member")?;
             std::str::from_utf8(source.window())
-                .map_err(|_| Error::Decode("Onshape STEP export is not UTF-8".into()))?
-                .to_owned(),
-        );
-        let mut model = Model::from_decoded(decoded, source_step);
-        part_studio_bodies(&mut model);
-        model
-    } else if !features.is_empty()
-        && features.iter().all(|feature| {
-            suppression(feature) == Ok(true)
-                || matches!(
+                .map_err(|_| {
+                    cadmpeg_core::CodecError::malformed("Onshape STEP export is not UTF-8")
+                })
+                .and_then(|text| {
+                    step_decoder(ctx, source).map(|decoded| (decoded, text.to_owned()))
+                })
+        })?;
+        match decoded {
+            Ok((decoded, text)) => Some(Model::from_decoded(decoded, Some(text))),
+            Err(error) if features.is_empty() => return Err(error.into()),
+            Err(error) => {
+                report.push_coded(
+                    &step_path,
+                    OnshapeLossCode::StepUnreadable,
+                    format!("{error}; final geometry is missing"),
+                );
+                None
+            }
+        }
+    } else {
+        if features.is_empty() {
+            return Err(Error::Decode(
+                "Onshape bundle has no history or final geometry".into(),
+            ));
+        }
+        if features.iter().any(|feature| {
+            suppression(feature) != Ok(true)
+                && !matches!(
                     feature.get("featureType").and_then(Value::as_str),
                     Some("newSketch" | "assignVariable")
                 )
-        })
-    {
-        Model::from_decoded(empty(ctx, root), None)
-    } else {
-        return Err(Error::Decode(
-            "Onshape bundle has body-building features but no STEP export; fetch a new bundle"
-                .into(),
-        ));
+        }) && !report
+            .notes
+            .iter()
+            .any(|note| note.code.to_string() == "onshape/step.unreadable")
+        {
+            report.push_coded(
+                &step_path,
+                OnshapeLossCode::StepUnreadable,
+                "STEP export is missing; final geometry is missing",
+            );
+        }
+        None
     };
+    let mut model = step.unwrap_or_else(|| Model::from_decoded(empty(ctx, root), None));
+    if model.source_step.is_some() {
+        part_studio_bodies(&mut model);
+    }
     if ctx.depth() == cadmpeg_core::decode::DecodeDepth::Geometry {
         report
             .notes

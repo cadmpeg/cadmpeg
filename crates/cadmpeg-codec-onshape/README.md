@@ -10,7 +10,7 @@ Support: L0 ([ladder](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-s
 <!-- /generated: capability onshape -->
 
 The [bundle contract](../../docs/formats/onshape.md) defines the manifest,
-canonical paths, consistency rules, units and bounds. Nonempty member bytes
+canonical paths, consistency rules, units and bounds. Admitted nonempty member bytes
 are embedded as assets. Empty members carry `container.empty-member`. Unsupported history carries stable `onshape/*`
 loss codes.
 
@@ -28,3 +28,11 @@ carry `onshape/history.design-operation-native`; the model rows retain their
 decoded constructions. Final STEP bodies bind after the complete timeline.
 Explicit historical provenance passes the stored rollback producer proof,
 including tangent-added edges.
+
+Member size and expansion limits omit the affected member with
+`onshape/member.too-large`. Topology row limits omit the affected rollback
+table with `onshape/topology.too-large`; dependent features use Native
+construction and their mapping loss. Unreadable STEP exports retain readable
+history with `onshape/step.unreadable` and missing final geometry. Session
+expansion, retained-byte and entity budgets remain decode errors. A bundle
+with empty history and unreadable final geometry remains a decode error.

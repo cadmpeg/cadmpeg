@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded ZIP admission and member views.
 use crate::error::Error;
+use crate::loss::OnshapeLossCode;
 use cadmpeg_container::{ArchiveSnapshot, ZipCompression};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -17,6 +19,7 @@ pub(super) struct Bundle<'a> {
     pub(super) snapshot: ArchiveSnapshot<'a>,
     members: BTreeMap<String, View<'a>>,
     json: BTreeMap<String, Value>,
+    pub(super) losses: Vec<LossNote>,
 }
 fn failure(detail: impl std::fmt::Display) -> Error {
     Error::Decode(format!("Onshape bundle: {detail}"))
@@ -53,6 +56,7 @@ impl<'a> Bundle<'a> {
         let mut members = BTreeMap::new();
         let mut json = BTreeMap::from([("manifest.json".to_owned(), manifest)]);
         let mut remaining = EXPANDED_BYTES;
+        let mut losses = Vec::new();
         for entry in snapshot.entries() {
             let name = &entry.name;
             if name.contains('\\')
@@ -69,25 +73,56 @@ impl<'a> Bundle<'a> {
                     "a member name or compression method is unsupported",
                 ));
             }
-            let limit = if has_extension(name, "json") {
-                JSON_BYTES.min(remaining)
+            let member_limit = if has_extension(name, "json") {
+                JSON_BYTES
             } else {
-                remaining
+                u64::MAX
             };
-            if entry.uncompressed_size > limit {
-                return Err(failure("the expanded data exceeds the bundle limit"));
+            let member_limit = if entry.compression == ZipCompression::Deflate {
+                member_limit.min(ctx.per_expand_allowance())
+            } else {
+                member_limit
+            };
+            if entry.uncompressed_size > member_limit {
+                losses.push(OnshapeLossCode::MemberTooLarge.note(format!(
+                    "{name}: expanded member exceeds {member_limit} bytes; omitted the member"
+                )));
+                continue;
             }
+            remaining = remaining
+                .checked_sub(entry.uncompressed_size)
+                .ok_or_else(|| failure("the expanded data exceeds the bundle limit"))?;
             let data = if name == "manifest.json" {
                 manifest_view
             } else {
-                snapshot.open(ctx, name)?
+                match ctx.run_part(|| snapshot.open(ctx, name))? {
+                    Ok(data) => data,
+                    Err(CodecError::ResourceLimit(limit))
+                        if limit.scope == cadmpeg_core::decode::LimitScope::Part =>
+                    {
+                        losses.push(
+                            OnshapeLossCode::MemberTooLarge
+                                .note(format!("{name}: {limit:?}; omitted the member")),
+                        );
+                        continue;
+                    }
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error.into()),
+                    Err(error) if name.ends_with("/export.step") => {
+                        losses.push(
+                            OnshapeLossCode::StepUnreadable
+                                .note(format!("{name}: {error}; final geometry is missing")),
+                        );
+                        continue;
+                    }
+                    Err(error) => return Err(error.into()),
+                }
             };
             let length = cadmpeg_core::decode::u64_from_index(data.window().len());
-            remaining = remaining
-                .checked_sub(length)
-                .ok_or_else(|| failure("expanded data exceeds the bundle limit"))?;
-            if length > limit {
-                return Err(failure("a member exceeds its expanded limit"));
+            if has_extension(name, "json") && length > JSON_BYTES {
+                losses.push(OnshapeLossCode::MemberTooLarge.note(format!(
+                    "{name}: expanded member exceeds {JSON_BYTES} bytes; omitted the member"
+                )));
+                continue;
             }
             if prefix
                 .as_deref()
@@ -108,6 +143,7 @@ impl<'a> Bundle<'a> {
             snapshot,
             members,
             json,
+            losses,
         })
     }
     pub(super) fn view(&self, path: &str) -> Result<View<'a>, Error> {
@@ -132,8 +168,9 @@ impl<'a> Bundle<'a> {
         }
         Ok(())
     }
-    pub(super) fn admit_topology(&self, ctx: &DecodeContext<'_>) -> Result<(), Error> {
+    pub(super) fn admit_topology(&mut self, ctx: &DecodeContext<'_>) -> Result<(), Error> {
         let mut count = 0usize;
+        let mut omitted = Vec::new();
         for (path, response) in &self.json {
             if !path.contains("/bodydetails/") {
                 continue;
@@ -141,37 +178,53 @@ impl<'a> Bundle<'a> {
             let Some(bodies) = response.get("bodies").and_then(Value::as_array) else {
                 continue;
             };
-            let mut add = |length: usize| -> Result<(), Error> {
-                if length > super::reader::ROWS {
-                    return Err(failure("topology exceeds the row limit"));
-                }
-                count = count
-                    .checked_add(length)
-                    .ok_or_else(|| failure("topology count overflow"))?;
-                Ok(())
-            };
-            add(bodies.len())?;
-            for body in bodies {
-                for key in ["faces", "edges", "vertices"] {
-                    if let Some(rows) = body.get(key).and_then(Value::as_array) {
-                        add(rows.len())?;
+            let rows = (|| {
+                let mut count = 0usize;
+                let mut add = |length: usize| -> Option<()> {
+                    if length > super::reader::ROWS {
+                        return None;
                     }
-                }
-                if let Some(faces) = body.get("faces").and_then(Value::as_array) {
-                    for face in faces {
-                        if let Some(loops) = face.get("loops").and_then(Value::as_array) {
-                            add(loops.len())?;
-                            for boundary in loops {
-                                if let Some(coedges) =
-                                    boundary.get("coedges").and_then(Value::as_array)
-                                {
-                                    add(coedges.len())?;
+                    count = count.checked_add(length)?;
+                    Some(())
+                };
+                add(bodies.len())?;
+                for body in bodies {
+                    for key in ["faces", "edges", "vertices"] {
+                        if let Some(rows) = body.get(key).and_then(Value::as_array) {
+                            add(rows.len())?;
+                        }
+                    }
+                    if let Some(faces) = body.get("faces").and_then(Value::as_array) {
+                        for face in faces {
+                            if let Some(loops) = face.get("loops").and_then(Value::as_array) {
+                                add(loops.len())?;
+                                for boundary in loops {
+                                    if let Some(coedges) =
+                                        boundary.get("coedges").and_then(Value::as_array)
+                                    {
+                                        add(coedges.len())?;
+                                    }
                                 }
                             }
                         }
                     }
                 }
+                Some(count)
+            })();
+            if let Some(rows) = rows {
+                count = count
+                    .checked_add(rows)
+                    .ok_or_else(|| failure("topology count overflow"))?;
+            } else {
+                omitted.push(path.clone());
             }
+        }
+        for path in omitted {
+            self.json.remove(&path);
+            self.losses
+                .push(OnshapeLossCode::TopologyTooLarge.note(format!(
+                    "{path}: topology exceeds the row limit; omitted the topology table"
+                )));
         }
         Ok(ctx.charge_entities(
             cadmpeg_core::decode::u64_from_index(count),

@@ -952,7 +952,7 @@ fn a_resolvable_default_tangent_fillet_maps_and_missing_tangents_name_the_loss()
 }
 
 #[test]
-fn missing_step_does_not_bypass_body_history_validation() {
+fn missing_step_retains_body_history_with_a_geometry_loss() {
     let source = fixture("plate-fillet");
     let mut input = zip::ZipArchive::new(Cursor::new(source)).unwrap();
     let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -972,10 +972,13 @@ fn missing_step_does_not_bypass_body_history_validation() {
         output.write_all(&data).unwrap();
     }
     let bytes = output.finish().unwrap().into_inner();
-    assert!(read(&bytes)
-        .unwrap_err()
-        .to_string()
-        .contains("body-building features but no STEP"));
+    let (model, report) = read(&bytes).unwrap();
+    assert_eq!(kinds(&model), ["sketch", "extrude", "fillet"]);
+    assert!(model.ir.geometry.bodies.is_empty());
+    assert!(report
+        .losses()
+        .iter()
+        .any(|loss| loss.code.as_deref() == Some("onshape/step.unreadable")));
 }
 
 #[test]

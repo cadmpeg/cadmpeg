@@ -14,6 +14,9 @@ pub(super) enum OnshapeLossCode {
     EmptyMember,
     SketchGeometryNotSupported,
     RecordMalformed,
+    MemberTooLarge,
+    TopologyTooLarge,
+    StepUnreadable,
 }
 impl OnshapeLossCode {
     const fn code(self) -> &'static str {
@@ -28,6 +31,9 @@ impl OnshapeLossCode {
             Self::EmptyMember => "container.empty-member",
             Self::SketchGeometryNotSupported => "sketch.geometry-not-supported",
             Self::RecordMalformed => "record.malformed",
+            Self::MemberTooLarge => "member.too-large",
+            Self::TopologyTooLarge => "topology.too-large",
+            Self::StepUnreadable => "step.unreadable",
         }
     }
     pub(super) fn note(self, message: impl Into<String>) -> LossNote {
@@ -36,7 +42,10 @@ impl OnshapeLossCode {
                 cadmpeg_ir::loss_namespace!("onshape"),
                 self.code(),
                 match self {
-                    Self::EmptyMember => LossTaxonomy::MetadataNotTransferred,
+                    Self::StepUnreadable => LossTaxonomy::GeometryNotTransferred,
+                    Self::EmptyMember | Self::MemberTooLarge => {
+                        LossTaxonomy::MetadataNotTransferred
+                    }
                     _ => LossTaxonomy::FeatureHistoryRetained,
                 },
             ),
