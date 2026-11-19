@@ -114,19 +114,21 @@ fn reads_override(
 }
 
 /// The parameter references of an expression, walked without recursion.
-fn references(expression: &Expression) -> Vec<&ParameterRef> {
-    let root = match expression {
-        Expression::Neutral(Neutral(root)) => root,
-        Expression::Source { tokens, .. } => {
-            return tokens
-                .iter()
-                .filter_map(|token| match token {
-                    ExpressionToken::Reference(reference) => Some(reference),
-                    ExpressionToken::Text(_) => None,
-                })
-                .collect();
-        }
-    };
+pub(super) fn references(expression: &Expression) -> Vec<&ParameterRef> {
+    match expression {
+        Expression::Neutral(Neutral(root)) => node_references(root),
+        Expression::Source { tokens, .. } => tokens
+            .iter()
+            .filter_map(|token| match token {
+                ExpressionToken::Reference(reference) => Some(reference),
+                ExpressionToken::Text(_) => None,
+            })
+            .collect(),
+    }
+}
+
+/// The parameter references of a neutral tree, walked without recursion.
+pub(super) fn node_references<R>(root: &Node<R>) -> Vec<&R> {
     let mut found = Vec::new();
     let mut pending = vec![root];
     while let Some(node) = pending.pop() {
