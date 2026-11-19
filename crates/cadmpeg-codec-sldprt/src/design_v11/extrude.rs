@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Extrudes (§6.3), from the decoder's typed extrusions.
 //!
-//! An extrude whose profile is a whole sketch the design states, named by
-//! the sketch or by its feature, and whose limits are blind distances or
-//! through-all, is typed: the profile is a `Sketch` pick, a blind limit binds the dimension that holds its distance,
-//! and a merge into a part that holds no body yet is a new body (§6). An
-//! extrude whose start, limits, draft, or profile the decoder reads only in
-//! part stays `Unresolved`, and so does one whose sketch the timeline lists
-//! after it, which its `Input` profile pick cannot see.
+//! An extrude whose profile is a whole sketch the design states, named by the
+//! sketch or by its feature, and whose limits are blind distances or
+//! through-all, is typed: the profile is a `Sketch` pick, a blind limit binds
+//! the dimension that holds its distance, and a merge into a part that holds
+//! no body yet is a new body (§6). An extrude whose start, limits, draft, or
+//! profile the decoder reads only in part stays `Unresolved`, and so does one
+//! whose sketch the timeline lists after it, which its `Input` profile pick
+//! cannot see.
 
 use std::collections::{HashMap, HashSet};
 

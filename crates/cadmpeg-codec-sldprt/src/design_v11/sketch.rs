@@ -4,13 +4,14 @@
 //! A sketch feature whose sketch the decoder typed names a sketch record that
 //! holds its entities and relations. The plane is a construction: one
 //! `Coincident` input on the built-in plane the sketch's profile names where
-//! that plane precedes the sketch and the stored frame lies in it, else the `Unread` input of §5.9, with
-//! the stored frame as its value. A point record that several curves name
-//! is one point entity with a role for each, so a coincidence of two of its
-//! ends is that entity's. The decoder reads the construction flag where it
-//! sets it, so an entity it does not mark states no flag. A dimension binds the parameter that holds its
-//! value, and states that parameter's quantity; a reference dimension whose
-//! parameter no tree node lists binds a `Driven` parameter minted for it.
+//! that plane precedes the sketch and the stored frame lies in it, else the
+//! `Unread` input of §5.9, with the stored frame as its value. A point record
+//! that several curves name is one point entity with a role for each, so a
+//! coincidence of two of its ends is that entity's. The decoder reads the
+//! construction flag where it sets it, so an entity it does not mark states
+//! no flag. A dimension binds the parameter that holds its value, and states
+//! that parameter's quantity; a reference dimension whose parameter no tree
+//! node lists binds a `Driven` parameter minted for it.
 
 use std::collections::{HashMap, HashSet};
 
