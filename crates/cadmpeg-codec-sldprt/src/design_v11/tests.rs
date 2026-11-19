@@ -710,7 +710,7 @@ fn part_with_marks(record_mark: u32) -> (CadIr, Vec<String>) {
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code.local_code() == "history.rollback-unread")
+        .filter(|loss| loss.code == crate::loss::SldprtLossCode::HistoryRollbackUnread.kind())
         .map(|loss| loss.message.clone())
         .collect();
     (result.ir().clone(), unread)
