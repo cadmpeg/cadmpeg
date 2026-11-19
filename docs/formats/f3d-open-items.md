@@ -3802,3 +3802,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** A save with a zero-distance direction one beside a pattern payload, with its direction records and instance positions.
 
 **Note.** The decoder reads the record that the payload names as the direction-one record, takes direction two from the payload V displacement, and charges `feature.rectangular-pattern-direction-one-record-assumed`. A payload without a V displacement leaves the one record to direction two.
+
+### DR-892. Packed-direction split component flag `Z`
+
+**Question.** What does the `Z: true` key in the descriptor of a packed-direction split component encode?
+
+**Known.** The flagged components inflate to their declared byte counts, the two components have equal lengths divisible by four, and every value read as f32 is finite and lies in [-1, 1]. Unflagged packed-direction components store the same layout.
+
+**Need.** Paired containers of one mesh saved with and without the flag, or decoded corner normals of a flagged stream compared with the triangle normals.
+
+**Note.** The decoder reads the flagged payload with the `{T: 3}` layout, retains the flag on the native split-stream record, and reports `mesh.component-flag-assumed`.

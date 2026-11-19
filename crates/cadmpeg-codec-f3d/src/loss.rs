@@ -1025,6 +1025,8 @@ pub(crate) enum F3dLossCode {
     MeshAttributeNotTransferred,
     MeshGuidBytesUninterpreted,
     MeshSplitStreamAssumed,
+    /// A packed-direction split component flag is read as payload-neutral.
+    MeshComponentFlagAssumed,
     MeshHistoryWindowAssumed,
     MeshOperationRecordsNative,
     MeshFaceGroupsAssumed,
@@ -1895,6 +1897,7 @@ impl F3dLossCode {
         Self::MeshAttributeNotTransferred,
         Self::MeshGuidBytesUninterpreted,
         Self::MeshSplitStreamAssumed,
+        Self::MeshComponentFlagAssumed,
         Self::MeshHistoryWindowAssumed,
         Self::MeshOperationRecordsNative,
         Self::MeshFaceGroupsAssumed,
@@ -2999,6 +3002,7 @@ impl F3dLossCode {
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::MeshGuidBytesUninterpreted => "mesh.guid-bytes-uninterpreted",
             Self::MeshSplitStreamAssumed => "mesh.split-stream-assumed",
+            Self::MeshComponentFlagAssumed => "mesh.component-flag-assumed",
             Self::MeshHistoryWindowAssumed => "mesh.history-window-assumed",
             Self::MeshOperationRecordsNative => "mesh.operation-records-native",
             Self::MeshFaceGroupsAssumed => "mesh.face-groups-assumed",
@@ -3814,6 +3818,7 @@ impl F3dLossCode {
             | Self::MeshContainerMissing
             | Self::MeshAttributeNotTransferred
             | Self::MeshSplitStreamAssumed
+            | Self::MeshComponentFlagAssumed
             | Self::MeshHistoryWindowAssumed
             | Self::MeshOperationRecordsNative
             | Self::MeshFaceGroupsAssumed
@@ -4016,6 +4021,7 @@ impl F3dLossCode {
             | Self::XrefOwnedPoseNative
             | Self::MeshGuidBytesUninterpreted
             | Self::MeshSplitStreamAssumed
+            | Self::MeshComponentFlagAssumed
             | Self::MeshHistoryWindowAssumed
             | Self::MeshOperationRecordsNative
             | Self::MeshFaceGroupsAssumed
@@ -5337,6 +5343,7 @@ mod tests {
                 "mesh.attribute-not-transferred",
                 "mesh.guid-bytes-uninterpreted",
                 "mesh.split-stream-assumed",
+                "mesh.component-flag-assumed",
                 "mesh.history-window-assumed",
                 "mesh.operation-records-native",
                 "mesh.face-groups-assumed",

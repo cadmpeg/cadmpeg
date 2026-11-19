@@ -1013,6 +1013,8 @@ fn message_pack_name_table(bytes: &[u8]) -> Result<UniqueStreamNames, CodecError
 struct MeshStream {
     descriptor: Vec<(String, StreamDescriptorValue)>,
     split_descriptor: Option<Vec<u8>>,
+    /// Whether a nested split component stores the `Z: true` flag.
+    component_flag: bool,
     history_lengths: Vec<u32>,
     bytes: Vec<u8>,
 }
@@ -1191,6 +1193,7 @@ fn inflate_stream_inner(
         }
         let mut components = Vec::new();
         let mut history_lengths = Vec::new();
+        let mut component_flag = false;
         let mut position = at;
         for (ordinal, size) in sizes.iter().enumerate() {
             let length = usize::try_from(*size).map_err(|_| {
@@ -1215,6 +1218,7 @@ fn inflate_stream_inner(
                     "paramesh split component has an invalid descriptor or length",
                 ));
             }
+            component_flag |= component.descriptor.len() == 2;
             history_lengths.extend(component.history_lengths);
             components.push(component.bytes);
             position = end;
@@ -1249,6 +1253,7 @@ fn inflate_stream_inner(
         return Ok(MeshStream {
             descriptor,
             split_descriptor: Some(body[2..at].to_vec()),
+            component_flag,
             history_lengths,
             bytes,
         });
@@ -1278,6 +1283,7 @@ fn inflate_stream_inner(
         return Ok(MeshStream {
             descriptor,
             split_descriptor: None,
+            component_flag: false,
             history_lengths: Vec::new(),
             bytes: payload.to_vec(),
         });
@@ -1326,6 +1332,7 @@ fn inflate_stream_inner(
     Ok(MeshStream {
         descriptor,
         split_descriptor: None,
+        component_flag: false,
         history_lengths: if window > nominal_window {
             vec![declared]
         } else {
@@ -2169,6 +2176,7 @@ pub(crate) fn decode_mesh_container(
                 crate::records::mesh::DesignMeshSplitStream {
                     name: name.clone(),
                     descriptor: cadmpeg_ir::native::bytes::NativeBytes::new(descriptor.clone()),
+                    component_flag: stream.component_flag,
                 }
             })
         })
@@ -3757,6 +3765,7 @@ mod tests {
             b'U', 0xc3,
         ];
         let stream = inflate_stream(&body(&packed)).unwrap();
+        assert!(stream.component_flag);
         let expected = [1.0f32, 2.0, 3.0, 4.0]
             .into_iter()
             .flat_map(f32::to_le_bytes)
@@ -3970,6 +3979,7 @@ mod tests {
             let stream = MeshStream {
                 descriptor: stream_descriptor(&descriptor).expect("version-2 descriptor"),
                 split_descriptor: None,
+                component_flag: false,
                 history_lengths: Vec::new(),
                 bytes: Vec::new(),
             };
@@ -3983,6 +3993,7 @@ mod tests {
             let stream = MeshStream {
                 descriptor: stream_descriptor(&descriptor).expect("scalar descriptor"),
                 split_descriptor: None,
+                component_flag: false,
                 history_lengths: Vec::new(),
                 bytes: Vec::new(),
             };
