@@ -88,6 +88,9 @@ fn current_document() -> CadIr {
     let mut owner = ProductDefinition::new(id("definition", 2), Storage::Embedded);
     owner.bodies = vec![id("body", 1)];
     ir.model.product_definitions.push(owner);
+    let mut scope = ProductDefinition::new(id("definition", 1), Storage::Embedded);
+    scope.occurrences = vec![id("occurrence", 1)];
+    ir.model.product_definitions.push(scope);
     ir.design.scopes.push(DesignScope {
         definition: id("definition", 1),
         roots: Vec::new(),
@@ -123,7 +126,10 @@ fn current_state_selects_reached_records_names_owners_and_poses() {
         &BTreeMap::from([(id("body", 1), id("definition", 2))])
     );
     assert_eq!(state.poses(), &ir.design.scopes[0].current[0].poses);
-    assert!(state.members().is_empty());
+    assert_eq!(
+        state.members(),
+        &BTreeMap::from([(id("occurrence", 1), id("definition", 1))])
+    );
     assert!(state.instance_bodies().is_empty());
     assert_eq!(ir, before);
 }
@@ -175,7 +181,10 @@ fn evaluation_composes_current_base_and_all_delta_maps() {
     );
     assert_eq!(
         state.owners(),
-        &BTreeMap::from([(id("body", 2), id("definition", 3))])
+        &BTreeMap::from([
+            (id("body", 1), id("definition", 2)),
+            (id("body", 2), id("definition", 3)),
+        ])
     );
     assert_eq!(
         state.members(),
@@ -316,5 +325,56 @@ fn chain_at_the_bound_resolves_and_one_past_is_refused() {
     assert_eq!(
         ir.resolved_evaluation_state(&id("evaluation", 3), &limits),
         Err(StateResolutionError::ChainDepthExceeded { limit: 2 })
+    );
+}
+
+#[test]
+fn current_state_resolves_scope_owned_bodies_and_listed_occurrences() {
+    let mut ir = current_document();
+    ir.model.product_definitions[0].bodies.clear();
+    ir.model.product_definitions[1].bodies = vec![id("body", 1)];
+    let state = ir
+        .resolved_current_state(&id("definition", 1), &position(1))
+        .unwrap();
+    assert_eq!(
+        state.owners(),
+        &BTreeMap::from([(id("body", 1), id("definition", 1))])
+    );
+    assert_eq!(
+        state.members(),
+        &BTreeMap::from([(id("occurrence", 1), id("definition", 1))])
+    );
+}
+
+#[test]
+fn evaluation_fallback_uses_its_scope_and_preserves_explicit_entries() {
+    let mut ir = current_document();
+    let mut base = evaluation(1, StateBase::Empty);
+    base.scope = id("definition", 9);
+    let delta = &mut base.content.as_mut().unwrap().delta;
+    delta.records.bodies = vec![body(1), body(2), body(3)];
+    delta.owners = BTreeMap::from([(id("body", 3), Some(id("definition", 3)))]);
+    delta.members = BTreeMap::from([(id("occurrence", 9), Some(id("definition", 3)))]);
+    ir.design.evaluations = vec![
+        base,
+        evaluation(2, StateBase::Evaluation(id("evaluation", 1))),
+    ];
+    let state = ir
+        .resolved_evaluation_state(&id("evaluation", 2), &ResourceLimits::default())
+        .unwrap();
+    assert_eq!(
+        state.owners(),
+        &BTreeMap::from([
+            (id("body", 1), id("definition", 2)),
+            (id("body", 2), id("definition", 1)),
+            (id("body", 3), id("definition", 3)),
+        ])
+    );
+    assert_eq!(
+        state.members(),
+        &BTreeMap::from([
+            (id("occurrence", 1), id("definition", 1)),
+            (id("occurrence", 9), id("definition", 3)),
+        ])
     );
 }

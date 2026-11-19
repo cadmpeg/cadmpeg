@@ -20,43 +20,93 @@ use crate::CadIr;
 
 /// A stored state with its base and deltas composed (§5.4, §5.5).
 #[derive(Debug, Clone, PartialEq)]
-pub struct ResolvedState(State);
+pub struct ResolvedState {
+    state: State,
+    owners: BTreeMap<BodyId, ProductDefinitionId>,
+    members: BTreeMap<OccurrenceId, ProductDefinitionId>,
+}
 
 impl ResolvedState {
+    fn new(ir: &CadIr, scope: &ProductDefinitionId, state: State) -> Self {
+        let owners = state
+            .records
+            .bodies
+            .iter()
+            .map(|body| {
+                let owner = state
+                    .owners
+                    .get(&body.id)
+                    .or_else(|| ir.body_owner(&body.id))
+                    .unwrap_or(scope);
+                (body.id.clone(), owner.clone())
+            })
+            .collect();
+        let spanned = ir.spanned_definitions(scope);
+        let occurrences = ir
+            .model
+            .product_definitions
+            .iter()
+            .filter(|definition| spanned.contains(definition.id.as_str()))
+            .flat_map(|definition| &definition.occurrences)
+            .chain(state.members.keys());
+        let members = occurrences
+            .map(|occurrence| {
+                let member = state
+                    .members
+                    .get(occurrence)
+                    .or_else(|| {
+                        crate::products::owner(&ir.model.product_definitions, occurrence)
+                            .map(|definition| &definition.id)
+                    })
+                    .unwrap_or(scope);
+                (occurrence.clone(), member.clone())
+            })
+            .collect();
+        Self {
+            state,
+            owners,
+            members,
+        }
+    }
+
     /// The topology records of the state.
     #[must_use]
     pub const fn records(&self) -> &Topology {
-        &self.0.records
+        &self.state.records
     }
 
     /// The name entries of the state.
     #[must_use]
     pub const fn names(&self) -> &BTreeMap<EntityRef, NameEntry> {
-        &self.0.names
+        &self.state.names
     }
 
-    /// Body ownership entries, with the fallback of §5.4 for absent entries.
+    /// One owner for each body in `records().bodies` (§5.4): the state's
+    /// owner entry, else the definition that lists the body, else the scope.
     #[must_use]
     pub const fn owners(&self) -> &BTreeMap<BodyId, ProductDefinitionId> {
-        &self.0.owners
+        &self.owners
     }
 
-    /// Occurrence membership entries, with the fallback of §5.4 for absent entries.
+    /// One member entry for each occurrence listed by the definitions the
+    /// scope spans, plus each occurrence named by a state member entry (§5.4).
+    /// The value is the state's member entry, else the definition that lists
+    /// the occurrence, else the scope.
     #[must_use]
     pub const fn members(&self) -> &BTreeMap<OccurrenceId, ProductDefinitionId> {
-        &self.0.members
+        &self.members
     }
 
     /// The instance-body entries of the state.
     #[must_use]
     pub const fn instance_bodies(&self) -> &BTreeMap<OccurrencePath, Vec<BodyId>> {
-        &self.0.instance_bodies
+        &self.state.instance_bodies
     }
 
     /// Placements that differ from the resolved configuration placements (§5.4).
     #[must_use]
     pub const fn poses(&self) -> &BTreeMap<OccurrencePath, Transform> {
-        &self.0.poses
+        &self.state.poses
     }
 }
 
@@ -110,7 +160,11 @@ impl CadIr {
                 at: at.clone(),
             }
         })?;
-        Ok(ResolvedState(self.extent(scope, current)?))
+        Ok(ResolvedState::new(
+            self,
+            scope,
+            self.extent(scope, current)?,
+        ))
     }
 
     /// Resolves an evaluation's stored state under
@@ -129,6 +183,13 @@ impl CadIr {
     ) -> Result<ResolvedState, StateResolutionError> {
         let limit = Ceiling::StateChain.of(limits);
         let mut seen = BTreeSet::new();
+        let scope = &self
+            .design
+            .evaluations
+            .iter()
+            .find(|evaluation| &evaluation.id == id)
+            .ok_or_else(|| StateResolutionError::MissingEvaluation(id.clone()))?
+            .scope;
         let mut next = id;
         loop {
             let evaluation = self
@@ -161,7 +222,7 @@ impl CadIr {
                 StateBase::Evaluation(base) => next = base,
             }
         }
-        Ok(ResolvedState(self.resolved(id)?))
+        Ok(ResolvedState::new(self, scope, self.resolved(id)?))
     }
 }
 
