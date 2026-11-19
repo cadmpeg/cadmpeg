@@ -1762,7 +1762,7 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Need.** Modeled threads on four or more faces, and the entity that carries a second value as its identity.
 
-**Conflict.** None.
+**Conflict.** An extended standard Thread with modeled flag `1` and a result state stores entry count `0`. The decoder reads it as modeled and charges `feature.thread-modeled-entries-absent`.
 
 **Note.** The decoder requires one entry for each face-selection pair of a modeled thread, reads the thread class after the entries, and keeps the entry bytes only in the retained source image.
 

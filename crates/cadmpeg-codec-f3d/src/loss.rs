@@ -380,6 +380,12 @@ pub(crate) enum F3dLossCode {
     ThreadLiveFaceUnproven,
     /// A Thread scope without the extended prefix stores modeled flag `0`, which is read as a cosmetic thread.
     ThreadModeledFlagAssumed,
+    /// An extended Thread prefix stores no face entries for a thread whose
+    /// modeled flag is `1`; the thread is read as modeled.
+    ThreadModeledEntriesAbsent,
+    /// A Thread scope has no admitted Thread construction; the feature stays
+    /// an unresolved Thread.
+    ThreadConstructionUnresolved,
     /// A Thread start offset is retained by its native parameter owner.
     ThreadOffsetNative,
     /// A stored-body operation has an empty proven body set.
@@ -1394,6 +1400,8 @@ impl F3dLossCode {
         Self::FeatureMeshSeparateMembershipUnresolved,
         Self::ThreadLiveFaceUnproven,
         Self::ThreadModeledFlagAssumed,
+        Self::ThreadModeledEntriesAbsent,
+        Self::ThreadConstructionUnresolved,
         Self::ThreadOffsetNative,
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
@@ -2306,6 +2314,8 @@ impl F3dLossCode {
             }
             Self::ThreadLiveFaceUnproven => "feature.thread-live-face-unproven",
             Self::ThreadModeledFlagAssumed => "feature.thread-modeled-flag-assumed",
+            Self::ThreadModeledEntriesAbsent => "feature.thread-modeled-entries-absent",
+            Self::ThreadConstructionUnresolved => "feature.thread-construction-unresolved",
             Self::ThreadOffsetNative => "feature.thread-offset-native",
             Self::FeatureMeshSeparateScopeUnparsed => "feature.mesh-separate-scope-unparsed",
             Self::FeatureMeshSeparateTailPartial => "feature.mesh-separate-tail-partial",
@@ -3290,6 +3300,8 @@ impl F3dLossCode {
             | Self::FeatureFilletSetInputUnresolved
             | Self::FeatureFilletSetGroupUnresolved
             | Self::ThreadModeledFlagAssumed
+            | Self::ThreadModeledEntriesAbsent
+            | Self::ThreadConstructionUnresolved
             | Self::ThreadOffsetNative
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
@@ -3961,6 +3973,8 @@ impl F3dLossCode {
             | Self::FeatureFilletSetInputUnresolved
             | Self::FeatureFilletSetGroupUnresolved
             | Self::ThreadModeledFlagAssumed
+            | Self::ThreadModeledEntriesAbsent
+            | Self::ThreadConstructionUnresolved
             | Self::ThreadOffsetNative
             | Self::HoleStandardSizingAssumed
             | Self::HoleClearanceFieldsAssumed
@@ -4658,6 +4672,8 @@ mod tests {
                 "feature.mesh-separate-membership-unresolved",
                 "feature.thread-live-face-unproven",
                 "feature.thread-modeled-flag-assumed",
+                "feature.thread-modeled-entries-absent",
+                "feature.thread-construction-unresolved",
                 "feature.thread-offset-native",
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",

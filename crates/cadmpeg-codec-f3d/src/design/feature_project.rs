@@ -1249,17 +1249,25 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     }
                 }
-                Some(DesignFeatureFamily::Thread) => scope
-                    .thread_construction()
-                    .and_then(|construction| {
-                        construction
-                            .nominal_size
-                            .value()
-                            .ok()
-                            .and_then(cadmpeg_ir::scalar::PositiveLength::new)
+                Some(DesignFeatureFamily::Thread) => {
+                    let resolved = scope.thread_construction().and_then(|construction| {
+                        let size = if construction.nominal_size.is_decimal() {
+                            construction.nominal_size.value()?
+                        } else {
+                            construction.diameters.major() * DESIGN_LENGTH_TO_MILLIMETRE
+                        };
+                        cadmpeg_ir::scalar::PositiveLength::new(size)
                             .map(|size| (construction, size))
-                    })
-                    .map_or_else(
+                    });
+                    if resolved.is_none() {
+                        projection_losses.push(
+                            crate::loss::F3dLossCode::ThreadConstructionUnresolved.note(format!(
+                                "Thread {} has no admitted Thread construction; it stays an unresolved Thread.",
+                                scope.id
+                            )),
+                        );
+                    }
+                    resolved.map_or_else(
                         || {
                             Ok::<_, CodecError>(FeatureDefinition::Operation(
                                 FeatureOperation::Unresolved {
@@ -1354,7 +1362,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 },
                             ))
                         },
-                    )?,
+                    )?
+                }
                 Some(DesignFeatureFamily::SheetMetalBaseFace) => {
                     base_face::project(scope, inputs, &mut projection_losses)
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
