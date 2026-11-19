@@ -68,6 +68,10 @@ pub enum ResolvedTarget<'a> {
         requested: &'a str,
         /// The document's source relative to this format.
         source: SourceIdentity,
+        /// The request named a row the encoder reaches only by replaying a
+        /// source of that dialect, and `entry` is the catalog default written
+        /// in its place.
+        displaced: bool,
     },
     /// Inheritance resolved to a catalog row equal to the recorded source.
     Inherited {
@@ -172,6 +176,25 @@ impl<'a> ResolvedWrite<'a> {
             ResolvedTarget::Inherited { .. }
             | ResolvedTarget::Default { .. }
             | ResolvedTarget::Preserved { .. } => None,
+        }
+    }
+
+    /// Describes the explicitly requested row written as another (§3.4,
+    /// `target.request-displaced`).
+    #[must_use]
+    pub fn request_displacement_message(&self) -> Option<String> {
+        match &self.target {
+            ResolvedTarget::Explicit {
+                entry,
+                requested,
+                displaced: true,
+                ..
+            } => Some(format!(
+                "requested target {requested} is a row the writer reaches only by replaying a \
+                 source of that dialect; the file is written as {}",
+                entry.id
+            )),
+            _ => None,
         }
     }
 
@@ -327,7 +350,10 @@ impl TargetDomain for DialectFree {
 
 /// A native format resolves every request against this complete catalog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Catalog(TargetCatalog);
+pub struct Catalog {
+    rows: TargetCatalog,
+    replay_rows: &'static [DialectId],
+}
 
 impl Catalog {
     /// Builds a native target domain whose optional default indexes one of
@@ -337,7 +363,19 @@ impl Catalog {
         targets: &'static [cadmpeg_core::target::TargetDescriptor],
         default: Option<usize>,
     ) -> Self {
-        Self(TargetCatalog::new(targets, default))
+        Self {
+            rows: TargetCatalog::new(targets, default),
+            replay_rows: &[],
+        }
+    }
+
+    /// Declares dialects the encoder reaches only by replaying a source of
+    /// that dialect. An explicit request for one is written as the catalog
+    /// default and charges `target.request-displaced`.
+    #[must_use]
+    pub const fn with_replay_rows(mut self, rows: &'static [DialectId]) -> Self {
+        self.replay_rows = rows;
+        self
     }
 }
 
@@ -345,7 +383,7 @@ impl TargetDomain for Catalog {
     type Resolved<'a> = ResolvedWrite<'a>;
 
     fn targets(&self, _format: FormatId) -> TargetCatalog {
-        self.0
+        self.rows
     }
 
     fn resolve<'a>(
@@ -354,7 +392,7 @@ impl TargetDomain for Catalog {
         request: TargetRequest<'a>,
         _format: FormatId,
     ) -> Result<ResolvedWrite<'a>, CodecError> {
-        resolve_write_request(ir, request, self.0)
+        resolve_write_request(ir, request, self.rows, self.replay_rows)
     }
 }
 
@@ -380,22 +418,40 @@ fn resolve_write_request<'a>(
     ir: &CadIr,
     request: TargetRequest<'a>,
     catalog: TargetCatalog,
+    replay_rows: &[DialectId],
 ) -> Result<ResolvedWrite<'a>, CodecError> {
     let format = catalog.namespace();
     let refuse = |kind| CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(kind, catalog)));
     let source = source_identity(ir, format);
     let target = match request {
         TargetRequest::Explicit(requested) => {
-            let (index, entry) = catalog.find(requested).ok_or_else(|| {
-                refuse(TargetRefusalKind::UnknownExplicit {
-                    requested: TargetToken::new(requested),
+            let replay_row = || {
+                replay_rows.iter().any(|row| {
+                    row.as_str() == requested
+                        || row
+                            .as_str()
+                            .strip_prefix(format)
+                            .and_then(|local| local.strip_prefix(':'))
+                            == Some(requested)
                 })
-            })?;
+            };
+            let (index, entry, displaced) = match catalog.find(requested) {
+                Some((index, entry)) => (index, entry, false),
+                None => match catalog.default().filter(|_| replay_row()) {
+                    Some((index, entry)) => (index, entry, true),
+                    None => {
+                        return Err(refuse(TargetRefusalKind::UnknownExplicit {
+                            requested: TargetToken::new(requested),
+                        }))
+                    }
+                },
+            };
             ResolvedTarget::Explicit {
                 index,
                 entry,
                 requested,
                 source,
+                displaced,
             }
         }
         TargetRequest::Inherit => match source {
