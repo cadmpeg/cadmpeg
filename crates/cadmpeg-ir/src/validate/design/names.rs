@@ -465,8 +465,9 @@ fn layout_coordinates(layout: &PatternLayout) -> Option<LayoutCoordinates<'_>> {
 }
 
 /// The coordinate range of a run whose count, and seed where `sides` reads
-/// it, are literal. A run whose `sides` is not stated may lie on either side
-/// of the seed.
+/// it, are literal (§6.5, Coordinate range). A run whose `sides` is not
+/// stated reaches at most `last` and has no lower bound: an unread side may
+/// be a `Reverse` arm whose count the run does not state.
 fn run_coordinate<'a, Q>(run: &PatternRun<Q>) -> Coordinate<'a> {
     let Some(last) = spacing_count(&run.spacing).map(|count| i64::from(count) - 1) else {
         return Coordinate::ANY;
@@ -494,9 +495,7 @@ fn run_coordinate<'a, Q>(run: &PatternRun<Q>) -> Coordinate<'a> {
             let low = spacing_count(reverse).map(|count| (1 - i64::from(count)).min(-seed));
             Coordinate::Range(low, Some(last - seed))
         }),
-        None => seed.map_or(Coordinate::ANY, |seed| {
-            Coordinate::between(-last.max(seed), last.max(seed))
-        }),
+        None => Coordinate::Range(None, Some(last)),
     }
 }
 

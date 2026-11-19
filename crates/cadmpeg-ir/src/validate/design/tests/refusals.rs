@@ -381,6 +381,13 @@ fn a_linear_instance_index_lies_in_its_run() {
         refused,
     );
     assert_no_finding(&patterned(&run(None, None), &[-1]), refused);
+    assert_no_finding(&patterned(&run(None, None), &[-5]), refused);
+    assert_finding(
+        &patterned(&run(None, Some(3)), &[2]),
+        Check::Design,
+        Severity::Error,
+        refused,
+    );
     assert_finding(
         &patterned(&run(Some("one"), None), &[-1]),
         Check::Design,
