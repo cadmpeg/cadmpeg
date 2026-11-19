@@ -252,6 +252,32 @@ fn a_profile_holds_a_pick_of_what_profiles_are_made_of() {
 }
 
 #[test]
+fn a_merged_name_has_a_kind_only_where_its_members_share_one() {
+    let merged = |kinds: [NameKind; 2]| {
+        let from = kinds
+            .into_iter()
+            .zip(1..)
+            .map(|(kind, index)| match entity(kind, index).target {
+                PickTarget::Entity(name) => name,
+                _ => unreachable!(),
+            })
+            .collect();
+        pick(PickTarget::Entity(TopoName::Merged {
+            feature: None,
+            from,
+        }))
+    };
+    assert_finding(
+        &extruding(|e| e.profile = named(vec![merged([NameKind::Vertex; 2])])),
+        "which no profile is made of",
+    );
+    assert_no_finding_containing(
+        &extruding(|e| e.profile = named(vec![merged([NameKind::Vertex, NameKind::Face])])),
+        "which no profile is made of",
+    );
+}
+
+#[test]
 fn booleans_fit_their_outputs() {
     let apply = |op| Boolean::Apply { op, targets: None };
     assert_finding(
@@ -598,6 +624,14 @@ fn linear(sides: Option<RunSides<Length>>, count: u32) -> PatternLayout {
 }
 
 fn pattern(layout: PatternLayout, overrides: Vec<InstanceOverride>) -> FeatureOperation {
+    pattern_of("fillet", layout, overrides)
+}
+
+fn pattern_of(
+    seed: &str,
+    layout: PatternLayout,
+    overrides: Vec<InstanceOverride>,
+) -> FeatureOperation {
     FeatureOperation::Pattern(Box::new(Pattern {
         seeds: PatternSeeds::Features {
             features: named(vec![pick(PickTarget::FeatureResult(feature(seed)))]),
@@ -627,14 +661,6 @@ fn a_pattern_layout_and_its_indices_fit_its_runs() {
         &with(pattern(linear(None, 0), Vec::new())),
         "a count is at least 1",
     );
-    pattern_of("fillet", layout, overrides)
-}
-
-fn pattern_of(
-    seed: &str,
-    layout: PatternLayout,
-    overrides: Vec<InstanceOverride>,
-) -> FeatureOperation {
     assert_finding(
         &with(pattern(linear(Some(RunSides::Against), 3), Vec::new())),
         "RunSides::Against occurs in a linear run",
@@ -1387,32 +1413,6 @@ fn a_symmetric_contour_flange_extent_is_admitted() {
     assert_finding(&with(flange(negative)), "a ContourFlange.extent end");
 }
 
-/// The sketch fixture with a circle beside its line and points.
-fn sketched_with_circle() -> CadIr {
-    let mut ir = sketched();
-    ir.design.sketch_entities.push(sketch_entity(
-        "circle",
-        PlanarCurve::Circle {
-            center: point(0.0, 0.0),
-            radius: positive(1.0),
-        },
-        Vec::new(),
-    ));
-    ir
-}
-
-fn sketch_entity_pick(key: &str) -> Picked {
-    pick(PickTarget::SketchEntity(id("sketch-entity", key)))
-}
-
-#[test]
-fn a_helix_start_circle_picks_a_circle_or_arc() {
-    let helical = |key| {
-        FeatureOperation::HelicalSweep(Box::new(HelicalSweep {
-            section: HelicalSection::Profile(unread()),
-            helix: Helix {
-                placement: Construction::default(),
-                start: Some(HelixStart::Circle(named(vec![sketch_entity_pick(key)]))),
 #[test]
 fn a_contour_flange_extent_follows_the_span_rules() {
     let flange = |extent| {
@@ -1445,6 +1445,32 @@ fn a_contour_flange_extent_follows_the_span_rules() {
     );
 }
 
+/// The sketch fixture with a circle beside its line and points.
+fn sketched_with_circle() -> CadIr {
+    let mut ir = sketched();
+    ir.design.sketch_entities.push(sketch_entity(
+        "circle",
+        PlanarCurve::Circle {
+            center: point(0.0, 0.0),
+            radius: positive(1.0),
+        },
+        Vec::new(),
+    ));
+    ir
+}
+
+fn sketch_entity_pick(key: &str) -> Picked {
+    pick(PickTarget::SketchEntity(id("sketch-entity", key)))
+}
+
+#[test]
+fn a_helix_start_circle_picks_a_circle_or_arc() {
+    let helical = |key| {
+        FeatureOperation::HelicalSweep(Box::new(HelicalSweep {
+            section: HelicalSection::Profile(unread()),
+            helix: Helix {
+                placement: Construction::default(),
+                start: Some(HelixStart::Circle(named(vec![sketch_entity_pick(key)]))),
                 shape: HelixShape::Helix {
                     law: None,
                     taper: None,

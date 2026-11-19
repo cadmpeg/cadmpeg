@@ -3,6 +3,7 @@
 
 use std::fmt;
 
+use super::super::names::derived_kinds;
 use crate::design::names::{NameKind, TopoName};
 use crate::design::selection::{
     Keyed, MemberOrder, PickTarget, Picked, Picks, PrincipalEntity, Selection, SelectionRule,
@@ -69,20 +70,12 @@ const fn name_kind(kind: NameKind) -> &'static str {
 }
 
 /// The derived kind of a name (§5.7). `None` for a `Merged` name with no
-/// members.
-pub(super) fn kind_of(name: &TopoName) -> Option<NameKind> {
-    let mut name = name;
-    loop {
-        name = match name {
-            TopoName::Generated { kind, .. } => return Some(*kind),
-            TopoName::Blend { .. } => return Some(NameKind::Face),
-            TopoName::Bounded { .. } => return Some(NameKind::Edge),
-            TopoName::Meeting { .. } => return Some(NameKind::Vertex),
-            TopoName::Root { .. } => return Some(NameKind::Body),
-            TopoName::Instance { of, .. } => of,
-            TopoName::Modified { from, .. } | TopoName::Split { from, .. } => from,
-            TopoName::Merged { from, .. } => from.first()?,
-        };
+/// members or with members of several kinds.
+fn kind_of(name: &TopoName) -> Option<NameKind> {
+    let kinds = derived_kinds(name);
+    match kinds.first() {
+        Some(kind) if kinds.len() == 1 => Some(*kind),
+        _ => None,
     }
 }
 
