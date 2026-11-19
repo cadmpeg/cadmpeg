@@ -220,6 +220,7 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option
     let continuation_bytes = match tail_len {
         133 => 56,
         layout::LEN | 142 => layout::SUFFIX - layout::CONTINUATION,
+        _ if owned && tail_len >= layout::LEN => layout::SUFFIX - layout::CONTINUATION,
         _ => return None,
     };
     if controls[0] != 1
@@ -232,7 +233,9 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option
         return None;
     }
     let parameters = read_f64_array::<8>(tail, cursor)?.map(FiniteReal::get);
-    if parameters[0] >= parameters[1]
+    let ordered_u =
+        parameters[0] < parameters[1] || (owned && tail_len == 142 && controls[0] < controls[1]);
+    if !ordered_u
         || (if owned && tail_len == 142 {
             parameters[2] == parameters[3]
         } else {
@@ -253,35 +256,52 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option
         }
     }
     let suffix = &tail[continuation_end..];
-    let valid_suffix = match (
-        tail_len,
-        &tail[layout::FLAGS + extra..layout::CONTINUATION + extra],
-    ) {
-        (133, [0x01, 0x01, 0x01]) => suffix == [0x01, 0x00, 0x01, 0x00, 0x07, 0x07],
-        (141, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => {
-            matches!(
-                suffix,
-                [0x01, 0x00, 0x01 | 0x09, 0x00, 0x07, 0x07] | [0x09, 0x00, 0x09, 0x00, 0x07, 0x07]
-            ) || owned
-                && matches!(
+    let valid_suffix = if owned && tail_len >= layout::LEN {
+        owned_surface_suffix(suffix).is_some()
+    } else {
+        match (
+            tail_len,
+            &tail[layout::FLAGS + extra..layout::CONTINUATION + extra],
+        ) {
+            (133, [0x01, 0x01, 0x01]) => suffix == [0x01, 0x00, 0x01, 0x00, 0x07, 0x07],
+            (141, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => {
+                matches!(
                     suffix,
-                    [0x05, 0x00, 0x05 | 0x09, 0x00, 0x07, 0x07]
-                        | [0x09, 0x00, 0x01, 0x00, 0x07, 0x07]
+                    [0x01, 0x00, 0x01 | 0x09, 0x00, 0x07, 0x07]
+                        | [0x09, 0x00, 0x09, 0x00, 0x07, 0x07]
                 )
+            }
+            (142, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => {
+                suffix.len() == 7
+                    && suffix[0] % 4 == 1
+                    && matches!(
+                        suffix[1..4],
+                        [0x00, 0x01 | 0x05 | 0x09 | 0x0d | 0x11 | 0x15 | 0x19, 0x01]
+                    )
+                    && suffix[4] % 4 == 1
+                    && suffix[5..] == [0x07, 0x07]
+            }
+            _ => false,
         }
-        (142, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => {
-            suffix.len() == 7
-                && suffix[0] % 4 == 1
-                && matches!(
-                    suffix[1..4],
-                    [0x00, 0x01 | 0x05 | 0x09 | 0x0d | 0x11 | 0x15 | 0x19, 0x01]
-                )
-                && suffix[4] % 4 == 1
-                && suffix[5..] == [0x07, 0x07]
-        }
-        _ => false,
     };
     valid_suffix.then_some(end)
+}
+
+fn owned_surface_suffix(bytes: &[u8]) -> Option<()> {
+    let mut at = 0;
+    for _ in 0..2 {
+        compact_int(bytes, &mut at)?;
+        let present = View::over_retained(bytes.get(at..)?).u8()?;
+        at += 1;
+        match present {
+            0x00 => {}
+            0x01 => {
+                compact_int(bytes, &mut at)?;
+            }
+            _ => return None,
+        }
+    }
+    (bytes.get(at..) == Some([0x07, 0x07].as_slice())).then_some(())
 }
 
 fn a8_inline_surface_tail(data: &[u8], at: usize, end: usize) -> Option<usize> {

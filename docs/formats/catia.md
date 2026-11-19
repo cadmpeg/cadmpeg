@@ -612,6 +612,8 @@ In an A5 sheet-owned surface, the distinct-knot counts use compact unsigned
 integers. The four terminal patch identifiers also use compact unsigned integers. The eight parameter values follow the fourth identifier. The continuation and suffix lengths are independent of the identifier widths. Its array marker also admits `0x08 0x19`. The 141-byte tail also admits suffixes `05 00 05 00 07 07`,
 `05 00 09 00 07 07`, and `09 00 01 00 07 07`. In the 142-byte tail
 the second control pair can begin with `01` and the V limits can descend.
+An increasing U patch pair permits descending local U limits.
+The sheet-owned tail suffix stores one extrapolation descriptor per axis in U, V order, followed by `07 07`. Each descriptor contains one compact unsigned count, one presence byte, and a second compact unsigned count when presence is `01`. Presence `00` ends the descriptor after the first count. The presence bytes and compact widths determine the suffix length. Both descriptors can contain a second count.
 The pole grid and its increasing knot vectors define the carrier chart.
 
 The 6-byte `b2 03 2e 01 05 05` record following an `a5 03 34` core is a standalone object.
