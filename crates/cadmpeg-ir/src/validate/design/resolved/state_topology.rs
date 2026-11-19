@@ -4,11 +4,12 @@
 //! and an edge with no vertex lies on a closed carrier with no parameter
 //! range and is the only coedge of each loop that uses it.
 //!
-//! A breach is reported against an evaluation when its own delta holds one of
-//! the records the breach involves. A breach among records of its base alone
-//! is the base's: the base evaluation reports it, or the current-geometry
-//! topology checks do. A reference to a record the state does not hold is the
-//! closure rule's.
+//! A breach is reported once along a chain, against the evaluation whose delta
+//! makes it: its own delta holds one of the records the breach involves, and
+//! its base state does not have the breach. A breach its base state has is the
+//! base's: the base evaluation reports it, or the current-geometry topology
+//! checks do. A reference to a record the state does not hold is the closure
+//! rule's.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -24,8 +25,8 @@ use crate::scalar::PositiveLength;
 use crate::topology::{Coedge, Edge, Face, Loop, Region, Shell};
 use crate::validate::geometry_consistency::vertexless_edge_on_open_carrier;
 
-/// A record of the resolved state, and whether the evaluation's own delta
-/// holds it.
+/// A record of a state, and whether the evaluation's own delta holds a record
+/// of its identity.
 struct Held<'a, T> {
     record: &'a T,
     own: bool,
@@ -56,10 +57,10 @@ fn hold<'a, T>(
 }
 
 impl<'a> Records<'a> {
-    fn of(state: &ResolvedState<'a>, delta: &Topology) -> Self {
+    fn of(state: &ResolvedState<'a>, restated: &BTreeSet<&str>) -> Self {
         let mut records = Self::default();
         for (&id, located) in &state.records {
-            let own = std::ptr::eq(located.topology, delta);
+            let own = restated.contains(id);
             let (topology, at) = (located.topology, located.index);
             match located.arena {
                 Arena::Region => hold(&mut records.regions, id, topology.regions.get(at), own),
@@ -88,40 +89,69 @@ impl<'a> Records<'a> {
     }
 }
 
-/// Reports `message` against `evaluation` when its own delta holds a record
-/// the breach involves.
-fn breach(findings: &mut Vec<Finding>, evaluation: &str, own: bool, message: fmt::Arguments<'_>) {
-    if own {
-        super::super::error(findings, evaluation, message);
+/// The breaches of a state that involve a record the evaluation's own delta
+/// holds, in the order found. A breach is identified by its message, which
+/// names its records and its direction.
+#[derive(Default)]
+struct Breaches(Vec<String>);
+
+impl Breaches {
+    fn breach(&mut self, own: bool, message: fmt::Arguments<'_>) {
+        if own {
+            self.0.push(message.to_string());
+        }
     }
 }
 
 pub(super) fn check_state_topology(
     ctx: &DecodeContext<'_>,
     linear: PositiveLength,
+    base: &ResolvedState<'_>,
     state: &ResolvedState<'_>,
     delta: &Topology,
     evaluation: &str,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let records = Records::of(state, delta);
-    check_child_lists(&records, evaluation, findings);
-    check_vertexless_edges(ctx, linear, &records, evaluation, findings)
+    let restated: BTreeSet<&str> = state
+        .records
+        .iter()
+        .filter(|(_, located)| std::ptr::eq(located.topology, delta))
+        .map(|(&id, _)| id)
+        .collect();
+    let mut inherited = Breaches::default();
+    check_topology(ctx, linear, &Records::of(base, &restated), &mut inherited)?;
+    let inherited: BTreeSet<String> = inherited.0.into_iter().collect();
+    let mut breaches = Breaches::default();
+    check_topology(ctx, linear, &Records::of(state, &restated), &mut breaches)?;
+    for message in breaches.0 {
+        if !inherited.contains(&message) {
+            super::super::error(findings, evaluation, format_args!("{message}"));
+        }
+    }
+    Ok(())
+}
+
+fn check_topology(
+    ctx: &DecodeContext<'_>,
+    linear: PositiveLength,
+    records: &Records<'_>,
+    breaches: &mut Breaches,
+) -> Result<(), CodecError> {
+    check_child_lists(records, breaches);
+    check_vertexless_edges(ctx, linear, records, breaches)
 }
 
 /// A region's `shells`, a face's `loops`, and a loop ring's `coedges` name
 /// children whose parent pointer names their lister, and each child is listed
 /// by the record its parent pointer names. A face lists a loop once, and a
 /// shell lists a wire edge or free vertex once.
-fn check_child_lists(records: &Records<'_>, evaluation: &str, findings: &mut Vec<Finding>) {
+fn check_child_lists(records: &Records<'_>, breaches: &mut Breaches) {
     for (&id, region) in &records.regions {
         for shell in &region.record.shells {
             let shell = shell.as_str();
             if let Some(child) = records.shells.get(shell) {
                 if child.record.region.as_str() != id {
-                    breach(
-                        findings,
-                        evaluation,
+                    breaches.breach(
                         region.own || child.own,
                         format_args!(
                             "region {id} lists shell {shell}, whose parent is another record"
@@ -136,18 +166,14 @@ fn check_child_lists(records: &Records<'_>, evaluation: &str, findings: &mut Vec
         for loop_ in &face.record.loops {
             let loop_ = loop_.as_str();
             if !seen.insert(loop_) {
-                breach(
-                    findings,
-                    evaluation,
+                breaches.breach(
                     face.own,
                     format_args!("face {id} lists loop {loop_} more than once"),
                 );
             }
             if let Some(child) = records.loops.get(loop_) {
                 if child.record.face.as_str() != id {
-                    breach(
-                        findings,
-                        evaluation,
+                    breaches.breach(
                         face.own || child.own,
                         format_args!(
                             "face {id} lists loop {loop_}, whose parent is another record"
@@ -162,9 +188,7 @@ fn check_child_lists(records: &Records<'_>, evaluation: &str, findings: &mut Vec
             let coedge = coedge.as_str();
             if let Some(child) = records.coedges.get(coedge) {
                 if child.record.owner_loop.as_str() != id {
-                    breach(
-                        findings,
-                        evaluation,
+                    breaches.breach(
                         loop_.own || child.own,
                         format_args!(
                             "loop {id} lists coedge {coedge}, whose parent is another record"
@@ -178,9 +202,7 @@ fn check_child_lists(records: &Records<'_>, evaluation: &str, findings: &mut Vec
         let region = shell.record.region.as_str();
         if let Some(parent) = records.regions.get(region) {
             if !parent.record.shells.contains(&shell.record.id) {
-                breach(
-                    findings,
-                    evaluation,
+                breaches.breach(
                     shell.own || parent.own,
                     format_args!("shell {id} is not listed by its region {region}"),
                 );
@@ -199,9 +221,7 @@ fn check_child_lists(records: &Records<'_>, evaluation: &str, findings: &mut Vec
             )
         {
             if !seen.insert(member) {
-                breach(
-                    findings,
-                    evaluation,
+                breaches.breach(
                     shell.own,
                     format_args!("shell {id} lists member {member} more than once"),
                 );
@@ -212,9 +232,7 @@ fn check_child_lists(records: &Records<'_>, evaluation: &str, findings: &mut Vec
         let face = loop_.record.face.as_str();
         if let Some(parent) = records.faces.get(face) {
             if !parent.record.loops.contains(&loop_.record.id) {
-                breach(
-                    findings,
-                    evaluation,
+                breaches.breach(
                     loop_.own || parent.own,
                     format_args!("loop {id} is not listed by its face {face}"),
                 );
@@ -225,9 +243,7 @@ fn check_child_lists(records: &Records<'_>, evaluation: &str, findings: &mut Vec
         let owner = coedge.record.owner_loop.as_str();
         if let Some(parent) = records.loops.get(owner) {
             if !parent.record.coedges().contains(&coedge.record.id) {
-                breach(
-                    findings,
-                    evaluation,
+                breaches.breach(
                     coedge.own || parent.own,
                     format_args!("coedge {id} is not listed by its loop {owner}"),
                 );
@@ -243,8 +259,7 @@ fn check_vertexless_edges(
     ctx: &DecodeContext<'_>,
     linear: PositiveLength,
     records: &Records<'_>,
-    evaluation: &str,
-    findings: &mut Vec<Finding>,
+    breaches: &mut Breaches,
 ) -> Result<(), CodecError> {
     for (&id, edge) in &records.edges {
         if edge.record.ends.is_some() {
@@ -255,9 +270,7 @@ fn check_vertexless_edges(
             .curve()
             .filter(|_| edge.record.param_range().is_none())
         else {
-            breach(
-                findings,
-                evaluation,
+            breaches.breach(
                 edge.own,
                 format_args!(
                     "edge {id} has no vertex, so it needs a carrier curve and no parameter range"
@@ -285,9 +298,7 @@ fn check_vertexless_edges(
                 cache_fit_tolerance,
             )?
         {
-            breach(
-                findings,
-                evaluation,
+            breaches.breach(
                 own,
                 format_args!(
                     "edge {id} has no vertex and lies on an open carrier curve {}",
@@ -310,9 +321,7 @@ fn check_vertexless_edges(
             continue;
         };
         if parent.record.coedges().len() != 1 {
-            breach(
-                findings,
-                evaluation,
+            breaches.breach(
                 coedge.own || edge.own || parent.own,
                 format_args!(
                     "coedge {id} uses edge {edge_id}, which has no vertex, and is not the only coedge of its loop {owner}"

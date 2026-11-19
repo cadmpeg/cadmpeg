@@ -126,8 +126,15 @@ struct Located<'a> {
     index: usize,
 }
 
+/// An evaluation's resolved state, and the state of its base: the same chain
+/// without the evaluation's own delta.
+struct Resolved<'a> {
+    base: ResolvedState<'a>,
+    state: ResolvedState<'a>,
+}
+
 /// One state with every delta of its chain applied.
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct ResolvedState<'a> {
     records: BTreeMap<&'a str, Located<'a>>,
     names: BTreeMap<&'a EntityRef, &'a NameEntry>,
@@ -246,16 +253,16 @@ impl<'a> Resolver<'a, '_, '_> {
         Ok(Some(state))
     }
 
-    /// The resolved state of an evaluation with content. A repeated identity
-    /// in the evaluation's own delta is reported. `None` where the chain of
-    /// bases does not resolve (an absent base, a base with no content, a
-    /// cycle, or a `Current` base that names no current state), which the
-    /// evaluation rules report.
+    /// The resolved state of an evaluation with content, and of its base. A
+    /// repeated identity in the evaluation's own delta is reported. `None`
+    /// where the chain of bases does not resolve (an absent base, a base with
+    /// no content, a cycle, or a `Current` base that names no current state),
+    /// which the evaluation rules report.
     fn resolve(
         &self,
         evaluation: &'a Evaluation,
         findings: &mut Vec<Finding>,
-    ) -> Result<Option<ResolvedState<'a>>, CodecError> {
+    ) -> Result<Option<Resolved<'a>>, CodecError> {
         let mut chain: Vec<&'a Evaluation> = vec![evaluation];
         let mut seen = BTreeSet::from([evaluation.id.as_str()]);
         let start = loop {
@@ -283,17 +290,20 @@ impl<'a> Resolver<'a, '_, '_> {
             }
         };
         let mut state = start;
-        for link in chain.iter().rev() {
+        for link in chain[1..].iter().rev() {
             if let Some(content) = &link.content {
-                let report = std::ptr::eq(*link, evaluation);
-                apply(
-                    &mut state,
-                    &content.delta,
-                    report.then_some((evaluation.id.as_str(), &mut *findings)),
-                );
+                apply(&mut state, &content.delta, None);
             }
         }
-        Ok(Some(state))
+        let base = state.clone();
+        if let Some(content) = &evaluation.content {
+            apply(
+                &mut state,
+                &content.delta,
+                Some((evaluation.id.as_str(), &mut *findings)),
+            );
+        }
+        Ok(Some(Resolved { base, state }))
     }
 }
 
@@ -391,7 +401,7 @@ pub(super) fn check_resolved_states(
         if evaluation.content.is_none() {
             continue;
         }
-        let Some(state) = resolver.resolve(evaluation, findings)? else {
+        let Some(Resolved { base, state }) = resolver.resolve(evaluation, findings)? else {
             continue;
         };
         let id = evaluation.id.as_str();
@@ -401,6 +411,7 @@ pub(super) fn check_resolved_states(
             state_topology::check_state_topology(
                 ctx,
                 ir.tolerances.linear,
+                &base,
                 &state,
                 &content.delta.records,
                 id,

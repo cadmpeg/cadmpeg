@@ -256,6 +256,48 @@ fn a_breach_of_the_base_is_reported_where_the_base_is_checked() {
 }
 
 #[test]
+fn a_breach_is_reported_once_along_a_chain_by_the_delta_that_makes_it() {
+    let mut ir = document();
+    let face = ir.geometry.faces[0].clone();
+    let mut moved = loop_of(&ir, 0);
+    moved.face = ir.geometry.faces[1].id.clone();
+    let moved_id = moved.id.as_str().to_owned();
+    delta(&mut ir).loops.push(moved.clone());
+    let first = ir.design.evaluations[0].id.clone();
+    let second = ir.design.evaluations[1].id.clone();
+    set_base(&mut ir, 1, StateBase::Evaluation(first.clone()));
+    ir.design.evaluations[1]
+        .content
+        .as_mut()
+        .unwrap()
+        .delta
+        .records
+        .faces
+        .push(face.clone());
+    let lists = format!(
+        "face {} lists loop {moved_id}, whose parent is another record",
+        face.id.as_str()
+    );
+    let found = messages(&ir, &lists);
+    assert_eq!(
+        found,
+        vec![(Some(first.as_str().to_owned()), lists.clone())]
+    );
+
+    delta(&mut ir).loops.clear();
+    ir.design.evaluations[1]
+        .content
+        .as_mut()
+        .unwrap()
+        .delta
+        .records
+        .loops
+        .push(moved);
+    let found = messages(&ir, &lists);
+    assert_eq!(found, vec![(Some(second.as_str().to_owned()), lists)]);
+}
+
+#[test]
 fn an_edge_with_no_vertex_in_a_delta_lies_alone_on_a_closed_carrier() {
     let mut ir = document();
     let mut edge = ir.geometry.edges[0].clone();
