@@ -36,14 +36,11 @@ fn authored_drawing_keeps_page_view_dimension_and_note() {
     }
     let page = drawing("Page");
     assert_eq!(page.template.as_ref(), Some(&drawing("Template").id));
-    let views = &page.relationships["Views"];
-    assert_eq!(views.len(), 4);
-    for (reference, name) in views.iter().zip(["View", "Dimension", "Note", "Symbol"]) {
-        assert_eq!(
-            reference.native_text(),
-            Some(crate::native::id_key(&drawing(name).object))
-        );
-    }
+    assert_eq!(
+        page.views,
+        ["View", "Dimension", "Note", "Symbol"].map(|name| drawing(name).id.clone())
+    );
+    assert!(page.relationships.is_empty());
     let template = drawing("Template");
     let sheet = template.sheet.as_ref().unwrap();
     assert!((sheet.width_mm.get() - 210.0).abs() < LENGTH_TOLERANCE);
@@ -111,6 +108,13 @@ fn authored_drawing_keeps_page_view_dimension_and_note() {
     assert_eq!(
         dim.references["References2D"][0].native_text(),
         Some("View.Edge1")
+    );
+    assert_eq!(
+        dim.references["References2D"][0].target,
+        cadmpeg_ir::ReferenceTarget::Drawing {
+            drawing: drawing("View").id.clone(),
+            part: Some(cadmpeg_ir::references::DrawingPart::Unread),
+        }
     );
     let [x, y, z] = dim.position.unwrap().get();
     for (actual, expected) in [x, y, z].into_iter().zip([80.0, 125.0, 0.0]) {
