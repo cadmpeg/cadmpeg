@@ -401,6 +401,8 @@ stores no measurement word?
 
 **Known.** `f3d.md` §3.1 "In the current reference-aware layout, a one-sided
 direction" gives the measurement word of the current reference-aware layout.
+The legacy class-330/262 symmetric distance frame in the same section stores
+travel on each side.
 One symmetric `Extrude` without indexed parameters stores lane zero as `1.2`
 cm on a Sketch in the plane `x = 150.5` mm. Its operation history holds planes
 at `x = 138.5` mm and `x = 162.5` mm, which is `12` mm on each side. The

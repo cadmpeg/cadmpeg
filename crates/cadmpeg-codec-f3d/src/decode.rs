@@ -2422,6 +2422,7 @@ fn report_design_projection_gaps(
         if prologue.extent()
             == Some(crate::records::feature::extrude::DesignExtrudeExtent::SymmetricDistance)
             && prologue.distance_tail().is_none()
+            && !scope.is_legacy_class_330_symmetric_distance()
         {
             let fixed_lane_only = scope
                 .fixed_extrude_parameters()

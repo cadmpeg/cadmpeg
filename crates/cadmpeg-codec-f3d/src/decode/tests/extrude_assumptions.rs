@@ -527,6 +527,15 @@ fn symmetric_distance_without_a_measurement_word_reports_its_reading() {
         )]
     );
 
+    let legacy = crate::design::test_support::legacy_symmetric_extrude_scope(
+        scope(
+            DesignExtrudeExtent::SymmetricDistance,
+            DesignExtrudeStart::ProfilePlane,
+        ),
+        [101, 100, 11, 12, 13],
+    );
+    assert!(notes(&native_with(legacy), symmetric(), code).is_empty());
+
     let fixed = scope_with(
         DesignExtrudeExtent::SymmetricDistance,
         DesignExtrudeStart::ProfilePlane,
