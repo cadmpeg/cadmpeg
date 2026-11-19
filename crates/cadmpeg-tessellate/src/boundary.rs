@@ -19,7 +19,7 @@ use cadmpeg_ir::topology::{Coedge, Edge, Sense};
 
 use crate::count::{ceil_count, exceeds_limit};
 use crate::face::Refusal;
-use crate::plane::{distance, dot, mid3, sub, Uv};
+use crate::plane::{distance, dot, length, mid3, sub, Uv};
 use crate::surface::Carrier;
 
 /// Seed segments of a curve of a kind with no seeding rule.
@@ -57,6 +57,9 @@ const POLE_LINE_SLOPE: f64 = 1e-3;
 /// Factor by which a first coedge traced again from the loop's end must
 /// narrow its widest gap from the surface to replace the first trace.
 const RESEED_GAIN: f64 = 0.5;
+/// Ratio of a half chord's length to the chord tolerance below which the
+/// half chord has no direction for the turn test.
+const TURN_LENGTH_RATIO: f64 = 1e-6;
 
 /// The samples of one edge, from its start vertex to its end vertex.
 #[derive(Debug)]
@@ -322,6 +325,12 @@ impl Sampler<'_, '_> {
                 )));
             }
         }
+        if params.len() == 2 && !matches!(geometry.map(basis), Some(SolvedCurveGeometry::Line(_))) {
+            // A curved edge has at least one interior sample.
+            let middle = low + span / 2.0;
+            params.insert(1, middle);
+            points.insert(1, point(middle)?);
+        }
         Ok(EdgeSamples {
             params,
             points,
@@ -345,7 +354,13 @@ impl Sampler<'_, '_> {
         let sag = distance(on, chord_mid);
         // The two half chords turn by half the turn of the curve between the
         // ends.
-        let turn = 2.0 * crate::plane::angle(sub(on, a.1), sub(b.1, on));
+        let (first, second) = (sub(on, a.1), sub(b.1, on));
+        let floor = TURN_LENGTH_RATIO * self.chord;
+        let turn = if length(first) > floor && length(second) > floor {
+            2.0 * crate::plane::angle(first, second)
+        } else {
+            0.0
+        };
         if depth < MAX_DEPTH && (exceeds_limit(sag, self.chord) || exceeds_limit(turn, self.angle))
         {
             self.bisect(point, a, (middle, on), depth + 1, params, points)?;
