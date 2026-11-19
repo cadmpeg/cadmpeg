@@ -526,6 +526,44 @@ impl<'a> DecodeContext<'a> {
         self.session.unknowns().len()
     }
 
+    /// The bodies each object committed, for the objects whose UUID no other
+    /// object holds.
+    fn object_bodies(&self) -> crate::history::v11::ObjectBodies {
+        let document = self.session.document();
+        let bodies = document
+            .geometry
+            .bodies
+            .iter()
+            .map(|body| (body.id.as_str(), &body.id))
+            .collect::<HashMap<_, _>>();
+        let unknowns = self.session.unknowns();
+        self.object_candidates
+            .iter()
+            .filter_map(|(object, orders)| {
+                let [order] = orders.as_slice() else {
+                    return None;
+                };
+                let links = unknowns.get(*order)?.links();
+                let committed = links
+                    .iter()
+                    .filter_map(|link| bodies.get(link.as_str()).map(|id| (*id).clone()))
+                    .collect::<Vec<_>>();
+                (!committed.is_empty()).then_some((*object, committed))
+            })
+            .collect()
+    }
+
+    /// The root definition the document states.
+    fn root_definition(&self) -> Option<cadmpeg_ir::ids::ProductDefinitionId> {
+        self.session
+            .document()
+            .model
+            .product_definitions
+            .iter()
+            .find(|definition| definition.is_root())
+            .map(|definition| definition.id.clone())
+    }
+
     /// Appends a later geometry-phase link to an object record.
     fn append_link(
         &mut self,
@@ -6407,6 +6445,7 @@ pub(crate) fn decode(
         )
     });
     context.report.phase_warnings.append(&mut history_warnings);
+    let history_projected = untyped.is_ok();
     match untyped {
         Ok((0, 0, 0, 0)) => {}
         Ok((untyped, failed, dropped_dependencies, redundant_repairs)) => {
@@ -6442,7 +6481,12 @@ pub(crate) fn decode(
             format_args!("history projection rejected atomically by IR validation: {error}"),
         ),
     }
-    context.commit()
+    let design = history_projected.then(|| (context.object_bodies(), context.root_definition()));
+    let mut decoded = context.commit()?;
+    if let Some((objects, root)) = design {
+        crate::history::v11::project(expand.ctx(), &scan.history, &objects, root, &mut decoded.ir)?;
+    }
+    Ok(decoded)
 }
 
 #[cfg(test)]
