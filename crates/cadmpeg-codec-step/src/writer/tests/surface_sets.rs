@@ -234,3 +234,81 @@ fn a_placed_sheet_maps_its_bounded_surface_representation() {
     }
     assert_eq!(text.matches("= MAPPED_ITEM(").count(), 1);
 }
+
+/// A geometric set of two curve-bounded surfaces on one plane: a ring of
+/// outer radius 5 with a hole of radius 2, and a disc of radius 1.
+fn ring_and_disc_set() -> String {
+    let mut source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_geometric_set.p21").to_vec(),
+    )
+    .unwrap()
+    .replace(
+        "#10=(BOUNDARY_CURVE() ",
+        "#10=(BOUNDARY_CURVE() OUTER_BOUNDARY_CURVE() ",
+    )
+    .replace(
+        "#11=CURVE_BOUNDED_SURFACE('disc',#8,(#10),.F.);",
+        "#11=CURVE_BOUNDED_SURFACE('ring',#8,(#10,#16),.F.);",
+    )
+    .replace(
+        "#12=GEOMETRIC_SET('',(#11));",
+        "#12=GEOMETRIC_SET('',(#11,#20));",
+    );
+    let end = source.rfind("ENDSEC;").unwrap();
+    source.insert_str(
+        end,
+        "#14=CIRCLE('',#6,2.);\n\
+         #15=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#14);\n\
+         #16=BOUNDARY_CURVE('hole',(#15),.F.);\n\
+         #17=CIRCLE('',#6,1.);\n\
+         #18=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#17);\n\
+         #19=OUTER_BOUNDARY_CURVE('',(#18),.F.);\n\
+         #20=CURVE_BOUNDED_SURFACE('disc',#8,(#19),.F.);\n",
+    );
+    source
+}
+
+/// The loop counts of the faces of a one-body sheet, ascending.
+fn sheet_loop_counts(ir: &CadIr) -> Vec<usize> {
+    let geometry = &ir.geometry;
+    assert_eq!(geometry.bodies.len(), 1, "{:#?}", geometry.bodies);
+    assert_eq!(
+        geometry.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Sheet
+    );
+    let mut counts: Vec<usize> = geometry.faces.iter().map(|face| face.loops.len()).collect();
+    counts.sort_unstable();
+    counts
+}
+
+/// The writer states the curve-bounded faces of a sheet as the members of
+/// one geometric set, each bounded by its boundary curves, so the sheet
+/// decodes as one body with the same faces and loops.
+#[test]
+fn a_sheet_of_curve_bounded_surfaces_round_trips_as_one_geometric_set() {
+    let source = StepCodec::default()
+        .decode(
+            &mut Cursor::new(ring_and_disc_set()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(sheet_loop_counts(source.ir()), [1, 2]);
+    let mut output = Vec::new();
+    write_step(
+        source.ir(),
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(output).unwrap();
+    assert_eq!(text.matches("= GEOMETRIC_SET(").count(), 1, "{text}");
+    assert_eq!(text.matches("= CURVE_BOUNDED_SURFACE(").count(), 2);
+    assert_eq!(text.matches("= OUTER_BOUNDARY_CURVE(").count(), 2);
+    assert_eq!(text.matches("= BOUNDARY_CURVE(").count(), 1);
+    assert_eq!(text.matches("= SHELL_BASED_SURFACE_MODEL(").count(), 0);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(sheet_loop_counts(decoded.ir()), [1, 2]);
+}

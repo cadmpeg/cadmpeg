@@ -1763,9 +1763,17 @@ shell of the one sheet region. Curve-only and point-only sets remain
 standalone geometry. The writer states a region of a body that is not a
 solid and has no wire topology (a sheet or a general body) as a `GEOMETRIC_SET` of its faces' surfaces in a
 `GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION` when every face of the
-region is a forward face with no loops whose surface either carries no
-procedural construction and has a solved NURBS geometry, or is a rectangular
-parameter subset (written as a `RECTANGULAR_TRIMMED_SURFACE`). Other
+region is a forward face that either has no loops and a surface that carries
+no procedural construction and has a solved NURBS geometry, has no loops and
+a rectangular parameter subset surface (written as a
+`RECTANGULAR_TRIMMED_SURFACE`), or has a curve-bounded surface and one loop
+per boundary curve of it, whose edges run on exactly the boundaries' segment
+curves. The writer
+states a curve-bounded face as a `CURVE_BOUNDED_SURFACE` on its support,
+with each boundary composite curve of the construction as a member of its
+boundary list. A boundary that shares a segment curve with the face's outer
+loop is an `OUTER_BOUNDARY_CURVE`; each other boundary is a
+`BOUNDARY_CURVE`. Other
 procedural surfaces, among them an exact NURBS whose retained ranges can make
 the written spline wider than the face and a sub-surface, which the writer
 states by its solved carrier rather than a trim to its ranges, take the
