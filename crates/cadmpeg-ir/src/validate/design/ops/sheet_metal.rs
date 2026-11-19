@@ -233,6 +233,9 @@ pub(super) fn check_sheet_metal(
                 ),
                 _ => {}
             }
+            if let Some(extent) = extent {
+                options::check_length_span(site, "ContourFlange.extent", extent, findings);
+            }
             if let Some(Span::Between { start, end }) = extent {
                 for limit in [start, end] {
                     let fits = match &**limit {

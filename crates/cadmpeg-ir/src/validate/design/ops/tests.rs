@@ -1413,6 +1413,38 @@ fn a_helix_start_circle_picks_a_circle_or_arc() {
             helix: Helix {
                 placement: Construction::default(),
                 start: Some(HelixStart::Circle(named(vec![sketch_entity_pick(key)]))),
+#[test]
+fn a_contour_flange_extent_follows_the_span_rules() {
+    let flange = |extent| {
+        sheet(SheetMetalKind::ContourFlange {
+            profile: unread(),
+            edges: None,
+            width: None,
+            extent: Some(extent),
+            thickness: None,
+            bend: bend(),
+            vertex_bends: Vec::new(),
+            rule: None,
+        })
+    };
+    let zero = Span::Symmetric {
+        amount: Dimension::Literal(length(0.0)),
+        measure: None,
+    };
+    assert_finding(
+        &with(flange(zero)),
+        "ContourFlange.extent is a symmetric span of zero",
+    );
+    let origins = Span::Between {
+        start: Box::new(Limit::AtOrigin),
+        end: Box::new(Limit::AtOrigin),
+    };
+    assert_finding(
+        &with(flange(origins)),
+        "ContourFlange.extent is a Span::Between with AtOrigin at both start and end",
+    );
+}
+
                 shape: HelixShape::Helix {
                     law: None,
                     taper: None,
