@@ -602,14 +602,14 @@ Object-stream `05 08 01` coordinate rows are unframed allocations outside the co
 
 ### 6.1 `a5 03 34` freeform surface (consolidated class)
 
-Payload: `degU` and `K_U` (`4n+1` codes), array marker (`0x0c`, `0x08 0x05`, `0x08 0x09`, `0x08 0x0d`, `0x08 0x11`, or `0x08 0x15`), `K_U` distinct finite U knots (f64le), then `degV`/`K_V`/marker/V-knots, a mode byte (`0x01` non-rational / `0x05` rational), the pole grid (nu×nv×3 f64le, 24-byte stride), an optional weight payload, and a limit/parameterization tail. **Only strictly increasing distinct knots are stored.** A direction with exactly two distinct knots is a single Bézier span for every positive stored degree: both endpoint multiplicities are `degree+1`, and the pole count is `degree+1`. Degree-1 and degree-3 directions use clamped multiplicities `[degree+1,1,…,1,degree+1]`. Degree 5 uses the clamped C2 policy `[6,3,…,3,6]`, so `n_control = Σmult − degree − 1 = 3·K`. Poles and `05 08 01` vertex coordinates share the identity world frame. Rational weights (mode `0x05`) are either `00` followed by a complete `nu×nv` f64le grid or a row program. A row command is `01` or `05` followed by a mirror mask; `05` also stores a leading-repeat count. Command `02` copies the preceding expanded row. The tail carries current-limits + original parameterization (`param_after = coef·param_before + shift`) and extrapolation flags/data.
+Payload: `degU` and `K_U` (`4n+1` codes), array marker (`0x0c`, `0x08 0x05`, `0x08 0x09`, `0x08 0x0d`, `0x08 0x11`, or `0x08 0x15`), `K_U` distinct finite U knots (f64le), then `degV`/`K_V`/marker/V-knots, a mode byte (`0x01` non-rational / `0x05` rational), the pole grid (nu×nv×3 f64le, 24-byte stride), an optional weight payload, and a limit/parameterization tail. **Only strictly increasing distinct knots are stored.** A direction with exactly two distinct knots is a single Bézier span for every positive stored degree: both endpoint multiplicities are `degree+1`, and the pole count is `degree+1`. Degree-1 and degree-3 directions use clamped multiplicities `[degree+1,1,…,1,degree+1]`. Degree 5 uses the clamped C2 policy `[6,3,…,3,6]`, so `n_control = Σmult − degree − 1 = 3·K`. Poles and `05 08 01` vertex coordinates share the identity world frame. Rational weights (mode `0x05`) are either `00` followed by a complete `nu×nv` f64le grid or a row program. A row command is `01` or `05` followed by a row control; `05` also stores a leading-repeat count. Command `02` copies the preceding expanded row. The tail carries current-limits + original parameterization (`param_after = coef·param_before + shift`) and extrapolation flags/data.
 
-The three-byte weight-row prefix stores its command and mirror mask:
+The three-byte weight-row prefix stores its command and row control:
 
 | Weight-row offset | Type | Meaning |
 | --- | --- | --- |
 | `+0` | `u8` | row command `01` or `05` |
-| `+1` | `u16le` | mirror mask |
+| `+1` | `u16le` | row control |
 
 The five-byte repeated weight-row prefix adds one field:
 
@@ -617,7 +617,9 @@ The five-byte repeated weight-row prefix adds one field:
 | --- | --- | --- |
 | `+3` | `u16le` | leading-repeat count for command `05` |
 
-A weight row traverses its columns in ascending order. In command `01`, the leading-repeat count is zero. The first column reads one finite nonzero f64le value. The next `leading-repeat count` columns copy that value. For each remaining column `j`, let `i=nv-1-j`. If `i<j` and bit `i` of the mirror mask is set, column `j` copies column `i`. Each other column reads one finite nonzero f64le value. The mask applies to reflected column indices. The leading-repeat count is less than `nv`. A row-copy command requires a preceding complete row. Literal reads remain inside the framed surface payload.
+Command `01` with row control `0003` or `0007` stores `ceil(nv/2)` finite nonzero f64le seeds. Append the first `floor(nv/2)` seeds in reverse order to complete the row.
+
+For other command-`01` controls and for command `05`, the row control is a mirror mask. A weight row traverses its columns in ascending order. In command `01`, the leading-repeat count is zero. The first column reads one finite nonzero f64le value. The next `leading-repeat count` columns copy that value. For each remaining column `j`, let `i=nv-1-j`. If `i<j` and bit `i` of the mirror mask is set, column `j` copies column `i`. Each other column reads one finite nonzero f64le value. The mask applies to reflected column indices. The leading-repeat count is less than `nv`. A row-copy command requires a preceding complete row. Literal reads remain inside the framed surface payload.
 
 The frame carries no inline persistent object id. Its byte offset in the object stream identifies the consolidated surface carrier.
 
@@ -916,7 +918,7 @@ The one-component layout stores `+18` direction component (`f64le`): X for `e4` 
 
 Sheet-owned class-`27` plane selectors retain their axis components and signs. Selector `08 68 1d` stores origin XYZ and V's signed Y component, with U=(1,0,0) and V=(0,v_y,0). Selector `08 e8 1d` has the same axes with v_y=1 and omits the direction scalar. These unrestricted payloads end after the frame scalars.
 
-Selector `d4 a0` stores origin XYZ, U's X and Z components, and four bounds, with U=(u_x,0,u_z) and V=(0,1,0). Selector `d4 20` adds V's signed Y component before those bounds. Each axis is a unit vector and the completed frame is orthonormal. The bounds are ordered U and V intervals. The [CATIA record layouts](../layouts/catia.md) give their field offsets and lengths.
+Selector `d4 a0` stores origin XYZ, U's X and Z components, and four bounds, with U=(u_x,0,u_z) and V=(0,1,0). This implicit-V form is 74 bytes. The 82-byte `d4 a0` form stores V's signed Y component between U and the four bounds. Its V axis is (0,v_y,0), with v_y equal to -1 or +1. Selector `d4 20` adds V's signed Y component before those bounds. Each axis is a unit vector and the completed frame is orthonormal. The bounds are ordered U and V intervals. The [CATIA record layouts](../layouts/catia.md) give their field offsets and lengths.
 
 A spatial class-`28` cylinder chart with terminal `07` ends immediately
 after that byte. The U interval starts at zero and stores circumferential

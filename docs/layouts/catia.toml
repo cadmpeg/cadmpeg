@@ -4238,7 +4238,7 @@ name = "surface_weight_row_prefix"
 parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
 kind = "byte"
 section = "6.1"
-anchor = "The three-byte weight-row prefix stores its command and mirror mask:"
+anchor = "The three-byte weight-row prefix stores its command and row control:"
 size = 3
 
 [[record.field]]
@@ -4253,7 +4253,7 @@ name = "mirror"
 offset = 1
 type = "u16"
 source = "spec"
-anchor = "mirror mask"
+anchor = "row control"
 
 [[record]]
 name = "surface_weight_repeat_row_prefix"
@@ -4276,7 +4276,7 @@ name = "mirror"
 offset = 1
 type = "u16"
 source = "spec"
-anchor = "mirror mask"
+anchor = "row control"
 
 [[record.field]]
 name = "leading_repeats"
@@ -4451,3 +4451,53 @@ offset = 50
 type = "f64[4]"
 source = "spec"
 anchor = "Selector `d4 20` adds V's signed Y component"
+
+[[record]]
+name = "sheet_plane_explicit_v_a0_payload"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/sheet_carrier.rs"
+kind = "byte"
+section = "6.3"
+anchor = "The 82-byte `d4 a0` form stores V's signed Y component"
+size = 82
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "u8[2]"
+source = "spec"
+anchor = "The 82-byte `d4 a0` form stores V's signed Y component"
+
+[[record.field]]
+name = "origin"
+offset = 2
+type = "f64[3]"
+source = "spec"
+anchor = "The 82-byte `d4 a0` form stores V's signed Y component"
+
+[[record.field]]
+name = "direction_u_x"
+offset = 26
+type = "f64"
+source = "spec"
+anchor = "The 82-byte `d4 a0` form stores V's signed Y component"
+
+[[record.field]]
+name = "direction_u_z"
+offset = 34
+type = "f64"
+source = "spec"
+anchor = "The 82-byte `d4 a0` form stores V's signed Y component"
+
+[[record.field]]
+name = "direction_v_y"
+offset = 42
+type = "f64"
+source = "spec"
+anchor = "The 82-byte `d4 a0` form stores V's signed Y component"
+
+[[record.field]]
+name = "bounds"
+offset = 50
+type = "f64[4]"
+source = "spec"
+anchor = "The 82-byte `d4 a0` form stores V's signed Y component"

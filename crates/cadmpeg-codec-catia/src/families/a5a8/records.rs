@@ -203,6 +203,10 @@ pub(in crate::families) fn a8_nested_b5_run_start(
 }
 
 fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option<usize> {
+    surface_tail_parameters(data, at, end, owned).map(|_| end)
+}
+
+fn surface_tail_parameters(data: &[u8], at: usize, end: usize, owned: bool) -> Option<[f64; 8]> {
     use crate::layout::surface_terminal_span_tail as layout;
 
     let tail = data.get(at..end)?;
@@ -285,7 +289,7 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option
             _ => false,
         }
     };
-    valid_suffix.then_some(end)
+    valid_suffix.then_some(parameters)
 }
 
 fn owned_surface_suffix(bytes: &[u8]) -> Option<()> {
@@ -1919,14 +1923,20 @@ fn a5_surface(
         }
         _ => return Ok(None),
     };
-    if parse_surface_tail(data, at, end, owned).is_none() {
+    let Some(parameters) = surface_tail_parameters(data, at, end, owned) else {
         return Ok(None);
-    }
+    };
+    let full_limits = [
+        u_distinct[0],
+        u_distinct[u_distinct.len() - 1],
+        v_distinct[0],
+        v_distinct[v_distinct.len() - 1],
+    ];
     let control_points = grid_rows(control_points, v_count)?;
     let weights = weights
         .map(|values| grid_rows(values, v_count))
         .transpose()?;
-    Ok(crate::nurbs::note_refusal(
+    let geometry = crate::nurbs::note_refusal(
         NurbsSurface::from_checked_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
@@ -1935,8 +1945,13 @@ fn a5_surface(
         ),
         refusal,
         format_args!("a5 NURBS surface record at byte {pos}"),
-    )
-    .map(|geometry| FreeformSurface {
+    );
+    if geometry.is_some()
+        && (parameters[..4] != full_limits || parameters[4..] != [1.0, 0.0, 1.0, 0.0])
+    {
+        refusal.push_surface_parameters_not_transferred(pos, parameters);
+    }
+    Ok(geometry.map(|geometry| FreeformSurface {
         pos,
         identity: None,
         geometry,
@@ -2361,12 +2376,14 @@ fn a5_weights(
             }
             for column in 0..cols {
                 let reflected = cols - 1 - column;
+                let symmetric = command == 0x01 && matches!(mirror, 0x0003 | 0x0007);
                 let mirrored = reflected < column
-                    && mirror
-                        .checked_shr(u32::try_from(reflected).ok()?)
-                        .unwrap_or(0)
-                        & 1
-                        != 0;
+                    && (symmetric
+                        || mirror
+                            .checked_shr(u32::try_from(reflected).ok()?)
+                            .unwrap_or(0)
+                            & 1
+                            != 0);
                 let value = if column > 0 && column <= repeat {
                     weights[row_start]
                 } else if mirrored {
