@@ -246,7 +246,7 @@ fn a_cache_that_reads_a_measure_or_the_geometry_holds_only_where_nothing_differs
     };
     let reads_measure = || {
         ParameterDefinition::Expression(Expression::Neutral(Neutral(
-            parse("@0 > 1[mm]", &[], &[measured.clone()]).unwrap(),
+            parse("@0 > 1[mm]", &[], std::slice::from_ref(&measured)).unwrap(),
         )))
     };
     for (name, definition) in [
