@@ -32,7 +32,8 @@ pub(crate) fn plan(
         },
         ResolvedTarget::Explicit { index, .. }
         | ResolvedTarget::Inherited { index, .. }
-        | ResolvedTarget::Default { index, .. } => {
+        | ResolvedTarget::Default { index, .. }
+        | ResolvedTarget::Displaced { index, .. } => {
             let version = crate::IgesVersion::ALL[*index];
             if resolved.preserves_source() {
                 replay_or_synthesize(input, version)

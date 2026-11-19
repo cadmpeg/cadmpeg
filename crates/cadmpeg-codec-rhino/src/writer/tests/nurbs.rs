@@ -258,7 +258,7 @@ fn explicit_nurbs_pcurves_round_trip_owned_geometry_and_tolerance() {
 }
 
 #[test]
-fn inconsistent_explicit_pcurve_is_rejected_before_output() {
+fn inconsistent_explicit_pcurve_omits_the_body() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
@@ -290,20 +290,16 @@ fn inconsistent_explicit_pcurve_is_rejected_before_output() {
         isoparametric: None,
         parameter_range: None,
     }];
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(error.to_string().contains("does not exactly match"));
-    assert_eq!(output, [0xaa]);
+    let body = ir.geometry.bodies[0].id.to_string();
+    let (bytes, losses) = super::write_reported(&ir, RhinoArchiveVersion::V8);
+    let message =
+        super::loss_naming(&losses, crate::loss::RhinoLossCode::WriterBodyOmitted, &body);
+    assert!(message.contains("does not exactly match"), "{message}");
+    assert!(super::decoded(bytes).geometry.bodies.is_empty());
 }
 
 #[test]
-fn multiple_pcurve_uses_are_rejected_before_output() {
+fn multiple_pcurve_uses_omits_the_body() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(2.0, 0.0, 0.0),
@@ -354,16 +350,10 @@ fn multiple_pcurve_uses_are_rejected_before_output() {
         },
     ];
 
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert_eq!(output, [0xaa]);
+    let body = ir.geometry.bodies[0].id.to_string();
+    let (bytes, losses) = super::write_reported(&ir, RhinoArchiveVersion::V8);
+    super::loss_naming(&losses, crate::loss::RhinoLossCode::WriterBodyOmitted, &body);
+    assert!(super::decoded(bytes).geometry.bodies.is_empty());
 }
 
 #[test]
@@ -686,7 +676,7 @@ fn generally_trimmed_nurbs_face_round_trips_outer_loop_and_hole() {
 }
 
 #[test]
-fn nurbs_trim_that_misses_its_edge_is_rejected_atomically() {
+fn nurbs_trim_that_misses_its_edge_omits_the_body() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.5, 0.5, 0.0),
         Point3::new(3.5, 0.5, 0.0),
@@ -705,35 +695,27 @@ fn nurbs_trim_that_misses_its_edge_is_rejected_atomically() {
         cadmpeg_ir::math::Point2::new(direction.u, direction.v + 0.25),
     )
     .unwrap();
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(error.to_string().contains("misses directed edge curve"));
-    assert_eq!(output, [0xaa]);
+    let body = ir.geometry.bodies[0].id.to_string();
+    let (bytes, losses) = super::write_reported(&ir, RhinoArchiveVersion::V8);
+    let message =
+        super::loss_naming(&losses, crate::loss::RhinoLossCode::WriterBodyOmitted, &body);
+    assert!(message.contains("misses directed edge curve"), "{message}");
+    assert!(super::decoded(bytes).geometry.bodies.is_empty());
 }
 
 #[test]
-fn nurbs_surface_patch_without_boundary_pcurves_is_rejected_atomically() {
+fn nurbs_surface_patch_without_boundary_pcurves_omits_the_body() {
     let mut ir = rectangular_nurbs_patch();
     ir.geometry.pcurves.clear();
     for coedge in &mut ir.geometry.coedges {
         coedge.pcurves.clear();
     }
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(error.to_string().contains("explicit pcurve"));
-    assert_eq!(output, [0xaa]);
+    let body = ir.geometry.bodies[0].id.to_string();
+    let (bytes, losses) = super::write_reported(&ir, RhinoArchiveVersion::V8);
+    let message =
+        super::loss_naming(&losses, crate::loss::RhinoLossCode::WriterBodyOmitted, &body);
+    assert!(message.contains("explicit pcurve"), "{message}");
+    assert!(super::decoded(bytes).geometry.bodies.is_empty());
 }
 
 /// The archive's pole lane states the figure `check_nurbs_surface` proved

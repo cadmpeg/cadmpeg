@@ -1,0 +1,2 @@
+{"code":{"kind":"namespaced","value":{"namespace":"rhino","code":"output.empty","kind":"no_exportable_solids","strict_floor":"warning"}},"severity":"warning","message":"the written archive holds no object"}
+{"code":{"kind":"namespaced","value":{"namespace":"rhino","code":"target.source-dialect-displaced","kind":"source_dialect_displaced","strict_floor":"warning"}},"severity":"warning","message":"source dialect rhino:archive-3 was displaced by target dialect rhino:archive-50; the source dialect identity is not preserved"}

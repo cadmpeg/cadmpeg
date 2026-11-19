@@ -11,11 +11,7 @@ use crate::loss::RhinoLossCode;
 use crate::RhinoArchiveVersion;
 
 /// Why this writer cannot reproduce a source archive version outside
-/// [`RhinoArchiveVersion::TARGETS`].
-///
-/// Archives 1, 2, 3, 4, 5 and 90 decode without a writer, unknown words decode
-/// as residual, and 3DM has no retained-image path that could write any of
-/// them back.
+/// [`RhinoArchiveVersion::TARGETS`]: 3DM has no byte-replay path.
 const OFF_CATALOG_SOURCE_REASON: &str =
     "the source archive version is one this writer cannot synthesize, and 3DM has no byte-replay \
      path that could preserve it";
@@ -23,8 +19,8 @@ const OFF_CATALOG_SOURCE_REASON: &str =
 /// Synthesize the resolved archive version.
 ///
 /// Every catalog resolution names its `RhinoArchiveVersion::ALL` row by
-/// position; the preserved resolution has no row and is refused here because
-/// 3DM has no replay path.
+/// position. The writer's catalog displaces an off-catalog source to its
+/// default, so the preserved resolution, which has no row, does not reach it.
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
@@ -35,7 +31,7 @@ pub(crate) fn plan(
     let version = RhinoArchiveVersion::ALL[index];
     let mut bytes = Vec::new();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
-    super::write(&recovered.document, version, &mut bytes)?;
+    let mut losses = super::write(&recovered.document, version, &mut bytes)?;
     let vertex_quantization = !version.stores_mesh_vertices_as_f64()
         && input
             .ir
@@ -59,7 +55,6 @@ pub(crate) fn plan(
                 || cadmpeg_core::convert::f32_from_f64(normal.y).map(f64::from) != Some(normal.y)
                 || cadmpeg_core::convert::f32_from_f64(normal.z).map(f64::from) != Some(normal.z)
         });
-    let mut losses = Vec::new();
     if !recovered.sampled_agreements.is_empty() {
         losses.push(RhinoLossCode::EdgePcurveAgreementSampled.note(format!(
             "{} recovered edge(s) have coedge curves compared at five parameters; agreement between samples is not established",
@@ -142,40 +137,40 @@ pub(crate) fn plan(
 
 /// What `prepare_write` does with each model arena.
 ///
-/// `subds`, procedural surfaces and curves, features, configurations, parameters,
-/// sketches, sketch entities and constraints, appearances, appearance bindings
-/// and attributes are `Dropped` because `prepare_write` refuses non-empty arenas.
-/// Topology is written as Brep and point objects or refused as orphaned;
-/// unowned pcurves are refused.
-/// `points` and `curves` are `Reported` because
-/// `WriterSupportGeometryWithheld` accounts for withheld support records.
+/// Topology, carriers and meshes are `Reported`: `prepare_write` writes each
+/// record the archive can state and charges a `writer.*-omitted` loss naming
+/// each record it omits, and `WriterSupportGeometryWithheld` accounts for
+/// withheld support records. Procedural surfaces and curves are `Dropped`:
+/// their carriers are written from the solved cache and
+/// `WriterProceduralConstructionReduced` names each construction. The wrapper
+/// charges the loss of each `Omitted` arena.
 const COVERAGE: ArenaDispositions = {
-    use ArenaDisposition::{Dropped, Ignored, Omitted, Reported, Written};
+    use ArenaDisposition::{Dropped, Ignored, Omitted, Reported};
     ArenaDispositions {
-        bodies: Written,
-        regions: Written,
-        shells: Written,
-        faces: Written,
-        loops: Written,
-        coedges: Written,
-        edges: Written,
-        vertices: Written,
+        bodies: Reported,
+        regions: Reported,
+        shells: Reported,
+        faces: Reported,
+        loops: Reported,
+        coedges: Reported,
+        edges: Reported,
+        vertices: Reported,
         points: Reported,
-        surfaces: Written,
+        surfaces: Reported,
         curves: Reported,
-        subds: Dropped,
-        pcurves: Written,
+        subds: Omitted,
+        pcurves: Reported,
         procedural_surfaces: Dropped,
         procedural_curves: Dropped,
         assets: Omitted,
-        features: Dropped,
+        features: Omitted,
         feature_input_topologies: Omitted,
         feature_result_topologies: Omitted,
-        configurations: Dropped,
-        parameters: Dropped,
-        sketches: Dropped,
-        sketch_entities: Dropped,
-        sketch_constraints: Dropped,
+        configurations: Omitted,
+        parameters: Omitted,
+        sketches: Omitted,
+        sketch_entities: Omitted,
+        sketch_constraints: Omitted,
         spatial_sketches: Omitted,
         spatial_sketch_entities: Omitted,
         spatial_sketch_constraints: Omitted,
@@ -187,12 +182,12 @@ const COVERAGE: ArenaDispositions = {
         semantic_annotations: Omitted,
         presentation_documents: Omitted,
         view_presentations: Omitted,
-        tessellations: Written,
+        tessellations: Reported,
         point_clouds: Omitted,
         history_bodies: Ignored,
-        appearances: Dropped,
-        appearance_bindings: Dropped,
-        attributes: Dropped,
+        appearances: Omitted,
+        appearance_bindings: Omitted,
+        attributes: Omitted,
         pmi: Omitted,
         presentation_layers: Omitted,
         physical_materials: Omitted,

@@ -12,12 +12,60 @@ use cadmpeg_ir::math::Point3;
 
 use crate::{RhinoArchiveVersion, RhinoCodec};
 
+/// Writes `ir` at archive `version` and returns the archive with the losses
+/// its export report charges.
+fn write_reported(
+    ir: &CadIr,
+    version: RhinoArchiveVersion,
+) -> (Vec<u8>, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    let plan = RhinoCodec
+        .plan(
+            cadmpeg_ir::codec::write::EncodeInput::new(ir, None),
+            TargetRequest::Explicit(version.descriptor().id.as_str()),
+        )
+        .expect("the Rhino write plans every document");
+    let losses = plan.report().losses.clone();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("the planned archive writes");
+    (bytes, losses)
+}
+
+/// The message of the loss `code` charges that names `id`.
+fn loss_naming(
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+    code: crate::loss::RhinoLossCode,
+    id: &str,
+) -> String {
+    losses
+        .iter()
+        .find(|loss| {
+            loss.code == code.kind()
+                && loss
+                    .message
+                    .split(|c: char| c.is_whitespace() || c == ',' || c == ';')
+                    .any(|token| token.trim_end_matches(':') == id)
+        })
+        .unwrap_or_else(|| panic!("no {code:?} loss names {id}: {losses:#?}"))
+        .message
+        .clone()
+}
+
+/// The archive decoded back to its document.
+fn decoded(bytes: Vec<u8>) -> CadIr {
+    RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("the written archive decodes")
+        .ir()
+        .clone()
+}
+
 mod computed_values;
 mod coverage;
 mod encoding;
 mod free_geometry;
 mod model;
 mod nurbs;
+mod omissions;
 mod planar;
 mod targets;
 

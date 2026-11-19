@@ -93,6 +93,16 @@ pub enum ResolvedTarget<'a> {
         /// The recorded source dialect to reproduce.
         source: DialectId,
     },
+    /// Inheritance of a recorded same-format dialect that is not on the
+    /// catalog of a writer with no replay path took the catalog default.
+    Displaced {
+        /// Position of `entry` in the encoder's declared catalog.
+        index: usize,
+        /// The selected catalog row.
+        entry: &'static TargetDescriptor,
+        /// The recorded source dialect the row replaces.
+        source: DialectId,
+    },
 }
 
 /// A native write resolved against the encoder catalog and source identity.
@@ -118,7 +128,8 @@ impl<'a> ResolvedWrite<'a> {
         match &self.target {
             ResolvedTarget::Explicit { entry, .. }
             | ResolvedTarget::Inherited { entry, .. }
-            | ResolvedTarget::Default { entry, .. } => Some(entry),
+            | ResolvedTarget::Default { entry, .. }
+            | ResolvedTarget::Displaced { entry, .. } => Some(entry),
             ResolvedTarget::Preserved { .. } => None,
         }
     }
@@ -133,7 +144,8 @@ impl<'a> ResolvedWrite<'a> {
         match &self.target {
             ResolvedTarget::Explicit { index, .. }
             | ResolvedTarget::Inherited { index, .. }
-            | ResolvedTarget::Default { index, .. } => Some(*index),
+            | ResolvedTarget::Default { index, .. }
+            | ResolvedTarget::Displaced { index, .. } => Some(*index),
             ResolvedTarget::Preserved { .. } => None,
         }
     }
@@ -145,7 +157,8 @@ impl<'a> ResolvedWrite<'a> {
         match &self.target {
             ResolvedTarget::Explicit { entry, .. }
             | ResolvedTarget::Inherited { entry, .. }
-            | ResolvedTarget::Default { entry, .. } => &entry.id,
+            | ResolvedTarget::Default { entry, .. }
+            | ResolvedTarget::Displaced { entry, .. } => &entry.id,
             ResolvedTarget::Preserved { source } => source,
         }
     }
@@ -157,7 +170,7 @@ impl<'a> ResolvedWrite<'a> {
         match &self.target {
             ResolvedTarget::Explicit { entry, source, .. } => source.recorded() == Some(&entry.id),
             ResolvedTarget::Inherited { .. } | ResolvedTarget::Preserved { .. } => true,
-            ResolvedTarget::Default { .. } => false,
+            ResolvedTarget::Default { .. } | ResolvedTarget::Displaced { .. } => false,
         }
     }
 
@@ -169,6 +182,7 @@ impl<'a> ResolvedWrite<'a> {
             ResolvedTarget::Explicit { entry, source, .. } => {
                 source.recorded().filter(|source| *source != &entry.id)
             }
+            ResolvedTarget::Displaced { source, .. } => Some(source),
             ResolvedTarget::Inherited { .. }
             | ResolvedTarget::Default { .. }
             | ResolvedTarget::Preserved { .. } => None,
@@ -194,7 +208,9 @@ impl<'a> ResolvedWrite<'a> {
     pub const fn has_same_format_source(&self) -> bool {
         match &self.target {
             ResolvedTarget::Explicit { source, .. } => source.is_same_format(),
-            ResolvedTarget::Inherited { .. } | ResolvedTarget::Preserved { .. } => true,
+            ResolvedTarget::Inherited { .. }
+            | ResolvedTarget::Preserved { .. }
+            | ResolvedTarget::Displaced { .. } => true,
             ResolvedTarget::Default { .. } => false,
         }
     }
@@ -223,7 +239,9 @@ impl<'a> ResolvedWrite<'a> {
                 requested: TargetToken::new(*requested),
                 reason,
             },
-            ResolvedTarget::Inherited { source, .. } | ResolvedTarget::Preserved { source } => {
+            ResolvedTarget::Inherited { source, .. }
+            | ResolvedTarget::Preserved { source }
+            | ResolvedTarget::Displaced { source, .. } => {
                 TargetRefusalKind::InheritedUnavailable {
                     source: source.clone(),
                     reason,
@@ -327,7 +345,21 @@ impl TargetDomain for DialectFree {
 
 /// A native format resolves every request against this complete catalog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Catalog(TargetCatalog);
+pub struct Catalog {
+    catalog: TargetCatalog,
+    off_catalog: OffCatalogSource,
+}
+
+/// How [`TargetRequest::Inherit`] resolves a recorded same-format source
+/// dialect outside the catalog.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OffCatalogSource {
+    /// [`ResolvedTarget::Preserved`]: the writer may replay the source.
+    Preserved,
+    /// [`ResolvedTarget::Displaced`]: the writer has no replay path and
+    /// writes the catalog default.
+    Displaced,
+}
 
 impl Catalog {
     /// Builds a native target domain whose optional default indexes one of
@@ -337,7 +369,23 @@ impl Catalog {
         targets: &'static [cadmpeg_core::target::TargetDescriptor],
         default: Option<usize>,
     ) -> Self {
-        Self(TargetCatalog::new(targets, default))
+        Self {
+            catalog: TargetCatalog::new(targets, default),
+            off_catalog: OffCatalogSource::Preserved,
+        }
+    }
+
+    /// Builds the target domain of a writer with no replay path: an inherited
+    /// source dialect outside `targets` resolves to `default`.
+    #[must_use]
+    pub const fn synthesis_only(
+        targets: &'static [cadmpeg_core::target::TargetDescriptor],
+        default: usize,
+    ) -> Self {
+        Self {
+            catalog: TargetCatalog::new(targets, Some(default)),
+            off_catalog: OffCatalogSource::Displaced,
+        }
     }
 }
 
@@ -345,7 +393,7 @@ impl TargetDomain for Catalog {
     type Resolved<'a> = ResolvedWrite<'a>;
 
     fn targets(&self, _format: FormatId) -> TargetCatalog {
-        self.0
+        self.catalog
     }
 
     fn resolve<'a>(
@@ -354,7 +402,7 @@ impl TargetDomain for Catalog {
         request: TargetRequest<'a>,
         _format: FormatId,
     ) -> Result<ResolvedWrite<'a>, CodecError> {
-        resolve_write_request(ir, request, self.0)
+        resolve_write_request(ir, request, self.catalog, self.off_catalog)
     }
 }
 
@@ -380,6 +428,7 @@ fn resolve_write_request<'a>(
     ir: &CadIr,
     request: TargetRequest<'a>,
     catalog: TargetCatalog,
+    off_catalog: OffCatalogSource,
 ) -> Result<ResolvedWrite<'a>, CodecError> {
     let format = catalog.namespace();
     let refuse = |kind| CodecError::UnsupportedTarget(Box::new(TargetRefusal::new(kind, catalog)));
@@ -418,7 +467,16 @@ fn resolve_write_request<'a>(
                     entry,
                     source,
                 },
-                None => ResolvedTarget::Preserved { source },
+                None => match (off_catalog, catalog.default()) {
+                    (OffCatalogSource::Displaced, Some((index, entry))) => {
+                        ResolvedTarget::Displaced {
+                            index,
+                            entry,
+                            source,
+                        }
+                    }
+                    _ => ResolvedTarget::Preserved { source },
+                },
             },
         },
     };

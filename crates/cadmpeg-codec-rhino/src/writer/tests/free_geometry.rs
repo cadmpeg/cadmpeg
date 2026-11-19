@@ -98,24 +98,21 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
 }
 
 #[test]
-fn invalid_archive_tolerances_are_rejected_before_output() {
+fn an_angular_tolerance_above_pi_is_written_as_pi_with_a_loss() {
     let mut ir = CadIr::empty();
     ir.tolerances.angular = cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::PI.next_up())
         .expect("positive finite tolerance");
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("invalid tolerance must not be serialized");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert_eq!(output, [0xaa]);
+    let (bytes, losses) = super::write_reported(&ir, RhinoArchiveVersion::V8);
+    assert!(losses.iter().any(|loss| loss.code
+        == crate::loss::RhinoLossCode::WriterToleranceAdjusted.kind()
+        && loss.message.contains("angular tolerance")));
+    assert_eq!(
+        super::decoded(bytes).tolerances.angular.get(),
+        std::f64::consts::PI
+    );
 }
-
 #[test]
-fn rejection_occurs_before_output() {
+fn a_curve_the_archive_cannot_state_is_omitted_and_the_rest_written() {
     let mut ir = CadIr::empty();
     ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
         parameter_range: None,
@@ -127,17 +124,22 @@ fn rejection_occurs_before_output() {
         source_object: None,
         native_ref: None,
     });
-    let mut output = vec![0xaa];
-    assert!(RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .is_err());
-    assert_eq!(output, [0xaa]);
+    ir.geometry.points.push(Point::new(
+        PointId::mint("cadir:model:point#kept").expect("identity grammar"),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
+            .expect("a finite position is a point"),
+        None,
+    ));
+    let (bytes, losses) = super::write_reported(&ir, RhinoArchiveVersion::V8);
+    super::loss_naming(
+        &losses,
+        crate::loss::RhinoLossCode::WriterCurveOmitted,
+        "rhino:test:curve#a",
+    );
+    let decoded = super::decoded(bytes);
+    assert!(decoded.geometry.curves.is_empty());
+    assert_eq!(decoded.geometry.points.len(), 1);
 }
-
 #[test]
 fn source_less_circle_round_trips_with_its_frame() {
     let mut ir = CadIr::empty();
@@ -397,13 +399,13 @@ fn standalone_mesh_round_trips_across_archive_versions() {
             triangles: vec![0],
         }])
         .expect("valid triangle group partition");
-    assert!(matches!(
-        RhinoCodec.plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
-        ),
-        Err(cadmpeg_core::CodecError::NotImplemented(_))
-    ));
+    let (bytes, losses) = super::write_reported(&ir, RhinoArchiveVersion::V8);
+    super::loss_naming(
+        &losses,
+        crate::loss::RhinoLossCode::WriterMeshOmitted,
+        "cadir:model:tessellation#mesh",
+    );
+    assert!(super::decoded(bytes).model.tessellations.is_empty());
 }
 
 #[test]
@@ -719,7 +721,7 @@ fn supported_decoded_geometry_can_be_edited_and_rewritten() {
 }
 
 #[test]
-fn unsupported_retained_native_records_are_refused_before_output() {
+fn native_records_without_an_encoder_are_omitted_by_id() {
     let mut source = CadIr::empty();
     source.geometry.points.push(Point::new(
         PointId::mint("cadir:model:point#retained").expect("identity grammar"),
@@ -727,14 +729,7 @@ fn unsupported_retained_native_records_are_refused_before_output() {
             .expect("a finite position is a point"),
         None,
     ));
-    let mut bytes = Vec::new();
-    RhinoCodec
-        .plan(
-            EncodeInput::new(&source, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut bytes))
-        .expect("required invariant");
+    let (bytes, _) = super::write_reported(&source, RhinoArchiveVersion::V8);
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("required invariant");
@@ -755,20 +750,31 @@ fn unsupported_retained_native_records_are_refused_before_output() {
             .expect("valid native identity"),
         );
 
-    let mut output = vec![0xaa];
-    let error = RhinoCodec
-        .plan(
-            EncodeInput::new(decoded.ir(), None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str()),
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .expect_err("expected error");
-    assert!(error.to_string().contains("survival handling"));
-    assert_eq!(output, [0xaa]);
+    let (bytes, losses) = super::write_reported(decoded.ir(), RhinoArchiveVersion::V8);
+    let message = super::loss_naming(
+        &losses,
+        crate::loss::RhinoLossCode::NativeRecordsOmitted,
+        "rhino:presentation:material#unsupported",
+    );
+    assert!(message.contains("`materials`"), "{message}");
+    assert_eq!(
+        losses
+            .iter()
+            .filter(|loss| loss.code == crate::loss::RhinoLossCode::NativeRecordsOmitted.kind())
+            .count(),
+        1,
+        "the regenerated layer, presentation and settings records charge nothing: {losses:#?}"
+    );
+    let rewritten = super::decoded(bytes);
+    assert_eq!(rewritten.geometry.points.len(), 1);
+    assert!(rewritten
+        .native
+        .namespace("rhino")
+        .and_then(|namespace| namespace.arenas().get("materials"))
+        .is_none_or(Vec::is_empty));
 }
-
 #[test]
-fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
+fn noncanonical_nurbs_periodicity_omits_the_curve() {
     let mut ir = CadIr::empty();
     ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
         parameter_range: None,
@@ -790,17 +796,14 @@ fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
         source_object: None,
         native_ref: None,
     });
-    let mut output = vec![0xaa];
-    assert!(RhinoCodec
-        .plan(
-            EncodeInput::new(&ir, None),
-            TargetRequest::Explicit(RhinoArchiveVersion::V8.descriptor().id.as_str())
-        )
-        .and_then(|plan| plan.write_to(&mut output))
-        .is_err());
-    assert_eq!(output, [0xaa]);
+    let (bytes, losses) = super::write_reported(&ir, RhinoArchiveVersion::V8);
+    super::loss_naming(
+        &losses,
+        crate::loss::RhinoLossCode::WriterCurveOmitted,
+        "cadir:model:curve#periodic",
+    );
+    assert!(super::decoded(bytes).geometry.curves.is_empty());
 }
-
 #[test]
 fn mesh_coordinate_above_f32_max_refuses_round_down() {
     let mesh = Tessellation::new(

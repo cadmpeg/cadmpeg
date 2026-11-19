@@ -248,6 +248,27 @@ pub(crate) enum RhinoLossCode {
     /// Body kind came from the closed-shell gauge or from an unverified stored
     /// solid flag rather than from a flag the writer stamp vouches for.
     TopologyBodyKindGaugeSubstituted,
+    /// Native records of the source namespace the writer has no encoder for were
+    /// omitted.
+    NativeRecordsOmitted,
+    /// A body the archive cannot state was omitted with its topology.
+    WriterBodyOmitted,
+    /// Topology or pcurves that no written body owns were omitted.
+    WriterTopologyOmitted,
+    /// A free curve the archive cannot state was omitted.
+    WriterCurveOmitted,
+    /// A free surface the archive cannot state was omitted.
+    WriterSurfaceOmitted,
+    /// A mesh the archive cannot state was omitted.
+    WriterMeshOmitted,
+    /// A procedural construction was written as its solved carrier.
+    WriterProceduralConstructionReduced,
+    /// A tolerance outside the archive's write range was adjusted.
+    WriterToleranceAdjusted,
+    /// Object attributes the archive write does not state were omitted.
+    WriterObjectAttributesReduced,
+    /// The written archive holds no object.
+    WriterOutputEmpty,
 }
 
 impl RhinoLossCode {
@@ -299,6 +320,16 @@ impl RhinoLossCode {
         Self::SourceDialectUnverified,
         Self::SourceDialectDisplaced,
         Self::TopologyBodyKindGaugeSubstituted,
+        Self::NativeRecordsOmitted,
+        Self::WriterBodyOmitted,
+        Self::WriterTopologyOmitted,
+        Self::WriterCurveOmitted,
+        Self::WriterSurfaceOmitted,
+        Self::WriterMeshOmitted,
+        Self::WriterProceduralConstructionReduced,
+        Self::WriterToleranceAdjusted,
+        Self::WriterObjectAttributesReduced,
+        Self::WriterOutputEmpty,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -350,6 +381,16 @@ impl RhinoLossCode {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
             Self::TopologyBodyKindGaugeSubstituted => "topology.body-kind-gauge-substituted",
+            Self::NativeRecordsOmitted => "native.records-omitted",
+            Self::WriterBodyOmitted => "writer.body-omitted",
+            Self::WriterTopologyOmitted => "writer.topology-omitted",
+            Self::WriterCurveOmitted => "writer.curve-omitted",
+            Self::WriterSurfaceOmitted => "writer.surface-omitted",
+            Self::WriterMeshOmitted => "writer.mesh-omitted",
+            Self::WriterProceduralConstructionReduced => "writer.procedural-construction-reduced",
+            Self::WriterToleranceAdjusted => "writer.tolerance-adjusted",
+            Self::WriterObjectAttributesReduced => "writer.object-attributes-reduced",
+            Self::WriterOutputEmpty => "output.empty",
         }
     }
 
@@ -418,6 +459,16 @@ impl RhinoLossCode {
             }
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TopologyBodyKindGaugeSubstituted => LossTaxonomy::TopologyGaugeSubstituted,
+            Self::NativeRecordsOmitted => LossTaxonomy::PassthroughRecordOmitted,
+            Self::WriterBodyOmitted => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterTopologyOmitted => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterCurveOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterSurfaceOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterMeshOmitted => LossTaxonomy::TessellationOmitted,
+            Self::WriterProceduralConstructionReduced => LossTaxonomy::ProceduralReduced,
+            Self::WriterToleranceAdjusted => LossTaxonomy::MetadataNotTransferred,
+            Self::WriterObjectAttributesReduced => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterOutputEmpty => LossTaxonomy::NoExportableSolids,
         }
     }
 
@@ -517,6 +568,16 @@ mod tests {
                 "source.dialect-unverified",
                 "target.source-dialect-displaced",
                 "topology.body-kind-gauge-substituted",
+                "native.records-omitted",
+                "writer.body-omitted",
+                "writer.topology-omitted",
+                "writer.curve-omitted",
+                "writer.surface-omitted",
+                "writer.mesh-omitted",
+                "writer.procedural-construction-reduced",
+                "writer.tolerance-adjusted",
+                "writer.object-attributes-reduced",
+                "output.empty",
             ]
         );
     }
