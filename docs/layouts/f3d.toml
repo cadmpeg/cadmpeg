@@ -21360,7 +21360,7 @@ source = "spec"
 anchor = "u32 `1` at offset 32"
 
 [[record.field]]
-name = "first_reference"
+name = "group_reference"
 offset = 36
 type = "bytes[11]"
 source = "spec"
@@ -38921,7 +38921,7 @@ anchor = "A marker-one `Move` prologue stores nine zero bytes"
 value = 1
 
 [[record.field]]
-name = "first_reference"
+name = "group_reference"
 offset = 40
 type = "bytes[11]"
 source = "spec"
