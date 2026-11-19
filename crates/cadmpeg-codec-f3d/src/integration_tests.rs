@@ -530,36 +530,26 @@ fn inherit_replays_an_off_catalog_dialect_and_names_it() {
 /// same-format conversion never silently changes what the archive is, and the
 /// refusal names both the source's dialect and the escape.
 #[test]
-fn inherit_refuses_an_off_catalog_source_dialect_with_no_retained_image() {
+fn inherit_writes_an_off_catalog_source_dialect_with_no_retained_image_as_the_default() {
     let result = decode(f3d_with_smbh_and_manifest_version(
         &synthetic_geometry_smbh(),
         "3-3-0-0",
     ));
-    let error = plan(&result, false, TargetRequest::Inherit)
-        .expect_err("f3d:unknown is not a synthesis target");
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.format(), "f3d");
-    assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("f3d:unknown")
+    let report = crate::test_support::assert_written_with_loss(
+        result.ir(),
+        None,
+        &crate::loss::F3dLossCode::SourceDialectDisplaced
+            .kind()
+            .to_string(),
+        "f3d:unknown",
     );
     assert!(
-        refusal
-            .available()
+        report
+            .losses
             .iter()
-            .any(|target| target.id.as_str() == "f3d:manifest-3-2-0-0"),
-        "{:?}",
-        refusal.available()
+            .any(|loss| loss.message.contains("f3d:manifest-3-2-0-0")),
+        "{:#?}",
+        report.losses
     );
 }
 
