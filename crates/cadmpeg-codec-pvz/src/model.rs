@@ -202,6 +202,11 @@ pub(crate) fn occurrences(
                 )?;
             }
             ir.model.product_definitions.push(document);
+            ctx.admit_entities(
+                u64_from_index(ir.entity_count()),
+                &mut admitted,
+                "pvz_document",
+            )?;
         }
     }
     let mut reached = vec![Reached::No; definitions.len()];

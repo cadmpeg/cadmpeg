@@ -15824,7 +15824,35 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "fcstd:model:body#Solid:Shape:Solid.Shape.brp:34%40location1",
+            "fcstd:model:body#Void:Shape:Void.Shape.brp:68%40location1",
+            "fcstd:model:body#Seam:Shape:Seam.Shape.brp:13%40location1",
+            "fcstd:model:body#Degenerate:Shape:Degenerate.Shape.brp:11%40location1",
+            "fcstd:model:body#Sheet:Shape:Sheet.Shape.brp:10%40location1",
+            "fcstd:model:body#Wire:Shape:Wire.Shape.brp:6%40location1",
+            "fcstd:model:body#Compound:Shape:Compound.Shape.brp:17%40location1",
+            "fcstd:model:body#MultiShell:Shape:MultiShell.Shape.brp:67%40location1",
+            "fcstd:model:body#CurveCarriers:Shape:CurveCarriers.Shape.brp:14%40location1",
+            "fcstd:model:body#FreeformSurface:Shape:FreeformSurface.Shape.brp:10%40location1",
+            "fcstd:model:body#Revolved:Shape:Revolved.Shape.brp:24%40location1",
+            "fcstd:model:body#Swept:Shape:Swept.Shape.brp:13%40location1"
+          ],
+          "bom_properties": {},
+          "id": "fcstd:model:product_definition#document:root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],
