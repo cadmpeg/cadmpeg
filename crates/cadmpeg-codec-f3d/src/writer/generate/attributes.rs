@@ -260,7 +260,7 @@ pub(super) fn source_less_body_key(
         .copied()
         .ok_or_else(|| {
             CodecError::malformed(format_args!(
-                "body {} is not a body of the written document",
+                "body {} has no ASM body key in the written document",
                 body.id
             ))
         })
@@ -295,24 +295,26 @@ fn emitted_body_keys<'a>(target: &'a CadIr, native: &'a F3dNative) -> HashMap<&'
             None => {}
         }
     }
-    let mut next = used
-        .iter()
-        .copied()
-        .max()
-        .unwrap_or(0)
-        .max(i64::try_from(bodies.len()).unwrap_or(i64::MAX));
+    let highest = used.iter().copied().max().unwrap_or(0);
+    let mut next = i64::try_from(bodies.len())
+        .ok()
+        .map(|count| count.max(highest));
     for (ordinal, body) in bodies.iter().enumerate() {
         if keys.contains_key(body.id.as_str()) {
             continue;
         }
-        let key = i64::try_from(ordinal)
+        let Some(key) = i64::try_from(ordinal)
             .ok()
             .and_then(|ordinal| ordinal.checked_add(1))
             .filter(|key| !used.contains(key))
-            .unwrap_or_else(|| {
-                next = next.saturating_add(1);
-                next
-            });
+            .or_else(|| {
+                let key = next?.checked_add(1)?;
+                next = Some(key);
+                Some(key)
+            })
+        else {
+            continue;
+        };
         used.insert(key);
         keys.insert(body.id.as_str(), key);
     }
