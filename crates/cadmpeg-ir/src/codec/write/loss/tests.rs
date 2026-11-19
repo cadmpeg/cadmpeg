@@ -70,14 +70,14 @@ fn marked_fidelity() -> SourceFidelity {
     let mut fidelity = SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"source"));
     fidelity
         .insert_retained_record(
-            "test:image#0".to_owned().try_into().unwrap(),
+            "test:source:image#0".to_owned().try_into().unwrap(),
             RetainedSourceRecord::whole("", b"image".to_vec())
                 .with_untyped([ArenaClass::Design, ArenaClass::Model]),
         )
         .unwrap();
     fidelity
         .insert_retained_record(
-            "test:typed#0".to_owned().try_into().unwrap(),
+            "test:source:typed#0".to_owned().try_into().unwrap(),
             RetainedSourceRecord::whole("", b"typed".to_vec()),
         )
         .unwrap();
@@ -92,8 +92,8 @@ fn a_replay_carries_and_a_patch_also_leaves_unchecked_the_untyped_records_it_hol
             .into_iter()
             .map(|note| {
                 assert!(
-                    note.message.contains("test:image#0 (model, design)")
-                        && !note.message.contains("test:typed#0"),
+                    note.message.contains("test:source:image#0 (model, design)")
+                        && !note.message.contains("test:source:typed#0"),
                     "{}",
                     note.message
                 );
@@ -117,7 +117,7 @@ fn a_replay_carries_and_a_patch_also_leaves_unchecked_the_untyped_records_it_hol
 #[test]
 fn a_file_with_no_untyped_record_carries_nothing_to_report() {
     let mut fidelity = marked_fidelity();
-    fidelity.remove_retained_record("test:image#0");
+    fidelity.remove_retained_record("test:source:image#0");
     assert!(carried_source_losses(Some(&fidelity), &WritePath::VerbatimReplay).is_empty());
     assert!(carried_source_losses(None, &WritePath::VerbatimReplay).is_empty());
 }

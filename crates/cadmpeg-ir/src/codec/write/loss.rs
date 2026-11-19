@@ -270,7 +270,7 @@ pub fn carried_source_losses(fidelity: Option<&SourceFidelity>, path: &WritePath
     };
     let records: Vec<String> = fidelity
         .into_iter()
-        .flat_map(|fidelity| fidelity.retained_records())
+        .flat_map(SourceFidelity::retained_records)
         .filter(|(_, record)| !record.untyped().is_empty())
         .map(|(id, record)| format!("{id} ({})", class_list(record.untyped())))
         .collect();
@@ -282,10 +282,12 @@ pub fn carried_source_losses(fidelity: Option<&SourceFidelity>, path: &WritePath
         .iter()
         .map(|code| match code {
             WriterLossCode::SourceUnchecked => code.note(format!(
-                "the patched file holds the bytes of untyped retained records beside the edits                  it wrote, unchecked against them: {records}"
+                "the patched file holds the bytes of untyped retained records beside the edits \
+                 it wrote, unchecked against them: {records}"
             )),
             _ => code.note(format!(
-                "the file holds the bytes of untyped retained records, content the document                  does not state: {records}"
+                "the file holds the bytes of untyped retained records, content the document \
+                 does not state: {records}"
             )),
         })
         .collect()

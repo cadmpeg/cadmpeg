@@ -225,6 +225,8 @@ fn convert_replays_a_container_only_f3z_and_reports_the_carried_source() {
             input.to_str().unwrap(),
             "-o",
             output.to_str().unwrap(),
+            "--to",
+            "f3d",
             "--container-only",
             "--report",
             report.to_str().unwrap(),
