@@ -2,9 +2,9 @@
 //! Rewrite the identities owned by these fields.
 
 use super::{
-    DatumReference, DatumReferences, DatumTargetForm, DimensionKind, DimensionTolerance,
+    DatumReference, DatumReferences, DatumTargetForm, DimensionModifier, FitStandard, FitZone,
     GeometricToleranceKind, LimitsAndFits, PmiAnnotation, PmiDefinition, PmiDimension,
-    PmiMagnitude, PmiQuantity, PmiTarget, PmiValue,
+    PmiDimensionKind, PmiMagnitude, PmiQuantity, PmiTarget, PmiValue,
 };
 
 rewrite_record!(DatumReference, []; {datum, precedence, common_group, modifiers});
@@ -15,23 +15,27 @@ rewrite_enum!(DatumTargetForm, []; {
     Rectangle,
     Circle,
     CircularCurve,
+    Area,
+    Curve,
     Other(field0),
 });
-rewrite_enum!(DimensionKind, []; {
+rewrite_enum!(PmiDimensionKind, []; {
     Size,
     Location,
+    DirectedLocation,
     Angular,
     Diameter,
     Radius,
     SphericalDiameter,
     SphericalRadius,
+    CurveLength,
     Other(field0),
 });
-rewrite_enum!(DimensionTolerance, []; {
-    PlusMinus {lower, upper},
-    Fit {fit},
-    PlusMinusFit {lower, upper, fit},
-    Limits {lower, upper},
+rewrite_enum!(DimensionModifier, []; {
+    Reference,
+    Statistical,
+    ControlledRadius,
+    Other(field0),
 });
 rewrite_enum!(GeometricToleranceKind, []; {
     Straightness,
@@ -51,17 +55,23 @@ rewrite_enum!(GeometricToleranceKind, []; {
     TotalRunout,
     Other(field0),
 });
-rewrite_record!(LimitsAndFits, []; {form_variance, zone_variance, grade, source});
-rewrite_record!(PmiAnnotation, []; {id, name, visible, targets, definition});
+rewrite_record!(LimitsAndFits, []; {form_variance, zone, grade, source});
+rewrite_scalar!(FitZone);
+rewrite_enum!(FitStandard, []; {
+    Iso286,
+    AnsiB41,
+    Native(field0),
+});
+rewrite_record!(PmiAnnotation, []; {id, name, visible, targets, definition, native_ref, native_options, source_settings});
 rewrite_enum!(PmiDefinition, []; {
     Datum {identification},
     DatumSystem {references},
     DatumTarget {form, identification, basis},
-    GeometricTolerance {tolerance, magnitude, defined_unit, defined_area_unit, defined_area_second_unit, datum_system, modifiers, constraints},
+    GeometricTolerance {tolerance, magnitude, defined_unit, defined_area_unit, defined_area_second_unit, datum_system, modifiers, displacement, maximum_upper, zones},
     Dimension(field0),
     Presentation {text, placement, semantics},
 });
-rewrite_record!(PmiDimension, []; {kind, nominal, tolerance, modifiers});
+rewrite_record!(PmiDimension, []; {dimension, nominal, tolerance, decimals, modifiers});
 rewrite_scalar!(PmiMagnitude);
 rewrite_scalar!(PmiQuantity);
 rewrite_enum!(PmiTarget, []; {
