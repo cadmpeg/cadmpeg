@@ -527,15 +527,6 @@ fn symmetric_distance_without_a_measurement_word_reports_its_reading() {
         )]
     );
 
-    let legacy = crate::design::test_support::legacy_symmetric_extrude_scope(
-        scope(
-            DesignExtrudeExtent::SymmetricDistance,
-            DesignExtrudeStart::ProfilePlane,
-        ),
-        [101, 100, 11, 12, 13],
-    );
-    assert!(notes(&native_with(legacy), symmetric(), code).is_empty());
-
     let fixed = scope_with(
         DesignExtrudeExtent::SymmetricDistance,
         DesignExtrudeStart::ProfilePlane,
@@ -552,11 +543,38 @@ fn symmetric_distance_without_a_measurement_word_reports_its_reading() {
         }),
     );
     assert_eq!(
-        notes(&native_with(fixed), symmetric(), code),
+        notes(&native_with(fixed.clone()), symmetric(), code),
         [format!(
             "Extrude {FEATURE_ID} assumes the symmetric distance applies to each side (DR-78)."
         )]
     );
+
+    for (scope, reading) in [
+        (
+            scope(
+                DesignExtrudeExtent::SymmetricDistance,
+                DesignExtrudeStart::ProfilePlane,
+            ),
+            "the whole travel",
+        ),
+        (fixed, "each side"),
+    ] {
+        let legacy = crate::design::test_support::legacy_symmetric_extrude_scope(
+            scope,
+            [101, 100, 11, 12, 13],
+        );
+        let mut native = native_with(legacy);
+        native
+            .design_parameters
+            .push(parameter(40, "AlongDistance", 0.2));
+        native.design_parameter_owners.push(owner(40));
+        assert_eq!(
+            notes(&native, symmetric(), code),
+            [format!(
+                "Extrude {FEATURE_ID} assumes the symmetric distance applies to {reading} (DR-78)."
+            )]
+        );
+    }
 
     let mut two_lanes = scope(
         DesignExtrudeExtent::SymmetricDistance,

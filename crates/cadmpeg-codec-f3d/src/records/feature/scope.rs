@@ -4008,6 +4008,12 @@ impl DesignParameterScope {
                     .map(|offset| Some(u64_from_index(offset)))
     }
 
+    pub(crate) fn assumes_symmetric_distance_each_side(&self, indexed_along: bool) -> bool {
+        self.fixed_extrude_parameters()
+            .is_some_and(|fixed| fixed.along_distance.is_some())
+            && (!indexed_along || self.is_legacy_class_330_symmetric_distance())
+    }
+
     #[cfg(test)]
     pub(crate) fn extrude_prologue_mut(&mut self) -> Option<&mut DesignExtrudePrologue> {
         self.extrude_mut()

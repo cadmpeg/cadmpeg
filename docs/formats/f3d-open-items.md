@@ -401,8 +401,6 @@ stores no measurement word?
 
 **Known.** `f3d.md` §3.1 "In the current reference-aware layout, a one-sided
 direction" gives the measurement word of the current reference-aware layout.
-The legacy class-330/262 symmetric distance frame in the same section stores
-travel on each side.
 One symmetric `Extrude` without indexed parameters stores lane zero as `1.2`
 cm on a Sketch in the plane `x = 150.5` mm. Its operation history holds planes
 at `x = 138.5` mm and `x = 162.5` mm, which is `12` mm on each side. The
@@ -414,6 +412,9 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 **Conflict.** The fixed-lane reading uses the distance on each side. The single-lane indexed-parameter reading uses the distance as the whole travel.
 
 **Note.** The decoder retains the chosen reading with `feature.extrude-symmetric-distance-assumed`.
+For the legacy class-330/262 symmetric distance frame, an indexed distance alone uses whole travel.
+A fixed distance in this frame uses the travel on each side. When both distance carriers are
+present, projection requires equal values.
 
 ### DR-79. Typed-reference Design record grammars
 
