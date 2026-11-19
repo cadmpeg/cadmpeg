@@ -735,10 +735,11 @@ fn legacy_cut_body_recipe_closes_at_its_profile_group() {
         recipe_index: 0,
         record_index: None,
     };
+    let recipes = [&recipe];
     let read = |bytes: &[u8], next_index| {
         let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
         let frame = BodyRecipeFrame::legacy_cut(bytes, &records, &record, next_index)?;
-        let recipe = unique_body_recipe_with_index(bytes, &records, &record, frame, &[&recipe])?;
+        let recipe = unique_body_recipe_with_index(bytes, &records, &record, frame, &recipes)?;
         parse_body_recipe_operand_frame_with_index(
             bytes,
             &records,
