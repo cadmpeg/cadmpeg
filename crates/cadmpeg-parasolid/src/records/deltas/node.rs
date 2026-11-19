@@ -223,6 +223,25 @@ impl<'r> DeltasNode<'r> {
         Some(out)
     }
 
+    /// The target of every transmitted pointer element, in field order; the
+    /// null index is `1`.
+    #[must_use]
+    pub fn pointer_targets(&self) -> Option<Vec<u32>> {
+        let mut out = Vec::new();
+        for (index, field) in self.instance.definition().plan().fields.iter().enumerate() {
+            if field.data_type != DataType::Pointer {
+                continue;
+            }
+            for value in self.values_at(index)? {
+                let FieldValue::Pointer { target, .. } = value else {
+                    return None;
+                };
+                out.push(target.get());
+            }
+        }
+        Some(out)
+    }
+
     /// The values of a variable short field.
     #[must_use]
     pub fn shorts(&self, name: &str) -> Option<Vec<u16>> {

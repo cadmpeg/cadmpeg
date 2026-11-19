@@ -11,6 +11,11 @@ rust-version.workspace = true
 
 [features]
 test-support = []
+examples = []
+
+[[example]]
+name = "delta_replay"
+required-features = ["examples"]
 
 [dependencies]
 cadmpeg-core.workspace = true

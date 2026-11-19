@@ -75,6 +75,8 @@ pub const AXIS_VALUES: u16 = 87;
 pub const TAG_VALUES: u16 = 88;
 /// Direction attribute values, `DIRECTION_VALUES`.
 pub const DIRECTION_VALUES: u16 = 89;
+/// A group of entities, `GROUP`.
+pub const GROUP: u16 = 90;
 /// Unicode attribute values, `UNICODE_VALUES`.
 pub const UNICODE_VALUES: u16 = 98;
 /// The field names of an attribute definition, `FIELD_NAMES`.
