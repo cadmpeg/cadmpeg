@@ -81,6 +81,7 @@ pub struct BundleMetadata {
     /// Stripped root identities.
     pub roots: Vec<String>,
     /// Opaque application data.
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::json_object")]
     pub context: Map<String, Value>,
     /// Consent-screen inventory.
     pub manifest: Vec<ManifestEntry>,
@@ -316,7 +317,8 @@ pub fn cut_with_native(
             .as_ref()
             .map(crate::document::SourceMeta::format),
     )?;
-    let mut document: Document = serde_json::from_value(value).map_err(CodecError::malformed)?;
+    let mut document: Document =
+        serde_json::from_str(&value.to_string()).map_err(CodecError::malformed)?;
     if finding.check != crate::report::check::Check::ArenaOrder {
         document.finalize();
     }

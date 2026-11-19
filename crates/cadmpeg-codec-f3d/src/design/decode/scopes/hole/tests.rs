@@ -4,8 +4,8 @@ use cadmpeg_core::decode::u64_from_index;
 use super::exact_hole_construction as exact_hole_construction_with_ctx;
 use super::exact_hole_face_selection;
 use super::HOLE_FACE_SELECTION_TYPE_GUID;
-use crate::design::decode::scopes::point_direction::POINT_DIRECTION_TYPE_GUID;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 use std::collections::HashMap;
@@ -18,14 +18,18 @@ fn exact_hole_construction(
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<crate::records::feature::hole::DesignHoleConstruction> {
-    exact_hole_construction_with_ctx(
-        bytes,
-        records,
-        scope,
-        stream_types,
-        &crate::records::feature::scope::DesignFeatureKind::Hole,
-    )
+    crate::test_support::with_decode_context(|ctx| {
+        exact_hole_construction_with_ctx(
+            ctx,
+            bytes,
+            records,
+            scope,
+            stream_types,
+            &crate::records::feature::scope::DesignFeatureKind::Hole,
+        )
+    })
     .unwrap()
+    .map(|hole| hole.construction)
 }
 
 #[test]
@@ -40,24 +44,97 @@ fn hole_carrier_reads_borrowed_as_built_scope() {
         .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     let types = HashMap::from([(55_u64, (POINT_DIRECTION_TYPE_GUID, 4))]);
-    let construction = exact_hole_construction_with_ctx(
-        &bytes,
-        &records,
-        &scope,
-        &types,
-        &crate::records::feature::scope::DesignFeatureKind::AsBuilt,
-    )
+    let construction = crate::test_support::with_decode_context(|ctx| {
+        exact_hole_construction_with_ctx(
+            ctx,
+            &bytes,
+            &records,
+            &scope,
+            &types,
+            &crate::records::feature::scope::DesignFeatureKind::AsBuilt,
+        )
+    })
     .unwrap();
-    assert_eq!(construction.unwrap().point_record_index, 55);
-    assert!(exact_hole_construction_with_ctx(
-        &bytes,
-        &records,
-        &scope,
-        &types,
-        &crate::records::feature::scope::DesignFeatureKind::Hole
-    )
-    .unwrap()
-    .is_none());
+    assert_eq!(construction.unwrap().construction.point_record_index, 55);
+    assert!(
+        crate::test_support::with_decode_context(|ctx| exact_hole_construction_with_ctx(
+            ctx,
+            &bytes,
+            &records,
+            &scope,
+            &types,
+            &crate::records::feature::scope::DesignFeatureKind::Hole
+        ))
+        .unwrap()
+        .is_none()
+    );
+}
+
+#[test]
+fn qualified_inputs_preserve_the_hole_and_as_built_carrier() {
+    use crate::records::feature::scope::DesignFeatureKind;
+
+    for version in [1, 2, 4] {
+        for keep_local in [false, true] {
+            let (mut bytes, scope, _, input_at) = hole_point_stream_version(version);
+            let mut inputs = Vec::new();
+            inputs.push(1);
+            inputs.extend_from_slice(&500u64.to_le_bytes());
+            inputs.extend_from_slice(&[0, 1]);
+            inputs.extend_from_slice(&7u32.to_le_bytes());
+            inputs.push(1);
+            inputs.extend_from_slice(&501u64.to_le_bytes());
+            inputs.push(1);
+            inputs.extend_from_slice(&8u32.to_le_bytes());
+            lp_utf16(&mut inputs, "00000000-0000-0000-0000-000000000001");
+            inputs.push(1);
+            let local_target_offset = u64_from_index(input_at + inputs.len() + 1);
+            let count = if keep_local {
+                inputs.extend_from_slice(&bytes[input_at..input_at + 11]);
+                3u32
+            } else {
+                2u32
+            };
+            bytes[input_at - 4..input_at].copy_from_slice(&count.to_le_bytes());
+            bytes.splice(input_at..input_at + 11, inputs);
+            let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+            let types = HashMap::from([(55_u64, (POINT_DIRECTION_TYPE_GUID, version))]);
+            for kind in [DesignFeatureKind::Hole, DesignFeatureKind::AsBuilt] {
+                let mut scope = scope.clone();
+                scope
+                    .try_edit(|draft| draft.payload = kind.clone().try_into().unwrap())
+                    .unwrap();
+                let hole = crate::test_support::with_decode_context(|ctx| {
+                    exact_hole_construction_with_ctx(ctx, &bytes, &records, &scope, &types, &kind)
+                })
+                .unwrap()
+                .expect("solved placement");
+                let point = hole.construction;
+                assert_eq!(point.reference_type, 19);
+                assert_f64_array(
+                    point.position.map(cadmpeg_ir::scalar::FiniteReal::get),
+                    [1.25, -2.5, 3.75],
+                );
+                assert_f64_array(
+                    point.direction.map(cadmpeg_ir::scalar::FiniteReal::get),
+                    [0.0, 0.0, 1.0],
+                );
+                assert_eq!(point.tangent_point_data.is_some(), version != 1);
+                if keep_local {
+                    let [input] = point.input_records.as_slice() else {
+                        panic!("one local input");
+                    };
+                    assert_eq!((input.value, input.offset), (378, local_target_offset));
+                } else {
+                    assert!(point.input_records.is_empty());
+                }
+                assert_eq!(
+                    hole.input_loss.unwrap().code,
+                    crate::loss::F3dLossCode::FeaturePointDirectionInputsUnrepresented.kind(),
+                );
+            }
+        }
+    }
 }
 
 fn assert_f64_array<const N: usize>(actual: [f64; N], expected: [f64; N]) {
@@ -433,6 +510,113 @@ fn hole_locations_keep_the_sole_input_of_a_vertex_rule_record() {
         })
         .collect();
     assert_eq!(inputs, [Some((90, true)), None]);
+}
+
+/// One reconstructed plane record, which has one indexed header: an empty
+/// record name, the extent minima, a zero byte, the origin, the u axis, the v
+/// axis, and the extent maxima.
+fn reconstructed_plane_frame(bytes: &mut Vec<u8>, record_index: u32, frame: [[f64; 3]; 3]) {
+    indexed_header(bytes, *b"385", record_index);
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.extend_from_slice(&[0, 0]);
+    for value in [-5.0_f64, -5.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.push(0);
+    for value in frame.into_iter().flatten() {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    for value in [5.0_f64, 5.0] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[0; 9]);
+}
+
+const SELECTION_RECORD: u64 = 90;
+const PLANE_FRAME: [[f64; 3]; 3] = [[0.5, 0.25, 2.0], [0.0, -1.0, 0.0], [0.0, 0.0, 1.0]];
+
+fn plane_location_types(
+    plane_record: u64,
+    plane_version: u32,
+) -> HashMap<u64, (&'static str, u32)> {
+    HashMap::from([
+        (55_u64, (POINT_DIRECTION_TYPE_GUID, 4)),
+        (70_u64, (super::POINT_DATA_TYPE_GUID, 3)),
+        (SELECTION_RECORD, (HOLE_FACE_SELECTION_TYPE_GUID, 1)),
+        (
+            plane_record,
+            (super::RECONSTRUCTED_PLANE_TYPE_GUID, plane_version),
+        ),
+    ])
+}
+
+fn plane_location(
+    types: &HashMap<u64, (&str, u32)>,
+    plane_records: &[u32],
+) -> Option<crate::records::feature::hole::DesignHolePlane> {
+    let (mut bytes, mut scope, _, _) = hole_point_stream();
+    with_point_records(&mut scope, &mut bytes, &[(70, [0.5, 1.0, 2.0], 17)]);
+    for record_index in plane_records {
+        reconstructed_plane_frame(&mut bytes, *record_index, PLANE_FRAME);
+    }
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let construction = exact_hole_construction(&bytes, &records, &scope, types)
+        .expect("hole carrier with its point record");
+    let [location] = construction.locations.as_slice() else {
+        panic!("one location");
+    };
+    if let Some(plane) = &location.plane {
+        let at = usize::try_from(plane.origin_offset).unwrap();
+        assert_eq!(
+            cadmpeg_core::decode::View::f64_le_at(&bytes, at),
+            Some(plane.origin[0].get())
+        );
+    }
+    location.plane.clone()
+}
+
+#[test]
+fn hole_location_reads_the_reconstructed_plane_of_its_selection() {
+    let plane = plane_location(&plane_location_types(93, 0), &[93]).expect("plane");
+    assert_eq!(plane.selection_record_index, 90);
+    assert_eq!(plane.record_index, 93);
+    assert_eq!(
+        plane.origin.map(cadmpeg_ir::scalar::FiniteReal::get),
+        PLANE_FRAME[0]
+    );
+    assert_eq!(
+        plane.u_axis.map(cadmpeg_ir::scalar::FiniteReal::get),
+        PLANE_FRAME[1]
+    );
+    assert_eq!(
+        plane.v_axis.map(cadmpeg_ir::scalar::FiniteReal::get),
+        PLANE_FRAME[2]
+    );
+}
+
+#[test]
+fn hole_location_reads_no_plane_for_another_plane_record_form() {
+    // Another type version is another record form.
+    assert_eq!(plane_location(&plane_location_types(93, 1), &[93]), None);
+    // A plane record beyond the selection chain belongs to no selection.
+    assert_eq!(
+        plane_location(&plane_location_types(91 + 16, 0), &[91 + 16]),
+        None
+    );
+    // A selection without a plane record in its chain reads no plane.
+    assert_eq!(plane_location(&plane_location_types(93, 0), &[]), None);
+    // Two plane records in one chain are ambiguous.
+    let mut types = plane_location_types(93, 0);
+    types.insert(94, (super::RECONSTRUCTED_PLANE_TYPE_GUID, 0));
+    assert_eq!(plane_location(&types, &[93, 94]), None);
+}
+
+#[test]
+fn hole_location_plane_stops_at_the_next_direct_selection() {
+    let mut types = plane_location_types(93, 0);
+    types.insert(91, (HOLE_FACE_SELECTION_TYPE_GUID, 1));
+    assert_eq!(plane_location(&types, &[93]), None);
 }
 
 #[test]

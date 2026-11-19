@@ -283,7 +283,8 @@ pub(super) fn project_extrude(
     let parameter_along = match or_none!(unique("AlongDistance")) {
         Some(parameter) => Some(or_none!(design_length(parameter))),
         None => None,
-    };
+    }
+    .filter(|distance| distance.get() != 0.0 || !prologue.is_legacy_shifted_to_face());
     let fixed_along = scope
         .fixed_extrude_parameters()
         .as_ref()
@@ -531,12 +532,20 @@ pub(super) fn project_extrude(
             }
         }
         DesignExtrudeStart::FromFace => {
-            let [start] = start_groups.as_slice() else {
-                return Ok(None);
+            let face = match start_groups.as_slice() {
+                [start] => selected_face(start)?,
+                [] if face_groups.is_empty()
+                    && target_shape_groups.is_empty()
+                    && prologue.operation() == DesignExtrudeOperation::NewBody
+                    && prologue.extent() == Some(DesignExtrudeExtent::OneSidedDistance) =>
+                {
+                    FaceSelection::Unresolved
+                }
+                _ => return Ok(None),
             };
             let offset = or_none!(profile_offset);
             ExtrudeStart::FromFace {
-                face: selected_face(start)?,
+                face,
                 offset: (offset.get() != 0.0).then_some(offset),
             }
         }

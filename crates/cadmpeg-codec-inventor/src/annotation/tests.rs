@@ -3,9 +3,12 @@
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_ir::design::parameter::{
+    Deviations, FitDeviations, LimitSide, Tolerance as DimensionTolerance,
+};
 use cadmpeg_ir::pmi::{
-    DimensionTolerance, GeometricToleranceKind, PmiAnnotation, PmiDefinition, PmiDimension,
-    PmiQuantity, PmiTarget,
+    DimensionModifier, FitZone, GeometricToleranceKind, PmiAnnotation, PmiDefinition, PmiDimension,
+    PmiTarget,
 };
 
 use super::names::HOLE_NAME;
@@ -424,19 +427,25 @@ fn diameter_transfers_symmetric_tolerance_basic_modifier_and_face() {
     };
     let dimension = dimension_of(annotation);
     assert!(close(
-        dimension.nominal().expect("nominal").value.get(),
+        dimension.literal_nominal().expect("nominal").value.get(),
         35.0
     ));
-    let Some(DimensionTolerance::PlusMinus { lower, upper }) = dimension.tolerance() else {
+    let Some(DimensionTolerance::Deviations(Deviations { lower, upper })) =
+        dimension.tolerance.as_ref()
+    else {
         panic!("plus-minus tolerance");
     };
-    assert!(close(lower.value.get(), -0.15) && close(upper.value.get(), 0.15));
-    assert_eq!(dimension.modifiers(), ["theoretical"]);
+    assert!(close(lower.get(), -0.15) && close(upper.get(), 0.15));
+    assert_eq!(
+        dimension.modifiers,
+        [DimensionModifier::Other("theoretical".to_owned())]
+    );
     assert_eq!(
         annotation.targets,
         [PmiTarget::Face {
             face: cadmpeg_ir::ids::FaceId::mint(FACE).expect("face id")
-        }]
+        }
+        .into()]
     );
     assert!(losses(&outcome).is_empty());
 }
@@ -445,7 +454,10 @@ fn diameter_transfers_symmetric_tolerance_basic_modifier_and_face() {
 fn display_two_marks_a_reference_dimension() {
     let fixture = Fixture::dimension(0, 2, 0.0, 0.0);
     let (annotations, _) = run(&fixture, OWNER_AT);
-    assert_eq!(dimension_of(&annotations[0]).modifiers(), ["auxiliary"]);
+    assert_eq!(
+        dimension_of(&annotations[0]).modifiers,
+        [DimensionModifier::Reference]
+    );
 }
 
 #[test]
@@ -462,9 +474,9 @@ fn reversed_limits_keep_the_dimension_without_tolerance() {
     let fixture = Fixture::dimension(3, 0, -0.02, 0.02);
     let (annotations, outcome) = run(&fixture, OWNER_AT);
     let dimension = dimension_of(&annotations[0]);
-    assert!(dimension.tolerance().is_none());
+    assert!(dimension.tolerance.as_ref().is_none());
     assert!(close(
-        dimension.nominal().expect("nominal").value.get(),
+        dimension.literal_nominal().expect("nominal").value.get(),
         35.0
     ));
     assert!(has_note(&outcome, InventorLossCode::PmiToleranceUnresolved));
@@ -474,7 +486,7 @@ fn reversed_limits_keep_the_dimension_without_tolerance() {
 fn unknown_tolerance_code_keeps_the_dimension_without_tolerance() {
     let fixture = Fixture::dimension(5, 0, 0.02, 0.0);
     let (annotations, outcome) = run(&fixture, OWNER_AT);
-    assert!(dimension_of(&annotations[0]).tolerance().is_none());
+    assert!(dimension_of(&annotations[0]).tolerance.as_ref().is_none());
     assert!(has_note(&outcome, InventorLossCode::PmiToleranceUnresolved));
 }
 
@@ -619,44 +631,53 @@ fn tolerance_forms_scale_internal_centimetres() {
     };
     let bounds = |tolerance: Option<&DimensionTolerance>| match tolerance {
         Some(
-            DimensionTolerance::PlusMinus { lower, upper }
-            | DimensionTolerance::Limits { lower, upper }
-            | DimensionTolerance::PlusMinusFit { lower, upper, .. },
-        ) => Some((lower.value.get(), upper.value.get())),
+            DimensionTolerance::Deviations(Deviations { lower, upper })
+            | DimensionTolerance::Fit {
+                deviations: Some(FitDeviations::Unchecked(Deviations { lower, upper })),
+                ..
+            },
+        ) => Some((lower.get(), upper.get())),
         _ => None,
     };
-    let length = PmiQuantity::Length;
-    let deviation = tolerance(&value(7, 0.01, -0.005, ""), 2.0, 10.0, length);
-    assert!(bounds(deviation.bounds.as_ref())
+    let deviation = tolerance(&value(7, 0.01, -0.005, ""), 10.0);
+    assert!(bounds(deviation.tolerance.as_ref())
         .is_some_and(|(lower, upper)| close(lower, -0.05) && close(upper, 0.1)));
-    let limits = tolerance(&value(3, 0.02, -0.02, ""), 3.5, 10.0, length);
-    assert!(bounds(limits.bounds.as_ref())
-        .is_some_and(|(lower, upper)| close(lower, 34.8) && close(upper, 35.2)));
-    let fitted = tolerance(&value(2, 0.0012, 0.0004, "G6"), 0.35, 10.0, length);
+    let limits = tolerance(&value(3, 0.02, -0.02, ""), 10.0);
+    assert!(bounds(limits.tolerance.as_ref())
+        .is_some_and(|(lower, upper)| close(lower, -0.2) && close(upper, 0.2)));
+    let fitted = tolerance(&value(2, 0.0012, 0.0004, "G6"), 10.0);
     assert!(matches!(
-        fitted.bounds,
-        Some(DimensionTolerance::PlusMinusFit { .. })
+        &fitted.tolerance,
+        Some(DimensionTolerance::Fit { fit, mate: None, .. }) if fit.zone == FitZone::Hole
     ));
-    let maximum = tolerance(&value(4, 0.0, 0.0, ""), 0.02, 10.0, length);
-    assert!(maximum.resolved && maximum.bounds.is_none());
-    assert_eq!(maximum.modifier, Some("maximum"));
-    let unknown = tolerance(&value(5, 0.0, 0.0, ""), 1.0, 10.0, length);
+    assert!(bounds(fitted.tolerance.as_ref())
+        .is_some_and(|(lower, upper)| close(lower, 0.004) && close(upper, 0.012)));
+    let maximum = tolerance(&value(4, 0.0, 0.0, ""), 10.0);
+    assert!(maximum.resolved);
+    assert_eq!(
+        maximum.tolerance,
+        Some(DimensionTolerance::SingleLimit(LimitSide::Maximum))
+    );
+    let unknown = tolerance(&value(5, 0.0, 0.0, ""), 10.0);
     assert!(!unknown.resolved);
 }
 
 #[test]
 fn fit_classes_split_letters_and_grade() {
-    let hole = fit("G6", "").expect("hole class");
+    let (hole, mate) = fit("G6", "").expect("hole class");
     assert_eq!(
-        (
-            hole.form_variance.as_str(),
-            hole.zone_variance.as_str(),
-            hole.grade.as_str()
-        ),
-        ("G", "hole", "6")
+        (hole.form_variance.as_str(), hole.zone, hole.grade.as_str()),
+        ("G", FitZone::Hole, "6")
     );
-    assert_eq!(fit("", "h7").expect("shaft class").zone_variance, "shaft");
-    assert!(fit("H7", "h7").is_none());
+    assert!(mate.is_none() && hole.source.is_none());
+    let (shaft, _) = fit("", "h7").expect("shaft class");
+    assert_eq!(
+        (shaft.form_variance.as_str(), shaft.zone),
+        ("H", FitZone::Shaft)
+    );
+    let (own, mate) = fit("H7", "h7").expect("a stored pair");
+    assert_eq!(own.zone, FitZone::Hole);
+    assert_eq!(mate.map(|mate| mate.zone), Some(FitZone::Shaft));
     assert!(fit("g6", "").is_none());
 }
 
@@ -961,10 +982,12 @@ fn plain_hole_note_transfers_its_diameter_deviations() {
     let fixture = hole_fixture(PLAIN_FLAGS, "\\F2;n\\F1;<HDIA> THRU");
     let (annotations, _) = run(&fixture, OWNER_AT);
     let dimension = dimension_of(&annotations[0]);
-    let Some(DimensionTolerance::PlusMinus { lower, upper }) = dimension.tolerance() else {
+    let Some(DimensionTolerance::Deviations(Deviations { lower, upper })) =
+        dimension.tolerance.as_ref()
+    else {
         panic!("deviation tolerance");
     };
-    assert!(close(lower.value.get(), -0.2) && close(upper.value.get(), 0.0));
+    assert!(close(lower.get(), -0.2) && close(upper.get(), 0.0));
 }
 
 #[test]
@@ -1218,7 +1241,10 @@ fn run_features(fixture: &Fixture, features: &[u32]) -> (Vec<PmiTarget>, Outcome
             )
         })
         .expect("geometric tolerance")
-        .targets;
+        .targets
+        .into_iter()
+        .map(|target| target.entity)
+        .collect();
     (targets, outcome)
 }
 

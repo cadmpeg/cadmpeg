@@ -1,7 +1,8 @@
 use std::collections::BTreeSet;
 
+use cadmpeg_ir::design::parameter::{Deviations, Tolerance as DimensionTolerance};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
-use cadmpeg_ir::pmi::{DimensionKind, DimensionTolerance, PmiDefinition, PmiTarget};
+use cadmpeg_ir::pmi::{PmiDefinition, PmiDimensionKind as DimensionKind, PmiTarget};
 
 use super::{datum_names, specimen, MM_PER_INCH, VALUE_TOLERANCE};
 
@@ -49,7 +50,7 @@ fn cylinder_geometry(
         .targets
         .iter()
         .map(|target| {
-            let PmiTarget::Face { face } = target else {
+            let PmiTarget::Face { face } = &target.entity else {
                 panic!(
                     "{} target is a face",
                     annotation.name.as_deref().unwrap_or("PMI")
@@ -137,7 +138,7 @@ fn ftc_06_emits_base_datums_with_face_targets() {
         let faces = annotation
             .targets
             .iter()
-            .filter_map(|target| match target {
+            .filter_map(|target| match &target.entity {
                 PmiTarget::Face { face } => Some(face),
                 _ => None,
             })
@@ -290,19 +291,21 @@ fn ftc_06_diameter8_targets_both_counted_spheres() {
     let PmiDefinition::Dimension(dimension) = &annotation.definition else {
         panic!("Diameter8 dimension")
     };
-    assert_eq!(dimension.kind(), &DimensionKind::SphericalDiameter);
-    let nominal = dimension.nominal().expect("Diameter8 nominal");
+    assert_eq!(dimension.dimension, DimensionKind::SphericalDiameter);
+    let nominal = dimension.literal_nominal().expect("Diameter8 nominal");
     assert!((nominal.value.get() - 1.250 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
-    let Some(DimensionTolerance::PlusMinus { lower, upper }) = dimension.tolerance() else {
+    let Some(DimensionTolerance::Deviations(Deviations { lower, upper })) =
+        dimension.tolerance.as_ref()
+    else {
         panic!("Diameter8 plus-minus tolerance")
     };
-    assert!((lower.value.get() + 0.008 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
-    assert!((upper.value.get() - 0.008 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+    assert!((lower.get() + 0.008 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+    assert!((upper.get() - 0.008 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
 
     for x in [-114.3, 114.3] {
         assert!(
             annotation.targets.iter().any(|target| {
-                let PmiTarget::Face { face: face_id } = target else {
+                let PmiTarget::Face { face: face_id } = &target.entity else {
                     return false;
                 };
                 let Some(face) = ir.geometry.faces.iter().find(|face| &face.id == face_id) else {
@@ -343,18 +346,20 @@ fn ftc_06_diameter7_maps_to_its_spherical_radius_owner() {
     let PmiDefinition::Dimension(dimension) = &annotation.definition else {
         panic!("Diameter7 dimension")
     };
-    assert_eq!(dimension.kind(), &DimensionKind::SphericalRadius);
-    let nominal = dimension.nominal().expect("Diameter7 nominal");
+    assert_eq!(dimension.dimension, DimensionKind::SphericalRadius);
+    let nominal = dimension.literal_nominal().expect("Diameter7 nominal");
     assert!((nominal.value.get() - 0.5 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
-    let Some(DimensionTolerance::PlusMinus { lower, upper }) = dimension.tolerance() else {
+    let Some(DimensionTolerance::Deviations(Deviations { lower, upper })) =
+        dimension.tolerance.as_ref()
+    else {
         panic!("Diameter7 plus-minus tolerance")
     };
-    assert!((lower.value.get() + 0.508).abs() < VALUE_TOLERANCE);
-    assert!((upper.value.get() - 0.508).abs() < VALUE_TOLERANCE);
+    assert!((lower.get() + 0.508).abs() < VALUE_TOLERANCE);
+    assert!((upper.get() - 0.508).abs() < VALUE_TOLERANCE);
 
     assert!(
         annotation.targets.iter().any(|target| {
-            let PmiTarget::Face { face: face_id } = target else {
+            let PmiTarget::Face { face: face_id } = &target.entity else {
                 return false;
             };
             let Some(face) = ir.geometry.faces.iter().find(|face| &face.id == face_id) else {

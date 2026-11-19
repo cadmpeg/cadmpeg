@@ -12,6 +12,12 @@
       "publications": [],
       "scopes": [],
       "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
       "spreadsheets": []
     },
     "fragment": false,
@@ -49,45 +55,7 @@
       "features": [],
       "history_bodies": [],
       "mass_properties": [],
-      "occurrences": [
-        {
-          "id": "creo:model:occurrence#root",
-          "name": "widget.prt ",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "creo:model:product_definition#root",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        }
-      ],
+      "occurrences": [],
       "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
@@ -100,11 +68,19 @@
           "bodies": [],
           "bom_properties": {},
           "id": "creo:model:product_definition#root",
+          "instance_bodies": [],
           "kind": "part",
           "label": "widget.prt ",
+          "occurrences": [],
           "part_number": "widget.prt ",
+          "representations": [],
           "sketches": [],
-          "source_name": "widget.prt "
+          "source_name": "widget.prt ",
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],
@@ -121,7 +97,19 @@
       "view_presentations": []
     },
     "native": {},
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,
@@ -626,11 +614,6 @@
   "source_fidelity": {
     "annotations": {
       "exactness": {
-        "creo:model:occurrence#root": {
-          "entity": "derived",
-          "fields": {},
-          "kind": "entity"
-        },
         "creo:model:product_definition#root": {
           "entity": "derived",
           "fields": {},
@@ -638,11 +621,6 @@
         }
       },
       "provenance": {
-        "creo:model:occurrence#root": {
-          "offset": 30,
-          "stream": "creo:archive_header",
-          "tag": "part_product_occurrence"
-        },
         "creo:model:product_definition#root": {
           "offset": 30,
           "stream": "creo:archive_header",

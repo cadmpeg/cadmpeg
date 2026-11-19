@@ -22,11 +22,15 @@ fn every_schema_position_has_one_spelling() {
     let report = cadmpeg_test_support::schema_sweep::sweep(&schema, &documents())
         .expect("the empty document serializes");
     println!(
-        "reached {} of {} definitions and probed {} struct positions; {} targets from \
+        "reached {} of {} definitions and probed {} struct positions, {} data-free \
+         enums, {} sets and pair-maps, and {} ordered member lists; {} targets from \
          documents, {} built from the schema; {} uninhabited; read {} documents",
         report.definitions_reached,
         report.definitions,
         report.positions,
+        report.names,
+        report.sets,
+        report.ordered,
         report.from_documents,
         report.built,
         report.uninhabited.len(),
@@ -37,6 +41,14 @@ fn every_schema_position_has_one_spelling() {
         "{} schema targets are reached by no document:\n{}",
         report.unreached.len(),
         report.unreached.join("\n")
+    );
+    assert!(
+        report.unprobed.is_empty(),
+        "{} value positions have no sample to probe. Give each one in `seed_documents()` \
+         in crates/cadmpeg-ir/tests/golden_tests/schema_sweep.rs: a document the readers \
+         accept that holds the position, and for a unique list two of its members:\n{}",
+        report.unprobed.len(),
+        report.unprobed.join("\n")
     );
     assert!(
         report.accepting.is_empty(),
@@ -93,6 +105,28 @@ fn documents() -> Vec<Value> {
 /// treatment diameter above the bore it widens, a knot vector as long as its
 /// poles and degree need, a membership its cages commit.
 fn seed_documents() -> Vec<(&'static str, Value)> {
+    let identity = json!(cadmpeg_ir::transform::Transform::identity());
+    let mut partial_form_inputs = json!(cadmpeg_ir::features::form::FormInputs::default());
+    partial_form_inputs["reference_evidence"] = json!([{
+        "source": "test:sweep:record#0",
+        "role": "body",
+        "ordinal": 0,
+        "group": 0,
+        "target": {
+            "kind": "document",
+            "target": 22,
+            "segment": 7,
+            "asset_guid": "literal-asset",
+            "target_type_guid": "11111111-1111-4111-8111-111111111111",
+            "link_name": "literal-link",
+            "version": {
+                "key": "22222222-2222-4222-8222-222222222222",
+                "urn": "literal-version"
+            }
+        }
+    }]);
+    partial_form_inputs["order_evidence"] = json!([{"order": "source", "members": [0, 1]}]);
+    let (two_member_complete_form, two_member_partial_form) = two_member_forms();
     let hole = |name: &'static str, shape: Value| {
         let operation = json!({"kind": "hole", "value": {"shape": shape}});
         (name, document("features", feature(&operation)))
@@ -120,7 +154,41 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
             "distance": {"kind": distance, "parameter": "test:sweep:parameter#0"},
         })
     };
+    let axis = |name: &'static str, axis: Value| {
+        (
+            name,
+            document(
+                "features",
+                feature(&json!({"kind": "datum_axis", "value": {"axis": axis}})),
+            ),
+        )
+    };
     vec![
+        axis(
+            "input-only datum axis",
+            json!({
+                "inputs": [{"reference": {"kind": "built", "value": {
+                    "kind": "point", "inputs": [], "after": [], "resolved_in": {},
+                    "resolved": {"x": 0.0, "y": 0.0, "z": 0.0}
+                }}}],
+                "native_options": {}, "source_settings": {}
+            }),
+        ),
+        axis(
+            "option-only datum axis",
+            json!({
+                "inputs": [],
+                "native_options": {"test:flag": {"kind": "bool", "value": {"kind": "literal", "value": true}}},
+                "source_settings": {}
+            }),
+        ),
+        axis(
+            "setting-only datum axis",
+            json!({
+                "inputs": [], "native_options": {},
+                "source_settings": {"test:flag": {"kind": "bool", "value": {"kind": "literal", "value": true}}}
+            }),
+        ),
         hole(
             "chamfer and counterdrill exit",
             json!({
@@ -203,7 +271,7 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
                                 "certainty": "assumed",
                             },
                         },
-                        "inputs": {"lists": [], "parameters": {}, "references": []},
+                        "inputs": cadmpeg_ir::features::form::FormInputs::default(),
                     },
                 })),
             ),
@@ -241,11 +309,13 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
                                 },
                             },
                         },
-                        "inputs": {"lists": [], "parameters": {}, "references": []},
+                        "inputs": partial_form_inputs,
                     },
                 })),
             ),
         ),
+        (TWO_MEMBER_COMPLETE_FORM, two_member_complete_form),
+        (TWO_MEMBER_PARTIAL_FORM, two_member_partial_form),
         (
             "wedge",
             document(
@@ -407,7 +477,334 @@ fn seed_documents() -> Vec<(&'static str, Value)> {
                 }),
             ),
         ),
+        (
+            "current state with poses",
+            design_document(
+                "scopes",
+                json!({
+                    "active_arrangements": [],
+                    "current": [{
+                        "at": {"kind": "start", "value": "test:sweep:container#0"},
+                        "bodies": [],
+                        "poses": [
+                            [
+                                [{"occurrence": {"kind": "occurrence", "value": "test:sweep:occurrence#0"}}],
+                                identity,
+                            ],
+                            [
+                                [{"occurrence": {"kind": "native", "value": {"codec": "inventor", "value": {"kind": "text", "value": "occurrence 1"}}}}],
+                                identity,
+                            ],
+                        ],
+                        "status": "current",
+                    }],
+                    "definition": "test:sweep:product-definition#0",
+                    "occurrences": {},
+                    "roots": ["test:sweep:container#0"],
+                }),
+            ),
+        ),
+        (
+            "operation limits",
+            process_document("operations", operation_limits()),
+        ),
+        (
+            "tool with a library GUID",
+            process_document(
+                "tools",
+                vec![json!({
+                    "id": "test:sweep:tool#0",
+                    "class": "flat_endmill",
+                    "native_kind": {"codec": "f3d", "value": {"kind": "text", "value": "flat end mill"}},
+                    "library": {"kind": "guid", "value": "123e4567-e89b-12d3-a456-426614174000"},
+                    "nc": {},
+                    "cutter": {},
+                })],
+            ),
+        ),
+        (
+            "neutral process parameter expression",
+            process_document(
+                "parameters",
+                vec![json!({
+                    "id": "test:sweep:process-parameter#1",
+                    "owner": {"kind": "setup", "value": "test:sweep:setup#0"},
+                    "name": "depth",
+                    "definition": {
+                        "kind": "expression",
+                        "value": {
+                            "kind": "neutral",
+                            "value": {
+                                "text": "$0 + $1",
+                                "refs": [
+                                    {"kind": "process", "value": "test:sweep:process-parameter#0"},
+                                    {"kind": "design", "value": parameter(0)},
+                                ],
+                                "measures": [],
+                            },
+                        },
+                    },
+                })],
+            ),
+        ),
     ]
+}
+
+const TWO_MEMBER_COMPLETE_FORM: &str = "two-member complete Form";
+const TWO_MEMBER_PARTIAL_FORM: &str = "two-member partial Form";
+
+/// Each unique Form list, as the seed that holds two of its members and the
+/// list's pointer below that seed's Form construction.
+const FORM_LISTS: [(&str, &str); 13] = [
+    (TWO_MEMBER_COMPLETE_FORM, "/inputs/lists"),
+    (TWO_MEMBER_COMPLETE_FORM, "/inputs/lists/0/members"),
+    (TWO_MEMBER_COMPLETE_FORM, "/inputs/reference_runs"),
+    (TWO_MEMBER_COMPLETE_FORM, "/inputs/position_evidence"),
+    (TWO_MEMBER_COMPLETE_FORM, "/inputs/order_evidence"),
+    (TWO_MEMBER_COMPLETE_FORM, "/inputs/closure_evidence"),
+    (TWO_MEMBER_COMPLETE_FORM, "/inputs/resource_evidence"),
+    (TWO_MEMBER_COMPLETE_FORM, "/inputs/resource_associations"),
+    (TWO_MEMBER_COMPLETE_FORM, "/inputs/resource_state_evidence"),
+    (
+        TWO_MEMBER_COMPLETE_FORM,
+        "/cage_inputs/observations/0/paths",
+    ),
+    (TWO_MEMBER_COMPLETE_FORM, "/cage_inputs/membership/members"),
+    (TWO_MEMBER_PARTIAL_FORM, "/inputs/cardinality_evidence"),
+    (TWO_MEMBER_PARTIAL_FORM, "/cages/value/membership/members"),
+];
+
+#[test]
+fn every_unique_form_list_refuses_a_repeated_member() {
+    let seeds = seed_documents();
+    for (name, pointer) in FORM_LISTS {
+        let (_, seed) = seeds
+            .iter()
+            .find(|(seed, _)| *seed == name)
+            .unwrap_or_else(|| panic!("no {name} seed"));
+        assert!(CadIr::deserialize(seed).is_ok(), "the {name} seed reads");
+        let mut repeated = seed.clone();
+        let list = form_construction(&mut repeated)
+            .pointer_mut(pointer)
+            .and_then(Value::as_array_mut)
+            .unwrap_or_else(|| panic!("the {name} seed states no list at {pointer}"));
+        assert_eq!(
+            list.len(),
+            2,
+            "the {name} seed holds two members at {pointer}"
+        );
+        list[1] = list[0].clone();
+        assert!(
+            CadIr::deserialize(&repeated).is_err(),
+            "the {name} seed reads a repeated member at {pointer}"
+        );
+    }
+}
+
+/// The Form construction of a seed made by [`feature`].
+fn form_construction(document: &mut Value) -> &mut Value {
+    let home = ["geometry", "model"]
+        .into_iter()
+        .find(|home| document[*home].get("features").is_some())
+        .expect("a document root holds the features arena");
+    &mut document[home]["features"][0]["definition"]["value"]["value"]
+}
+
+/// A complete and a partial Form whose unique lists ([`FORM_LISTS`]) each
+/// hold two members that the Form reader's cross-checks accept.
+fn two_member_forms() -> (Value, Value) {
+    let record = |key: u32| json!(format!("test:sweep:record#{key}"));
+    let path = |key: u32| json!({"references": [record(key)]});
+    let resource = |entry: &str| json!({"source": record(0), "entry": entry});
+    let members = json!([
+        {"ordinal": 0, "reference": record(0)},
+        {"ordinal": 1, "reference": record(1)},
+    ]);
+    let mut complete_inputs = json!(cadmpeg_ir::features::form::FormInputs::default());
+    for (list, value) in [
+        (
+            "lists",
+            json!([
+                {"source": path(0), "role": "cage_objects", "declared_count": 2, "members": members},
+                {"source": path(1), "role": "cage_catalog", "declared_count": 2, "members": members},
+            ]),
+        ),
+        ("reference_runs", json!([[record(0)], [record(1)]])),
+        (
+            "position_evidence",
+            json!([{"observation": 0, "ordinal": 0}, {"observation": 1, "ordinal": 1}]),
+        ),
+        (
+            "order_evidence",
+            json!([
+                {"order": "source", "members": [0, 1]},
+                {"order": "assumed", "members": [0, 1]},
+            ]),
+        ),
+        (
+            "closure_evidence",
+            json!([
+                {"members": [0, 1], "order": "source", "certainty": "source"},
+                {"members": [0, 1], "order": "assumed", "certainty": "assumed"},
+            ]),
+        ),
+        ("resource_evidence", json!([resource("a"), resource("b")])),
+        (
+            "resource_associations",
+            json!([
+                {"cage": "test:sweep:subd#0", "resource": resource("a")},
+                {"cage": "test:sweep:subd#1", "resource": resource("b")},
+            ]),
+        ),
+        (
+            "resource_state_evidence",
+            json!([
+                {"resource": resource("c"), "availability": "active_undecoded"},
+                {"resource": resource("d"), "availability": "unknown"},
+            ]),
+        ),
+    ] {
+        complete_inputs[list] = value;
+    }
+    let complete = document(
+        "features",
+        feature(&json!({
+            "kind": "form",
+            "value": {
+                "cages": {"kind": "complete", "value": ["test:sweep:subd#0", "test:sweep:subd#1"]},
+                "cage_inputs": {
+                    "observations": [
+                        {
+                            "binding": {"kind": "decoded", "cage": "test:sweep:subd#0"},
+                            "paths": [path(0), path(1)],
+                        },
+                        {"binding": {"kind": "decoded", "cage": "test:sweep:subd#1"}, "paths": []},
+                    ],
+                    "membership": {
+                        "kind": "complete",
+                        "members": [0, 1],
+                        "order": "source",
+                        "certainty": "source",
+                    },
+                },
+                "inputs": complete_inputs,
+            },
+        })),
+    );
+    let mut partial_inputs = json!(cadmpeg_ir::features::form::FormInputs::default());
+    partial_inputs["cardinality_evidence"] = json!([2, 3]);
+    let partial = document(
+        "features",
+        feature(&json!({
+            "kind": "form",
+            "value": {
+                "cages": {
+                    "kind": "retained",
+                    "value": {
+                        "observations": [
+                            {"binding": {"kind": "decoded", "cage": "test:sweep:subd#0"}, "paths": []},
+                            {"binding": {"kind": "unresolved"}, "paths": []},
+                        ],
+                        "membership": {
+                            "kind": "partial",
+                            "members": [
+                                {"observation": 0, "ordinal": 0},
+                                {"observation": 1, "ordinal": 1},
+                            ],
+                            "order": "unknown",
+                        },
+                    },
+                },
+                "inputs": partial_inputs,
+            },
+        })),
+    );
+    (complete, partial)
+}
+
+/// Two operations whose height, radius, and axial limits state every arm of
+/// `HeightFrom`, `RadialLimit`, `RadiusFrom`, `AxialFrom`, and `LimitPoint`:
+/// their values sit under map keys, which the schema alone does not build.
+fn operation_limits() -> Vec<Value> {
+    let choice = |value: Value| json!({"value": value, "parameters": []});
+    let tag = |kind: &str| json!({"kind": kind});
+    let tagged = |kind: &str, value: Value| json!({"kind": kind, "value": value});
+    let height =
+        |from: Value| json!({"from": choice(from), "offset": {"kind": "literal", "value": 5.0}});
+    let from = |base: Value| choice(tagged("from", json!({"base": base})));
+    let axial = |base: Value, point: Option<&str>| match point {
+        Some(point) => json!({"base": choice(base), "point": choice(json!(point))}),
+        None => json!({"base": choice(base), "offset": {"kind": "literal", "value": 1.0}}),
+    };
+    let operation = |key: u32, heights: Value, radii: Value, axial: Value| {
+        json!({
+            "id": format!("test:sweep:operation#{key}"),
+            "kind": {"kind": "machining", "class": {"kind": "probing"}},
+            "native_kind": {"codec": "f3d", "value": {"kind": "text", "value": "probe"}},
+            "features": [],
+            "groups": [],
+            "geometry": [],
+            "heights": heights,
+            "radii": radii,
+            "axial": axial,
+            "technology": {"feeds": []},
+            "configuration_states": {},
+        })
+    };
+    vec![
+        operation(
+            0,
+            json!({
+                "clearance": height(tag("wcs")),
+                "retract": height(tag("stock_top")),
+                "feed": height(tag("stock_bottom")),
+                "top": height(tag("model_top")),
+                "bottom": height(tag("model_bottom")),
+            }),
+            json!({
+                "outer": choice(tagged("absolute", tagged("diameter", json!({"kind": "literal", "value": 40.0})))),
+                "inner": choice(tagged("from", json!({"base": tag("stock_outer"), "offset": {"kind": "literal", "value": 2.0}}))),
+                "outer_clearance": from(tag("stock_inner")),
+                "inner_clearance": from(tagged("selection_min", json!("turning"))),
+                "outer_retract": from(tagged("selection_max", json!("turning"))),
+            }),
+            json!({
+                "front": axial(tag("model_front"), Some("contact_point")),
+                "back": axial(tag("model_back"), Some("cutting_edge")),
+            }),
+        ),
+        operation(
+            1,
+            json!({
+                "clearance": height(tagged("height", json!("retract"))),
+                "retract": height(tagged("selection", json!("top face"))),
+                "feed": height(tag("geometry")),
+                "top": height(tagged("native", json!("f3d:x"))),
+                "bottom": {},
+            }),
+            json!({
+                "outer": from(tagged("positions", json!({"slot": "limits", "side": choice(json!("front"))}))),
+                "inner": from(tagged("limit", json!("outer"))),
+                "outer_clearance": from(tagged("native", json!("f3d:tool-radius"))),
+            }),
+            json!({
+                "front": axial(tag("stock_front"), None),
+                "back": axial(tagged("native", json!("f3d:selection")), None),
+            }),
+        ),
+    ]
+}
+
+/// The empty document with `elements` as the elements of the `process` arena
+/// `arena`.
+fn process_document(arena: &str, elements: Vec<Value>) -> Value {
+    let mut document = serde_json::to_value(CadIr::empty()).expect("a CadIr serializes");
+    assert!(
+        document["process"].get(arena).is_some(),
+        "no process arena {arena}"
+    );
+    document["process"][arena] = Value::Array(elements);
+    document
 }
 
 /// The empty document with `element` as the one element of the `design`

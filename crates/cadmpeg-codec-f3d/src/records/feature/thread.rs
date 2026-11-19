@@ -33,8 +33,6 @@ pub(crate) struct DesignThreadExtended {
     pub(crate) class: String,
     /// Whether the thread is external rather than internal.
     pub(crate) external: bool,
-    /// Whether the body geometry contains the helical form.
-    pub(crate) modeled: bool,
     /// Whether an extended standard thread runs along the full face length.
     #[serde(
         default,
@@ -71,11 +69,18 @@ pub(crate) enum DesignThreadForm {
     StandardExtended,
     CompactOwnersLeading,
     CompactOwnersTrailing,
-    /// Extended compact prefix with two owners before its face-selection pairs.
+    /// Compact Hole companion with two owners before its face-selection pairs.
     CompactExtended(Located<NonZeroU32>),
 }
 
 impl DesignThreadForm {
+    pub(crate) const fn hole_reference(self) -> Option<Located<NonZeroU32>> {
+        match self {
+            Self::Compact(Some(reference)) | Self::CompactExtended(reference) => Some(reference),
+            _ => None,
+        }
+    }
+
     pub(crate) fn class_pair_holds(self, class: &str, paired: &str) -> bool {
         match self {
             Self::StandardLegacy => class == "334" && paired == "262",
@@ -99,6 +104,11 @@ impl DesignThreadForm {
         };
         match self {
             Self::CompactOwnersLeading | Self::CompactOwnersTrailing => delta == compact_owned::LEN,
+            Self::CompactExtended(_)
+                if [direct_prefix::LEN, owner_prefix::LEN].contains(&delta) =>
+            {
+                true
+            }
             Self::StandardExtended | Self::CompactExtended(_) => {
                 delta >= extended_prefix::LEN + SHORTEST_EXTENDED_CLASS_AND_COPY
             }
@@ -170,7 +180,7 @@ impl DesignThreadForm {
             (Some(offset), Some(length)) => {
                 let offset_value = offset.evaluated_value().get();
                 offset.local_ordinal() == 0
-                    && if matches!(self, Self::StandardExtended) {
+                    && if matches!(self, Self::StandardExtended | Self::CompactExtended(_)) {
                         offset_value >= 0.0
                     } else {
                         offset_value == 0.0
@@ -278,9 +288,11 @@ pub(crate) struct DesignThreadConstruction {
     pub(crate) diameters: DesignThreadDiameters,
     /// Thread pitch in Design length units.
     pub(crate) pitch: PositiveReal,
+    /// Whether the body geometry contains the helical form.
+    pub(crate) modeled: bool,
     /// Ordered counted face-selection groups referenced by the scope.
     pub(crate) face_group_record_indices: Vec<u32>,
-    /// Class, sense, modeled state, and length flag of an extended prefix.
+    /// Class, sense, and length flag of an extended prefix.
     pub(crate) extended: Option<DesignThreadExtended>,
 }
 
@@ -373,7 +385,7 @@ impl Serialize for DesignThreadConstruction {
         };
         let mut fields = serializer.serialize_struct(
             "DesignThreadConstructionWire",
-            11 + if trailing_reference.is_some() { 2 } else { 0 }
+            12 + if trailing_reference.is_some() { 2 } else { 0 }
                 + usize::from(self.extended.is_some()),
         )?;
         fields.serialize_field("form", &form)?;
@@ -386,6 +398,7 @@ impl Serialize for DesignThreadConstruction {
         fields.serialize_field("minor_diameter", &self.diameters.minor())?;
         fields.serialize_field("pitch", &self.pitch.get())?;
         fields.serialize_field("pitch_diameter", &self.diameters.pitch())?;
+        fields.serialize_field("modeled", &self.modeled)?;
         if let Some(reference) = trailing_reference {
             fields.serialize_field("trailing_reference_record_index", &reference.value.get())?;
             fields.serialize_field("trailing_reference_offset", &reference.offset)?;
@@ -439,6 +452,8 @@ struct DesignThreadConstructionWire {
     pub(super) pitch: f64,
     /// Pitch diameter in Design length units.
     pub(super) pitch_diameter: f64,
+    /// Whether the body geometry contains the helical form.
+    modeled: bool,
     /// Record named by the reference-bearing compact trailer.
     #[serde(
         default,
@@ -455,7 +470,7 @@ struct DesignThreadConstructionWire {
     trailing_reference_offset: Option<u64>,
     /// Ordered counted face-selection groups referenced by the scope.
     face_group_record_indices: Vec<u32>,
-    /// Class, sense, modeled state, and length flag of an extended prefix.
+    /// Class, sense, and length flag of an extended prefix.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -523,6 +538,7 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
             diameters: DesignThreadDiameters::new(value.major_diameter, value.minor_diameter, value.pitch_diameter)
                 .ok_or("major_diameter, minor_diameter, and pitch_diameter must be positive finite and strictly ordered")?,
             pitch: PositiveReal::new(value.pitch).ok_or("pitch must be positive finite")?,
+            modeled: value.modeled,
             face_group_record_indices: value.face_group_record_indices,
             extended: value.extended,
         })

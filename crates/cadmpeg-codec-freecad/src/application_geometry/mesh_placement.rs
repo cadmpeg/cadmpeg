@@ -6,7 +6,8 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};
+use cadmpeg_ir::ids::OccurrenceId;
+use cadmpeg_ir::products::Occurrence;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::tessellation::{Tessellation, TessellationId};
 use cadmpeg_ir::transform::Transform;
@@ -16,9 +17,11 @@ use crate::native::{ProductNode, ProductNodeRecord, PropertyRecord};
 
 const MAX_MESH_PLACEMENT_WORK: usize = 65_536;
 
+/// `parents` names the container occurrence each occurrence sits in.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
+    parents: &HashMap<OccurrenceId, OccurrenceId>,
     properties: &[PropertyRecord],
     records: &[ProductNodeRecord],
     losses: &mut Vec<LossNote>,
@@ -52,16 +55,14 @@ pub(crate) fn project(
     let mut own_occurrences = HashMap::new();
     let mut children = HashMap::<&str, Vec<&Occurrence>>::new();
     for occurrence in &ir.model.occurrences {
-        if let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent {
+        if let Some(parent) = parents.get(&occurrence.id) {
             children
                 .entry(parent.as_str())
                 .or_default()
                 .push(occurrence);
         }
-        if let (Some(object), PrototypeReference::Local { definition }) =
-            (occurrence.native_ref.as_deref(), &occurrence.prototype)
-        {
-            if definitions.get(definition.as_str()).copied() == Some(object) {
+        if let Some(object) = occurrence.native_ref.as_deref() {
+            if definitions.get(occurrence.prototype.as_str()).copied() == Some(object) {
                 own_occurrences.insert(object, occurrence);
             }
         }
@@ -87,11 +88,10 @@ pub(crate) fn project(
         }
     }
     for children in children.values_mut() {
-        children.retain(|child| match &child.prototype {
-            PrototypeReference::Local { definition } => definitions
-                .get(definition.as_str())
-                .is_some_and(|object| reachable.contains(object)),
-            _ => false,
+        children.retain(|child| {
+            definitions
+                .get(child.prototype.as_str())
+                .is_some_and(|object| reachable.contains(object))
         });
     }
     let placements = properties
@@ -138,6 +138,7 @@ pub(crate) fn project(
                 ctx,
                 occurrence,
                 &occurrence_index,
+                parents,
                 &mut world,
                 &mut HashSet::new(),
             )?
@@ -172,6 +173,7 @@ pub(crate) fn project(
             ctx,
             occurrence,
             &occurrence_index,
+            parents,
             &mut world,
             &mut HashSet::new(),
         )?;
@@ -242,12 +244,7 @@ impl Sink<'_> {
 
 impl Scene<'_, '_> {
     fn prototype<'a>(&'a self, occurrence: &Occurrence) -> Option<&'a str> {
-        match &occurrence.prototype {
-            PrototypeReference::Local { definition } => {
-                self.definitions.get(definition.as_str()).copied()
-            }
-            _ => None,
-        }
+        self.definitions.get(occurrence.prototype.as_str()).copied()
     }
 
     fn expand(
@@ -326,7 +323,7 @@ impl Scene<'_, '_> {
             self.expand(
                 prototype,
                 transform
-                    .compose(child.effective_transform().map_err(CodecError::malformed)?)
+                    .compose(child.transform.unwrap_or_default())
                     .map_err(CodecError::malformed)?,
                 stack,
                 sink,
@@ -345,6 +342,7 @@ fn world_transform(
     ctx: &DecodeContext<'_>,
     occurrence: &Occurrence,
     index: &HashMap<&str, &Occurrence>,
+    parents: &HashMap<OccurrenceId, OccurrenceId>,
     cache: &mut HashMap<String, Transform>,
     active: &mut HashSet<String>,
 ) -> Result<Transform, CodecError> {
@@ -355,24 +353,21 @@ fn world_transform(
     if !active.insert(occurrence.id.as_str().to_owned()) {
         return Err(CodecError::malformed("mesh occurrence parent cycle"));
     }
-    let parent = match &occurrence.parent {
-        OccurrenceParent::Root {} => Transform::identity(),
-        OccurrenceParent::Occurrence { occurrence: parent } => world_transform(
+    let parent = match parents.get(&occurrence.id) {
+        None => Transform::identity(),
+        Some(parent) => world_transform(
             ctx,
             index
                 .get(parent.as_str())
                 .ok_or_else(|| CodecError::malformed("mesh occurrence parent is absent"))?,
             index,
+            parents,
             cache,
             active,
         )?,
     };
     let transform = parent
-        .compose(
-            occurrence
-                .effective_transform()
-                .map_err(CodecError::malformed)?,
-        )
+        .compose(occurrence.transform.unwrap_or_default())
         .map_err(CodecError::malformed)?;
     active.remove(occurrence.id.as_str());
     cache.insert(occurrence.id.as_str().to_owned(), transform);

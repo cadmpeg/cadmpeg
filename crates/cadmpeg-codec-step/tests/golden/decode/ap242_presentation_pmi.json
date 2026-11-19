@@ -12,6 +12,12 @@
       "publications": [],
       "scopes": [],
       "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
       "spreadsheets": []
     },
     "fragment": false,
@@ -62,26 +68,41 @@
           "relationships": {
             "items": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "step",
+                  "value": {
+                    "kind": "text",
+                    "value": "#8"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "step:presentation:pmi#8"
+                  "kind": "unresolved"
                 }
               },
               {
-                "subelements": [],
+                "native": {
+                  "codec": "step",
+                  "value": {
+                    "kind": "text",
+                    "value": "#9"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "step:data:annotation_plane#9"
+                  "kind": "unresolved"
                 }
               }
             ],
             "presentation_context": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "step",
+                  "value": {
+                    "kind": "text",
+                    "value": "#2"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "step:data:geometric_representation_context_global_unit_assigned_context_representation_context#2"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -127,6 +148,8 @@
           },
           "id": "step:presentation:pmi#8",
           "name": "surface note",
+          "native_options": {},
+          "source_settings": {},
           "targets": []
         }
       ],
@@ -163,7 +186,19 @@
         ]
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

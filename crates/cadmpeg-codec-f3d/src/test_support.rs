@@ -34,6 +34,7 @@ pub(crate) mod origin_types;
 pub(crate) mod procedural_support;
 pub(crate) mod sketch_relations;
 pub(crate) mod sketch_text;
+pub(crate) mod split_face;
 pub(crate) mod verification;
 
 /// A face of `shell` with no loop, on a surface id the fixture need not hold.
@@ -313,3 +314,5 @@ pub(crate) fn loss_codes(
 }
 
 pub(crate) mod move_face;
+
+pub(crate) mod typed_reference_scopes;

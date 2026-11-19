@@ -730,11 +730,13 @@ fn shared_surface_carrier_is_staged_once() {
     let region_id = RegionId::mint("step:data:region#shared-surface").expect("identity grammar");
     let built = super::super::staged_topology(super::super::StagedTopologyParts {
         typed: HashSet::new(),
+        points: Vec::new(),
         vertices: Vec::new(),
         edges: Vec::new(),
         coedges: Vec::new(),
         loops: Vec::new(),
         faces: Vec::new(),
+        curves: Vec::new(),
         surfaces: vec![surface.clone(), surface],
         shells: Vec::new(),
         region: Region {

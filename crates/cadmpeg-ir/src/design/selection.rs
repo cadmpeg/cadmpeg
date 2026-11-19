@@ -9,6 +9,7 @@ use std::cmp::Ordering;
 use std::marker::PhantomData;
 
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize, Serializer};
@@ -75,6 +76,15 @@ pub struct Members<T, O> {
     order: PhantomData<O>,
 }
 
+impl<T, O> Default for Members<T, O> {
+    fn default() -> Self {
+        Self {
+            items: Vec::new(),
+            order: PhantomData,
+        }
+    }
+}
+
 impl<T: Keyed, O: MemberOrder> Members<T, O> {
     /// Admits a list of members that are distinct by identity. An
     /// `Unordered` list is sorted by identity key.
@@ -84,7 +94,10 @@ impl<T: Keyed, O: MemberOrder> Members<T, O> {
     /// Refuses a list that states a member twice.
     pub fn new(mut items: Vec<T>) -> Result<Self, &'static str> {
         let repeats = {
-            let mut keys: Vec<T::Key<'_>> = items.iter().map(T::key).collect();
+            let mut keys: Vec<T::Key<'_>> = Vec::with_capacity(items.len());
+            for item in &items {
+                keys.push(item.key());
+            }
             keys.sort();
             keys.windows(2).any(|pair| pair[0] == pair[1])
         };
@@ -107,6 +120,11 @@ impl<T, O> Members<T, O> {
     pub fn as_slice(&self) -> &[T] {
         &self.items
     }
+
+    #[doc = "Consume the checked list in its stored order."]
+    pub fn into_vec(self) -> Vec<T> {
+        self.items
+    }
 }
 
 impl<T: Serialize, O> Serialize for Members<T, O> {
@@ -118,16 +136,21 @@ impl<T: Serialize, O> Serialize for Members<T, O> {
 impl<T: Keyed, O: MemberOrder> TryFrom<Vec<T>> for Members<T, O> {
     type Error = &'static str;
 
-    /// Admits a list of members that are distinct by identity.
+    /// Reads a list of members that are distinct by identity. An `Unordered`
+    /// list states its members in identity-key order, its one spelling.
     fn try_from(items: Vec<T>) -> Result<Self, Self::Error> {
+        if O::SORTED && items.windows(2).any(|pair| pair[0].key() > pair[1].key()) {
+            return Err("an unordered member list states its members out of identity-key order");
+        }
         Self::new(items)
     }
 }
 
 #[cfg(feature = "schema")]
-impl<T: JsonSchema, O> JsonSchema for Members<T, O> {
+impl<T: JsonSchema, O: MemberOrder> JsonSchema for Members<T, O> {
     fn schema_name() -> std::borrow::Cow<'static, str> {
-        format!("Members_{}", T::schema_name()).into()
+        let order = if O::SORTED { "Unordered" } else { "Ordered" };
+        format!("{order}Members_{}", T::schema_name()).into()
     }
 
     fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
@@ -501,13 +524,13 @@ pub struct DefinitionRef {
 }
 
 /// A path of occurrences, outermost first.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(transparent)]
 pub struct OccurrencePath(pub Vec<PathStep>);
 
 /// One step of an occurrence path.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct PathStep {
@@ -525,7 +548,7 @@ pub struct PathStep {
 }
 
 /// The occurrence of a path step.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -542,7 +565,7 @@ pub enum StepRef {
 }
 
 /// An origin plane, axis, point, or frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum PrincipalEntity {

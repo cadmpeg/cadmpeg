@@ -12,6 +12,12 @@
       "publications": [],
       "scopes": [],
       "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
       "spreadsheets": []
     },
     "fragment": false,
@@ -81,7 +87,19 @@
         ]
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,
@@ -195,7 +213,13 @@
             "namespace": "step"
           }
         },
+        "count": 1,
         "message": "preserved 1 EXAMPLE_STRINGS instance(s) as named opaque STEP records",
+        "provenance": {
+          "format": "step",
+          "offset": 193,
+          "tag": "EXAMPLE_STRINGS"
+        },
         "severity": "warning"
       }
     ],

@@ -12,6 +12,12 @@
       "publications": [],
       "scopes": [],
       "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
       "spreadsheets": []
     },
     "fragment": false,
@@ -1974,26 +1980,29 @@
             "MeasureType": "<Integer value=\"1\"/>",
             "Rotation": "<Float value=\"0.0000000000000000\"/>",
             "Scale": "<Float value=\"1.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"0\"/>",
             "X": "<Float value=\"80.0000000000000000\"/>",
             "Y": "<Float value=\"125.0000000000000000\"/>"
           },
           "relationships": {
             "References2D": [
               {
-                "subelements": [
-                  "Edge1"
-                ],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "View.Edge1"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#View:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
           },
-          "rotation_degrees": 0.0,
+          "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewDimension",
-          "scale": 1.0
+          "scale": 1.0,
+          "scale_from": "sheet"
         },
         {
           "assets": [],
@@ -2008,7 +2017,6 @@
             "LockPosition": "<Bool value=\"false\"/>",
             "Rotation": "<Float value=\"0.0000000000000000\"/>",
             "Scale": "<Float value=\"1.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"0\"/>",
             "X": "<Float value=\"105.0000000000000000\"/>",
             "Y": "<Float value=\"148.5000000000000000\"/>"
           },
@@ -2019,16 +2027,16 @@
           "relationships": {
             "Owner": [
               {
-                "subelements": [],
                 "target": {
                   "kind": "null"
                 }
               }
             ]
           },
-          "rotation_degrees": 0.0,
+          "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewAnnotation",
-          "scale": 1.0
+          "scale": 1.0,
+          "scale_from": "sheet"
         },
         {
           "assets": [],
@@ -2039,46 +2047,71 @@
           "object": "fcstd:native:object#Page",
           "order": 0,
           "parameters": {
-            "ProjectionType": "<Integer value=\"0\"/>",
             "Scale": "<Float value=\"1.0000000000000000\"/>"
           },
+          "projection": "first",
           "relationships": {
             "Template": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Template"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Template:entity"
+                  "kind": "unresolved"
                 }
               }
             ],
             "Views": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "View"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#View:entity"
+                  "kind": "unresolved"
                 }
               },
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Dimension"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Dimension:entity"
+                  "kind": "unresolved"
                 }
               },
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Note"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Note:entity"
+                  "kind": "unresolved"
                 }
               },
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Symbol"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#Symbol:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -2100,7 +2133,6 @@
             "LockPosition": "<Bool value=\"false\"/>",
             "Rotation": "<Float value=\"0.0000000000000000\"/>",
             "Scale": "<Float value=\"1.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"2\"/>",
             "X": "<Float value=\"105.0000000000000000\"/>",
             "Y": "<Float value=\"148.5000000000000000\"/>"
           },
@@ -2111,16 +2143,16 @@
           "relationships": {
             "Owner": [
               {
-                "subelements": [],
                 "target": {
                   "kind": "null"
                 }
               }
             ]
           },
-          "rotation_degrees": 0.0,
+          "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewSymbol",
-          "scale": 1.0
+          "scale": 1.0,
+          "scale_from": "own"
         },
         {
           "assets": [
@@ -2206,6 +2238,7 @@
             -1.0,
             0.0
           ],
+          "hidden_line": "exact",
           "id": "fcstd:model:drawing#View:entity",
           "kind": "view",
           "native_ref": "fcstd:native:drawing#View",
@@ -2217,7 +2250,6 @@
             "LockPosition": "<Bool value=\"false\"/>",
             "Rotation": "<Float value=\"0.0000000000000000\"/>",
             "Scale": "<Float value=\"1.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"0\"/>",
             "X": "<Float value=\"105.0000000000000000\"/>",
             "Y": "<Float value=\"148.5000000000000000\"/>"
           },
@@ -2228,17 +2260,23 @@
           "relationships": {
             "Source": [
               {
-                "subelements": [],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "Model"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:native:object#Model"
+                  "kind": "unresolved"
                 }
               }
             ]
           },
-          "rotation_degrees": 0.0,
+          "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewPart",
           "scale": 1.0,
+          "scale_from": "sheet",
           "x_direction": [
             1.0,
             0.0,
@@ -2334,13 +2372,23 @@
             "fcstd:native:entry#BoxCorners",
             "fcstd:native:entry#Dimension.SavedGeometry.0.brp"
           ],
+          "basic": false,
           "dimension_kind": {
             "kind": "distance"
           },
           "format": "%.2w",
           "id": "fcstd:model:semantic-annotation#Dimension:content",
           "kind": "dimension",
+          "measured_on": "view",
           "native_ref": "fcstd:native:annotation#Dimension",
+          "negated": false,
+          "number_format": {
+            "decimals": 2,
+            "prefix": "",
+            "suffix": "",
+            "trim_zeros": true,
+            "unit_shown": false
+          },
           "object": "fcstd:native:object#Dimension",
           "order": 0,
           "parameters": {
@@ -2385,12 +2433,15 @@
           "references": {
             "References2D": [
               {
-                "subelements": [
-                  "Edge1"
-                ],
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "View.Edge1"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#View:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -2437,7 +2488,6 @@
           "references": {
             "Owner": [
               {
-                "subelements": [],
                 "target": {
                   "kind": "null"
                 }
@@ -2484,7 +2534,6 @@
           "references": {
             "Owner": [
               {
-                "subelements": [],
                 "target": {
                   "kind": "null"
                 }
@@ -2542,7 +2591,7 @@
           "carrier_census": "efa84ccb5acbee7f3408b19c2d98278e5324cb914eae7422f6137782c9f45aec",
           "design_census": "36fa88b89a1dbe73989e2f0e0d30bcbbd58c94c8d73b8cef24757d8207dcfef3",
           "document": "49c32df2c71ab8d28178fc633c063765d5d41f35656d27686d0fabd47fb26485",
-          "drawings": "5cdcec5c4482f7c3a6ad0b12e6e2ed2241129b2c68b8e20852100edfcb490d16",
+          "drawings": "ff1cc29b303e56020fa1ca4aba911864ec6b42ec20f32ff67fe436d4fefe8688",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "entries": "79f225f6b4969c8724282d6fb640a39df0b9a9e2c3db7677359d9281314fb219",
           "extensions": "591c321408a3afc92e72ad67590a489a98ea5d23662a7b93757493b8310b095f",
@@ -2651,7 +2700,19 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

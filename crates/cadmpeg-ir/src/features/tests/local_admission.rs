@@ -468,12 +468,12 @@ fn selection_operand_parts_move_retained_storage() {
     let replacements_text = String::from("replacements-native");
     let targets_pointer = targets_text.as_ptr();
     let replacements_pointer = replacements_text.as_ptr();
-    let operands = crate::features::ReplaceFaceOperands::new(
+    let operands = crate::features::replace_face::ReplaceFaceOperands::new(
         crate::features::FaceSelection::Native(targets_text),
         crate::features::FaceSelection::Native(replacements_text),
     )
     .unwrap();
-    let (targets, replacements) = operands.into_parts();
+    let (targets, replacements) = (operands.targets(), operands.replacements());
     let crate::features::FaceSelection::Native(targets) = targets else {
         panic!("native targets");
     };
@@ -694,4 +694,22 @@ fn selection_reference_constructors_keep_padded_text() {
         };
         result.unwrap();
     }
+}
+
+#[cfg(feature = "schema")]
+#[test]
+fn nonempty_members_schema_requires_a_member() {
+    for (value, valid) in [
+        (serde_json::json!([]), false),
+        (serde_json::json!([7]), true),
+        (serde_json::json!([7, 7]), true),
+    ] {
+        assert_eq!(
+            serde_json::from_value::<NonEmptyMembers<u32>>(value).is_ok(),
+            valid
+        );
+    }
+    let schema = serde_json::to_value(schemars::schema_for!(NonEmptyMembers<u32>)).unwrap();
+    assert_eq!(schema["type"], "array");
+    assert_eq!(schema["minItems"], 1);
 }

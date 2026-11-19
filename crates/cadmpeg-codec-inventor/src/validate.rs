@@ -131,6 +131,8 @@ const OPTIONAL_ARENAS: &[&str] = &[
     "feature_history_states",
     "pm_dc_sheet_metal_styles",
     "pm_dc_sheet_metal_flanges",
+    "pm_app_sheet_metal_unfold_rules",
+    "pm_app_sheet_metal_unfold_selections",
     "drawing_records",
     "drawing_metadata_references",
     "drawing_reference_tables",
@@ -214,6 +216,7 @@ pub(crate) fn validate_native(
     validate_design(&data, ir, &mut findings);
     validate_sketches(&data, ir, &mut findings);
     validate_features(ctx, ir, &data, &mut findings)?;
+    findings.extend(crate::design_v11::validate_operations(ir)?);
     unique(
         &mut findings,
         data.unknowns.iter().map(|record| record.id.as_str()),
@@ -3116,6 +3119,8 @@ struct NativeData {
     pm_dc_feature_properties: Vec<PmDcFeatureProperty>,
     pm_dc_sheet_metal_styles: Vec<crate::feature::sheet_metal::style::Style>,
     pm_dc_sheet_metal_flanges: Vec<crate::feature::sheet_metal::flange::Flange>,
+    pm_app_sheet_metal_unfold_rules: Vec<crate::feature::sheet_metal::unfold::Rule>,
+    pm_app_sheet_metal_unfold_selections: Vec<crate::feature::sheet_metal::unfold::Selection>,
     pm_dc_feature_dimensions: Vec<crate::feature::revolve::Dimension>,
     pm_dc_feature_labels: Vec<PmDcFeatureLabel>,
     pm_dc_thread_definitions: Vec<crate::feature::thread::Definition>,
@@ -3255,6 +3260,10 @@ impl NativeData {
                 .arena_as_for_decode(ctx, "pm_dc_sheet_metal_styles")?,
             pm_dc_sheet_metal_flanges: namespace
                 .arena_as_for_decode(ctx, "pm_dc_sheet_metal_flanges")?,
+            pm_app_sheet_metal_unfold_rules: namespace
+                .arena_as_for_decode(ctx, "pm_app_sheet_metal_unfold_rules")?,
+            pm_app_sheet_metal_unfold_selections: namespace
+                .arena_as_for_decode(ctx, "pm_app_sheet_metal_unfold_selections")?,
             pm_dc_feature_dimensions: namespace
                 .arena_as_for_decode(ctx, "pm_dc_feature_dimensions")?,
             pm_dc_feature_labels: namespace.arena_as_for_decode(ctx, "pm_dc_feature_labels")?,

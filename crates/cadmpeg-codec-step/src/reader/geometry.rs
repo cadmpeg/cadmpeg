@@ -64,9 +64,25 @@ fn attach_geometry_source(
 }
 
 pub(super) struct GeometryData {
+    pub(super) points: BTreeMap<u64, FinitePoint3>,
+    pub(super) directions: BTreeMap<u64, UnitVector3>,
+    pub(super) vectors: BTreeMap<u64, Vector3>,
     pub(super) placements: BTreeMap<u64, (FinitePoint3, UnitVector3, UnitVector3)>,
     pub(super) transformation_operators: BTreeMap<u64, Transform>,
     pub(super) units: UnitScales,
+    pub(super) uncertainties: ContextUncertainties,
+}
+
+/// The linear uncertainties the representation contexts state, in
+/// millimetres.
+pub(super) struct ContextUncertainties {
+    /// The length candidates of each `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT`,
+    /// sorted ascending, keyed by the context record.
+    pub(super) by_context: BTreeMap<u64, Vec<PositiveLength>>,
+    /// The distinct candidates of all contexts, sorted ascending, and the
+    /// count of unresolved measures, when more than one candidate is
+    /// distinct.
+    pub(super) disagreement: Option<(Vec<PositiveLength>, usize)>,
 }
 
 pub(super) fn placement_transform(
@@ -541,6 +557,7 @@ pub(super) fn decode(
             PositiveReal::ONE
         }
     };
+    degree_factor_corrections(exchange, &mut losses, ctx)?;
     let unit_scales = resolve_unit_scales(exchange, scale, angle_scale, &mut losses, ctx)?;
     let angle_scale = angle_scale.get();
     let source_curve_parameter_scales =
@@ -555,7 +572,9 @@ pub(super) fn decode(
     let mut vectors2 = BTreeMap::new();
     let mut placements = BTreeMap::new();
     let mut placements2 = BTreeMap::new();
-    match linear_uncertainty(exchange, ctx)? {
+    let (projection, by_context) = linear_uncertainty(exchange, ctx)?;
+    let mut disagreement = None;
+    match projection {
         LinearUncertainty::Value(uncertainty) => ir.tolerances.linear = uncertainty,
         LinearUncertainty::Empty { unresolved } => {
             if unresolved > 0 {
@@ -570,18 +589,14 @@ pub(super) fn decode(
             rest,
             unresolved,
         } => {
-            let default_linear = ir.tolerances.linear.get();
-            let listed = [first, second]
-                .iter()
-                .chain(&rest)
-                .map(|value| format!("{:?}", value.get()))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let message = format!("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT records give {} different linear uncertainty values in millimetres ({listed}) and {unresolved} unresolved measure(s); the linear tolerance keeps the default {default_linear:?}",
-            2 + rest.len());
-            losses.push(StepLossCode::UncertaintyLengthAmbiguous.note(message));
+            let values = [first, second].into_iter().chain(rest).collect();
+            disagreement = Some((values, unresolved));
         }
     }
+    let uncertainties = ContextUncertainties {
+        by_context,
+        disagreement,
+    };
 
     for (id, record) in exchange.entities_any(&[
         "APLL_POINT",
@@ -1706,6 +1721,14 @@ pub(super) fn decode(
                 .and_then(
                     |(((center, axis, ref_direction), major_radius), minor_radius)| {
                         let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                        // A negative major radius names the torus of its
+                        // magnitude at `(u + π, π - v)`; topology reverses
+                        // the faces on it.
+                        let major_radius = if surface_type == "TOROIDAL_SURFACE" {
+                            major_radius.abs()
+                        } else {
+                            major_radius
+                        };
                         let major_radius = PositiveLength::new(major_radius * record_scale)?;
                         let minor_radius = NonZeroLength::new(minor_radius * record_scale)?;
                         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
@@ -2353,6 +2376,32 @@ pub(super) fn decode(
         });
     }
 
+    // The inner sheet of a self-intersecting torus, stated by a negative
+    // major radius smaller in magnitude than the minor radius.
+    for (id, record) in exchange.entities("TOROIDAL_SURFACE") {
+        if !reversed_torus_record(record)
+            || !named_parameter(record, "TOROIDAL_SURFACE", 2)
+                .and_then(Value::number)
+                .zip(named_parameter(record, "TOROIDAL_SURFACE", 3).and_then(Value::number))
+                .is_some_and(|(major, minor)| major.abs() < minor.abs())
+            || !carrier_index.surfaces.contains_key(&id)
+        {
+            continue;
+        }
+        let surface = SurfaceId::from(ids::data(kind!("surface"), id));
+        let _attached = procedural_admission.add_surface(
+            &mut ir.geometry,
+            &surface,
+            ProceduralSurface::new(
+                ProceduralSurfaceId::from(ids::construction(kind!("degenerate_torus"), id)),
+                ProceduralSurfaceDefinition::DegenerateTorus {
+                    select_outer: false,
+                },
+                None,
+            ),
+        )?;
+    }
+
     for (id, record) in exchange.entities("DEGENERATE_TOROIDAL_SURFACE") {
         let Some(select_outer) = named_parameter(record, "DEGENERATE_TOROIDAL_SURFACE", 4)
             .and_then(|value| logical_value(value).ok().flatten())
@@ -2404,9 +2453,13 @@ pub(super) fn decode(
     Ok((
         StageOutcome {
             value: GeometryData {
+                points,
+                directions,
+                vectors,
                 placements,
                 transformation_operators,
                 units: unit_scales,
+                uncertainties,
             },
             claims: typed,
             losses,
@@ -3571,14 +3624,14 @@ fn same_scale(left: PositiveReal, right: PositiveReal) -> bool {
     (left - right).abs() <= tolerance
 }
 
-fn is_representation_record(record: &RawRecord) -> bool {
+pub(super) fn is_representation_record(record: &RawRecord) -> bool {
     record
         .partials
         .iter()
         .any(|partial| super::representation::is_representation_name(&partial.name))
 }
 
-fn representation_context(record: &RawRecord) -> Option<u64> {
+pub(super) fn representation_context(record: &RawRecord) -> Option<u64> {
     record
         .partials
         .iter()
@@ -3803,6 +3856,83 @@ fn document_unit_scale(
     Ok(unique_scale(&scales))
 }
 
+/// The radian measure of one degree.
+const DEGREE_RADIANS: f64 = std::f64::consts::PI / 180.0;
+
+/// A stated degree factor within this fraction of `π/180` agrees with it.
+/// The bound lies far above the rounding of `π/180` to the 15 or more
+/// significant digits an exchange writes (about 1e-15) and far below the
+/// `1/57.3` approximation (about 7.4e-5).
+const DEGREE_FACTOR_RELATIVE_TOLERANCE: f64 = 1.0e-9;
+
+/// Whether `record` is a plane-angle `CONVERSION_BASED_UNIT` named `degree`.
+fn is_degree_unit(record: &RawRecord, exchange: &Exchange) -> bool {
+    if record.partial("PLANE_ANGLE_UNIT").is_none() {
+        return false;
+    }
+    let Some(Value::String(bytes)) = record
+        .partial("CONVERSION_BASED_UNIT")
+        .and_then(|unit| unit.parameters.first())
+    else {
+        return false;
+    };
+    exchange
+        .decode_string(bytes)
+        .is_ok_and(|name| name.trim().eq_ignore_ascii_case("degree"))
+}
+
+/// The radian factor a `CONVERSION_BASED_UNIT` states: its conversion
+/// factor's value times the resolved scale of the factor's unit.
+fn stated_conversion_radians(
+    record: &RawRecord,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<f64>, CodecError> {
+    let Some(unit) = record.partial("CONVERSION_BASED_UNIT") else {
+        return Ok(None);
+    };
+    let Some(factor_id) = unit.parameters.get(1).and_then(Value::reference) else {
+        return Ok(None);
+    };
+    let Some(factor) = exchange.records().get(&factor_id) else {
+        return Ok(None);
+    };
+    let Some(value) = record_values(factor).find_map(ValueExt::typed_number) else {
+        return Ok(None);
+    };
+    let Some(base_id) = record_values(factor).find_map(Value::reference) else {
+        return Ok(None);
+    };
+    Ok(unit_scale_radians(base_id, exchange, active, ctx)?.map(|base| value * base.get()))
+}
+
+/// One loss for each plane-angle unit named `degree` whose stated radian
+/// factor differs from `π/180` by more than
+/// [`DEGREE_FACTOR_RELATIVE_TOLERANCE`]; the reader takes `π/180`.
+fn degree_factor_corrections(
+    exchange: &Exchange,
+    losses: &mut Vec<LossNote>,
+    ctx: &DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    for (id, record) in exchange.entities_any(&["CONVERSION_BASED_UNIT"]) {
+        if !is_degree_unit(record, exchange) {
+            continue;
+        }
+        let Some(stated) = stated_conversion_radians(record, exchange, &mut BTreeSet::new(), ctx)?
+        else {
+            continue;
+        };
+        if (stated / DEGREE_RADIANS - 1.0).abs() > DEGREE_FACTOR_RELATIVE_TOLERANCE {
+            losses.push(StepLossCode::AngleUnitFactorCorrected.note(format!(
+                "plane-angle unit #{id} named degree states {stated:e} rad; the reader reads \
+                 it as π/180 = {DEGREE_RADIANS:e} rad"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn unit_scale_radians(
     id: u64,
     exchange: &Exchange,
@@ -3829,20 +3959,13 @@ pub(super) fn unit_scale_radians(
             } else {
                 Ok(None)
             }
-        } else if let Some(unit) = record.partial("CONVERSION_BASED_UNIT") {
-            let Some(factor_id) = unit.parameters.get(1).and_then(Value::reference) else {
-                return Ok(None);
-            };
-            let Some(factor) = exchange.records().get(&factor_id) else {
-                return Ok(None);
-            };
-            let Some(value) = record_values(factor).find_map(ValueExt::typed_number) else {
-                return Ok(None);
-            };
-            let Some(base_id) = record_values(factor).find_map(Value::reference) else {
-                return Ok(None);
-            };
-            Ok(unit_scale_radians(base_id, exchange, active, ctx)?.map(|base| value * base.get()))
+        } else if record.partial("CONVERSION_BASED_UNIT").is_some() {
+            let stated = stated_conversion_radians(record, exchange, active, ctx)?;
+            if is_degree_unit(record, exchange) {
+                Ok(stated.map(|_| DEGREE_RADIANS))
+            } else {
+                Ok(stated)
+            }
         } else {
             Ok(None)
         }
@@ -4015,27 +4138,33 @@ enum LinearUncertainty {
     },
 }
 
+/// The document projection and the sorted candidates of each context.
 fn linear_uncertainty(
     exchange: &Exchange,
     ctx: &DecodeContext<'_>,
-) -> Result<LinearUncertainty, CodecError> {
+) -> Result<(LinearUncertainty, BTreeMap<u64, Vec<PositiveLength>>), CodecError> {
     let mut candidates: Vec<PositiveLength> = Vec::new();
+    let mut by_context = BTreeMap::new();
     let mut unresolved = 0;
-    for (_, context) in exchange.entities("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT") {
-        let (context_candidates, context_unresolved) =
+    for (id, context) in exchange.entities("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT") {
+        let (mut context_candidates, context_unresolved) =
             context_length_uncertainties(context, exchange, ctx)?;
         unresolved += context_unresolved;
-        for candidate in context_candidates {
+        for &candidate in &context_candidates {
             // Exact equality: the candidates come from one file, so equal
             // declarations corroborate each other and are not a conflict.
             if !candidates.contains(&candidate) {
                 candidates.push(candidate);
             }
         }
+        if !context_candidates.is_empty() {
+            context_candidates.sort_by(|left, right| left.get().total_cmp(&right.get()));
+            by_context.insert(id, context_candidates);
+        }
     }
     candidates.sort_by(|left, right| left.get().total_cmp(&right.get()));
 
-    Ok(match candidates.len() {
+    let projection = match candidates.len() {
         0 => LinearUncertainty::Empty { unresolved },
         1 => LinearUncertainty::Value(candidates[0]),
         _ => {
@@ -4049,7 +4178,8 @@ fn linear_uncertainty(
                 unresolved,
             }
         }
-    })
+    };
+    Ok((projection, by_context))
 }
 
 fn string_value(value: &Value, exchange: &Exchange) -> Option<String> {
@@ -6081,3 +6211,12 @@ fn optional_direction(
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+/// Whether a `TOROIDAL_SURFACE` record states a negative major radius, which
+/// names the torus of its magnitude with the opposite normal.
+pub(super) fn reversed_torus_record(record: &RawRecord) -> bool {
+    record.partial("DEGENERATE_TOROIDAL_SURFACE").is_none()
+        && named_parameter(record, "TOROIDAL_SURFACE", 2)
+            .and_then(Value::number)
+            .is_some_and(|major| major < 0.0)
+}

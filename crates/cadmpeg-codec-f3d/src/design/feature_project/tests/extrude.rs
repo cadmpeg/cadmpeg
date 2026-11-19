@@ -212,6 +212,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                         side_extent_discriminator_offsets: [177, 190],
                         first_side_target_ordinal: None,
                         distance_tail: None,
+                        opaque_distance_word: None,
                         extent: DesignExtrudeExtent::OneSidedDistance,
                         direction_face_extend_offsets: [132, 136],
                         direction_reversed: false,
@@ -781,15 +782,16 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
                 )
             })
             .expect("spatial-profile Extrude feature");
+        let frame = scope
+            .extrude_profile()
+            .expect("profile frame")
+            .byte_offset();
+        let frame = format!("f3d:Design/BulkStream.dat:design-record-header#{frame}");
+        let expected = ProfileRef::spatial_sketch_selection(spatial_sketch.id.clone(), vec![frame]);
         assert!(matches!(
             spatial_extrude.evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Extrude {
-                profile: ProfileRef::SpatialSketchProfiles {
-                    ref sketch,
-                    ref profiles
-                },
-                ..
-            }) if sketch == &spatial_sketch.id && profiles.as_slice() == [0]
+            FeatureDefinition::Operation(FeatureOperation::Extrude { profile, .. })
+                if expected.as_ref().ok() == Some(profile)
         ));
         assert_eq!(
             spatial_extrude.dependencies.as_slice(),
@@ -1948,8 +1950,8 @@ fn sketch_inputs_bind_owner_dependencies_after_sketch_conversion() {
         2,
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(planar_sketch.clone()),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0).unwrap(),
-            side: SheetMetalThicknessSide::Forward,
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(1.0),
+            side: Some(SheetMetalThicknessSide::Forward),
         }),
     );
     let loft = feature(

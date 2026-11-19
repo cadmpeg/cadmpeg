@@ -599,7 +599,7 @@ Co 1001000 +2 0 *
         .collect::<std::collections::HashSet<_>>();
     assert!(result.ir().model.appearance_bindings.iter().any(|binding| {
         matches!(
-            &binding.target,
+            &binding.target.entity,
             cadmpeg_ir::appearance::AppearanceTarget::Face(face) if shape_face_ids.contains(face.as_str())
         ) && binding.channels.get("precedence").map(String::as_str) == Some("face_over_object")
     }));
@@ -611,7 +611,7 @@ Co 1001000 +2 0 *
             .iter()
             .filter(|binding| {
                 matches!(
-                    binding.target,
+                    &binding.target.entity,
                     cadmpeg_ir::appearance::AppearanceTarget::Edge(_)
                 ) && binding.channels.get("precedence").map(String::as_str)
                     == Some("edge_array_over_line")
@@ -627,7 +627,7 @@ Co 1001000 +2 0 *
             .iter()
             .filter(|binding| {
                 matches!(
-                    binding.target,
+                    &binding.target.entity,
                     cadmpeg_ir::appearance::AppearanceTarget::Vertex(_)
                 ) && binding.channels.get("precedence").map(String::as_str)
                     == Some("vertex_array_over_point")

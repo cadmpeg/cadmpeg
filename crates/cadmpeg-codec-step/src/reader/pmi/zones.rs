@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::pmi::zones::{ToleranceConstraints, ToleranceProjection, ToleranceZone};
+use cadmpeg_ir::pmi::zones::{ToleranceProjection, ToleranceZone, ToleranceZoneForm};
 use cadmpeg_ir::pmi::{PmiDefinition, PmiQuantity, PmiTarget};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Length, PositiveLength};
@@ -44,12 +44,19 @@ fn length(
         .and_then(|value| Length::new(value.value.get())))
 }
 
-pub(super) fn constraints(
+/// The zone offset and the maximum tolerance that a geometric tolerance's
+/// complex instance introduces.
+pub(super) struct ZoneLimits {
+    pub(super) displacement: Option<Length>,
+    pub(super) maximum_upper: Option<PositiveLength>,
+}
+
+pub(super) fn limits(
     record: &RawRecord,
     exchange: &Exchange,
     measurements: &mut MeasureContext<'_>,
     ctx: &DecodeContext<'_>,
-) -> Result<ToleranceConstraints, CodecError> {
+) -> Result<ZoneLimits, CodecError> {
     let displacement = introduced(record, "UNEQUALLY_DISPOSED_GEOMETRIC_TOLERANCE", 4, 0)
         .map(|value| length(value, exchange, measurements, ctx))
         .transpose()?
@@ -76,10 +83,9 @@ pub(super) fn constraints(
             );
         }
     }
-    Ok(ToleranceConstraints {
+    Ok(ZoneLimits {
         displacement,
-        maximum,
-        ..ToleranceConstraints::default()
+        maximum_upper: maximum,
     })
 }
 
@@ -128,7 +134,7 @@ pub(super) fn attach(
                 )
                 .map(|form| (id, form))
             })
-            .and_then(|(id, form)| NonBlankString::new(form).map(|form| (id, form)));
+            .and_then(|(id, form)| NonBlankString::new(form).map(|form| (id, zone_form(&form))));
         let Some((form_id, form)) = form else {
             losses.push(
                 StepLossCode::PmiZoneUnresolved
@@ -153,7 +159,7 @@ pub(super) fn attach(
             let Some(index) = annotations.get(owner) else {
                 continue;
             };
-            let PmiDefinition::GeometricTolerance { constraints, .. } =
+            let PmiDefinition::GeometricTolerance { zones, .. } =
                 &mut ir.model.pmi[index.get()].definition
             else {
                 continue;
@@ -163,7 +169,7 @@ pub(super) fn attach(
                 cadmpeg_core::decode::u64_from_index(zone_projections.len()),
                 "STEP tolerance-zone projections",
             )?;
-            constraints.zones.push(ToleranceZone {
+            zones.push(ToleranceZone {
                 form: form.clone(),
                 projections: zone_projections
                     .iter()
@@ -252,12 +258,26 @@ fn projection(
     Ok(Some((
         zone,
         ToleranceProjection {
-            boundaries,
+            boundaries: boundaries
+                .into_iter()
+                .map(cadmpeg_ir::references::InstanceTarget::new)
+                .collect(),
             end: PmiTarget::ShapeAspect {
                 source_id: super::super::step_source_id(end),
-            },
+            }
+            .into(),
             length,
             offset: offset.flatten(),
         },
     )))
+}
+
+/// A `TOLERANCE_ZONE_FORM` name: ISO 10303's `cylindrical or circular` and
+/// `spherical` are typed, and another name stays the source's.
+fn zone_form(name: &NonBlankString) -> ToleranceZoneForm {
+    match name.as_str().trim().to_ascii_lowercase().as_str() {
+        "cylindrical or circular" => ToleranceZoneForm::CylindricalOrCircular,
+        "spherical" => ToleranceZoneForm::Spherical,
+        _ => ToleranceZoneForm::Other(name.as_str().to_owned()),
+    }
 }

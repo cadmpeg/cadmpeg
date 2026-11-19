@@ -79,10 +79,14 @@ fn two_sided_revolve_construction(
             bytes.get(start + two_sided_revolve::PROJECT_AXIS),
             Some(0 | 1)
         )
-        || bytes.get(start + two_sided_revolve::SOLID) != Some(&1)
     {
         return None;
     }
+    let solid = match bytes.get(start + two_sided_revolve::SOLID)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
     let opposite_record_index = marked_record_reference(
         bytes,
         start + two_sided_revolve::OPPOSITE_ANGLE_REFERENCE_MARKER,
@@ -113,10 +117,73 @@ fn two_sided_revolve_construction(
                 angle_record_index: opposite_record_index,
                 angle_offset: opposite.evaluated_value_offset(),
             }),
-            solid: None,
+            solid: Some(solid),
             reversed: false,
         },
     ))
+}
+
+/// Largest difference from `2π` at which a referenced angle is a full turn.
+const FULL_TURN_TOLERANCE: f64 = 1e-9;
+
+/// Length of the fixed scope tail that carries a second marked reference.
+const SECOND_REFERENCE_TAIL: u64 = 88;
+
+/// Tail offset of the preceding history-state identity after a second marked
+/// tail reference.
+const SECOND_REFERENCE_PREVIOUS_STATE: u64 = 41;
+
+/// The record that the second marked reference of a scope's 88-byte fixed
+/// tail names.
+pub(super) fn tail_second_reference(bytes: &[u8], scope: &DesignParameterScope) -> Option<u64> {
+    let tail = scope
+        .paired_byte_offset()
+        .checked_sub(SECOND_REFERENCE_TAIL)?;
+    if scope.feature_ordinal_offset() != tail
+        || scope.previous_history_state_id_offset()
+            != tail.checked_add(SECOND_REFERENCE_PREVIOUS_STATE)
+    {
+        return None;
+    }
+    let marker = usize::try_from(tail)
+        .ok()?
+        .checked_add(super::parameter_scope::FIXED_TAIL_SECOND_REFERENCE)?;
+    if bytes.get(marker) != Some(&1)
+        || bytes.get(marker.checked_add(9)?..marker.checked_add(11)?) != Some(&[0; 2])
+    {
+        return None;
+    }
+    let target = View::u64_le_at(bytes, marker.checked_add(1)?)?;
+    (!scope
+        .reference_members()
+        .values()
+        .any(|&member| u64::from(member) == target))
+    .then_some(target)
+}
+
+pub(super) fn referenced_revolve_reference_loss(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    construction: &path_features::DesignRevolveConstruction,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    if design_feature_family(&scope.kind())? != DesignFeatureFamily::Revolve {
+        return None;
+    }
+    let length = parameter_scope_payload_length(scope)?;
+    construction.solid?;
+    let operation = construction
+        .operation_offset
+        .checked_sub(scope.byte_offset())?;
+    let base_length = match (length, usize::try_from(operation).ok()?) {
+        (361, referenced_revolve::OPERATION) => 351,
+        (379, unmarked_revolve::OPERATION) => 369,
+        _ => return None,
+    };
+    let target = tail_second_reference(bytes, scope)?;
+    Some(crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.note(format!(
+        "Revolve scope {} stores a second tail reference with target {target} in its {length}-byte referenced-angle frame; the decoder reads the other fields at the {base_length}-byte offsets (DR-657).",
+        scope.id
+    )))
 }
 
 /// A referenced-angle `Revolve` scope whose angle owner can store a negative angle.
@@ -133,18 +200,24 @@ fn referenced_angle_revolve_construction(
         parameter_scope_payload_length(scope)?,
         scope.reference_members().len(),
     ) {
-        (length @ (351 | 373), count @ (6 | 8))
-            if matches!(
+        (length @ (351 | 361 | 373), count @ (6 | 8))
+            if (matches!(
                 (
                     length,
                     count,
                     View::u32_le_at(bytes, start + referenced_revolve::OPERATION)
                 ),
                 (351, 6, Some(4)) | (373, 8, Some(1..=3))
-            ) && bytes.get(start + referenced_revolve::MARKER) == Some(&1)
+            ) || (length, count) == (361, 6)
+                && View::u32_le_at(bytes, start + referenced_revolve::OPERATION) == Some(4)
+                && tail_second_reference(bytes, scope).is_some())
+                && bytes.get(start + referenced_revolve::MARKER) == Some(&1)
                 && View::u32_le_at(bytes, start + referenced_revolve::ZERO_VALUE) == Some(0)
                 && View::u32_le_at(bytes, start + referenced_revolve::EXTENT_KIND) == Some(2)
-                && bytes.get(start + referenced_revolve::DIRECTION_KIND) == Some(&0) =>
+                && matches!(
+                    bytes.get(start + referenced_revolve::DIRECTION_KIND),
+                    Some(&(0 | 1))
+                ) =>
         {
             (
                 referenced_revolve::OPERATION,
@@ -154,10 +227,11 @@ fn referenced_angle_revolve_construction(
                 referenced_revolve::ANGLE_REFERENCE_MARKER,
             )
         }
-        (369, 8)
-            if bytes
-                .get(start + unmarked_revolve::ZERO_RUN..start + unmarked_revolve::OPERATION)?
-                == [0; 10]
+        (length @ (369 | 379), 8)
+            if (length == 369 || tail_second_reference(bytes, scope).is_some())
+                && bytes.get(
+                    start + unmarked_revolve::ZERO_RUN..start + unmarked_revolve::OPERATION,
+                )? == [0; 10]
                 && View::u32_le_at(bytes, start + unmarked_revolve::EXTENT_KIND)
                     == Some(unmarked_revolve::EXTENT_KIND_VALUE)
                 && bytes.get(start + unmarked_revolve::DIRECTION_KIND)
@@ -186,6 +260,12 @@ fn referenced_angle_revolve_construction(
     let angle_record_index = marked_record_reference(bytes, start + angle_reference)?;
     let angle = referenced_revolve_angle_owner(scope, parameter_owners, angle_record_index)?;
     let value = angle.evaluated_value().get();
+    // Direction kind 1 is read for a full turn, whose swept solid is the same in each direction (DR-657).
+    if bytes.get(start + referenced_revolve::DIRECTION_KIND) == Some(&1)
+        && (value.abs() - std::f64::consts::TAU).abs() > FULL_TURN_TOLERANCE
+    {
+        return None;
+    }
     Some(path_features::DesignRevolveConstruction {
         operation: extrude_operation_at(bytes, start + operation)?,
         operation_offset: u64::try_from(start + operation).ok()?,

@@ -12,6 +12,12 @@
       "publications": [],
       "scopes": [],
       "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
       "spreadsheets": []
     },
     "fragment": false,
@@ -2481,8 +2487,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:12%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:12%40location1"
+            }
           }
         },
         {
@@ -2494,8 +2502,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:14%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:14%40location1"
+            }
           }
         },
         {
@@ -2507,8 +2517,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:15%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:15%40location1"
+            }
           }
         },
         {
@@ -2520,8 +2532,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:19%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:19%40location1"
+            }
           }
         },
         {
@@ -2533,8 +2547,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:20%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:20%40location1"
+            }
           }
         },
         {
@@ -2546,8 +2562,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:23%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:23%40location1"
+            }
           }
         },
         {
@@ -2559,8 +2577,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:27%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:27%40location1"
+            }
           }
         },
         {
@@ -2572,8 +2592,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:28%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:28%40location1"
+            }
           }
         },
         {
@@ -2585,8 +2607,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:3%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:3%40location1"
+            }
           }
         },
         {
@@ -2598,8 +2622,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:31%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:31%40location1"
+            }
           }
         },
         {
@@ -2611,8 +2637,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:37%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:37%40location1"
+            }
           }
         },
         {
@@ -2624,8 +2652,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:38%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:38%40location1"
+            }
           }
         },
         {
@@ -2637,8 +2667,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:5%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:5%40location1"
+            }
           }
         },
         {
@@ -2650,8 +2682,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:7%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:7%40location1"
+            }
           }
         },
         {
@@ -2663,8 +2697,10 @@
           "object_type": "ViewProvider Edge",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "edge",
-            "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:8%40location1"
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:8%40location1"
+            }
           }
         },
         {
@@ -2676,8 +2712,10 @@
           "object_type": "ViewProvider ShapeAppearance",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:10%40location1"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:10%40location1"
+            }
           }
         },
         {
@@ -2689,8 +2727,10 @@
           "object_type": "ViewProvider ShapeAppearance",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:17%40location1"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:17%40location1"
+            }
           }
         },
         {
@@ -2702,8 +2742,10 @@
           "object_type": "ViewProvider ShapeAppearance",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1"
+            }
           }
         },
         {
@@ -2715,8 +2757,10 @@
           "object_type": "ViewProvider ShapeAppearance",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:30%40location1"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:30%40location1"
+            }
           }
         },
         {
@@ -2728,8 +2772,10 @@
           "object_type": "ViewProvider ShapeAppearance",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:33%40location1"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:33%40location1"
+            }
           }
         },
         {
@@ -2741,8 +2787,10 @@
           "object_type": "ViewProvider ShapeAppearance",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:35%40location1"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:35%40location1"
+            }
           }
         },
         {
@@ -2754,8 +2802,10 @@
           "object_type": "ViewProvider ShapeAppearance",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:40%40location1"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:40%40location1"
+            }
           }
         },
         {
@@ -2767,8 +2817,10 @@
           "object_type": "ViewProvider ShapeAppearance",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "face",
-            "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:42%40location1"
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:42%40location1"
+            }
           }
         },
         {
@@ -2780,8 +2832,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1"
+            }
           }
         },
         {
@@ -2793,8 +2847,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1"
+            }
           }
         },
         {
@@ -2806,8 +2862,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1"
+            }
           }
         },
         {
@@ -2819,8 +2877,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1"
+            }
           }
         },
         {
@@ -2832,8 +2892,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1"
+            }
           }
         },
         {
@@ -2845,8 +2907,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1"
+            }
           }
         },
         {
@@ -2858,8 +2922,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1"
+            }
           }
         },
         {
@@ -2871,8 +2937,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1"
+            }
           }
         },
         {
@@ -2884,8 +2952,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1"
+            }
           }
         },
         {
@@ -2897,8 +2967,10 @@
           "object_type": "ViewProvider Vertex",
           "source_entity_id": "fcstd:native:object#ColoredModel",
           "target": {
-            "kind": "vertex",
-            "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1"
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1"
+            }
           }
         }
       ],
@@ -3166,15 +3238,6 @@
           "states": [
             {
               "assets": [],
-              "attributes": {},
-              "kind": {
-                "kind": "Native",
-                "value": "Expand"
-              },
-              "order": 0
-            },
-            {
-              "assets": [],
               "attributes": {
                 "settings": "OrthographicCamera {\n  viewportMapping ADJUST_CAMERA\n  position 17.311642 -2.3116379 17.811638\n  orientation 0.74290609 0.30772209 0.59447283  1.2171158\n  nearDistance 0\n  farDistance 28.79236\n  aspectRatio 1\n  focalDistance 14.39618\n  height 32.432148\n\n}\n"
               },
@@ -3394,7 +3457,19 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,

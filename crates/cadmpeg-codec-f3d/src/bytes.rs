@@ -16,6 +16,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
+pub(crate) mod reference_fields;
 pub(crate) mod utf16;
 use utf16::Utf16View;
 
@@ -173,6 +174,7 @@ pub(crate) enum Reference<G, L> {
         target: u64,
         inline_type_guid: Option<G>,
         segment: u32,
+        asset_guid: Option<L>,
     },
     /// A named target in another document.
     CrossDocument {
@@ -180,7 +182,7 @@ pub(crate) enum Reference<G, L> {
         inline_type_guid: Option<G>,
         segment: u32,
         asset_guid: L,
-        target_type_guid: G,
+        target_type_guid: Option<G>,
         link_name: L,
         version: Option<(L, L)>,
     },
@@ -218,6 +220,26 @@ impl<G: AsRef<str>, L> Reference<G, L> {
             | Self::CrossDocument { target, .. } => Some(*target),
         }
     }
+
+    pub(crate) fn document_type(&self) -> Option<&str> {
+        match self {
+            Self::CrossDocument {
+                inline_type_guid,
+                target_type_guid,
+                ..
+            } => match (inline_type_guid.as_ref(), target_type_guid.as_ref()) {
+                (Some(inline), Some(external))
+                    if !inline.as_ref().eq_ignore_ascii_case(external.as_ref()) =>
+                {
+                    None
+                }
+                (Some(inline), _) => Some(inline.as_ref()),
+                (_, Some(external)) => Some(external.as_ref()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
 }
 
 impl Reference<String, String> {
@@ -236,43 +258,51 @@ pub(crate) fn take_owned_reference(
     at: &mut usize,
 ) -> Option<Reference<String, String>> {
     let reference = take_reference(bytes, at)?;
-    let copy_guid = |guid: Option<&str>| guid.map(str::to_owned);
-    Some(match reference {
-        Reference::Null => Reference::Null,
-        Reference::Local {
-            target,
-            inline_type_guid,
-        } => Reference::Local {
-            target,
-            inline_type_guid: copy_guid(inline_type_guid),
-        },
-        Reference::CrossSegment {
-            target,
-            inline_type_guid,
-            segment,
-        } => Reference::CrossSegment {
-            target,
-            inline_type_guid: copy_guid(inline_type_guid),
-            segment,
-        },
-        Reference::CrossDocument {
-            target,
-            inline_type_guid,
-            segment,
-            asset_guid,
-            target_type_guid,
-            link_name,
-            version,
-        } => Reference::CrossDocument {
-            target,
-            inline_type_guid: copy_guid(inline_type_guid),
-            segment,
-            asset_guid: asset_guid.to_string(),
-            target_type_guid: target_type_guid.to_owned(),
-            link_name: link_name.to_string(),
-            version: version.map(|(key, urn)| (key.to_string(), urn.to_string())),
-        },
-    })
+    Some(reference.into_owned())
+}
+
+impl Reference<&str, Utf16View<'_>> {
+    pub(crate) fn into_owned(self) -> Reference<String, String> {
+        let copy_guid = |guid: Option<&str>| guid.map(str::to_owned);
+        match self {
+            Reference::Null => Reference::Null,
+            Reference::Local {
+                target,
+                inline_type_guid,
+            } => Reference::Local {
+                target,
+                inline_type_guid: copy_guid(inline_type_guid),
+            },
+            Reference::CrossSegment {
+                target,
+                inline_type_guid,
+                segment,
+                asset_guid,
+            } => Reference::CrossSegment {
+                target,
+                inline_type_guid: copy_guid(inline_type_guid),
+                segment,
+                asset_guid: asset_guid.map(|guid| guid.to_string()),
+            },
+            Reference::CrossDocument {
+                target,
+                inline_type_guid,
+                segment,
+                asset_guid,
+                target_type_guid,
+                link_name,
+                version,
+            } => Reference::CrossDocument {
+                target,
+                inline_type_guid: copy_guid(inline_type_guid),
+                segment,
+                asset_guid: asset_guid.to_string(),
+                target_type_guid: target_type_guid.map(str::to_owned),
+                link_name: link_name.to_string(),
+                version: version.map(|(key, urn)| (key.to_string(), urn.to_string())),
+            },
+        }
+    }
 }
 
 /// Take one reference, advancing `at` past every byte it owns.
@@ -286,127 +316,23 @@ pub(crate) fn take_reference<'a>(
     bytes: &'a [u8],
     at: &mut usize,
 ) -> Option<Reference<&'a str, Utf16View<'a>>> {
-    let utf16 = |at, bounds| -> Option<(Utf16View<'a>, usize)> {
-        let (raw, end) = lp_utf16_raw(bytes, at, bounds)?;
-        Utf16View::new(raw).map(|text| (text, end))
-    };
-    let ascii = |at, bounds: RangeInclusive<usize>| -> Option<(&'a str, usize)> {
-        let (raw, end) = lp_u32_bytes_at(bytes, at)?;
-        if !RangeInclusive::contains(&bounds, &raw.len()) {
-            return None;
-        }
-        std::str::from_utf8(raw).ok().map(|text| (text, end))
-    };
     let mut cursor = *at;
-    let present = *bytes.get(cursor)?;
-    cursor += 1;
-    if present == 0 {
-        *at = cursor;
-        return Some(Reference::Null);
-    }
-    if present != 1 {
+    let reference = take_reference_lossless(bytes, &mut cursor)?;
+    if matches!(&reference, Reference::CrossDocument { inline_type_guid: Some(inline), target_type_guid: Some(external), .. } if !inline.eq_ignore_ascii_case(external))
+    {
         return None;
     }
-    let target = View::u64_le_at(bytes, cursor)?;
-    cursor += 8;
-    let inline_type_guid = if View::u32_le_at(bytes, cursor) == Some(36) {
-        let (guid, end) = ascii(cursor, 36..=36)?;
-        if !is_guid_hyphenated(guid) {
-            return None;
-        }
-        cursor = end;
-        Some(guid)
-    } else {
-        None
-    };
-    let reference = match *bytes.get(cursor)? {
-        0 => {
-            cursor += 1;
-            match *bytes.get(cursor)? {
-                0 => {
-                    cursor += 1;
-                    Reference::Local {
-                        target,
-                        inline_type_guid,
-                    }
-                }
-                1 => {
-                    let segment = View::u32_le_at(bytes, cursor + 1)?;
-                    cursor += 5;
-                    Reference::CrossSegment {
-                        target,
-                        inline_type_guid,
-                        segment,
-                    }
-                }
-                _ => return None,
-            }
-        }
-        1 => {
-            cursor += 1;
-            let segment = View::u32_le_at(bytes, cursor)?;
-            cursor += 4;
-            let (asset_guid, end) = utf16(cursor, 0..=64)?;
-            cursor = end;
-            match *bytes.get(cursor)? {
-                1 => {
-                    cursor += 1;
-                    Reference::CrossSegment {
-                        target,
-                        inline_type_guid,
-                        segment,
-                    }
-                }
-                0 => {
-                    cursor += 1;
-                    let external_type =
-                        ascii(cursor, 36..=36).filter(|(guid, _)| is_guid_hyphenated(guid));
-                    let target_type_guid = match (inline_type_guid, external_type) {
-                        (Some(inline), Some((external, end))) => {
-                            if !inline.eq_ignore_ascii_case(external) {
-                                return None;
-                            }
-                            cursor = end;
-                            inline
-                        }
-                        (Some(inline), None) => inline,
-                        (None, Some((external, end))) => {
-                            cursor = end;
-                            external
-                        }
-                        (None, None) => return None,
-                    };
-                    let (link_name, end) = utf16(cursor, 0..=256)?;
-                    cursor = end;
-                    let version = match *bytes.get(cursor)? {
-                        0 => {
-                            cursor += 1;
-                            None
-                        }
-                        1 => {
-                            let (key, end) = utf16(cursor + 1, 36..=36)?;
-                            let (urn, end) = utf16(end, 0..=256)?;
-                            cursor = end;
-                            Some((key, urn))
-                        }
-                        _ => return None,
-                    };
-                    Reference::CrossDocument {
-                        target,
-                        inline_type_guid,
-                        segment,
-                        asset_guid,
-                        target_type_guid,
-                        link_name,
-                        version,
-                    }
-                }
-                _ => return None,
-            }
-        }
-        _ => return None,
-    };
     *at = cursor;
+    Some(reference)
+}
+
+pub(crate) fn take_reference_lossless<'a>(
+    bytes: &'a [u8],
+    at: &mut usize,
+) -> Option<Reference<&'a str, Utf16View<'a>>> {
+    let read = reference_fields::read_reference_fields(bytes, *at);
+    let reference = read.reference?;
+    *at = read.end;
     Some(reference)
 }
 
@@ -556,8 +482,9 @@ mod tests {
             super::Reference::CrossSegment {
                 target: 7,
                 segment: 0,
-                inline_type_guid: None
-            }
+                inline_type_guid: None,
+                asset_guid: Some(ref guid)
+            } if guid == "11111111-2222-3333-4444-555555555555"
         ));
         assert_eq!(at, cross_segment.len());
     }
@@ -598,7 +525,7 @@ mod tests {
                     inline_type_guid: inline.then(|| TYPE.to_owned()),
                     segment: 5,
                     asset_guid: ASSET.into(),
-                    target_type_guid: TYPE.into(),
+                    target_type_guid: external.then(|| TYPE.into()),
                     link_name: role.into(),
                     version: Some((ASSET.into(), "urn:example:version=2".into())),
                 }
@@ -615,6 +542,30 @@ mod tests {
                 assert_eq!(at, 0);
             }
         }
+    }
+
+    #[test]
+    fn qualified_same_document_references_keep_distinct_assets() {
+        let mut parsed = Vec::new();
+        for asset in [
+            "11111111-1111-4111-8111-111111111111",
+            "22222222-2222-4222-8222-222222222222",
+        ] {
+            let mut bytes = vec![1];
+            bytes.extend_from_slice(&22u64.to_le_bytes());
+            bytes.push(1);
+            bytes.extend_from_slice(&7u32.to_le_bytes());
+            crate::test_support::lp_utf16(&mut bytes, asset);
+            bytes.push(1);
+            let mut cursor = 0;
+            let reference = super::take_owned_reference(&bytes, &mut cursor).unwrap();
+            assert_eq!(cursor, bytes.len());
+            assert!(
+                matches!(&reference, super::Reference::CrossSegment { target: 22, segment: 7, asset_guid: Some(value), .. } if value == asset)
+            );
+            parsed.push(reference);
+        }
+        assert_ne!(parsed[0], parsed[1]);
     }
 
     #[test]

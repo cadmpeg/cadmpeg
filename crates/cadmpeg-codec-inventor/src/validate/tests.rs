@@ -234,6 +234,8 @@ fn empty_data() -> super::NativeData {
         pm_dc_feature_properties: Vec::new(),
         pm_dc_sheet_metal_styles: Vec::new(),
         pm_dc_sheet_metal_flanges: Vec::new(),
+        pm_app_sheet_metal_unfold_rules: Vec::new(),
+        pm_app_sheet_metal_unfold_selections: Vec::new(),
         pm_dc_feature_dimensions: Vec::new(),
         pm_dc_feature_labels: Vec::new(),
         pm_dc_thread_definitions: Vec::new(),
@@ -814,6 +816,7 @@ fn split_validation_recomputes_operands_and_the_plane_feature() -> TestResult {
         feature.id = crate::feature::history_feature_id(&split.identity)?;
         feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::SplitBody {
+                extend_tool: None,
                 targets: target.clone(),
                 tool,
             },

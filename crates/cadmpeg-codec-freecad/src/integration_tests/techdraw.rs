@@ -3,7 +3,9 @@
 use super::decode;
 use crate::test_support::test_archive::assert_valid_document;
 use cadmpeg_ir::drawings::DrawingKind;
-use cadmpeg_ir::semantic_annotations::{DimensionKind, SemanticAnnotationKind};
+use cadmpeg_ir::semantic_annotations::{
+    AnnotationDimensionKind as DimensionKind, SemanticAnnotationKind,
+};
 
 const BOX_VOLUME_TOLERANCE: f64 = 1.0e-5;
 const BOX_AREA_TOLERANCE: f64 = 1.0e-5;
@@ -238,14 +240,13 @@ fn assert_authored_view(
         &[1.0, 0.0, 0.0],
         "{name}"
     );
-    assert_eq!(
-        view.rotation_degrees.unwrap().get(),
-        rotation_degrees,
+    assert!(
+        (view.rotation.unwrap().get().to_degrees() - rotation_degrees).abs() < 1e-12,
         "{name}"
     );
     assert_eq!(
-        view.relationships["Source"][0].local_target(),
-        Some(crate::native::native_id("object", source).as_str()),
+        view.relationships["Source"][0].native_text(),
+        Some(source),
         "{name} source"
     );
 }
@@ -275,7 +276,8 @@ fn assert_authored_dimension(
     assert!(
         page.relationships["Views"]
             .iter()
-            .any(|reference| reference.local_target() == Some(dimension_drawing.id.as_str())),
+            .any(|reference| reference.native_text()
+                == Some(crate::native::id_key(&dimension_drawing.object))),
         "Page.Views owns {name}"
     );
 
@@ -286,24 +288,26 @@ fn assert_authored_dimension(
         .find(|annotation| annotation.object.ends_with(&format!("#{name}")))
         .unwrap();
     assert_eq!(annotation.position.unwrap().get(), position, "{name}");
-    let references = &annotation.references["References2D"];
-    assert_eq!(references.len(), expected_references.len(), "{name}");
-    for (reference, (view_name, subelements)) in references.iter().zip(expected_references) {
-        assert_eq!(
-            reference.local_target(),
-            Some(drawing(view_name).id.as_str()),
-            "{name} reference view"
-        );
-        assert_eq!(
-            reference
-                .subelements
+    let references = annotation.references["References2D"]
+        .iter()
+        .map(cadmpeg_ir::ReferenceSelection::native_text)
+        .collect::<Vec<_>>();
+    let expected = expected_references
+        .iter()
+        .flat_map(|(view_name, subelements)| {
+            subelements
                 .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>(),
-            *subelements,
-            "{name} reference subelements"
-        );
-    }
+                .map(move |subelement| format!("{view_name}.{subelement}"))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        references,
+        expected
+            .iter()
+            .map(|text| Some(text.as_str()))
+            .collect::<Vec<_>>(),
+        "{name} references"
+    );
     let anchors = annotation
         .reference_anchors
         .iter()
@@ -362,13 +366,12 @@ fn physical_page_template_and_saved_dimension_are_exact() {
     assert_eq!(dimension.position.unwrap(), [65.0, 160.0, 0.0]);
     assert_eq!(
         dimension.dimension_kind.clone().unwrap(),
-        DimensionKind::HorizontalDistance {}
+        DimensionKind::HorizontalDistance
     );
     let [reference] = dimension.references["References2D"].as_slice() else {
         panic!("Length must have one 2D reference")
     };
-    assert_eq!(reference.local_target(), Some(drawing("Front").id.as_str()));
-    assert_eq!(reference.subelements, ["Edge3"]);
+    assert_eq!(reference.native_text(), Some("Front.Edge3"));
     assert_eq!(
         dimension
             .reference_anchors
@@ -380,7 +383,10 @@ fn physical_page_template_and_saved_dimension_are_exact() {
     let page_views = &page.relationships["Views"];
     assert_eq!(page_views.len(), 4);
     for (reference, name) in page_views.iter().zip(["Front", "Top", "Length", "Note"]) {
-        assert_eq!(reference.local_target(), Some(drawing(name).id.as_str()));
+        assert_eq!(
+            reference.native_text(),
+            Some(crate::native::id_key(&drawing(name).object))
+        );
     }
     for (name, position, scale, direction) in [
         ("Front", [65.0, 180.0], 2.0, [0.0, -1.0, 0.0]),
@@ -391,10 +397,7 @@ fn physical_page_template_and_saved_dimension_are_exact() {
         assert_eq!(view.position.unwrap().get(), position);
         assert_eq!(view.scale.unwrap().get(), scale);
         assert_eq!(view.direction.unwrap().as_raw(), &direction);
-        assert_eq!(
-            view.relationships["Source"][0].local_target(),
-            Some(crate::native::native_id("object", "Box").as_str())
-        );
+        assert_eq!(view.relationships["Source"][0].native_text(), Some("Box"));
     }
     let note = ir
         .model
@@ -448,9 +451,8 @@ fn authored_techdraw_views_keep_page_ownership_and_saved_parameters() {
         "TriangleView",
     ] {
         assert!(
-            page_views
-                .iter()
-                .any(|reference| reference.local_target() == Some(drawing(name).id.as_str())),
+            page_views.iter().any(|reference| reference.native_text()
+                == Some(crate::native::id_key(&drawing(name).object))),
             "Page.Views owns {name}"
         );
     }
@@ -473,14 +475,14 @@ fn authored_techdraw_views_keep_page_ownership_and_saved_parameters() {
         triangle_view.x_direction.unwrap().as_raw(),
         &[1.0, 0.0, 0.0]
     );
-    assert_eq!(triangle_view.rotation_degrees.unwrap().get(), 30.0);
+    assert!((triangle_view.rotation.unwrap().get().to_degrees() - 30.0).abs() < 1e-12);
     assert_eq!(
-        triangle_view.relationships["Source"][0].local_target(),
-        Some(crate::native::native_id("object", "Triangle").as_str())
+        triangle_view.relationships["Source"][0].native_text(),
+        Some("Triangle")
     );
     for (name, kind, value) in [
-        ("Euclidean", DimensionKind::Distance {}, 30.0),
-        ("Vertical", DimensionKind::VerticalDistance {}, 10.0),
+        ("Euclidean", DimensionKind::Distance, 30.0),
+        ("Vertical", DimensionKind::VerticalDistance, 10.0),
     ] {
         let annotation = ir
             .model
@@ -494,40 +496,34 @@ fn authored_techdraw_views_keep_page_ownership_and_saved_parameters() {
 
     let projection = drawing("Projection");
     assert_eq!(
-        projection.relationships["Source"][0].local_target(),
-        Some(crate::native::native_id("object", "Box").as_str())
+        projection.relationships["Source"][0].native_text(),
+        Some("Box")
     );
 
     let front = drawing("Front");
     assert_eq!(front.position.unwrap().get(), [65.0, 180.0]);
     assert_eq!(front.scale.unwrap().get(), 2.0);
     assert_eq!(front.direction.unwrap().as_raw(), &[0.0, -1.0, 0.0]);
-    assert_eq!(
-        front.relationships["Source"][0].local_target(),
-        Some(crate::native::native_id("object", "Box").as_str())
-    );
+    assert_eq!(front.relationships["Source"][0].native_text(), Some("Box"));
     let top = drawing("Top");
     assert_eq!(top.position.unwrap().get(), [65.0, 230.0]);
     assert_eq!(top.scale.unwrap().get(), 1.0);
     assert_eq!(top.direction.unwrap().as_raw(), &[0.0, 0.0, 1.0]);
-    assert_eq!(
-        top.relationships["Source"][0].local_target(),
-        Some(crate::native::native_id("object", "Box").as_str())
-    );
+    assert_eq!(top.relationships["Source"][0].native_text(), Some("Box"));
 
     let section = drawing("Section");
     assert_eq!(
-        section.relationships["Source"][0].local_target(),
-        Some(crate::native::native_id("object", "Box").as_str())
+        section.relationships["Source"][0].native_text(),
+        Some("Box")
     );
     assert_eq!(
-        section.relationships["BaseView"][0].local_target(),
-        Some(front.id.as_str())
+        section.relationships["BaseView"][0].native_text(),
+        Some(crate::native::id_key(&front.object))
     );
     let detail = drawing("Detail");
     assert_eq!(
-        detail.relationships["BaseView"][0].local_target(),
-        Some(front.id.as_str())
+        detail.relationships["BaseView"][0].native_text(),
+        Some(crate::native::id_key(&front.object))
     );
     let properties = ir
         .native
@@ -638,7 +634,10 @@ fn drawing_only_pages_keep_independent_physical_sheets() {
         let [reference] = page.relationships["Views"].as_slice() else {
             panic!("{name} page must own exactly one view")
         };
-        assert_eq!(reference.local_target(), Some(view.id.as_str()));
+        assert_eq!(
+            reference.native_text(),
+            Some(crate::native::id_key(&view.object))
+        );
     }
 }
 
@@ -653,12 +652,17 @@ fn expanded_templates_dimensions_and_view_families_keep_exact_data_and_losses() 
     assert_authored_fixture_shape_measures(result.ir(), "techdraw-dimensions", 30.0, 7.0);
     let model = &result.ir().model;
     for (name, kind, value, anchor_count) in [
-        ("Length", DimensionKind::HorizontalDistance {}, 30.0, 2),
-        ("Euclidean", DimensionKind::Distance {}, 30.0, 2),
-        ("Vertical", DimensionKind::VerticalDistance {}, 10.0, 2),
-        ("Radius", DimensionKind::Radius {}, 7.0, 2),
-        ("Diameter", DimensionKind::Diameter {}, 14.0, 2),
-        ("Angle", DimensionKind::Angle {}, 90.0, 0),
+        ("Length", DimensionKind::HorizontalDistance, 30.0, 2),
+        ("Euclidean", DimensionKind::Distance, 30.0, 2),
+        ("Vertical", DimensionKind::VerticalDistance, 10.0, 2),
+        ("Radius", DimensionKind::Radius, 7.0, 2),
+        ("Diameter", DimensionKind::Diameter, 14.0, 2),
+        (
+            "Angle",
+            DimensionKind::Angle,
+            std::f64::consts::FRAC_PI_2,
+            0,
+        ),
     ] {
         let annotation = model
             .semantic_annotations
@@ -868,12 +872,12 @@ fn dimension_measurements_follow_changed_saved_reference_geometry() {
     assert_valid_document(result.ir());
     assert_authored_fixture_shape_measures(result.ir(), "techdraw-variants", 42.0, 11.0);
     for (name, kind, expected) in [
-        ("Length", DimensionKind::HorizontalDistance {}, 42.0),
-        ("Euclidean", DimensionKind::Distance {}, 42.0),
-        ("Vertical", DimensionKind::VerticalDistance {}, 10.0),
-        ("Radius", DimensionKind::Radius {}, 11.0),
-        ("Diameter", DimensionKind::Diameter {}, 22.0),
-        ("Angle", DimensionKind::Angle {}, 90.0),
+        ("Length", DimensionKind::HorizontalDistance, 42.0),
+        ("Euclidean", DimensionKind::Distance, 42.0),
+        ("Vertical", DimensionKind::VerticalDistance, 10.0),
+        ("Radius", DimensionKind::Radius, 11.0),
+        ("Diameter", DimensionKind::Diameter, 22.0),
+        ("Angle", DimensionKind::Angle, std::f64::consts::FRAC_PI_2),
     ] {
         let annotation = result
             .ir()
@@ -1061,7 +1065,7 @@ fn asymmetric_saved_reference_y_is_reflected_into_page_coordinates() {
         .find(|annotation| annotation.object.ends_with("#TriangleBase"))
         .unwrap();
     assert_eq!(annotation.value.unwrap().get(), 40.0);
-    assert_eq!(annotation.dimension_kind, Some(DimensionKind::Distance {}));
+    assert_eq!(annotation.dimension_kind, Some(DimensionKind::Distance));
     assert_eq!(annotation.position.unwrap(), [80.0, 100.0, 0.0]);
     assert_eq!(
         annotation
@@ -1107,9 +1111,9 @@ fn custom_dimension_labels_keep_precedence_during_exact_evaluation() {
         assert_eq!(
             dimension.dimension_kind,
             Some(if label == "Distance" {
-                DimensionKind::Distance {}
+                DimensionKind::Distance
             } else {
-                DimensionKind::Radius {}
+                DimensionKind::Radius
             })
         );
         assert_eq!(

@@ -12,6 +12,12 @@
       "publications": [],
       "scopes": [],
       "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
       "spreadsheets": []
     },
     "fragment": false,
@@ -62,12 +68,19 @@
           "bodies": [],
           "bom_properties": {},
           "id": "step:product:product#1",
+          "instance_bodies": [],
           "kind": "part",
           "label": "Part",
           "native_ref": "#1",
+          "occurrences": [],
           "part_number": "P1",
+          "representations": [],
           "sketches": [],
-          "source_name": "Part"
+          "source_name": "Part",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
         }
       ],
       "rigid_bodies": [],
@@ -99,7 +112,19 @@
         ]
       }
     },
-    "process": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
     "scope": {
       "design": true,
       "model": true,
@@ -213,7 +238,13 @@
             "namespace": "step"
           }
         },
+        "count": 1,
         "message": "preserved 1 EXAMPLE_RECORD instance(s) as named opaque STEP records",
+        "provenance": {
+          "format": "step",
+          "offset": 398,
+          "tag": "EXAMPLE_RECORD"
+        },
         "severity": "warning"
       },
       {
@@ -225,7 +256,13 @@
             "namespace": "step"
           }
         },
+        "count": 1,
         "message": "preserved 1 SIGNATURE instance(s) as named opaque STEP records",
+        "provenance": {
+          "format": "step",
+          "offset": 453,
+          "tag": "SIGNATURE"
+        },
         "severity": "warning"
       }
     ],

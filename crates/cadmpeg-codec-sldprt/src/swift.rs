@@ -2,6 +2,7 @@
 //! Semantic PMI stored in the SWIFT GDT-analysis object graph.
 #![warn(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 
+use cadmpeg_ir::design::options::NativeOptions;
 use std::cell::Cell;
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -10,12 +11,15 @@ use std::num::NonZeroU32;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View, WorkBudget};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::parameter::{Deviations, Tolerance};
 use cadmpeg_ir::ids::{EdgeId, FaceId, PmiId, VertexId};
-use cadmpeg_ir::pmi::zones::{ToleranceConstraints, ToleranceZone};
+use cadmpeg_ir::pmi::zones::{ToleranceZone, ToleranceZoneForm};
 use cadmpeg_ir::pmi::{
-    DatumReference, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiAnnotation,
-    PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
+    DatumReference, GeometricToleranceKind, PmiAnnotation, PmiDefinition, PmiDimension,
+    PmiDimensionKind as DimensionKind, PmiQuantity, PmiTarget, PmiValue,
 };
+use cadmpeg_ir::references::InstanceTarget;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use cadmpeg_ir::topology::{Body, Edge, Face, Vertex};
@@ -1339,6 +1343,9 @@ fn project_with_feature_index_and_displays(
                             definition: PmiDefinition::DatumSystem {
                                 references: tolerance.references,
                             },
+                            native_ref: None,
+                            native_options: NativeOptions::new(),
+                            source_settings: NativeOptions::new(),
                         });
                         Some(datum_system)
                     }
@@ -1349,7 +1356,7 @@ fn project_with_feature_index_and_displays(
                 id,
                 name: object_name(entity),
                 visible: None,
-                targets,
+                targets: targets.into_iter().map(InstanceTarget::new).collect(),
                 definition: PmiDefinition::GeometricTolerance {
                     tolerance: tolerance.kind,
                     magnitude: tolerance.magnitude,
@@ -1358,8 +1365,13 @@ fn project_with_feature_index_and_displays(
                     defined_area_second_unit,
                     datum_system,
                     modifiers: tolerance_modifiers(entity),
-                    constraints: tolerance_constraints(short_class(&entity.class), entity),
+                    displacement: None,
+                    maximum_upper: None,
+                    zones: tolerance_zones(short_class(&entity.class), entity),
                 },
+                native_ref: None,
+                native_options: NativeOptions::new(),
+                source_settings: NativeOptions::new(),
             });
             if short_class(&entity.class) == "GdtCompositeSurfaceProfile" {
                 if let Some(lower_tier) =
@@ -1433,9 +1445,9 @@ fn unresolved_implicit_diameter(entity: &Entity, annotation: &PmiAnnotation) -> 
         && matches!(
             &annotation.definition,
             PmiDefinition::Dimension(dimension)
-                if (dimension.kind() == &DimensionKind::Diameter
-                    || dimension.kind() == &DimensionKind::SphericalDiameter)
-                    && dimension.nominal().is_none()
+                if (dimension.dimension == DimensionKind::Diameter
+                    || dimension.dimension == DimensionKind::SphericalDiameter)
+                    && dimension.nominal.is_none()
         )
 }
 
@@ -1508,8 +1520,11 @@ fn project_datum(
             id,
             name,
             visible: None,
-            targets,
+            targets: targets.into_iter().map(InstanceTarget::new).collect(),
             definition: PmiDefinition::Datum { identification },
+            native_ref: None,
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
         }),
     )
 }
@@ -1520,17 +1535,16 @@ struct ProjectedTolerance {
     references: cadmpeg_ir::pmi::DatumReferences,
 }
 
-fn tolerance_constraints(class: &str, entity: &Entity) -> ToleranceConstraints {
+/// The tolerance zones a tolerance record states: a `GdtPosition` whose
+/// `ZoneType` is 2 has a spherical zone.
+fn tolerance_zones(class: &str, entity: &Entity) -> Vec<ToleranceZone> {
     if class != "GdtPosition" || entity.integers.get("ZoneType") != Some(&2) {
-        return ToleranceConstraints::default();
+        return Vec::new();
     }
-    ToleranceConstraints {
-        zones: vec![ToleranceZone {
-            form: cadmpeg_core::nonblank_literal!("spherical"),
-            projections: Vec::new(),
-        }],
-        ..ToleranceConstraints::default()
-    }
+    vec![ToleranceZone {
+        form: ToleranceZoneForm::Spherical,
+        projections: Vec::new(),
+    }]
 }
 
 fn project_tolerance(
@@ -1590,7 +1604,7 @@ fn project_lower_profile_tier(
         id,
         name,
         visible: None,
-        targets,
+        targets: targets.into_iter().map(InstanceTarget::new).collect(),
         definition: PmiDefinition::GeometricTolerance {
             tolerance: GeometricToleranceKind::SurfaceProfile,
             magnitude: cadmpeg_ir::pmi::PmiMagnitude::from_parts(magnitude, PmiQuantity::Length),
@@ -1599,8 +1613,13 @@ fn project_lower_profile_tier(
             defined_area_second_unit: None,
             datum_system: None,
             modifiers: vec!["composite_lower_tier".into()],
-            constraints: cadmpeg_ir::pmi::zones::ToleranceConstraints::default(),
+            displacement: None,
+            maximum_upper: None,
+            zones: Vec::new(),
         },
+        native_ref: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
     }))
 }
 
@@ -1896,10 +1915,7 @@ fn project_dimension(
         deviation(entity, nominal, "LowerLimit", "MinusTolerance"),
         deviation(entity, nominal, "UpperLimit", "PlusTolerance"),
     ) {
-        (Some(lower), Some(upper)) => Some(DimensionTolerance::PlusMinus {
-            lower: PmiValue::from_parts(lower, quantity),
-            upper: PmiValue::from_parts(upper, quantity),
-        }),
+        (Some(lower), Some(upper)) => Some(Tolerance::Deviations(Deviations { lower, upper })),
         _ => None,
     };
     let Some(id) = pmi_id(&reference.id) else {
@@ -1912,23 +1928,21 @@ fn project_dimension(
         .then_some(inferred_spherical_target_pair)
         .flatten()
         .is_some_and(|pair| append_inferred_spherical_targets(&mut targets, pair));
-    let Ok(dimension) = cadmpeg_ir::pmi::PmiDimension::new(
-        dimension,
-        nominal.map(|value| PmiValue::from_parts(value, quantity)),
-        tolerance,
-    ) else {
-        return Ok(None);
-    };
-    Ok(Some((
-        PmiAnnotation {
-            id,
-            name: object_name(entity),
-            visible: None,
-            targets,
-            definition: PmiDefinition::Dimension(dimension),
-        },
-        inferred_spherical_target,
-    )))
+    let mut dimension = PmiDimension::new(dimension);
+    dimension.nominal =
+        nominal.map(|value| Dimension::Literal(PmiValue::from_parts(value, quantity)));
+    dimension.tolerance = tolerance;
+    dimension.decimals = entity
+        .integers
+        .get("BlockToleranceDecimalPlaces")
+        .and_then(|places| u8::try_from(*places).ok());
+    let mut annotation = PmiAnnotation::new(
+        id,
+        targets.into_iter().map(InstanceTarget::new).collect(),
+        PmiDefinition::Dimension(dimension),
+    );
+    annotation.name = object_name(entity);
+    Ok(Some((annotation, inferred_spherical_target)))
 }
 
 fn append_inferred_spherical_targets(

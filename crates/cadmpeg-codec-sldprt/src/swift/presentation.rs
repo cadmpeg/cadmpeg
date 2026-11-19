@@ -1,6 +1,7 @@
 //! SWIFT presentation archive: geometric-tolerance displays, their feature
 //! paths, and the semantic annotations they depict.
 
+use cadmpeg_ir::design::options::NativeOptions;
 use std::collections::{BTreeSet, HashMap};
 use std::num::NonZeroU32;
 
@@ -628,6 +629,9 @@ pub(super) fn annotations(
                 placement: None,
                 semantics: semantics.unwrap_or_default(),
             },
+            native_ref: None,
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
         });
     }
     if short > 0 {
@@ -693,6 +697,9 @@ fn apply_datum_systems(
             visible: None,
             targets: Vec::new(),
             definition: PmiDefinition::DatumSystem { references },
+            native_ref: None,
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
         });
     }
     Ok(())
@@ -770,7 +777,7 @@ impl<'a> SemanticIndex<'a> {
                     faces: annotation
                         .targets
                         .iter()
-                        .filter_map(|target| match target {
+                        .filter_map(|target| match &target.entity {
                             PmiTarget::Face { face } => Some(face),
                             _ => None,
                         })

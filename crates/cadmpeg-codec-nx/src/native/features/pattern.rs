@@ -25,14 +25,14 @@ use serde::Deserialize;
 
 use crate::om::discriminators::ConstructionBinary64Frame;
 use crate::om::nonempty::NonEmpty;
+use crate::om::pattern::PatternAtom;
 use crate::om::pattern::PatternRow;
 use crate::om::pattern::PatternRows;
 use crate::om::pattern::PatternScalarEncoding;
 use crate::om::pattern::PatternTerminal;
 use crate::om::pattern::PatternValue;
+use crate::om::pattern::PatternWide;
 use crate::om::pattern::PatternWideValues;
-use crate::om::scalar::ShiftedBinary64;
-use crate::om::scalar::ShiftedScalar;
 use cadmpeg_core::printable::PrintableString;
 use serde::Serialize;
 use std::num::NonZeroU8;
@@ -418,10 +418,7 @@ impl From<FeaturePatternTransformLane> for FeaturePatternTransformLaneWire {
         match lane.rows {
             PatternRows::Scalar(rows) => {
                 for row in rows.into_vec() {
-                    let encoding = match row.values.scalar {
-                        ShiftedScalar::Binary32(_) => PatternScalarEncoding::Binary32,
-                        ShiftedScalar::Binary64(_) => PatternScalarEncoding::Binary64,
-                    };
+                    let encoding = row.values.scalar.encoding();
                     wire.push_scalar(
                         encoding,
                         row.values.scalar.value().get(),
@@ -464,13 +461,10 @@ struct PatternScalarWire {
 }
 
 impl PatternScalarWire {
-    fn shifted(&self) -> Result<PatternValue<ShiftedScalar, u64>, String> {
+    fn shifted(&self) -> Result<PatternValue<PatternAtom, u64>, String> {
         let scalar =
-            ShiftedScalar::read(&self.raw).ok_or("raw_values must contain shifted scalar atoms")?;
-        let encoding = match scalar {
-            ShiftedScalar::Binary32(_) => PatternScalarEncoding::Binary32,
-            ShiftedScalar::Binary64(_) => PatternScalarEncoding::Binary64,
-        };
+            PatternAtom::read(&self.raw).ok_or("raw_values must contain pattern scalar atoms")?;
+        let encoding = scalar.encoding();
         if self.encoding != encoding
             || self.raw.len() != scalar.raw().len()
             || self.value.to_bits() != scalar.value().get().to_bits()
@@ -483,19 +477,17 @@ impl PatternScalarWire {
         })
     }
 
-    fn binary64(&self) -> Result<PatternValue<ShiftedBinary64, u64>, String> {
+    fn binary64(&self) -> Result<PatternValue<PatternWide, u64>, String> {
         if self.encoding != PatternScalarEncoding::Binary64 {
             return Err(
                 "encodings must select binary64 for the first four wide-row scalars".into(),
             );
         }
-        let raw = self
-            .raw
-            .as_slice()
-            .try_into()
-            .map_err(|_| "raw_values wide-row scalars must contain eight bytes")?;
-        let scalar = ShiftedBinary64::from_wire(self.value, raw)
-            .map_err(|error| format!("values/raw_values: {error}"))?;
+        let scalar = PatternWide::read(&self.raw)
+            .ok_or("raw_values wide-row scalars must contain eight-byte pattern atoms")?;
+        if self.value.to_bits() != scalar.value().get().to_bits() {
+            return Err("values/raw_values: scalars must match raw_scalars".into());
+        }
         Ok(PatternValue {
             scalar,
             offset: self.source_offset,
@@ -503,8 +495,9 @@ impl PatternScalarWire {
     }
 
     fn terminal(&self) -> Result<PatternValue<PatternTerminal, u64>, String> {
-        let scalar = PatternTerminal::read(&self.raw)
-            .ok_or("raw_values wide-row terminal must contain exact one or binary32")?;
+        let scalar = PatternTerminal::read(&self.raw).ok_or(
+            "raw_values wide-row terminal must contain exact one or a four-byte pattern atom",
+        )?;
         if self.encoding != scalar.encoding()
             || self.raw.len() != scalar.raw().len()
             || self.value.to_bits() != scalar.value().get().to_bits()

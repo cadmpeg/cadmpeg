@@ -26,17 +26,9 @@ use super::{Writer, MILLIMETRES_PER_UNIT};
 
 /// Name of the scope that holds physical materials and joints.
 pub(super) const PHYSICS: &str = "Physics";
-/// Millimetres per metre.
-const MILLIMETRES_PER_METRE: f64 = 1000.0;
-
-/// Metres per scene unit.
-fn meters_per_unit() -> f64 {
-    MILLIMETRES_PER_UNIT / MILLIMETRES_PER_METRE
-}
-
-/// Scene-unit density per kilogram per cubic metre.
+/// Scene-unit density per kilogram per cubic millimetre.
 fn density_scale() -> f64 {
-    meters_per_unit().powi(3)
+    MILLIMETRES_PER_UNIT.powi(3)
 }
 
 /// The schemas and properties of one prim.
@@ -216,11 +208,7 @@ impl Plan {
                     let placements: Vec<OccurrenceId> = model
                         .occurrences
                         .iter()
-                        .filter(|occurrence| {
-                            matches!(&occurrence.prototype,
-                                cadmpeg_ir::products::PrototypeReference::Local { definition: local }
-                                    if local == definition)
-                        })
+                        .filter(|occurrence| &occurrence.prototype == definition)
                         .map(|occurrence| occurrence.id.clone())
                         .collect();
                     for occurrence in placements {
@@ -236,7 +224,7 @@ impl Plan {
         };
         let mut rigid: BTreeSet<OccurrenceId> = BTreeSet::new();
         for body in &model.rigid_bodies {
-            if let PhysicsTarget::Occurrence { occurrence } = &body.target {
+            if let PhysicsTarget::Occurrence { occurrence } = &body.target.entity {
                 rigid.insert(occurrence.clone());
             }
             let mut lines = Vec::new();
@@ -266,7 +254,7 @@ impl Plan {
             if body.starts_asleep {
                 lines.push("bool physics:startsAsleep = 1".to_owned());
             }
-            add(&body.target, "PhysicsRigidBodyAPI", lines);
+            add(&body.target.entity, "PhysicsRigidBodyAPI", lines);
         }
         for joint in &model.assembly_joints {
             for connector in joint.connectors() {
@@ -286,30 +274,34 @@ impl Plan {
             }
         }
         for articulation in &model.articulations {
-            add(&articulation.root, "PhysicsArticulationRootAPI", Vec::new());
+            add(
+                &articulation.root.entity,
+                "PhysicsArticulationRootAPI",
+                Vec::new(),
+            );
         }
         for mass in &model.mass_properties {
-            add(&mass.target, "PhysicsMassAPI", mass_lines(mass));
+            add(&mass.target.entity, "PhysicsMassAPI", mass_lines(mass));
         }
         let scope_path = String::new();
         for collider in &model.colliders {
             let approximation = match &collider.shape {
-                ColliderShape::Exact {} => None,
-                ColliderShape::ConvexHull {} => Some("convexHull"),
-                ColliderShape::ConvexDecomposition {} => Some("convexDecomposition"),
-                ColliderShape::BoundingBox {} => Some("boundingCube"),
-                ColliderShape::BoundingSphere {} => Some("boundingSphere"),
-                ColliderShape::Simplified {} => Some("meshSimplification"),
+                ColliderShape::Exact => None,
+                ColliderShape::ConvexHull => Some("convexHull"),
+                ColliderShape::ConvexDecomposition => Some("convexDecomposition"),
+                ColliderShape::BoundingBox => Some("boundingCube"),
+                ColliderShape::BoundingSphere => Some("boundingSphere"),
+                ColliderShape::Simplified => Some("meshSimplification"),
                 ColliderShape::Native { name } => Some(name.as_str()),
             };
             let mut lines = Vec::new();
             if !collider.enabled {
                 lines.push("bool physics:collisionEnabled = 0".to_owned());
             }
-            add(&collider.target, "PhysicsCollisionAPI", lines);
+            add(&collider.target.entity, "PhysicsCollisionAPI", lines);
             if let Some(approximation) = approximation {
                 add(
-                    &collider.target,
+                    &collider.target.entity,
                     "PhysicsMeshCollisionAPI",
                     vec![format!(
                         "uniform token physics:approximation = {}",
@@ -319,7 +311,7 @@ impl Plan {
             }
             if let Some(material) = collider.material.as_ref().and_then(|id| materials.get(id)) {
                 add(
-                    &collider.target,
+                    &collider.target.entity,
                     "MaterialBindingAPI",
                     vec![format!(
                         "rel material:binding:physics = <{scope_path}/{PHYSICS}/{material}>"
@@ -342,7 +334,7 @@ impl Plan {
                 entry.0.push(schema.clone());
                 entry.1.extend(lines.iter().cloned());
             };
-            let physics_target = match &settings.target {
+            let physics_target = match &settings.target.entity {
                 SolverTarget::Occurrence { occurrence } => Some(PhysicsTarget::Occurrence {
                     occurrence: occurrence.clone(),
                 }),
@@ -354,12 +346,12 @@ impl Plan {
                     .colliders
                     .iter()
                     .find(|record| &record.id == collider)
-                    .map(|record| record.target.clone()),
+                    .map(|record| record.target.entity.clone()),
                 SolverTarget::Articulation { articulation } => model
                     .articulations
                     .iter()
                     .find(|record| &record.id == articulation)
-                    .map(|record| record.root.clone()),
+                    .map(|record| record.root.entity.clone()),
                 SolverTarget::Joint { joint } => {
                     onto(joint_settings.entry(joint.clone()).or_default());
                     None
@@ -485,17 +477,19 @@ impl Writer<'_> {
             .occurrences
             .iter()
             .find(|candidate| &candidate.id == occurrence)?;
-        let mut transform = current.transform;
-        while let cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence: parent } =
-            &current.parent
-        {
-            current = model
-                .occurrences
-                .iter()
-                .find(|candidate| &candidate.id == parent)?;
-            transform = current.transform.compose(transform).ok()?;
+        let mut transform = current.transform?;
+        for _ in 0..model.occurrences.len() {
+            let Some(owner) = cadmpeg_ir::products::owner(&model.product_definitions, &current.id)
+            else {
+                return Some(transform);
+            };
+            if owner.is_root() {
+                return Some(transform);
+            }
+            current = cadmpeg_ir::products::sole_placement(&model.occurrences, &owner.id)?;
+            transform = current.transform?.compose(transform).ok()?;
         }
-        Some(transform)
+        None
     }
 
     fn frame_lines(&mut self, side: usize, frame: &Transform) {
@@ -713,15 +707,15 @@ impl Writer<'_> {
             let rotation = matches!(drive.axis, DriveAxis::Rotation { .. });
             let degrees = 180.0 / std::f64::consts::PI;
             // See the reader for the inverse factors.
-            let mpu = meters_per_unit();
+            let millimetres = MILLIMETRES_PER_UNIT;
             let (position, response, force) = if rotation {
                 (
                     degrees,
-                    1.0 / (mpu * mpu * MILLIMETRES_PER_METRE * degrees),
-                    1.0 / (mpu * mpu * MILLIMETRES_PER_METRE),
+                    1.0 / (millimetres * millimetres * degrees),
+                    1.0 / (millimetres * millimetres),
                 )
             } else {
-                (1.0, MILLIMETRES_PER_METRE, 1.0 / mpu)
+                (1.0, 1.0, 1.0 / millimetres)
             };
             let name = |field: &str| format!("drive:{instance}:physics:{field}");
             if drive.mode == DriveMode::Acceleration {
