@@ -35,10 +35,44 @@ fn density_scale(length: f64) -> f64 {
 /// The schemas and properties of one prim.
 pub(super) type PrimPhysics = (Vec<String>, Vec<String>);
 
+/// The initial velocities of a rigid body: linear in scene units per
+/// second and angular in degrees per second, in the coordinates of the
+/// model.
+#[derive(Debug, Clone, Copy, Default)]
+struct Velocity {
+    linear: Option<[f64; 3]>,
+    angular: Option<[f64; 3]>,
+}
+
+impl Velocity {
+    /// The velocity attributes of a prim whose transform turns its parent
+    /// space by `turn` from the model's.
+    fn lines(self, turn: Option<f64>) -> Vec<String> {
+        let mut lines = Vec::new();
+        if let Some(linear) = self.linear {
+            lines.push(format!(
+                "vector3f physics:velocity = {}",
+                floats(&super::turned(turn, linear))
+            ));
+        }
+        if let Some(angular) = self.angular {
+            lines.push(format!(
+                "vector3f physics:angularVelocity = {}",
+                floats(&super::turned(turn, angular))
+            ));
+        }
+        lines
+    }
+}
+
 /// The physics schemas the writer applies to occurrence and body prims.
 pub(super) struct Plan {
     occurrences: BTreeMap<OccurrenceId, PrimPhysics>,
     bodies: BTreeMap<BodyId, PrimPhysics>,
+    /// The initial velocities of the rigid bodies on occurrence and body
+    /// prims.
+    occurrence_velocities: BTreeMap<OccurrenceId, Velocity>,
+    body_velocities: BTreeMap<BodyId, Velocity>,
     /// The collision schemas of each body.
     colliders: BTreeMap<BodyId, PrimPhysics>,
     /// Material names in the `Physics` scope.
@@ -182,6 +216,8 @@ impl Plan {
         let mut occurrences: BTreeMap<OccurrenceId, PrimPhysics> = BTreeMap::new();
         let mut bodies: BTreeMap<BodyId, PrimPhysics> = BTreeMap::new();
         let mut colliders: BTreeMap<BodyId, PrimPhysics> = BTreeMap::new();
+        let mut occurrence_velocities: BTreeMap<OccurrenceId, Velocity> = BTreeMap::new();
+        let mut body_velocities: BTreeMap<BodyId, Velocity> = BTreeMap::new();
         let mut names = Names::default();
         let materials: BTreeMap<PhysicalMaterialId, String> = model
             .physical_materials
@@ -236,19 +272,34 @@ impl Plan {
             if !body.enabled {
                 lines.push("bool physics:rigidBodyEnabled = 0".to_owned());
             }
-            if let Some(velocity) = body.linear_velocity {
-                let velocity = velocity.get();
-                lines.push(format!(
-                    "vector3f physics:velocity = {}",
-                    floats(&[velocity.x, velocity.y, velocity.z].map(|value| value / length))
-                ));
-            }
-            if let Some(velocity) = body.angular_velocity {
-                let velocity = velocity.get();
-                lines.push(format!(
-                    "vector3f physics:angularVelocity = {}",
-                    floats(&[velocity.x, velocity.y, velocity.z].map(f64::to_degrees))
-                ));
+            let velocity = Velocity {
+                linear: body.linear_velocity.map(|velocity| {
+                    let velocity = velocity.get();
+                    [velocity.x, velocity.y, velocity.z].map(|value| value / length)
+                }),
+                angular: body.angular_velocity.map(|velocity| {
+                    let velocity = velocity.get();
+                    [velocity.x, velocity.y, velocity.z].map(f64::to_degrees)
+                }),
+            };
+            if velocity.linear.is_some() || velocity.angular.is_some() {
+                match &body.target.entity {
+                    PhysicsTarget::Occurrence { occurrence } => {
+                        occurrence_velocities.insert(occurrence.clone(), velocity);
+                    }
+                    PhysicsTarget::Body { body } => {
+                        body_velocities.insert(body.clone(), velocity);
+                    }
+                    PhysicsTarget::Definition { definition } => {
+                        for occurrence in model
+                            .occurrences
+                            .iter()
+                            .filter(|occurrence| &occurrence.prototype == definition)
+                        {
+                            occurrence_velocities.insert(occurrence.id.clone(), velocity);
+                        }
+                    }
+                }
             }
             if body.starts_asleep {
                 lines.push("bool physics:startsAsleep = 1".to_owned());
@@ -375,6 +426,8 @@ impl Plan {
         Self {
             occurrences,
             bodies,
+            occurrence_velocities,
+            body_velocities,
             colliders,
             materials,
             joint_settings,
@@ -408,12 +461,24 @@ impl Plan {
         parent.clone_into(&mut self.scope);
     }
 
-    pub(super) fn occurrence(&self, id: &OccurrenceId) -> PrimPhysics {
-        self.occurrences.get(id).cloned().unwrap_or_default()
+    /// The physics of the prim of occurrence `id`, whose transform turns
+    /// its parent space by `turn`.
+    pub(super) fn occurrence(&self, id: &OccurrenceId, turn: Option<f64>) -> PrimPhysics {
+        let mut physics = self.occurrences.get(id).cloned().unwrap_or_default();
+        if let Some(velocity) = self.occurrence_velocities.get(id) {
+            physics.1.extend(velocity.lines(turn));
+        }
+        physics
     }
 
-    pub(super) fn body(&self, id: &BodyId) -> PrimPhysics {
-        self.bodies.get(id).cloned().unwrap_or_default()
+    /// The physics of the prim of body `id`, whose transform turns its
+    /// parent space by `turn`.
+    pub(super) fn body(&self, id: &BodyId, turn: Option<f64>) -> PrimPhysics {
+        let mut physics = self.bodies.get(id).cloned().unwrap_or_default();
+        if let Some(velocity) = self.body_velocities.get(id) {
+            physics.1.extend(velocity.lines(turn));
+        }
+        physics
     }
 
     /// The collision schemas of body `id`, for the prim of its collision
@@ -848,7 +913,10 @@ impl Writer<'_> {
                 let direction = cadmpeg_ir::math::Vector3::from(direction);
                 self.out.line(&format!(
                     "vector3f physics:gravityDirection = {}",
-                    floats(&self.turned([direction.x, direction.y, direction.z]))
+                    floats(&super::turned(
+                        self.turn,
+                        [direction.x, direction.y, direction.z]
+                    ))
                 ));
             }
             if let Some(magnitude) = scene.gravity_magnitude {
