@@ -278,6 +278,10 @@ pub(crate) fn validate_native(
             &data.pm_dc_parameters,
             &data.pm_dc_units,
         )?);
+        findings.extend(crate::design_v11::validate_states(
+            ir,
+            &ctx.policy().limits,
+        )?);
     }
     Ok(findings)
 }

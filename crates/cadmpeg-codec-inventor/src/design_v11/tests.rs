@@ -281,23 +281,90 @@ fn block_definitions_are_members_of_the_unordered_blocks_group() {
     assert_eq!(group, &BTreeSet::from([Member::Feature(block.id)]));
 }
 
+fn extrude(key: &str, ordinal: u64) -> LegacyFeature {
+    let mut extrude = feature(key, ordinal);
+    extrude.evaluation = FeatureEvaluation::from_definition(
+        cadmpeg_ir::features::FeatureDefinition::Operation(LegacyOperation::Unresolved {
+            family: UnresolvedFamily::Extrude,
+        }),
+    );
+    extrude
+}
+
+fn with_bodies(mut ir: CadIr) -> CadIr {
+    for key in ["b", "a", "other"] {
+        ir.geometry.bodies.push(
+            serde_json::from_value(
+                serde_json::json!({"id":format!("inventor:brep:body#{key}"),"kind":"solid"}),
+            )
+            .expect("body"),
+        );
+    }
+    ir.model.product_definitions[0].bodies = ir.geometry.bodies[..2]
+        .iter()
+        .map(|b| b.id.clone())
+        .collect();
+    ir
+}
+
+fn owned(ir: &CadIr) -> Vec<cadmpeg_ir::ids::BodyId> {
+    let mut owned = ir.model.product_definitions[0].bodies.clone();
+    owned.sort();
+    owned
+}
+
 #[test]
-fn unproduced_count_uses_the_decoded_body_output_joins() {
-    let mut producer = feature("producer", 0);
-    let bodies = ["produced", "unproduced"].map(|name| {
-        serde_json::from_value::<cadmpeg_ir::topology::Body>(serde_json::json!({
-            "id":format!("inventor:brep:body#{name}"), "kind":"solid"
-        }))
-        .expect("body")
-    });
-    producer
-        .evaluation
-        .set_outputs(std::iter::once(bodies[0].id.clone()).collect());
-    let mut ir = part(vec![producer]);
-    ir.geometry.bodies.extend(bodies);
-    assert_eq!(unproduced_bodies(&ir), 1);
-    ir.model.features.clear();
+fn a_state_changing_member_produces_every_owned_body() {
+    let mut ir = with_bodies(part(vec![feature("sketch", 0), extrude("extrude", 1)]));
+    project_part(&mut ir);
+    let scope = &ir.design.scopes[0];
+    assert_eq!(scope.current[0].bodies, owned(&ir));
+    assert!(scope.unproduced.is_empty());
+    assert_eq!(unproduced_bodies(&ir), 0);
+}
+
+#[test]
+fn stateless_members_leave_owned_bodies_unproduced() {
+    let mut block = feature("block", 1);
+    block.evaluation =
+        FeatureEvaluation::from_definition(cadmpeg_ir::features::FeatureDefinition::Operation(
+            LegacyOperation::SketchBlockDefinition { sketch: None },
+        ));
+    let mut ir = with_bodies(part(vec![feature("sketch", 0), block]));
+    project_part(&mut ir);
+    let scope = &ir.design.scopes[0];
+    assert!(scope.current[0].bodies.is_empty());
+    assert_eq!(
+        scope.unproduced.iter().cloned().collect::<Vec<_>>(),
+        owned(&ir)
+    );
     assert_eq!(unproduced_bodies(&ir), 2);
+}
+
+#[test]
+fn members_after_the_rollback_or_suppressed_produce_no_current_body() {
+    let mut below = extrude("below", 1);
+    property(&mut below, "end_of_part", "below");
+    let mut suppressed = extrude("suppressed", 1);
+    property(&mut suppressed, "suppressed", "true");
+    for second in [below, suppressed] {
+        let mut ir = with_bodies(part(vec![feature("sketch", 0), second]));
+        project_part(&mut ir);
+        let scope = &ir.design.scopes[0];
+        assert!(scope.current[0].bodies.is_empty());
+        assert_eq!(scope.unproduced.len(), 2);
+    }
+}
+
+#[test]
+fn timeline_production_reads_only_ordered_containers() {
+    let ir = part(Vec::new());
+    let group = Container::Unordered {
+        id: ContainerId::mint("inventor:document:group#blocks").expect("id"),
+        kind: UnorderedKind::Group,
+        members: BTreeSet::new(),
+    };
+    assert!(!timeline_produces(&ir, &group).expect("group"));
 }
 
 #[test]
@@ -523,4 +590,77 @@ pub(super) fn validate_from_native(
         namespace.arena_as_for_decode(ctx, "pm_dc_parameters")?;
     let units: Vec<crate::design::PmDcUnit> = namespace.arena_as_for_decode(ctx, "pm_dc_units")?;
     super::validate_operations(ctx, ir, &features, &sketches, &parameters, &units)
+}
+
+fn state_findings(ir: &CadIr) -> usize {
+    validate_states(ir, &DecodePolicy::service().limits)
+        .expect("validation")
+        .len()
+}
+
+#[test]
+fn state_validation_accepts_the_decoder_placement() {
+    for features in [
+        vec![feature("sketch", 0), extrude("extrude", 1)],
+        vec![feature("sketch", 0)],
+    ] {
+        let mut ir = with_bodies(part(features));
+        project_part(&mut ir);
+        assert_eq!(state_findings(&ir), 0);
+    }
+}
+
+#[test]
+fn state_validation_rejects_bodies_the_predicate_places_elsewhere() {
+    let mut ir = with_bodies(part(vec![feature("sketch", 0), extrude("extrude", 1)]));
+    project_part(&mut ir);
+    let body = ir.design.scopes[0].current[0].bodies.pop().expect("body");
+    ir.design.scopes[0].unproduced.insert(body);
+    assert_eq!(state_findings(&ir), 1);
+
+    let mut ir = with_bodies(part(vec![feature("sketch", 0)]));
+    project_part(&mut ir);
+    let scope = &mut ir.design.scopes[0];
+    let body = scope.unproduced.pop_first().expect("body");
+    scope.current[0].bodies.push(body);
+    assert_eq!(state_findings(&ir), 1);
+}
+
+#[test]
+fn state_validation_rejects_an_extent_with_another_owner() {
+    let mut ir = with_bodies(part(vec![feature("sketch", 0), extrude("extrude", 1)]));
+    project_part(&mut ir);
+    let other = ir.geometry.bodies[2].id.clone();
+    let mut definition = ir.model.product_definitions[0].clone();
+    definition.id = cadmpeg_ir::ids::ProductDefinitionId::mint("inventor:product:definition#other")
+        .expect("definition");
+    definition.bodies = vec![other.clone()];
+    definition.occurrences = Vec::default();
+    ir.model.product_definitions.push(definition);
+    ir.design.scopes[0].current[0].bodies.push(other);
+    assert_eq!(state_findings(&ir), 1);
+}
+
+#[test]
+fn state_validation_rejects_an_unresolved_evaluation() {
+    let mut ir = with_bodies(part(vec![feature("sketch", 0), extrude("extrude", 1)]));
+    project_part(&mut ir);
+    let id = cadmpeg_ir::design::ids::EvaluationId::mint("inventor:test:evaluation#a").expect("id");
+    ir.design
+        .evaluations
+        .push(cadmpeg_ir::design::evaluation::Evaluation {
+            id: id.clone(),
+            scope: ir.design.scopes[0].definition.clone(),
+            configuration: None,
+            of: cadmpeg_ir::design::refs::Evaluated::State(Position::After(Member::Feature(
+                FeatureId::mint("inventor:design:feature#extrude").expect("id"),
+            ))),
+            status: EvaluationStatus::Current,
+            content: Some(cadmpeg_ir::design::evaluation::StateContent {
+                base: cadmpeg_ir::design::evaluation::StateBase::Evaluation(id),
+                delta: cadmpeg_ir::design::evaluation::StateDelta::default(),
+            }),
+            native_ref: None,
+        });
+    assert_eq!(state_findings(&ir), 1);
 }

@@ -6,7 +6,7 @@ use cadmpeg_ir::features::{
 };
 use std::collections::BTreeMap;
 
-fn document(produced: bool) -> CadIr {
+fn document(history: bool) -> CadIr {
     let mut ir = crate::test_support::root_part_ir();
     let body: cadmpeg_ir::topology::Body = serde_json::from_value(
         serde_json::json!({"id":"inventor:brep:body#synthetic","kind":"solid"}),
@@ -26,28 +26,44 @@ fn document(produced: bool) -> CadIr {
         source_content: FeatureContent::default(),
         evaluation: FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {}),
-            produced.then_some(body.id.clone()).into_iter().collect(),
+            [body.id.clone()].into_iter().collect(),
         ),
         native_ref: None,
     });
+    if history {
+        ir.model.history_bodies.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "inventor:history:body#synthetic",
+                "produced_by": "inventor:design:feature#base",
+                "state": {"ordinal": 0, "identifier": 1},
+                "topology": {
+                    "body": {"id":"inventor:history:body#synthetic.body","kind":"solid"},
+                    "regions": [], "shells": [], "faces": [], "loops": [],
+                    "coedges": [], "edges": [], "vertices": [], "surfaces": [],
+                    "curves": [], "pcurves": [], "points": []
+                }
+            }))
+            .expect("history body"),
+        );
+    }
     ir.geometry.bodies.push(body);
     ir
 }
 
 #[test]
-fn unproduced_current_bodies_keep_all_legacy_design_records() {
-    let mut ir = document(false);
+fn history_bodies_keep_all_legacy_design_records() {
+    let mut ir = document(true);
     let before = ir.model.clone();
-    assert_eq!(contract(&mut ir), 1);
+    assert!(!contract(&mut ir));
     assert_eq!(ir.model, before);
 }
 
 #[test]
-fn produced_current_bodies_allow_design_contraction() {
-    let mut ir = document(true);
+fn documents_without_history_bodies_allow_design_contraction() {
+    let mut ir = document(false);
     let geometry = ir.geometry.clone();
     let definitions = ir.model.product_definitions.clone();
-    assert_eq!(contract(&mut ir), 0);
+    assert!(contract(&mut ir));
     assert!(ir.model.features.is_empty());
     assert_eq!(ir.geometry, geometry);
     assert_eq!(ir.model.product_definitions, definitions);

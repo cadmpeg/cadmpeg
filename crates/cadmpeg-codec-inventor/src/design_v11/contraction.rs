@@ -11,10 +11,11 @@ pub(crate) fn finish(ir: &mut CadIr) {
     }
 }
 
-fn contract(ir: &mut CadIr) -> usize {
-    let unproduced = super::unproduced_bodies(ir);
-    if unproduced != 0 {
-        return unproduced;
+/// Removes the legacy design arenas of a document without history bodies,
+/// and returns whether it removed them.
+fn contract(ir: &mut CadIr) -> bool {
+    if !ir.model.history_bodies.is_empty() {
+        return false;
     }
     ir.model.features.clear();
     ir.model.feature_input_topologies.clear();
@@ -23,14 +24,13 @@ fn contract(ir: &mut CadIr) -> usize {
     ir.model.sketches.clear();
     ir.model.sketch_entities.clear();
     ir.model.sketch_constraints.clear();
-    ir.model.history_bodies.clear();
     ir.model.assembly_joints.clear();
     ir.model.configurations.clear();
     ir.model.spatial_sketches.clear();
     ir.model.spatial_sketch_entities.clear();
     ir.model.spatial_sketch_constraints.clear();
     ir.model.spreadsheets.clear();
-    0
+    true
 }
 
 #[cfg(test)]
