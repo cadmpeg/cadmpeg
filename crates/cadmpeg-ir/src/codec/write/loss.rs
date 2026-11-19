@@ -2,7 +2,8 @@
 //! Stable loss vocabulary charged by the sealed export wrapper.
 //!
 //! These codes belong to no codec: the wrapper charges them from a backend's
-//! declared arena coverage, so every encoder reports them under one namespace.
+//! declared arena coverage and from the validation the caller gives it, so
+//! every encoder reports them under one namespace.
 
 use crate::report::{
     loss::{LossKind, LossNamespace, LossNote, LossTaxonomy, NamespacedLossKind},
@@ -17,6 +18,9 @@ const NAMESPACE: LossNamespace<'static> = crate::loss_namespace!("export");
 pub(crate) enum ExportLossCode {
     /// The write path does not represent a non-empty model arena.
     ArenaOmitted(EntityKind),
+    /// A record is written despite a validation Error, or the finding names
+    /// no record.
+    RecordInvalid,
 }
 
 impl ExportLossCode {
@@ -24,18 +28,23 @@ impl ExportLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::ArenaOmitted(_) => "arena.omitted",
+            Self::RecordInvalid => "record.invalid",
         }
     }
 
     const fn severity(self) -> Severity {
         match self {
             Self::ArenaOmitted(_) => Severity::Warning,
+            Self::RecordInvalid => Severity::Error,
         }
     }
 
     /// Shared category of the omitted arena's content.
     const fn shared_taxonomy(self) -> LossTaxonomy {
-        let Self::ArenaOmitted(kind) = self;
+        let kind = match self {
+            Self::ArenaOmitted(kind) => kind,
+            Self::RecordInvalid => return LossTaxonomy::DecodeDiagnostic,
+        };
         match kind {
             EntityKind::Body
             | EntityKind::Region

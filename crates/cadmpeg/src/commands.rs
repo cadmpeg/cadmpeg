@@ -11,6 +11,8 @@ use reporting::{
 
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::Confidence;
+use cadmpeg_ir::report::strictness::Strictness;
+use cadmpeg_ir::report::Severity;
 use std::fs::File;
 use std::io::{self, Write};
 use std::path::Path;
@@ -58,12 +60,17 @@ pub(crate) fn print_load_notice(document: &LoadedDocument) {
     }
 }
 
-/// CLI-facing conversion arguments assembled from argv.
+/// CLI-facing conversion arguments assembled from argv. Each refusal flag
+/// sets a field of the decode's or the write's strictness.
 pub(crate) struct ConversionArgs {
-    /// Decode and export loss refusal.
+    /// The phases whose strictness `floor` sets.
     pub(crate) losses: LossPolicy,
-    /// Refuse export when validation reports an error in what the output writes.
+    /// The least severity `--reject-lossy` refuses.
+    pub(crate) floor: Severity,
+    /// Add `export:record.invalid` to the write's codes.
     pub(crate) reject_errors: bool,
+    /// Add `export:output.empty` to the write's codes.
+    pub(crate) reject_empty: bool,
     /// Decode at full depth whatever depth the output format needs.
     pub(crate) full_decode: bool,
     /// CAD output destination and its overwrite policy.
@@ -72,6 +79,23 @@ pub(crate) struct ConversionArgs {
     pub(crate) report: Option<FileDestination>,
     /// Explicit input format selected by the user.
     pub(crate) forced_input: Option<ForcedInput>,
+}
+
+impl ConversionArgs {
+    /// The write's strictness: each flag sets one field.
+    fn write_strictness(&self) -> Strictness {
+        let mut strictness = Strictness {
+            floor: self.losses.rejects_export().then_some(self.floor),
+            ..Strictness::default()
+        };
+        if self.reject_errors {
+            strictness = strictness.with_code(transcoder::RECORD_INVALID);
+        }
+        if self.reject_empty {
+            strictness = strictness.with_code("export:output.empty");
+        }
+        strictness
+    }
 }
 
 /// Attempt to persist a semantic refusal without replacing it with a report
@@ -450,7 +474,6 @@ pub(crate) fn check_cmd(
             args.policy.limits.work_profile(),
         )?;
         let check_refusal = (!report.is_ok()).then(|| ConversionRefusal::CheckFailed {
-            operation: crate::application::refusal::CheckOperation::Check,
             decode_report: loaded.decode_report().cloned(),
             validation: report.clone(),
         });
@@ -483,8 +506,7 @@ pub(crate) fn convert(
 ) -> CommandResult<()> {
     let result = (|| {
         let policy = ConversionPolicy {
-            losses: conversion.losses,
-            reject_errors: conversion.reject_errors,
+            write: conversion.write_strictness(),
             destination: conversion.destination.clone(),
         };
         let selection = TargetSelection::resolve(to, policy.destination.path())?;
@@ -506,10 +528,14 @@ pub(crate) fn convert(
         } else {
             target.needs().request()
         };
+        let mut options = args.options_at(depth);
+        if conversion.losses.rejects_decode() {
+            options.strictness.floor = Some(conversion.floor);
+        }
         let source = SourceRequest {
             path,
             forced: conversion.forced_input,
-            options: args.options_at(depth),
+            options,
             work: args.policy.limits.work_profile(),
         };
         let prepared = transcoder::prepare(inputs, &source, target, &policy)?;
@@ -523,15 +549,17 @@ pub(crate) fn convert(
                 print_decode_report(&mut stderr, report)?;
                 writeln!(stderr)?;
             }
-            print_check_report(&mut stderr, &prepared.validation)?;
-            let total = prepared.validation.error_count();
-            if total > 0 {
-                writeln!(
-                    stderr,
-                    "check: {} of {total} error(s) in what the {} output writes",
-                    planned.carried_errors(),
-                    prepared.format().name()
-                )?;
+            if let Some(validation) = &prepared.validation {
+                print_check_report(&mut stderr, validation)?;
+                let total = validation.error_count();
+                if total > 0 {
+                    writeln!(
+                        stderr,
+                        "check: {} of {total} error(s) in what the {} output writes",
+                        planned.carried_errors(),
+                        prepared.format().name()
+                    )?;
+                }
             }
             (
                 prepared.document.decode_report().cloned(),
@@ -548,7 +576,7 @@ pub(crate) fn convert(
             "convert",
             CommandReportBody::Ok {
                 decode_report: decode_report.as_ref(),
-                check_report: Some(&validation),
+                check_report: validation.as_ref(),
                 export: Some(&emission.report),
             },
         ) {
@@ -656,7 +684,51 @@ pub(crate) fn diff(
 
 #[cfg(test)]
 mod tests {
-    use super::{inspect, inspect_io_error};
+    use super::{inspect, inspect_io_error, ConversionArgs};
+    use crate::application::transcoder::{DestinationPolicy, LossPolicy};
+    use cadmpeg_ir::report::strictness::Strictness;
+    use cadmpeg_ir::report::Severity;
+
+    fn conversion(losses: LossPolicy, reject_errors: bool, reject_empty: bool) -> ConversionArgs {
+        ConversionArgs {
+            losses,
+            floor: Severity::Warning,
+            reject_errors,
+            reject_empty,
+            full_decode: false,
+            destination: DestinationPolicy::Stdout {
+                allow_binary: false,
+            },
+            report: None,
+            forced_input: None,
+        }
+    }
+
+    #[test]
+    fn each_write_refusal_flag_sets_one_field_of_the_write_strictness() {
+        assert_eq!(
+            conversion(LossPolicy::Allow, false, false).write_strictness(),
+            Strictness::default()
+        );
+        assert_eq!(
+            conversion(LossPolicy::Allow, true, false).write_strictness(),
+            Strictness::default().with_code("export:record.invalid")
+        );
+        assert_eq!(
+            conversion(LossPolicy::Allow, false, true).write_strictness(),
+            Strictness::default().with_code("export:output.empty")
+        );
+        for (losses, floor) in [
+            (LossPolicy::RejectDecode, None),
+            (LossPolicy::RejectExport, Some(Severity::Warning)),
+            (LossPolicy::RejectAny, Some(Severity::Warning)),
+        ] {
+            assert_eq!(
+                conversion(losses, false, false).write_strictness().floor,
+                floor
+            );
+        }
+    }
     use cadmpeg_core::decode::ResourceLimits;
     use cadmpeg_registry::InputCatalog;
     use std::io;

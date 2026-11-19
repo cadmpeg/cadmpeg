@@ -9,6 +9,7 @@ use std::collections::{BTreeSet, HashMap};
 use cadmpeg_core::decode::{DecodeContext, ResourceDimension, ResourceFailure, ResourceLimit};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::index::ModelIndex;
+use cadmpeg_ir::report::strictness::Strictness;
 use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -24,6 +25,7 @@ use crate::edges::{measure_edge, EdgeGeometry};
 use crate::face::{FaceInput, FaceResult, Verdict};
 use crate::failure::{settle, Missing, Outcome};
 use crate::geom::Aabb;
+use crate::loss::MeasureLossCode;
 use crate::owners::Owners;
 use crate::reason::CaveatCode;
 use crate::report::{
@@ -48,13 +50,16 @@ pub struct MeasureInput<'ir> {
 }
 
 /// Options of a measurement pass.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct MeasureOptions {
     /// The work profile that sets the pass allowance.
     pub work: WorkProfile,
     /// The material density of every body; body rows report mass and
     /// inertia only with one.
     pub density: Option<Density>,
+    /// The report entries on which the caller refuses the measurement. The
+    /// default refuses none.
+    pub strictness: Strictness,
 }
 
 /// A material density in kilograms per cubic metre: finite and positive.
@@ -104,6 +109,15 @@ pub enum MeasureError {
         entity: String,
         /// The occurrence.
         occurrence: String,
+    },
+    /// The completed report holds an entry that
+    /// [`MeasureOptions::strictness`] refuses.
+    #[error("strictness refuses {}: {}", report.losses()[*entry].code, report.losses()[*entry].message)]
+    StrictRejected {
+        /// The completed report.
+        report: Box<MeasureReport>,
+        /// The index in [`MeasureReport::losses`] of the first refused entry.
+        entry: usize,
     },
 }
 
@@ -163,7 +177,9 @@ impl<'ir> Measurer<'ir> {
 
     /// Measure the selection. Item work runs in slices of one pass allowance;
     /// a session refusal of `ctx` ends the call. A selection with no face or
-    /// edge level measures body rows.
+    /// edge level measures body rows. A document whose scope holds no `model`
+    /// class measures no body and charges `measure:output.empty`. The
+    /// options' strictness refuses the completed report.
     pub fn measure(
         &self,
         ctx: &DecodeContext<'_>,
@@ -470,19 +486,34 @@ impl<'ir> Measurer<'ir> {
             ));
         }
         caveats.sort();
-        Ok(MeasureReport {
+        let mut losses = Vec::new();
+        if !self.input.ir.scope().model {
+            losses.push(
+                MeasureLossCode::OutputEmpty
+                    .note("the document's scope holds no model class, so no body is measured"),
+            );
+        }
+        let report = MeasureReport {
             occurrence: space.map(|space| space.report),
             tolerances: ReportTolerances {
                 linear: self.input.ir.tolerances.linear.get(),
                 angular: self.input.ir.tolerances.angular.get(),
             },
             caveats,
+            losses,
             bodies: body_out,
             faces: face_out,
             edges: edge_out,
             surfaces: surface_out,
             document,
-        })
+        };
+        match self.options.strictness.first_refused(&report.losses, false) {
+            Some(entry) => Err(MeasureError::StrictRejected {
+                report: Box::new(report),
+                entry,
+            }),
+            None => Ok(report),
+        }
     }
 
     /// The faces of the shell of a face whose region may rest on its

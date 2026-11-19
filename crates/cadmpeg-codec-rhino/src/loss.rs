@@ -540,6 +540,13 @@ mod tests {
 
     /// The note builder fixes severity from the code and emits the code string.
     #[test]
+    fn every_code_has_one_strictness_name() {
+        cadmpeg_test_support::strictness::assert_named_by_strictness(
+            RhinoLossCode::ALL.iter().map(|code| code.note("")),
+        );
+    }
+
+    #[test]
     fn note_takes_severity_from_the_code_and_renders_it() {
         for code in RhinoLossCode::ALL {
             let note = code.note("x");

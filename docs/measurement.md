@@ -152,6 +152,17 @@ Caveat codes follow the reason discipline.
 | `measure.provenance-not-recorded` | undefined | document | Neutral CADIR without a decode sidecar; every exactness is `not_recorded`. |
 | `measure.geometry-not-transferred` | input | document | The decode report states that no geometry was transferred. |
 
+## Report entries
+
+`losses` holds the measurement's coded entries, in the loss-note form of
+CADIR v11 §3.2, and is absent when it holds none. The caller's
+`MeasureOptions.strictness` refuses a completed report on these entries
+(CADIR v11 §3.4, Refusals); its default refuses none.
+
+| Code | Severity | When |
+| --- | --- | --- |
+| `measure:output.empty` | Warning | The document's scope holds no `model` class, so the pass measures no body. |
+
 ## Comparison causes
 
 A comparison cause states why an ID-free comparison is inconclusive or why

@@ -17,7 +17,8 @@ pub(crate) fn plan_inherited_write(
     fidelity: &SourceFidelity,
     writer: &mut dyn Write,
 ) -> Result<WritePath, CodecError> {
-    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
+    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)
+        .map_err(cadmpeg_test_support::strictness::codec_error)?;
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 

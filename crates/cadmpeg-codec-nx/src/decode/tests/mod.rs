@@ -1,16 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode-owner unit tests.
 
-use cadmpeg_core::decode::{DecodeDepth, DecodeMode};
+use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_ir::codec::DecodeOptions;
 
-fn options_in(mode: DecodeMode, depth: DecodeDepth) -> DecodeOptions {
+fn options_at(depth: DecodeDepth) -> DecodeOptions {
     DecodeOptions {
         depth,
-        policy: cadmpeg_core::decode::DecodePolicy {
-            mode,
-            ..Default::default()
-        },
+        ..DecodeOptions::default()
     }
 }
 

@@ -711,12 +711,19 @@ fn convert_writes_and_reports_check_errors_unless_rejected() {
         .assert()
         .code(1)
         .stderr(predicate::str::contains(
-            "refusing to export under --reject-errors",
+            "strictness refuses the write on export:record.invalid",
         ));
     assert!(!refused.exists());
     let value: serde_json::Value =
         serde_json::from_slice(&fs::read(&refused_report).unwrap()).unwrap();
-    assert_eq!(value["refusal"]["code"], "check_failed");
+    assert_eq!(value["refusal"]["code"], "strict_export_rejected");
+    assert_eq!(value["refusal"]["stage"], "export");
+    assert!(value["export"]["losses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|loss| loss["code"]["value"]["namespace"] == "export"
+            && loss["code"]["value"]["code"] == "record.invalid"));
 }
 
 #[cfg(feature = "step")]

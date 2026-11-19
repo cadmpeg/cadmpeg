@@ -38,7 +38,7 @@ pub use companion::{Companion, CompanionLoad, Companions};
 pub use context::{DecodeContext, ExpandSpec, ExpandWriter};
 pub use depth::DecodeDepth;
 pub use error::{LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation};
-pub use policy::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
+pub use policy::{DecodePolicy, InspectOptions, ResourceLimits};
 pub use probe::{ParseError, ParseErrorKind};
 pub use scope::{ArenaClass, ArenaClasses, ContentScope, ScopeDependency};
 pub use space::{ByteRange, SpaceId};

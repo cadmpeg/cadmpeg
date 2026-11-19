@@ -75,7 +75,8 @@ struct DecodeArgs {
 /// depth switch.
 #[derive(Debug, Clone, Args)]
 struct DecodePolicyArgs {
-    /// Fail if required content cannot be decoded. Salvage is off.
+    /// Refuse a decode that reports a loss whose code pins a strict floor
+    /// its severity reaches. Sets the decode's `Strictness.pinned`.
     #[arg(long)]
     no_salvage: bool,
     /// Resource-limit profile: `desktop` (generous, the default) or `service`
@@ -94,6 +95,30 @@ enum LimitProfile {
     Desktop,
     /// Tight ceilings for unattended service use.
     Service,
+}
+
+/// The severity floor of `--reject-lossy`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum LossFloor {
+    /// Refuse every loss.
+    Info,
+    /// Refuse a warning or worse.
+    Warning,
+    /// Refuse an error or worse.
+    Error,
+    /// Refuse a blocking loss.
+    Blocking,
+}
+
+impl LossFloor {
+    const fn severity(self) -> cadmpeg_ir::report::Severity {
+        match self {
+            Self::Info => cadmpeg_ir::report::Severity::Info,
+            Self::Warning => cadmpeg_ir::report::Severity::Warning,
+            Self::Error => cadmpeg_ir::report::Severity::Error,
+            Self::Blocking => cadmpeg_ir::report::Severity::Blocking,
+        }
+    }
 }
 
 impl DecodeArgs {
@@ -116,15 +141,15 @@ impl DecodeArgs {
 impl DecodePolicyArgs {
     /// Options for a decode at `depth`.
     fn options_at(&self, depth: cadmpeg_core::decode::DecodeDepth) -> cadmpeg_ir::DecodeOptions {
-        let limits = self.limits.limits(self.max_input_bytes);
-        let mode = if self.no_salvage {
-            cadmpeg_core::decode::DecodeMode::Strict
-        } else {
-            cadmpeg_core::decode::DecodeMode::Salvage
-        };
         cadmpeg_ir::DecodeOptions {
             depth,
-            policy: cadmpeg_core::decode::DecodePolicy { mode, limits },
+            policy: cadmpeg_core::decode::DecodePolicy {
+                limits: self.limits.limits(self.max_input_bytes),
+            },
+            strictness: cadmpeg_ir::report::strictness::Strictness {
+                pinned: self.no_salvage,
+                ..cadmpeg_ir::report::strictness::Strictness::default()
+            },
         }
     }
 }
@@ -178,17 +203,23 @@ enum Command {
         format: Option<String>,
         #[command(flatten)]
         destinations: ConversionDestinations,
-        /// Do not write if the check finds an error in what the output writes.
+        /// Do not write if the check finds an error in what the output writes:
+        /// adds `export:record.invalid` to the write's strictness.
         #[arg(long)]
         reject_errors: bool,
+        /// Do not write an output that holds nothing: adds
+        /// `export:output.empty` to the write's strictness.
+        #[arg(long)]
+        reject_empty: bool,
         /// Decode the whole source, design intent included, even when the
         /// output format needs only its geometry.
         #[arg(long, conflicts_with = "container_only")]
         full_decode: bool,
-        /// Do not write if a loss was reported. `--reject-lossy=decode` refuses
-        /// only on decode loss, `=export` only on export loss, and the bare
-        /// flag on either. Every scope decodes the whole source, as
-        /// `--full-decode` does, so a loss in its design intent counts.
+        /// Do not write if a loss at or above `--reject-lossy-floor` was
+        /// reported. `--reject-lossy=decode` sets the floor of the decode's
+        /// strictness, `=export` the write's, and the bare flag both. Every
+        /// scope decodes the whole source, as `--full-decode` does, so a loss
+        /// in its design intent counts.
         #[arg(
             long,
             value_enum,
@@ -198,6 +229,9 @@ enum Command {
             value_name = "SCOPE"
         )]
         reject_lossy: Option<LossPolicy>,
+        /// The least severity `--reject-lossy` refuses.
+        #[arg(long, value_enum, default_value_t = LossFloor::Info, requires = "reject_lossy")]
+        reject_lossy_floor: LossFloor,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -328,6 +362,10 @@ enum Command {
         /// kg·mm².
         #[arg(long, value_name = "VALUE", value_parser = parse_density)]
         density: Option<cadmpeg_measure::Density>,
+        /// Refuse a measurement that measures no body: adds
+        /// `measure:output.empty` to the measurement's strictness.
+        #[arg(long)]
+        reject_empty: bool,
         #[command(flatten)]
         report: OptionalFileDestination,
         #[command(flatten)]
@@ -525,14 +563,18 @@ fn main() -> ExitCode {
             format,
             destinations,
             reject_errors,
+            reject_empty,
             full_decode,
             reject_lossy,
+            reject_lossy_floor,
             input_args,
             decode,
         } => {
             let conversion_args = commands::ConversionArgs {
                 losses: reject_lossy.unwrap_or_default(),
+                floor: reject_lossy_floor.severity(),
                 reject_errors,
+                reject_empty,
                 full_decode,
                 destination: destinations.destination,
                 report: destinations.report,
@@ -553,6 +595,7 @@ fn main() -> ExitCode {
             json,
             tsv,
             density,
+            reject_empty,
             report,
             input_args,
             decode,
@@ -573,6 +616,7 @@ fn main() -> ExitCode {
                 forced: input_args.input_format,
                 options: decode.options_at(cadmpeg_core::decode::DecodeDepth::Geometry),
                 profile: decode.limits.work_profile(),
+                reject_empty,
             },
         ),
         Command::Formats => print_formats(&inputs)

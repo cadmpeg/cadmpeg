@@ -28,6 +28,7 @@ pub mod roundtrip;
 pub mod schema_sweep;
 pub mod solids;
 pub mod spelling;
+pub mod strictness;
 pub mod unknown_keys;
 pub mod wire;
 pub mod zip_fixture;

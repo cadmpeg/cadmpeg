@@ -74,7 +74,7 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
         ])
         .assert()
         .code(1)
-        .stderr(predicate::str::contains("refusing to write a lossy"));
+        .stderr(predicate::str::contains("strictness refuses the decode on"));
 
     let report = dir.path().join("lossy-report.json");
     Command::cargo_bin("cadmpeg")
@@ -121,7 +121,7 @@ fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
             .args(args)
             .assert()
             .code(1)
-            .stderr(predicate::str::contains("strict mode rejects"));
+            .stderr(predicate::str::contains("strictness refuses the decode on"));
 
         let value: serde_json::Value = serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
         assert_eq!(value["status"], "refused");
@@ -494,7 +494,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
             .args(["convert", path, "-f", "step", scope])
             .assert()
             .code(1)
-            .stderr(predicate::str::contains("decode reported"));
+            .stderr(predicate::str::contains("strictness refuses the decode on"));
     }
 
     Command::cargo_bin("cadmpeg")
@@ -511,15 +511,13 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
         .assert()
         .code(1)
         .stderr(
-            predicate::str::contains("export planning reported 2 loss(es)")
-                .and(predicate::str::contains(
-                    "uninterpreted passthrough record(s)",
-                ))
-                .and(predicate::str::contains("decode reported").not()),
+            predicate::str::contains("strictness refuses the write on")
+                .and(predicate::str::contains("the decode on").not()),
         );
     let report: serde_json::Value =
         serde_json::from_slice(&fs::read(export_report).unwrap()).unwrap();
-    assert_eq!(report["refusal"]["code"], "export_loss_rejected");
+    assert_eq!(report["refusal"]["code"], "strict_export_rejected");
+    assert_eq!(report["refusal"]["stage"], "export");
     assert!(report["export"].is_object());
     assert_eq!(report["export"]["identity"]["kind"], "native");
     let losses = report["export"]["losses"].as_array().unwrap();
@@ -543,6 +541,25 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
             .args(["convert", lossless.to_str().unwrap(), "-f", "step", scope])
             .assert()
             .success();
+    }
+
+    for (floor, refused) in [("warning", true), ("error", false), ("blocking", false)] {
+        let assert = Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "convert",
+                path,
+                "-f",
+                "step",
+                "--reject-lossy=export",
+                &format!("--reject-lossy-floor={floor}"),
+            ])
+            .assert();
+        if refused {
+            assert.code(1);
+        } else {
+            assert.success();
+        }
     }
 
     Command::cargo_bin("cadmpeg")

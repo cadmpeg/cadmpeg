@@ -5131,6 +5131,13 @@ mod tests {
 
     /// The note builder fixes severity from the codec-specific code.
     #[test]
+    fn every_code_has_one_strictness_name() {
+        cadmpeg_test_support::strictness::assert_named_by_strictness(
+            F3dLossCode::ALL.iter().map(|code| code.note("")),
+        );
+    }
+
+    #[test]
     fn note_takes_severity_from_the_code() {
         for code in F3dLossCode::ALL {
             let note = code.note("x");

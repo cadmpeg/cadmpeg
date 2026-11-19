@@ -8,8 +8,10 @@
 use std::io::{self, Write};
 use std::path::Path;
 
+use cadmpeg_core::decode::DecodeDepth;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::decode::DecodeReport;
+use cadmpeg_ir::report::strictness::Strictness;
 use cadmpeg_ir::DecodeOptions;
 use cadmpeg_measure::compare::{compare, CompareOptions, Comparison, Operand, Row, Verdict};
 use cadmpeg_measure::report::MeasureReport;
@@ -17,9 +19,9 @@ use cadmpeg_measure::{Selection, WorkProfile};
 use serde::Serialize;
 
 use super::render::{name, number};
-use super::{input_summary, require_geometry, run, MeasureBody, Session};
+use super::{input_summary, run, MeasureBody, Session};
 use crate::application::document::LoadedDocument;
-use crate::application::refusal::{ApplicationError, RefusalStage};
+use crate::application::refusal::{ApplicationError, ConversionRefusal, DepthReport, RefusalStage};
 
 /// How the geometry comparison runs.
 #[derive(Debug, Clone, Copy)]
@@ -59,6 +61,22 @@ const HEADER: [&str; 10] = [
     "agrees",
 ];
 
+/// Refuse to compare a document that holds no geometry: a comparison of no
+/// bodies decides nothing.
+fn require_geometry(loaded: &LoadedDocument) -> Result<(), ApplicationError> {
+    if !loaded.ir.scope().model {
+        return Err(ConversionRefusal::InsufficientMeasureDepth {
+            depth: DepthReport {
+                needed: DecodeDepth::Geometry,
+                recorded: DecodeDepth::Container,
+            },
+            decode_report: loaded.decode_report().cloned(),
+        }
+        .into());
+    }
+    Ok(())
+}
+
 impl GeometryDiff {
     /// Measure the bodies of both documents and compare them.
     pub(crate) fn measure(
@@ -67,16 +85,17 @@ impl GeometryDiff {
         options: &DecodeOptions,
         args: &GeometryArgs,
     ) -> Result<Self, ApplicationError> {
-        let session = Session {
-            options,
-            profile: args.profile,
-            density: None,
-        };
         let measured = |loaded: &LoadedDocument| -> Result<MeasureReport, ApplicationError> {
             require_geometry(loaded)?;
             let transferred = loaded
                 .decode_report()
                 .is_none_or(DecodeReport::geometry_transferred);
+            let session = Session {
+                options,
+                profile: args.profile,
+                density: None,
+                strictness: Strictness::default(),
+            };
             run(session, loaded, &Selection::default(), transferred)
         };
         let a = measured(left)?;

@@ -10,6 +10,8 @@ use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 
 use crate::examples::unit_cube;
 use crate::report::loss::{LossKind, LossNote, LossTaxonomy};
+use crate::report::strictness::Strictness;
+use crate::report::Severity;
 use crate::source_fidelity::SourceFidelity;
 use crate::CadIr;
 
@@ -18,9 +20,7 @@ use super::{
     Decoded, FormatId,
 };
 use crate::ContainerSummary;
-use cadmpeg_core::decode::{
-    ContentScope, DecodeContext, DecodeDepth, DecodeMode, InspectOptions, View,
-};
+use cadmpeg_core::decode::{ContentScope, DecodeContext, DecodeDepth, InspectOptions, View};
 use cadmpeg_core::CodecError;
 
 fn decoded(ir: CadIr) -> Decoded {
@@ -305,13 +305,82 @@ fn sealed_decode_refuses_a_cyclic_model_as_malformed() {
     );
 }
 
-fn strict_options(depth: DecodeDepth) -> DecodeOptions {
-    let mut options = DecodeOptions {
+fn options_with(depth: DecodeDepth, strictness: Strictness) -> DecodeOptions {
+    DecodeOptions {
         depth,
+        strictness,
         ..DecodeOptions::default()
+    }
+}
+
+fn strict_options(depth: DecodeDepth) -> DecodeOptions {
+    options_with(
+        depth,
+        Strictness {
+            pinned: true,
+            ..Strictness::default()
+        },
+    )
+}
+
+fn reject_floor_decode(
+    depth: DecodeDepth,
+    strictness: Strictness,
+) -> Result<DecodeResult, DecodeFailure> {
+    RejectFloorCodec.decode(
+        &mut Cursor::new(vec![1u8, 2, 3, 4]),
+        &options_with(depth, strictness),
+    )
+}
+
+fn refused_entry(result: Result<DecodeResult, DecodeFailure>) -> LossKind {
+    match result {
+        Err(DecodeFailure::StrictRejected { rejection }) => rejection.loss().code.clone(),
+        other => panic!("expected a strict refusal, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_default_strictness_refuses_no_decode() {
+    for depth in [DecodeDepth::Full, DecodeDepth::Container] {
+        let result = reject_floor_decode(depth, Strictness::default()).expect("admitted");
+        assert!(result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == reject_floor_kind()));
+    }
+}
+
+#[test]
+fn a_decode_floor_refuses_a_loss_it_reaches_and_admits_one_below_it() {
+    let floor = |severity| Strictness {
+        floor: Some(severity),
+        ..Strictness::default()
     };
-    options.policy.mode = DecodeMode::Strict;
-    options
+    for depth in [DecodeDepth::Full, DecodeDepth::Container] {
+        assert_eq!(
+            refused_entry(reject_floor_decode(depth, floor(Severity::Warning))),
+            reject_floor_kind()
+        );
+    }
+    reject_floor_decode(DecodeDepth::Full, floor(Severity::Error)).expect("below the floor");
+}
+
+#[test]
+fn decode_codes_refuse_a_named_loss_and_admit_another() {
+    let named = Strictness::default().with_code("shared/topology_not_transferred");
+    for depth in [DecodeDepth::Full, DecodeDepth::Container] {
+        assert_eq!(
+            refused_entry(reject_floor_decode(depth, named.clone())),
+            reject_floor_kind()
+        );
+    }
+    reject_floor_decode(
+        DecodeDepth::Full,
+        Strictness::default().with_code("shared/pcurve_omitted"),
+    )
+    .expect("an unnamed code");
 }
 
 #[test]

@@ -111,6 +111,7 @@ fn archive_session_expanded_member_traces_avoid_reexecution() {
                 .members()
                 .iter()
                 .map(|member| session.decode_member(member.id()).unwrap()),
+            &cadmpeg_ir::report::strictness::Strictness::default(),
         )
     };
     session
@@ -253,13 +254,19 @@ fn archive_session_public_archive_trace_counts() {
     session
         .require_original_spaces
         .store(true, std::sync::atomic::Ordering::Relaxed);
-    let original = session.compose(decode());
+    let original = session.compose(
+        decode(),
+        &cadmpeg_ir::report::strictness::Strictness::default(),
+    );
     assert!(original.is_ok());
     let before = session.composition_reexecutions();
     session
         .require_original_spaces
         .store(false, std::sync::atomic::Ordering::Relaxed);
-    let composed = session.compose(decode());
+    let composed = session.compose(
+        decode(),
+        &cadmpeg_ir::report::strictness::Strictness::default(),
+    );
     let after = session.composition_reexecutions() - before;
     crate::test_support::archive_session::assert_equal(&original, &composed);
     println!("public archive: members={}, original-space reexecutions={before}, relocated reexecutions={after}", session.members().len());

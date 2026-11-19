@@ -47,13 +47,13 @@ Evidence is current as of `t3/state-machine-audit` on `origin/main`. Confirmed r
 | --- | --- | --- | --- | --- |
 | start | resolve target / destination | existing output and no `--force` | refused before decode | continue |
 | open | `load_artifact` | native / CADIR / sidecar | `Decoded` / `Restored` / `Neutral` | operational error |
-| decoded | `--reject-lossy` decode | any decode loss | `decode_loss_rejected` | continue |
-| decoded | `validate_loaded` | `--reject-errors` and error findings in the payload | `check_failed` | continue |
-| checked | `encoder.plan` | plan `Err`, `--reject-errors`, and error findings | `check_failed` preferred | plan refusal |
-| planned | export losses and reject-lossy | nonempty export losses | `export_loss_rejected` | write |
+| open | decode wrapper | `DecodeOptions.strictness` refuses a report entry | `strict_decode_rejected` | `Decoded` |
+| decoded | `validate_loaded` | resource limit, and the write's strictness refuses `export:record.invalid` | `resource_limit` at `check` | checked, or unchecked with a note |
+| checked | `encoder.plan` | plan `Err` | plan refusal | planned |
+| checked | `encoder.plan` | `EncodeInput.strictness` refuses an entry of the completed export report | `strict_export_rejected` | planned |
 | write | `NamedTempFile` then rename | persist fails | operational error | `ok` |
 
-Convert writes after check errors and reports them; `--reject-errors` refuses. CADIR and sidecar use two independent renames; a crash between them leaves a digest mismatch and the next load fails closed.
+Convert writes after check errors and reports each one the output writes as `export:record.invalid`; `--reject-errors` adds that code to the write's strictness. CADIR and sidecar use two independent renames; a crash between them leaves a digest mismatch and the next load fails closed.
 
 No CLI retry loop exists.
 
@@ -136,7 +136,7 @@ Registry `read` in `dialect-support.toml` is a capability column. Golden tests r
 
 **Explicit.** Backend `WritePath`: `VerbatimReplay` \| `Patched` \| `Synthesized`. Fidelity: `NotProvided` \| `NotConsumed` \| `Replayed` \| `Degraded`. `into_report` collapses by `fidelity_provided`. Verbatim cannot be `NotConsumed`. Synthesized cannot be `Replayed`.
 
-Strict decode evaluates `LossNote::strict_consequence` once in `DecodeResult::new` for non-container Strict mode. CLI `--reject-lossy` counts every loss, including Info.
+The sealed decode and encode wrappers apply the caller's `Strictness { pinned, floor, codes }` to the completed report. `pinned` refuses an entry whose `LossNote::strict_consequence` is `Reject` and does not apply at `Container` depth; `floor` refuses an entry at or above it; `codes` refuses an entry whose `code_name` it holds. The default refuses nothing. CLI `--reject-lossy` sets `floor`, by default `Info`, so it refuses every loss.
 
 ## Topology and measurement
 

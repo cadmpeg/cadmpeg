@@ -23,7 +23,11 @@ pub fn at_depth(
 ) -> Result<DecodeResult, DecodeFailure> {
     let arena = DecodeArena::new();
     let (ctx, root) = DecodeContext::from_root_bytes_at(bytes, &arena, policy, depth)?;
-    let result = codec.decode_with_context(&ctx, root);
+    let result = codec.decode_with_context(
+        &ctx,
+        root,
+        &cadmpeg_ir::report::strictness::Strictness::default(),
+    );
     ctx.finish_session()?;
     result
 }

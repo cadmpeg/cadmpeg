@@ -46,7 +46,7 @@ pub(crate) fn plan_at(
 /// Decode options in strict mode.
 pub(crate) fn strict_options() -> cadmpeg_ir::codec::DecodeOptions {
     let mut options = cadmpeg_ir::codec::DecodeOptions::default();
-    options.policy.mode = cadmpeg_core::decode::DecodeMode::Strict;
+    options.strictness.pinned = true;
     options
 }
 

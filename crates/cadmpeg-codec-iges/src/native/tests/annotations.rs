@@ -3,8 +3,8 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::{DecodeMode, DecodePolicy};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::report::strictness::Strictness;
 
 use super::code_count;
 use crate::loss::IgesLossCode;
@@ -432,9 +432,9 @@ fn decode_new_general_note_overdeclared_count_reads_no_string_and_charges_the_lo
     }
 
     let strict = DecodeOptions {
-        policy: DecodePolicy {
-            mode: DecodeMode::Strict,
-            ..DecodePolicy::default()
+        strictness: Strictness {
+            pinned: true,
+            ..Strictness::default()
         },
         ..DecodeOptions::default()
     };

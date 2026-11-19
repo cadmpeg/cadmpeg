@@ -5,7 +5,6 @@ use cadmpeg_test_support::EditableDecodeResult;
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::DecodeMode;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::report::decode::DecodeReport;
 
@@ -152,7 +151,7 @@ fn assert_overdeclared_contract(bytes: &[u8], sequence: u32) {
     }
 
     let mut strict = DecodeOptions::default();
-    strict.policy.mode = DecodeMode::Strict;
+    strict.strictness.pinned = true;
     match IgesCodec
         .decode(&mut Cursor::new(bytes.to_vec()), &strict)
         .unwrap_err()
