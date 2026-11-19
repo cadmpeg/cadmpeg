@@ -2,7 +2,7 @@
 //! The trim curves of a face written as a `NurbsPatch` prim (spec §14.1).
 
 use cadmpeg_ir::index::StandardIndex;
-use cadmpeg_ir::topology::{Face, LoopBoundary, PcurveUse, Sense};
+use cadmpeg_ir::topology::{Face, FaceLoops, LoopBoundary, PcurveUse, Sense};
 
 use super::records::pcurve_nurbs;
 use super::text::{real, tuple};
@@ -24,8 +24,12 @@ impl Writer<'_> {
 
     /// The loops of `face` as closed chains of parameter-space curves, the
     /// outer loop first: counterclockwise when outer and clockwise when
-    /// inner. `None` when a coedge or pole has no parameter-space curve.
+    /// inner. `None` when the face does not classify its loops, or when a
+    /// coedge or pole has no parameter-space curve.
     pub(super) fn trim_loops(&self, face: &Face) -> Option<Vec<Vec<Nurbs<2>>>> {
+        if matches!(face.loops, FaceLoops::Unspecified { .. }) {
+            return None;
+        }
         let mut loops = Vec::new();
         for (position, loop_id) in face.loops.iter().enumerate() {
             let loop_ = self.index.loops(loop_id.as_str(), StandardIndex)?;

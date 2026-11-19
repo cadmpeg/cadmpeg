@@ -565,3 +565,76 @@ fn bounded_patches_round_trip_through_a_brep_array_without_their_poles() {
         );
     }
 }
+
+/// Whether the triangle `[a, b, c]` of the XY plane holds `point`.
+fn triangle_holds(triangle: [[f64; 2]; 3], point: [f64; 2]) -> bool {
+    let side = |a: [f64; 2], b: [f64; 2]| {
+        (b[0] - a[0]) * (point[1] - a[1]) - (b[1] - a[1]) * (point[0] - a[0])
+    };
+    let [a, b, c] = triangle;
+    let sides = [side(a, b), side(b, c), side(c, a)];
+    sides.iter().all(|value| *value >= 0.0) || sides.iter().all(|value| *value <= 0.0)
+}
+
+/// A face that does not classify its loops, listed hole first, writes no
+/// trim curves: the writer meshes it, and the hole stays a hole.
+#[test]
+fn unclassified_loops_listing_the_hole_first_keep_the_hole() {
+    let first = decode(&layer(&format!("{PLANE}{}", square_with_hole(true))));
+    let mut ir = first.ir().clone();
+    let face = &mut ir.geometry.faces[0];
+    let mut loops = face.loops.to_vec();
+    loops.sort_by_key(|id| {
+        first
+            .ir()
+            .geometry
+            .loops
+            .iter()
+            .find(|candidate| &candidate.id == id)
+            .map(|candidate| candidate.coedges().len())
+    });
+    assert_eq!(rings(first.ir()).len(), 2);
+    face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(loops);
+    let (text, _) = encode(&ir);
+    assert!(!text.contains("trimCurve"), "{text}");
+    let second = decode(&without_brep_array(&text));
+    let [mesh] = second.ir().model.tessellations.as_slice() else {
+        panic!("one mesh: {text}");
+    };
+    let points: Vec<[f64; 2]> = mesh
+        .vertices()
+        .iter()
+        .map(|point| [point.get().x, point.get().y])
+        .collect();
+    let mut area = 0.0;
+    for [a, b, c] in mesh.triangles() {
+        let triangle = [a, b, c].map(|index| points[usize::try_from(index).unwrap()]);
+        assert!(
+            !triangle_holds(triangle, [5.0, 5.0]),
+            "a triangle covers the hole: {triangle:?}"
+        );
+        let [a, b, c] = triangle;
+        area += ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])).abs() / 2.0;
+    }
+    let expected = 64.0 - 4.0 * std::f64::consts::PI;
+    assert!(
+        (area - expected).abs() <= 0.5,
+        "area {area}, expected {expected}"
+    );
+}
+
+/// A body with no `BrepArray` prim writes no trim curves for a face that
+/// does not classify its loops: an edge curve with no geometry refuses the
+/// prim, where a classified face is written as a trimmed patch.
+#[test]
+fn unclassified_loops_write_no_trim_curves_without_a_brep_array() {
+    let first = decode(&layer(&format!("{PLANE}{}", square_with_hole(true))));
+    let mut ir = first.ir().clone();
+    let loops = ir.geometry.faces[0].loops.to_vec();
+    ir.geometry.faces[0].loops = cadmpeg_ir::topology::FaceLoops::unspecified(loops);
+    ir.geometry.curves[0].geometry =
+        CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
+    let (text, _) = encode(&ir);
+    assert!(!text.contains("def BrepArray"), "{text}");
+    assert!(!text.contains("trimCurve"), "{text}");
+}
