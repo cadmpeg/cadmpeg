@@ -17,7 +17,7 @@ use cadmpeg_ir::products::{
     AssemblyJoint, DriveAxis, DriveMode, FrameAxis, JointConnector, JointDrive, JointId,
     JointLimits, JointOperand, PairedJointKind,
 };
-use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
+use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal, NonZeroReal, PositiveReal};
 use cadmpeg_ir::transform::Transform;
 
 use cadmpeg_ir::physics::solver::SolverTarget;
@@ -514,7 +514,7 @@ impl super::Builder<'_, '_, '_, '_> {
                                 PairedJointKind::Gears {
                                     distance: None,
                                     distance2: None,
-                                    ratio: data.ratio.and_then(PositiveReal::new),
+                                    ratio: data.ratio.and_then(|ratio| NonZeroReal::new(-ratio)),
                                     coupled_joints,
                                 }
                             } else {
@@ -522,7 +522,7 @@ impl super::Builder<'_, '_, '_, '_> {
                                     distance: None,
                                     distance2: None,
                                     ratio: data.ratio.and_then(|ratio| {
-                                        PositiveReal::new(ratio.to_radians() / scale)
+                                        NonZeroReal::new(ratio.to_radians() / scale)
                                     }),
                                     coupled_joints,
                                 }
