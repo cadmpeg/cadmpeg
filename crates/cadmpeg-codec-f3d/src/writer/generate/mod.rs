@@ -332,7 +332,10 @@ fn write_archive<W: Write + Seek>(
 /// parameters. Where the root definition's design scope is written
 /// (`neutral`), its scopes, containers, features and parameters are
 /// `Reported`: the design module charges a loss for each record it does not
-/// write. Sketches and the remaining design arenas are not represented.
+/// write. Where a fallback drops that design, the four arenas are `Omitted`
+/// and the reduction also names each of their records, because the wrapper
+/// does not charge a design arena while the document holds a v10 design
+/// record. Sketches and the remaining design arenas are not represented.
 fn coverage(write_design: bool, parameters: ArenaDisposition, neutral: bool) -> ArenaDispositions {
     use ArenaDisposition::{Dropped, Ignored, Omitted, Reported, Written};
     ArenaDispositions {

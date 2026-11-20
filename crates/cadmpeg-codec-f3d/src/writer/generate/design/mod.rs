@@ -5,9 +5,11 @@
 //!
 //! It runs where no native Design record is written and the document holds a
 //! design scope for its root definition. It charges a loss for every design
-//! scope, container, feature and parameter it does not write. A failure here
-//! is a [`super::reduce::Stage::NeutralDesign`] failure, whose only fallback
-//! is to write no design: it never drops a body.
+//! scope, container, feature and parameter it does not write, and for the
+//! root scope's configuration, arrangements and occurrence states. A failure
+//! here is a [`super::reduce::Stage::NeutralDesign`] failure, whose only
+//! fallback is to write no design ([`dropped_records`]): it never drops a
+//! body.
 
 mod base_feature;
 mod expression;
@@ -172,29 +174,51 @@ pub(super) fn restated_parameters(target: &CadIr) -> BTreeSet<&str> {
     })
 }
 
-/// The root scope's features and parameters, for the losses of a design the
-/// writer drops.
-pub(super) fn scope_records(target: &CadIr) -> (Vec<String>, Vec<String>) {
-    let Some(scope) = root_scope(target) else {
-        return (Vec::new(), Vec::new());
-    };
-    let features = scope_features(target, scope)
-        .into_iter()
-        .map(ToString::to_string)
-        .collect();
-    let parameters = target
-        .design
-        .parameters
-        .iter()
-        .filter(|parameter| parameter.scope == scope.definition)
-        .map(|parameter| parameter.id.to_string())
-        .collect();
-    (features, parameters)
+/// The losses of a design the writer drops: every design scope, container,
+/// feature and parameter of the document.
+pub(super) fn dropped_records(target: &CadIr, reason: &str) -> Vec<LossNote> {
+    let design = &target.design;
+    let unwritten = format!("the F3D writer writes no design ({reason})");
+    let mut losses = Vec::new();
+    losses.extend(evaluation_missing(
+        "F3D",
+        &format!("stores no design for these features ({reason})"),
+        design.features.iter().map(|feature| feature.id.to_string()),
+    ));
+    losses.extend(named_loss(
+        F3dLossCode::WriterParameterOmitted,
+        "parameter",
+        &unwritten,
+        design
+            .parameters
+            .iter()
+            .map(|parameter| parameter.id.to_string()),
+    ));
+    losses.extend(named_loss(
+        F3dLossCode::WriterDesignRecordOmitted,
+        "design scope",
+        &unwritten,
+        design
+            .scopes
+            .iter()
+            .map(|scope| scope.definition.to_string()),
+    ));
+    losses.extend(named_loss(
+        F3dLossCode::WriterDesignRecordOmitted,
+        "design container",
+        &unwritten,
+        design
+            .containers
+            .iter()
+            .map(|container| container.id().to_string()),
+    ));
+    losses
 }
 
 /// The losses of the design records outside the root scope's written form:
-/// the other scopes with their features and parameters, every container but
-/// the one the written timeline stands for, and that container's folders,
+/// the root scope's configuration, arrangements and occurrence states, the
+/// other scopes with their features and parameters, every container but the
+/// one the written timeline stands for, and that container's folders,
 /// rollback and placement.
 fn unwritten_records(target: &CadIr, root: &DesignScope) -> Vec<LossNote> {
     let others = move || {
@@ -222,6 +246,25 @@ fn unwritten_records(target: &CadIr, root: &DesignScope) -> Vec<LossNote> {
             root.definition
         ),
         others().map(|scope| scope.definition.to_string()),
+    ));
+    let definition = &root.definition;
+    let configuration = root
+        .active_configuration
+        .iter()
+        .map(|id| format!("{definition} active configuration {id}"));
+    let arrangements = root
+        .active_arrangements
+        .iter()
+        .map(|id| format!("{definition} active arrangement {id}"));
+    let occurrences = root
+        .occurrences
+        .keys()
+        .map(|id| format!("{definition} design state of occurrence {id}"));
+    losses.extend(named_loss(
+        F3dLossCode::WriterDesignRecordOmitted,
+        "design scope value",
+        "the F3D design holds its current bodies alone, with no configuration, arrangement or occurrence state",
+        configuration.chain(arrangements).chain(occurrences),
     ));
     losses.extend(evaluation_missing(
         "F3D",
