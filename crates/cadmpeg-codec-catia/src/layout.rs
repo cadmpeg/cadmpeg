@@ -943,3 +943,19 @@ pub(crate) mod consolidated_vertex_wide_roster {
     /// Stated value of `terminal` (`u8`). Spec §6.4.
     pub(crate) const TERMINAL_VALUE: u8 = 0;
 }
+
+/// Byte offsets for the `sheet_plane_implicit_v_payload` record.
+///
+/// Spec §6.3. Record length 74 B.
+pub(crate) mod sheet_plane_implicit_v_payload {
+    /// Record length in bytes. Spec §6.3.
+    pub(crate) const LEN: usize = 74;
+}
+
+/// Byte offsets for the `sheet_plane_explicit_v_a0_payload` record.
+///
+/// Spec §6.3. Record length 82 B.
+pub(crate) mod sheet_plane_explicit_v_a0_payload {
+    /// Record length in bytes. Spec §6.3.
+    pub(crate) const LEN: usize = 82;
+}
