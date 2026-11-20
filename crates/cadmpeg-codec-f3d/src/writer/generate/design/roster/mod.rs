@@ -320,6 +320,28 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
     notes.extend(super::base_feature::item_tail_loss(SCOPE));
     notes.extend(record_residual_unavailable(
         "F3D",
+        "writes fixed-clock (2026-01-01 UTC) authoring timestamps in the record-timestamp tables: the document records no authoring clock",
+        [
+            "record 206 (component record-timestamp table)".to_owned(),
+            "record 210 (Base Feature scope record-timestamp table)".to_owned(),
+            "record 214 (Base Feature result record-timestamp table)".to_owned(),
+        ],
+    ));
+    if let Some(length) = ctx.values.unit_system_fallback {
+        let label = match length {
+            Some(unit) => format!("length unit {unit:?}"),
+            None => "no declared length unit".to_owned(),
+        };
+        notes.extend(record_residual_unavailable(
+            "F3D",
+            &format!(
+                "writes MmMKS (unit system 67) for {label}: Fusion's custom unit-system table models only mm, cm, m, in and ft"
+            ),
+            ["record 0 (AssetSettings)".to_owned()],
+        ));
+    }
+    notes.extend(record_residual_unavailable(
+        "F3D",
         "fits the HOME camera, the AssetSettings view blocks and the scene radius to the body boxes by a rule f3d-open-items.md DR-896 leaves open",
         [
             "record 0 (AssetSettings)".to_owned(),
