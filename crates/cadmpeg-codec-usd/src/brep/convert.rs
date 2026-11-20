@@ -1602,6 +1602,18 @@ pub(crate) fn nurbs_only(brep: &Brep) -> Result<Converted, String> {
                 Some((Catalog::Analytic, pcurve)) => analytic_pcurve(brep.analytic_pcurves.get(pcurve)?).ok()?.0,
                 None => planar_pcurve(brep, *carrier, oriented, &out, tolerance)?,
             };
+            let collapsed_edge = out.edges.get(oriented.edge).is_some_and(|edge| {
+                let [start, end] = edge.vertices;
+                start == end
+                    && edge.curve.is_some_and(|(_, curve)| {
+                        out.nurbs_curves
+                            .get(curve)
+                            .is_some_and(|curve| collapsed(curve, out.tolerance))
+                    })
+            });
+            if collapsed_edge {
+                return mapped_pcurve(&curve, surface_maps, tolerance);
+            }
             let revolved = match carrier {
                 (Catalog::Analytic, index) => brep.analytic_surfaces.get(*index).filter(|surface| {
                     matches!(

@@ -18,7 +18,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{CurveId, EdgeId, FaceId, SurfaceId, VertexId};
 use cadmpeg_ir::index::{ModelIndex, StandardIndex};
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{Body, BodyKind, Coedge, LoopBoundary, Sense};
+use cadmpeg_ir::topology::{AnchoredVertexUse, Body, BodyKind, Coedge, LoopBoundary, Sense};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -621,8 +621,6 @@ pub(super) struct Unwritten {
     pub(super) edges: usize,
     /// Oriented edges on non-planar faces with no pcurve.
     pub(super) pcurves: usize,
-    /// Loops whose pole-vertex uses were dropped.
-    pub(super) pole_uses: usize,
     /// Faces with no mesh, with the reason.
     pub(super) unmeshed: Vec<String>,
 }
@@ -938,6 +936,50 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
         Some([first, last])
     }
 
+    /// The oriented edge of pole `pole` (spec §17.2): a use of an edge whose
+    /// ends are the pole vertex and whose curve stays there, with the
+    /// collapsed side of the face domain as its trim curve.
+    fn pole_edgeuse(&mut self, pole: &AnchoredVertexUse, chart: Chart) -> Option<usize> {
+        let vertex = self.vertex(&pole.vertex)?;
+        let position = *self.brep.vertices.get(vertex)?;
+        self.brep.nurbs_curves.push(NurbsCurveRecord {
+            order: 2,
+            points: vec![position, position],
+            weights: vec![1.0, 1.0],
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            form: Form::Open,
+        });
+        self.brep.edges.push(EdgeRecord {
+            vertices: [vertex, vertex],
+            curve: Some((Catalog::Nurbs, self.brep.nurbs_curves.len() - 1)),
+            range: [0.0, 1.0],
+            same_sense: true,
+            tolerance: None,
+        });
+        let edge = self.brep.edges.len() - 1;
+        let pcurve = pole.pcurves.first().and_then(|use_| {
+            let pcurve = self.index.pcurves(use_.pcurve.as_str(), StandardIndex)?;
+            let range = use_
+                .parameter_range
+                .map(cadmpeg_ir::geometry::DirectedParameterRange::endpoints);
+            let curve = pcurve_nurbs(&pcurve.geometry, range)?.map(|point| chart.apply(point));
+            self.brep.nurbs_pcurves.push(NurbsCurveRecord {
+                order: curve.degree + 1,
+                points: curve.points,
+                weights: curve.weights,
+                knots: curve.knots,
+                form: Form::Open,
+            });
+            Some((Catalog::Nurbs, self.brep.nurbs_pcurves.len() - 1))
+        });
+        self.brep.oriented_edges.push(OrientedEdgeRecord {
+            edge,
+            orientation: true,
+            pcurve,
+        });
+        Some(self.brep.oriented_edges.len() - 1)
+    }
+
     /// The pcurve record of a coedge on a face with chart `chart`, traversed
     /// in the coedge direction.
     fn pcurve(&mut self, coedge: &Coedge, chart: Chart, planar: bool) -> Option<Reference> {
@@ -1022,9 +1064,6 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
                     });
                 }
                 LoopBoundary::Ring(ring) => {
-                    if !ring.vertex_uses().is_empty() {
-                        self.unwritten.pole_uses += 1;
-                    }
                     let mut oriented = Vec::new();
                     for coedge_id in ring.coedges() {
                         let Some(coedge) = self.index.coedges(coedge_id.as_str(), StandardIndex)
@@ -1058,6 +1097,15 @@ impl<'t, 'ir> Exporter<'t, 'ir> {
                             pcurve,
                         });
                         oriented.push(self.brep.oriented_edges.len() - 1);
+                        for pole in ring
+                            .vertex_uses()
+                            .iter()
+                            .filter(|pole| &pole.after == coedge_id)
+                        {
+                            if let Some(edgeuse) = self.pole_edgeuse(pole, chart) {
+                                oriented.push(edgeuse);
+                            }
+                        }
                     }
                     self.join_pcurves(&mut oriented, surface);
                     self.brep.loops.push(LoopRecord {

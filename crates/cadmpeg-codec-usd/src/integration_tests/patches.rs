@@ -540,7 +540,7 @@ fn shape(ir: &CadIr) -> (usize, Vec<(usize, usize)>, usize) {
 }
 
 #[test]
-fn bounded_patches_round_trip_through_a_brep_array_without_their_poles() {
+fn bounded_patches_round_trip_through_a_brep_array() {
     for text in [
         layer(&bicubic("")),
         layer(&format!("{PLANE}{}", square_with_hole(true))),
@@ -548,21 +548,21 @@ fn bounded_patches_round_trip_through_a_brep_array_without_their_poles() {
         pole_patch(),
     ] {
         let first = decode(&text);
-        let (written, report) = encode(first.ir());
+        let (written, _) = encode(first.ir());
         assert!(written.contains("def BrepArray"), "{written}");
         let second = decode(&written);
         assert_valid(&second);
-        let (faces, rings, edges) = shape(first.ir());
-        let poles: usize = rings.iter().map(|(_, poles)| poles).sum();
-        let ringed = rings.iter().map(|(coedges, _)| (*coedges, 0)).collect();
-        assert_eq!(shape(second.ir()), (faces, ringed, edges), "{written}");
-        assert_eq!(
-            report
-                .losses
-                .iter()
-                .any(|loss| loss.code == UsdLossCode::ExportBrepPoleNotWritten.kind()),
-            poles > 0
-        );
+        assert_eq!(shape(second.ir()), shape(first.ir()), "{written}");
+        for loop_ in &second.ir().geometry.loops {
+            if let LoopBoundary::Ring(ring) = &loop_.boundary {
+                assert!(
+                    ring.vertex_uses()
+                        .iter()
+                        .all(|pole| pole.pcurves.len() == 1),
+                    "a pole keeps its trim curve: {written}"
+                );
+            }
+        }
     }
 }
 

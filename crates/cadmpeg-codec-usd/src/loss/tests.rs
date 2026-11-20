@@ -60,7 +60,6 @@ fn code_strings_are_pinned() {
             "export.topology-tessellated",
             "export.brep-not-written",
             "export.brep-untrimmed",
-            "export.brep-pole-not-written",
             "export.carrier-not-written",
             "export.joint-not-written",
             "export.solver-property-not-written",
