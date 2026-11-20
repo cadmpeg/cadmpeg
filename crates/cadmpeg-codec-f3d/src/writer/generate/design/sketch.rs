@@ -28,6 +28,9 @@ use crate::loss::F3dLossCode;
 
 /// The largest departure of a sketch normal from its origin plane's axis.
 const NORMAL_TOLERANCE: f64 = 1e-9;
+/// The largest component of a mapped source sketch axis across the Fusion
+/// sketch axis it lies along.
+const AXIS_TOLERANCE: f64 = 1e-9;
 /// The smallest linear tolerance a sketch frame is checked with, in mm: the
 /// decoder's linear resolution.
 const MIN_LINEAR_TOLERANCE: f64 = 1e-5;
@@ -173,11 +176,25 @@ pub(super) struct PlannedSketch<'a> {
 pub(super) struct SketchPlan<'a> {
     pub(super) items: Vec<PlannedSketch<'a>>,
     /// The typed sketches not written, with the reason.
-    pub(super) unwritten: BTreeMap<&'a FeatureId, &'static str>,
+    pub(super) unwritten: BTreeMap<&'a FeatureId, String>,
     losses: Vec<LossNote>,
 }
 
 impl SketchPlan<'_> {
+    /// Write none of the planned sketches, for `reason`: a failure of the
+    /// design with them.
+    pub(super) fn drop_items(&mut self, reason: &str) {
+        for item in self.items.drain(..) {
+            self.unwritten.insert(
+                item.feature,
+                format!(
+                    "is dropped because the writer failed with the design's sketches ({reason})"
+                ),
+            );
+        }
+        self.losses.clear();
+    }
+
     /// Whether `feature` is written as a `Sketch` item.
     pub(super) fn writes(&self, feature: &FeatureId) -> bool {
         self.items.iter().any(|item| item.feature == feature)
@@ -201,17 +218,17 @@ pub(super) fn plan<'a>(target: &'a CadIr, features: &[&'a FeatureId]) -> SketchP
             continue;
         };
         let Some(sketch) = target.design.sketches.iter().find(|s| &s.id == sketch_id) else {
-            out.unwritten.insert(id, "has no sketch record");
+            out.unwritten.insert(id, "has no sketch record".into());
             continue;
         };
         if matches!(feature.suppressed, Some(Dimension::Literal(true))) {
-            out.unwritten.insert(id, "is suppressed");
+            out.unwritten.insert(id, "is suppressed".into());
             continue;
         }
         let frame = match placement(target, sketch, tolerance) {
             Ok(frame) => frame,
             Err(reason) => {
-                out.unwritten.insert(id, reason);
+                out.unwritten.insert(id, reason.into());
                 continue;
             }
         };
@@ -457,7 +474,7 @@ impl<'a> PlannedSketch<'a> {
             .iter()
             .filter(|constraint| constraint.sketch == sketch.id)
         {
-            match relations(constraint, &written, &planned.curves) {
+            match relations(constraint, &written, &planned.curves, frame) {
                 Ok(relations) => planned.relations.extend(relations),
                 Err(reason) => notes.omit(constraint.id.to_string(), reason),
             }
@@ -562,11 +579,13 @@ impl<'a> PlannedSketch<'a> {
     }
 }
 
-/// The written relations of `constraint`, or the reason it is not written.
+/// The written relations of `constraint` in Fusion's sketch frame, or the
+/// reason it is not written.
 fn relations(
     constraint: &SketchConstraint<Planar>,
     written: &HashMap<&SketchEntityId, Entity>,
     curves: &[PlannedCurve],
+    frame: Frame,
 ) -> Result<Vec<PlannedRelation>, &'static str> {
     if matches!(constraint.active, Some(Dimension::Literal(false))) {
         return Err("Fusion stores no inactive sketch relation");
@@ -601,8 +620,8 @@ fn relations(
         SketchRelation::Perpendicular { a, b } => two(RelationKind::Perpendicular, a, b),
         SketchRelation::Tangent { a, b, .. } => two(RelationKind::Tangent, a, b),
         SketchRelation::Curvature { a, b, .. } => two(RelationKind::Curvature, a, b),
-        SketchRelation::Horizontal { a, b } => one_or_two(RelationKind::Horizontal, a, b),
-        SketchRelation::Vertical { a, b } => one_or_two(RelationKind::Vertical, a, b),
+        SketchRelation::Horizontal { a, b } => one_or_two(orientation(frame.x)?, a, b),
+        SketchRelation::Vertical { a, b } => one_or_two(orientation(frame.y)?, a, b),
         SketchRelation::Midpoint { point, of } => Ok(vec![PlannedRelation {
             kind: RelationKind::Midpoint,
             members: vec![member(&Operand::Entity(point.clone()))?, member(of)?],
@@ -652,6 +671,19 @@ fn relations(
         | SketchRelation::FixedLength { .. }
         | SketchRelation::FixedAngle { .. }
         | SketchRelation::Native { .. } => Err("the writer writes no relation of this kind"),
+    }
+}
+
+/// The Fusion relation that holds an entity along `axis`, a source sketch
+/// axis in Fusion's sketch coordinates: horizontal along Fusion's u axis,
+/// vertical along its v axis.
+fn orientation(axis: [f64; 2]) -> Result<RelationKind, &'static str> {
+    if axis[1].abs() <= AXIS_TOLERANCE {
+        Ok(RelationKind::Horizontal)
+    } else if axis[0].abs() <= AXIS_TOLERANCE {
+        Ok(RelationKind::Vertical)
+    } else {
+        Err("its source axis lies along neither axis of Fusion's sketch frame")
     }
 }
 
