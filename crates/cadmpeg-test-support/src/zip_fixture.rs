@@ -289,16 +289,31 @@ fn push_raw_blocks(out: &mut Vec<u8>, plain: &[u8]) {
     }
 }
 
+const CRC32_TABLE: [u32; 256] = {
+    let mut table = [0_u32; 256];
+    let mut index = 0_usize;
+    let mut value = 0_u32;
+    while index < 256 {
+        let mut crc = value;
+        let mut bit = 0;
+        while bit < 8 {
+            let polynomial = if crc & 1 == 0 { 0 } else { 0xEDB8_8320 };
+            crc = (crc >> 1) ^ polynomial;
+            bit += 1;
+        }
+        table[index] = crc;
+        index += 1;
+        value += 1;
+    }
+    table
+};
+
 /// CRC-32 (IEEE, the ZIP polynomial) of `bytes`, computed here so this crate needs no dependency.
 #[must_use]
 pub fn crc32(bytes: &[u8]) -> u32 {
     let mut crc = 0xFFFF_FFFF_u32;
     for byte in bytes {
-        crc ^= u32::from(*byte);
-        for _ in 0..8 {
-            let polynomial = if crc & 1 == 0 { 0 } else { 0xEDB8_8320 };
-            crc = (crc >> 1) ^ polynomial;
-        }
+        crc = (crc >> 8) ^ CRC32_TABLE[usize::from(crc.to_le_bytes()[0] ^ byte)];
     }
     !crc
 }

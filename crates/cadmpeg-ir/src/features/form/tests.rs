@@ -416,7 +416,7 @@ fn foreign_form_reference_round_trips_and_rewrites_only_typed_local_identities()
         serde_json::from_value::<FormConstruction>(encoded).unwrap(),
         construction
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let rewritten = crate::schema::rewrite::identities(&ctx, construction, |id| {
         Ok(id.replace("test:stream:", "test:instance:"))
     })

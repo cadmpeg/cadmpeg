@@ -104,7 +104,7 @@ pub(in crate::design::profile_select) fn selection_agrees(
     else {
         return Ok(false);
     };
-    let Some(sampled) = sample_regions(&regions, tolerance) else {
+    let Some(sampled) = sample_regions(&regions, tolerance, resolution.profile_work) else {
         return Ok(false);
     };
     let points: Vec<_> = sampled.iter().map(|region| region.point).collect();
@@ -419,7 +419,7 @@ pub(in crate::design::profile_select) fn removed_candidate(
     else {
         return Ok(None);
     };
-    let Some(sampled) = sample_regions(&regions, tolerance) else {
+    let Some(sampled) = sample_regions(&regions, tolerance, resolution.profile_work) else {
         return Ok(None);
     };
     let selected: Vec<_> = sampled

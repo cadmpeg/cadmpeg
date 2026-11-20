@@ -240,7 +240,7 @@ fn codec_detection_matches_part21_trivia_and_keyword_rules() {
 
 #[test]
 fn zip_root_detection_uses_structured_entry_names() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let root = include_bytes!("../../tests/fixtures/ap242_minimal.p21");
     let marker_payload = b"payload contains ISO-10303.p21 but has no such entry";
     let codec = StepCodec::default();

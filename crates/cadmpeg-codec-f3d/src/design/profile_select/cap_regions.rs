@@ -397,7 +397,7 @@ pub(super) fn cap_profile_selection(
     let Some(regions) = atomic_sketch_regions(sketch, entities, tolerance, work, ctx)? else {
         return Ok(None);
     };
-    let Some(sampled) = sample_regions(&regions, tolerance) else {
+    let Some(sampled) = sample_regions(&regions, tolerance, work) else {
         return Ok(None);
     };
     let mut selected = Vec::new();
@@ -661,7 +661,7 @@ fn removed_regions(
     let Some(regions) = atomic_sketch_regions(sketch, entities, tolerance, work, ctx)? else {
         return Ok(None);
     };
-    let Some(sampled) = sample_regions(&regions, tolerance) else {
+    let Some(sampled) = sample_regions(&regions, tolerance, work) else {
         return Ok(None);
     };
     let mut selected = Vec::new();
@@ -1451,7 +1451,31 @@ fn clearance(point: Point2, ring: &[Point2]) -> f64 {
 
 /// Each region with a point well inside it, outside the regions nested in it.
 /// `None` when a region has no such point.
-fn sample_regions(regions: &[AtomicSketchRegion], tolerance: f64) -> Option<Vec<Sampled<'_>>> {
+fn sample_regions<'a>(
+    regions: &'a [AtomicSketchRegion],
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+) -> Option<Vec<Sampled<'a>>> {
+    let samples = work.region_samples(regions, tolerance, || sample_points(regions, tolerance))?;
+    Some(
+        regions
+            .iter()
+            .zip(samples)
+            .map(|(region, (point, nested))| Sampled {
+                region,
+                point,
+                nested,
+            })
+            .collect(),
+    )
+}
+
+/// The point of [`sample_regions`] for each region and the outermost regions
+/// nested in it.
+fn sample_points(
+    regions: &[AtomicSketchRegion],
+    tolerance: f64,
+) -> Option<Vec<(Point2, Vec<usize>)>> {
     let areas: Vec<f64> = regions
         .iter()
         .map(|region| polygon_area(&region.polyline).abs())
@@ -1538,11 +1562,7 @@ fn sample_regions(regions: &[AtomicSketchRegion], tolerance: f64) -> Option<Vec<
         if room <= 10.0 * tolerance || area <= tolerance * tolerance {
             return None;
         }
-        out.push(Sampled {
-            region,
-            point,
-            nested,
-        });
+        out.push((point, nested));
     }
     Some(out)
 }

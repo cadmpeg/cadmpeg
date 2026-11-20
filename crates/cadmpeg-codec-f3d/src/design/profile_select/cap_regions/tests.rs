@@ -11,7 +11,7 @@ use cadmpeg_ir::sketches::{
     SketchPlacement,
 };
 
-use crate::design::geometry::AtomicSketchRegion;
+use crate::design::geometry::{AtomicSketchRegion, ProfileGeometryWork};
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCurveAxis,
     AsmHistoricalCylinder, AsmHistoricalEdge, AsmHistoricalEdgeSample,
@@ -367,7 +367,7 @@ fn a_closed_edge_is_a_circle_only_on_a_cylinder_about_the_cap_normal() {
 }
 
 fn ctx() -> cadmpeg_core::decode::DecodeContext<'static> {
-    cadmpeg_test_support::service_decode_context()
+    cadmpeg_core::decode::test_support::service_decode_context()
 }
 
 fn line(id: &str, start: (f64, f64), end: (f64, f64)) -> SketchEntity {
@@ -793,7 +793,7 @@ fn cut_selection(
     let before = plane_faces(&[(1, 0.0, vec![plate.clone()]), (2, -5.0, vec![plate])]);
     let after = plane_faces(&[(3, 0.0, holed.clone()), (4, -5.0, holed)]);
     let history = cut_history(before, after);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let resolution = super::super::ScopedExtrudeProfileResolution {
         entities: &window.entities,
         spatial_entities: &[],
@@ -1027,7 +1027,7 @@ fn a_far_face_over_material_the_plane_already_held_selects_nothing() {
     let after = || plane_faces(&[(3, 0.0, opening.clone()), (4, -5.0, opening.clone())]);
     let select = |before| {
         let history = cut_history(before, after());
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let work = crate::design::geometry::ProfileGeometryWork::new();
         let resolution = super::super::ScopedExtrudeProfileResolution {
             entities: &window.entities,
@@ -1078,7 +1078,7 @@ fn a_cut_whose_regions_use_curves_outside_the_stored_profile_takes_the_proven_re
     let before = plane_faces(&[(1, 0.0, vec![plate.clone()]), (2, -5.0, vec![plate])]);
     let after = plane_faces(&[(3, 0.0, holed.clone()), (4, -5.0, holed)]);
     let history = cut_history(before, after);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let work = crate::design::geometry::ProfileGeometryWork::new();
     let resolution = super::super::ScopedExtrudeProfileResolution {
         entities: &window.entities,
@@ -1279,7 +1279,7 @@ fn compact_cut_certificate_checks_region_side_carriers_and_stored_travel() {
                    candidate: &ProfileRef,
                    length: f64| {
         let history = cut_history(before, after);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let work = crate::design::geometry::ProfileGeometryWork::new();
         let resolution = super::super::ScopedExtrudeProfileResolution {
             entities: &entities,
@@ -1373,7 +1373,8 @@ fn region_sampler_finds_a_band_between_grid_points() {
     };
     // A frame one unit wide around a square: no grid point lies in the frame.
     let regions = [ring(square(0.0, 100.0)), ring(square(1.0, 99.0))];
-    let sampled = sample_regions(&regions, TOLERANCE).expect("each region has a point");
+    let sampled = sample_regions(&regions, TOLERANCE, &ProfileGeometryWork::new())
+        .expect("each region has a point");
     assert_eq!(sampled[0].nested, vec![1]);
     let point = sampled[0].point;
     let in_frame = |p: f64| (0.0..1.0).contains(&p) || (99.0..100.0).contains(&p);
@@ -1456,7 +1457,7 @@ fn selected_nested_interiors_without_a_hole_stay_native() {
         .map(|(u, v)| Point2::new(*u, *v))
         .collect();
     let regions = [outer, inner];
-    let mut sampled = sample_regions(&regions, TOLERANCE).unwrap();
+    let mut sampled = sample_regions(&regions, TOLERANCE, &ProfileGeometryWork::new()).unwrap();
     let Some(ResolvedProfileSelection::Regions(selected)) =
         trimmed_selection(&sampled, &[0, 1], TOLERANCE)
     else {
@@ -1481,4 +1482,26 @@ fn selected_nested_interiors_without_a_hole_stay_native() {
     });
     sampled[0].nested.clear();
     assert!(trimmed_selection(&sampled, &[0, 1], TOLERANCE).is_none());
+}
+
+#[test]
+fn each_sketch_region_is_sampled_at_its_grid_point_farthest_from_its_boundary() {
+    let work = ProfileGeometryWork::new();
+    for side in [10.0, 20.0, 10.0] {
+        let regions = [AtomicSketchRegion {
+            boundary: Vec::new(),
+            polyline: vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(side, 0.0),
+                Point2::new(side, side),
+                Point2::new(0.0, side),
+            ],
+            encloses_island: false,
+            island_absence_assumed: false,
+        }];
+        let sampled = sample_regions(&regions, TOLERANCE, &work).unwrap();
+        assert_eq!(sampled.len(), 1);
+        assert_eq!(sampled[0].point, Point2::new(side / 2.0, side / 2.0));
+        assert!(sampled[0].nested.is_empty());
+    }
 }

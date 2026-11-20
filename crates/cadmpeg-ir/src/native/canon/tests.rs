@@ -707,24 +707,25 @@ impl std::fmt::Display for Pieces<'_> {
 }
 
 /// `collect_str` writes the text `serde_json` writes for the same string,
-/// for every `char` and however the `Display` value divides its text.
+/// however the `Display` value divides its text. Both escape by byte value:
+/// the text holds every ASCII byte, the first and last scalar of each UTF-8
+/// length, and the scalars next to the surrogates.
 #[test]
 fn display_text_is_escaped_as_serde_json_escapes_the_whole_string() {
-    let every_char = (0..=u32::from(char::MAX))
-        .filter_map(char::from_u32)
+    let text = (0..=0x7f)
+        .chain([0x80, 0x7ff, 0x800, 0xd7ff, 0xe000, 0xffff, 0x1_0000])
+        .chain([u32::from(char::MAX)])
+        .map(|scalar| char::from_u32(scalar).unwrap())
         .collect::<String>();
     let ctx = crate::native::test_ctx();
     for piece in [1, 2, 3, 7, 64, 512, usize::MAX] {
         let mut out = b"prefix".to_vec();
         let written = CanonText::for_record(&ctx, &mut out)
-            .collect_str(&Pieces {
-                text: &every_char,
-                piece,
-            })
+            .collect_str(&Pieces { text: &text, piece })
             .expect("text writes");
         assert!(matches!(written, Written::Text));
         let mut expected = b"prefix".to_vec();
-        serde_json::to_writer(&mut expected, &every_char).unwrap();
+        serde_json::to_writer(&mut expected, &text).unwrap();
         assert!(out == expected, "pieces of {piece} characters");
     }
 }

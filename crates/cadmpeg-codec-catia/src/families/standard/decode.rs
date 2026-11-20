@@ -9116,7 +9116,7 @@ mod circle_axis_tests {
         )
         .expect("anisotropic nurbs surface");
         let residual = super::surface_membership::nurbs_surface_witness_distance(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &surface,
             Point3::new(0.3, 0.4, 0.),
         )

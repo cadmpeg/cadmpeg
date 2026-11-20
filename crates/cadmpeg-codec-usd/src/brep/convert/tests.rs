@@ -70,13 +70,9 @@ fn a_traced_curve_is_within_its_tolerance() {
     for step in 0..=200 {
         let s = domain[0] + (domain[1] - domain[0]) * f64::from(step) / 200.0;
         let point = evaluate(&curve, s).expect("point");
-        let nearest = (0..=30_000)
-            .map(|index| {
-                let exact = image(3.0 * f64::from(index) / 30_000.0).expect("image");
-                (exact[0] - point[0]).hypot(exact[1] - point[1])
-            })
-            .fold(f64::INFINITY, f64::min);
-        assert!(nearest < 1e-7, "{s} {nearest}");
+        let exact = image(s).expect("image");
+        let deviation = (exact[0] - point[0]).hypot(exact[1] - point[1]);
+        assert!(deviation < 1e-7, "{s} {deviation}");
     }
 }
 

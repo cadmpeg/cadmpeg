@@ -3907,7 +3907,7 @@ fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
     record.links.sort();
     record.links.dedup();
     ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "rhino",
         &unknowns,
     )
