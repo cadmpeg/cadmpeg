@@ -12,7 +12,7 @@ use cadmpeg_ir::compare::floats_agree;
 use cadmpeg_ir::math::Point3;
 
 use crate::face::Refusal;
-use crate::plane::{contains, signed_area, Uv};
+use crate::plane::{contains, cross, length, signed_area, sub, Uv};
 
 /// Ratio to a period, or to the extent of a loop, below which a closure
 /// displacement is zero.
@@ -58,6 +58,9 @@ pub(crate) struct Frame {
     /// parameters; a wrapping strip with one loop runs to one of them or to
     /// a domain end.
     pub(crate) poles: Vec<(Uv, Option<Point3>)>,
+    /// Width below which a loop that does not close in the parameter plane
+    /// encloses nothing a mesh can show.
+    pub(crate) narrow: f64,
 }
 
 enum Kind {
@@ -106,13 +109,55 @@ fn kind(ring: &Ring, frame: &Frame) -> Result<Kind, Refusal> {
     )))
 }
 
+/// The kind of `ring`, absent for a ring that does not close in the
+/// parameter plane and whose samples enclose a strip narrower than
+/// `frame.narrow`.
+fn kind_unless_narrow(ring: &Ring, frame: &Frame) -> Result<Option<Kind>, Refusal> {
+    match kind(ring, frame) {
+        Ok(kind) => Ok(Some(kind)),
+        Err(_) if narrow(ring, frame) => Ok(None),
+        Err(refusal) => Err(refusal),
+    }
+}
+
+/// Whether the samples of `ring` enclose a strip narrower than
+/// `frame.narrow`: twice the enclosed vector area over the perimeter.
+fn narrow(ring: &Ring, frame: &Frame) -> bool {
+    let Some(points) = ring
+        .nodes
+        .iter()
+        .map(|node| node.point)
+        .collect::<Option<Vec<_>>>()
+    else {
+        return false;
+    };
+    let Some(&first) = points.first() else {
+        return false;
+    };
+    let mut twice_area = [0.0_f64; 3];
+    let mut perimeter = 0.0_f64;
+    for (at, &point) in points.iter().enumerate() {
+        let next = points[(at + 1) % points.len()];
+        let normal = cross(sub(point, first), sub(next, first));
+        twice_area[0] += normal.x;
+        twice_area[1] += normal.y;
+        twice_area[2] += normal.z;
+        perimeter += length(sub(next, point));
+    }
+    let [x, y, z] = twice_area;
+    perimeter > 0.0 && (x * x + y * y + z * z).sqrt() < frame.narrow * perimeter
+}
+
 /// Whether `ring` closes in the parameter plane of a surface with no
 /// periodic parameter and runs clockwise there.
 pub(crate) fn clockwise_on_open_carrier(ring: &Ring, frame: &Frame) -> Result<bool, Refusal> {
     if frame.periods.iter().any(Option::is_some) || ring.nodes.len() < 3 {
         return Ok(false);
     }
-    Ok(matches!(kind(ring, frame)?, Kind::Closed) && signed_area(&uvs(&ring.nodes)) < 0.0)
+    Ok(
+        matches!(kind_unless_narrow(ring, frame)?, Some(Kind::Closed))
+            && signed_area(&uvs(&ring.nodes)) < 0.0,
+    )
 }
 
 /// Maps a point into the frame of a strip that wraps along `axis`: the first
@@ -152,16 +197,18 @@ pub(crate) fn reversed(nodes: &[Node]) -> Vec<Node> {
 pub(crate) fn regions(rings: Vec<Ring>, frame: &Frame) -> Result<Vec<Region>, Refusal> {
     let mut closed = Vec::new();
     let mut wraps: Vec<(usize, Ring)> = Vec::new();
-    // A loop whose samples run out and back along one chord bounds no area.
+    // A loop whose samples run out and back along one chord, or enclose a
+    // strip narrower than the frame's width, bounds no area.
     let mut flat = false;
     for ring in rings {
         if ring.nodes.len() < 2 {
             flat = true;
             continue;
         }
-        match kind(&ring, frame)? {
-            Kind::Closed => closed.push(ring.nodes),
-            Kind::Wrap { axis } => wraps.push((axis, ring)),
+        match kind_unless_narrow(&ring, frame)? {
+            Some(Kind::Closed) => closed.push(ring.nodes),
+            Some(Kind::Wrap { axis }) => wraps.push((axis, ring)),
+            None => flat = true,
         }
     }
     let mut outers = Vec::new();

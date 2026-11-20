@@ -1313,7 +1313,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     let annotations = cadmpeg_ir::Annotations::default();
 
     assert!(cadmpeg_ir::admit_with_annotations(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &accepted,
         &annotations,
         cadmpeg_ir::RHINO_DRAFT_CHECKS,
@@ -1322,7 +1322,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     .expect("admit the model")
     .is_ok());
     assert!(cadmpeg_ir::admit(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &accepted,
         cadmpeg_ir::RHINO_INSTANCE_CHECKS,
         Vec::new()
@@ -1331,7 +1331,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     .is_ok());
 
     assert!(!cadmpeg_ir::admit_with_annotations(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &rejected,
         &annotations,
         cadmpeg_ir::RHINO_DRAFT_CHECKS,
@@ -1340,7 +1340,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     .expect("admit the model")
     .is_ok());
     assert!(!cadmpeg_ir::admit(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &rejected,
         cadmpeg_ir::RHINO_INSTANCE_CHECKS,
         Vec::new()

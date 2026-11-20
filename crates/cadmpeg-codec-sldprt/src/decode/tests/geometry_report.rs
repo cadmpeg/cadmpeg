@@ -86,7 +86,7 @@ fn native_planar_and_spatial_sketch_geometry_is_reported() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -463,7 +463,7 @@ fn native_dimension_subtypes_are_reported() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -491,7 +491,7 @@ fn geometry_report_surfaces_ambiguous_pcurve_loss() {
 
     let classification = crate::dialect::classify_layers(&scan).unwrap();
     let report = super::super::build_geometry_report(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &scan,
         &mut decoded,
         &classification,
@@ -524,7 +524,7 @@ fn geometry_report_aggregates_surface_solver_caps_across_partitions() {
 
     let classification = crate::dialect::classify_layers(&scan).unwrap();
     let report = super::super::build_geometry_report(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &scan,
         &mut decoded,
         &classification,
@@ -560,7 +560,7 @@ fn unresolved_swift_source() -> Vec<u8> {
 fn unsupported_swift_loss_retains_exact_text() {
     let source = unresolved_swift_source();
     let scan = crate::test_support::container::scan(&source);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut losses = Vec::new();
     super::super::append_swift_pmi_losses(&ctx, &scan, &mut losses).unwrap();
     assert_eq!(losses.len(), 1);

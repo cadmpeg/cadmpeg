@@ -945,8 +945,34 @@ pub struct TessellationTriangleGroup {
         deserialize_with = "deserialize_source_id"
     )]
     pub source_id: Option<String>,
+    /// The face of the tessellation's body whose triangles the group holds.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_face"
+    )]
+    pub face: Option<FaceId>,
     /// Strictly increasing triangle ordinals belonging to this group.
     pub triangles: Vec<u32>,
+}
+
+impl TessellationTriangleGroup {
+    /// A group of `triangles` with the source identity `source_id`.
+    #[must_use]
+    pub const fn new(source_id: Option<String>, triangles: Vec<u32>) -> Self {
+        Self {
+            source_id,
+            face: None,
+            triangles,
+        }
+    }
+
+    /// The group as the triangles of `face`.
+    #[must_use]
+    pub fn with_face(mut self, face: FaceId) -> Self {
+        self.face = Some(face);
+        self
+    }
 }
 
 /// One source texture resource assigned directly to tessellation triangles.
@@ -1098,6 +1124,7 @@ fn require_triangle_groups(
         .take(triangle_count)
         .collect::<Vec<_>>();
     let mut source_ids = std::collections::BTreeSet::new();
+    let mut faces = std::collections::BTreeSet::new();
     let valid = triangle_groups.iter().all(|group| {
         !group.triangles.is_empty()
             && group
@@ -1119,6 +1146,7 @@ fn require_triangle_groups(
             && group.source_id.as_ref().is_none_or(|source_id| {
                 !source_id.is_empty() && source_ids.insert(source_id.as_str())
             })
+            && group.face.as_ref().is_none_or(|face| faces.insert(face))
     }) && memberships.iter().all(|visited| *visited);
     if !valid {
         return Err(tessellation_error(
@@ -1672,6 +1700,7 @@ cadmpeg_core::named_optional_field!(
     "source_object"
 );
 cadmpeg_core::named_optional_field!(deserialize_source_id, String, "source_id");
+cadmpeg_core::named_optional_field!(deserialize_face, FaceId, "face");
 
 mod identity_rewrite;
 

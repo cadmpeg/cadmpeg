@@ -74,8 +74,34 @@ impl PmarkState {
         })
     }
 
-    pub(crate) fn xmt(self) -> u32 {
+    /// Stream-local node index of the mark.
+    #[must_use]
+    pub fn xmt(self) -> u32 {
         self.xmt.into()
+    }
+
+    /// Node index of the preceding mark, or `None` for the initial mark.
+    #[must_use]
+    pub fn preceding(self) -> Option<u32> {
+        Some(self.preceding.get()).filter(|index| *index != 1)
+    }
+
+    /// Persistent mark identifier, in the domain of WORLD `current_id`.
+    #[must_use]
+    pub const fn identifier(self) -> u32 {
+        self.identifier
+    }
+
+    /// Whether the mark's delta runs from its preceding mark to the mark.
+    #[must_use]
+    pub const fn delta_is_forward(self) -> bool {
+        self.delta_is_forward
+    }
+
+    /// Transmitted key of the mark's delta.
+    #[must_use]
+    pub const fn delta_key(self) -> u32 {
+        self.delta_key
     }
 }
 

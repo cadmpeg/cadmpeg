@@ -2399,6 +2399,20 @@ profile-derived axes.
 
 ---
 
+### 3.4 Partition marks and the rollback position
+
+A `Contents/Config-<N>-Partition` section holds two Parasolid transmits in order: the partition (`TRANSMIT FILE (partition)`) and its deltas (`TRANSMIT FILE (deltas)`), each in its own zlib member. The deltas transmit opens with a PARTITION node (type 3) and the PMARK node (type 4) its `current_pmark` names, both with the base schema fields (`parasolid.md`). That PMARK's `id` is the current mark: the mark the stored partition is at. Following `preceding` through the PMARK nodes of the transmit from the current mark gives the main line back to the initial mark, whose `preceding` is null.
+
+The first twelve bytes of a `moPMarkRecord_c` body (§2.3) are its head: the mark, a little-endian u32 at +0; the form, a little-endian u32 at +4; and the form word, a little-endian u32 at +8. The form is `0` or `1`, or a feature identifier in the id-range form, whose form word is `1`. The mark is the `id` of the PMARK set after the feature that holds the record. `Contents/Config-<N>` declares `moPMarkRecord_c`, so each record in `Config-<N>-ResolvedFeatures` opens with that class's token: u16 `8000|index`, or `7fff` and u32 `80000000|index` for an index of `7fff` and above.
+
+The records follow the order of their features. A record's feature is the innermost named object (`moNodeName_c` header) that holds it. The rollback position of the feature tree joins the current mark of the active configuration to these records:
+
+- The current mark is the mark of the last record: the bar stands after the feature of that record.
+- The current mark is the mark of record k and every later record's mark lies off the main line: the features of the later records are not built. The bar stands after the feature of record k and before the first of them that is not suppressed; where each of them is suppressed, the tree is built through its end.
+- Otherwise the marks do not fix the position: the current mark follows the last record's mark on the main line (a later feature holds no tagged record), or it is the mark of no record.
+
+A feature that holds no record sets no mark. Where such a feature lies after the feature at the current mark and before the first unbuilt feature that is not suppressed (or the end of the tree), the marks do not place the bar before or after it.
+
 ## 4. Typed topology records
 
 Primary ownership chain:
@@ -2853,6 +2867,47 @@ and every field in order. An empty tail differs from a tail containing zero.
 A complete reference selects a face only when its complete identity has one
 distinct current target.
 
+The list is a chain of *hops*; value 0 is the first hop's class, and the
+feature-local identity and path fields above are that class's fields. Each hop
+is `[class, producer, timestamp, 0, class fields...]`: the class is the code of
+a `mo*SurfIdRep_c` identity class, the producer and timestamp name the feature
+that made the face, and a wrapping class is followed, after its own fields, by
+the hop it wraps. The codes join to their classes through DisplayFace strings
+(§8), whose `<class>,<producer>,<fields>` sequence equals a list's hop
+sequence, and through the hops a consuming feature's face reference stores
+(§2). A one-hop list is four to seven values:
+
+| Code | Class | Fields | Design name (CADIR §5.7) |
+|---:|---|---|---|
+| 74 | `moFromSktEntSurfIdRep_c` | sketch entity id | `Generated`, role `Side` |
+| 83 | `moFromSktEnt3IntSurfIdRep_c` | sketch entity id, two integers | `Generated`, role `Side` |
+| 40 | `moEndFaceSurfIdRep_c` | end (0 start, 1 end), region | `Generated`, role `Start` or `End`, `index` the region |
+| 81 | `moEndFace3IntSurfIdRep_c` | end, region, 0 | as code 40 |
+| 72 | `moFilletSurfIdRep_c` | ordinal, 1 to the blend face count | `Blend`, `index` the ordinal |
+| 36 | `moSurfaceIdRep_c` | none: the feature's set of faces | `Generated`, no role |
+| 49 | `moWzdHoleSurfIdRep_c` | two integers | `Generated`, role `Other("sldprt:49")` |
+| 46 | `moSweepSideSurfIdRep_c` | two integers | role `Other("sldprt:46")` |
+| 77 | `moSimpleSurfIdRep_c` | one integer | role `Other("sldprt:77")` |
+| 78 | `moThinOffsetSurfIdRep_c` | one integer | role `Other("sldprt:78")` |
+
+Code 72 names fillet and chamfer faces alike; which edge takes which ordinal is
+not known. A cap's region is nonzero on each cap of an end with several
+regions, and mostly 0 on the one cap of an end with one; the rule that assigns
+it is not known. Some code-81 caps carry 1 as their third field; what it states
+is not known, and such a cap is `Other("sldprt:81")`. The producer and the
+timestamp are allocations: they stay in the native name. The sketch entity id
+stays there too, and the name states no generating entity, because that it is
+the sketch segment's id is not established.
+Wrapping classes are `moLPatternSurfIdRep_c` (57: two instance indices),
+`moCirPatternSurfIdRep2_c` (124: instance, 0), `moCurvePatternSurfIdRep_c` (54:
+instance, 0), `moMirPatternSurfIdRep_c` (59: none), `moMirPatternSurfIdRep2_c`
+(132: one integer), `moCopySurfIdRep_c` (53: the copy's step for a Move/Copy
+Body), `moShellSurfIdRep_c` (65: none), and the derived, indirect and punch
+classes (55, 56, 96: one integer each). A wrapped list is longer than seven
+values. Every other code is a role whose meaning is not known,
+`Other("sldprt:<code>")`. A face can carry several `FACE_ID_2001` lists where
+faces merged, and the pieces of a split face carry equal lists.
+
 A single-face component selection that supplies only the source and local
 identity selects a face only when that pair has one distinct current target.
 Document, configuration, and mirror-plane selections use this rule. Earlier
@@ -2937,9 +2992,17 @@ existing partition node.
 A cylindrical face spanning a complete angular period stores two loops. Each
 loop contains one coedge whose edge is closed and whose carrier is a circle
 coaxial with the cylinder. The stored topology omits the longitudinal seam.
-Its endpoints are the two circle points
-`center - ref_direction * radius`, where `ref_direction` is the cylinder
-carrier's reference direction. The neutral topology joins these endpoints
+A circle vertex is fixed when the file stores its point or another edge also
+ends at it. A hole circle that touches a straight edge of its face shares the
+touching vertex with that edge. A fixed vertex keeps its position. The seam's
+endpoints are the two circle points `center - ref_direction * radius`, where
+`ref_direction` is the cylinder carrier's reference direction. When a fixed
+vertex lies off its circle point by more than the linear resolution, the seam
+is the cylinder ruling through that vertex, and its endpoints are the two
+circle points on that ruling. Each vertex that is not fixed moves to its
+endpoint. When a fixed vertex lies off its endpoint by more than the linear
+resolution, the neutral topology keeps the two loops and adds no seam. The
+neutral topology joins the seam endpoints
 with one line edge, inserts two oppositely oriented radial coedges for that
 edge, and combines the two circular coedges and two seam coedges into one
 loop.

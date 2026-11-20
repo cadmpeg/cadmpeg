@@ -2565,7 +2565,7 @@ mod tests {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         ir.model.product_definitions.clear();
         ir.geometry.bodies[0].transform = Some(transform);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
         assert_eq!(ir.geometry.bodies[0].transform, Some(transform));
         assert_eq!(
@@ -2605,7 +2605,7 @@ mod tests {
                 general_tolerance: None,
                 active: None,
             });
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let id = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
         assert_eq!(ir.model.product_definitions.len(), 1);
         assert_eq!(ir.model.product_definitions[0].id, id);
