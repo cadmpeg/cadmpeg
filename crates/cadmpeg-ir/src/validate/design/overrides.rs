@@ -5,21 +5,23 @@
 //! override.
 //!
 //! A place is the path of field names, variant names, map keys, and list
-//! indices from the definition to the dimension. The dimensions of a
-//! definition are found by serializing it: `Dimension` is the adjacently
-//! tagged enum serde names `Dimension`, tagged `literal`, `parameter`, or
-//! `negated`. Names and picks hold no dimension and are not entered, so the
-//! walk nests only as deep as the definition's constructions. Two literal
-//! reals are equal within the document's linear and angular tolerances.
+//! indices from the definition to the dimension; a struct's `kind` tag, once
+//! written, also names the place of the struct's later fields. The dimensions
+//! of a definition are found in the JSON text the canonical walk writes for
+//! it, with the structs that write it: `Dimension` is the adjacently tagged
+//! enum serde names `Dimension`, tagged `literal`, `parameter`, or `negated`.
+//! Names and picks hold no dimension, and a dimension's value is not entered.
+//! Two literal reals are equal within the document's linear and angular
+//! tolerances.
 
+use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::fmt;
 
-use serde::ser::{self, Impossible, Serialize};
 use serde_json::Value;
 
 use crate::design::configuration::Overrides;
 use crate::design::feature::FeatureDefinition;
+use crate::hash::finite_json::{admission::CanonicalAdmission, write_serde_json, Structs};
 use crate::report::check::Finding;
 
 use super::records::DesignRecords;
@@ -125,486 +127,251 @@ type Places = BTreeMap<Vec<String>, Found>;
 /// Every dimension of a definition, by place. `None` where a value of it does
 /// not serialize.
 fn dimensions(definition: &FeatureDefinition) -> Option<Places> {
-    let mut path = Vec::new();
-    let mut found = BTreeMap::new();
-    definition
-        .serialize(Collect {
-            path: &mut path,
-            found: &mut found,
-        })
-        .ok()?;
-    Some(found)
+    let reader = RefCell::new(Reader::default());
+    let structs: &dyn Structs = &reader;
+    write_serde_json(
+        CanonicalAdmission::unlimited(),
+        Some(structs),
+        &mut Sink(&reader),
+        definition,
+    )
+    .ok()?;
+    Some(reader.into_inner().found)
 }
 
-#[derive(Debug)]
-struct Unsupported;
-
-impl fmt::Display for Unsupported {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("a value has no place")
-    }
+/// What an open struct is to the walk.
+enum Role {
+    /// Its fields are places.
+    Entered,
+    /// A name or a pick, or a struct inside an unentered one.
+    Unentered,
+    /// A dimension at `place`, whose JSON text begins at `from`.
+    Dimension { place: Vec<String>, from: usize },
 }
 
-impl std::error::Error for Unsupported {}
-
-impl ser::Error for Unsupported {
-    fn custom<T: fmt::Display>(_: T) -> Self {
-        Self
-    }
-}
-
-/// Collects the dimensions below the place `path` names.
-struct Collect<'c> {
-    path: &'c mut Vec<String>,
-    found: &'c mut Places,
-}
-
-impl Collect<'_> {
-    fn reborrow(&mut self) -> Collect<'_> {
-        Collect {
-            path: &mut *self.path,
-            found: &mut *self.found,
-        }
-    }
-
-    fn nested<T: Serialize + ?Sized>(
-        &mut self,
-        segment: String,
-        value: &T,
-    ) -> Result<(), Unsupported> {
-        self.path.push(segment);
-        let result = value.serialize(self.reborrow());
-        self.path.pop();
-        result
-    }
-}
-
-macro_rules! leaves {
-    ($($method:ident($type:ty)),* $(,)?) => {$(
-        fn $method(self, _: $type) -> Result<(), Unsupported> {
-            Ok(())
-        }
-    )*};
-}
-
-impl<'c> ser::Serializer for Collect<'c> {
-    type Ok = ();
-    type Error = Unsupported;
-    type SerializeSeq = List<'c>;
-    type SerializeTuple = List<'c>;
-    type SerializeTupleStruct = List<'c>;
-    type SerializeTupleVariant = List<'c>;
-    type SerializeMap = Map<'c>;
-    type SerializeStruct = Fields<'c>;
-    type SerializeStructVariant = Fields<'c>;
-
-    leaves! {
-        serialize_bool(bool), serialize_i8(i8), serialize_i16(i16), serialize_i32(i32),
-        serialize_i64(i64), serialize_u8(u8), serialize_u16(u16), serialize_u32(u32),
-        serialize_u64(u64), serialize_f32(f32), serialize_f64(f64), serialize_char(char),
-        serialize_str(&str), serialize_bytes(&[u8]), serialize_unit_struct(&'static str),
-    }
-
-    fn serialize_none(self) -> Result<(), Unsupported> {
-        Ok(())
-    }
-
-    fn serialize_some<T: Serialize + ?Sized>(self, value: &T) -> Result<(), Unsupported> {
-        value.serialize(self)
-    }
-
-    fn serialize_unit(self) -> Result<(), Unsupported> {
-        Ok(())
-    }
-
-    fn serialize_unit_variant(
-        self,
-        _: &'static str,
-        _: u32,
-        _: &'static str,
-    ) -> Result<(), Unsupported> {
-        Ok(())
-    }
-
-    fn serialize_newtype_struct<T: Serialize + ?Sized>(
-        self,
-        _: &'static str,
-        value: &T,
-    ) -> Result<(), Unsupported> {
-        value.serialize(self)
-    }
-
-    fn serialize_newtype_variant<T: Serialize + ?Sized>(
-        mut self,
-        _: &'static str,
-        _: u32,
-        variant: &'static str,
-        value: &T,
-    ) -> Result<(), Unsupported> {
-        self.nested(variant.to_owned(), value)
-    }
-
-    fn serialize_seq(self, _: Option<usize>) -> Result<List<'c>, Unsupported> {
-        Ok(List::new(self, false))
-    }
-
-    fn serialize_tuple(self, _: usize) -> Result<List<'c>, Unsupported> {
-        Ok(List::new(self, false))
-    }
-
-    fn serialize_tuple_struct(self, _: &'static str, _: usize) -> Result<List<'c>, Unsupported> {
-        Ok(List::new(self, false))
-    }
-
-    fn serialize_tuple_variant(
-        self,
-        _: &'static str,
-        _: u32,
-        variant: &'static str,
-        _: usize,
-    ) -> Result<List<'c>, Unsupported> {
-        self.path.push(variant.to_owned());
-        Ok(List::new(self, true))
-    }
-
-    fn serialize_map(self, _: Option<usize>) -> Result<Map<'c>, Unsupported> {
-        Ok(Map {
-            into: self,
-            key: None,
-        })
-    }
-
-    fn serialize_struct(self, name: &'static str, _: usize) -> Result<Fields<'c>, Unsupported> {
-        Ok(match name {
-            "Dimension" => Fields::Dimension {
-                into: self,
-                arm: None,
-                value: None,
-            },
-            "TopoName" | "Picked" => Fields::Skipped,
-            _ => Fields::Plain {
-                into: self,
-                pushed: 0,
-            },
-        })
-    }
-
-    fn serialize_struct_variant(
-        self,
-        _: &'static str,
-        _: u32,
-        variant: &'static str,
-        _: usize,
-    ) -> Result<Fields<'c>, Unsupported> {
-        self.path.push(variant.to_owned());
-        Ok(Fields::Plain {
-            into: self,
-            pushed: 1,
-        })
-    }
-}
-
-/// The elements of a list, each at its index.
-struct List<'c> {
-    into: Collect<'c>,
-    next: usize,
-    variant: bool,
-}
-
-impl<'c> List<'c> {
-    const fn new(into: Collect<'c>, variant: bool) -> Self {
-        Self {
-            into,
-            next: 0,
-            variant,
-        }
-    }
-
-    fn element<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Unsupported> {
-        let at = self.next;
-        self.next += 1;
-        self.into.nested(at.to_string(), value)
-    }
-
-    fn finish(self) {
-        if self.variant {
-            self.into.path.pop();
-        }
-    }
-}
-
-macro_rules! list_impl {
-    ($trait:ident, $method:ident) => {
-        impl ser::$trait for List<'_> {
-            type Ok = ();
-            type Error = Unsupported;
-            fn $method<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Unsupported> {
-                self.element(value)
-            }
-            fn end(self) -> Result<(), Unsupported> {
-                self.finish();
-                Ok(())
-            }
-        }
-    };
-}
-
-list_impl!(SerializeSeq, serialize_element);
-list_impl!(SerializeTuple, serialize_element);
-list_impl!(SerializeTupleStruct, serialize_field);
-list_impl!(SerializeTupleVariant, serialize_field);
-
-/// The entries of a map, each at its key.
-struct Map<'c> {
-    into: Collect<'c>,
-    key: Option<String>,
-}
-
-impl ser::SerializeMap for Map<'_> {
-    type Ok = ();
-    type Error = Unsupported;
-
-    fn serialize_key<T: Serialize + ?Sized>(&mut self, key: &T) -> Result<(), Unsupported> {
-        let text = key
-            .serialize(Text)
-            .or_else(|_| serde_json::to_string(key).map_err(|_| Unsupported))?;
-        self.key = Some(text);
-        Ok(())
-    }
-
-    fn serialize_value<T: Serialize + ?Sized>(&mut self, value: &T) -> Result<(), Unsupported> {
-        let key = self.key.take().ok_or(Unsupported)?;
-        self.into.nested(key, value)
-    }
-
-    fn end(self) -> Result<(), Unsupported> {
-        Ok(())
-    }
-}
-
-/// The fields of a struct: each at its name, after the tag a tagged enum
-/// writes first; the arm and value of a dimension; or nothing below a name
-/// or a pick.
-enum Fields<'c> {
-    Plain {
-        into: Collect<'c>,
-        pushed: usize,
+/// An open JSON container and the member being written in it.
+enum Container {
+    Array {
+        index: usize,
     },
-    Dimension {
-        into: Collect<'c>,
-        arm: Option<String>,
-        value: Option<Value>,
+    Object {
+        /// The object is a map's: its `kind` key is a key like any other.
+        map: bool,
+        /// The tags the object's `kind` members wrote so far.
+        tags: Vec<String>,
+        key: Option<String>,
+        expects_key: bool,
+        /// Where the value of a `kind` member being written begins.
+        tag_from: Option<usize>,
     },
-    Skipped,
 }
 
-impl Fields<'_> {
-    fn field<T: Serialize + ?Sized>(
-        &mut self,
-        key: &'static str,
-        value: &T,
-    ) -> Result<(), Unsupported> {
-        match self {
-            Fields::Plain { into, pushed } => {
-                if key == "kind" {
-                    if let Ok(tag) = value.serialize(Text) {
-                        into.path.push(tag);
-                        *pushed += 1;
-                        return Ok(());
+/// Reads a definition's JSON text as it is written, with the structs and
+/// maps that write it.
+#[derive(Default)]
+struct Reader {
+    text: Vec<u8>,
+    containers: Vec<Container>,
+    in_string: bool,
+    escaped: bool,
+    /// Where the object key being written begins: its opening quote.
+    key_from: Option<usize>,
+    /// The next object to open is a map's.
+    map_next: bool,
+    /// The open structs, innermost last.
+    structs: Vec<Role>,
+    /// The open structs that are not entered: names, picks, and dimensions.
+    unentered: usize,
+    found: Places,
+}
+
+impl Reader {
+    fn read(&mut self, byte: u8) {
+        self.text.push(byte);
+        if self.in_string {
+            if self.escaped {
+                self.escaped = false;
+            } else if byte == b'\\' {
+                self.escaped = true;
+            } else if byte == b'"' {
+                self.in_string = false;
+                if let Some(from) = self.key_from.take() {
+                    let text = string(&self.text[from..]);
+                    if let Some(Container::Object { key, .. }) = self.containers.last_mut() {
+                        *key = text;
                     }
                 }
-                into.nested(key.to_owned(), value)
             }
-            Fields::Dimension {
-                arm, value: held, ..
-            } => {
-                match key {
-                    "kind" => *arm = value.serialize(Text).ok(),
-                    "value" => *held = serde_json::to_value(value).ok(),
-                    _ => {}
+            return;
+        }
+        let end = self.text.len() - 1;
+        match byte {
+            b'"' => {
+                self.in_string = true;
+                if let Some(Container::Object { expects_key, .. }) = self.containers.last_mut() {
+                    if *expects_key {
+                        *expects_key = false;
+                        self.key_from = Some(end);
+                    }
                 }
-                Ok(())
             }
-            Fields::Skipped => Ok(()),
+            b'{' => self.containers.push(Container::Object {
+                map: std::mem::take(&mut self.map_next),
+                tags: Vec::new(),
+                key: None,
+                expects_key: true,
+                tag_from: None,
+            }),
+            b'[' => self.containers.push(Container::Array { index: 0 }),
+            b'}' | b']' => {
+                self.containers.pop();
+            }
+            b':' => {
+                if let Some(Container::Object {
+                    map: false,
+                    key: Some(key),
+                    tag_from,
+                    ..
+                }) = self.containers.last_mut()
+                {
+                    if key.as_str() == "kind" {
+                        *tag_from = Some(self.text.len());
+                    }
+                }
+            }
+            b',' => match self.containers.last_mut() {
+                Some(Container::Array { index }) => *index += 1,
+                Some(Container::Object {
+                    tags,
+                    expects_key,
+                    tag_from,
+                    ..
+                }) => {
+                    if let Some(from) = tag_from.take() {
+                        tags.extend(tag(&self.text[from..end]));
+                    }
+                    *expects_key = true;
+                }
+                None => {}
+            },
+            _ => {}
         }
     }
 
-    fn finish(self) {
-        match self {
-            Fields::Plain { into, pushed } => {
-                for _ in 0..pushed {
-                    into.path.pop();
+    /// The place of the value about to be written.
+    fn place(&self) -> Vec<String> {
+        let mut place = Vec::new();
+        for container in &self.containers {
+            match container {
+                Container::Array { index } => place.push(index.to_string()),
+                Container::Object { tags, key, .. } => {
+                    place.extend(tags.iter().cloned());
+                    place.extend(key.iter().cloned());
                 }
             }
-            Fields::Dimension {
-                into,
-                arm: Some(arm),
-                value: Some(value),
-            } if matches!(arm.as_str(), "literal" | "parameter" | "negated") => {
-                into.found.insert(into.path.clone(), Found { arm, value });
+        }
+        place
+    }
+
+    fn begin(&mut self, name: &'static str) {
+        let role = if self.unentered > 0 || matches!(name, "TopoName" | "Picked") {
+            Role::Unentered
+        } else if name == "Dimension" {
+            Role::Dimension {
+                place: self.place(),
+                from: self.text.len(),
             }
-            Fields::Dimension { .. } | Fields::Skipped => {}
+        } else {
+            Role::Entered
+        };
+        if !matches!(role, Role::Entered) {
+            self.unentered += 1;
+        }
+        self.structs.push(role);
+    }
+
+    fn end(&mut self) {
+        match self.structs.pop() {
+            Some(Role::Dimension { place, from }) => {
+                self.unentered -= 1;
+                if let Some(found) = dimension(&self.text[from..]) {
+                    self.found.insert(place, found);
+                }
+            }
+            Some(Role::Unentered) => self.unentered -= 1,
+            Some(Role::Entered) | None => {}
         }
     }
 }
 
-macro_rules! fields_impl {
-    ($trait:ident) => {
-        impl ser::$trait for Fields<'_> {
-            type Ok = ();
-            type Error = Unsupported;
+fn json(text: &[u8]) -> Option<Value> {
+    std::str::from_utf8(text)
+        .ok()
+        .and_then(|text| crate::native::replay::value(text).ok())
+}
 
-            fn serialize_field<T: Serialize + ?Sized>(
-                &mut self,
-                key: &'static str,
-                value: &T,
-            ) -> Result<(), Unsupported> {
-                self.field(key, value)
-            }
+/// The text of a JSON string.
+fn string(text: &[u8]) -> Option<String> {
+    match json(text)? {
+        Value::String(text) => Some(text),
+        _ => None,
+    }
+}
 
-            fn end(self) -> Result<(), Unsupported> {
-                self.finish();
-                Ok(())
-            }
-        }
+/// The tag a `kind` member's value names: a string, a whole number, or a
+/// boolean.
+fn tag(text: &[u8]) -> Option<String> {
+    match json(text)? {
+        Value::String(text) => Some(text),
+        Value::Bool(flag) => Some(flag.to_string()),
+        Value::Number(number) if !number.is_f64() => Some(number.to_string()),
+        _ => None,
+    }
+}
+
+/// The arm and value of a dimension's JSON text.
+fn dimension(text: &[u8]) -> Option<Found> {
+    let Value::Object(mut members) = json(text)? else {
+        return None;
     };
+    let Some(Value::String(arm)) = members.remove("kind") else {
+        return None;
+    };
+    if !matches!(arm.as_str(), "literal" | "parameter" | "negated") {
+        return None;
+    }
+    let value = members.remove("value")?;
+    Some(Found { arm, value })
 }
 
-fields_impl!(SerializeStruct);
-fields_impl!(SerializeStructVariant);
+impl Structs for RefCell<Reader> {
+    fn begin(&self, name: &'static str) {
+        self.borrow_mut().begin(name);
+    }
 
-/// A map key or an enum tag as text.
-struct Text;
+    fn end(&self) {
+        self.borrow_mut().end();
+    }
 
-impl ser::Serializer for Text {
-    type Ok = String;
-    type Error = Unsupported;
-    type SerializeSeq = Impossible<String, Unsupported>;
-    type SerializeTuple = Impossible<String, Unsupported>;
-    type SerializeTupleStruct = Impossible<String, Unsupported>;
-    type SerializeTupleVariant = Impossible<String, Unsupported>;
-    type SerializeMap = Impossible<String, Unsupported>;
-    type SerializeStruct = Impossible<String, Unsupported>;
-    type SerializeStructVariant = Impossible<String, Unsupported>;
+    fn map(&self) {
+        self.borrow_mut().map_next = true;
+    }
+}
 
-    fn serialize_bool(self, value: bool) -> Result<String, Unsupported> {
-        Ok(value.to_string())
+/// Feeds the written JSON text to a [`Reader`].
+struct Sink<'a>(&'a RefCell<Reader>);
+
+impl std::io::Write for Sink<'_> {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        let mut reader = self.0.borrow_mut();
+        for &byte in bytes {
+            reader.read(byte);
+        }
+        Ok(bytes.len())
     }
-    fn serialize_i8(self, value: i8) -> Result<String, Unsupported> {
-        Ok(value.to_string())
-    }
-    fn serialize_i16(self, value: i16) -> Result<String, Unsupported> {
-        Ok(value.to_string())
-    }
-    fn serialize_i32(self, value: i32) -> Result<String, Unsupported> {
-        Ok(value.to_string())
-    }
-    fn serialize_i64(self, value: i64) -> Result<String, Unsupported> {
-        Ok(value.to_string())
-    }
-    fn serialize_u8(self, value: u8) -> Result<String, Unsupported> {
-        Ok(value.to_string())
-    }
-    fn serialize_u16(self, value: u16) -> Result<String, Unsupported> {
-        Ok(value.to_string())
-    }
-    fn serialize_u32(self, value: u32) -> Result<String, Unsupported> {
-        Ok(value.to_string())
-    }
-    fn serialize_u64(self, value: u64) -> Result<String, Unsupported> {
-        Ok(value.to_string())
-    }
-    fn serialize_f32(self, _: f32) -> Result<String, Unsupported> {
-        Err(Unsupported)
-    }
-    fn serialize_f64(self, _: f64) -> Result<String, Unsupported> {
-        Err(Unsupported)
-    }
-    fn serialize_char(self, value: char) -> Result<String, Unsupported> {
-        Ok(value.to_string())
-    }
-    fn serialize_str(self, value: &str) -> Result<String, Unsupported> {
-        Ok(value.to_owned())
-    }
-    fn serialize_bytes(self, _: &[u8]) -> Result<String, Unsupported> {
-        Err(Unsupported)
-    }
-    fn serialize_none(self) -> Result<String, Unsupported> {
-        Err(Unsupported)
-    }
-    fn serialize_some<T: Serialize + ?Sized>(self, value: &T) -> Result<String, Unsupported> {
-        value.serialize(self)
-    }
-    fn serialize_unit(self) -> Result<String, Unsupported> {
-        Err(Unsupported)
-    }
-    fn serialize_unit_struct(self, _: &'static str) -> Result<String, Unsupported> {
-        Err(Unsupported)
-    }
-    fn serialize_unit_variant(
-        self,
-        _: &'static str,
-        _: u32,
-        variant: &'static str,
-    ) -> Result<String, Unsupported> {
-        Ok(variant.to_owned())
-    }
-    fn serialize_newtype_struct<T: Serialize + ?Sized>(
-        self,
-        _: &'static str,
-        value: &T,
-    ) -> Result<String, Unsupported> {
-        value.serialize(self)
-    }
-    fn serialize_newtype_variant<T: Serialize + ?Sized>(
-        self,
-        _: &'static str,
-        _: u32,
-        _: &'static str,
-        _: &T,
-    ) -> Result<String, Unsupported> {
-        Err(Unsupported)
-    }
-    fn serialize_seq(self, _: Option<usize>) -> Result<Self::SerializeSeq, Unsupported> {
-        Err(Unsupported)
-    }
-    fn serialize_tuple(self, _: usize) -> Result<Self::SerializeTuple, Unsupported> {
-        Err(Unsupported)
-    }
-    fn serialize_tuple_struct(
-        self,
-        _: &'static str,
-        _: usize,
-    ) -> Result<Self::SerializeTupleStruct, Unsupported> {
-        Err(Unsupported)
-    }
-    fn serialize_tuple_variant(
-        self,
-        _: &'static str,
-        _: u32,
-        _: &'static str,
-        _: usize,
-    ) -> Result<Self::SerializeTupleVariant, Unsupported> {
-        Err(Unsupported)
-    }
-    fn serialize_map(self, _: Option<usize>) -> Result<Self::SerializeMap, Unsupported> {
-        Err(Unsupported)
-    }
-    fn serialize_struct(
-        self,
-        _: &'static str,
-        _: usize,
-    ) -> Result<Self::SerializeStruct, Unsupported> {
-        Err(Unsupported)
-    }
-    fn serialize_struct_variant(
-        self,
-        _: &'static str,
-        _: u32,
-        _: &'static str,
-        _: usize,
-    ) -> Result<Self::SerializeStructVariant, Unsupported> {
-        Err(Unsupported)
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
     }
 }
 
