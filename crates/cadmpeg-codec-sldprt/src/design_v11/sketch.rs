@@ -14,7 +14,8 @@
 //! it binds `Driven`, and one whose parameter no tree node lists binds a
 //! `Driven` parameter minted for it. A sketch with a dimension that binds no
 //! parameter, or with an entity that has no planar curve, stays
-//! `Unresolved`.
+//! `Unresolved`; its dimensions still state the quantities of the parameters
+//! they bind.
 
 use std::collections::{HashMap, HashSet};
 
@@ -141,9 +142,13 @@ fn sketch(
         .filter(|entity| entity.sketch == record.id)
         .collect::<Vec<_>>();
     let roles = Roles::new(&entities);
+    let mut failure = None;
     let mut sketch_entities = Vec::with_capacity(entities.len());
     for entity in &entities {
-        let form = curve(&entity.geometry).ok_or("a sketch entity has no planar curve")?;
+        let Some(form) = curve(&entity.geometry) else {
+            failure.get_or_insert("a sketch entity has no planar curve");
+            continue;
+        };
         sketch_entities.push(SketchEntity {
             id: entity.id().clone(),
             sketch: record.id.clone(),
@@ -172,7 +177,13 @@ fn sketch(
             roles: &roles,
             entities: &entities,
         };
-        let (relation, binding) = relations.relation(constraint, &driven)?;
+        let (relation, binding) = match relations.relation(constraint, &driven) {
+            Ok(relation) => relation,
+            Err(reason) => {
+                failure.get_or_insert(reason);
+                continue;
+            }
+        };
         if matches!(&relation, SketchRelation::Coincident { a, b } if a == b) {
             continue;
         }
@@ -193,6 +204,10 @@ fn sketch(
             source_settings: NativeOptions::new(),
             native_ref: constraint.native_ref.clone(),
         });
+    }
+    out.bound.extend(bound);
+    if let Some(reason) = failure {
+        return Err(reason);
     }
     out.records.push(Sketch {
         id: record.id.clone(),
@@ -229,7 +244,6 @@ fn sketch(
     out.constraints.extend(constraints);
     out.driven.extend(driven);
     out.references.extend(references);
-    out.bound.extend(bound);
     Ok(record.id.clone())
 }
 
