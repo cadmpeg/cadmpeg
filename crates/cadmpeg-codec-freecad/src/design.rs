@@ -9343,7 +9343,7 @@ pub(crate) fn census(
             FeatureDefinition::PostProcess { operation, .. } => (operation, true),
             FeatureDefinition::Operation(operation) => (operation, false),
         };
-        let value = serde_json::to_value(definition).map_err(|error| {
+        let value = cadmpeg_ir::hash::finite_json::to_json_value(definition).map_err(|error| {
             CodecError::malformed(format_args!(
                 "cannot classify design feature {}: {error}",
                 feature.id

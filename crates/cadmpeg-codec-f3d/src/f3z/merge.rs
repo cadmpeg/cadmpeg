@@ -1963,6 +1963,16 @@ fn define_member(
             .product_definitions
             .retain(|definition| !definition.id.as_str().ends_with(STORED_FRAME_GROUP_SUFFIX));
     }
+    let (top_level, tessellations) = ir
+        .model
+        .product_definitions
+        .iter()
+        .position(|row| row.id == crate::tree::file_root_id())
+        .map(|position| {
+            let root = ir.model.product_definitions.remove(position);
+            (root.occurrences, root.tessellations)
+        })
+        .unwrap_or_default();
     let owned = ir
         .model
         .product_definitions
@@ -1989,15 +1999,6 @@ fn define_member(
         .filter(|sketch| !owned_sketches.contains(&sketch.id))
         .map(|sketch| sketch.id.clone())
         .collect();
-    // The member file's own root definition is the member definition: it is
-    // stored in its own file of the archive, and holds the member's top level.
-    let top_level = ir
-        .model
-        .product_definitions
-        .iter()
-        .position(|row| row.id == crate::tree::file_root_id())
-        .map(|position| ir.model.product_definitions.remove(position).occurrences)
-        .unwrap_or_default();
     let storage = match ir.source.clone() {
         Some(source) => Storage::File {
             document: ExternalDocument::path(document.to_owned()),
@@ -2016,6 +2017,7 @@ fn define_member(
         definition.sketches.extend(sketches);
         definition.label = (!label.trim().is_empty()).then(|| label.to_owned());
         definition.occurrences.extend(top_level);
+        definition.tessellations.extend(tessellations);
         definition.storage = storage;
         return Ok(id);
     }
@@ -2025,6 +2027,7 @@ fn define_member(
     definition.bodies = bodies;
     definition.sketches = sketches;
     definition.occurrences = top_level;
+    definition.tessellations = tessellations;
     ir.model.product_definitions.push(definition);
     Ok(id)
 }
