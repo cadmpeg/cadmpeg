@@ -6,6 +6,7 @@ use super::{
     ScopedExtrudeProfileResolution,
 };
 use crate::ids::native_stream;
+use crate::loss::F3dLossCode;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{BooleanOp, PlanarProfileRef, SketchProfileRegion};
@@ -17,7 +18,7 @@ pub(super) fn resolve(
     scoped: ScopedExtrudeProfileResolution<'_>,
     states: (i64, i64),
     sweep: cap_regions::compact::Sweep<'_>,
-) -> Result<Option<(PlanarProfileRef, bool)>, CodecError> {
+) -> Result<Option<(PlanarProfileRef, Vec<F3dLossCode>)>, CodecError> {
     let Some(stream) = native_stream(&group.id) else {
         return Ok(None);
     };
@@ -42,13 +43,15 @@ pub(super) fn resolve(
     certified_regions_bounded_by(source, &curves, scoped, states, sweep)
 }
 
+/// The exact reading requires every curve to bound a selected region.
+/// Split entries and partial boundary matches require a loss.
 pub(super) fn certified_regions_bounded_by(
     sketch: &Sketch,
     curves: &[Vec<SketchEntityId>],
     scoped: ScopedExtrudeProfileResolution<'_>,
     states: (i64, i64),
     sweep: cap_regions::compact::Sweep<'_>,
-) -> Result<Option<(PlanarProfileRef, bool)>, CodecError> {
+) -> Result<Option<(PlanarProfileRef, Vec<F3dLossCode>)>, CodecError> {
     let candidate = match sweep.operation {
         BooleanOp::Cut => cap_regions::compact::removed_candidate(sketch, scoped, states, sweep)?,
         _ => cap_regions::compact::added_candidate(sketch, scoped, states, sweep)?,
@@ -60,7 +63,10 @@ pub(super) fn certified_regions_bounded_by(
         return Ok(None);
     };
     let mut coincident_boundary = false;
+    let mut partial_entry = false;
     for pieces in curves {
+        partial_entry |=
+            pieces.len() > 1 || pieces.iter().any(|curve| !bounds_region(regions, curve));
         if pieces.iter().any(|curve| bounds_region(regions, curve)) {
             continue;
         }
@@ -94,7 +100,14 @@ pub(super) fn certified_regions_bounded_by(
         }
         coincident_boundary = true;
     }
-    Ok(Some((candidate, coincident_boundary)))
+    let mut losses = Vec::new();
+    if partial_entry {
+        losses.push(F3dLossCode::FeatureProfilePartialEntryAssumed);
+    }
+    if coincident_boundary {
+        losses.push(F3dLossCode::FeatureProfileCoincidentBoundaryAssumed);
+    }
+    Ok(Some((candidate, losses)))
 }
 
 /// Whether `curve` has a use in the exterior or a hole ring of a region.

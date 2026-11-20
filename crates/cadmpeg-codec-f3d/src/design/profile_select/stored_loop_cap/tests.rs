@@ -16,6 +16,7 @@ use super::super::ScopedExtrudeProfileResolution;
 use super::certified_regions_bounded_by;
 use crate::design::geometry::ProfileGeometryWork;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
+use crate::loss::F3dLossCode;
 
 const TOLERANCE: f64 = 1.0e-6;
 
@@ -73,7 +74,7 @@ fn select(entities: &[SketchEntity], stored: &[usize]) -> Option<Vec<SketchProfi
 fn select_candidates(
     entities: &[SketchEntity],
     stored: &[Vec<usize>],
-) -> Option<(Vec<SketchProfileRegion>, bool)> {
+) -> Option<(Vec<SketchProfileRegion>, Vec<F3dLossCode>)> {
     let states = [(2, prism_over(2.0)), (1, AsmHistoricalTopology::default())]
         .into_iter()
         .map(|(state_id, topology)| {
@@ -147,13 +148,13 @@ fn select_candidates(
         )
     })
     .unwrap();
-    selected.map(|(profile, coincident)| {
+    selected.map(|(profile, losses)| {
         (
             match profile {
                 PlanarProfileRef::SketchRegions { regions, .. } => regions.to_vec(),
                 _ => panic!("sketch regions"),
             },
-            coincident,
+            losses,
         )
     })
 }
@@ -161,7 +162,9 @@ fn select_candidates(
 #[test]
 fn a_cap_that_a_curve_outside_the_stored_loop_divides_selects_each_region() {
     let entities = divided_rectangle();
-    let regions = select(&entities, &[0, 1, 2, 3]).expect("certified regions");
+    let (regions, losses) = select_candidates(&entities, &[vec![0], vec![1], vec![2], vec![3]])
+        .expect("certified regions");
+    assert!(losses.is_empty());
     assert_eq!(regions.len(), 2);
     let divider = entities[4].id();
     for region in &regions {
@@ -202,10 +205,9 @@ fn split_rectangle() -> Vec<SketchEntity> {
 #[test]
 fn a_split_identity_uses_its_piece_on_the_certified_boundary() {
     let entities = split_rectangle();
-    let (regions, coincident) =
-        select_candidates(&entities, &[vec![0], vec![1, 6], vec![2], vec![3]])
-            .expect("certified boundary piece");
-    assert!(!coincident);
+    let (regions, losses) = select_candidates(&entities, &[vec![0], vec![1, 6], vec![2], vec![3]])
+        .expect("certified boundary piece");
+    assert_eq!(losses, vec![F3dLossCode::FeatureProfilePartialEntryAssumed]);
     assert_eq!(regions.len(), 2);
     assert!(regions.iter().any(|region| matches!(region,
         SketchProfileRegion::Trimmed { outer_boundary, .. }
@@ -243,9 +245,15 @@ fn a_reversed_coincident_boundary_curve_uses_the_certified_interval() {
         })
         .unwrap(),
     ));
-    let (regions, coincident) =
+    let (regions, losses) =
         select_candidates(&entities, &[vec![0], vec![1], vec![2], vec![3], vec![6]])
             .expect("coincident boundary");
-    assert!(coincident);
+    assert_eq!(
+        losses,
+        vec![
+            F3dLossCode::FeatureProfilePartialEntryAssumed,
+            F3dLossCode::FeatureProfileCoincidentBoundaryAssumed,
+        ]
+    );
     assert_eq!(regions.len(), 2);
 }

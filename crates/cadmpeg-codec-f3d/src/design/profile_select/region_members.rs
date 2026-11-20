@@ -160,7 +160,7 @@ pub(super) fn resolve_certified(
     Ok(super::stored_loop_cap::certified_regions_bounded_by(
         sketch, &named, resolution, states, sweep,
     )?
-    .filter(|(_, coincident)| !coincident)
+    .filter(|(_, losses)| losses.is_empty())
     .map(|(profile, _)| profile))
 }
 
