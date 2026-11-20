@@ -45,8 +45,9 @@ fn every_schema_position_has_one_spelling() {
     assert!(
         report.unprobed.is_empty(),
         "{} value positions have no sample to probe. Give each one in `seed_documents()` \
-         in crates/cadmpeg-ir/tests/golden_tests/schema_sweep.rs: a document the readers \
-         accept that holds the position, and for a unique list two of its members:\n{}",
+         in crates/cadmpeg-test-support/tests/golden_tests/schema_sweep.rs: a document \
+         the readers accept that holds the position, and for a unique list two of its \
+         members:\n{}",
         report.unprobed.len(),
         report.unprobed.join("\n")
     );
