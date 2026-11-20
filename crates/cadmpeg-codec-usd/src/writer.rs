@@ -208,6 +208,9 @@ fn turned(turn: Option<f64>, vector: [f64; 3]) -> [f64; 3] {
 #[derive(Default)]
 struct Unwritten {
     tessellated_bodies: usize,
+    /// Bodies with a transform of their own and physics, written as a group of
+    /// prims: their physics was not written.
+    body_physics: Vec<String>,
     /// Bodies with faces and no `BrepArray` prim, with the reason.
     breps: Vec<String>,
     /// Bodies whose `BrepArray` prim has no trim curves.
@@ -1117,11 +1120,23 @@ impl<'ir> Writer<'ir> {
             }
             return;
         }
-        self.prim_head("def Xform", &name, &placement.metadata);
+        // The body's own physics goes on the group prim, whose space is the
+        // body's when the body has no transform of its own.
+        let (schemas, physics) = self.physics.body(&body.id, placement.turn);
+        let mut metadata = placement.metadata.clone();
+        let mut properties = placement.properties.clone();
+        if body.transform.is_none() {
+            metadata.extend(schemas);
+            properties.extend(physics);
+        } else if !schemas.is_empty() || !physics.is_empty() {
+            self.unwritten.body_physics.push(name.clone());
+        }
+        self.prim_head("def Xform", &name, &metadata);
         self.out.open();
         self.placement(&Placement {
             hidden,
             metadata: Vec::new(),
+            properties,
             ..placement.clone()
         });
         let inner = Placement {
@@ -1799,10 +1814,18 @@ impl<'ir> Writer<'ir> {
 
     /// The losses of the write.
     fn losses(&self) -> Vec<LossNote> {
+        let mut losses = Vec::new();
+        if !self.unwritten.body_physics.is_empty() {
+            losses.push(UsdLossCode::ExportPhysicsNotWritten.note(format!(
+                "the rigid body, mass, or velocities of {} bodies with a transform of their own \
+                 were not written: {}",
+                self.unwritten.body_physics.len(),
+                self.unwritten.body_physics.join(", ")
+            )));
+        }
         let unwritten = &self.unwritten;
         let model = &self.ir.model;
         let geometry = &self.ir.geometry;
-        let mut losses = Vec::new();
         if unwritten.solver_properties > 0 {
             losses.push(UsdLossCode::ExportSolverPropertyNotWritten.note(format!(
                 "{} solver properties have no PhysX attribute, prim, or relationship target to \
