@@ -253,16 +253,27 @@ fn attempt<W: Write + Seek>(
     let parameters = match native_parameters {
         Some(design::parameters::ParameterSource::Native) => ArenaDisposition::Written,
         Some(design::parameters::ParameterSource::Neutral(plan)) => {
+            let mut losses = plan.into_losses();
+            losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+                "F3D",
+                "writes these bodies as visible: the source did not record their visibility",
+                design_registry.guessed_visible,
+            ));
             return Ok((
                 coverage(write_design, ArenaDisposition::Reported, false),
-                plan.into_losses(),
+                losses,
             ));
         }
         None if neutral.is_some() => ArenaDisposition::Reported,
         None => ArenaDisposition::Dropped,
     };
     let written = neutral.is_some();
-    let losses = neutral.map_or_else(Vec::new, design::NeutralDesign::into_losses);
+    let mut losses = neutral.map_or_else(Vec::new, design::NeutralDesign::into_losses);
+    losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+        "F3D",
+        "writes these bodies as visible: the source did not record their visibility",
+        design_registry.guessed_visible,
+    ));
     Ok((coverage(write_design, parameters, written), losses))
 }
 

@@ -13,10 +13,10 @@ use crate::design::body::{
 use crate::design::presentation::{
     BROWSER_NODE_BASE_TYPE_GUID, BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION,
 };
-use crate::records::entity_header::{SegmentType, DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
+use crate::records::entity_header::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION, SegmentType};
 
 use super::{
-    attributes::{source_less_body_key, AttributeIndex},
+    attributes::{AttributeIndex, source_less_body_key},
     preconditions::DesignBindingsValidated,
 };
 
@@ -156,6 +156,7 @@ pub(super) struct GeneratedDesignRegistry {
     pub(super) types: Vec<GeneratedDesignType>,
     pub(super) body_map: Option<GeneratedBodyMap>,
     pub(super) browser_nodes: Option<GeneratedBrowserNodes>,
+    pub(super) guessed_visible: Vec<String>,
     used_record_indices: BTreeSet<u32>,
     next_record_index: u32,
 }
@@ -176,11 +177,15 @@ impl GeneratedDesignRegistry {
         let mut body_map = BTreeMap::new();
         let mut suffixes = BTreeSet::new();
         let mut pending = Vec::new();
+        let mut guessed_visible = Vec::new();
 
         for body in &target.geometry.bodies {
             let visible = match (body.visible, selection) {
                 (Some(visible), _) => visible,
-                (None, BodySelection::Every) => true,
+                (None, BodySelection::Every) => {
+                    guessed_visible.push(body.id.to_string());
+                    true
+                }
                 (None, BodySelection::Stated) => continue,
             };
             let metadata = visibility_by_body.get(body.id.as_str()).copied();
@@ -312,6 +317,7 @@ impl GeneratedDesignRegistry {
             types,
             body_map,
             browser_nodes,
+            guessed_visible,
             used_record_indices,
             next_record_index,
         })
@@ -324,6 +330,7 @@ impl GeneratedDesignRegistry {
             types,
             body_map: None,
             browser_nodes: None,
+            guessed_visible: Vec::new(),
             used_record_indices: BTreeSet::new(),
             next_record_index: 0,
         }
@@ -426,7 +433,7 @@ fn register_generated_type(
         _ => {
             return Err(CodecError::malformed(format_args!(
                 "F3D Design type registry repeats built-in type {type_guid}"
-            )))
+            )));
         }
     };
     let design_type = &mut types[ordinal];
@@ -499,7 +506,7 @@ pub(super) fn deterministic_guid(domain: &str, identity: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{deterministic_guid, GeneratedDesignRegistry};
+    use super::{GeneratedDesignRegistry, deterministic_guid};
 
     #[test]
     fn generated_type_rejects_relaxed_noncanonical_guid() {
