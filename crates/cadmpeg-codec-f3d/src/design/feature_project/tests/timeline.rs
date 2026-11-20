@@ -296,6 +296,7 @@ fn a_reciprocal_thread_projects_after_its_hole() {
             panic!("Thread scope");
         };
         *construction = Some(DesignThreadConstruction {
+            angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
             form: DesignThreadForm::Compact(Some(Located {
                 value: NonZeroU32::new(owner).unwrap(),
                 offset: 0,

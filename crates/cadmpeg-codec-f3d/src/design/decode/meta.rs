@@ -941,7 +941,7 @@ pub(super) fn stream_types_by_class_tag<'a>(
 
 /// Compare an encoded native `MetaStream` scope with the `BulkStream`'s sibling
 /// name without materializing either name.
-fn meta_scope_matches_bulk(scope: &str, bulk_entry_name: &str) -> bool {
+pub(crate) fn meta_scope_matches_bulk(scope: &str, bulk_entry_name: &str) -> bool {
     let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
         return false;
     };

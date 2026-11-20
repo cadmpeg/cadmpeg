@@ -349,7 +349,8 @@ fn the_planar_tail_marker_follows_the_pad_and_three_opaque_bytes() {
         for marker in [0, 1] {
             let bytes = planar_tail(133, references, marker);
             assert_eq!(
-                crate::design::decode::sketch::planar_tail_marker(&bytes, 133),
+                crate::design::decode::sketch::planar_curve_tail(&bytes, 133)
+                    .map(|tail| tail.marker),
                 Some(marker)
             );
         }
@@ -362,11 +363,61 @@ fn a_planar_tail_with_a_nonzero_pad_or_no_reference_run_has_no_marker() {
     let pad = 133 + 96 + 22;
     bytes[pad] = 1;
     assert_eq!(
-        crate::design::decode::sketch::planar_tail_marker(&bytes, 133),
+        crate::design::decode::sketch::planar_curve_tail(&bytes, 133),
         None
     );
     assert_eq!(
-        crate::design::decode::sketch::planar_tail_marker(&[0; 300], 133),
+        crate::design::decode::sketch::planar_curve_tail(&[0; 300], 133),
         None
+    );
+}
+
+/// A tail of two marked references, the pad, `opaque`, a zero marker, the u32
+/// `lane`, and flag byte `1`.
+fn lane_tail(opaque: &[u8], lane: u32) -> Vec<u8> {
+    let mut bytes = vec![0xAA; 133 + 96];
+    for index in 0..2u32 {
+        bytes.push(1);
+        bytes.extend_from_slice(&(index + 10).to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&[0; 3]);
+    bytes.extend_from_slice(opaque);
+    bytes.push(0);
+    bytes.extend_from_slice(&lane.to_le_bytes());
+    bytes.extend_from_slice(&[1, 0, 0]);
+    bytes
+}
+
+#[test]
+fn a_planar_tail_with_two_opaque_bytes_moves_its_lane_one_byte_earlier() {
+    use crate::design::decode::sketch::{planar_curve_tail, PlanarCurveTail};
+    for (lane, construction) in [(0, false), (1, true)] {
+        assert_eq!(
+            planar_curve_tail(&lane_tail(&[1, 0, 0], lane), 133),
+            Some(PlanarCurveTail {
+                marker: 0,
+                construction,
+                short: false
+            })
+        );
+        assert_eq!(
+            planar_curve_tail(&lane_tail(&[1, 0], lane), 133),
+            Some(PlanarCurveTail {
+                marker: 0,
+                construction,
+                short: true
+            })
+        );
+    }
+    let mut marked = lane_tail(&[1, 0], 1);
+    marked[133 + 96 + 22 + 3 + 2] = 1;
+    assert_eq!(
+        planar_curve_tail(&marked, 133),
+        Some(PlanarCurveTail {
+            marker: 1,
+            construction: true,
+            short: true
+        })
     );
 }

@@ -385,7 +385,11 @@ supports only one normal domain.
 
 `triangle_groups` is empty or is an ordered partition of all triangle ordinals.
 Each group is nonempty, its ordinals are strictly increasing, and a nonempty
-`source_id` is unique within the tessellation. `texture_assignments` associates
+`source_id` is unique within the tessellation. A group's optional `face` names
+the B-rep face whose triangles the group holds. The face is a face of the
+tessellation's `body`, which is then present, and a member of `faces` when
+`faces` is not empty. Each face names at most one group of a tessellation.
+`texture_assignments` associates
 one source texture resource and asset with each nonempty, strictly increasing
 triangle subset. Nonempty texture-resource identities are unique. Anonymous
 assignments use an asset at most once. Distinct source resources can use the
