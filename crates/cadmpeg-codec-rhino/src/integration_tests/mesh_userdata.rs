@@ -215,7 +215,7 @@ fn mesh_correspondence_future_payload_retains_parent_mesh_record() {
         ));
 
         assert_eq!(result.ir().model.tessellations.len(), 1);
-        assert_eq!(result.ir().model.points.len(), 1);
+        assert_eq!(result.ir().geometry.points.len(), 1);
         assert!(result.report().losses.iter().any(|loss| {
             loss.message.contains(label) && loss.message.contains("could not be transferred")
         }));

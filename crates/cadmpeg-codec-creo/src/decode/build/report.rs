@@ -24,36 +24,37 @@ use cadmpeg_ir::codec::DecodeBody;
 
 pub(in super::super) fn has_transferred_geometry(ir: &CadIr) -> bool {
     let model = &ir.model;
-    !model.points.is_empty()
-        || !model.vertices.is_empty()
-        || !model.edges.is_empty()
-        || !model.coedges.is_empty()
-        || !model.loops.is_empty()
-        || !model.faces.is_empty()
-        || !model.shells.is_empty()
-        || !model.regions.is_empty()
-        || !model.bodies.is_empty()
-        || model.surfaces.iter().any(|surface| {
+    let geometry = &ir.geometry;
+    !geometry.points.is_empty()
+        || !geometry.vertices.is_empty()
+        || !geometry.edges.is_empty()
+        || !geometry.coedges.is_empty()
+        || !geometry.loops.is_empty()
+        || !geometry.faces.is_empty()
+        || !geometry.shells.is_empty()
+        || !geometry.regions.is_empty()
+        || !geometry.bodies.is_empty()
+        || geometry.surfaces.iter().any(|surface| {
             !matches!(
                 surface.geometry.solved(),
                 Some(SolvedSurfaceGeometry::Unknown { .. })
             )
         })
-        || model.curves.iter().any(|curve| {
+        || geometry.curves.iter().any(|curve| {
             !matches!(
                 curve.geometry.solved(),
                 Some(SolvedCurveGeometry::Unknown { .. })
             )
         })
-        || !model.subds.is_empty()
-        || !model.pcurves.is_empty()
-        || model.procedural_surfaces.iter().any(|surface| {
+        || !geometry.subds.is_empty()
+        || !geometry.pcurves.is_empty()
+        || geometry.procedural_surfaces.iter().any(|surface| {
             !matches!(
                 surface.definition(),
                 ProceduralSurfaceDefinition::Unknown { .. }
             )
         })
-        || model.procedural_curves.iter().any(|curve| {
+        || geometry.procedural_curves.iter().any(|curve| {
             !matches!(
                 curve.definition(),
                 ProceduralCurveDefinition::Unknown { .. }
@@ -151,7 +152,7 @@ pub(in super::super) fn build_report(
     ));
 
     let transferred_plane_ids: BTreeSet<_> = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .filter(|surface| {

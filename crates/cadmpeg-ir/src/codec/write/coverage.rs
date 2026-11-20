@@ -6,9 +6,11 @@
 //! the payload omits, so a drop is reported even when the backend has no code
 //! path that knows about the arena.
 
-use crate::document::Model;
+use cadmpeg_core::decode::ArenaClass;
+
+use crate::document::{ArenaHome, CadIr};
 use crate::report::loss::LossNote;
-use crate::schema::{EntityKind, EntitySchema};
+use crate::schema::{ArenaRecord, EntityKind};
 
 use super::loss::ExportLossCode;
 
@@ -61,51 +63,129 @@ impl ArenaCoverage {
     }
 
     /// One loss per non-empty arena this coverage omits.
-    pub(super) fn omission_losses(&self, model: &Model, format: &str) -> Vec<LossNote> {
+    pub(super) fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
         match self {
             Self::Complete => Vec::new(),
-            Self::Declared(dispositions) => dispositions.omission_losses(model, format),
+            Self::Declared(dispositions) => dispositions.omission_losses(ir, format),
         }
     }
 }
 
-fn arena_kind<T: EntitySchema>(_: &[T]) -> EntityKind {
+fn arena_kind<T: ArenaRecord>(_: &[T]) -> EntityKind {
     T::KIND
 }
 
-macro_rules! declare_arena_dispositions {
-    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
-        /// One disposition for every model arena.
+/// A disposition field of [`ArenaDispositions`]: the arenas of the `design`
+/// and `process` homes are fields of its `design` and `process` members.
+macro_rules! disposition {
+    ($dispositions:expr, $field:ident, design) => {
+        $dispositions.design.$field
+    };
+    ($dispositions:expr, $field:ident, process) => {
+        $dispositions.process.$field
+    };
+    ($dispositions:expr, $field:ident, $home:ident) => {
+        $dispositions.$field
+    };
+}
+
+macro_rules! split_arena_dispositions {
+    ([$($model:ident)*] [$($design:ident)*] [$($process:ident)*] $field:ident: design; $($rest:tt)*) => {
+        split_arena_dispositions! { [$($model)*] [$($design)* $field] [$($process)*] $($rest)* }
+    };
+    ([$($model:ident)*] [$($design:ident)*] [$($process:ident)*] $field:ident: process; $($rest:tt)*) => {
+        split_arena_dispositions! { [$($model)*] [$($design)*] [$($process)* $field] $($rest)* }
+    };
+    ([$($model:ident)*] [$($design:ident)*] [$($process:ident)*] $field:ident: $home:ident; $($rest:tt)*) => {
+        split_arena_dispositions! { [$($model)* $field] [$($design)*] [$($process)*] $($rest)* }
+    };
+    ([$($model:ident)*] [$($design:ident)*] [$($process:ident)*]) => {
+        /// One disposition for every arena.
         ///
         /// Every field is required and the type has no default, so a new arena
         /// fails to compile in every writer until that writer declares it.
         #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub struct ArenaDispositions {
             $(
-                #[doc = concat!("Disposition of the `", stringify!($field), "` arena.")]
-                pub $field: ArenaDisposition,
+                #[doc = concat!("Disposition of the `", stringify!($model), "` arena.")]
+                pub $model: ArenaDisposition,
+            )*
+            /// Dispositions of the arenas of the `design` home.
+            pub design: DesignArenaDispositions,
+            /// Dispositions of the arenas of the `process` home.
+            pub process: ProcessArenaDispositions,
+        }
+
+        /// One disposition for every arena of the `process` home.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub struct ProcessArenaDispositions {
+            $(
+                #[doc = concat!("Disposition of the `process.", stringify!($process), "` arena.")]
+                pub $process: ArenaDisposition,
             )*
         }
 
+        impl ProcessArenaDispositions {
+            /// One disposition for every arena of the `process` home.
+            #[must_use]
+            pub const fn uniform(disposition: ArenaDisposition) -> Self {
+                Self { $($process: disposition,)* }
+            }
+        }
+
+        /// One disposition for every arena of the `design` home.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub struct DesignArenaDispositions {
+            $(
+                #[doc = concat!("Disposition of the `design.", stringify!($design), "` arena.")]
+                pub $design: ArenaDisposition,
+            )*
+        }
+
+        impl DesignArenaDispositions {
+            /// One disposition for every arena of the `design` home.
+            #[must_use]
+            pub const fn uniform(disposition: ArenaDisposition) -> Self {
+                Self { $($design: disposition,)* }
+            }
+        }
+    };
+}
+
+macro_rules! declare_arena_dispositions {
+    ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+        split_arena_dispositions! { [] [] [] $($field: $home;)* }
+
         impl ArenaDispositions {
-            /// Whether the payload may carry a record of this model arena.
+            /// Whether the payload may carry a record of this arena.
             pub fn carries(&self, kind: EntityKind) -> bool {
-                [$(self.$field),*]
+                [$(disposition!(self, $field, $home)),*]
                     .get(kind.index())
                     .is_none_or(|disposition| disposition.carries())
             }
 
-            fn omission_losses(&self, model: &Model, format: &str) -> Vec<LossNote> {
+            fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
+                // While the document holds a v10 design record, the v11 design
+                // arenas restate content the v10 path writes.
+                let restated = ir.arenas().holds(ArenaClass::Design, ArenaHome::Model);
                 let mut losses = Vec::new();
                 $(
-                    if self.$field == ArenaDisposition::Omitted && !model.$field.is_empty() {
+                    // The document root is the written document itself.
+                    let records = if arena_kind(&ir.$home.$field) == EntityKind::ProductDefinition {
+                        crate::products::stated_definitions(&ir.model.product_definitions).count()
+                    } else {
+                        ir.$home.$field.len()
+                    };
+                    if disposition!(self, $field, $home) == ArenaDisposition::Omitted
+                        && records != 0
+                        && !(restated && crate::document::arena_home!($home) == ArenaHome::Design)
+                    {
                         losses.push(
-                            ExportLossCode::ArenaOmitted(arena_kind(&model.$field))
+                            ExportLossCode::ArenaOmitted(arena_kind(&ir.$home.$field))
                             .note(format!(
                                 "the {format} write does not represent model arena `{}`: \
-                                 {} record(s) omitted",
-                                stringify!($field),
-                                model.$field.len(),
+                                 {records} record(s) omitted",
+                                crate::document::arena_label!($field, $home),
                             )),
                         );
                     }
@@ -116,4 +196,4 @@ macro_rules! declare_arena_dispositions {
     };
 }
 
-crate::document::arena_registry!(declare_arena_dispositions);
+crate::document::every_arena_registry!(declare_arena_dispositions);

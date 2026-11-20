@@ -2,7 +2,7 @@ use super::assembly::DesignAssemblyOperandPath;
 use super::scope::DesignParameterScope;
 use crate::layout::{
     captured_position_matrix as matrix, captured_position_prefix as prefix,
-    captured_position_row as row, captured_position_suffix as suffix,
+    captured_position_row as row, captured_position_suffix as suffix, captured_position_v4 as v4,
 };
 use crate::records::identity::Located;
 use cadmpeg_core::decode::u64_from_index;
@@ -46,7 +46,18 @@ impl DesignCapturedPositions {
         if scope.kind_name() != "Position" {
             return false;
         }
-        let Some(mut at) = scope.byte_offset().checked_add(u64_from_index(prefix::LEN)) else {
+        let (start, suffix_length) = if scope.byte_offset().checked_add(u64_from_index(v4::LEN))
+            == Some(scope.reference_count_offset())
+        {
+            match self.rows.as_slice() {
+                [position] if position.target.value != 0 && position.matrix.is_some() => {}
+                _ => return false,
+            }
+            (v4::ROW, v4::LEN - v4::IDENTITY_LENGTH)
+        } else {
+            (prefix::LEN, suffix::LEN)
+        };
+        let Some(mut at) = scope.byte_offset().checked_add(u64_from_index(start)) else {
             return false;
         };
         let mut next_path = 0;
@@ -89,7 +100,7 @@ impl DesignCapturedPositions {
             at = next;
         }
         next_path == self.paths.len()
-            && at.checked_add(u64_from_index(suffix::LEN)) == Some(scope.reference_count_offset())
+            && at.checked_add(u64_from_index(suffix_length)) == Some(scope.reference_count_offset())
     }
 }
 

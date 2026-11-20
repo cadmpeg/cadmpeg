@@ -42,7 +42,7 @@ fn decode_transfers_positional_line_extrusion_plane() {
 
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
@@ -79,11 +79,11 @@ fn decode_transfers_positional_line_extrusion_plane() {
     let carrier_id = surface.id.clone();
     let construction = result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|surface| {
-            result.ir().model.procedural_surface_owner(&surface.id) == Some(&carrier_id)
+            result.ir().geometry.procedural_surface_owner(&surface.id) == Some(&carrier_id)
         })
         .expect("extrusion construction");
     assert!(match construction.definition() {
@@ -142,7 +142,7 @@ fn decode_transfers_lane_specific_tabulated_line_extrusion_plane() {
 
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
@@ -236,19 +236,19 @@ fn decode_withholds_positional_line_extrusion_for_duplicate_surface_id() {
 
     assert!(result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#7"));
     assert!(result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .all(|curve| curve.id.as_str() != "creo:visibgeom:surface_directrix#7"));
     assert!(result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .all(|surface| surface.id.as_str() != "creo:visibgeom:surface_extrusion#7"));
@@ -272,7 +272,7 @@ fn decode_preserves_type_2c_direction_before_named_record() {
     assert_eq!(record.fields().unwrap()["extrusion_direction"][0], 0.0);
     assert_eq!(record.fields().unwrap()["extrusion_direction"][1], 1.0);
     assert_eq!(record.fields().unwrap()["extrusion_direction"][2], 0.0);
-    assert_unknown_visible_surface(&result.ir().model.surfaces, 7);
+    assert_unknown_visible_surface(&result.ir().geometry.surfaces, 7);
 }
 
 #[test]
@@ -409,7 +409,7 @@ fn decode_places_complete_positional_torus() {
 
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
@@ -522,7 +522,7 @@ fn decode_places_paired_five_coordinate_sphere_envelopes() {
     for id in [7, 8] {
         let surface = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == format!("creo:visibgeom:surface#{id}"))
@@ -677,8 +677,8 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
         -1.0
     );
 
-    assert_eq!(result.ir().model.surfaces.len(), 1);
-    let surface = &result.ir().model.surfaces[0];
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
+    let surface = &result.ir().geometry.surfaces[0];
     assert_eq!(surface.id.as_str(), "creo:visibgeom:surface#7");
     assert_eq!(
         surface.geometry,
@@ -719,9 +719,9 @@ fn decode_transfers_plane_from_complete_compact_rotation() {
         )
         .expect("decode");
 
-    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
     assert_eq!(
-        result.ir().model.surfaces[0].geometry,
+        result.ir().geometry.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -772,9 +772,9 @@ fn decode_uses_support_frame_to_chart_line_shaped_plane_outline() {
         )
         .expect("decode");
 
-    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
     assert_eq!(
-        result.ir().model.surfaces[0].geometry,
+        result.ir().geometry.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(3.0, 0.0, 0.0),
@@ -802,9 +802,9 @@ fn decode_transfers_held_coordinate_plane_with_canonical_chart() {
         )
         .expect("decode");
 
-    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
     assert_eq!(
-        result.ir().model.surfaces[0].geometry,
+        result.ir().geometry.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
                 cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0),
@@ -830,7 +830,7 @@ fn decode_withholds_unplaced_cylinder_prototype_frame() {
             &DecodeOptions::default(),
         )
         .expect("decode");
-    assert_unknown_visible_surface(&result.ir().model.surfaces, 7);
+    assert_unknown_visible_surface(&result.ir().geometry.surfaces, 7);
 }
 
 #[test]
@@ -848,7 +848,7 @@ fn decode_places_first_cylinder_instance_from_complete_named_prototype() {
         .expect("decode");
     let cylinder = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
@@ -887,7 +887,7 @@ fn decode_withholds_complete_cylinder_prototype_without_positive_radius() {
                 &DecodeOptions::default(),
             )
             .expect("decode");
-        assert_unknown_visible_surface(&result.ir().model.surfaces, 7);
+        assert_unknown_visible_surface(&result.ir().geometry.surfaces, 7);
     }
 }
 
@@ -910,7 +910,7 @@ fn decode_places_direct_two_direction_named_prototype_frame() {
         .expect("decode");
     let torus = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
@@ -953,7 +953,7 @@ fn decode_does_not_promote_untyped_terminal_torus_scalars() {
         .expect("decode");
     let torus = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
@@ -1022,7 +1022,7 @@ fn decode_places_first_plane_instance_from_named_prototype() {
         .expect("decode");
     let plane = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
@@ -1065,7 +1065,7 @@ fn decode_places_named_prototype_before_its_surface_row() {
 
     let plane = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
@@ -1092,7 +1092,7 @@ fn decode_does_not_cross_counted_surface_array_frames_for_prototypes() {
         )
         .expect("decode");
 
-    assert_unknown_visible_surface(&result.ir().model.surfaces, 7);
+    assert_unknown_visible_surface(&result.ir().geometry.surfaces, 7);
     assert_eq!(
         wire::coverage_count(
             result.report(),
@@ -1116,7 +1116,7 @@ fn decode_does_not_use_incomplete_frame_for_prototype_join() {
         )
         .expect("decode");
 
-    assert_unknown_visible_surface(&result.ir().model.surfaces, 7);
+    assert_unknown_visible_surface(&result.ir().geometry.surfaces, 7);
     assert_eq!(
         wire::coverage_count(
             result.report(),
@@ -1144,11 +1144,11 @@ fn decode_binds_prototype_between_same_family_rows_to_the_preceding_instance() {
 
     assert!(result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| surface.id.as_str() == "creo:visibgeom:surface#7"));
-    assert_unknown_visible_surface(&result.ir().model.surfaces, 8);
+    assert_unknown_visible_surface(&result.ir().geometry.surfaces, 8);
     assert_eq!(
         wire::coverage_count(
             result.report(),
@@ -1173,7 +1173,7 @@ fn decode_withholds_competing_named_prototypes_for_one_surface_row() {
         )
         .expect("decode");
 
-    assert_unknown_visible_surface(&result.ir().model.surfaces, 7);
+    assert_unknown_visible_surface(&result.ir().geometry.surfaces, 7);
 }
 
 #[test]
@@ -1225,7 +1225,7 @@ fn decode_places_first_interpolation_spline_instance_from_named_prototype() {
         .expect("decode");
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
@@ -1293,7 +1293,7 @@ fn decode_places_first_sphere_and_torus_instances_from_named_prototypes() {
             .expect("decode");
         let surface = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
@@ -1350,7 +1350,7 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         .expect("one-cap decode");
     let one_cap_cylinder = one_cap
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#10")
@@ -1402,7 +1402,7 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
     });
     let one_cap_circle = one_cap
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "creo:visibgeom:curve#20")
@@ -1469,7 +1469,7 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         .expect("neutral-chart decode");
     let neutral_circle = neutral_chart
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "creo:visibgeom:curve#22")
@@ -1515,7 +1515,7 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
     assert_eq!(cap_pairs[0].fields().unwrap()["radius_mm"], 1.0);
     let cylinder = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#10")
@@ -1532,10 +1532,10 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
             .unwrap()
         ))
     );
-    assert_eq!(result.ir().model.curves.len(), 2);
+    assert_eq!(result.ir().geometry.curves.len(), 2);
     assert!(result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .all(|curve| match curve.geometry {

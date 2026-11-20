@@ -312,16 +312,13 @@ impl<'a> BodyInput<'a, '_> {
     fn members(&self, body: &Body) -> Vec<Member<'a>> {
         let mut members = Vec::new();
         let mut position = 0;
-        for region in &body.regions {
-            let Some(region) = self.owners.region(region.as_str()) else {
-                continue;
-            };
+        for region in self.owners.body_regions(&body.id) {
             for shell_id in &region.shells {
                 let Some(shell) = self.owners.shell(shell_id.as_str()) else {
                     continue;
                 };
-                for face in shell.faces() {
-                    if let Some((id, result)) = self.faces.get_key_value(face.as_str()) {
+                for face in self.owners.shell_faces(&shell.id) {
+                    if let Some((id, result)) = self.faces.get_key_value(face.id.as_str()) {
                         members.push(Member {
                             id,
                             shell: position,
@@ -340,10 +337,7 @@ impl<'a> BodyInput<'a, '_> {
     /// no face's region reaches a natural domain edge.
     fn shells(&self, body: &Body) -> Vec<ShellMeasures> {
         let mut rows = Vec::new();
-        for region in &body.regions {
-            let Some(region) = self.owners.region(region.as_str()) else {
-                continue;
-            };
+        for region in self.owners.body_regions(&body.id) {
             for (position, shell_id) in region.shells.iter().enumerate() {
                 let Some(shell) = self.owners.shell(shell_id.as_str()) else {
                     continue;
@@ -359,7 +353,7 @@ impl<'a> BodyInput<'a, '_> {
                     } else {
                         ShellRole::Void
                     },
-                    closed: !shell.faces().is_empty()
+                    closed: !self.owners.shell_faces(&shell.id).is_empty()
                         && open.is_empty()
                         && natural_edge_faces.is_empty(),
                     open_edges: open
@@ -418,16 +412,13 @@ pub(crate) fn closure<'ir>(
 ) -> Closure<'ir> {
     let mut uses: BTreeMap<&'ir str, (usize, usize)> = BTreeMap::new();
     let mut natural_edge_faces = Vec::new();
-    for face in shell.faces() {
+    for face in owners.shell_faces(&shell.id) {
         if faces
-            .get(face.as_str())
+            .get(face.id.as_str())
             .is_some_and(|result| result.natural)
         {
-            natural_edge_faces.push(face.as_str().to_owned());
+            natural_edge_faces.push(face.id.as_str().to_owned());
         }
-        let Some(face) = owners.face(face.as_str()) else {
-            continue;
-        };
         for loop_id in &face.loops {
             let Some(face_loop) = owners.loop_(loop_id.as_str()) else {
                 continue;

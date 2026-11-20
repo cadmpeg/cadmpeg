@@ -82,7 +82,7 @@ fn point_commit_propagates_entity_limit() {
         assert!(
             result.is_err(),
             "points: {}, warnings: {:?}",
-            context.session.document().model.points.len(),
+            context.session.document().geometry.points.len(),
             context.report.phase_warnings
         );
         result.expect_err("five point entities exceed four")
@@ -95,7 +95,7 @@ fn point_commit_propagates_entity_limit() {
     with_entity_limit(&scan, 5, |expand| {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context.decode_geometry().expect("five point entities fit");
-        assert_eq!(context.session.document().model.points.len(), 1);
+        assert_eq!(context.session.document().geometry.points.len(), 1);
     });
 }
 
@@ -172,7 +172,7 @@ fn point_cloud_commits_one_vertex() {
         assert!(context
             .commit_geometry(0, cloud())
             .expect("vertex admitted"));
-        assert_eq!(context.session.document().model.vertices.len(), 1);
+        assert_eq!(context.session.document().geometry.vertices.len(), 1);
     });
 }
 
@@ -183,7 +183,7 @@ fn candidate_validation_propagates_entity_limit() {
         let mut context = DecodeContext::new(&scan, expand).expect("transaction admitted");
         context
             .validate_candidate(|candidate, _| {
-                candidate.model.points.push(Point::new(
+                candidate.geometry.points.push(Point::new(
                     "rhino:test:point#limited".try_into().expect("valid id"),
                     cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
                         .expect("finite point"),
@@ -392,6 +392,7 @@ fn instance_plane_transform_keeps_component_division() {
             frame,
         ))),
         source_object: None,
+        native_ref: None,
     };
     let transform = Transform::affine([
         [2.0, 0.0, 0.0, 4.0],
@@ -1086,7 +1087,7 @@ fn extrusion_cap_admission_error_is_not_reported_as_ir_validation() {
             .phase_warnings
             .iter()
             .all(|warning| { !warning.contains("IR validation") }));
-        assert!(context.session.document().model.surfaces.is_empty());
+        assert!(context.session.document().geometry.surfaces.is_empty());
     });
 }
 
@@ -1109,11 +1110,11 @@ fn candidate_rejections_distinguish_admission_from_validation() {
                     .expect("a finite position is a point"),
                 None,
             );
-            candidate.model.points.extend([point.clone(), point]);
+            candidate.geometry.points.extend([point.clone(), point]);
             Ok::<(), String>(())
         });
         assert!(matches!(validation, Err(CandidateError::Validation(_))));
-        assert!(context.session.document().model.points.is_empty());
+        assert!(context.session.document().geometry.points.is_empty());
     });
 }
 
@@ -1160,7 +1161,7 @@ fn candidate_rejection_restores_native_records_annotations_and_all_model_arenas(
                         .expect("a finite position is a point"),
                     None,
                 );
-                candidate.model.points.extend([point.clone(), point]);
+                candidate.geometry.points.extend([point.clone(), point]);
                 Ok(())
             });
             assert!(result.is_err());
@@ -1219,18 +1220,18 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
                 }),
             )
         };
-        context.ir_mut().model.points.push(point("z"));
-        let checkpoint = ModelCheckpoint::capture(&context.session.document().model);
+        context.ir_mut().geometry.points.push(point("z"));
+        let checkpoint = ModelCheckpoint::capture(context.session.document());
         context
             .validate_candidate(|candidate, _| {
-                candidate.model.points.push(point("a"));
+                candidate.geometry.points.push(point("a"));
             })
             .expect("distinct point admitted");
         assert_eq!(
             context
                 .session
                 .document()
-                .model
+                .geometry
                 .points
                 .get(checkpoint.arena_len::<Point>()..)
                 .unwrap()[0]
@@ -1238,12 +1239,10 @@ fn successful_candidate_keeps_preceding_arena_order_for_instance_checkpoints() {
                 .as_str(),
             "rhino:test:point#a"
         );
-        checkpoint
-            .discard_appended(&mut context.ir_mut().model)
-            .unwrap();
-        assert_eq!(context.session.document().model.points.len(), 1);
+        checkpoint.discard_appended(context.ir_mut()).unwrap();
+        assert_eq!(context.session.document().geometry.points.len(), 1);
         assert_eq!(
-            context.session.document().model.points[0].id.as_str(),
+            context.session.document().geometry.points[0].id.as_str(),
             "rhino:test:point#z"
         );
     });
@@ -1263,13 +1262,14 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
                 let id: cadmpeg_ir::ids::CurveId = format!("rhino:object:curve#cap-{index}")
                     .try_into()
                     .expect("valid identity");
-                ir.model.curves.push(Curve {
+                ir.geometry.curves.push(Curve {
                     parameter_range: None,
                     id: id.clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
                         boundary.start_nurbs.clone(),
                     )),
                     source_object: Some(association.clone()),
+                    native_ref: None,
                 });
                 CommittedExtrusionBoundary {
                     boundary,
@@ -1286,14 +1286,14 @@ fn extrusion_caps_build_outer_and_hole_loops_with_opposite_face_senses() {
             &boundaries,
         )
         .is_ok());
-        assert_eq!(ir.model.faces.len(), expected_faces);
-        assert_eq!(ir.model.regions.len(), expected_faces);
-        assert_eq!(ir.model.shells.len(), expected_faces);
-        assert_eq!(ir.model.loops.len(), expected_faces * 2);
-        assert_eq!(ir.model.pcurves.len(), expected_faces * 2);
+        assert_eq!(ir.geometry.faces.len(), expected_faces);
+        assert_eq!(ir.geometry.regions.len(), expected_faces);
+        assert_eq!(ir.geometry.shells.len(), expected_faces);
+        assert_eq!(ir.geometry.loops.len(), expected_faces * 2);
+        assert_eq!(ir.geometry.pcurves.len(), expected_faces * 2);
         if expected_faces == 2 {
-            assert_eq!(ir.model.faces[0].sense, Sense::Reversed);
-            assert_eq!(ir.model.faces[1].sense, Sense::Forward);
+            assert_eq!(ir.geometry.faces[0].sense, Sense::Reversed);
+            assert_eq!(ir.geometry.faces[1].sense, Sense::Forward);
         }
         assert_eq!(
             cadmpeg_ir::validate_neutral(&ir, Vec::new())
@@ -1313,7 +1313,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     let annotations = cadmpeg_ir::Annotations::default();
 
     assert!(cadmpeg_ir::admit_with_annotations(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &accepted,
         &annotations,
         cadmpeg_ir::RHINO_DRAFT_CHECKS,
@@ -1322,7 +1322,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     .expect("admit the model")
     .is_ok());
     assert!(cadmpeg_ir::admit(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &accepted,
         cadmpeg_ir::RHINO_INSTANCE_CHECKS,
         Vec::new()
@@ -1331,7 +1331,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     .is_ok());
 
     assert!(!cadmpeg_ir::admit_with_annotations(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &rejected,
         &annotations,
         cadmpeg_ir::RHINO_DRAFT_CHECKS,
@@ -1340,7 +1340,7 @@ fn phase5_freeze_shared_admissibility_fixtures() {
     .expect("admit the model")
     .is_ok());
     assert!(!cadmpeg_ir::admit(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &rejected,
         cadmpeg_ir::RHINO_INSTANCE_CHECKS,
         Vec::new()
@@ -1413,7 +1413,7 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
         assert!(context.mark_decoded(0));
         assert!(!context.mark_decoded(0));
         assert!(!context.mark_failed(0));
-        assert_eq!(context.ir_mut().model.bodies.len(), 0);
+        assert_eq!(context.ir_mut().geometry.bodies.len(), 0);
         context
             .unknown_links_mut(0)
             .expect("required invariant")
@@ -1583,7 +1583,7 @@ fn rejected_candidate_rolls_back_entities_and_preserves_retained_bytes() {
         assert_eq!(context.unknown_count(), 1);
         let matching = context
             .ir_mut()
-            .model
+            .geometry
             .points
             .iter()
             .filter(|point| point.id.as_str() == "rhino:test:point#duplicate")
@@ -1611,9 +1611,9 @@ fn unknown_surface_placeholder_does_not_report_geometry_transfer() {
     let mut scan = scan_with_objects(&[object]);
     set_test_units(&mut scan, 1.0);
     let result = crate::decode::decode_for_test(&scan);
-    assert_eq!(result.ir().model.surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
     assert!(matches!(
-        result.ir().model.surfaces[0].geometry,
+        result.ir().geometry.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
     assert!(!result.report().geometry_transferred());
@@ -1628,7 +1628,7 @@ fn scaled_coordinate_overflow_retains_object_transactionally_and_repeats_determi
     set_test_units(&mut scan, 1.0e308);
     let first = crate::decode::decode_for_test(&scan);
     let second = crate::decode::decode_for_test(&scan);
-    assert!(first.ir().model.points.is_empty());
+    assert!(first.ir().geometry.points.is_empty());
     assert_eq!(first.ir(), second.ir());
     assert_eq!(first.report(), second.report());
     assert!(first
@@ -1660,9 +1660,9 @@ fn missing_stamp_carries_brep_typed_loss_codes() {
     let unstamped = decode_archive(crate::test_support::test_archive::archive(
         std::slice::from_ref(&solid_brep),
     ));
-    assert_eq!(unstamped.ir().model.bodies.len(), 1);
+    assert_eq!(unstamped.ir().geometry.bodies.len(), 1);
     // The stored flag is trusted, though the three edges carry one trim each.
-    assert_eq!(unstamped.ir().model.bodies[0].kind, BodyKind::Solid);
+    assert_eq!(unstamped.ir().geometry.bodies[0].kind, BodyKind::Solid);
     assert!(
         unstamped
             .report()
@@ -1688,8 +1688,8 @@ fn missing_stamp_carries_brep_typed_loss_codes() {
         200_206_170,
         &[solid_brep],
     ));
-    assert_eq!(stamped.ir().model.bodies.len(), 1);
-    assert_eq!(stamped.ir().model.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(stamped.ir().geometry.bodies.len(), 1);
+    assert_eq!(stamped.ir().geometry.bodies[0].kind, BodyKind::Sheet);
     assert!(
         !stamped.report().losses.iter().any(|loss| {
             loss.code == RhinoLossCode::TopologyBodyKindGaugeSubstituted.kind()

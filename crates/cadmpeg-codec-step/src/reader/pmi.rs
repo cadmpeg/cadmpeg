@@ -8,13 +8,19 @@ use std::num::NonZeroU32;
 use super::reference::{first_matching, references};
 use super::{named_parameter, record_values, source_numeric_id, RecordExt, ValueExt};
 use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::options::NativeOption;
+use cadmpeg_ir::design::parameter::{Deviations, FitDeviations, Tolerance};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
-    DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
-    LimitsAndFits, PmiDefinition, PmiDimension, PmiQuantity, PmiTarget, PmiValue,
+    DatumReference, DatumTargetForm, DimensionModifier, FitStandard, FitZone,
+    GeometricToleranceKind, LimitsAndFits, PmiDefinition, PmiDimension, PmiDimensionKind,
+    PmiQuantity, PmiTarget, PmiValue,
 };
+use cadmpeg_ir::references::InstanceTarget;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::transform::Transform;
 
@@ -269,7 +275,7 @@ pub(super) fn decode(
                 break;
             }
         }
-        if matches!(kind, DimensionKind::Size) {
+        if matches!(kind, PmiDimensionKind::Size) {
             let category = if dimension_name.starts_with("DIMENSIONAL_SIZE_WITH_DATUM_FEATURE") {
                 let mut category = None;
                 for value in record
@@ -297,32 +303,75 @@ pub(super) fn decode(
             };
             let category = category.as_deref().or(name.as_deref());
             kind = if category.is_some_and(|value| value.eq_ignore_ascii_case("diameter")) {
-                DimensionKind::Diameter
+                PmiDimensionKind::Diameter
             } else if category.is_some_and(|value| value.eq_ignore_ascii_case("radius")) {
-                DimensionKind::Radius
+                PmiDimensionKind::Radius
             } else if category.is_some_and(|value| value.eq_ignore_ascii_case("spherical diameter"))
             {
-                DimensionKind::SphericalDiameter
+                PmiDimensionKind::SphericalDiameter
             } else if category.is_some_and(|value| value.eq_ignore_ascii_case("spherical radius")) {
-                DimensionKind::SphericalRadius
+                PmiDimensionKind::SphericalRadius
             } else {
                 kind
             };
         }
         let values = characteristic_values.get(&id);
-        let definition = PmiDimension::new(
-            kind,
-            values.and_then(|values| values.nominal),
-            values.and_then(|values| values.limits.clone()),
-        )
-        .and_then(|dimension| {
-            dimension.with_modifiers(
-                values
-                    .map(|values| values.modifiers.clone())
-                    .unwrap_or_default(),
+        let limits = values.and_then(|values| values.limits);
+        let dimension = |kind: &PmiDimensionKind, limits: Option<(PmiValue, PmiValue)>| {
+            admit_dimension(
+                kind,
+                values.and_then(|values| values.nominal),
+                limits,
+                values.map_or(&[][..], |values| values.modifiers.as_slice()),
             )
-        })
-        .map_err(|error| CodecError::malformed(format_args!("dimension #{id}: {error}")))?;
+        };
+        let entity_kind = PmiDimensionKind::Other(dimension_name.to_ascii_lowercase());
+        let replaceable = !matches!(kind, PmiDimensionKind::Other(_));
+        let attempts = [
+            (&kind, limits, false, false),
+            (&entity_kind, limits, true, false),
+            (&kind, None, false, true),
+            (&entity_kind, None, true, true),
+        ];
+        let mut first_error = None;
+        let mut definition = None;
+        for (attempt_kind, attempt_limits, replaces_kind, omits_limits) in attempts {
+            if (replaces_kind && !replaceable) || (omits_limits && limits.is_none()) {
+                continue;
+            }
+            match dimension(attempt_kind, attempt_limits) {
+                Ok(built) => {
+                    let error = first_error.take().unwrap_or_default();
+                    if replaces_kind {
+                        losses.push(StepLossCode::PmiDimensionKindQuantityMismatch.note(format!(
+                            "dimension #{id}: {error}; the dimension keeps the kind {} in place of {kind:?}",
+                            dimension_name.to_ascii_lowercase()
+                        )));
+                    }
+                    if omits_limits {
+                        losses.push(StepLossCode::DimensionalLimitsOmitted.note(format!(
+                            "dimension #{id}: {error}; the dimension keeps no limits"
+                        )));
+                    }
+                    definition = Some(built);
+                    break;
+                }
+                Err(error) => {
+                    first_error.get_or_insert(error);
+                }
+            }
+        }
+        let Some(AdmittedDimension {
+            dimension: definition,
+            native_options,
+            source_settings,
+        }) = definition
+        else {
+            return Err(CodecError::malformed(format_args!(
+                "dimension #{id}: {}",
+                first_error.unwrap_or_default()
+            )));
+        };
         let aspect_ids = record
             .partials
             .iter()
@@ -332,7 +381,7 @@ pub(super) fn decode(
                 Ok(id) => shape_aspects.contains(id),
                 Err(_) => true,
             });
-        annotations.push(
+        let index = annotations.push(
             ir,
             id,
             AnnotationDraft {
@@ -342,6 +391,9 @@ pub(super) fn decode(
                 definition: PmiDefinition::Dimension(definition),
             },
         );
+        let annotation = &mut ir.model.pmi[index.get()];
+        annotation.native_options = native_options;
+        annotation.source_settings = source_settings;
         typed.insert(id);
     }
 
@@ -362,61 +414,33 @@ pub(super) fn decode(
                 let record = exchange.records().get(reference)?;
                 (record.simple_name() == Some("LIMITS_AND_FITS")).then(
                     || -> Result<_, CodecError> {
+                        let mut text = |index: usize, role: &str| {
+                            record
+                                .parameter(index)
+                                .and_then(|value| {
+                                    decode_text(
+                                        exchange,
+                                        value,
+                                        &mut losses,
+                                        *reference,
+                                        role,
+                                        StepLossCode::MetadataStringInvalid,
+                                    )
+                                })
+                                .unwrap_or_default()
+                        };
+                        let form_variance = text(0, "limits-and-fits form variance");
+                        let zone_variance = text(1, "limits-and-fits zone variance");
+                        let grade = text(2, "limits-and-fits grade");
+                        let source = text(3, "limits-and-fits source");
+                        let zone = named_zone(&zone_variance);
                         Ok((
                             *reference,
-                            LimitsAndFits {
-                                form_variance: record
-                                    .parameter(0)
-                                    .and_then(|value| {
-                                        decode_text(
-                                            exchange,
-                                            value,
-                                            &mut losses,
-                                            *reference,
-                                            "limits-and-fits form variance",
-                                            StepLossCode::MetadataStringInvalid,
-                                        )
-                                    })
-                                    .unwrap_or_default(),
-                                zone_variance: record
-                                    .parameter(1)
-                                    .and_then(|value| {
-                                        decode_text(
-                                            exchange,
-                                            value,
-                                            &mut losses,
-                                            *reference,
-                                            "limits-and-fits zone variance",
-                                            StepLossCode::MetadataStringInvalid,
-                                        )
-                                    })
-                                    .unwrap_or_default(),
-                                grade: record
-                                    .parameter(2)
-                                    .and_then(|value| {
-                                        decode_text(
-                                            exchange,
-                                            value,
-                                            &mut losses,
-                                            *reference,
-                                            "limits-and-fits grade",
-                                            StepLossCode::MetadataStringInvalid,
-                                        )
-                                    })
-                                    .unwrap_or_default(),
-                                source: record
-                                    .parameter(3)
-                                    .and_then(|value| {
-                                        decode_text(
-                                            exchange,
-                                            value,
-                                            &mut losses,
-                                            *reference,
-                                            "limits-and-fits source",
-                                            StepLossCode::MetadataStringInvalid,
-                                        )
-                                    })
-                                    .unwrap_or_default(),
+                            step_fit(&form_variance, zone, &grade, &source),
+                            if zone.is_some() {
+                                String::new()
+                            } else {
+                                zone_variance
                             },
                         ))
                     },
@@ -440,7 +464,7 @@ pub(super) fn decode(
             if let (Some(lower), Some(upper)) = (lower, upper) {
                 if set_dimension_tolerance(
                     &mut ir.model.pmi[index.get()].definition,
-                    DimensionTolerance::PlusMinus { lower, upper },
+                    StepTolerance::Deviations { lower, upper },
                 )
                 .map_err(|error| {
                     CodecError::malformed(format_args!("PLUS_MINUS_TOLERANCE #{id}: {error}"))
@@ -457,14 +481,24 @@ pub(super) fn decode(
                     "PLUS_MINUS_TOLERANCE #{id} does not contain both deviation values"
                 )));
             }
-        } else if let (Some(index), Some((fit_id, fit))) = (dimension, fit) {
+        } else if let (Some(_), Some((fit_id, None, _))) = (dimension, &fit) {
+            losses.push(StepLossCode::DecodeWarning.note(format!(
+                "LIMITS_AND_FITS #{fit_id} names no hole or shaft letter; the designation is not transferred"
+            )));
+        } else if let (Some(index), Some((fit_id, Some(fit), zone_variance))) = (dimension, fit) {
             if set_dimension_tolerance(
                 &mut ir.model.pmi[index.get()].definition,
-                DimensionTolerance::Fit { fit },
+                StepTolerance::Fit(fit),
             )
             .map_err(|error| {
                 CodecError::malformed(format_args!("PLUS_MINUS_TOLERANCE #{id}: {error}"))
             })? {
+                if let Some(zone_variance) = NonBlankString::new(zone_variance) {
+                    ir.model.pmi[index.get()].native_options.insert(
+                        cadmpeg_core::nonblank_literal!("step:zone_variance"),
+                        NativeOption::Text(Dimension::Literal(zone_variance)),
+                    );
+                }
                 typed.extend([id, fit_id]);
             } else {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -570,7 +604,7 @@ pub(super) fn decode(
         } else {
             (None, None)
         };
-        let constraints = zones::constraints(record, exchange, &mut measurements, ctx)?;
+        let zone_limits = zones::limits(record, exchange, &mut measurements, ctx)?;
         let datum_system = first_matching(datum_system_parameter(record), ctx, |id| {
             annotations.get(id).is_some_and(|index| {
                 matches!(
@@ -616,7 +650,9 @@ pub(super) fn decode(
                     defined_area_second_unit,
                     datum_system,
                     modifiers: tolerance_modifiers(record, exchange, ctx)?,
-                    constraints,
+                    displacement: zone_limits.displacement,
+                    maximum_upper: zone_limits.maximum_upper,
+                    zones: Vec::new(),
                 },
             },
         );
@@ -792,7 +828,7 @@ pub(super) fn decode(
         .pmi
         .iter()
         .flat_map(|annotation| &annotation.targets)
-        .filter_map(|target| match target {
+        .filter_map(|target| match &target.entity {
             PmiTarget::ShapeAspect { source_id } => {
                 source_id.as_str().strip_prefix('#')?.parse().ok()
             }
@@ -809,14 +845,235 @@ pub(super) fn decode(
     })
 }
 
+/// A tolerance that one `PLUS_MINUS_TOLERANCE` states for a dimension.
+enum StepTolerance {
+    Deviations { lower: PmiValue, upper: PmiValue },
+    Fit(LimitsAndFits),
+}
+
+/// Add a tolerance to a dimension, or join a designation and deviations
+/// that two records state for it; `false` where the dimension already holds
+/// a tolerance this one cannot join.
 fn set_dimension_tolerance(
     definition: &mut PmiDefinition,
-    value: DimensionTolerance,
+    value: StepTolerance,
 ) -> Result<bool, String> {
     let PmiDefinition::Dimension(dimension) = definition else {
         return Ok(false);
     };
-    dimension.merge_tolerance(value)
+    let value = match value {
+        StepTolerance::Deviations { lower, upper } => {
+            if lower.quantity != upper.quantity {
+                return Err("dimension tolerance quantities disagree".into());
+            }
+            if dimension
+                .quantity()
+                .is_some_and(|quantity| quantity != lower.quantity)
+            {
+                return Err(
+                    "dimension tolerance quantity disagrees with its kind or nominal".into(),
+                );
+            }
+            Tolerance::Deviations(Deviations {
+                lower: lower.value,
+                upper: upper.value,
+            })
+        }
+        StepTolerance::Fit(fit) => Tolerance::Fit {
+            fit,
+            mate: None,
+            deviations: None,
+        },
+    };
+    let merged = match (dimension.tolerance.take(), value) {
+        (None, value) => value,
+        (Some(Tolerance::Deviations(stored)), Tolerance::Fit { fit, mate, .. })
+        | (
+            Some(Tolerance::Fit {
+                fit,
+                mate,
+                deviations: None,
+            }),
+            Tolerance::Deviations(stored),
+        ) => Tolerance::Fit {
+            fit,
+            mate,
+            deviations: unchecked_deviations(stored),
+        },
+        (previous, _) => {
+            dimension.tolerance = previous;
+            return Ok(false);
+        }
+    };
+    dimension.tolerance = Some(merged);
+    Ok(true)
+}
+
+/// The deviations stored beside a designation: STEP names no table the
+/// decoder holds, so they are unchecked, and 0 and 0 state none.
+fn unchecked_deviations(deviations: Deviations) -> Option<FitDeviations> {
+    (deviations.lower.get() != 0.0 || deviations.upper.get() != 0.0)
+        .then_some(FitDeviations::Unchecked(deviations))
+}
+
+/// The zone a `LIMITS_AND_FITS` zone variance names, where it names one.
+fn named_zone(zone_variance: &str) -> Option<FitZone> {
+    let zone = zone_variance.trim();
+    if zone.eq_ignore_ascii_case("hole") {
+        Some(FitZone::Hole)
+    } else if zone.eq_ignore_ascii_case("shaft") {
+        Some(FitZone::Shaft)
+    } else {
+        None
+    }
+}
+
+/// A `LIMITS_AND_FITS` designation: the zone its zone variance names, or
+/// else the letter's case (ISO 286 capitals for a hole); the letter is
+/// stored in capitals, and a letter and grade written whole in
+/// `form_variance` are split.
+fn step_fit(
+    form_variance: &str,
+    named: Option<FitZone>,
+    grade: &str,
+    source: &str,
+) -> Option<LimitsAndFits> {
+    let form_variance = form_variance.trim();
+    let (letters, grade) = if grade.trim().is_empty() {
+        let split = form_variance
+            .find(|character: char| character.is_ascii_digit())
+            .unwrap_or(form_variance.len());
+        (&form_variance[..split], &form_variance[split..])
+    } else {
+        (form_variance, grade.trim())
+    };
+    let zone = if letters.is_empty() || !letters.chars().all(|c| c.is_ascii_alphabetic()) {
+        return None;
+    } else if let Some(zone) = named {
+        zone
+    } else if letters.chars().all(|c| c.is_ascii_uppercase()) {
+        FitZone::Hole
+    } else if letters.chars().all(|c| c.is_ascii_lowercase()) {
+        FitZone::Shaft
+    } else {
+        return None;
+    };
+    Some(LimitsAndFits {
+        form_variance: letters.to_ascii_uppercase(),
+        zone,
+        grade: grade.to_owned(),
+        source: fit_standard(source),
+    })
+}
+
+fn fit_standard(source: &str) -> Option<FitStandard> {
+    let compact = source
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    match compact.as_str() {
+        "" => None,
+        "iso286" => Some(FitStandard::Iso286),
+        "ansib41" => Some(FitStandard::AnsiB41),
+        _ => NonBlankString::new(source.trim()).map(FitStandard::Native),
+    }
+}
+
+/// A dimension admitted from its characteristic values, with the native
+/// values its annotation keeps.
+struct AdmittedDimension {
+    dimension: PmiDimension,
+    native_options: cadmpeg_ir::design::options::NativeOptions,
+    source_settings: cadmpeg_ir::design::options::NativeOptions,
+}
+
+/// Admit a dimension of `kind` with its nominal, its limits, and its
+/// dimensional notes, refusing quantities that disagree with the kind.
+///
+/// Limits about a nominal are its deviations, displayed as limits
+/// (`step:tolerance_display`); limits with no nominal state no deviations and
+/// stay native. The `theoretical` note on a stated nominal is a basic
+/// dimension.
+fn admit_dimension(
+    kind: &PmiDimensionKind,
+    nominal: Option<PmiValue>,
+    limits: Option<(PmiValue, PmiValue)>,
+    notes: &[String],
+) -> Result<AdmittedDimension, String> {
+    let expected = kind.quantity().or(nominal.map(|value| value.quantity));
+    if nominal.is_some_and(|value| Some(value.quantity) != expected) {
+        return Err("dimension nominal quantity disagrees with its kind".into());
+    }
+    let mut native_options = cadmpeg_ir::design::options::NativeOptions::new();
+    let mut source_settings = cadmpeg_ir::design::options::NativeOptions::new();
+    let mut tolerance = None;
+    if let Some((lower, upper)) = limits {
+        if lower.quantity != upper.quantity {
+            return Err("dimension tolerance quantities disagree".into());
+        }
+        if expected.is_some_and(|quantity| lower.quantity != quantity) {
+            return Err("dimension tolerance quantity disagrees with its kind or nominal".into());
+        }
+        if lower.value.get() > upper.value.get() {
+            return Err("dimension lower limit exceeds its upper limit".into());
+        }
+        if let Some(deviations) = nominal.and_then(|nominal| {
+            Deviations::from_limits(nominal.value.get(), lower.value.get(), upper.value.get())
+        }) {
+            tolerance = Some(Tolerance::Deviations(deviations));
+            source_settings.insert(
+                cadmpeg_core::nonblank_literal!("step:tolerance_display"),
+                NativeOption::Text(Dimension::Literal(cadmpeg_core::nonblank_literal!(
+                    "limits"
+                ))),
+            );
+        } else {
+            for (name, limit) in [
+                (cadmpeg_core::nonblank_literal!("step:lower_limit"), lower),
+                (cadmpeg_core::nonblank_literal!("step:upper_limit"), upper),
+            ] {
+                native_options.insert(name, measure_option(limit));
+            }
+        }
+    }
+    let mut modifiers = Vec::new();
+    for note in notes {
+        let modifier = match note.to_ascii_lowercase().as_str() {
+            "auxiliary" => DimensionModifier::Reference,
+            "statistical" => DimensionModifier::Statistical,
+            "controlled radius" => DimensionModifier::ControlledRadius,
+            "theoretical" if tolerance.is_none() && nominal.is_some() => {
+                tolerance = Some(Tolerance::Basic);
+                continue;
+            }
+            _ => DimensionModifier::Other(note.clone()),
+        };
+        if !modifiers.contains(&modifier) {
+            modifiers.push(modifier);
+        }
+    }
+    let mut dimension = PmiDimension::new(kind.clone());
+    dimension.nominal = nominal.map(Dimension::Literal);
+    dimension.tolerance = tolerance;
+    dimension.modifiers = modifiers;
+    Ok(AdmittedDimension {
+        dimension,
+        native_options,
+        source_settings,
+    })
+}
+
+fn measure_option(value: PmiValue) -> NativeOption {
+    match value.quantity {
+        PmiQuantity::Length => NativeOption::Length(Dimension::Literal(
+            cadmpeg_ir::scalar::Length::from_assigned_real(value.value),
+        )),
+        PmiQuantity::Angle => NativeOption::Angle(Dimension::Literal(
+            cadmpeg_ir::scalar::Angle::from_assigned_real(value.value),
+        )),
+        PmiQuantity::Ratio => NativeOption::Real(Dimension::Literal(value.value)),
+    }
 }
 
 fn mark_characteristic_representations(
@@ -1050,34 +1307,38 @@ fn topology_targets(
     let mut targets = Vec::new();
     for body in topology.body_by_root.get(&id).into_iter().flatten() {
         let body = body.clone();
-        push_target(&mut targets, PmiTarget::Body { body });
+        push_unique(&mut targets, PmiTarget::Body { body });
     }
     for face in topology.faces_by_source.get(&id).into_iter().flatten() {
         let face = face.clone();
-        push_target(&mut targets, PmiTarget::Face { face });
+        push_unique(&mut targets, PmiTarget::Face { face });
     }
     for edge in topology.edges_by_source.get(&id).into_iter().flatten() {
         let edge = edge.clone();
-        push_target(&mut targets, PmiTarget::Edge { edge });
+        push_unique(&mut targets, PmiTarget::Edge { edge });
     }
     for vertex in topology.vertices_by_source.get(&id).into_iter().flatten() {
         let vertex = vertex.clone();
-        push_target(&mut targets, PmiTarget::Vertex { vertex });
+        push_unique(&mut targets, PmiTarget::Vertex { vertex });
     }
     for point in geometry_sources.points.get(&id).into_iter().flatten() {
         let point = point.clone();
-        push_target(&mut targets, PmiTarget::Point { point });
+        push_unique(&mut targets, PmiTarget::Point { point });
     }
     for curve in geometry_sources.curves.get(&id).into_iter().flatten() {
         let curve = curve.clone();
-        push_target(&mut targets, PmiTarget::Curve { curve });
+        push_unique(&mut targets, PmiTarget::Curve { curve });
     }
     targets
 }
 
-fn push_target(targets: &mut Vec<PmiTarget>, target: PmiTarget) {
-    if !targets.contains(&target) {
-        targets.push(target);
+fn push_target(targets: &mut Vec<InstanceTarget<PmiTarget>>, target: PmiTarget) {
+    push_unique(targets, InstanceTarget::new(target));
+}
+
+fn push_unique<T: PartialEq>(items: &mut Vec<T>, item: T) {
+    if !items.contains(&item) {
+        items.push(item);
     }
 }
 
@@ -1107,7 +1368,7 @@ fn point_sources(
     ir: &CadIr,
 ) -> std::collections::BTreeMap<u64, std::vec::Vec<cadmpeg_ir::ids::PointId>> {
     let mut points = BTreeMap::<u64, Vec<_>>::new();
-    for point in &ir.model.points {
+    for point in &ir.geometry.points {
         let Some(source) = source_numeric_id(point.id.as_str(), "point") else {
             continue;
         };
@@ -1121,7 +1382,7 @@ fn curve_sources(
     ir: &CadIr,
 ) -> std::collections::BTreeMap<u64, std::vec::Vec<cadmpeg_ir::ids::CurveId>> {
     let mut curves = BTreeMap::<u64, Vec<_>>::new();
-    for curve in &ir.model.curves {
+    for curve in &ir.geometry.curves {
         let Some(source) = source_numeric_id(curve.id.as_str(), "curve") else {
             continue;
         };
@@ -1572,6 +1833,10 @@ fn datum_target_form(value: &str) -> cadmpeg_ir::DatumTargetForm {
         DatumTargetForm::Circle
     } else if form.eq_ignore_ascii_case("circular curve") {
         DatumTargetForm::CircularCurve
+    } else if form.eq_ignore_ascii_case("area") {
+        DatumTargetForm::Area
+    } else if form.eq_ignore_ascii_case("curve") {
+        DatumTargetForm::Curve
     } else {
         DatumTargetForm::Other(value.to_owned())
     }
@@ -1773,46 +2038,32 @@ fn is_measure_record(record: &RawRecord) -> bool {
 }
 
 fn is_dimension_name(name: &str) -> bool {
-    name == "DIMENSIONAL_SIZE"
-        || name.starts_with("DIMENSIONAL_SIZE_")
-        || name == "DIMENSIONAL_LOCATION"
-        || name.starts_with("DIMENSIONAL_LOCATION_")
-        || name == "ANGULAR_SIZE"
-        || name.starts_with("ANGULAR_SIZE_")
-        || name == "ANGULAR_LOCATION"
-        || name.starts_with("ANGULAR_LOCATION_")
-        || matches!(name, "DIAMETER_SIZE" | "RADIUS_SIZE")
-        || name.ends_with("_SIZE")
-        || name.ends_with("_LOCATION")
+    dimension_kind(name).is_some()
 }
 
-fn dimension_kind(name: &str) -> Option<cadmpeg_ir::DimensionKind> {
+fn dimension_kind(name: &str) -> Option<PmiDimensionKind> {
     match name {
         name if name == "DIMENSIONAL_SIZE" || name.starts_with("DIMENSIONAL_SIZE_") => {
-            Some(DimensionKind::Size)
+            Some(PmiDimensionKind::Size)
         }
         name if name == "DIMENSIONAL_LOCATION" || name.starts_with("DIMENSIONAL_LOCATION_") => {
-            Some(DimensionKind::Location)
+            Some(PmiDimensionKind::Location)
         }
+        "DIRECTED_DIMENSIONAL_LOCATION" => Some(PmiDimensionKind::DirectedLocation),
         name if name == "ANGULAR_SIZE"
             || name.starts_with("ANGULAR_SIZE_")
             || name == "ANGULAR_LOCATION"
             || name.starts_with("ANGULAR_LOCATION_") =>
         {
-            Some(DimensionKind::Angular)
+            Some(PmiDimensionKind::Angular)
         }
-        "DIAMETER_SIZE" => Some(DimensionKind::Diameter),
-        "RADIUS_SIZE" => Some(DimensionKind::Radius),
-        name if name.ends_with("_SIZE") || name.ends_with("_LOCATION") => {
-            let mut name = name.to_owned();
-            name.make_ascii_lowercase();
-            Some(DimensionKind::Other(name))
-        }
+        "DIAMETER_SIZE" => Some(PmiDimensionKind::Diameter),
+        "RADIUS_SIZE" => Some(PmiDimensionKind::Radius),
         _ => None,
     }
 }
 
-fn dimension_descriptor(record: &RawRecord) -> Option<(&str, cadmpeg_ir::DimensionKind)> {
+fn dimension_descriptor(record: &RawRecord) -> Option<(&str, PmiDimensionKind)> {
     for partial in &record.partials {
         if let Some(kind) = dimension_kind(partial.name.as_str()) {
             return Some((partial.name.as_str(), kind));
@@ -1900,7 +2151,7 @@ fn modifier_values(
 
 struct CharacteristicValues {
     nominal: Option<PmiValue>,
-    limits: Option<DimensionTolerance>,
+    limits: Option<(PmiValue, PmiValue)>,
     modifiers: Vec<String>,
 }
 
@@ -1980,10 +2231,7 @@ fn characteristic_values(
             }
         };
         let limits = match (lower_limits.as_slice(), upper_limits.as_slice()) {
-            ([lower], [upper]) => Some(DimensionTolerance::Limits {
-                lower: *lower,
-                upper: *upper,
-            }),
+            ([lower], [upper]) => Some((*lower, *upper)),
             ([], []) => None,
             (lower, upper) => {
                 losses.push(StepLossCode::DimensionalLimitsOmitted.note(format!(

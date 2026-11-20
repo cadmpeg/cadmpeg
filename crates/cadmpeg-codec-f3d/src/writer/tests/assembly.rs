@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::OccurrenceId;
-use cadmpeg_ir::products::{Occurrence, OccurrenceParent, OperandContainer};
+use cadmpeg_ir::products::{Occurrence, OperandContainer};
 
 use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
 use crate::records::feature::assembly::{
@@ -144,19 +144,14 @@ fn assemble_type() -> SegmentType {
 }
 
 fn insert_occurrence() -> Occurrence {
-    Occurrence {
-        id: OccurrenceId::mint("f3d:model:occurrence#insert").unwrap(),
-        prototype: cadmpeg_ir::products::PrototypeReference::Unresolved {},
-        parent: OccurrenceParent::Root {},
-        ordinal: 0,
-        transform: cadmpeg_ir::transform::Transform::identity(),
-        linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-        name: None,
-        visible: None,
-        link: None,
-        native_ref: Some(format!("{STREAM}:design-parameter-scope#100")),
-    }
+    let mut occurrence = Occurrence::new(
+        OccurrenceId::mint("f3d:model:occurrence#insert").unwrap(),
+        cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:occurrence#insert/unresolved")
+            .unwrap(),
+        Some(cadmpeg_ir::transform::Transform::identity()),
+    );
+    occurrence.native_ref = Some(format!("{STREAM}:design-parameter-scope#100"));
+    occurrence
 }
 
 #[test]
@@ -169,6 +164,16 @@ fn writer_accepts_a_standalone_joint_nested_below_a_component_insert_key() {
     let occurrence = insert_occurrence();
     let mut target = CadIr::empty();
     target.model.occurrences = vec![occurrence.clone()];
+    target
+        .model
+        .product_definitions
+        .push(cadmpeg_ir::products::ProductDefinition::new(
+            occurrence.prototype.clone(),
+            cadmpeg_ir::products::Storage::External(
+                cadmpeg_ir::products::ExternalDocument::default(),
+            ),
+        ));
+    crate::tree::place_top_level(&mut target.model, occurrence.id.clone());
     let projected = crate::design::assembly::project_assembly_joints_with_paths(
         &native.design_parameter_scopes,
         &[],
@@ -181,6 +186,7 @@ fn writer_accepts_a_standalone_joint_nested_below_a_component_insert_key() {
         &crate::design::components::paths::LocalOccurrencePaths::new(
             &[],
             &[],
+            &target.model.product_definitions,
             &target.model.occurrences,
             &native.design_parameter_scopes,
         ),
@@ -202,5 +208,15 @@ fn writer_accepts_a_standalone_joint_nested_below_a_component_insert_key() {
     target.model.assembly_joints = projected.joints;
     assert!(
         crate::writer::primitives::validate_assembly_projection(&target, Some(&native)).is_err()
+    );
+
+    let joint = target.model.assembly_joints[0].id.to_string();
+    crate::test_support::assert_written_with_loss(
+        &target,
+        None,
+        &crate::loss::F3dLossCode::WriterJointOmitted
+            .kind()
+            .to_string(),
+        &joint,
     );
 }

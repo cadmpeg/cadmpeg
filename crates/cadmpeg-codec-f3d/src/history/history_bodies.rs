@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Base Feature bodies at their producing state.
+//! Stored feature results and bodies consumed by initial cuts.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::{CadIr, Model};
+use cadmpeg_ir::document::{CadIr, Model, Topology};
 use cadmpeg_ir::features::{
-    BodySelection, DistinctMembers, Feature, FeatureContent, FeatureDefinition, FeatureEvaluation,
-    FeatureOperation,
+    BodySelection, BooleanOp, DistinctMembers, Feature, FeatureContent, FeatureDefinition,
+    FeatureEvaluation, FeatureOperation,
 };
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -21,6 +21,7 @@ use cadmpeg_ir::schema::EntitySchema;
 use crate::container::{self, ContainerScan};
 use crate::history_records::AsmHistory;
 use crate::loss::F3dLossCode;
+use crate::native::F3dNative;
 use crate::records::feature::scope::DesignParameterScope;
 
 const MAX_HISTORY_BODIES: usize = 64;
@@ -30,6 +31,8 @@ struct Want<'a> {
     feature: &'a Feature,
     state: i64,
     slot: i64,
+    capture_current: bool,
+    consumed: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -41,12 +44,142 @@ pub(crate) struct Inputs<'a> {
     pub(crate) primary_brep: Option<&'a str>,
 }
 
+pub(crate) fn derived_base_snapshots(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    scopes: &mut [DesignParameterScope],
+    histories: &[AsmHistory],
+    bindings: &[crate::records::bodies::DesignBodyBinding],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<Vec<HistoryBody>, CodecError> {
+    use crate::records::feature::derived_base::DesignDerivedBaseSnapshot;
+    use cadmpeg_ir::features::{
+        BodySelection, FeatureContent, FeatureDefinition, FeatureEvaluation, FeatureOperation,
+    };
+
+    let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
+    let mut bodies = Vec::new();
+    for scope in scopes {
+        let Some(source) = scope.derived_base_source.as_ref() else {
+            continue;
+        };
+        let Some(stream) = crate::ids::native_stream(&scope.id) else {
+            continue;
+        };
+        let unique_binding = |suffix| {
+            let mut matches = bindings.iter().filter(|binding| {
+                crate::ids::native_stream(binding.id()) == Some(stream)
+                    && binding.entity_suffix == suffix
+            });
+            let first = matches.next()?;
+            matches.next().is_none().then_some(first)
+        };
+        let (Some(_), Some(result)) = (
+            unique_binding(source.source_body.value),
+            unique_binding(source.result_body.value),
+        ) else {
+            continue;
+        };
+        if !result.history_only || result.pair_count() != 1 {
+            continue;
+        }
+        let Some(blob) = result.blob_name().strip_prefix("BREP.") else {
+            continue;
+        };
+        let mut matching = histories
+            .iter()
+            .filter(|history| super::historical_brep_source(&history.id) == Some(blob));
+        let Some(history) = matching.next() else {
+            continue;
+        };
+        if matching.next().is_some() {
+            continue;
+        }
+        let (Some(current), Some(previous)) =
+            (scope.history_state_id(), scope.previous_history_state_id())
+        else {
+            continue;
+        };
+        let Some((_, state, _)) =
+            super::unique_history_state_pair(std::slice::from_ref(history), current, previous)
+        else {
+            continue;
+        };
+        let Some(topology) = history.topology(state) else {
+            continue;
+        };
+        let [slot] = topology.bodies.as_slice() else {
+            continue;
+        };
+        let slot = *slot;
+        let Some(facts) = container::history_breps(scan).find(|facts| {
+            history
+                .id
+                .starts_with(&format!("f3d:{}:asm-history#", facts.name))
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&facts.name)?;
+        let feature = Feature {
+            product_definition: None,
+            id: crate::ids::neutral_feature_id(scope),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: FeatureContent::default(),
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::BaseFeature {
+                    bodies: BodySelection::Unresolved,
+                },
+            )),
+            native_ref: Some(scope.id.clone()),
+        };
+        let before = bodies.len();
+        fill_history(
+            ctx,
+            bytes,
+            history,
+            &[Want {
+                feature: &feature,
+                state: current,
+                slot,
+                capture_current: true,
+                consumed: false,
+            }],
+            &mut bodies,
+            &work,
+            losses,
+        )?;
+        if bodies.len() > before {
+            let snapshot = DesignDerivedBaseSnapshot {
+                history_body: bodies[before].id.clone(),
+                body_slot: slot,
+            };
+            if let Some(source) = &mut scope.derived_base_source {
+                source.snapshot = Some(snapshot);
+            }
+        }
+    }
+    Ok(bodies)
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct ConsumerContext {
+    pub(crate) bindings: HashMap<String, String>,
+    pub(crate) remaining_work: usize,
+}
+
 pub(crate) fn fill(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     inputs: Inputs<'_>,
+    mut bodies_out: Vec<HistoryBody>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Vec<HistoryBody>, CodecError> {
+) -> Result<(Vec<HistoryBody>, usize), CodecError> {
     let Inputs {
         features,
         scopes,
@@ -54,10 +187,9 @@ pub(crate) fn fill(
         bindings,
         primary_brep,
     } = inputs;
-    let mut bodies_out = Vec::new();
     let mut wants = BTreeMap::<usize, Vec<Want<'_>>>::new();
     for feature in features {
-        let Some(bodies) = super::stored_bodies::bound_result_bodies(feature) else {
+        let Some(bodies) = super::stored_bodies::base_feature_result_bodies(feature, scopes) else {
             continue;
         };
         let Some(current) = feature
@@ -104,12 +236,98 @@ pub(crate) fn fill(
                     feature,
                     state: current,
                     slot,
+                    capture_current: false,
+                    consumed: false,
                 });
             }
         }
     }
     let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
-    for (index, wants) in wants {
+    fill_requests(ctx, scan, histories, &wants, &mut bodies_out, &work, losses)?;
+    Ok((bodies_out, work.remaining()))
+}
+
+#[cfg(test)]
+thread_local! {
+    static INJECTED_CONSUMED_FAILURE: std::cell::Cell<Option<fn() -> CodecError>> =
+        const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn inject_consumed_failure(failure: fn() -> CodecError) {
+    INJECTED_CONSUMED_FAILURE.with(|slot| slot.set(Some(failure)));
+}
+
+pub(crate) fn fill_consumed(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    model: &mut Model,
+    native: &F3dNative,
+    primary_brep: Option<&str>,
+    context: &ConsumerContext,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    let inputs = Inputs {
+        features: &model.features,
+        scopes: &native.design_parameter_scopes,
+        histories: &native.asm_histories,
+        bindings: &context.bindings,
+        primary_brep,
+    };
+    let mut wants = BTreeMap::<usize, Vec<Want<'_>>>::new();
+    for feature in &model.features {
+        if let Some((history, want)) = initial_cut_body(feature, inputs, losses) {
+            wants.entry(history).or_default().push(want);
+        }
+    }
+    #[cfg(test)]
+    if let Some(failure) = INJECTED_CONSUMED_FAILURE.with(std::cell::Cell::take) {
+        return contain_consumed_failure(ctx, Err(failure()), losses);
+    }
+    let work = WorkBudget::new(context.remaining_work);
+    let result = fill_requests(
+        ctx,
+        scan,
+        inputs.histories,
+        &wants,
+        &mut model.history_bodies,
+        &work,
+        losses,
+    );
+    contain_consumed_failure(ctx, result, losses)
+}
+
+fn contain_consumed_failure(
+    ctx: &DecodeContext<'_>,
+    result: Result<(), CodecError>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    match result {
+        Err(error) if matches!(error, CodecError::ResourceLimit(_)) => Err(error),
+        Err(error) => match ctx.resource_refusal() {
+            Some(limit) => Err(CodecError::ResourceLimit(limit)),
+            None => {
+                losses.push(
+                    F3dLossCode::FeatureHistoryBodyUndecoded
+                        .note(format!("Consumed history body decoding failed: {error}")),
+                );
+                Ok(())
+            }
+        },
+        Ok(()) => Ok(()),
+    }
+}
+
+fn fill_requests(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan<'_>,
+    histories: &[AsmHistory],
+    requests: &BTreeMap<usize, Vec<Want<'_>>>,
+    bodies_out: &mut Vec<HistoryBody>,
+    work: &WorkBudget,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    for (&index, wants) in requests {
         let history = &histories[index];
         let Some(facts) = container::history_breps(scan).find(|facts| {
             history
@@ -119,10 +337,81 @@ pub(crate) fn fill(
             continue;
         };
         let bytes = scan.entry_bytes(&facts.name)?;
-        fill_history(ctx, bytes, history, &wants, &mut bodies_out, &work, losses)?;
+        fill_history(ctx, bytes, history, wants, bodies_out, work, losses)?;
     }
     bodies_out.sort_by(|left, right| left.id.cmp(&right.id));
-    Ok(bodies_out)
+    Ok(())
+}
+
+fn initial_cut_body<'a>(
+    feature: &'a Feature,
+    inputs: Inputs<'a>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Option<(usize, Want<'a>)> {
+    if feature.suppressed == Some(true)
+        || !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                op: BooleanOp::Cut,
+                solid: Some(true),
+                ..
+            })
+        )
+    {
+        return None;
+    }
+    let product = feature.product_definition.as_ref()?;
+    let selected =
+        super::face_selection_state(feature, inputs.scopes, inputs.bindings, inputs.histories)?;
+    let history = &inputs.histories[selected.history];
+    let previous = &history.states()[selected.previous];
+    let [slot] = history.topology(previous)?.bodies.as_slice() else {
+        return None;
+    };
+    if inputs.features.iter().any(|earlier| {
+        earlier.product_definition.as_ref() == Some(product)
+            && earlier.ordinal < feature.ordinal
+            && earlier.suppressed != Some(true)
+            && !earlier.evaluation.outputs().is_empty()
+    }) {
+        losses.push(
+            F3dLossCode::FeatureHistoryBodyConsumedWithheld.note(format!(
+                "{} previous state {} has an earlier unsuppressed feature with bound outputs",
+                feature.id, previous.state_id
+            )),
+        );
+        return None;
+    }
+    let [output] = feature.evaluation.outputs().as_slice() else {
+        losses.push(
+            F3dLossCode::FeatureHistoryBodyConsumedWithheld.note(format!(
+                "{} previous state {} has {} output bodies",
+                feature.id,
+                previous.state_id,
+                feature.evaluation.outputs().len()
+            )),
+        );
+        return None;
+    };
+    if super::stable_ref(output.as_str()) != Some(*slot)
+        || output_history(
+            std::iter::once(output.as_str()),
+            inputs.histories,
+            inputs.primary_brep,
+        ) != Some(history.id.as_str())
+    {
+        return None;
+    }
+    Some((
+        selected.history,
+        Want {
+            feature,
+            state: previous.state_id,
+            slot: *slot,
+            consumed: true,
+            capture_current: false,
+        },
+    ))
 }
 
 fn output_history<'a>(
@@ -195,9 +484,11 @@ fn fill_history(
             let state_id = states[state_index].state_id;
             for want in wants.iter().filter(|want| want.state == state_id) {
                 let revision = versions.get(&want.slot).copied();
-                if !newer
-                    .get(&want.slot)
-                    .is_some_and(|seen| seen.iter().any(|new| *new != revision))
+                if !want.capture_current
+                    && !want.consumed
+                    && !newer
+                        .get(&want.slot)
+                        .is_some_and(|seen| seen.iter().any(|new| *new != revision))
                 {
                     continue;
                 }
@@ -212,6 +503,12 @@ fn fill_history(
                     }
                 }
                 let Some(archive) = archive.as_ref() else {
+                    if want.consumed {
+                        losses.push(F3dLossCode::FeatureHistoryBodyUndecoded.note(format!(
+                            "{} body slot {} state {state_id} has an incomplete record archive",
+                            want.feature.id, want.slot
+                        )));
+                    }
                     continue;
                 };
                 if bodies.len() >= MAX_HISTORY_BODIES
@@ -310,7 +607,7 @@ fn build(
     };
     let mut scratch = CadIr::empty();
     cadmpeg_asm::brep::transfer::transfer_into_ir(ctx, &mut scratch, "f3d", brep)?;
-    let Extract::Nest(topology) = extract(ctx, &scratch.model, body.as_str())? else {
+    let Extract::Nest(topology) = extract(ctx, &scratch.geometry, body.as_str())? else {
         return Ok(None);
     };
     let mut map = IdentityMap::new(|id: &str| {
@@ -337,8 +634,8 @@ fn build(
         HistoryBody {
             id: HistoryBodyId::mint(format!("f3d:history-body:nest#h{nest_index:04}"))
                 .map_err(|error| CodecError::malformed(format_args!("{error}")))?,
-            produced_by: Some(want.feature.id.clone()),
-            consumed_by: None,
+            produced_by: (!want.consumed).then(|| want.feature.id.clone()),
+            consumed_by: want.consumed.then(|| want.feature.id.clone()),
             state: HistoryStateRef {
                 ordinal: u32::try_from(ordinal)
                     .map_err(|_| CodecError::malformed("history ordinal"))?,
@@ -452,13 +749,13 @@ impl Record<'_> {
 
 fn reach<'a>(
     ctx: &DecodeContext<'_>,
-    model: &'a Model,
+    geometry: &'a Topology,
     body: &str,
 ) -> Result<(HashSet<&'a str>, usize), CodecError> {
     let mut table = HashMap::<&str, Record<'_>>::new();
     macro_rules! index {
         ($arena:ident, $variant:ident) => {
-            for record in &model.$arena {
+            for record in &geometry.$arena {
                 table.insert(record.identity(), Record::$variant(record));
             }
         };
@@ -471,10 +768,10 @@ fn reach<'a>(
     index!(coedges, Coedge);
     index!(edges, Edge);
     index!(vertices, Vertex);
-    for record in &model.surfaces {
+    for record in &geometry.surfaces {
         table.insert(record.identity(), Record::Surface);
     }
-    for record in &model.curves {
+    for record in &geometry.curves {
         table.insert(record.identity(), Record::Curve);
     }
     index!(pcurves, Pcurve);
@@ -482,10 +779,34 @@ fn reach<'a>(
     let Some((&start, _)) = table.get_key_value(body) else {
         return Ok((HashSet::new(), 0));
     };
+    let mut children = HashMap::<&str, Vec<&str>>::new();
+    for region in &geometry.regions {
+        children
+            .entry(region.body.as_str())
+            .or_default()
+            .push(region.id.as_str());
+    }
+    for shell in &geometry.shells {
+        children
+            .entry(shell.region.as_str())
+            .or_default()
+            .push(shell.id.as_str());
+    }
+    for face in &geometry.faces {
+        children
+            .entry(face.shell.as_str())
+            .or_default()
+            .push(face.id.as_str());
+    }
     let mut seen = HashSet::from([start]);
     let mut queue = VecDeque::from([start]);
     let mut missing = 0;
     while let Some(id) = queue.pop_front() {
+        for &child in children.get(id).into_iter().flatten() {
+            if seen.insert(child) {
+                queue.push_back(child);
+            }
+        }
         let Some(record) = table.get(id).copied() else {
             continue;
         };
@@ -551,11 +872,11 @@ fn solve(topology: &mut BodyTopology) -> bool {
 }
 
 fn escapes(ctx: &DecodeContext<'_>, topology: &BodyTopology) -> Result<bool, CodecError> {
-    let model = topology.to_model();
+    let geometry = topology.to_topology();
     let mut inside = HashSet::<&str>::new();
     macro_rules! collect {
         ($($arena:ident),*) => {$(
-            for record in &model.$arena {
+            for record in &geometry.$arena {
                 inside.insert(record.identity());
             }
         )*};
@@ -567,7 +888,7 @@ fn escapes(ctx: &DecodeContext<'_>, topology: &BodyTopology) -> Result<bool, Cod
     let mut escaped = false;
     macro_rules! visit {
         ($($arena:ident),*) => {$(
-            for record in &model.$arena {
+            for record in &geometry.$arena {
                 record.visit_references(ctx, &mut |target| {
                     escaped |= !inside.contains(target);
                     Ok(())
@@ -582,9 +903,13 @@ fn escapes(ctx: &DecodeContext<'_>, topology: &BodyTopology) -> Result<bool, Cod
     Ok(escaped)
 }
 
-fn extract(ctx: &DecodeContext<'_>, model: &Model, body: &str) -> Result<Extract, CodecError> {
-    let (reached, missing) = reach(ctx, model, body)?;
-    let Some(root) = model
+fn extract(
+    ctx: &DecodeContext<'_>,
+    geometry: &Topology,
+    body: &str,
+) -> Result<Extract, CodecError> {
+    let (reached, missing) = reach(ctx, geometry, body)?;
+    let Some(root) = geometry
         .bodies
         .iter()
         .find(|candidate| candidate.id.as_str() == body)
@@ -592,17 +917,17 @@ fn extract(ctx: &DecodeContext<'_>, model: &Model, body: &str) -> Result<Extract
         return Ok(Extract::Absent);
     };
     let mut topology = BodyTopology::new(root.clone());
-    topology.regions = retain(&model.regions, &reached);
-    topology.shells = retain(&model.shells, &reached);
-    topology.faces = retain(&model.faces, &reached);
-    topology.loops = retain(&model.loops, &reached);
-    topology.coedges = retain(&model.coedges, &reached);
-    topology.edges = retain(&model.edges, &reached);
-    topology.vertices = retain(&model.vertices, &reached);
-    topology.surfaces = retain(&model.surfaces, &reached);
-    topology.curves = retain(&model.curves, &reached);
-    topology.pcurves = retain(&model.pcurves, &reached);
-    topology.points = retain(&model.points, &reached);
+    topology.regions = retain(&geometry.regions, &reached);
+    topology.shells = retain(&geometry.shells, &reached);
+    topology.faces = retain(&geometry.faces, &reached);
+    topology.loops = retain(&geometry.loops, &reached);
+    topology.coedges = retain(&geometry.coedges, &reached);
+    topology.edges = retain(&geometry.edges, &reached);
+    topology.vertices = retain(&geometry.vertices, &reached);
+    topology.surfaces = retain(&geometry.surfaces, &reached);
+    topology.curves = retain(&geometry.curves, &reached);
+    topology.pcurves = retain(&geometry.pcurves, &reached);
+    topology.points = retain(&geometry.points, &reached);
     if !solve(&mut topology) {
         return Ok(Extract::Absent);
     }

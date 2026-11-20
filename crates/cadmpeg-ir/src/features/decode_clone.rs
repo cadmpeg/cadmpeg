@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Identity rewrite implementations for feature records.
 
-use super::surfaces::UntrimLoops;
+use super::boundary_fill::BoundaryFillCell;
+use super::surfaces::{SilhouetteSplitMode, SplitFaceMethod, UntrimLoops};
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
     BodyMembers, BodySelection, CapturedComponentPosition, CapturedPositionTransform,
@@ -15,16 +16,15 @@ use super::{
     GeometryImportPath, HelicalSweepConstruction, InsertedBodies, InsertedComponents,
     LinearTermination, LoftGuidance, LoftPointSection, LoftSection, NativeFeatureKind,
     NativeSelections, NonEmptyMembers, PartialRevolveConstruction, PathRef, PlanarProfileRef,
-    PrimitiveSolid, PrimitiveSolidKind, ProfileRef, ReplaceFaceOperands, RevolutionAxis,
-    RevolveConstruction, RevolveExtent, RibConstruction, RuledSurfaceMode, ScaleCenter,
-    SectionOperands, SelectionMembers, SelectionReference, SewBodySelection,
-    SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
-    SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding,
-    SketchPointSelection, SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion,
-    SketchProfileRegions, SolidFeatureResult, SplitBodyTool, SplitFacePlanes, SplitFaceTool,
-    SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
-    ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
-    VertexSelection,
+    PrimitiveSolid, PrimitiveSolidKind, ProfileRef, RevolutionAxis, RevolveConstruction,
+    RevolveExtent, RibConstruction, RuledSurfaceMode, ScaleCenter, SectionOperands,
+    SelectionMembers, SelectionReference, SewBodySelection, SheetMetalFlangeEdgeWidths,
+    SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth,
+    SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding, SketchPointSelection,
+    SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion, SketchProfileRegions,
+    SolidFeatureResult, SplitBodyTool, SplitFacePlanes, SplitFaceTool, SurfaceBoundary,
+    SweepGuideRail, SweepOrientation, SweepSection, SweepShape, ThreePointSelection, TreeChildren,
+    TrimBodyOperands, TrimCellSelection, TrimRegion, VertexSelection,
 };
 
 rewrite_enum!(AngularTermination, []; {
@@ -37,10 +37,15 @@ rewrite_enum!(AngularTermination, []; {
     ToVertex { vertex },
     OffsetFromFace { face, offset },
     ToShape { target },
+    ToPlane { plane, native, source },
     Angle { angle },
 });
 
 rewrite_record!(AxisAngle, []; { origin, direction, angle });
+rewrite_enum!(BoundaryFillCell, []; {
+    BodyRegion(selection),
+    Recorded { record },
+});
 rewrite_record!(CapturedComponentPosition, []; { selector, occurrence, transform });
 rewrite_enum!(CapturedPositionTransform, []; {
     Affine { transform },
@@ -218,7 +223,7 @@ rewrite_enum!(FeatureOperation, []; {
     ComponentTransfer { mode, occurrence, component, source_owner, target_owner, source_transform, target_transform },
     CapturedComponentPositions { positions },
     AssemblyJoint { joint },
-    Form { cages },
+    Form(field0),
     CosmeticThread { face, standard, designation, diameter, pitch, modeled, extent },
     ReferenceImage { asset, visible, mirror_u, mirror_v, frame, bounds, opacity },
     Decal { asset, faces, mapping, opacity },
@@ -226,7 +231,7 @@ rewrite_enum!(FeatureOperation, []; {
     DatumPlane { frame },
     DatumThreePointPlane { frame, points },
     DatumOffsetPlane { reference, distance },
-    DatumAxis { origin, direction },
+    DatumAxis { axis },
     DatumPoint { position, construction },
     PointGeometry { position },
     LineSegment { segment },
@@ -296,12 +301,13 @@ Thicken { faces, thickness, side, result, tangent_chain },
     RuledSurface { edges, support_faces, mode, angle, alternate_face, corner },
     Draft { faces, anchor, angle, outward, second_side },
     Combine { operands, op, keep_tools, destination },
-    BoundaryFill { tools, cells },
+    BoundaryFill { tools, cells, plane_tools, operation, remove_tools },
     CutWithSurface { targets, tools, reverse },
     TrimBodies { operands, keep },
     TrimBodiesAtPlane { targets, plane, keep },
-    SplitBody { targets, tool },
-    SplitFace { targets, tool },
+    SplitBody { targets, tool, extend_tool },
+    SplitFace { targets, tool, method },
+    SilhouetteSplit { target, direction, mode },
     DeleteBody { bodies, mode },
     DeleteFace { faces, heal },
     ReplaceFace { operands },
@@ -450,8 +456,6 @@ rewrite_enum!(ProfileRef, []; {
     Planar(field0),
 });
 
-rewrite_record!(ReplaceFaceOperands, []; { targets, replacements });
-
 rewrite_record!(RevolutionAxis, []; { origin, direction, reference });
 
 rewrite_enum!(RevolveConstruction, []; {
@@ -544,15 +548,26 @@ rewrite_record!(SketchProfileRegions, []; (field0));
 
 rewrite_record!(SplitFacePlanes, []; (field0));
 
+rewrite_enum!(SilhouetteSplitMode, []; { Unresolved, FacesOnly, ShelledBody, SolidBody });
+
 rewrite_enum!(SplitBodyTool, []; {
     Faces(field0),
     Plane { plane },
 });
 
 rewrite_enum!(SplitFaceTool, []; {
+    Faces(field0),
+    Native(field0),
     Path(field0),
     Plane { plane },
     Planes { planes },
+});
+
+rewrite_enum!(SplitFaceMethod, []; {
+    Unresolved {},
+    SurfaceIntersection { extend },
+    ClosestPoint {},
+    AlongVector { direction, native_carrier, native_inputs, native_input_count, native_inputs_complete },
 });
 
 rewrite_enum!(UntrimLoops, []; {
@@ -616,7 +631,6 @@ rewrite_enum!(VertexSelection, []; {
 rewrite_enum!(super::ConfigurationEvaluation, []; { Suppressed {}, Active { outputs } });
 rewrite_record!(super::ConfigurationFeatureState, []; { evaluation, dependencies, definition });
 rewrite_record!(super::FeatureEvaluation, []; { definition, outputs });
-rewrite_record!(super::Feature, []; { id, product_definition, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref });
 rewrite_record!(super::FeatureContent, []; (field0));
 rewrite_enum!(super::FeatureSourceContent, []; { Text(value), Parameter(value), Feature(value) });
 rewrite_enum!(super::ParameterValue, []; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });

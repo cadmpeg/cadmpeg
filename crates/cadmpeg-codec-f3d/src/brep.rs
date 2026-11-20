@@ -401,7 +401,7 @@ fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
     let payload = sketch_link_payload(&attribute.values[family + 1..])?;
     Some(SketchCurveLink {
         id: format!("f3d:design:sketch-curve-link#{}", attribute_key(attribute)),
-        target: attribute.target.clone(),
+        target: attribute.target.entity.clone(),
         sketch_curve_id: payload.sketch_curve_id,
         ref_b: payload.ref_b,
         sense: crate::records::sketch_links::SketchLinkSense::try_from(payload.sense).ok(),
@@ -410,10 +410,10 @@ fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
     })
 }
 
-fn persistent_design_links(
+pub(crate) fn persistent_design_links(
     attribute: &SourceAttribute,
 ) -> Result<Vec<PersistentDesignLink>, CodecError> {
-    let AttributeTarget::Body(_) = &attribute.target else {
+    let AttributeTarget::Body(_) = &attribute.target.entity else {
         return Ok(Vec::new());
     };
     let Some(GenericTagPayload {
@@ -457,7 +457,7 @@ fn persistent_design_links(
                 "f3d:design:persistent-design-link#{}:{ordinal}",
                 attribute_key(attribute)
             ),
-            target: attribute.target.clone(),
+            target: attribute.target.entity.clone(),
             design_id,
             design_reference,
             ordinal,
@@ -471,7 +471,7 @@ fn persistent_subentity_tags(
     attribute: &SourceAttribute,
 ) -> Result<Vec<PersistentSubentityTag>, CodecError> {
     if !matches!(
-        attribute.target,
+        attribute.target.entity,
         AttributeTarget::Face(_) | AttributeTarget::Edge(_)
     ) {
         return Ok(Vec::new());
@@ -542,7 +542,7 @@ fn persistent_subentity_tags(
                 "f3d:design:persistent-subentity-tag#{}:{ordinal}",
                 attribute_key(attribute)
             ),
-            target: attribute.target.clone(),
+            target: attribute.target.entity.clone(),
             selector: *selector,
             token,
             token_integer,
@@ -614,7 +614,7 @@ fn creation_timestamp(attribute: &SourceAttribute) -> Option<CreationTimestamp> 
     let record_index = attribute_key(attribute).parse().ok()?;
     Some(CreationTimestamp {
         id: format!("f3d:design:creation-timestamp#{}", attribute_key(attribute)),
-        target: attribute.target.clone(),
+        target: attribute.target.entity.clone(),
         record_index,
         unix_microseconds: *unix_microseconds,
     })

@@ -12,7 +12,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
-use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{
@@ -58,8 +57,8 @@ const DOMAIN_EXTENT_TOLERANCE: f64 = 1.0e-9;
 
 /// Destination of the neutral records of one exact stream.
 pub(crate) struct Sink<'s> {
-    /// Neutral model the records are appended to.
-    pub(crate) model: &'s mut Model,
+    /// Neutral topology the records are appended to.
+    pub(crate) geometry: &'s mut cadmpeg_ir::document::Topology,
     /// Exactness and provenance of the records.
     pub(crate) annotations: &'s mut AnnotationBuilder,
     /// Losses of the stream.
@@ -254,9 +253,9 @@ impl Writer<'_, '_, '_, '_> {
 
     fn write(&mut self) -> Result<Vec<BodyId>, CodecError> {
         let first = Arenas {
-            loops: self.sink.model.loops.len(),
-            coedges: self.sink.model.coedges.len(),
-            faces: self.sink.model.faces.len(),
+            loops: self.sink.geometry.loops.len(),
+            coedges: self.sink.geometry.coedges.len(),
+            faces: self.sink.geometry.faces.len(),
         };
         let carriers = self.write_surfaces()?;
         self.dropped = self.degenerate_coedges(&carriers);
@@ -288,10 +287,11 @@ impl Writer<'_, '_, '_, '_> {
                 None => SolvedSurfaceGeometry::Unknown { record: None },
             };
             self.ctx.charge_entities(1, "pvz exact surface")?;
-            self.sink.model.surfaces.push(Surface {
+            self.sink.geometry.surfaces.push(Surface {
                 id: id.clone(),
                 geometry: IrSurfaceGeometry::Solved(geometry),
                 source_object: None,
+                native_ref: None,
             });
             self.sink.annotations.note(
                 id.to_string(),
@@ -603,11 +603,12 @@ impl Writer<'_, '_, '_, '_> {
             };
             let id = self.ids.curve(*edge);
             self.ctx.charge_entities(1, "pvz exact curve")?;
-            self.sink.model.curves.push(Curve {
+            self.sink.geometry.curves.push(Curve {
                 id: id.clone(),
                 geometry: IrCurveGeometry::Solved(chart.geometry.clone()),
                 parameter_range: None,
                 source_object: None,
+                native_ref: None,
             });
             self.located(&id, record.offset, "0x14");
             charts.insert(*edge, chart);
@@ -655,11 +656,13 @@ impl Writer<'_, '_, '_, '_> {
             let id = self.ids.edge(*edge);
             let merged = merged.contains(edge);
             self.ctx.charge_entities(1, "pvz exact edge")?;
-            self.sink.model.edges.push(Edge {
+            self.sink.geometry.edges.push(Edge {
                 id: id.clone(),
                 carrier,
-                start: self.ids.vertex(start),
-                end: self.ids.vertex(end),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    self.ids.vertex(start),
+                    self.ids.vertex(end),
+                )),
                 tolerance: merged
                     .then(|| {
                         PositiveReal::new(
@@ -667,6 +670,7 @@ impl Writer<'_, '_, '_, '_> {
                         )
                     })
                     .flatten(),
+                native_ref: None,
             });
             self.located(&id, record.offset, "0x14");
             if merged {
@@ -683,12 +687,15 @@ impl Writer<'_, '_, '_, '_> {
                 .ids
                 .edge(cadmpeg_ir::identity_key!("free").colon(Ids::pair(*loop_index, *position)));
             self.ctx.charge_entities(1, "pvz exact edge")?;
-            self.sink.model.edges.push(Edge {
+            self.sink.geometry.edges.push(Edge {
                 id: id.clone(),
                 carrier: EdgeCarrier::Free,
-                start: self.ids.vertex(start),
-                end: self.ids.vertex(end),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    self.ids.vertex(start),
+                    self.ids.vertex(end),
+                )),
                 tolerance: None,
+                native_ref: None,
             });
             self.derived(&id);
             vertices.extend([start, end]);
@@ -705,15 +712,16 @@ impl Writer<'_, '_, '_, '_> {
                 * MILLIMETRES_PER_METRE;
             self.ctx.charge_entities(2, "pvz exact vertex")?;
             self.sink
-                .model
+                .geometry
                 .points
                 .push(Point::new(point_id.clone(), position, None));
             self.derived(&point_id);
             let id = self.ids.vertex(*vertex);
-            self.sink.model.vertices.push(Vertex {
+            self.sink.geometry.vertices.push(Vertex {
                 id: id.clone(),
                 point: point_id,
                 tolerance: PositiveReal::new(tolerance),
+                native_ref: None,
             });
             self.derived(&id);
             self.sink
@@ -837,8 +845,8 @@ impl Writer<'_, '_, '_, '_> {
                             }
                         }
                         self.ctx.charge_entities(1, "pvz exact coedge")?;
-                        written.insert(coedge_id.clone(), self.sink.model.coedges.len());
-                        self.sink.model.coedges.push(Coedge {
+                        written.insert(coedge_id.clone(), self.sink.geometry.coedges.len());
+                        self.sink.geometry.coedges.push(Coedge {
                             id: coedge_id.clone(),
                             owner_loop: loop_id.clone(),
                             edge: edge_id.clone(),
@@ -850,6 +858,7 @@ impl Writer<'_, '_, '_, '_> {
                             },
                             pcurves,
                             use_curve: None,
+                            native_ref: None,
                         });
                         self.located(&coedge_id, source.offset, "0x11");
                         radial.entry(edge_id).or_default().push(coedge_id.clone());
@@ -859,10 +868,11 @@ impl Writer<'_, '_, '_, '_> {
                         CodecError::malformed(format_args!("pvz exact loop: {error}"))
                     })?;
                     self.ctx.charge_entities(1, "pvz exact loop")?;
-                    self.sink.model.loops.push(Loop {
+                    self.sink.geometry.loops.push(Loop {
                         id: loop_id.clone(),
                         face: face_id.clone(),
                         boundary: LoopBoundary::Ring(boundary),
+                        native_ref: None,
                     });
                     let offset = self.exact.loops[loop_topology.index].offset;
                     self.located(&loop_id, offset, "0x01000010");
@@ -885,7 +895,7 @@ impl Writer<'_, '_, '_, '_> {
                     None
                 };
                 self.ctx.charge_entities(1, "pvz exact face")?;
-                self.sink.model.faces.push(Face {
+                self.sink.geometry.faces.push(Face {
                     id: face_id.clone(),
                     shell: self.ids.shell(0),
                     surface: self.ids.surface(index),
@@ -894,6 +904,7 @@ impl Writer<'_, '_, '_, '_> {
                     name: None,
                     color: None,
                     tolerance,
+                    native_ref: None,
                 });
                 self.located(&face_id, record.offset, "0x13");
                 if !face_topology.side_derived {
@@ -917,7 +928,7 @@ impl Writer<'_, '_, '_, '_> {
                 let next = ring[(position + 1) % ring.len()].clone();
                 if let Some(coedge) = written
                     .get(id)
-                    .and_then(|index| self.sink.model.coedges.get_mut(*index))
+                    .and_then(|index| self.sink.geometry.coedges.get_mut(*index))
                 {
                     coedge.radial_next = next;
                 }
@@ -983,10 +994,11 @@ impl Writer<'_, '_, '_, '_> {
         let id = self.ids.pcurve(key);
         self.ctx.charge_entities(1, "pvz exact pcurve")?;
         let fit = fit.and_then(|fit| FitTolerance::try_new(fit).ok());
-        self.sink.model.pcurves.push(Pcurve {
+        self.sink.geometry.pcurves.push(Pcurve {
             id: id.clone(),
             geometry,
             metadata: PcurveMetadata::general(None, None, fit),
+            native_ref: None,
         });
         self.located(&id, offset, "0x15");
         if fit.is_some() {
@@ -1021,12 +1033,12 @@ impl Writer<'_, '_, '_, '_> {
             .map(|(index, id)| (id, index))
             .collect();
         let mut parent: Vec<usize> = (0..flat.len()).collect();
-        let loop_face: BTreeMap<LoopId, usize> = self.sink.model.loops[first.loops..]
+        let loop_face: BTreeMap<LoopId, usize> = self.sink.geometry.loops[first.loops..]
             .iter()
             .filter_map(|loop_| Some((loop_.id.clone(), *position.get(&loop_.face)?)))
             .collect();
         let mut edge_faces: BTreeMap<EdgeId, Vec<usize>> = BTreeMap::new();
-        for coedge in &self.sink.model.coedges[first.coedges..] {
+        for coedge in &self.sink.geometry.coedges[first.coedges..] {
             if let Some(face) = loop_face.get(&coedge.owner_loop) {
                 edge_faces
                     .entry(coedge.edge.clone())
@@ -1082,22 +1094,21 @@ impl Writer<'_, '_, '_, '_> {
             self.ids.body()
         };
         let mut regions: [Vec<RegionId>; 2] = [Vec::new(), Vec::new()];
-        for (shell, list) in members.iter().enumerate() {
+        for (shell, _) in members.iter().enumerate() {
             let body = if closed[shell] { &solid } else { &sheet };
             let shell_id = self.ids.shell(shell);
             let region_id = self.ids.region(shell);
-            let face_ids: Vec<FaceId> = list.iter().map(|face| flat[*face].clone()).collect();
             self.ctx.charge_entities(2, "pvz exact shell")?;
-            self.sink.model.shells.push(
-                Shell::with_faces(shell_id.clone(), region_id.clone(), face_ids).map_err(
-                    |error| CodecError::malformed(format_args!("pvz exact shell: {error}")),
-                )?,
-            );
+            self.sink
+                .geometry
+                .shells
+                .push(Shell::new(shell_id.clone(), region_id.clone()));
             self.derived(&shell_id);
-            self.sink.model.regions.push(Region {
+            self.sink.geometry.regions.push(Region {
                 id: region_id.clone(),
                 body: body.clone(),
                 shells: vec![shell_id],
+                native_ref: None,
             });
             self.derived(&region_id);
             regions[usize::from(!closed[shell])].push(region_id);
@@ -1107,7 +1118,7 @@ impl Writer<'_, '_, '_, '_> {
             .zip(&shell_of_face)
             .map(|(face, shell)| (face.clone(), self.ids.shell(*shell)))
             .collect();
-        for face in &mut self.sink.model.faces[first.faces..] {
+        for face in &mut self.sink.geometry.faces[first.faces..] {
             if let Some(shell) = face_shell.get(&face.id) {
                 face.shell = shell.clone();
             }
@@ -1122,14 +1133,14 @@ impl Writer<'_, '_, '_, '_> {
                 continue;
             }
             self.ctx.charge_entities(1, "pvz exact body")?;
-            self.sink.model.bodies.push(Body {
+            self.sink.geometry.bodies.push(Body {
                 id: id.clone(),
                 kind,
-                regions,
                 transform: None,
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             });
             self.derived(&id);
             bodies.push(id);

@@ -1,17 +1,24 @@
 {
   "ir": {
-    "ir_version": "10",
-    "decode_depth": "full",
+    "ir_version": "11",
+    "fragment": false,
+    "scope": {
+      "model": true,
+      "design": true,
+      "process": true
+    },
     "source": {
       "identity": {
-        "classification": "classified",
+        "kind": "classified",
         "dialects": {
           "primary": {
             "dialect": "f3d:manifest-3-2-0-0",
             "declared": {
               "top_level_manifest_version": "3-2-0-0"
             },
-            "admission": "admitted"
+            "admission": {
+              "kind": "admitted"
+            }
           },
           "extra": [
             {
@@ -22,38 +29,37 @@
                 "save_format_major": "231",
                 "save_format_minor": "0"
               },
-              "admission": "admitted"
+              "admission": {
+                "kind": "admitted"
+              }
             }
           ]
         }
       },
       "attributes": {
         "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-        "active_brep_sha256": "38abfed904c06e396677d851dc0069db84b387a9d8a514fb837d5ca1d844d440",
         "asset_folder": "FusionAssetName[Active]",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
-        "save_date": "Tue Mar 31 16:16:19 2026",
-        "solved_record_len": "2207",
-        "zip_entry_count": "3"
+        "save_date": "Tue Mar 31 16:16:19 2026"
       }
     },
     "units": {
-      "length": "millimeter"
+      "length": "millimeter",
+      "angle": "radian",
+      "mass": "kilogram",
+      "time": "second"
     },
     "tolerances": {
       "linear": 9.999999999999999e-6,
       "angular": 1e-10
     },
-    "model": {
+    "geometry": {
       "bodies": [
         {
           "id": "f3d:brep:entity#1",
-          "kind": "general",
-          "regions": [
-            "f3d:brep:entity#2"
-          ]
+          "kind": "general"
         }
       ],
       "regions": [
@@ -71,10 +77,6 @@
           "region": "f3d:brep:entity#2",
           "members": [
             {
-              "kind": "face",
-              "id": "f3d:brep:entity#4"
-            },
-            {
               "kind": "wire_edge",
               "id": "f3d:brep:entity#21"
             }
@@ -88,7 +90,7 @@
           "surface": "f3d:brep:entity#6",
           "sense": "forward",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "f3d:brep:entity#5"
             ]
@@ -105,7 +107,8 @@
               "f3d:brep:entity#7",
               "f3d:brep:entity#8",
               "f3d:brep:entity#9"
-            ]
+            ],
+            "vertex_uses": []
           }
         }
       ],
@@ -115,21 +118,24 @@
           "owner_loop": "f3d:brep:entity#5",
           "edge": "f3d:brep:entity#10",
           "radial_next": "f3d:brep:entity#7",
-          "sense": "forward"
+          "sense": "forward",
+          "pcurves": []
         },
         {
           "id": "f3d:brep:entity#8",
           "owner_loop": "f3d:brep:entity#5",
           "edge": "f3d:brep:entity#11",
           "radial_next": "f3d:brep:entity#8",
-          "sense": "forward"
+          "sense": "forward",
+          "pcurves": []
         },
         {
           "id": "f3d:brep:entity#9",
           "owner_loop": "f3d:brep:entity#5",
           "edge": "f3d:brep:entity#12",
           "radial_next": "f3d:brep:entity#9",
-          "sense": "forward"
+          "sense": "forward",
+          "pcurves": []
         }
       ],
       "edges": [
@@ -141,8 +147,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#13",
-          "end": "f3d:brep:entity#14"
+          "ends": {
+            "start": "f3d:brep:entity#13",
+            "end": "f3d:brep:entity#14"
+          }
         },
         {
           "id": "f3d:brep:entity#11",
@@ -152,8 +160,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#14",
-          "end": "f3d:brep:entity#15"
+          "ends": {
+            "start": "f3d:brep:entity#14",
+            "end": "f3d:brep:entity#15"
+          }
         },
         {
           "id": "f3d:brep:entity#12",
@@ -163,8 +173,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#15",
-          "end": "f3d:brep:entity#13"
+          "ends": {
+            "start": "f3d:brep:entity#15",
+            "end": "f3d:brep:entity#13"
+          }
         },
         {
           "id": "f3d:brep:entity#21",
@@ -175,8 +187,10 @@
               20.0
             ]
           },
-          "start": "f3d:brep:entity#22",
-          "end": "f3d:brep:entity#23"
+          "ends": {
+            "start": "f3d:brep:entity#22",
+            "end": "f3d:brep:entity#23"
+          }
         }
       ],
       "vertices": [
@@ -247,21 +261,24 @@
         {
           "id": "f3d:brep:entity#6",
           "geometry": {
-            "kind": "plane",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           }
         }
@@ -270,16 +287,19 @@
         {
           "id": "f3d:brep:entity#26",
           "geometry": {
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 10.0
-            },
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 10.0
+              },
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           }
         }
@@ -287,8 +307,13 @@
       "subds": [],
       "pcurves": [],
       "procedural_surfaces": [],
-      "procedural_curves": [],
+      "procedural_curves": []
+    },
+    "model": {
+      "assets": [],
       "features": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "configurations": [],
       "parameters": [],
       "sketches": [],
@@ -296,8 +321,26 @@
       "sketch_constraints": [],
       "spatial_sketches": [],
       "spatial_sketch_entities": [],
+      "spatial_sketch_constraints": [],
       "spreadsheets": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "id": "f3d:model:product-definition#root",
+          "bom_properties": {},
+          "storage": {
+            "kind": "file",
+            "document": {}
+          },
+          "bodies": [
+            "f3d:brep:entity#1"
+          ],
+          "tessellations": [],
+          "occurrences": [],
+          "instance_bodies": [],
+          "representations": [],
+          "sketches": []
+        }
+      ],
       "occurrences": [],
       "assembly_joints": [],
       "drawings": [],
@@ -309,7 +352,50 @@
       "appearance_bindings": [],
       "attributes": [],
       "pmi": [],
-      "presentation_layers": []
+      "presentation_layers": [],
+      "physical_materials": [],
+      "mass_properties": [],
+      "rigid_bodies": [],
+      "colliders": [],
+      "articulations": [],
+      "physics_scenes": [],
+      "solver_settings": [],
+      "declared_measures": [],
+      "point_clouds": [],
+      "history_bodies": []
+    },
+    "design": {
+      "scopes": [],
+      "containers": [],
+      "features": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketch_constraints": [],
+      "parameters": [],
+      "spreadsheets": [],
+      "sheet_metal_rules": [],
+      "programs": [],
+      "configurations": [],
+      "arrangements": [],
+      "publications": [],
+      "evaluations": [],
+      "names": []
+    },
+    "process": {
+      "setups": [],
+      "operations": [],
+      "features": [],
+      "groups": [],
+      "tools": [],
+      "presets": [],
+      "machines": [],
+      "programs": [],
+      "parameters": [],
+      "toolpaths": [],
+      "states": []
     },
     "native": {
       "f3d": {
@@ -525,14 +611,16 @@
   },
   "report": {
     "identity": {
-      "classification": "classified",
+      "kind": "classified",
       "dialects": {
         "primary": {
           "dialect": "f3d:manifest-3-2-0-0",
           "declared": {
             "top_level_manifest_version": "3-2-0-0"
           },
-          "admission": "admitted"
+          "admission": {
+            "kind": "admitted"
+          }
         },
         "extra": [
           {
@@ -543,22 +631,27 @@
               "save_format_major": "231",
               "save_format_minor": "0"
             },
-            "admission": "admitted"
+            "admission": {
+              "kind": "admitted"
+            }
           }
         ]
       }
     },
     "transfer": {
-      "transfer": "full",
+      "kind": "full",
       "geometry_transferred": true
     },
+    "coverage": {},
     "losses": [
       {
         "code": {
-          "scope": "namespaced",
-          "namespace": "f3d",
-          "code": "material.not-transferred",
-          "kind": "material_not_transferred"
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "material.not-transferred",
+            "kind": "material_not_transferred"
+          }
         },
         "severity": "warning",
         "message": "Materials/appearances (.protein assets, ACT/design assignments) were not transferred."
@@ -568,9 +661,15 @@
       "Design asset folder (from manifests): FusionAssetName[Active]",
       "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
       "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (2220 bytes uncompressed)"
-    ]
+    ],
+    "transfer_ledger": {
+      "entries": []
+    }
   },
   "source_fidelity": {
+    "decode_digest": "03b969beb0ff9ccfa815e83a68ea8cc5be3d5bd65d35966344cc5cf8b40fb72b",
+    "file_digests": {},
+    "unrepresented": [],
     "annotations": {
       "provenance": {
         "f3d:brep:entity#1": {
@@ -696,13 +795,13 @@
       },
       "exactness": {
         "f3d:brep:entity#26": {
-          "scope": "fields",
+          "kind": "fields",
           "fields": {
             "geometry.direction": "derived"
           }
         },
         "f3d:brep:entity#6": {
-          "scope": "fields",
+          "kind": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
@@ -715,9 +814,10 @@
         "stream": "f3d",
         "offset": 0,
         "bytes": {
-          "retention": "inline",
+          "kind": "inline",
           "data": "UEsDBAoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAATWFuaWZlc3QuZGF0BwAAADMtMi0wLTANAAAARnVzaW9uRG9jVHlwZQQAAAAuAGYAMwBkAA8AAABGAHUAcwBpAG8AbgAgAEQAbwBjAHUAbQBlAG4AdAARAAAAQQAgAEYAdQBzAGkAbwBuACAARABvAGMAdQBtAGUAbgB0ACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADIA0gQAABQAAAAkAAAAQABAKgcAAAALAAAAQXBwbGljYXRpb24BAAAAAwAAAENBTQQAAAAIAAAAUGFyYU1lc2gIAAAACQAAAFNpbUNvbW1vbjV1AAAPAAAAU2ltRkVBQ1NPYmplY3RzAgAAABAAAABTaW1GbHVpZER5bmFtaWNzAgAAABcAAABTaW1TdHJ1Y3R1cmFsQXR0cmlidXRlcxInAAAAAAAAACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMwABAAAADwAAAEYAdQBzAGkAbwBuAEEAcwBzAGUAdABOAGEAbQBlAAAAAAABCQAAAE4AQQBfAEUAWABQAE8AUgBUAFBLAwQKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdA8AAABGAHUAcwBpAG8AbgBBAHMAcwBlAHQATgBhAG0AZQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADMAJAAAADAAMAAwADAAMAAwADAAMAAtADAAMAAwADAALQA0ADAAMAAwAC0AOAAwADAAMAAtADAAMAAwADAAMAAwADAAMAAwADAAMAA0AA8AAABGdXNpb25Bc3NldFR5cGUUAAAABAAAAAsAAABBcHBsaWNhdGlvbosAAAAIAAAAUGFyYU1lc2gNAAAABgAAAFNlcnZlciQAAAAIAAAAVm9sRmllbGQEAAAAEgAAAE5ldXRyb24zREFzc2V0VHlwZQAAAAAAAQAAABIAAABwaHlzaWNhbENoYW5nZUd1aWQkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADUAAAAAAAcAAAADAAAAAAAAABcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZRcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZQEAAAAUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUCAAAAGAAAAEZ1c2lvbkJyb3dzZXJTZWdtZW50VHlwZRgAAABGdXNpb25Ccm93c2VyU2VnbWVudFR5cGVQSwMECgAAAAAAAAAhABj9HP6sCAAArAgAADIAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQm9keTEuc21iaEFTTSBCaW5hcnlGaWxlODxaAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAMAAAAAAAAABxBBdXRvZGVzayBOZXV0cm9uBxVBU00gMjMxLjYuMy42NTUzNSBPU1gHGFR1ZSBNYXIgMzEgMTY6MTY6MTkgMjAyNgYAAAAAAABOQAaN7bWg98awPga7vdfZ33zbPQ0JYXNtaGVhZGVyBw0yMzEuNi4zLjY1NTM1EQ0EYm9keQz//////////wQqAAAAAAAAAAz//////////wwCAAAAAAAAAAwTAAAAAAAAAAz//////////xENBnJlZ2lvbgz//////////wT//////////wz//////////wz//////////wwDAAAAAAAAAAwBAAAAAAAAABENBXNoZWxsDP//////////BP//////////DP//////////DP//////////DP//////////DAQAAAAAAAAADBMAAAAAAAAADAIAAAAAAAAAEQ0EZmFjZQz//////////wT//////////wz//////////wz//////////wwFAAAAAAAAAAwDAAAAAAAAAAz//////////wwGAAAAAAAAAAsLEQ0EbG9vcAz//////////wT//////////wz//////////wz//////////wwHAAAAAAAAAAwEAAAAAAAAABEOBXBsYW5lDQdzdXJmYWNlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8UAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAACxENBmNvZWRnZQz//////////wT//////////wz//////////wwIAAAAAAAAAAwJAAAAAAAAAAz//////////wwKAAAAAAAAAAsMBQAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MCQAAAAAAAAAMBwAAAAAAAAAM//////////8MCwAAAAAAAAALDAUAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DAcAAAAAAAAADAgAAAAAAAAADP//////////DAwAAAAAAAAACwwFAAAAAAAAAAQAAAAAAAAAAAz//////////xENBGVkZ2UM//////////8E//////////8M//////////8MDQAAAAAAAAAGAAAAAAAAAAAMDgAAAAAAAAAGAAAAAAAA8D8M//////////8M//////////8LBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wwOAAAAAAAAAAYAAAAAAAAAAAwPAAAAAAAAAAYAAAAAAADwPwz//////////wz//////////wsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DA8AAAAAAAAABgAAAAAAAAAADA0AAAAAAAAABgAAAAAAAPA/DP//////////DP//////////CwcHdW5rbm93bhENBnZlcnRleAz//////////wT//////////wz//////////wwKAAAAAAAAAAQAAAAAAAAAAAwQAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwKAAAAAAAAAAQBAAAAAAAAAAwRAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwMAAAAAAAAAAQAAAAAAAAAAAwSAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABENBHdpcmUM//////////8E//////////8M//////////8M//////////8MFAAAAAAAAAAMAwAAAAAAAAAM//////////8LEQ0GY29lZGdlDP//////////BP//////////DP//////////DBQAAAAAAAAADBQAAAAAAAAADP//////////DBUAAAAAAAAACwwTAAAAAAAAAAQAAAAAAAAAAAz//////////xENBGVkZ2UM//////////8E//////////8M//////////8MFgAAAAAAAAAGAAAAAAAAAAAMFwAAAAAAAAAGAAAAAAAAAEAMFAAAAAAAAAAMGgAAAAAAAAALBwd1bmtub3duEQ0GdmVydGV4DP//////////BP//////////DP//////////DBUAAAAAAAAABAAAAAAAAAAADBgAAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DBUAAAAAAAAABAEAAAAAAAAADBkAAAAAAAAAEQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/EQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAAAEAAAAAAAAAAAAAAAAAAAPA/EQ4Ic3RyYWlnaHQNBWN1cnZlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAARDQtkZWx0YV9zdGF0ZVBLAQIKAwoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAAAAAAAAAAAACkgQAAAABNYW5pZmVzdC5kYXRQSwECCgMKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAAAAAAAAAAAApIFlAgAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vTWFuaWZlc3QuZGF0UEsBAgoDCgAAAAAAAAAhABj9HP6sCAAArAgAADIAAAAAAAAAAAAAAKSB9AQAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0JyZXBzLkJsb2JQYXJ0cy9Cb2R5MS5zbWJoUEsFBgAAAAADAAMA7AAAAPANAAAAAA=="
-        }
+        },
+        "untyped": []
       }
     }
   }

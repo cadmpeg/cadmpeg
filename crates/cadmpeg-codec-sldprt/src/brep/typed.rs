@@ -1298,13 +1298,13 @@ mod tests {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        assert_eq!(decoded.ir().model.faces.len(), 1);
-        assert_eq!(decoded.ir().model.loops.len(), 1);
-        assert_eq!(decoded.ir().model.coedges.len(), 3);
-        let curve = &decoded.ir().model.curves[0].id;
+        assert_eq!(decoded.ir().geometry.faces.len(), 1);
+        assert_eq!(decoded.ir().geometry.loops.len(), 1);
+        assert_eq!(decoded.ir().geometry.coedges.len(), 3);
+        let curve = &decoded.ir().geometry.curves[0].id;
         assert!(decoded
             .ir()
-            .model
+            .geometry
             .edges
             .iter()
             .any(|edge| edge.curve() == Some(curve)));

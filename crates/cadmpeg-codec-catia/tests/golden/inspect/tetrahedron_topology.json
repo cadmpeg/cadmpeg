@@ -8,11 +8,11 @@
         "extent_count": "1",
         "extent_words": "0x00000000"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "MainDataStream",
       "role": "stream",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 356
       }
     },
@@ -23,25 +23,29 @@
         "extent_count": "1",
         "extent_words": "0x00000000"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "SurfacicReps",
       "role": "stream",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 260
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {},
         "dialect": "catia:standard-nested"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "outer V5_CFV2 container: directory offset 879 + length 0 = 879 (file size 879); variant: standard nested V5_CFV2 (complete FBB edge/vertex walk): geometry decode supported",
     "nested V5_CFV2 at file offset 16 with a CATIA_V5 CB0001 directory of 2 stream(s)",

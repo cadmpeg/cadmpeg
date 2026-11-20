@@ -15,7 +15,7 @@ use cadmpeg_asm::history::{
 };
 use cadmpeg_core::decode::{work_units, DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::{CadIr, Model};
+use cadmpeg_ir::document::{CadIr, Topology};
 use cadmpeg_ir::features::{Feature, FeatureId};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -267,7 +267,7 @@ pub(crate) fn build(
                 .find(|(_, candidate)| Some(*candidate) == key)
                 .map(|(body, _)| body.as_str());
             let result = match body {
-                Some(body) => extract(ctx, &scratch.model, body),
+                Some(body) => extract(ctx, &scratch.geometry, body),
                 None => Ok(Extract::Absent),
             };
             match result {
@@ -423,13 +423,13 @@ impl Record<'_> {
 /// no record of the model.
 fn reach<'a>(
     ctx: &DecodeContext<'_>,
-    model: &'a Model,
+    geometry: &'a Topology,
     body: &str,
 ) -> Result<(HashSet<&'a str>, usize), CodecError> {
     let mut table = HashMap::<&str, Record<'_>>::new();
     macro_rules! index {
         ($arena:ident, $variant:ident) => {
-            for record in &model.$arena {
+            for record in &geometry.$arena {
                 table.insert(record.identity(), Record::$variant(record));
             }
         };
@@ -442,10 +442,10 @@ fn reach<'a>(
     index!(coedges, Coedge);
     index!(edges, Edge);
     index!(vertices, Vertex);
-    for record in &model.surfaces {
+    for record in &geometry.surfaces {
         table.insert(record.identity(), Record::Surface);
     }
-    for record in &model.curves {
+    for record in &geometry.curves {
         table.insert(record.identity(), Record::Curve);
     }
     index!(pcurves, Pcurve);
@@ -453,10 +453,34 @@ fn reach<'a>(
     let Some((&start, _)) = table.get_key_value(body) else {
         return Ok((HashSet::new(), 0));
     };
+    let mut children = HashMap::<&str, Vec<&str>>::new();
+    for region in &geometry.regions {
+        children
+            .entry(region.body.as_str())
+            .or_default()
+            .push(region.id.as_str());
+    }
+    for shell in &geometry.shells {
+        children
+            .entry(shell.region.as_str())
+            .or_default()
+            .push(shell.id.as_str());
+    }
+    for face in &geometry.faces {
+        children
+            .entry(face.shell.as_str())
+            .or_default()
+            .push(face.id.as_str());
+    }
     let mut seen = HashSet::from([start]);
     let mut queue = VecDeque::from([start]);
     let mut missing = 0;
     while let Some(id) = queue.pop_front() {
+        for &child in children.get(id).into_iter().flatten() {
+            if seen.insert(child) {
+                queue.push_back(child);
+            }
+        }
         let Some(record) = table.get(id).copied() else {
             continue;
         };
@@ -548,11 +572,11 @@ fn solve(topology: &mut BodyTopology) -> bool {
 
 /// Whether a record of the nest refers to an identity outside the nest.
 fn escapes(ctx: &DecodeContext<'_>, topology: &BodyTopology) -> Result<bool, CodecError> {
-    let model = topology.to_model();
+    let geometry = topology.to_topology();
     let mut inside = HashSet::<&str>::new();
     macro_rules! collect {
         ($($arena:ident),*) => {$(
-            for record in &model.$arena {
+            for record in &geometry.$arena {
                 inside.insert(record.identity());
             }
         )*};
@@ -564,7 +588,7 @@ fn escapes(ctx: &DecodeContext<'_>, topology: &BodyTopology) -> Result<bool, Cod
     let mut escaped = false;
     macro_rules! visit {
         ($($arena:ident),*) => {$(
-            for record in &model.$arena {
+            for record in &geometry.$arena {
                 record.visit_references(ctx, &mut |target| {
                     escaped |= !inside.contains(target);
                     Ok(())
@@ -580,9 +604,13 @@ fn escapes(ctx: &DecodeContext<'_>, topology: &BodyTopology) -> Result<bool, Cod
 }
 
 /// Copy the records of one body of a decoded state into a nest.
-fn extract(ctx: &DecodeContext<'_>, model: &Model, body: &str) -> Result<Extract, CodecError> {
-    let (reached, missing) = reach(ctx, model, body)?;
-    let Some(root) = model
+fn extract(
+    ctx: &DecodeContext<'_>,
+    geometry: &Topology,
+    body: &str,
+) -> Result<Extract, CodecError> {
+    let (reached, missing) = reach(ctx, geometry, body)?;
+    let Some(root) = geometry
         .bodies
         .iter()
         .find(|candidate| candidate.id.as_str() == body)
@@ -590,17 +618,17 @@ fn extract(ctx: &DecodeContext<'_>, model: &Model, body: &str) -> Result<Extract
         return Ok(Extract::Absent);
     };
     let mut topology = BodyTopology::new(root.clone());
-    topology.regions = retain(&model.regions, &reached);
-    topology.shells = retain(&model.shells, &reached);
-    topology.faces = retain(&model.faces, &reached);
-    topology.loops = retain(&model.loops, &reached);
-    topology.coedges = retain(&model.coedges, &reached);
-    topology.edges = retain(&model.edges, &reached);
-    topology.vertices = retain(&model.vertices, &reached);
-    topology.surfaces = retain(&model.surfaces, &reached);
-    topology.curves = retain(&model.curves, &reached);
-    topology.pcurves = retain(&model.pcurves, &reached);
-    topology.points = retain(&model.points, &reached);
+    topology.regions = retain(&geometry.regions, &reached);
+    topology.shells = retain(&geometry.shells, &reached);
+    topology.faces = retain(&geometry.faces, &reached);
+    topology.loops = retain(&geometry.loops, &reached);
+    topology.coedges = retain(&geometry.coedges, &reached);
+    topology.edges = retain(&geometry.edges, &reached);
+    topology.vertices = retain(&geometry.vertices, &reached);
+    topology.surfaces = retain(&geometry.surfaces, &reached);
+    topology.curves = retain(&geometry.curves, &reached);
+    topology.pcurves = retain(&geometry.pcurves, &reached);
+    topology.points = retain(&geometry.points, &reached);
     if !solve(&mut topology) {
         return Ok(Extract::Absent);
     }

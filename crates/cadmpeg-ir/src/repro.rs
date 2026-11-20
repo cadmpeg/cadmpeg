@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Closed CADIR fragments and stable finding signatures.
 
+use crate::hash::finite_json::{
+    admission::CanonicalAdmission, write_serde_json, CanonicalJsonError,
+};
 use crate::{report::check::Finding, CadIr};
 use cadmpeg_core::CodecError;
 #[cfg(feature = "schema")]
@@ -81,6 +84,7 @@ pub struct BundleMetadata {
     /// Stripped root identities.
     pub roots: Vec<String>,
     /// Opaque application data.
+    #[serde(deserialize_with = "cadmpeg_core::distinct_keys::json_object")]
     pub context: Map<String, Value>,
     /// Consent-screen inventory.
     pub manifest: Vec<ManifestEntry>,
@@ -131,18 +135,20 @@ impl<'de> Deserialize<'de> for Bundle {
 /// A row address within a document projection.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Row {
-    /// Model or native arena JSON pointer.
+    /// Neutral or native arena JSON pointer.
     pub arena: String,
     /// Position within the array.
     pub index: usize,
 }
 
-/// Index every model and native arena row.
+/// Index every neutral and native arena row.
 pub fn rows(value: &Value) -> Vec<Row> {
     let mut rows = Vec::new();
-    if let Some(model) = value["model"].as_object() {
-        for (name, arena) in model {
-            add_rows(&mut rows, &format!("/model/{name}"), arena);
+    for home in crate::document::ArenaHome::ALL {
+        if let Some(arenas) = value[home.as_str()].as_object() {
+            for (name, arena) in arenas {
+                add_rows(&mut rows, &format!("/{home}/{name}"), arena);
+            }
         }
     }
     if let Some(native) = value["native"].as_object() {
@@ -221,11 +227,11 @@ pub fn retain(value: &mut Value, rows: &[Row], keep: &BTreeSet<usize>) {
 
 /// Measure a bounded serialized document before validation.
 pub fn projection_size(document: &Document, options: &CutOptions) -> Result<usize, CodecError> {
-    Ok(project(document, options)?.bytes.len())
+    Ok(project(document, options)?.len())
 }
 
-fn project(document: &Document, options: &CutOptions) -> Result<LimitedProjection, CodecError> {
-    let mut count = document.model.entity_count();
+fn project(document: &Document, options: &CutOptions) -> Result<Vec<u8>, CodecError> {
+    let mut count = document.entity_count();
     for namespace in document.native.0.values() {
         for arena in namespace.arenas().values() {
             count = count
@@ -238,12 +244,28 @@ fn project(document: &Document, options: &CutOptions) -> Result<LimitedProjectio
             "fragment row limit exceeded".into(),
         ));
     }
-    let mut projection = LimitedProjection {
+    compact_json(document, options.max_serialized_bytes)
+}
+
+/// The bytes `serde_json::to_writer` writes for `value`, refused past `limit`.
+fn compact_json<T: Serialize + ?Sized>(value: &T, limit: usize) -> Result<Vec<u8>, CodecError> {
+    let mut projection = CompactProjection {
         bytes: Vec::new(),
-        limit: options.max_serialized_bytes,
+        limit,
+        in_string: false,
+        escaped: false,
     };
-    serde_json::to_writer(&mut projection, document).map_err(CodecError::malformed)?;
-    Ok(projection)
+    write_serde_json(
+        CanonicalAdmission::unlimited(),
+        None,
+        &mut projection,
+        value,
+    )
+    .map_err(|error| match error {
+        CanonicalJsonError::Serialize(error) => CodecError::malformed(error),
+        error => CodecError::malformed(error),
+    })?;
+    Ok(projection.bytes)
 }
 
 /// Build the reference closure and required topology context of a finding.
@@ -279,8 +301,7 @@ pub fn cut_with_native(
     native_text_replacements: &BTreeMap<String, String>,
 ) -> Result<Bundle, CodecError> {
     let projection = project(document, options)?;
-    let mut value: Value =
-        serde_json::from_slice(&projection.bytes).map_err(CodecError::malformed)?;
+    let mut value: Value = serde_json::from_slice(&projection).map_err(CodecError::malformed)?;
     let roots: Vec<String> = finding
         .entity
         .iter()
@@ -314,7 +335,8 @@ pub fn cut_with_native(
             .as_ref()
             .map(crate::document::SourceMeta::format),
     )?;
-    let mut document: Document = serde_json::from_value(value).map_err(CodecError::malformed)?;
+    let mut document: Document =
+        serde_json::from_str(&value.to_string()).map_err(CodecError::malformed)?;
     if finding.check != crate::report::check::Check::ArenaOrder {
         document.finalize();
     }
@@ -361,7 +383,8 @@ impl Bundle {
 
     /// Recalculate the inventory after row removal.
     pub fn refresh_manifest(&mut self) -> Result<(), CodecError> {
-        let value = serde_json::to_value(&self.document).map_err(CodecError::malformed)?;
+        let value = crate::hash::finite_json::to_json_value(&self.document)
+            .map_err(CodecError::malformed)?;
         let arenas: BTreeSet<String> = rows(&value).into_iter().map(|row| row.arena).collect();
         self.manifest = arenas
             .into_iter()
@@ -384,21 +407,35 @@ impl Bundle {
 #[cfg(test)]
 mod tests;
 
-struct LimitedProjection {
+/// Compact JSON kept from the pretty JSON text written into it: the bytes
+/// outside string literals, less spaces and line feeds.
+struct CompactProjection {
     bytes: Vec<u8>,
     limit: usize,
+    in_string: bool,
+    escaped: bool,
 }
-impl std::io::Write for LimitedProjection {
+impl std::io::Write for CompactProjection {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        let total = self
-            .bytes
-            .len()
-            .checked_add(bytes.len())
-            .ok_or_else(|| std::io::Error::other("fragment byte count overflow"))?;
-        if total > self.limit {
-            return Err(std::io::Error::other("fragment byte limit exceeded"));
+        for &byte in bytes {
+            if self.in_string {
+                if self.escaped {
+                    self.escaped = false;
+                } else if byte == b'\\' {
+                    self.escaped = true;
+                } else if byte == b'"' {
+                    self.in_string = false;
+                }
+            } else if byte == b' ' || byte == b'\n' {
+                continue;
+            } else if byte == b'"' {
+                self.in_string = true;
+            }
+            if self.bytes.len() == self.limit {
+                return Err(std::io::Error::other("fragment byte limit exceeded"));
+            }
+            self.bytes.push(byte);
         }
-        self.bytes.extend_from_slice(bytes);
         Ok(bytes.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {

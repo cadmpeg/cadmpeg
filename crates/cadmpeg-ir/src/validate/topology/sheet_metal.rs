@@ -117,15 +117,20 @@ mod tests {
         let ir = crate::examples::unit_cube().expect("cube");
         let ids = ModelIndex::build(&ir);
         let owner = FeatureId::mint("test:model:feature#plate").expect("identity");
-        let profile =
-            PlanarProfileRef::Faces(ir.model.faces.iter().map(|face| face.id.clone()).collect());
+        let profile = PlanarProfileRef::Faces(
+            ir.geometry
+                .faces
+                .iter()
+                .map(|face| face.id.clone())
+                .collect(),
+        );
         let mut findings = Vec::new();
         check_profile(&owner, &profile, &ids, &mut findings);
         assert!(findings
             .iter()
             .any(|finding| finding.message == "attached plate profile is not planar"));
         findings.clear();
-        let profile = PlanarProfileRef::Faces(vec![ir.model.faces[0].id.clone()]);
+        let profile = PlanarProfileRef::Faces(vec![ir.geometry.faces[0].id.clone()]);
         check_profile(&owner, &profile, &ids, &mut findings);
         assert!(findings.is_empty());
     }
@@ -184,7 +189,7 @@ mod tests {
                 plate_id.clone(),
                 0,
                 FeatureOperation::SheetMetalAttachedPlate {
-                    profile: PlanarProfileRef::Faces(vec![ir.model.faces[0].id.clone()]),
+                    profile: PlanarProfileRef::Faces(vec![ir.geometry.faces[0].id.clone()]),
                     thickness: PositiveLength::new(1.0).expect("thickness"),
                     side: SheetMetalThicknessSide::Forward,
                     attachment: selection.clone(),

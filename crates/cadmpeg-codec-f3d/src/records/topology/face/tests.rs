@@ -209,6 +209,28 @@ fn face_operand_borrowed_wire_matches_owned_wire_bytes() {
 }
 
 #[test]
+fn registered_recipe_frame_borrowed_and_owned_wire_match() {
+    let mut wire = serde_json::to_value(face_operand_for_borrowed(false)).unwrap();
+    wire["next_record_index"] = 5.into();
+    wire["registered_recipe_frame"] = serde_json::json!({
+        "record_index": 5,
+        "primary_offset": 30,
+        "secondary_offset": 200,
+        "end_offset": 211,
+        "next_primary_index": 6
+    });
+    let operand: super::DesignFaceOperand = serde_json::from_value(wire).unwrap();
+    let owned = super::DesignFaceOperandWire::from(operand.clone());
+    assert_eq!(
+        serde_json::to_vec(&operand).unwrap(),
+        serde_json::to_vec(&owned).unwrap()
+    );
+    let mut null = serde_json::to_value(&operand).unwrap();
+    null["registered_recipe_frame"] = serde_json::Value::Null;
+    assert!(serde_json::from_value::<super::DesignFaceOperand>(null).is_err());
+}
+
+#[test]
 fn face_operand_native_retained_limit_refuses_before_clone() {
     let operand = face_operand_for_borrowed(true);
     crate::test_support::native_test::assert_borrowed_native_retained_limit(

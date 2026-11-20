@@ -58,14 +58,85 @@ pub(crate) struct Graph {
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
+/// The properties one unreadable archive entry removes from the graph.
+#[derive(Debug, Default)]
+pub(crate) struct UnreadableDrops {
+    /// Ids of the dropped properties.
+    pub(crate) records: Vec<String>,
+}
+
+/// The side files a Geometry property needs to hold its value: the entry
+/// of an exact shape's direct `Part` carrier, or of a mesh or point-cloud
+/// value root. A geometry list stores its value inline.
+fn payload_side_files(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    property: &PropertyRecord,
+) -> Result<Vec<String>, CodecError> {
+    if property.family != PropertyFamily::Geometry
+        || !matches!(property.body, crate::native::PropertyBody::Persisted { .. })
+    {
+        return Ok(Vec::new());
+    }
+    if property.type_name == "Part::PropertyPartShape" {
+        return Ok(crate::brep::direct_shape_entry(ctx, property)?
+            .into_iter()
+            .collect());
+    }
+    Ok(crate::application_geometry::payload_entry(ctx, property)?
+        .into_iter()
+        .collect())
+}
+
+/// Drops every Geometry property whose payload is in an unreadable archive
+/// entry. The owning object keeps every other property it read.
+pub(crate) fn drop_unreadable(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    graph: &mut Graph,
+    unreadable: &std::collections::BTreeSet<String>,
+) -> Result<std::collections::BTreeMap<String, UnreadableDrops>, CodecError> {
+    let mut drops = std::collections::BTreeMap::<String, UnreadableDrops>::new();
+    if unreadable.is_empty() {
+        return Ok(drops);
+    }
+    let mut dropped = HashSet::new();
+    for property in &graph.properties {
+        for entry in payload_side_files(ctx, property)?
+            .into_iter()
+            .filter(|name| unreadable.contains(name))
+        {
+            drops
+                .entry(entry)
+                .or_default()
+                .records
+                .push(property.id.clone());
+            dropped.insert(property.id.clone());
+        }
+    }
+    graph
+        .properties
+        .retain(|property| !dropped.contains(&property.id));
+    for entry in drops.values_mut() {
+        entry.records.sort_unstable();
+        entry.records.dedup();
+    }
+    Ok(drops)
+}
+
 /// Required property payload references must resolve. Missing naming sidecars
 /// stay in exact value XML, but cannot enter the admitted reference graph.
 pub(crate) fn resolve_side_entries(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     properties: &mut [PropertyRecord],
     entries: &std::collections::BTreeMap<String, cadmpeg_core::decode::View<'_>>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     for property in properties {
+        if let crate::native::PropertyBody::Persisted { side_entries, .. } = &property.body {
+            if side_entries.iter().all(|name| entries.contains_key(name)) {
+                continue;
+            }
+        }
+        let required_files = payload_side_files(ctx, property)?;
         let crate::native::PropertyBody::Persisted {
             values,
             side_entries,
@@ -74,11 +145,7 @@ pub(crate) fn resolve_side_entries(
         else {
             continue;
         };
-        if side_entries.iter().all(|name| entries.contains_key(name)) {
-            continue;
-        }
         let mut naming_files = HashSet::new();
-        let mut required_files = HashSet::new();
         for value in values {
             for (key, name) in &value.attributes {
                 if !matches!(key.as_str(), "file" | "File") || name.is_empty() {
@@ -89,8 +156,6 @@ pub(crate) fn resolve_side_entries(
                     "StringHasher" | "StringHasher2" | "ElementMap" | "ElementMap2"
                 ) {
                     naming_files.insert(name.as_str());
-                } else if property.family == PropertyFamily::Geometry {
-                    required_files.insert(name.as_str());
                 }
             }
         }
@@ -98,7 +163,7 @@ pub(crate) fn resolve_side_entries(
             .iter()
             .filter(|name| !entries.contains_key(*name))
         {
-            if required_files.contains(name.as_str()) {
+            if required_files.contains(name) {
                 return Err(CodecError::malformed(format_args!(
                     "property {} references missing side entry {name}",
                     property.id

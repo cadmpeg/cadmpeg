@@ -338,6 +338,7 @@ fn asm_inline_pcurve_metadata_lives_under_its_own_nested_key() {
             )
             .unwrap(),
         },
+        native_ref: None,
     };
     let value = serde_json::to_value(&pcurve).unwrap();
     assert_eq!(
@@ -350,8 +351,7 @@ fn asm_inline_pcurve_metadata_lives_under_its_own_nested_key() {
                 "direction": {"u": 3.0, "v": 4.0}
             },
             "metadata": {
-                "source": "asm_inline",
-                "form": {
+                "kind": "asm_inline", "form": {
                     "wrapper_reversed": false,
                     "native_tail_flags": [true, false, true, false],
                     "uv_offset": [-1.0, 2.0],
@@ -414,9 +414,10 @@ fn line_pcurve_direction_uses_the_shared_nonzero_vector_contract() {
 /// carriers over the same route a checked-in document takes.
 fn document_with_pcurve(geometry: &serde_json::Value) -> serde_json::Value {
     let mut document = serde_json::to_value(unit_cube().expect("valid unit cube fixture")).unwrap();
-    document["model"]["pcurves"] = serde_json::json!([{
+    document["geometry"]["pcurves"] = serde_json::json!([{
         "id": "synthetic:cube:pcurve#0",
         "geometry": geometry.clone(),
+        "metadata": serde_json::to_value(super::PcurveMetadata::default()).unwrap(),
     }]);
     document
 }

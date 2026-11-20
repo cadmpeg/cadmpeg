@@ -648,11 +648,18 @@ fn native_namespace_types_and_validates_range_intervals_independently_of_constra
             )),
             &DecodeOptions::default(),
         )
-        .expect("decode unset range interval");
+        .expect("decode zero-literal range interval");
     assert_eq!(
         wire::coverage_count(
             unset.report(),
             crate::coverage::DECODED_RANGE_INTERVAL_UNSET_SLOT_COUNT.as_str()
+        ),
+        0
+    );
+    assert_eq!(
+        wire::coverage_count(
+            unset.report(),
+            crate::coverage::DECODED_RANGE_INTERVAL_FINITE_SLOT_COUNT.as_str()
         ),
         2
     );
@@ -863,14 +870,14 @@ fn constraint_range_requires_an_exact_role_and_framing_pair() {
             decoded.report(),
             crate::coverage::DECODED_EVALUATED_CONSTRAINT_RANGE_COUNT.as_str()
         ),
-        0
+        1
     );
     assert_eq!(
         wire::coverage_count(
             decoded.report(),
             crate::coverage::DECODED_UNSET_CONSTRAINT_RANGE_COUNT.as_str()
         ),
-        1
+        0
     );
 
     for (range, constraint, code) in [
@@ -927,4 +934,34 @@ fn constraint_ranges_decode_and_range_intervals_rederive_identically() {
     })
     .expect("derive the range interval");
     assert_eq!(service, range_entity.range_interval);
+}
+
+#[test]
+fn range_nominals_read_the_e7_and_e8_literals_that_constraint_ranges_read() {
+    let mut encoded_range = vec![0x87, 0xe8, 0xe0, 0x07, 0x37, 0x83, 0x81, 0xe6];
+    encoded_range.extend_from_slice(&(-0.2032_f64).to_bits().to_le_bytes());
+    encoded_range.push(0xe6);
+    encoded_range.extend_from_slice(&0.2032_f64.to_bits().to_le_bytes());
+    encoded_range.extend_from_slice(&[0xfe, 0xfe]);
+    for (opcode, value) in [(0xe7, 1.0_f64), (0xe8, 0.0)] {
+        let file = standard_catpart_with_range_interval(
+            &encoded_range,
+            &[0x84, 0x96, 0x82, 0xdc, opcode, 0x81, 0xdb],
+        );
+        let native = crate::native::CatiaNative::decode(&file);
+        let nominal = native.entity_records[0]
+            .range_interval
+            .as_ref()
+            .and_then(|range| range.nominal.as_ref())
+            .expect("literal Range nominal");
+        assert_eq!(nominal.bits, value.to_bits());
+
+        let decoded = CatiaCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .expect("decode literal Range nominal");
+        assert!(decoded.report().losses.iter().any(|loss| {
+            loss.code == crate::loss::CatiaLossCode::HistoryParameterLiteralAssumed.kind()
+                && loss.message.contains("1 Range nominal(s)")
+        }));
+    }
 }

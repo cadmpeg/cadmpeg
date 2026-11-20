@@ -1,7 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::collections::HashMap;
 
-use super::{decode_stream, FREEDOM_ENTRY_PREFIX, ZERO_LANE_FREEDOM_ENTRY_PREFIX};
+use super::{
+    AsBuiltJoints, FREEDOM_ENTRY_PREFIX, JOINT_TYPE_GUID, MOTION_TYPE_GUID, OCCURRENCE_TYPE_GUID,
+    ZERO_LANE_FREEDOM_ENTRY_PREFIX,
+};
+
+fn decode_stream(
+    bytes: &[u8],
+    stream: &str,
+    scopes: &HashMap<u32, bool>,
+) -> Vec<super::DesignJointMotion> {
+    super::decode_stream(bytes, stream, scopes, &AsBuiltJoints::default())
+}
 
 fn header(out: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
     out.extend_from_slice(&3u32.to_le_bytes());
@@ -74,6 +85,53 @@ fn codes(bytes: &[u8], scopes: &HashMap<u32, bool>) -> Vec<(u32, u32, Vec<u32>)>
             )
         })
         .collect()
+}
+
+#[test]
+fn as_built_motion_binds_the_registered_joint_after_occurrence_parents() {
+    let mut bytes = Vec::new();
+    joint(&mut bytes, 10, Some((2.0, -1.0)));
+    scope(&mut bytes, 11, 10);
+    header(&mut bytes, *b"271", 12);
+    header(&mut bytes, *b"271", 13);
+    header(&mut bytes, *b"368", 20);
+    bytes.extend_from_slice(&[0; 9]);
+    bytes.extend_from_slice(&3_u32.to_le_bytes());
+    for (parent, role) in [(12, 4_u32), (13, 5), (10, 0)] {
+        reference(&mut bytes, parent);
+        bytes.extend_from_slice(&role.to_le_bytes());
+    }
+    freedom(&mut bytes, 8);
+    let mut as_built = AsBuiltJoints {
+        types: HashMap::from([
+            (10, (JOINT_TYPE_GUID, 5)),
+            (12, (OCCURRENCE_TYPE_GUID, 2)),
+            (13, (OCCURRENCE_TYPE_GUID, 2)),
+            (20, (MOTION_TYPE_GUID, 3)),
+        ]),
+        joints: [10].into(),
+    };
+    let scopes = HashMap::from([(11, true)]);
+    let read = |as_built: &AsBuiltJoints<'_>| {
+        super::decode_stream(&bytes, "Design/BulkStream.dat", &scopes, as_built)
+    };
+    let [motion]: [_; 1] = read(&as_built).try_into().unwrap();
+    assert_eq!(motion.joint_record_index, 10);
+    assert_eq!(motion.freedoms[0].value, 8);
+    let limits = motion.limits.expect("limits from the registered joint");
+    assert!((limits.minimum + 1.0).abs() < f64::EPSILON);
+    assert!((limits.maximum - 2.0).abs() < f64::EPSILON);
+
+    as_built.types.insert(20, (MOTION_TYPE_GUID, 2));
+    assert!(read(&as_built).is_empty());
+
+    as_built.types.insert(10, (JOINT_TYPE_GUID, 4));
+    let [motion]: [_; 1] = read(&as_built).try_into().unwrap();
+    assert_eq!(motion.joint_record_index, 10);
+    assert_eq!(motion.freedoms[0].value, 8);
+
+    as_built.types.insert(13, (JOINT_TYPE_GUID, 5));
+    assert!(read(&as_built).is_empty());
 }
 
 /// A revolute joint and a rigid joint of the current generation: the motion
@@ -347,7 +405,7 @@ fn malformed_rest_lanes_keep_limits() {
             );
             assert_eq!(projection.joints.len(), 1);
             let joint = serde_json::to_value(&projection.joints[0]).unwrap();
-            let limits = &joint["operands"]["kind"][limits_key];
+            let limits = &joint["operands"]["value"]["kind"][limits_key];
             assert_eq!(limits["minimum"], -1.5 * scale);
             assert_eq!(limits["maximum"], 1.5 * scale);
             assert_eq!(

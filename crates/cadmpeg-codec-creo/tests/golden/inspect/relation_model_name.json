@@ -5,28 +5,31 @@
       "attributes": {
         "offset": "99"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "DEPDB_DATA",
       "role": "metadata",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 89
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "version_line": "#UGC:2 P c"
         },
         "dialect": "creo:depdb"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "PSB container: #UGC:2 P c",
     "layout: DEPDB; 1 section(s) enumerated",

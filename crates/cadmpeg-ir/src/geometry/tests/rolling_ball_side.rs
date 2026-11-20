@@ -28,7 +28,7 @@ fn rolling_ball_side_keeps_flat_support_and_extension_fields() {
         "curve": "test:model:curve#side",
         "parameter_range": [null, 6.0]
     });
-    wire["extension"] = json!({"value": 7, "pcurve": null});
+    wire["extension"] = json!({"value": 7});
     let side: RollingBallSide = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(
         side.surface.as_ref().unwrap().parameter_ranges,

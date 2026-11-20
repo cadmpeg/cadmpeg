@@ -23,7 +23,7 @@ fn malformed_gui_metadata_keeps_geometry_and_valid_native_state() {
             .decode(&mut Cursor::new(&source), &DecodeOptions::default())
             .unwrap();
         // Presentation is owned by GUI metadata; geometric entities are independent.
-        assert_eq!(recovered.ir().model.faces, expected.ir().model.faces);
+        assert_eq!(recovered.ir().geometry.faces, expected.ir().geometry.faces);
         let without_style = |bodies: &[cadmpeg_ir::topology::Body]| {
             let mut bodies = bodies.to_vec();
             for body in &mut bodies {
@@ -33,10 +33,13 @@ fn malformed_gui_metadata_keeps_geometry_and_valid_native_state() {
             bodies
         };
         assert_eq!(
-            without_style(&recovered.ir().model.bodies),
-            without_style(&expected.ir().model.bodies)
+            without_style(&recovered.ir().geometry.bodies),
+            without_style(&expected.ir().geometry.bodies)
         );
-        assert_eq!(recovered.ir().model.surfaces, expected.ir().model.surfaces);
+        assert_eq!(
+            recovered.ir().geometry.surfaces,
+            expected.ir().geometry.surfaces
+        );
         assert_valid_document(recovered.ir());
         assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
         let documents = recovered

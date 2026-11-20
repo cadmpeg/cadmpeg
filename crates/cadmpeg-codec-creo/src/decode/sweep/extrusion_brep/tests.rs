@@ -134,9 +134,12 @@ fn admitted_extrusion_fixture() -> (crate::container::ContainerScan<'static>, Ca
             .expect("plane"),
         )),
         source_object: None,
+        native_ref: None,
     };
     let mut ir = CadIr::empty();
-    ir.model.surfaces.extend([plane(31, 0.0), plane(32, 2.0)]);
+    ir.geometry
+        .surfaces
+        .extend([plane(31, 0.0), plane(32, 2.0)]);
     let sketch_id = SketchId::mint("creo:model:sketch#7").expect("sketch identity");
     let mut uses = Vec::new();
     for (index, (start, end)) in [
@@ -230,7 +233,7 @@ fn closed_extrusion_reaches_brep_admission() {
     })
     .expect("admitted transfer");
     assert_eq!(count, 1);
-    assert_eq!(ir.model.bodies.len(), 1);
+    assert_eq!(ir.geometry.bodies.len(), 1);
     assert!(diagnostics.rejected_extrusion_bodies.is_empty());
 }
 
@@ -271,7 +274,7 @@ fn extrusion_cap_of_an_arc_stored_with_extra_turns_traces_one_sweep() {
     )
     .expect("admitted transfer");
     assert_eq!(count, 1);
-    assert_eq!(ir.model.bodies.len(), 1);
+    assert_eq!(ir.geometry.bodies.len(), 1);
     assert!(diagnostics.rejected_extrusion_bodies.is_empty());
     assert_eq!(ctx.resource_refusal(), None);
     assert!(ctx.finish_session().is_ok());

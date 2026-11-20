@@ -168,11 +168,11 @@ fn hole_and_circular_sweep_identities_preserve_service_geometry() {
     .expect("hole cylinders admitted");
     assert_eq!(hole_count, 2);
     assert_eq!(
-        hole_ir.model.surfaces[0].id.as_str(),
+        hole_ir.geometry.surfaces[0].id.as_str(),
         "creo:visibgeom:surface#13"
     );
     assert_eq!(
-        hole_ir.model.surfaces[0]
+        hole_ir.geometry.surfaces[0]
             .source_object
             .as_ref()
             .expect("source")
@@ -194,11 +194,11 @@ fn hole_and_circular_sweep_identities_preserve_service_geometry() {
     .expect("circular sweep cylinder admitted");
     assert_eq!(sweep_count, 1);
     assert_eq!(
-        sweep_ir.model.surfaces[0].id.as_str(),
+        sweep_ir.geometry.surfaces[0].id.as_str(),
         "creo:visibgeom:surface#51"
     );
     assert_eq!(
-        sweep_ir.model.surfaces[0]
+        sweep_ir.geometry.surfaces[0]
             .source_object
             .as_ref()
             .expect("source")
@@ -259,11 +259,11 @@ fn cross_section_plane_identities_preserve_service_geometry() {
         .expect("cross-section plane admitted");
         assert_eq!(count, 1);
         assert_eq!(
-            ir.model.surfaces[0].id.as_str(),
+            ir.geometry.surfaces[0].id.as_str(),
             "creo:cross_section_geometry:surface#7"
         );
         assert_eq!(
-            ir.model.surfaces[0]
+            ir.geometry.surfaces[0]
                 .source_object
                 .as_ref()
                 .expect("source object")
@@ -327,9 +327,12 @@ fn positional_cone_identity_preserves_service_geometry() {
     })
     .expect("positional cone admitted");
     assert_eq!(count, 1);
-    assert_eq!(ir.model.surfaces[0].id.as_str(), "creo:visibgeom:surface#7");
     assert_eq!(
-        ir.model.surfaces[0]
+        ir.geometry.surfaces[0].id.as_str(),
+        "creo:visibgeom:surface#7"
+    );
+    assert_eq!(
+        ir.geometry.surfaces[0]
             .source_object
             .as_ref()
             .expect("source object")

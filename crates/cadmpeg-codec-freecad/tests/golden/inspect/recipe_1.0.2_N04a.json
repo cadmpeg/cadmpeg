@@ -8,8 +8,8 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compression": "deflate",
       "expanded": 32822,
+      "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
       "stored": 3351
@@ -21,8 +21,8 @@
         "data_offset": "3445",
         "header_offset": "3393"
       },
-      "compression": "deflate",
       "expanded": 326,
+      "kind": "deflate",
       "name": "StringHasher.Table.txt",
       "role": "auxiliary",
       "stored": 129
@@ -34,8 +34,8 @@
         "data_offset": "3618",
         "header_offset": "3574"
       },
-      "compression": "deflate",
       "expanded": 4705,
+      "kind": "deflate",
       "name": "Body.Shape.brp",
       "role": "brep",
       "stored": 513
@@ -47,8 +47,8 @@
         "data_offset": "4179",
         "header_offset": "4131"
       },
-      "compression": "deflate",
       "expanded": 308,
+      "kind": "deflate",
       "name": "Body.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 158
@@ -60,8 +60,8 @@
         "data_offset": "4391",
         "header_offset": "4337"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "Sketch.InternalShape.brp",
       "role": "brep",
       "stored": 2
@@ -73,8 +73,8 @@
         "data_offset": "4439",
         "header_offset": "4393"
       },
-      "compression": "deflate",
       "expanded": 2375,
+      "kind": "deflate",
       "name": "Sketch.Shape.brp",
       "role": "brep",
       "stored": 319
@@ -86,8 +86,8 @@
         "data_offset": "4808",
         "header_offset": "4758"
       },
-      "compression": "deflate",
       "expanded": 181,
+      "kind": "deflate",
       "name": "Sketch.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 114
@@ -99,8 +99,8 @@
         "data_offset": "4971",
         "header_offset": "4922"
       },
-      "compression": "deflate",
       "expanded": 3307,
+      "kind": "deflate",
       "name": "Pad.AddSubShape.brp",
       "role": "brep",
       "stored": 449
@@ -112,8 +112,8 @@
         "data_offset": "5473",
         "header_offset": "5420"
       },
-      "compression": "deflate",
       "expanded": 403,
+      "kind": "deflate",
       "name": "Pad.AddSubShape.Map.txt",
       "role": "auxiliary",
       "stored": 199
@@ -125,8 +125,8 @@
         "data_offset": "5715",
         "header_offset": "5672"
       },
-      "compression": "deflate",
       "expanded": 3529,
+      "kind": "deflate",
       "name": "Pad.Shape.brp",
       "role": "brep",
       "stored": 457
@@ -138,8 +138,8 @@
         "data_offset": "6219",
         "header_offset": "6172"
       },
-      "compression": "deflate",
       "expanded": 403,
+      "kind": "deflate",
       "name": "Pad.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 199
@@ -151,19 +151,20 @@
         "data_offset": "6471",
         "header_offset": "6418"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "Pad.SuppressedShape.brp",
       "role": "brep",
       "stored": 2
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_version": "1",
           "program_version": "1.0R39319 (Git)",
@@ -171,8 +172,10 @@
         },
         "dialect": "fcstd:schema-4"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",

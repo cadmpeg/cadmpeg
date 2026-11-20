@@ -9,19 +9,14 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::ids::{IdentityKey, OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
-    ExternalDocument, Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind,
-    PrototypeReference,
+    ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
 };
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
 
 use crate::loss::SldprtLossCode;
 
 use super::AssemblyProjection;
-
-/// Key of the root occurrence, the assembly document itself.
-const ROOT_KEY: &str = "root";
 
 /// Definitions and placements in native order, before neutral product
 /// structure is projected.
@@ -54,7 +49,10 @@ impl NativeAssembly {
         self.losses.push(loss);
     }
 
-    /// Map the native structure to the neutral product projection.
+    /// Map the native structure to the neutral product projection. Each
+    /// placement is an occurrence of the definition that owns it; a placement
+    /// of a document this one does not hold places a definition of external
+    /// storage, one per document and configuration.
     pub(super) fn into_projection(self) -> AssemblyProjection {
         let virtual_sites = self
             .definitions
@@ -68,17 +66,63 @@ impl NativeAssembly {
                 Some((definition.id.clone(), site, name))
             })
             .collect();
+        let mut definitions: Vec<ProductDefinition> = self
+            .definitions
+            .into_iter()
+            .map(NativeDefinition::into_product_definition)
+            .collect();
+        let mut externals = BTreeMap::<(String, Option<String>), ProductDefinitionId>::new();
+        let mut occurrences = Vec::new();
+        for placement in self.placements {
+            let prototype = match placement.prototype {
+                NativePrototype::Local(definition) => definition,
+                NativePrototype::External { document, object } => externals
+                    .entry((document.clone(), object.clone()))
+                    .or_insert_with(|| {
+                        let mut key = IdentityKey::encode_segment(&document);
+                        if let Some(object) = &object {
+                            key = key.dash(IdentityKey::encode_segment(object));
+                        }
+                        let id = ProductDefinitionId::compose(&external_namespace(), key);
+                        let mut external = ExternalDocument::path(document.clone());
+                        if let Some(object) = &object {
+                            external = external.with_object(object.clone());
+                        }
+                        let mut definition =
+                            ProductDefinition::new(id.clone(), Storage::External(external));
+                        definition.source_name = document_stem(&document);
+                        definitions.push(definition);
+                        id
+                    })
+                    .clone(),
+                NativePrototype::Unresolved => {
+                    let id = ProductDefinitionId::compose(
+                        &unresolved_namespace(),
+                        placement.key.clone(),
+                    );
+                    definitions.push(ProductDefinition::new(
+                        id.clone(),
+                        Storage::External(ExternalDocument::default()),
+                    ));
+                    id
+                }
+            };
+            if let Some(owner) = definitions
+                .iter_mut()
+                .find(|definition| definition.id == placement.owner)
+            {
+                owner.occurrences.push(placement.id.clone());
+            }
+            let mut occurrence =
+                Occurrence::new(placement.id, prototype, Some(placement.transform));
+            occurrence.name = placement.name;
+            occurrence.visible = placement.visible;
+            occurrence.native_ref = Some(placement.native_ref);
+            occurrences.push(occurrence);
+        }
         AssemblyProjection {
-            definitions: self
-                .definitions
-                .into_iter()
-                .map(NativeDefinition::into_product_definition)
-                .collect(),
-            occurrences: self
-                .placements
-                .into_iter()
-                .map(NativePlacement::into_occurrence)
-                .collect(),
+            definitions,
+            occurrences,
             losses: self.losses,
             carries_parasolid: false,
             virtual_sites,
@@ -105,6 +149,9 @@ impl NativeAssembly {
 #[derive(Debug)]
 pub(super) struct NativeDefinition {
     id: ProductDefinitionId,
+    kind: ProductDefinitionKind,
+    /// Whether this is the model of the document being decoded.
+    root: bool,
     source_name: Option<String>,
     native_ref: String,
     /// The site key of the virtual component section whose bodies the
@@ -122,6 +169,8 @@ impl NativeDefinition {
         );
         Some(Self {
             id,
+            kind: ProductDefinitionKind::Assembly,
+            root: false,
             source_name,
             native_ref: native_model_ref(model),
             bodies_site: None,
@@ -131,6 +180,13 @@ impl NativeDefinition {
     /// The definition that owns the bodies decoded from the site `site`.
     pub(super) fn with_bodies_from(mut self, site: String) -> Self {
         self.bodies_site = Some(site);
+        self.kind = ProductDefinitionKind::Part;
+        self
+    }
+
+    /// The model of the document being decoded, the root definition.
+    pub(super) fn into_root(mut self) -> Self {
+        self.root = true;
         self
     }
 
@@ -139,18 +195,15 @@ impl NativeDefinition {
     }
 
     fn into_product_definition(self) -> ProductDefinition {
-        ProductDefinition {
-            id: self.id,
-            kind: ProductDefinitionKind::Part,
-            source_name: self.source_name,
-            label: None,
-            description: None,
-            part_number: None,
-            bom_properties: BTreeMap::default(),
-            bodies: Vec::new(),
-            sketches: Vec::new(),
-            native_ref: Some(self.native_ref),
-        }
+        let mut definition = if self.root {
+            ProductDefinition::root(self.id, ExternalDocument::default())
+        } else {
+            ProductDefinition::new(self.id, Storage::Embedded)
+        };
+        definition.kind = Some(self.kind);
+        definition.source_name = self.source_name;
+        definition.native_ref = Some(self.native_ref);
+        definition
     }
 
     #[cfg(test)]
@@ -190,25 +243,15 @@ impl NativePrototype {
                 .map(str::to_string),
         }
     }
-
-    fn into_prototype_reference(self) -> PrototypeReference {
-        match self {
-            Self::Local(definition) => PrototypeReference::Local { definition },
-            Self::External { document, object } => PrototypeReference::External {
-                document: ExternalDocument::path(document),
-                object,
-            },
-            Self::Unresolved => PrototypeReference::Unresolved {},
-        }
-    }
 }
 
 /// One placed occurrence in native terms.
 #[derive(Debug, Clone)]
 pub(super) struct NativePlacement {
     id: OccurrenceId,
+    key: IdentityKey,
     prototype: NativePrototype,
-    parent: OccurrenceParent,
+    owner: ProductDefinitionId,
     ordinal: u32,
     transform: Transform,
     name: Option<String>,
@@ -217,55 +260,28 @@ pub(super) struct NativePlacement {
 }
 
 impl NativePlacement {
-    /// The key and identity of a component-tree child occurrence.
-    ///
-    /// A `swReference` id is joined to the parent key with a dash, so one
-    /// model placed at two paths yields two distinct occurrences.
+    /// The key and identity of a component instance: its `swReference` id,
+    /// the source's stable instance key.
     ///
     /// `None` when the reference identity is not a valid identity key.
-    pub(super) fn tree_occurrence_id(
-        parent_key: Option<&IdentityKey>,
-        reference: &str,
-    ) -> Option<(IdentityKey, OccurrenceId)> {
-        let id_key = IdentityKey::try_new(reference).ok()?;
-        let key = match parent_key {
-            Some(parent_key) => parent_key.clone().dash(id_key),
-            None => id_key,
-        };
+    pub(super) fn tree_occurrence_id(reference: &str) -> Option<(IdentityKey, OccurrenceId)> {
+        let key = IdentityKey::try_new(reference).ok()?;
         let occurrence = OccurrenceId::compose(&occurrence_namespace(), key.clone());
         Some((key, occurrence))
     }
 
-    /// The root occurrence of a component tree.
-    pub(super) fn tree_root(
-        model: &str,
-        definition: ProductDefinitionId,
-        name: Option<String>,
-    ) -> Option<Self> {
-        let key = IdentityKey::try_new(ROOT_KEY).ok()?;
-        Some(Self {
-            id: OccurrenceId::compose(&occurrence_namespace(), key),
-            prototype: NativePrototype::Local(definition),
-            parent: OccurrenceParent::Root {},
-            ordinal: 0,
-            transform: Transform::identity(),
-            name,
-            visible: None,
-            native_ref: native_model_ref(model),
-        })
-    }
-
-    /// A child occurrence of a component tree.
+    /// A component instance that the definition `owner` places.
     pub(super) fn tree_child(
-        occurrence: OccurrenceId,
+        (key, occurrence): (IdentityKey, OccurrenceId),
         prototype: NativePrototype,
-        parent: OccurrenceId,
+        owner: ProductDefinitionId,
         reference: &str,
     ) -> Self {
         Self {
             id: occurrence,
+            key,
             prototype,
-            parent: OccurrenceParent::Occurrence { occurrence: parent },
+            owner,
             ordinal: 0,
             transform: Transform::identity(),
             name: None,
@@ -292,24 +308,9 @@ impl NativePlacement {
         self
     }
 
+    #[cfg(test)]
     pub(super) fn id(&self) -> &OccurrenceId {
         &self.id
-    }
-
-    fn into_occurrence(self) -> Occurrence {
-        Occurrence {
-            id: self.id,
-            prototype: self.prototype.into_prototype_reference(),
-            parent: self.parent,
-            ordinal: self.ordinal,
-            transform: self.transform,
-            linked_prototype: None,
-            scale: [FiniteReal::ONE; 3],
-            name: self.name,
-            visible: self.visible,
-            link: None,
-            native_ref: Some(self.native_ref),
-        }
     }
 
     #[cfg(test)]
@@ -323,8 +324,8 @@ impl NativePlacement {
     }
 
     #[cfg(test)]
-    pub(super) fn parent(&self) -> &OccurrenceParent {
-        &self.parent
+    pub(super) fn owner(&self) -> &ProductDefinitionId {
+        &self.owner
     }
 
     #[cfg(test)]
@@ -350,6 +351,14 @@ impl NativePlacement {
 
 fn definition_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
     cadmpeg_ir::identity_namespace!("sldprt", "assembly", "model")
+}
+
+fn external_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
+    cadmpeg_ir::identity_namespace!("sldprt", "assembly", "external")
+}
+
+fn unresolved_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
+    cadmpeg_ir::identity_namespace!("sldprt", "assembly", "unresolved")
 }
 
 fn occurrence_namespace() -> cadmpeg_ir::ids::IdentityNamespace {

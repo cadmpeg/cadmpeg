@@ -331,7 +331,7 @@ fn positional_dimensions_decode_the_positive_dict_lattice_and_bounded_opaque_for
     assert_eq!(
         positive_row.value.resolved(),
         Some(f64::from_be_bytes([
-            0x3f, 0xc8, 0xa1, 0xca, 0xc0, 0x83, 0x12, 0x6f,
+            0x3f, 0xc5, 0xa1, 0xca, 0xc0, 0x83, 0x12, 0x6f,
         ]))
     );
     assert_eq!(positive_row.direction_byte, 0);
@@ -1241,4 +1241,40 @@ fn mixed_relation_operand_retains_the_exact_row_without_integer_vectors() {
         row.operands,
         b"\x04\x01\xe4\x02\x00\xe6\x65\xa3\x4d\xb4\xd1\xc0\x92\x0f\xe5"
     );
+}
+
+#[test]
+fn positional_dimensions_read_the_banded_positive_dict_heads() {
+    let cache = scalar::ScalarCache::default();
+    for (prefix, value) in [(0x54, 0.18), (0x58, 0.22)] {
+        let bytes = f64::to_be_bytes(value);
+        let mut row = vec![1, prefix];
+        row.extend_from_slice(&bytes[2..]);
+        row.extend_from_slice(&[0, 0x18, 46]);
+        let decoded = positional_dimension(&row, 0, row.len(), &cache)
+            .expect("positive dictionary dimension");
+        assert_eq!(decoded.value.resolved(), Some(value));
+    }
+}
+
+#[test]
+fn positional_dimension_prefix_51_reads_the_banded_head() {
+    let row = [1, 0x51, 0x26, 0x7b, 0xb5, 0xd4, 0x76, 0x65, 0, 0x18, 46];
+    let cache = scalar::ScalarCache::default();
+    let decoded =
+        positional_dimension(&row, 0, row.len(), &cache).expect("positive dictionary dimension");
+    assert_eq!(
+        decoded.value.resolved(),
+        Some(f64::from_be_bytes([
+            0x3f, 0xc3, 0x26, 0x7b, 0xb5, 0xd4, 0x76, 0x65,
+        ]))
+    );
+}
+
+#[test]
+fn variable_dict_scalar_stays_inside_its_end() {
+    let token = [0x54, 0x0a, 0x3d, 0x70, 0xa3, 0xd7, 0x0a];
+    let cache = scalar::ScalarCache::default();
+    let (lane, next) = decode_variable_scalar(&token, 0, 4, &cache);
+    assert!(next <= 4 || !matches!(lane, ScalarLane::Value(_)));
 }

@@ -33,8 +33,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!(
         "{} bodies, {} surfaces",
-        decoded.ir().model.bodies.len(),
-        decoded.ir().model.surfaces.len()
+        decoded.ir().geometry.bodies.len(),
+        decoded.ir().geometry.surfaces.len()
     );
     for loss in &decoded.report().losses {
         eprintln!("{:?}: {}", loss.severity, loss.message);

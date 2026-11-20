@@ -25,6 +25,7 @@ fn resolved_hole_face() -> Face {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     }
 }
 
@@ -32,7 +33,7 @@ fn resolved_hole_face() -> Face {
 fn hole_resolved_face_keeps_its_native_reference() {
     let scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
-    ir.model.faces.push(resolved_hole_face());
+    ir.geometry.faces.push(resolved_hole_face());
     let selection = hole_face_selection(
         &scan,
         &ir,
@@ -157,7 +158,7 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
             offset: 1,
         });
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("creo:visibgeom:surface#6".to_string()).expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -168,6 +169,7 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     assert!(matches!(
         crate::decode::with_service_context(|ctx| schema_feature_definition(
@@ -183,7 +185,7 @@ fn datum_feature_rejects_conflicting_local_and_transferred_plane_carriers() {
         IrFeatureDefinition::Operation(IrFeatureOperation::DatumPlane { .. })
     ));
 
-    match &mut ir.model.surfaces[0].geometry {
+    match &mut ir.geometry.surfaces[0].geometry {
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) => {
             let origin = plane_surface.origin();
             let normal = plane_surface.frame().axis().as_raw();
@@ -239,6 +241,7 @@ fn plane_surface(origin_y: f64) -> Surface {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     }
 }
 
@@ -282,7 +285,7 @@ fn unbounded_plane_uses_its_placed_carrier_without_model_surface() {
 fn unbounded_plane_uses_its_model_carrier_without_placed_surface() {
     let scan = unbounded_plane_scan();
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(plane_surface(1.0));
+    ir.geometry.surfaces.push(plane_surface(1.0));
 
     assert_eq!(
         unbounded_feature_plane_definition(
@@ -310,7 +313,7 @@ fn unbounded_plane_rejects_conflicting_carriers() {
     let mut scan = unbounded_plane_scan();
     scan.planes.positional_frames.push(placed_plane());
     let mut ir = CadIr::empty();
-    ir.model.surfaces.push(plane_surface(2.0));
+    ir.geometry.surfaces.push(plane_surface(2.0));
 
     assert!(unbounded_feature_plane_definition(
         &scan,

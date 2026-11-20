@@ -17,7 +17,7 @@ fn model_admission_refuses_a_malformed_curve_surface_reference_cycle() {
         finding.check == Check::ReferentialIntegrity && finding.message == expected
     }));
     assert!(!admit::admit(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         admit::DRAFT_CORE_CHECKS,
         Vec::new()
@@ -25,7 +25,7 @@ fn model_admission_refuses_a_malformed_curve_surface_reference_cycle() {
     .expect("admit the model")
     .is_ok());
     assert!(matches!(
-        admit_evaluation_cycles(&cadmpeg_test_support::service_decode_context(), &ir),
+        admit_evaluation_cycles(&cadmpeg_core::decode::test_support::service_decode_context(), &ir),
         Err(CodecError::Malformed(message)) if message == expected
     ));
 }
@@ -53,9 +53,9 @@ fn cycle_admission_preserves_zero_depth_session_refusal() {
 fn cycle_check_reports_one_cycle_for_repeated_carrier_rows() {
     let (mut ir, curve, surface) = cyclic_model();
     // Repeated carrier rows still share the last graph entry and one active state.
-    ir.model.curves.push(ir.model.curves[0].clone());
+    ir.geometry.curves.push(ir.geometry.curves[0].clone());
     let index = crate::index::ModelIndex::new_model_only(&ir);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     super::check_evaluation_cycles(&ctx, &ir, &index, &mut findings).unwrap();
     assert_eq!(findings.len(), 1);
@@ -72,8 +72,8 @@ fn cycle_check_reports_one_cycle_for_repeated_carrier_rows() {
 fn cycle_admission_admits_solved_carriers_among_many_points() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = crate::examples::unit_cube().expect("cube fixture");
-    let point = ir.model.points[0].clone();
-    ir.model.points.extend(std::iter::repeat_n(point, 1_024));
+    let point = ir.geometry.points[0].clone();
+    ir.geometry.points.extend(std::iter::repeat_n(point, 1_024));
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
@@ -86,9 +86,9 @@ fn cycle_admission_finds_cycles_among_many_unrelated_points() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let (mut ir, curve, surface) = cyclic_model();
     let cube = crate::examples::unit_cube().expect("cube fixture");
-    ir.model
+    ir.geometry
         .points
-        .extend(std::iter::repeat_n(cube.model.points[0].clone(), 1_024));
+        .extend(std::iter::repeat_n(cube.geometry.points[0].clone(), 1_024));
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("empty input");
@@ -109,25 +109,25 @@ fn cycle_associations_keep_the_general_index_duplicate_selection_rules() {
     use crate::ids::{ProceduralCurveId, ProceduralSurfaceId};
     let (mut ir, curve, surface) = cyclic_model();
     // Duplicate construction IDs select the first construction row.
-    ir.model.procedural_curves.push(ProceduralCurve::new(
-        ir.model.procedural_curves[0].id.clone(),
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
+        ir.geometry.procedural_curves[0].id.clone(),
         ProceduralCurveDefinition::Exact { cache: None },
     ));
     // Duplicate curve carriers select the first resolved construction.
     let other_curve = ProceduralCurveId::mint("test:cycle:construction#other-curve").unwrap();
-    ir.model.procedural_curves.push(ProceduralCurve::new(
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
         other_curve.clone(),
         ProceduralCurveDefinition::Exact { cache: None },
     ));
-    let mut carrier = ir.model.curves[0].clone();
+    let mut carrier = ir.geometry.curves[0].clone();
     carrier.geometry = CurveGeometry::Procedural {
         construction: other_curve,
         cache: None,
     };
-    ir.model.curves.push(carrier);
+    ir.geometry.curves.push(carrier);
     // Duplicate surface carriers select the last resolved construction.
     let other_surface = ProceduralSurfaceId::mint("test:cycle:construction#other-surface").unwrap();
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         other_surface.clone(),
         ProceduralSurfaceDefinition::Replica {
             source: surface.clone(),
@@ -135,12 +135,12 @@ fn cycle_associations_keep_the_general_index_duplicate_selection_rules() {
         },
         None,
     ));
-    let mut carrier = ir.model.surfaces[0].clone();
+    let mut carrier = ir.geometry.surfaces[0].clone();
     carrier.geometry = SurfaceGeometry::Procedural {
         construction: other_surface,
         cache: None,
     };
-    ir.model.surfaces.push(carrier);
+    ir.geometry.surfaces.push(carrier);
     let index = super::CycleIndex::build(&ir);
     let general = crate::index::ModelIndex::new_model_only(&ir);
     assert_eq!(index.curve(curve.as_str()), general.curve(curve.as_str()));
@@ -150,10 +150,10 @@ fn cycle_associations_keep_the_general_index_duplicate_selection_rules() {
     );
     assert_eq!(
         index.curve(curve.as_str()),
-        Some(&ir.model.procedural_curves[0])
+        Some(&ir.geometry.procedural_curves[0])
     );
     assert_eq!(
         index.surface(surface.as_str()),
-        Some(&ir.model.procedural_surfaces[1])
+        Some(&ir.geometry.procedural_surfaces[1])
     );
 }

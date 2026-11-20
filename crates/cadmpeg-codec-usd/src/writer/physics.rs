@@ -22,30 +22,57 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
 use super::text::{quoted, real32, tuple32, Names};
-use super::{Writer, MILLIMETRES_PER_UNIT};
+use super::Writer;
 
 /// Name of the scope that holds physical materials and joints.
 pub(super) const PHYSICS: &str = "Physics";
-/// Millimetres per metre.
-const MILLIMETRES_PER_METRE: f64 = 1000.0;
-
-/// Metres per scene unit.
-fn meters_per_unit() -> f64 {
-    MILLIMETRES_PER_UNIT / MILLIMETRES_PER_METRE
-}
-
-/// Scene-unit density per kilogram per cubic metre.
-fn density_scale() -> f64 {
-    meters_per_unit().powi(3)
+/// Scene-unit density per kilogram per cubic millimetre, for `length`
+/// millimetres per scene unit.
+fn density_scale(length: f64) -> f64 {
+    length.powi(3)
 }
 
 /// The schemas and properties of one prim.
 pub(super) type PrimPhysics = (Vec<String>, Vec<String>);
 
+/// The initial velocities of a rigid body: linear in scene units per
+/// second and angular in degrees per second, in the coordinates of the
+/// model.
+#[derive(Debug, Clone, Copy, Default)]
+struct Velocity {
+    linear: Option<[f64; 3]>,
+    angular: Option<[f64; 3]>,
+}
+
+impl Velocity {
+    /// The velocity attributes of a prim whose transform turns its parent
+    /// space by `turn` from the model's.
+    fn lines(self, turn: Option<f64>) -> Vec<String> {
+        let mut lines = Vec::new();
+        if let Some(linear) = self.linear {
+            lines.push(format!(
+                "vector3f physics:velocity = {}",
+                floats(&super::turned(turn, linear))
+            ));
+        }
+        if let Some(angular) = self.angular {
+            lines.push(format!(
+                "vector3f physics:angularVelocity = {}",
+                floats(&super::turned(turn, angular))
+            ));
+        }
+        lines
+    }
+}
+
 /// The physics schemas the writer applies to occurrence and body prims.
 pub(super) struct Plan {
     occurrences: BTreeMap<OccurrenceId, PrimPhysics>,
     bodies: BTreeMap<BodyId, PrimPhysics>,
+    /// The initial velocities of the rigid bodies on occurrence and body
+    /// prims.
+    occurrence_velocities: BTreeMap<OccurrenceId, Velocity>,
+    body_velocities: BTreeMap<BodyId, Velocity>,
     /// The collision schemas of each body.
     colliders: BTreeMap<BodyId, PrimPhysics>,
     /// Material names in the `Physics` scope.
@@ -138,7 +165,7 @@ fn floats(values: &[f64]) -> String {
     )
 }
 
-fn mass_lines(mass: &MassProperties) -> Vec<String> {
+fn mass_lines(mass: &MassProperties, length: f64) -> Vec<String> {
     let mut lines = Vec::new();
     if let Some(value) = mass.mass {
         lines.push(format!("float physics:mass = {}", float(value.get())));
@@ -146,14 +173,14 @@ fn mass_lines(mass: &MassProperties) -> Vec<String> {
     if let Some(value) = mass.density {
         lines.push(format!(
             "float physics:density = {}",
-            float(value.get() * density_scale())
+            float(value.get() * density_scale(length))
         ));
     }
     if let Some(point) = mass.center_of_mass {
         let point = point.get();
         lines.push(format!(
             "point3f physics:centerOfMass = {}",
-            floats(&[point.x, point.y, point.z].map(|value| value / MILLIMETRES_PER_UNIT))
+            floats(&[point.x, point.y, point.z].map(|value| value / length))
         ));
     }
     if let Some(inertia) = &mass.inertia {
@@ -162,7 +189,7 @@ fn mass_lines(mass: &MassProperties) -> Vec<String> {
             floats(
                 &inertia
                     .moments
-                    .map(|moment| moment.get() / (MILLIMETRES_PER_UNIT * MILLIMETRES_PER_UNIT))
+                    .map(|moment| moment.get() / (length * length))
             )
         ));
         let axes = inertia
@@ -183,11 +210,14 @@ impl Plan {
             && self.materials.is_empty()
     }
 
-    pub(super) fn new(ir: &CadIr) -> Self {
+    /// The plan of `ir`, in scene units of `length` millimetres.
+    pub(super) fn new(ir: &CadIr, length: f64) -> Self {
         let model = &ir.model;
         let mut occurrences: BTreeMap<OccurrenceId, PrimPhysics> = BTreeMap::new();
         let mut bodies: BTreeMap<BodyId, PrimPhysics> = BTreeMap::new();
         let mut colliders: BTreeMap<BodyId, PrimPhysics> = BTreeMap::new();
+        let mut occurrence_velocities: BTreeMap<OccurrenceId, Velocity> = BTreeMap::new();
+        let mut body_velocities: BTreeMap<BodyId, Velocity> = BTreeMap::new();
         let mut names = Names::default();
         let materials: BTreeMap<PhysicalMaterialId, String> = model
             .physical_materials
@@ -216,11 +246,7 @@ impl Plan {
                     let placements: Vec<OccurrenceId> = model
                         .occurrences
                         .iter()
-                        .filter(|occurrence| {
-                            matches!(&occurrence.prototype,
-                                cadmpeg_ir::products::PrototypeReference::Local { definition: local }
-                                    if local == definition)
-                        })
+                        .filter(|occurrence| &occurrence.prototype == definition)
                         .map(|occurrence| occurrence.id.clone())
                         .collect();
                     for occurrence in placements {
@@ -236,7 +262,7 @@ impl Plan {
         };
         let mut rigid: BTreeSet<OccurrenceId> = BTreeSet::new();
         for body in &model.rigid_bodies {
-            if let PhysicsTarget::Occurrence { occurrence } = &body.target {
+            if let PhysicsTarget::Occurrence { occurrence } = &body.target.entity {
                 rigid.insert(occurrence.clone());
             }
             let mut lines = Vec::new();
@@ -246,27 +272,39 @@ impl Plan {
             if !body.enabled {
                 lines.push("bool physics:rigidBodyEnabled = 0".to_owned());
             }
-            if let Some(velocity) = body.linear_velocity {
-                let velocity = velocity.get();
-                lines.push(format!(
-                    "vector3f physics:velocity = {}",
-                    floats(
-                        &[velocity.x, velocity.y, velocity.z]
-                            .map(|value| value / MILLIMETRES_PER_UNIT)
-                    )
-                ));
-            }
-            if let Some(velocity) = body.angular_velocity {
-                let velocity = velocity.get();
-                lines.push(format!(
-                    "vector3f physics:angularVelocity = {}",
-                    floats(&[velocity.x, velocity.y, velocity.z].map(f64::to_degrees))
-                ));
+            let velocity = Velocity {
+                linear: body.linear_velocity.map(|velocity| {
+                    let velocity = velocity.get();
+                    [velocity.x, velocity.y, velocity.z].map(|value| value / length)
+                }),
+                angular: body.angular_velocity.map(|velocity| {
+                    let velocity = velocity.get();
+                    [velocity.x, velocity.y, velocity.z].map(f64::to_degrees)
+                }),
+            };
+            if velocity.linear.is_some() || velocity.angular.is_some() {
+                match &body.target.entity {
+                    PhysicsTarget::Occurrence { occurrence } => {
+                        occurrence_velocities.insert(occurrence.clone(), velocity);
+                    }
+                    PhysicsTarget::Body { body } => {
+                        body_velocities.insert(body.clone(), velocity);
+                    }
+                    PhysicsTarget::Definition { definition } => {
+                        for occurrence in model
+                            .occurrences
+                            .iter()
+                            .filter(|occurrence| &occurrence.prototype == definition)
+                        {
+                            occurrence_velocities.insert(occurrence.id.clone(), velocity);
+                        }
+                    }
+                }
             }
             if body.starts_asleep {
                 lines.push("bool physics:startsAsleep = 1".to_owned());
             }
-            add(&body.target, "PhysicsRigidBodyAPI", lines);
+            add(&body.target.entity, "PhysicsRigidBodyAPI", lines);
         }
         for joint in &model.assembly_joints {
             for connector in joint.connectors() {
@@ -286,30 +324,38 @@ impl Plan {
             }
         }
         for articulation in &model.articulations {
-            add(&articulation.root, "PhysicsArticulationRootAPI", Vec::new());
+            add(
+                &articulation.root.entity,
+                "PhysicsArticulationRootAPI",
+                Vec::new(),
+            );
         }
         for mass in &model.mass_properties {
-            add(&mass.target, "PhysicsMassAPI", mass_lines(mass));
+            add(
+                &mass.target.entity,
+                "PhysicsMassAPI",
+                mass_lines(mass, length),
+            );
         }
         let scope_path = String::new();
         for collider in &model.colliders {
             let approximation = match &collider.shape {
-                ColliderShape::Exact {} => None,
-                ColliderShape::ConvexHull {} => Some("convexHull"),
-                ColliderShape::ConvexDecomposition {} => Some("convexDecomposition"),
-                ColliderShape::BoundingBox {} => Some("boundingCube"),
-                ColliderShape::BoundingSphere {} => Some("boundingSphere"),
-                ColliderShape::Simplified {} => Some("meshSimplification"),
+                ColliderShape::Exact => None,
+                ColliderShape::ConvexHull => Some("convexHull"),
+                ColliderShape::ConvexDecomposition => Some("convexDecomposition"),
+                ColliderShape::BoundingBox => Some("boundingCube"),
+                ColliderShape::BoundingSphere => Some("boundingSphere"),
+                ColliderShape::Simplified => Some("meshSimplification"),
                 ColliderShape::Native { name } => Some(name.as_str()),
             };
             let mut lines = Vec::new();
             if !collider.enabled {
                 lines.push("bool physics:collisionEnabled = 0".to_owned());
             }
-            add(&collider.target, "PhysicsCollisionAPI", lines);
+            add(&collider.target.entity, "PhysicsCollisionAPI", lines);
             if let Some(approximation) = approximation {
                 add(
-                    &collider.target,
+                    &collider.target.entity,
                     "PhysicsMeshCollisionAPI",
                     vec![format!(
                         "uniform token physics:approximation = {}",
@@ -319,7 +365,7 @@ impl Plan {
             }
             if let Some(material) = collider.material.as_ref().and_then(|id| materials.get(id)) {
                 add(
-                    &collider.target,
+                    &collider.target.entity,
                     "MaterialBindingAPI",
                     vec![format!(
                         "rel material:binding:physics = <{scope_path}/{PHYSICS}/{material}>"
@@ -336,13 +382,13 @@ impl Plan {
                 unwritten_settings += settings.values.len().max(1);
                 continue;
             }
-            let (schema, lines, unwritten) = super::physx::lines(settings);
+            let (schema, lines, unwritten) = super::physx::lines(settings, length);
             unwritten_settings += unwritten;
             let onto = |entry: &mut PrimPhysics| {
                 entry.0.push(schema.clone());
                 entry.1.extend(lines.iter().cloned());
             };
-            let physics_target = match &settings.target {
+            let physics_target = match &settings.target.entity {
                 SolverTarget::Occurrence { occurrence } => Some(PhysicsTarget::Occurrence {
                     occurrence: occurrence.clone(),
                 }),
@@ -354,12 +400,12 @@ impl Plan {
                     .colliders
                     .iter()
                     .find(|record| &record.id == collider)
-                    .map(|record| record.target.clone()),
+                    .map(|record| record.target.entity.clone()),
                 SolverTarget::Articulation { articulation } => model
                     .articulations
                     .iter()
                     .find(|record| &record.id == articulation)
-                    .map(|record| record.root.clone()),
+                    .map(|record| record.root.entity.clone()),
                 SolverTarget::Joint { joint } => {
                     onto(joint_settings.entry(joint.clone()).or_default());
                     None
@@ -380,6 +426,8 @@ impl Plan {
         Self {
             occurrences,
             bodies,
+            occurrence_velocities,
+            body_velocities,
             colliders,
             materials,
             joint_settings,
@@ -413,12 +461,24 @@ impl Plan {
         parent.clone_into(&mut self.scope);
     }
 
-    pub(super) fn occurrence(&self, id: &OccurrenceId) -> PrimPhysics {
-        self.occurrences.get(id).cloned().unwrap_or_default()
+    /// The physics of the prim of occurrence `id`, whose transform turns
+    /// its parent space by `turn`.
+    pub(super) fn occurrence(&self, id: &OccurrenceId, turn: Option<f64>) -> PrimPhysics {
+        let mut physics = self.occurrences.get(id).cloned().unwrap_or_default();
+        if let Some(velocity) = self.occurrence_velocities.get(id) {
+            physics.1.extend(velocity.lines(turn));
+        }
+        physics
     }
 
-    pub(super) fn body(&self, id: &BodyId) -> PrimPhysics {
-        self.bodies.get(id).cloned().unwrap_or_default()
+    /// The physics of the prim of body `id`, whose transform turns its
+    /// parent space by `turn`.
+    pub(super) fn body(&self, id: &BodyId, turn: Option<f64>) -> PrimPhysics {
+        let mut physics = self.bodies.get(id).cloned().unwrap_or_default();
+        if let Some(velocity) = self.body_velocities.get(id) {
+            physics.1.extend(velocity.lines(turn));
+        }
+        physics
     }
 
     /// The collision schemas of body `id`, for the prim of its collision
@@ -485,24 +545,26 @@ impl Writer<'_> {
             .occurrences
             .iter()
             .find(|candidate| &candidate.id == occurrence)?;
-        let mut transform = current.transform;
-        while let cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence: parent } =
-            &current.parent
-        {
-            current = model
-                .occurrences
-                .iter()
-                .find(|candidate| &candidate.id == parent)?;
-            transform = current.transform.compose(transform).ok()?;
+        let mut transform = current.transform?;
+        for _ in 0..model.occurrences.len() {
+            let Some(owner) = cadmpeg_ir::products::owner(&model.product_definitions, &current.id)
+            else {
+                return Some(transform);
+            };
+            if owner.is_root() {
+                return Some(transform);
+            }
+            current = cadmpeg_ir::products::sole_placement(&model.occurrences, &owner.id)?;
+            transform = current.transform?.compose(transform).ok()?;
         }
-        Some(transform)
+        None
     }
 
     fn frame_lines(&mut self, side: usize, frame: &Transform) {
         let [r0, r1, r2] = frame.affine_rows();
         self.out.line(&format!(
             "point3f physics:localPos{side} = {}",
-            floats(&[r0[3], r1[3], r2[3]].map(|value| value / MILLIMETRES_PER_UNIT))
+            floats(&[r0[3], r1[3], r2[3]].map(|value| value / self.millimetres_per_unit))
         ));
         self.out.line(&format!(
             "quatf physics:localRot{side} = {}",
@@ -613,7 +675,45 @@ impl Writer<'_> {
             } => &["transZ", "rotX", "rotY"],
             _ => &[],
         };
-        for axis in limit_axes {
+        let limit =
+            |limits: &Option<JointLimits>, convert: &dyn Fn(f64) -> f64| -> [Option<f64>; 2] {
+                match limits {
+                    None => [None, None],
+                    Some(JointLimits::Minimum { minimum }) => [Some(convert(minimum.get())), None],
+                    Some(JointLimits::Maximum { maximum }) => [None, Some(convert(maximum.get()))],
+                    Some(JointLimits::Range(range)) => [
+                        Some(convert(range.minimum().get())),
+                        Some(convert(range.maximum().get())),
+                    ],
+                }
+            };
+        let degrees = |value: f64| value * (180.0 / std::f64::consts::PI);
+        let millimetres_per_unit = self.millimetres_per_unit;
+        let length = |value: f64| value / millimetres_per_unit;
+        // The limits of the degrees of freedom a generic joint leaves free.
+        let free_limits: Vec<(&str, [Option<f64>; 2])> = match joint.operands() {
+            JointOperands::Pair {
+                kind:
+                    PairedJointKind::Cylindrical {
+                        angular_limits,
+                        linear_limits,
+                        ..
+                    },
+                ..
+            } => [
+                ("rotZ", limit(angular_limits, &degrees)),
+                ("transZ", limit(linear_limits, &length)),
+            ]
+            .into_iter()
+            .filter(|(_, bounds)| bounds.iter().any(Option::is_some))
+            .collect(),
+            _ => Vec::new(),
+        };
+        for axis in limit_axes
+            .iter()
+            .copied()
+            .chain(free_limits.iter().map(|(axis, _)| *axis))
+        {
             applied.push(format!("PhysicsLimitAPI:{axis}"));
         }
         let (settings_schemas, settings_lines) = self
@@ -655,30 +755,14 @@ impl Writer<'_> {
             self.out.line("bool physics:jointEnabled = 0");
         }
         self.coupling_lines(joint);
-        let limit =
-            |limits: &Option<JointLimits>, convert: &dyn Fn(f64) -> f64| -> [Option<f64>; 2] {
-                match limits {
-                    None => [None, None],
-                    Some(JointLimits::Minimum { minimum }) => [Some(convert(minimum.get())), None],
-                    Some(JointLimits::Maximum { maximum }) => [None, Some(convert(maximum.get()))],
-                    Some(JointLimits::Range(range)) => [
-                        Some(convert(range.minimum().get())),
-                        Some(convert(range.maximum().get())),
-                    ],
-                }
-            };
         let (axis_limits, distance) = match joint.operands() {
             JointOperands::Pair { kind, .. } => match kind {
-                PairedJointKind::Revolute { angular_limits, .. } => (
-                    limit(angular_limits, &|value| {
-                        value * (180.0 / std::f64::consts::PI)
-                    }),
-                    None,
-                ),
-                PairedJointKind::Slider { linear_limits, .. } => (
-                    limit(linear_limits, &|value| value / MILLIMETRES_PER_UNIT),
-                    None,
-                ),
+                PairedJointKind::Revolute { angular_limits, .. } => {
+                    (limit(angular_limits, &degrees), None)
+                }
+                PairedJointKind::Slider { linear_limits, .. } => {
+                    (limit(linear_limits, &length), None)
+                }
                 PairedJointKind::Distance { distance } => ([None, None], *distance),
                 _ => ([None, None], None),
             },
@@ -696,7 +780,7 @@ impl Writer<'_> {
             }
         }
         if let Some(distance) = distance {
-            let value = float(distance.get() / MILLIMETRES_PER_UNIT);
+            let value = float(distance.get() / self.millimetres_per_unit);
             self.out
                 .line(&format!("float physics:minDistance = {value}"));
             self.out
@@ -709,19 +793,31 @@ impl Writer<'_> {
             self.out
                 .line(&format!("float limit:{axis}:physics:high = -1"));
         }
+        for (axis, [low, high]) in &free_limits {
+            if let Some(low) = low {
+                self.out
+                    .line(&format!("float limit:{axis}:physics:low = {}", float(*low)));
+            }
+            if let Some(high) = high {
+                self.out.line(&format!(
+                    "float limit:{axis}:physics:high = {}",
+                    float(*high)
+                ));
+            }
+        }
         for (instance, drive) in drives {
             let rotation = matches!(drive.axis, DriveAxis::Rotation { .. });
             let degrees = 180.0 / std::f64::consts::PI;
             // See the reader for the inverse factors.
-            let mpu = meters_per_unit();
+            let millimetres = self.millimetres_per_unit;
             let (position, response, force) = if rotation {
                 (
                     degrees,
-                    1.0 / (mpu * mpu * MILLIMETRES_PER_METRE * degrees),
-                    1.0 / (mpu * mpu * MILLIMETRES_PER_METRE),
+                    1.0 / (millimetres * millimetres * degrees),
+                    1.0 / (millimetres * millimetres),
                 )
             } else {
-                (1.0, MILLIMETRES_PER_METRE, 1.0 / mpu)
+                (1.0, 1.0, 1.0 / millimetres)
             };
             let name = |field: &str| format!("drive:{instance}:physics:{field}");
             if drive.mode == DriveMode::Acceleration {
@@ -801,7 +897,7 @@ impl Writer<'_> {
                 coupled_joints,
                 ..
             } => (
-                ratio.map(|ratio| (ratio.get() * MILLIMETRES_PER_UNIT).to_degrees()),
+                ratio.map(|ratio| (ratio.get() * self.millimetres_per_unit).to_degrees()),
                 coupled_joints,
                 ["physics:ratio", "physics:hinge", "physics:prismatic"],
             ),
@@ -851,13 +947,16 @@ impl Writer<'_> {
                 let direction = cadmpeg_ir::math::Vector3::from(direction);
                 self.out.line(&format!(
                     "vector3f physics:gravityDirection = {}",
-                    floats(&[direction.x, direction.y, direction.z])
+                    floats(&super::turned(
+                        self.turn,
+                        [direction.x, direction.y, direction.z]
+                    ))
                 ));
             }
             if let Some(magnitude) = scene.gravity_magnitude {
                 self.out.line(&format!(
                     "float physics:gravityMagnitude = {}",
-                    float(magnitude.get() / MILLIMETRES_PER_UNIT)
+                    float(magnitude.get() / self.millimetres_per_unit)
                 ));
             }
             for line in &settings_lines {
@@ -889,7 +988,9 @@ impl Writer<'_> {
             for (field, value) in [
                 (
                     "density",
-                    material.density.map(|value| value.get() * density_scale()),
+                    material
+                        .density
+                        .map(|value| value.get() * density_scale(self.millimetres_per_unit)),
                 ),
                 (
                     "staticFriction",

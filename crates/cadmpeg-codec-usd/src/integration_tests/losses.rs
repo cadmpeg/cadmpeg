@@ -6,7 +6,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::tessellation::{ChannelAddressing, TessellationChannel};
+use cadmpeg_ir::tessellation::{ChannelAddressing, TessellationChannel, TessellationTriangleGroup};
 
 use crate::loss::UsdLossCode;
 use crate::test_support::{decode, encode, prim_layer};
@@ -143,14 +143,14 @@ fn export_losses_are_emitted() {
         1.0,
     )
     .unwrap();
-    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle));
+    ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle));
     let (_, report) = encode(&ir);
     assert!(emitted(&report.losses, UsdLossCode::ExportCurveNotWritten));
 
     let free = decode("#usda 1.0\ndef BasisCurves \"C\"\n{\n    uniform token type = \"linear\"\n    int[] curveVertexCounts = [2]\n    point3f[] points = [(0, 0, 0), (1, 0, 0)]\n}\n");
     let (mut ir, _, _) = free.into_parts();
-    ir.model.edges.clear();
-    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle));
+    ir.geometry.edges.clear();
+    ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(circle));
     let (_, report) = encode(&ir);
     assert!(emitted(
         &report.losses,
@@ -165,29 +165,29 @@ fn export_losses_are_emitted() {
         1.0,
     )
     .unwrap();
-    ir.model.surfaces[0].geometry =
+    ir.geometry.surfaces[0].geometry =
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder));
     // An edge curve with no shape leaves the face unmeshed.
     let face = ir
-        .model
+        .geometry
         .faces
         .iter()
-        .find(|face| face.surface == ir.model.surfaces[0].id)
+        .find(|face| face.surface == ir.geometry.surfaces[0].id)
         .unwrap();
     let loop_ = ir
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| face.loops.contains(&loop_.id))
         .unwrap();
     let coedge = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| loop_.coedges().contains(&coedge.id))
         .unwrap();
     let curve = ir
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.id == coedge.edge)
@@ -196,12 +196,12 @@ fn export_losses_are_emitted() {
         .unwrap()
         .clone();
     let slot = ir
-        .model
+        .geometry
         .curves
         .iter()
         .position(|candidate| candidate.id == curve)
         .unwrap();
-    ir.model.curves[slot].geometry =
+    ir.geometry.curves[slot].geometry =
         CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
     let (_, report) = encode(&ir);
     assert!(emitted(&report.losses, UsdLossCode::ExportFaceNotWritten));
@@ -212,10 +212,10 @@ fn export_losses_are_emitted() {
         "#usda 1.0\ndef NurbsPatch \"P\"\n{{\n{PATCH}\n}}\n"
     ));
     let (mut ir, _, _) = patch.into_parts();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let tessellation = mesh_ir.model.tessellations[0].clone().with_body(Some(body));
     ir.model.tessellations.push(tessellation);
-    ir.model.surfaces[0].geometry =
+    ir.geometry.surfaces[0].geometry =
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     let (_, report) = encode(&ir);
     assert!(emitted(
@@ -237,6 +237,48 @@ fn export_losses_are_emitted() {
         &report.losses,
         UsdLossCode::ExportChannelNotWritten
     ));
+}
+
+/// A body keeps its exact B-rep, and its tessellation has a triangle group
+/// that names a face of the body. No `GeomSubset` property states that
+/// face, so the export reports it.
+#[test]
+fn a_triangle_group_face_is_reported_as_not_written() {
+    let meshed = decode(&mesh(TRIANGLE));
+    let (mesh_ir, _, _) = meshed.into_parts();
+    let patch = decode(&format!(
+        "#usda 1.0\ndef NurbsPatch \"P\"\n{{\n{PATCH}\n}}\n"
+    ));
+    let (mut ir, _, _) = patch.into_parts();
+    let body = ir.geometry.bodies[0].id.clone();
+    let face = ir.geometry.faces[0].id.clone();
+    let group = TessellationTriangleGroup::new(Some("S".to_owned()), vec![0]).with_face(face);
+    let tessellation = mesh_ir.model.tessellations[0]
+        .clone()
+        .with_body(Some(body))
+        .with_triangle_groups(vec![group])
+        .unwrap();
+    ir.model.tessellations.push(tessellation);
+    let (text, report) = encode(&ir);
+    assert!(text.contains("def GeomSubset \"S\""), "{text}");
+    assert!(
+        !emitted(&report.losses, UsdLossCode::ExportTopologyTessellated),
+        "{:#?}",
+        report.losses
+    );
+    let notes: Vec<_> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == UsdLossCode::ExportGroupFaceNotWritten.kind())
+        .collect();
+    assert_eq!(notes.len(), 1, "{:#?}", report.losses);
+    assert!(
+        notes[0]
+            .message
+            .contains("1 triangle group faces were not written"),
+        "{}",
+        notes[0].message
+    );
 }
 
 #[test]

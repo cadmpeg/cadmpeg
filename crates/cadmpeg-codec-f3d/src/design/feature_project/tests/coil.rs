@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::feature_project::project_coil;
+use crate::design::feature_project::coil::project as project_coil;
 use crate::records::{
     feature::{
         coil::{
@@ -419,4 +419,117 @@ fn coil_join_with_a_two_member_target_group_charges_the_member_assumption() {
         crate::loss::F3dLossCode::CoilTargetMembersAssumed.kind()
     );
     assert!(project(&[61]).1.is_empty());
+}
+
+#[test]
+fn short_coil_keeps_signed_dimensions_and_native_placement_with_controls_loss() {
+    use crate::records::feature::scope::DesignScopePayloadMut;
+    let (mut scope, mut parameters) = long_coil_fixture();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 454;
+            draft.paired_byte_offset = 454;
+            draft.reference_count_offset = 228;
+            draft.reference_members =
+                crate::records::identity::ReferenceRun::unlocated((60..70).collect());
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    if let DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut() {
+        let coil = slot.as_mut().unwrap();
+        coil.operation = Some(crate::records::identity::RecordedValue {
+            value: DesignExtrudeOperation::Cut,
+            offset: 26,
+        });
+        coil.extent = Some(crate::records::identity::MaybeRecordedValue::Unlocated(
+            DesignCoilExtent::HeightPitch,
+        ));
+        coil.transform = None;
+    }
+    parameters[3] = parameter(4, "Height", Some("cm"), -1.5);
+    parameters[4] = parameter(5, "Pitch", Some("cm"), -0.25);
+    let mut group = coil_body_group();
+    group.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            crate::records::topology::extrude_selection::DesignOperandRole::BODIES_A,
+        );
+    let owned = owned_parameters(&parameters);
+    let mut losses = Vec::new();
+    let Some(FeatureDefinition::Operation(FeatureOperation::Coil {
+        construction,
+        result,
+    })) = project_coil(&scope, &owned, std::slice::from_ref(&group), &mut losses).unwrap()
+    else {
+        panic!("expected Coil");
+    };
+    assert!(matches!(
+        construction.placement,
+        CoilPlacement::Native { .. }
+    ));
+    assert_eq!(
+        construction.extent,
+        cadmpeg_ir::features::CoilExtent::HeightPitch {
+            height: cadmpeg_ir::scalar::NonZeroLength::new(-15.0).unwrap(),
+            pitch: cadmpeg_ir::scalar::NonZeroLength::new(-2.5).unwrap(),
+        }
+    );
+    assert!(matches!(
+        result,
+        SolidFeatureResult::Boolean {
+            operation: cadmpeg_ir::features::BooleanKind::Cut,
+            ..
+        }
+    ));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::CoilShortControlsAssumed.kind()
+    );
+    for bad in [
+        parameter(5, "Pitch", Some("cm"), 0.0),
+        parameter(5, "Pitch", Some("rad"), -0.25),
+        parameter(5, "Height", Some("cm"), -0.25),
+    ] {
+        let mut invalid = parameters.clone();
+        invalid[4] = bad;
+        let mut losses = Vec::new();
+        assert!(project_coil(
+            &scope,
+            &owned_parameters(&invalid),
+            std::slice::from_ref(&group),
+            &mut losses
+        )
+        .unwrap()
+        .is_none());
+        assert!(losses.is_empty());
+    }
+    for groups in [vec![], vec![group.clone(), group.clone()]] {
+        let mut losses = Vec::new();
+        let Some(FeatureDefinition::Operation(FeatureOperation::Coil { result, .. })) =
+            project_coil(&scope, &owned, &groups, &mut losses).unwrap()
+        else {
+            panic!("expected partial Coil");
+        };
+        assert!(matches!(
+            result,
+            SolidFeatureResult::Boolean {
+                targets: cadmpeg_ir::features::BodySelection::Unresolved,
+                ..
+            }
+        ));
+        assert_eq!(losses.len(), 2);
+        assert_eq!(
+            losses[1].code,
+            crate::loss::F3dLossCode::CoilTargetUnresolved.kind()
+        );
+    }
+    if let DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut() {
+        slot.as_mut().unwrap().clockwise = None;
+    }
+    let mut losses = Vec::new();
+    assert!(project_coil(&scope, &owned, &[group], &mut losses)
+        .unwrap()
+        .is_none());
+    assert!(losses.is_empty());
 }

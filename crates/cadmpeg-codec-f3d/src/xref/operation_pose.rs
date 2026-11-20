@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{bounded_len, DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::products::{Occurrence, OccurrenceParent};
+use cadmpeg_ir::products::Occurrence;
 use cadmpeg_ir::transform::Transform;
 
 use super::{
@@ -405,6 +405,8 @@ fn agree(a: Transform, b: Transform) -> bool {
 struct Placement<'a> {
     occurrences: &'a [Occurrence],
     index: BTreeMap<&'a str, usize>,
+    /// The occurrence each nested occurrence sits in.
+    parents: BTreeMap<cadmpeg_ir::ids::OccurrenceId, cadmpeg_ir::ids::OccurrenceId>,
     candidates: BTreeMap<usize, (Option<usize>, Transform)>,
     protected: &'a BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
 }
@@ -417,14 +419,14 @@ impl Placement<'_> {
     }
 
     fn parent(&self, i: usize) -> Result<Option<usize>, CodecError> {
-        match &self.occurrence(i)?.parent {
-            OccurrenceParent::Occurrence { occurrence } => self
+        match self.parents.get(&self.occurrence(i)?.id) {
+            Some(occurrence) => self
                 .index
                 .get(occurrence.as_str())
                 .copied()
                 .map(Some)
                 .ok_or_else(|| CodecError::malformed("F3D operation pose has no owner")),
-            OccurrenceParent::Root {} => Ok(None),
+            None => Ok(None),
         }
     }
 
@@ -437,12 +439,12 @@ impl Placement<'_> {
             let o = self.occurrence(i)?;
             baseline |= self.protected.contains(&o.id);
             let (parent, local) = if baseline {
-                (self.parent(i)?, o.transform)
+                (self.parent(i)?, o.transform.unwrap_or_default())
             } else {
                 self.candidates
                     .get(&i)
                     .copied()
-                    .unwrap_or((self.parent(i)?, o.transform))
+                    .unwrap_or((self.parent(i)?, o.transform.unwrap_or_default()))
             };
             chain.push(local);
             let Some(parent) = parent else { break };
@@ -452,11 +454,10 @@ impl Placement<'_> {
     }
 
     fn candidate_world(&self, i: usize) -> Result<Transform, CodecError> {
-        let (parent, local) = self
-            .candidates
-            .get(&i)
-            .copied()
-            .unwrap_or((self.parent(i)?, self.occurrence(i)?.transform));
+        let (parent, local) = self.candidates.get(&i).copied().unwrap_or((
+            self.parent(i)?,
+            self.occurrence(i)?.transform.unwrap_or_default(),
+        ));
         let parent = parent.map_or(Ok(Transform::identity()), |parent| {
             self.world(parent, false)
         })?;
@@ -474,7 +475,7 @@ impl Placement<'_> {
             chain.push(if self.candidates.contains_key(&i) {
                 self.local(i)?
             } else {
-                self.occurrence(i)?.transform
+                self.occurrence(i)?.transform.unwrap_or_default()
             });
             let Some(parent) = self.parent(i)? else { break };
             i = parent;
@@ -534,8 +535,10 @@ pub(crate) fn project(
             streams.insert(r.id.clone(), s.to_owned());
         }
     }
+    let parents = crate::tree::parent_ids(&ir.model.product_definitions, &ir.model.occurrences);
     let mut placement = Placement {
         occurrences: &ir.model.occurrences,
+        parents,
         index: ir
             .model
             .occurrences
@@ -673,12 +676,12 @@ pub(crate) fn project(
             ir.model
                 .occurrences
                 .get(*i)
-                .is_some_and(|o| !agree(*transform, o.transform))
+                .is_some_and(|o| !agree(*transform, o.transform.unwrap_or_default()))
         })
         .count();
     for (i, transform) in placed {
         if let Some(o) = ir.model.occurrences.get_mut(i) {
-            o.transform = transform;
+            o.transform = Some(transform);
         }
     }
     let ns = ir.native.namespace_mut("f3d");

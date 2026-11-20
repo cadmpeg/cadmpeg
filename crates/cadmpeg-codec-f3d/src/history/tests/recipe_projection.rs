@@ -11,7 +11,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
-use crate::history::{discard_projection_caches, side_one_recipe_edge};
+use crate::history::{discard_projection_caches, side_one_common_edge, side_one_recipe_edge};
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 
 #[test]
@@ -77,7 +77,7 @@ fn projection_caches_end_after_history_consumers() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .expect("store native history");
@@ -148,6 +148,69 @@ fn side_one_edge_uses_nonzero_references_and_ignores_second_side() {
             &[40, 41, 42]
         ),
         Some(41)
+    );
+}
+
+#[test]
+fn side_one_common_edge_requires_one_shared_candidate_without_incidence_fallback() {
+    let side = |header_value, scalars: Vec<i32>| {
+        crate::records::topology::edge_recipe::DesignTopologyRecipeSide {
+            header_value,
+            scalars,
+            payload_prefix: vec![0],
+
+            entries: Vec::new(),
+        }
+    };
+    let structure = crate::records::topology::edge_recipe::DesignEdgeRecipeStructure {
+        root: 2,
+        sides: vec![side(0, vec![2, 1]), side(0, vec![1, 3])],
+    };
+    let context = |reference_ordinal, shared_edge_slots| {
+        crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
+            reference_ordinal,
+            result_faces: Vec::new(),
+            result_face_boundary_ids: Vec::new(),
+            result_shared_edge_slots: Vec::new(),
+            preceding_faces: Vec::new(),
+            preceding_face_boundary_ids: Vec::new(),
+            preceding_support_face_slots: Vec::new(),
+            preceding_support_face_boundary_ids: Vec::new(),
+            shared_edge_slots,
+            changed_shared_edge_slots: Vec::new(),
+            changed_reference_edge_slots: Vec::new(),
+        }
+    };
+    // The first side names references 2 and 1; reference 3 is in a later side.
+    let contexts = vec![
+        context(0, vec![139, 255, 737, 757]),
+        context(1, vec![737, 739, 741]),
+        context(2, vec![737]),
+    ];
+    assert_eq!(
+        side_one_common_edge(Some(&structure), &contexts, &[737, 739, 741, 757]),
+        Some(737)
+    );
+    // The shared edge must be a candidate edge.
+    assert_eq!(
+        side_one_common_edge(Some(&structure), &contexts, &[739, 741]),
+        None
+    );
+    // Two shared candidates stay unresolved.
+    let ambiguous = vec![
+        context(0, vec![139, 737]),
+        context(1, vec![139, 737]),
+        context(2, vec![]),
+    ];
+    assert_eq!(
+        side_one_common_edge(Some(&structure), &ambiguous, &[139, 737]),
+        None
+    );
+    // Disjoint reference sets select nothing.
+    let disjoint = vec![context(0, vec![5423]), context(1, vec![5396])];
+    assert_eq!(
+        side_one_common_edge(Some(&structure), &disjoint, &[5396, 5423]),
+        None
     );
 }
 

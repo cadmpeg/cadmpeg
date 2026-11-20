@@ -61,7 +61,7 @@ fn flat_pattern_settings_retain_the_complete_type_table_and_related_headers() {
         zip.write_all(&bulk).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            let _ctx = cadmpeg_test_support::service_decode_context();
+            let _ctx = cadmpeg_core::decode::test_support::service_decode_context();
             let types = super::decode_types(scan).unwrap();
             assert_eq!(types.len(), expected_types);
             let timelines = super::decode_feature_timelines(scan, &mut Vec::new()).unwrap();
@@ -1199,4 +1199,36 @@ fn origin_classification_does_not_overflow_at_the_identity_limit() {
         classify_origin_entity(&types, bulk, u64::MAX),
         Class::NotOrigin
     );
+}
+
+#[test]
+fn a_plane_beside_every_listed_origin_is_not_an_origin() {
+    use super::{
+        classify_origin_entity, is_construction_plane_entity, OriginClassification as Class,
+    };
+    use crate::test_support::origin_types::{component_row, origin_design_types, plane_row};
+    let meta = "f3d:Design/MetaStream.dat";
+    let bulk = "f3d:Design/BulkStream.dat";
+    let mut types = origin_design_types(meta, 40);
+    types.push(plane_row(meta, 900));
+    types.push(component_row(meta, [1]));
+    assert_eq!(classify_origin_entity(&types, bulk, 900), Class::NotOrigin);
+    assert!(is_construction_plane_entity(&types, bulk, 900));
+    assert_eq!(
+        classify_origin_entity(&types, bulk, 43),
+        Class::Origin(super::OriginEntity::Plane(0))
+    );
+}
+
+#[test]
+fn a_plane_stays_unknown_while_a_component_origin_is_unlisted() {
+    use super::{classify_origin_entity, OriginClassification as Class};
+    use crate::test_support::origin_types::{component_row, origin_design_types, plane_row};
+    let meta = "f3d:Design/MetaStream.dat";
+    let bulk = "f3d:Design/BulkStream.dat";
+    let mut types = origin_design_types(meta, 40);
+    types.push(plane_row(meta, 900));
+    assert_eq!(classify_origin_entity(&types, bulk, 900), Class::Unknown);
+    types.push(component_row(meta, [1, 2]));
+    assert_eq!(classify_origin_entity(&types, bulk, 900), Class::Unknown);
 }

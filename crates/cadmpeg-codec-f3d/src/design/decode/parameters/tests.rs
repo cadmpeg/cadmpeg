@@ -1897,6 +1897,14 @@ fn wide_owned_parameter_accepts_eleven_zero_bytes_after_expression() {
     assert!(parse_design_parameter_record(&scale).is_some());
     let expression_end = 50 + 4 + 2;
     scale.splice(expression_end..expression_end, [0; 2]);
+    let parameter = parse_design_parameter_record(&scale).expect("discriminator-5 wide parameter");
+    assert_eq!(parameter.source_kind(), "ScaleFactor");
+    assert_eq!(parameter.owner_record_index(), Some(1));
+    scale[26..30].copy_from_slice(&4u32.to_le_bytes());
+    let parameter = parse_design_parameter_record(&scale).expect("discriminator-4 wide parameter");
+    assert_eq!(parameter.source_kind(), "ScaleFactor");
+    assert_eq!(parameter.owner_record_index(), Some(1));
+    scale[26..30].copy_from_slice(&3u32.to_le_bytes());
     assert!(parse_design_parameter_record(&scale).is_none());
 }
 

@@ -12,8 +12,14 @@ pub mod error;
 pub mod io;
 pub mod iter_wire;
 pub mod printable;
+pub mod tag_only;
+pub mod tagged;
 pub mod target;
 pub mod text;
+
+// `#[derive(cadmpeg_derive::DeserializeTagged)]` names its reader by this path.
+#[cfg(test)]
+extern crate self as cadmpeg_core;
 
 pub use container::ContainerEntry;
 pub use error::CodecError;

@@ -44,6 +44,7 @@ mod generate;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Component, Path, PathBuf};
+use std::sync::LazyLock;
 
 use serde::Deserialize;
 
@@ -129,6 +130,8 @@ struct TokenDecl {
 #[serde(deny_unknown_fields)]
 struct Record {
     name: String,
+    #[serde(default)]
+    rust_doc_attributes: bool,
     /// `byte` = absolute byte offsets; `slot` = ordered typed slots with no
     /// stated offsets; `column` = 1-based inclusive character columns.
     kind: RecordKind,
@@ -1268,6 +1271,16 @@ fn parse(path: &Path) -> LayoutFile {
     toml::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
+static LAYOUT_TABLES: LazyLock<Vec<(PathBuf, LayoutFile)>> = LazyLock::new(|| {
+    layout_files(&repo_root().join("docs/layouts"))
+        .into_iter()
+        .map(|path| {
+            let file = parse(&path);
+            (path, file)
+        })
+        .collect()
+});
+
 #[test]
 fn ascii_token_tags_keep_trailing_spaces() {
     match parse_token_tag("FINJPL  ") {
@@ -1292,18 +1305,16 @@ fn every_format_has_a_layout_table() {
 
 #[test]
 fn layout_tables_are_internally_consistent() {
-    let root = repo_root();
-    let mut ctx = Context::new(root.clone());
+    let mut ctx = Context::new(repo_root());
     let mut failures = Vec::new();
-    for path in layout_files(&root.join("docs/layouts")) {
-        let file = parse(&path);
+    for (path, file) in &*LAYOUT_TABLES {
         assert_eq!(
             file.format,
             path.file_stem().unwrap().to_string_lossy(),
             "{}: `format` must match the file stem",
             path.display()
         );
-        failures.extend(validate(&mut ctx, &path, &file));
+        failures.extend(validate(&mut ctx, path, file));
     }
     assert!(
         failures.is_empty(),
@@ -1399,12 +1410,10 @@ fn unchanged_layout_outputs_keep_their_modified_time() {
 
 #[test]
 fn rendered_layout_pages_match_the_tables() {
-    let root = repo_root();
     let update = std::env::var_os("UPDATE_LAYOUT_DOCS").is_some();
     let mut stale = Vec::new();
-    for path in layout_files(&root.join("docs/layouts")) {
-        let file = parse(&path);
-        let rendered = render(&file);
+    for (path, file) in &*LAYOUT_TABLES {
+        let rendered = render(file);
         let target = path.with_extension("md");
         if update {
             write_if_changed(&target, &rendered).unwrap();
@@ -1431,13 +1440,11 @@ fn rendered_layout_pages_match_the_tables() {
 
 #[test]
 fn every_byte_layout_table_has_a_generated_file() {
-    let root = repo_root();
     let mapped: BTreeSet<&str> = GENERATED_LAYOUT_RS
         .iter()
         .map(|(format, _)| *format)
         .collect();
-    for path in layout_files(&root.join("docs/layouts")) {
-        let file = parse(&path);
+    for (_, file) in &*LAYOUT_TABLES {
         let has_byte = file
             .records
             .iter()
@@ -1466,14 +1473,17 @@ fn generated_layout_code_matches_the_tables() {
     let mut emit_errors = Vec::new();
     for (format, relative) in GENERATED_LAYOUT_RS {
         let table = root.join("docs/layouts").join(format!("{format}.toml"));
-        let file = parse(&table);
+        let (_, file) = LAYOUT_TABLES
+            .iter()
+            .find(|(path, _)| *path == table)
+            .unwrap_or_else(|| panic!("{}: no layout table", table.display()));
         assert_eq!(
             file.format,
             *format,
             "{}: format must match the mapping key",
             table.display()
         );
-        let mut rendered = match emit_layout_rs(&file, root.join(relative).parent().unwrap()) {
+        let mut rendered = match emit_layout_rs(file, root.join(relative).parent().unwrap()) {
             Ok(rendered) => rendered,
             Err(errors) => {
                 emit_errors.extend(errors);

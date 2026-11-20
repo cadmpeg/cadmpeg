@@ -6,6 +6,7 @@ use crate::records::feature::direct_face::{
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
 };
+use crate::records::parameters::DesignParameterOwner;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::CodecError;
@@ -928,7 +929,7 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
         translation,
         rotation: Some(rotation),
         copies,
-    })) = super::super::project_move(&scope, std::slice::from_ref(&group), &mut Vec::new())
+    })) = super::super::project_move(&scope, std::slice::from_ref(&group), &[], &mut Vec::new())
     else {
         panic!("MoveBody");
     };
@@ -944,11 +945,14 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
     assert_eq!(rotation.direction.z, -1.);
     assert!((rotation.angle.get() - std::f64::consts::FRAC_PI_2).abs() <= f64::EPSILON);
     assert_eq!(copies, 0);
-    assert!(super::super::project_move(&scope, &[], &mut Vec::new()).is_none());
-    assert!(
-        super::super::project_move(&scope, &[group.clone(), group.clone()], &mut Vec::new())
-            .is_none()
-    );
+    assert!(super::super::project_move(&scope, &[], &[], &mut Vec::new()).is_none());
+    assert!(super::super::project_move(
+        &scope,
+        &[group.clone(), group.clone()],
+        &[],
+        &mut Vec::new()
+    )
+    .is_none());
     scope
         .try_edit(|draft| {
             draft.reference_count_offset = 50;
@@ -962,7 +966,8 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
         .unwrap();
     let mut losses = Vec::new();
     assert!(
-        super::super::project_move(&scope, std::slice::from_ref(&group), &mut losses).is_some()
+        super::super::project_move(&scope, std::slice::from_ref(&group), &[], &mut losses)
+            .is_some()
     );
     assert_eq!(losses.len(), 1);
     assert_eq!(
@@ -980,7 +985,290 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
     ]
     .try_into()
     .unwrap();
-    assert!(super::super::project_move(&scope, &[group], &mut Vec::new()).is_none());
+    assert!(super::super::project_move(&scope, &[group], &[], &mut Vec::new()).is_none());
+}
+
+fn move_owner(record_index: u32, local_ordinal: u32, value: f64) -> DesignParameterOwner {
+    owner_in("f3d:test", 12, record_index, local_ordinal, value)
+}
+
+fn owner_in(
+    stream: &str,
+    scope_record_index: u32,
+    record_index: u32,
+    local_ordinal: u32,
+    value: f64,
+) -> DesignParameterOwner {
+    serde_json::from_value(serde_json::json!({
+        "id": format!("{stream}:design-parameter-owner#{record_index}"),
+        "byte_offset": 2000 + record_index,
+        "frame_length": 104,
+        "class_tag": "351",
+        "record_index": record_index,
+        "scope_record_index": scope_record_index,
+        "local_ordinal": local_ordinal,
+        "evaluated_value": value,
+        "evaluated_value_offset": 2040 + record_index,
+        "parameter_record_index": record_index + 2,
+        "owned_ordinal": 1,
+        "variant": 0,
+        "companion_record_index": record_index + 1,
+    }))
+    .unwrap()
+}
+
+/// A `Move` scope with body group 100, transform 71, and further references
+/// 900, 901 and 902.
+fn move_scope(
+    form: crate::records::feature::direct_face::DesignMoveForm,
+    transform: [[f64; 4]; 4],
+    codes: Option<[u32; 2]>,
+) -> DesignParameterScope {
+    use crate::records::feature::direct_face::{
+        DesignMoveOperation, DesignMovePrefix, DesignMoveReference,
+    };
+    let mut scope = DesignParameterScope::empty("f3d:test:scope#12", DesignFeatureKind::Move, 12);
+    scope
+        .try_edit(|draft| {
+            draft.reference_count_offset = 50;
+            draft.frame_length = 350;
+            draft.paired_byte_offset = 350;
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                100, 200, 71, 900, 901, 902,
+            ]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let DesignScopePayloadMut::Move(slot) = scope.payload_mut() else {
+        panic!("Move payload");
+    };
+    *slot = Some(DesignMoveOperation {
+        transform: transform.try_into().unwrap(),
+        transform_record_index: 71,
+        form,
+        prefix: codes.map(|codes| DesignMovePrefix {
+            references: std::array::from_fn(|_| DesignMoveReference::Null),
+            codes,
+            matrix_omitted: false,
+            leading: None,
+        }),
+        ..DesignMoveOperation::default()
+    });
+    scope
+}
+
+fn move_scope_reference_loss(
+    scope: &DesignParameterScope,
+    owners: &[DesignParameterOwner],
+) -> Option<String> {
+    let mut losses = Vec::new();
+    assert!(super::super::project_move(
+        scope,
+        std::slice::from_ref(&group(DesignOperandRole::BODIES_A)),
+        owners,
+        &mut losses
+    )
+    .is_some());
+    assert!(losses.len() <= 1);
+    losses.pop().map(|loss| {
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::FeatureMoveScopeReferencesAssumed.kind()
+        );
+        loss.message
+    })
+}
+
+const MOVE_TRANSLATION: [[f64; 4]; 4] = [
+    [1., 0., 0., 0.7],
+    [0., 1., 0., -0.3],
+    [0., 0., 1., 0.2],
+    [0., 0., 0., 1.],
+];
+
+#[test]
+fn translation_distance_owners_that_equal_the_matrix_translation_are_classified() {
+    use crate::records::feature::direct_face::DesignMoveForm;
+    let owners = [
+        move_owner(900, 0, 0.7),
+        move_owner(901, 1, -0.3),
+        move_owner(902, 2, 0.2),
+    ];
+    for codes in [None, Some([0, 0]), Some([0, 1])] {
+        let scope = move_scope(DesignMoveForm::Form0, MOVE_TRANSLATION, codes);
+        assert_eq!(
+            move_scope_reference_loss(&scope, &owners),
+            None,
+            "{codes:?}"
+        );
+    }
+}
+
+#[test]
+fn world_translation_distance_owners_agree_with_the_matrix_by_length() {
+    use crate::records::feature::direct_face::DesignMoveForm;
+    let component = [
+        [1., 0., 0., -0.3],
+        [0., 1., 0., -0.7],
+        [0., 0., 1., 0.2],
+        [0., 0., 0., 1.],
+    ];
+    let owners = [
+        move_owner(900, 0, 0.7),
+        move_owner(901, 1, -0.3),
+        move_owner(902, 2, 0.2),
+    ];
+    let world = move_scope(DesignMoveForm::Form0, component, Some([0, 1]));
+    assert_eq!(move_scope_reference_loss(&world, &owners), None);
+    let local = move_scope(DesignMoveForm::Form0, component, Some([0, 0]));
+    assert!(move_scope_reference_loss(&local, &owners)
+        .unwrap()
+        .contains("[900, 901, 902]"));
+}
+
+#[test]
+fn translation_owners_that_disagree_with_the_matrix_stay_auxiliary() {
+    use crate::records::feature::direct_face::DesignMoveForm;
+    let scope = move_scope(DesignMoveForm::Form0, MOVE_TRANSLATION, Some([0, 1]));
+    for owners in [
+        vec![
+            move_owner(900, 0, 0.7),
+            move_owner(901, 1, -0.3),
+            move_owner(902, 2, 0.5),
+        ],
+        vec![move_owner(900, 0, 0.7), move_owner(901, 1, -0.3)],
+        vec![
+            move_owner(900, 0, 0.7),
+            move_owner(901, 1, -0.3),
+            move_owner(902, 3, 0.2),
+        ],
+    ] {
+        assert!(move_scope_reference_loss(&scope, &owners)
+            .unwrap()
+            .contains("[900, 901, 902]"));
+    }
+    let disagreeing = [
+        move_owner(900, 0, 0.7),
+        move_owner(901, 1, -0.3),
+        move_owner(902, 2, 0.5),
+    ];
+    let message = move_scope_reference_loss(&scope, &disagreeing).unwrap();
+    assert!(
+        message.contains("parameter owners [900, 901, 902] disagree"),
+        "{message}"
+    );
+    let rotation = move_scope(DesignMoveForm::Form1, MOVE_TRANSLATION, None);
+    let owners = [
+        move_owner(900, 0, 0.7),
+        move_owner(901, 1, -0.3),
+        move_owner(902, 2, 0.2),
+    ];
+    assert!(move_scope_reference_loss(&rotation, &owners)
+        .unwrap()
+        .contains("[900, 901, 902]"));
+}
+
+#[test]
+fn world_distances_of_a_rotated_component_agree_with_the_component_translation() {
+    use crate::records::feature::direct_face::DesignMoveForm;
+    let component = [
+        [1., 0., 0., 0.],
+        [0., 1., 0., 0.],
+        [0., 0., 1., 0.5],
+        [0., 0., 0., 1.],
+    ];
+    let owners = [
+        move_owner(900, 0, 0.3),
+        move_owner(901, 1, 0.4),
+        move_owner(902, 2, 0.),
+    ];
+    let world = move_scope(DesignMoveForm::Form0, component, Some([0, 1]));
+    assert_eq!(move_scope_reference_loss(&world, &owners), None);
+}
+
+#[test]
+fn translation_owners_with_unknown_codes_or_outside_the_scope_stay_auxiliary() {
+    use crate::records::feature::direct_face::DesignMoveForm;
+    let unknown = move_scope(DesignMoveForm::Form0, MOVE_TRANSLATION, Some([0, 2]));
+    let owners = [
+        move_owner(900, 0, 0.7),
+        move_owner(901, 1, -0.3),
+        move_owner(902, 2, 0.2),
+    ];
+    let message = move_scope_reference_loss(&unknown, &owners).unwrap();
+    assert!(message.contains("[900, 901, 902]") && !message.contains("disagree"));
+    let scope = move_scope(DesignMoveForm::Form0, MOVE_TRANSLATION, None);
+    for third in [
+        owner_in("f3d:other", 12, 902, 2, 0.2),
+        owner_in("f3d:test", 13, 902, 2, 0.2),
+        move_owner(950, 2, 0.2),
+        move_owner(902, 1, 0.2),
+    ] {
+        let owners = [move_owner(900, 0, 0.7), move_owner(901, 1, -0.3), third];
+        let message = move_scope_reference_loss(&scope, &owners).unwrap();
+        assert!(message.contains("[900, 901, 902]"), "{message}");
+    }
+}
+
+#[test]
+fn a_rotation_angle_owner_is_compared_in_radians_modulo_a_full_turn() {
+    use crate::records::feature::direct_face::DesignMoveForm;
+    let (sine, cosine) = std::f64::consts::FRAC_PI_4.sin_cos();
+    let rotation = [
+        [cosine, -sine, 0., 0.],
+        [sine, cosine, 0., 0.],
+        [0., 0., 1., 0.],
+        [0., 0., 0., 1.],
+    ];
+    let scope = move_scope(DesignMoveForm::Form1, rotation, None);
+    for angle in [
+        -std::f64::consts::FRAC_PI_4,
+        std::f64::consts::TAU - std::f64::consts::FRAC_PI_4,
+        std::f64::consts::TAU + std::f64::consts::FRAC_PI_4,
+    ] {
+        assert!(
+            move_scope_reference_loss(&scope, &[move_owner(900, 0, angle)])
+                .unwrap()
+                .contains("[901, 902]")
+        );
+    }
+    let identity = move_scope(
+        DesignMoveForm::Form1,
+        [
+            [1., 0., 0., 0.],
+            [0., 1., 0., 0.],
+            [0., 0., 1., 0.],
+            [0., 0., 0., 1.],
+        ],
+        None,
+    );
+    assert!(
+        move_scope_reference_loss(&identity, &[move_owner(900, 0, 4.0e-5)])
+            .unwrap()
+            .contains("parameter owners [900] disagree")
+    );
+}
+
+#[test]
+fn a_rotation_angle_owner_that_equals_the_matrix_angle_is_classified() {
+    use crate::records::feature::direct_face::DesignMoveForm;
+    let (sine, cosine) = std::f64::consts::FRAC_PI_4.sin_cos();
+    let rotation = [
+        [cosine, -sine, 0., 0.],
+        [sine, cosine, 0., 0.],
+        [0., 0., 1., 0.],
+        [0., 0., 0., 1.],
+    ];
+    let scope = move_scope(DesignMoveForm::Form1, rotation, None);
+    let agreed = [move_owner(900, 0, std::f64::consts::FRAC_PI_4)];
+    assert!(move_scope_reference_loss(&scope, &agreed)
+        .unwrap()
+        .contains("[901, 902]"));
+    let other = [move_owner(900, 0, std::f64::consts::FRAC_PI_6)];
+    assert!(move_scope_reference_loss(&scope, &other)
+        .unwrap()
+        .contains("[900, 901, 902]"));
 }
 
 /// A bounded-face member of group 100 whose candidate lanes resolve face 27.
@@ -1056,4 +1344,54 @@ fn shell_keeps_its_group_when_a_member_resolves_a_face() {
         panic!("expected a shell");
     };
     assert_eq!(removed_faces, FaceSelection::Native(group.id.clone()));
+}
+
+#[test]
+fn shell_projects_preceding_faces_with_empty_active_candidates() {
+    let mut scope = scope(DesignFeatureKind::Shell);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(6);
+            draft.previous_history_state_id = Some(5);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let group = group(DesignOperandRole::ROLE_0X10);
+    let operand = resolved_member_operand();
+    assert!(operand.candidate_faces.is_empty());
+    let FeatureOperation::Shell { removed_faces, .. } = projected_operation(
+        super::super::project_shell(&scope, &[operand], std::slice::from_ref(&group)),
+    ) else {
+        panic!("expected a shell");
+    };
+    let feature = crate::ids::neutral_feature_id(&scope);
+    let prefix = crate::ids::feature_input_prefix(&feature, 5);
+    let expected = FaceSelection::historical(
+        crate::ids::feature_input_topology_id(&feature, 5),
+        vec![crate::ids::history_input_face_id(&prefix, 27)],
+        group.id,
+    )
+    .unwrap();
+    assert_eq!(removed_faces, expected);
+}
+
+#[test]
+fn shell_keeps_a_group_with_an_unresolved_historical_member() {
+    let mut scope = scope(DesignFeatureKind::Shell);
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(6);
+            draft.previous_history_state_id = Some(5);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let group = group(DesignOperandRole::ROLE_0X10);
+    let mut operand = resolved_member_operand();
+    operand.resolved_face_slots.clear();
+    let FeatureOperation::Shell { removed_faces, .. } = projected_operation(
+        super::super::project_shell(&scope, &[operand], std::slice::from_ref(&group)),
+    ) else {
+        panic!("expected a shell");
+    };
+    assert_eq!(removed_faces, FaceSelection::Native(group.id));
 }

@@ -12,6 +12,15 @@ use std::num::NonZeroU32;
 
 pub(crate) const OCCURRENCE_PLACEMENT_TYPE_GUID: &str = "CE2913AA-CFE0-4F04-9102-24424ED3BCFA";
 pub(crate) const DERIVED_INSTANCE_RELATION_TYPE_GUID: &str = "2D6E13A1-BBEF-4FB3-9277-00D99F634136";
+/// Whether a 261-byte `Component Insert` scope of this primary class can be
+/// the identity frame that stores the 272-byte prefix. The class-keyed compact
+/// identity generations own the other 261-byte frames.
+pub(crate) fn legacy_identity_insert_class(class_tag: &str) -> bool {
+    !matches!(class_tag, "296" | "410" | "414" | "426" | "434")
+}
+
+/// Frame length of the typed-reference `Component Insert` scope.
+pub(crate) const TYPED_COMPONENT_INSERT_FRAME_LENGTH: u64 = 584;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct DesignComponentInsertScope {

@@ -347,6 +347,36 @@ fn attachment_directions_admit_either_u_sign_without_a_side_flip() {
 }
 
 #[test]
+fn off_axis_first_directions_refuse_an_orthogonal_attachment_frame() {
+    use cadmpeg_ir::{math::Vector3, units::UnitVector3};
+    let fixture = Fixture::new();
+    let first = UnitVector3::normalized(Vector3::new(3.0, 4.0, 0.0)).expect("first");
+    let second = UnitVector3::normalized(Vector3::new(-4.0, 3.0, 0.0)).expect("second");
+    for first in [first, first.reversed()] {
+        for second in [second, second.reversed()] {
+            let result = plate(
+                &fixture.plate,
+                Some(&fixture.style),
+                |r| fixture.property(r),
+                Fixture::length,
+                |r| match r.index() {
+                    2 => Some(first.reversed()),
+                    33 => Some(first),
+                    34 => Some(second),
+                    _ => Fixture::direction(r),
+                },
+                UnitVector3::Z_AXIS,
+                UnitVector3::X_AXIS,
+            );
+            assert_eq!(
+                result.expect_err("off-axis attachment"),
+                PlateRefusal::FirstDirection
+            );
+        }
+    }
+}
+
+#[test]
 fn second_direction_is_antiparallel_to_v_only_with_a_reversed_first_direction() {
     use cadmpeg_ir::units::UnitVector3;
     let fixture = Fixture::new();
@@ -377,7 +407,45 @@ fn second_direction_is_antiparallel_to_v_only_with_a_reversed_first_direction() 
         PlateRefusal::SecondDirection
     );
     assert_eq!(
-        run(x, x.reversed(), UnitVector3::Z_AXIS).expect_err("oblique"),
+        run(x, x.reversed(), UnitVector3::Z_AXIS).expect_err("perpendicular to V"),
+        PlateRefusal::SecondDirection
+    );
+}
+
+#[test]
+fn an_oblique_second_direction_with_a_positive_v_component_keeps_the_forward_side() {
+    use cadmpeg_ir::math::Vector3;
+    use cadmpeg_ir::units::UnitVector3;
+    let fixture = Fixture::new();
+    // Normal Z and U axis X give V = Y.
+    let run = |first: UnitVector3, second: Vector3| {
+        plate(
+            &fixture.plate,
+            Some(&fixture.style),
+            |r| fixture.property(r),
+            Fixture::length,
+            |r| match r.index() {
+                2 => Some(first.reversed()),
+                33 => Some(first),
+                34 => UnitVector3::normalized(second),
+                _ => Fixture::direction(r),
+            },
+            UnitVector3::Z_AXIS,
+            UnitVector3::X_AXIS,
+        )
+    };
+    let x = UnitVector3::X_AXIS;
+    let (sin, cos) = (60.0_f64.to_radians().sin(), 60.0_f64.to_radians().cos());
+    for first in [x, x.reversed()] {
+        let value = run(first, Vector3::new(0.0, sin, cos)).expect("oblique plate");
+        assert_eq!(value.side, SheetMetalThicknessSide::Forward);
+    }
+    assert_eq!(
+        run(x, Vector3::new(0.0, -sin, cos)).expect_err("negative V component"),
+        PlateRefusal::SecondDirection
+    );
+    assert_eq!(
+        run(x, Vector3::new(0.25, sin, cos)).expect_err("not perpendicular to the first"),
         PlateRefusal::SecondDirection
     );
 }

@@ -14,6 +14,7 @@ use cadmpeg_ir::codec::write::{
     DepthNeed, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::ContainerSummary;
 
@@ -108,6 +109,22 @@ impl CodecBackend for StepCodec {
     }
 
     fn decode_impl(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        root: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Decoded, CodecError> {
+        let mut decoded = self.decode_packaged(ctx, root)?;
+        decoded.ir.state_root_definition(
+            ctx,
+            reader::product::document_definition_id(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )?;
+        Ok(decoded)
+    }
+}
+
+impl StepCodec {
+    fn decode_packaged(
         &self,
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         root: cadmpeg_core::decode::View<'_>,
@@ -458,6 +475,7 @@ fn decode_zip(
             entry_count,
             root_data_offset,
         },
+        Sha256Digest::digest(root.window()),
     )?;
     decoded.body.notes.push(format!(
         "container root {}; archive entries={entry_count}",

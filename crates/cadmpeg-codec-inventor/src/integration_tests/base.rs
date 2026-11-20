@@ -464,7 +464,7 @@ fn base_projection_rejects_duplicate_segment_identifiers() {
                 parameters: BTreeMap::new(),
             }));
     }
-    let mut valid_model = ir.model.clone();
+    let mut valid_ir = ir.clone();
     assert_eq!(
         crate::feature::base::project(
             &ctx,
@@ -473,7 +473,7 @@ fn base_projection_rejects_duplicate_segment_identifiers() {
             &design,
             &[],
             &keys,
-            &mut valid_model
+            &mut valid_ir
         )
         .expect("valid Base projection")
         .transferred,
@@ -495,17 +495,9 @@ fn base_projection_rejects_duplicate_segment_identifiers() {
         }
     }
     assert_eq!(
-        crate::feature::base::project(
-            &ctx,
-            &document,
-            &features,
-            &design,
-            &[],
-            &keys,
-            &mut ir.model
-        )
-        .expect("ambiguous Base projection")
-        .transferred,
+        crate::feature::base::project(&ctx, &document, &features, &design, &[], &keys, &mut ir)
+            .expect("ambiguous Base projection")
+            .transferred,
         0
     );
     assert!(ir.model.feature_result_topologies.is_empty());

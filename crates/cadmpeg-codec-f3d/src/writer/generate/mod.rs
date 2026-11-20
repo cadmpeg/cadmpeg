@@ -8,6 +8,7 @@ use std::io::{Seek, SeekFrom, Write};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::manifest::{self, GENERATED_DESIGN_ASSET_FOLDER as DESIGN_FOLDER};
 use crate::writer::primitives::{
@@ -17,9 +18,11 @@ mod attributes;
 mod index;
 mod native_bytes;
 pub(crate) mod native_geometry;
+pub(in crate::writer) mod pcurve_supports;
 mod preconditions;
 mod presentation;
 mod records;
+mod reduce;
 mod smbh;
 use preconditions::{
     validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
@@ -30,169 +33,219 @@ use preconditions::{
 };
 use presentation::GeneratedDesignRegistry;
 use records::{encode_design_bulkstream, encode_design_metastream, encode_document_parameters};
+use reduce::{Failure, Reduction, Stage};
 use smbh::encode_smbh;
 
-/// Write a canonical source-less F3D archive for the currently supported
-/// native construction profile, and state which model arenas it carries.
-pub(super) fn write_new(
-    target: &CadIr,
-    writer: &mut dyn Write,
-) -> Result<ArenaDispositions, CodecError> {
+/// What [`write_new`] wrote: the model arenas it carries and the losses it
+/// charged for the content it dropped or degraded.
+pub(super) struct Generated {
+    pub(super) coverage: ArenaDispositions,
+    pub(super) losses: Vec<LossNote>,
+}
+
+/// Write a source-less F3D archive of everything in `target` the generator
+/// can encode, and report the rest as losses (see [`reduce`]).
+pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<Generated, CodecError> {
     // `subset_int_cur` states its interval and cache on the parameter of the
     // curve it trims.
     let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(target, |_| true)?;
-    let target = lowered.as_ref();
-    let loaded_native = f3d_native(target)?;
-    validate_assembly_projection(target, loaded_native.as_ref())?;
+    let mut reduction = Reduction::new(lowered.as_ref());
+    reduction.prepare()?;
+    let (mut staged, coverage) = loop {
+        let mut staged = tempfile::tempfile()?;
+        match attempt(reduction.ir(), reduction.writes_design(), &mut staged) {
+            Ok(coverage) => break (staged, coverage),
+            Err(failure) => reduction.degrade(failure, writes_alone)?,
+        }
+    };
+    staged.seek(SeekFrom::Start(0))?;
+    std::io::copy(&mut staged, writer)?;
+    Ok(Generated {
+        coverage,
+        losses: reduction.finish(),
+    })
+}
+
+/// Whether `stage` writes `target` (one body of the document, without its
+/// native namespace) on its own, with `native` for the B-rep stream.
+fn writes_alone(target: &CadIr, native: &crate::native::F3dNative, stage: Stage) -> bool {
+    match stage {
+        Stage::Brep => {
+            let attributes = attributes::AttributeIndex::new(target, native);
+            encode_brep(target, native, &attributes).is_ok()
+        }
+        Stage::Design | Stage::Archive => {
+            attempt(target, false, &mut std::io::Cursor::new(Vec::new())).is_ok()
+        }
+    }
+}
+
+fn encode_brep(
+    target: &CadIr,
+    native: &crate::native::F3dNative,
+    attributes: &attributes::AttributeIndex<'_>,
+) -> Result<Vec<u8>, CodecError> {
+    validate_source_less_procedural_carriers(target)?;
+    validate_source_less_topology_tolerances(target, native)?;
+    validate_source_less_auxiliary_geometry(target)?;
+    encode_smbh(target, native, attributes)
+}
+
+/// Write `target` once. `write_design` states whether its native Design
+/// records are written; a failure names the stage that failed.
+fn attempt<W: Write + Seek>(
+    target: &CadIr,
+    write_design: bool,
+    staged: W,
+) -> Result<ArenaDispositions, Failure> {
+    let loaded_native = f3d_native(target).map_err(Failure::design)?;
     let has_native = loaded_native.is_some();
     let native = loaded_native.unwrap_or_default();
+    if write_design {
+        validate_assembly_projection(target, Some(&native)).map_err(Failure::design)?;
+    }
     let attributes = attributes::AttributeIndex::new(target, &native);
-    if !target.model.subds.is_empty() {
-        return Err(CodecError::NotImplemented(
-            "source-less F3D generation does not support SubD surfaces".into(),
-        ));
+    if has_native {
+        validate_source_less_design_links(target, &native, &attributes).map_err(Failure::design)?;
     }
-    if !target.model.assets.is_empty() {
-        return Err(CodecError::NotImplemented(
-            "source-less F3D generation does not support document assets".into(),
-        ));
-    }
-    validate_source_less_procedural_carriers(target)?;
-    validate_source_less_topology_tolerances(target, &native)?;
-    validate_source_less_auxiliary_geometry(target)?;
-    if !native.act_entities.is_empty()
-        || !native.act_guids.is_empty()
-        || !native.act_registry_channels.is_empty()
-        || !native.act_component_links.is_empty()
-        || !native.act_table_references.is_empty()
-    {
-        return Err(CodecError::NotImplemented(
-            "source-less F3D ACT generation requires a retained MetaStream record registry".into(),
-        ));
-    }
-    let design_bindings = validate_source_less_design_bindings(&native)?;
+    let smbh = encode_brep(target, &native, &attributes).map_err(Failure::brep)?;
+    let design_bindings = validate_source_less_design_bindings(&native).map_err(Failure::design)?;
     let mut parameter_bytes = Vec::new();
-    if has_native {
-        validate_configuration_projection(target, &native)?;
-        validate_source_less_history_graph(target, &native)?;
-        parameter_bytes = encode_document_parameters(&native.design_parameters)?;
-        validate_source_less_design_ownership(&native)?;
-        validate_source_less_sketch_graph(&native)?;
-        validate_source_less_recipes(&native)?;
-        validate_source_less_design_links(target, &native, &attributes)?;
+    if write_design {
+        let design = || -> Result<Vec<u8>, CodecError> {
+            validate_configuration_projection(target, &native)?;
+            validate_source_less_history_graph(target, &native)?;
+            let parameter_bytes = encode_document_parameters(&native.design_parameters)?;
+            validate_source_less_design_ownership(&native)?;
+            validate_source_less_sketch_graph(&native)?;
+            validate_source_less_recipes(&native)?;
+            Ok(parameter_bytes)
+        };
+        parameter_bytes = design().map_err(Failure::design)?;
     }
-    let design_registry = GeneratedDesignRegistry::new(target, design_bindings, &attributes)?;
-    let smbh = encode_smbh(target, &native, &attributes)?;
-    let mut staged = tempfile::tempfile()?;
-    let mut archive = zip::ZipWriter::new(&mut staged);
-    let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-    archive
-        .start_file("Manifest.dat", options)
-        .map_err(|error| {
-            CodecError::malformed(format_args!("cannot create F3D manifest: {error}"))
-        })?;
-    archive.write_all(&manifest::generated_top_level()?)?;
-    archive
-        .start_file("Properties.dat", options)
-        .map_err(|error| {
-            CodecError::malformed(format_args!("cannot create F3D properties: {error}"))
-        })?;
-    archive.write_all(&0u32.to_le_bytes())?;
-    archive
-        .start_file(format!("{DESIGN_FOLDER}/Manifest.dat"), options)
-        .map_err(|error| {
-            CodecError::malformed(format_args!("cannot create F3D asset manifest: {error}"))
-        })?;
-    archive.write_all(&manifest::generated_design_asset()?)?;
-    archive
-        .start_file(
-            format!("{DESIGN_FOLDER}/Breps.BlobParts/BREP.generated.smbh"),
-            options,
-        )
-        .map_err(|error| {
-            CodecError::malformed(format_args!("cannot create F3D BREP entry: {error}"))
-        })?;
-    archive.write_all(&smbh)?;
-    if has_native {
+    let design_registry = GeneratedDesignRegistry::new(target, design_bindings, &attributes)
+        .map_err(Failure::design)?;
+    let mut configurations = Vec::new();
+    if write_design {
         let mut configuration_names = BTreeSet::new();
         for configuration in &native.design_configurations {
             if !configuration_names.insert(configuration.entry_name().as_str()) {
-                return Err(CodecError::malformed(format_args!(
+                return Err(Failure::design(CodecError::malformed(format_args!(
                     "duplicate F3D configuration identity: {}",
                     configuration.entry_name()
-                )));
+                ))));
             }
             if configuration.active_row().is_some() {
-                return Err(CodecError::NotImplemented(
+                return Err(Failure::design(CodecError::NotImplemented(
                     "source-less F3D generation does not write the Design configuration root record"
                         .into(),
-                ));
+                )));
             }
             let payload =
-                crate::records::configuration::encode_configuration_payload(configuration)?;
-            archive
-                .start_file(configuration.entry_name(), options)
-                .map_err(|error| {
-                    CodecError::malformed(format_args!(
-                        "cannot create F3D configuration entry: {error}"
-                    ))
-                })?;
-            archive.write_all(&payload)?;
+                crate::records::configuration::encode_configuration_payload(configuration)
+                    .map_err(Failure::design)?;
+            configurations.push((configuration.entry_name(), payload));
         }
     }
-    let design_bulk = encode_design_bulkstream(target, &native, &design_registry, parameter_bytes)?;
-    if let Some(bulk_stream) = &design_bulk {
-        archive
-            .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
-            .map_err(|error| {
-                CodecError::malformed(format_args!("cannot create F3D Design BulkStream: {error}"))
-            })?;
-        archive.write_all(&bulk_stream.bytes)?;
-    }
+    let design_bulk = encode_design_bulkstream(target, &native, &design_registry, parameter_bytes)
+        .map_err(Failure::design)?;
     let primary_records = design_bulk.as_ref().map_or(&[][..], |bulk_stream| {
         bulk_stream.primary_records.as_slice()
     });
-    if let Some(meta_stream) = encode_design_metastream(&design_registry, primary_records)? {
+    let meta_stream =
+        encode_design_metastream(&design_registry, primary_records).map_err(Failure::design)?;
+    let proteins = target
+        .model
+        .appearances
+        .iter()
+        .map(crate::materials::encode_protein)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(Failure::design)?;
+    write_archive(
+        staged,
+        &ArchiveEntries {
+            smbh: &smbh,
+            configurations: &configurations,
+            design_bulk: design_bulk
+                .as_ref()
+                .map(|bulk_stream| bulk_stream.bytes.as_slice()),
+            meta_stream: meta_stream.as_deref(),
+            proteins: &proteins,
+        },
+    )
+    .map_err(Failure::archive)?;
+    Ok(coverage(write_design))
+}
+
+struct ArchiveEntries<'a> {
+    smbh: &'a [u8],
+    configurations: &'a [(&'a String, Vec<u8>)],
+    design_bulk: Option<&'a [u8]>,
+    meta_stream: Option<&'a [u8]>,
+    proteins: &'a [Vec<u8>],
+}
+
+fn write_archive<W: Write + Seek>(
+    staged: W,
+    entries: &ArchiveEntries<'_>,
+) -> Result<(), CodecError> {
+    let mut archive = zip::ZipWriter::new(staged);
+    let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    let mut entry = |name: String, bytes: &[u8]| -> Result<(), CodecError> {
         archive
-            .start_file(format!("{DESIGN_FOLDER}/Design1/MetaStream.dat"), options)
+            .start_file(name.as_str(), options)
             .map_err(|error| {
-                CodecError::malformed(format_args!("cannot create F3D Design MetaStream: {error}"))
+                CodecError::malformed(format_args!("cannot create F3D entry {name}: {error}"))
             })?;
-        archive.write_all(&meta_stream)?;
+        archive.write_all(bytes)?;
+        Ok(())
+    };
+    entry("Manifest.dat".into(), &manifest::generated_top_level()?)?;
+    entry("Properties.dat".into(), &0u32.to_le_bytes())?;
+    entry(
+        format!("{DESIGN_FOLDER}/Manifest.dat"),
+        &manifest::generated_design_asset()?,
+    )?;
+    entry(
+        format!("{DESIGN_FOLDER}/Breps.BlobParts/BREP.generated.smbh"),
+        entries.smbh,
+    )?;
+    for (name, payload) in entries.configurations {
+        entry((*name).clone(), payload)?;
     }
-    for (ordinal, appearance) in target.model.appearances.iter().enumerate() {
-        let protein = crate::materials::encode_protein(appearance)?;
-        archive
-            .start_file(
-                format!("{DESIGN_FOLDER}/ProteinAssets.BlobParts/ProteinAsset.{ordinal}.protein"),
-                options,
-            )
-            .map_err(|error| {
-                CodecError::malformed(format_args!("cannot create F3D Protein asset: {error}"))
-            })?;
-        archive.write_all(&protein)?;
+    if let Some(bulk_stream) = entries.design_bulk {
+        entry(
+            format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"),
+            bulk_stream,
+        )?;
+    }
+    if let Some(meta_stream) = entries.meta_stream {
+        entry(
+            format!("{DESIGN_FOLDER}/Design1/MetaStream.dat"),
+            meta_stream,
+        )?;
+    }
+    for (ordinal, protein) in entries.proteins.iter().enumerate() {
+        entry(
+            format!("{DESIGN_FOLDER}/ProteinAssets.BlobParts/ProteinAsset.{ordinal}.protein"),
+            protein,
+        )?;
     }
     archive.finish().map_err(|error| {
         CodecError::malformed(format_args!("cannot finish F3D archive: {error}"))
     })?;
-    staged.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut staged, writer)?;
-    Ok(coverage(has_native))
+    Ok(())
 }
 
 /// What [`write_new`] does with each model arena.
-/// `subds`, assets, tessellations and assembly joints are `Dropped` because
-/// non-empty arenas are refused; parameters are also `Dropped` without native
-/// Design records because their required projection is empty.
-///
-/// The generator writes B-rep topology, geometry, procedural carriers and
-/// appearances from the neutral model. Configurations and parameters are
-/// written from the native Design records after the neutral arenas are proved
-/// equal to their projection; without an `f3d` namespace a non-empty parameter
-/// arena is refused and configurations are not read. Design history, sketches
-/// and the remaining document arenas come only from native records, so the
-/// neutral arenas are not represented.
-fn coverage(has_native: bool) -> ArenaDispositions {
+/// `subds`, assets, tessellations and assembly joints are `Dropped`: the
+/// reduction removes them and charges a loss naming each. Configurations and
+/// parameters are written from the native Design records after the neutral
+/// arenas are proved equal to their projection; without those records the
+/// reduction drops them the same way. Design history, sketches and the
+/// remaining document arenas come only from native records, so the neutral
+/// arenas are not represented.
+fn coverage(write_design: bool) -> ArenaDispositions {
     use ArenaDisposition::{Dropped, Ignored, Omitted, Written};
     ArenaDispositions {
         bodies: Written,
@@ -214,8 +267,8 @@ fn coverage(has_native: bool) -> ArenaDispositions {
         features: Omitted,
         feature_input_topologies: Omitted,
         feature_result_topologies: Omitted,
-        configurations: if has_native { Written } else { Omitted },
-        parameters: if has_native { Written } else { Dropped },
+        configurations: if write_design { Written } else { Dropped },
+        parameters: if write_design { Written } else { Dropped },
         sketches: Omitted,
         sketch_entities: Omitted,
         sketch_constraints: Omitted,
@@ -246,5 +299,7 @@ fn coverage(has_native: bool) -> ArenaDispositions {
         physics_scenes: Omitted,
         solver_settings: Omitted,
         declared_measures: Omitted,
+        design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted),
+        process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Omitted),
     }
 }

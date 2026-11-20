@@ -12,17 +12,22 @@
 mod names;
 mod records;
 
+use cadmpeg_ir::design::options::NativeOptions;
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::Model;
+
+use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::options::NativeOption;
+use cadmpeg_ir::design::parameter::{
+    Deviations, FitDeviations, LimitSide, Tolerance as DimensionTolerance,
+};
 use cadmpeg_ir::ids::{EdgeId, FaceId, PmiId};
-use cadmpeg_ir::pmi::zones::ToleranceConstraints;
 use cadmpeg_ir::pmi::{
-    DatumReference, DatumReferences, DimensionKind, DimensionTolerance, GeometricToleranceKind,
-    LimitsAndFits, PmiAnnotation, PmiDefinition, PmiDimension, PmiMagnitude, PmiQuantity,
-    PmiTarget, PmiValue,
+    DatumReference, DatumReferences, DimensionModifier, FitZone, GeometricToleranceKind,
+    LimitsAndFits, PmiAnnotation, PmiDefinition, PmiDimension, PmiDimensionKind as DimensionKind,
+    PmiMagnitude, PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::report::loss::LossNote;
 
@@ -270,9 +275,9 @@ struct Outcome {
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     inputs: &Inputs<'_>,
-    model: &mut Model,
+    ir: &mut cadmpeg_ir::CadIr,
 ) -> Result<Vec<LossNote>, CodecError> {
-    let names = BodyNames::new(model);
+    let names = BodyNames::new(ir);
     let mut outcome = Outcome::default();
     let mut annotations = Vec::new();
     for rse_segment in &inputs.rse.segments {
@@ -379,8 +384,8 @@ pub(crate) fn project(
         cadmpeg_core::decode::u64_from_index(annotations.len()),
         "Inventor part annotations",
     )?;
-    model.pmi.extend(annotations);
-    model
+    ir.model.pmi.extend(annotations);
+    ir.model
         .pmi
         .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     Ok(losses(&outcome))
@@ -521,40 +526,39 @@ fn dimension(
     };
     let nominal = PmiValue::new(model_value * scale, quantity);
     let Tolerance {
-        bounds,
-        modifier,
+        tolerance: mut stated,
         resolved,
-    } = tolerance(&value, model_value, scale, quantity);
-    let mut modifiers = Vec::new();
-    modifiers.extend(modifier.map(str::to_owned));
+    } = tolerance(&value, scale);
+    let mut definition = PmiDimension::new(kind);
     match value.display {
-        1 => modifiers.push("theoretical".to_owned()),
-        2 => modifiers.push("auxiliary".to_owned()),
+        1 if stated.is_none() && nominal.is_some() => stated = Some(DimensionTolerance::Basic),
+        1 => definition
+            .modifiers
+            .push(DimensionModifier::Other("theoretical".to_owned())),
+        2 => definition.modifiers.push(DimensionModifier::Reference),
         _ => {}
     }
-    let mut tolerance_resolved = resolved;
-    let definition = if let Ok(definition) = PmiDimension::new(kind.clone(), nominal, bounds)
-        .and_then(|definition| definition.with_modifiers(modifiers.clone()))
-    {
-        definition
-    } else {
-        tolerance_resolved = false;
-        PmiDimension::new(kind, nominal, None)
-            .and_then(|definition| definition.with_modifiers(modifiers))
-            .map_err(|error| CodecError::malformed(format_args!("Inventor dimension: {error}")))?
-    };
-    if !tolerance_resolved {
+    definition.nominal = nominal.map(Dimension::Literal);
+    let displayed_form = stated.is_some() && value.tolerance != 0;
+    definition.tolerance = stated;
+    if !resolved {
         outcome.tolerance_unresolved += 1;
     }
     let targets = targets(scope, &owner.intents, outcome);
     outcome.dimensions += 1;
-    Ok(Some(PmiAnnotation {
-        id: annotation_id(segment, owner_ordinal)?,
-        name: name.map(str::to_owned),
-        visible: None,
-        targets,
-        definition: PmiDefinition::Dimension(definition),
-    }))
+    let mut annotation = PmiAnnotation::new(
+        annotation_id(segment, owner_ordinal)?,
+        targets.into_iter().map(Into::into).collect(),
+        PmiDefinition::Dimension(definition),
+    );
+    annotation.name = name.map(str::to_owned);
+    if displayed_form {
+        annotation.source_settings.insert(
+            cadmpeg_core::nonblank_literal!("inventor:tol_type"),
+            NativeOption::Integer(Dimension::Literal(i64::from(value.tolerance))),
+        );
+    }
+    Ok(Some(annotation))
 }
 
 fn annotation_id(segment: &Segment<'_>, owner: u32) -> Result<PmiId, CodecError> {
@@ -733,73 +737,86 @@ fn face_item_faces(scope: &Scope<'_, '_, '_>, item: u32) -> Option<Vec<PmiTarget
     Some(faces)
 }
 
-/// The tolerance of a value record and its single-limit modifier.
+/// The tolerance of a value record.
 struct Tolerance {
-    bounds: Option<DimensionTolerance>,
-    modifier: Option<&'static str>,
+    tolerance: Option<DimensionTolerance>,
     /// The tolerance form is one of the established codes.
     resolved: bool,
 }
 
-fn tolerance(value: &Value, model_value: f64, scale: f64, quantity: PmiQuantity) -> Tolerance {
-    let at = |internal: f64| PmiValue::new(internal * scale, quantity);
-    let mut modifier = None;
+/// A value record's tolerance: symmetric, deviation, and limit forms are
+/// displays of one pair of deviations (the form stays `inventor:tol_type`);
+/// form 2 holds a designation beside its stored deviations, and form 4 is a
+/// maximum.
+fn tolerance(value: &Value, scale: f64) -> Tolerance {
+    let at = |internal: f64| cadmpeg_ir::scalar::FiniteReal::new(internal * scale);
+    let deviations = |lower: f64, upper: f64| {
+        at(lower)
+            .zip(at(upper))
+            .map(|(lower, upper)| Deviations { lower, upper })
+    };
+    let ordered = |lower: f64, upper: f64| {
+        deviations(lower, upper)
+            .filter(|deviations| deviations.lower.get() <= deviations.upper.get())
+    };
     let tolerance = match value.tolerance {
         0 => Some(None),
-        TOLERANCE_SYMMETRIC => at(-value.upper.abs())
-            .zip(at(value.upper.abs()))
-            .map(|(lower, upper)| Some(DimensionTolerance::PlusMinus { lower, upper })),
-        TOLERANCE_DEVIATION => at(value.lower)
-            .zip(at(value.upper))
-            .map(|(lower, upper)| Some(DimensionTolerance::PlusMinus { lower, upper })),
-        3 => at(model_value + value.lower)
-            .zip(at(model_value + value.upper))
-            .map(|(lower, upper)| Some(DimensionTolerance::Limits { lower, upper })),
-        2 => at(value.lower)
-            .zip(at(value.upper))
+        TOLERANCE_SYMMETRIC => ordered(-value.upper.abs(), value.upper.abs())
+            .map(|deviations| Some(DimensionTolerance::Deviations(deviations))),
+        TOLERANCE_DEVIATION | 3 => ordered(value.lower, value.upper)
+            .map(|deviations| Some(DimensionTolerance::Deviations(deviations))),
+        2 => deviations(value.lower, value.upper)
             .zip(fit(&value.hole_fit, &value.shaft_fit))
-            .map(|((lower, upper), fit)| {
-                Some(DimensionTolerance::PlusMinusFit { lower, upper, fit })
+            .map(|(deviations, (fit, mate))| {
+                let stored = deviations.lower.get() != 0.0 || deviations.upper.get() != 0.0;
+                Some(DimensionTolerance::Fit {
+                    fit,
+                    mate,
+                    deviations: stored.then_some(FitDeviations::Unchecked(deviations)),
+                })
             }),
-        4 => {
-            modifier = Some("maximum");
-            Some(None)
-        }
+        4 => Some(Some(DimensionTolerance::SingleLimit(LimitSide::Maximum))),
         _ => None,
     };
     Tolerance {
         resolved: tolerance.is_some(),
-        bounds: tolerance.flatten(),
-        modifier,
+        tolerance: tolerance.flatten(),
     }
 }
 
-/// An ISO 286 tolerance class: fundamental-deviation letters and grade.
-fn fit(hole: &str, shaft: &str) -> Option<LimitsAndFits> {
-    let (class, zone) = match (hole.is_empty(), shaft.is_empty()) {
-        (false, true) => (hole, "hole"),
-        (true, false) => (shaft, "shaft"),
-        _ => return None,
-    };
+/// The designations a record stores: the first stored, the hole slot before
+/// the shaft slot, is the dimension's own, and the other is its mate.
+fn fit(hole: &str, shaft: &str) -> Option<(LimitsAndFits, Option<LimitsAndFits>)> {
+    let hole = (!hole.is_empty()).then(|| designation(hole, FitZone::Hole));
+    let shaft = (!shaft.is_empty()).then(|| designation(shaft, FitZone::Shaft));
+    match (hole, shaft) {
+        (Some(hole), Some(shaft)) => Some((hole?, Some(shaft?))),
+        (Some(fit), None) | (None, Some(fit)) => Some((fit?, None)),
+        (None, None) => None,
+    }
+}
+
+/// One designation: its fundamental-deviation letters, in the case ISO 286
+/// gives the zone, and its grade.
+fn designation(class: &str, zone: FitZone) -> Option<LimitsAndFits> {
     let split = class.find(|character: char| character.is_ascii_digit())?;
     let (letters, grade) = class.split_at(split);
-    let valid_letters = if zone == "hole" {
-        letters
+    let valid_letters = match zone {
+        FitZone::Hole => letters
             .chars()
-            .all(|character| character.is_ascii_uppercase())
-    } else {
-        letters
+            .all(|character| character.is_ascii_uppercase()),
+        FitZone::Shaft => letters
             .chars()
-            .all(|character| character.is_ascii_lowercase())
+            .all(|character| character.is_ascii_lowercase()),
     };
     (!letters.is_empty()
         && valid_letters
         && grade.chars().all(|character| character.is_ascii_digit()))
     .then(|| LimitsAndFits {
-        form_variance: letters.to_owned(),
-        zone_variance: zone.to_owned(),
+        form_variance: letters.to_ascii_uppercase(),
+        zone,
         grade: grade.to_owned(),
-        source: String::new(),
+        source: None,
     })
 }
 
@@ -844,10 +861,13 @@ fn datums(
             id,
             name: labels.get(&owner).cloned().flatten(),
             visible: None,
-            targets,
+            targets: targets.into_iter().map(Into::into).collect(),
             definition: PmiDefinition::Datum {
                 identification: label,
             },
+            native_ref: None,
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
         });
     }
     Ok((annotations, ids))
@@ -949,6 +969,9 @@ fn frame(
                     visible: None,
                     targets: Vec::new(),
                     definition: PmiDefinition::DatumSystem { references },
+                    native_ref: None,
+                    native_options: NativeOptions::new(),
+                    source_settings: NativeOptions::new(),
                 });
                 Some(id)
             }
@@ -958,7 +981,10 @@ fn frame(
         id: annotation_id(segment, owner_ordinal)?,
         name: name.map(str::to_owned),
         visible: None,
-        targets: owner_targets(scope, owner_ordinal, intent.as_slice(), outcome),
+        targets: owner_targets(scope, owner_ordinal, intent.as_slice(), outcome)
+            .into_iter()
+            .map(Into::into)
+            .collect(),
         definition: PmiDefinition::GeometricTolerance {
             tolerance: kind,
             magnitude,
@@ -967,8 +993,13 @@ fn frame(
             defined_area_second_unit: None,
             datum_system,
             modifiers: Vec::new(),
-            constraints: ToleranceConstraints::default(),
+            displacement: None,
+            maximum_upper: None,
+            zones: Vec::new(),
         },
+        native_ref: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
     });
     outcome.frames += 1;
     Ok(annotations)

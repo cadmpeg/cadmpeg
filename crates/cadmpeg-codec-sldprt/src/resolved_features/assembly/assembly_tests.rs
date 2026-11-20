@@ -69,6 +69,7 @@ fn scalar_archive_classes_map_each_value_offset() {
     let walk = Walk {
         status: Status::End,
         sketch_profiles: Vec::new(),
+        marks: Vec::new(),
         trace: Vec::new(),
         parameters: vec![
             parameter("moLengthParameter_c", 42),
@@ -97,10 +98,10 @@ fn archive_parameter_classes_serialize_as_snake_case() {
 
 fn lanes_of(bytes: &[u8]) -> (Vec<crate::records::FeatureInputLane>, Vec<LossNote>) {
     let scan = scan(bytes);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut annotations = Annotations::default();
     let mut losses = Vec::new();
-    let (lanes, _) =
+    let (lanes, _, _) =
         super::lanes(&ctx, &scan, &mut annotations, &mut losses).expect("lane assembly succeeds");
     (lanes, losses)
 }

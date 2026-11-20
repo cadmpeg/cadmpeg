@@ -80,6 +80,7 @@ fn transfer(patch: Patch) -> (CadIr, Vec<cadmpeg_ir::report::loss::LossNote>) {
             vec![patch],
             &mut notes,
             &mut FamilyEntityAdmission::new(ctx),
+            &super::super::super::roster::BodyRoots::new(),
         )
     })
     .expect("transfer recovered patch");
@@ -99,8 +100,8 @@ fn rolling_extension_recovers_and_reports_a_bounded_cylindrical_strip() {
     let expected_gap = 4.0 * (0.0015 * std::f64::consts::FRAC_PI_2 / 2.0).sin();
     assert!((patch.recovery.rolling_extension_mm - expected_gap).abs() < 1.0e-9);
     let (ir, notes) = transfer(patch);
-    assert_eq!(ir.model.faces.len(), 1);
-    assert_eq!(ir.model.edges.len(), 4);
+    assert_eq!(ir.geometry.faces.len(), 1);
+    assert_eq!(ir.geometry.edges.len(), 4);
     let note = notes
         .iter()
         .find(|note| note.code.local_code() == "geometry.rolling-sheet-extended")
@@ -155,7 +156,7 @@ fn rolling_recovery_retains_the_active_spline_pcurve_interval() {
         .iter()
         .all(|side| matches!(side.pcurve, PcurveGeometry::Trimmed(_))));
     let (ir, _) = transfer(patch);
-    assert_eq!(ir.model.faces.len(), 1);
+    assert_eq!(ir.geometry.faces.len(), 1);
 }
 
 #[test]
@@ -261,4 +262,60 @@ fn spline_trims_share_the_lifted_edges_clamped_chart() {
         }
         transfer(patch);
     }
+}
+
+#[test]
+fn bounded_plane_chart_reports_omitted_bounds_on_emission_and_shell_edge_recovery() {
+    let definition = cylinder_section();
+    let mut face = sheet(&definition, 0.1);
+    let mut bytes = vec![0xd4, 0xa0];
+    for value in [0.0_f64, 0.0, 0.0, 1.0, 0.0, -1.0, -4.0, 4.0, -6.0, 6.0] {
+        bytes.extend(value.to_le_bytes());
+    }
+    face.carrier = Carrier::Plane(
+        super::super::super::sheet_carrier::SpatialPlane::read(&bytes).expect("bounded plane"),
+    );
+    let patch = face.patch(&CadIr::empty(), None).expect("planar ring");
+    assert_eq!(
+        patch.recovery.untransferred_plane_bounds,
+        Some([[-4.0, 4.0], [-6.0, 6.0]])
+    );
+    let edges = patch.sides.iter().map(|side| (side.edge, side)).collect();
+    let reused = face
+        .recover_from_shell_edges(&edges)
+        .expect("established planar edges");
+    assert_eq!(
+        reused.recovery.untransferred_plane_bounds,
+        patch.recovery.untransferred_plane_bounds
+    );
+    for candidate in [patch, reused] {
+        let (ir, notes) = transfer(candidate);
+        assert_eq!(ir.geometry.faces.len(), 1);
+        let notes = notes
+            .iter()
+            .filter(|note| note.code.local_code() == "geometry.plane-bounds-not-transferred")
+            .collect::<Vec<_>>();
+        assert_eq!(notes.len(), 1);
+        assert!(notes[0].message.contains("[[-4.0, 4.0], [-6.0, 6.0]]"));
+    }
+}
+
+#[test]
+fn unrestricted_plane_emission_has_no_omitted_bounds_note() {
+    let definition = cylinder_section();
+    let mut face = sheet(&definition, 0.1);
+    let mut bytes = vec![0x08, 0xe8, 0x1d];
+    for value in [0.0_f64, 0.0, 0.0] {
+        bytes.extend(value.to_le_bytes());
+    }
+    face.carrier = Carrier::Plane(
+        super::super::super::sheet_carrier::SpatialPlane::read(&bytes).expect("unrestricted plane"),
+    );
+    let patch = face.patch(&CadIr::empty(), None).expect("planar ring");
+    assert!(patch.recovery.untransferred_plane_bounds.is_none());
+    let (ir, notes) = transfer(patch);
+    assert_eq!(ir.geometry.faces.len(), 1);
+    assert!(notes
+        .iter()
+        .all(|note| note.code.local_code() != "geometry.plane-bounds-not-transferred"));
 }

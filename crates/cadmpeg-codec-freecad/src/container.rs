@@ -8,10 +8,11 @@ use std::path::Path;
 
 use cadmpeg_container::ArchiveSnapshot;
 use cadmpeg_core::bytes::contains;
-use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::decode::{ArenaClass, DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::{CodecError, ContainerEntry};
-use cadmpeg_ir::native::bytes::NativeBytes;
+use cadmpeg_ir::ids::Identity;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::ContainerSummary;
 
 use crate::brep::ShapePayloadRecord;
@@ -70,37 +71,61 @@ pub(crate) fn has_document_markers(
     Ok(contains(document, b"<Document") && contains(document, b"SchemaVersion"))
 }
 
+/// The persistence document admitted from `Document.xml`.
+pub(crate) struct Persistence<'a> {
+    /// Persistence metadata.
+    pub(crate) document: DocumentFacts,
+    /// Declared persistence schema version, owned by the source declaration.
+    pub(crate) schema_version: String,
+    /// One admitted persistence tree shared by all document readers.
+    pub(crate) xml: roxmltree::Document<'a>,
+}
+
+/// An archive entry that could not be opened. It is given up once the
+/// records that need it are known.
+pub(crate) struct UnreadableEntry<'a> {
+    /// The archive entry name.
+    pub(crate) name: String,
+    part: Part<'a>,
+    error: CodecError,
+}
+
+impl UnreadableEntry<'_> {
+    /// Gives the entry up, naming the records dropped because they need it.
+    pub(crate) fn give_up(
+        self,
+        ctx: &DecodeContext<'_>,
+        drops: Option<&crate::persistence::UnreadableDrops>,
+    ) -> Result<GivenUpPart, CodecError> {
+        let mut part = self.part;
+        if let Some(drops) = drops {
+            let records = drops
+                .records
+                .iter()
+                .map(|id| Identity::new(id.clone()).map_err(CodecError::malformed))
+                .collect::<Result<Vec<_>, _>>()?;
+            part = part.dropping(records);
+        }
+        ctx.give_up_part(part, self.error)
+    }
+}
+
 /// Fully scanned container used by inspection and decode.
 pub(crate) struct Scan<'a> {
     /// Recoverable container metadata diagnostics.
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     /// Container summary entries.
     pub(crate) entries: Vec<ContainerEntry>,
-    /// Persistence metadata.
-    pub(crate) document: DocumentFacts,
-    /// Declared persistence schema version, owned by the source declaration.
-    pub(crate) schema_version: String,
-    /// One admitted persistence tree shared by all document readers.
-    pub(crate) document_xml: roxmltree::Document<'a>,
+    /// The persistence document, or `None` when `Document.xml` was given up.
+    pub(crate) persistence: Option<Persistence<'a>>,
     /// Exact physical archive partition.
     pub(crate) ledger: Vec<ArchiveSpan>,
-    /// Bounded physical payloads that could not be opened.
-    pub(crate) unreadable_entries: Vec<UnreadableEntry>,
+    /// Archive entries that could not be opened, to be given up as parts.
+    pub(crate) unreadable: Vec<UnreadableEntry<'a>>,
+    /// Names of the given-up archive entries.
+    pub(crate) unreadable_names: BTreeSet<String>,
     /// Inflated entry views, each retaining its [`SpaceId`](cadmpeg_core::decode::SpaceId).
     pub(crate) data: BTreeMap<String, View<'a>>,
-}
-
-/// A source-only ZIP payload. Its bytes are stored bytes, never expanded data.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct UnreadableEntry {
-    pub(crate) id: String,
-    pub(crate) name: String,
-    pub(crate) data_start: u64,
-    pub(crate) data_end: u64,
-    #[serde(deserialize_with = "crate::native::deserialize_lowercase_native_bytes")]
-    pub(crate) stored_data: NativeBytes,
-    pub(crate) error: String,
 }
 
 /// Scan an archive through the session resource budget.
@@ -115,64 +140,24 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
             "ZIP has no root Document.xml".into(),
         ));
     }
-    let document_view = archive.open(ctx, "Document.xml")?;
-    let document_bytes = document_view.window();
-    if let Some((_, object_count)) = xml_envelope_counts(document_bytes) {
-        ctx.charge_entities(object_count, "admit FCStd document objects")?;
-    }
     let mut losses = Vec::new();
-    let document_xml = admit_document(ctx, document_bytes)?;
-    let (document, schema_version) = parse_document(&document_xml, &mut losses)?;
-    let mut data = BTreeMap::new();
-    let mut unreadable_entries = Vec::new();
-    for file in archive.entries() {
-        let name = file.name.clone();
-        if !crate::native::is_safe_entry_name(&name) {
-            return Err(CodecError::malformed(format_args!(
-                "unsafe ZIP entry path {name:?}"
-            )));
+    let mut persistence = None;
+    // Opening the entry is the part; a Part refusal while admitting its tree
+    // gives the part up too. A declaration that does not admit refuses the
+    // file.
+    let opened = ctx.run_part(|| {
+        let view = archive.open(ctx, "Document.xml")?;
+        Ok(admit_persistence(ctx, view))
+    })?;
+    let mut document = Some(match opened {
+        Ok(admitted) => {
+            let (view, admitted, metadata) = admitted?;
+            persistence = Some(admitted);
+            losses.extend(metadata);
+            Ok(view)
         }
-        let view = if file.name == "Document.xml" {
-            document_view
-        } else {
-            match archive.open(ctx, &file.name) {
-                Ok(view) => view,
-                Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-                Err(error) => {
-                    let range = file.stored_range()?;
-                    let end = range.end;
-                    let start_index = usize::try_from(range.start)
-                        .map_err(|_| CodecError::malformed("ZIP data offset exceeds memory"))?;
-                    let end_index = usize::try_from(end)
-                        .map_err(|_| CodecError::malformed("ZIP data offset exceeds memory"))?;
-                    let bytes = root
-                        .window()
-                        .get(start_index..end_index)
-                        .ok_or_else(|| CodecError::malformed("ZIP payload escapes archive"))?;
-                    losses.push(crate::loss::FreecadLossCode::ArchiveEntryUnreadable.note(
-                        format!(
-                            "{} cannot be opened: {error}; stored payload retained",
-                            file.name
-                        ),
-                    ));
-                    ctx.retain_bytes(
-                        cadmpeg_core::decode::u64_from_index(bytes.len()),
-                        "FCStd unreadable stored payload",
-                    )?;
-                    unreadable_entries.push(UnreadableEntry {
-                        id: format!("fcstd:native:unreadable_entry#{name}"),
-                        name,
-                        data_start: range.start,
-                        data_end: end,
-                        stored_data: bytes.to_vec().into(),
-                        error: format!("{error}"),
-                    });
-                    continue;
-                }
-            }
-        };
-        data.insert(name, view);
-    }
+        Err(error) => Err(error),
+    });
     let physical_ledger = archive.physical_ledger()?;
     let mut ledger = Vec::new();
     for (index, span) in physical_ledger.into_iter().enumerate() {
@@ -183,16 +168,122 @@ pub(crate) fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan<'
             role: crate::native::ArchiveSpanRole::from(&span.role),
         });
     }
+    let mut data = BTreeMap::new();
+    let mut unreadable = Vec::new();
+    let mut unreadable_names = BTreeSet::new();
+    for file in archive.entries() {
+        let name = file.name.clone();
+        if !crate::native::is_safe_entry_name(&name) {
+            return Err(CodecError::malformed(format_args!(
+                "unsafe ZIP entry path {name:?}"
+            )));
+        }
+        let opened = if name == "Document.xml" {
+            document
+                .take()
+                .ok_or_else(|| CodecError::malformed("ZIP has two Document.xml entries"))?
+        } else {
+            ctx.run_part(|| archive.open(ctx, &name))?
+        };
+        let error = match opened {
+            Ok(view) => {
+                data.insert(name, view);
+                continue;
+            }
+            Err(error) => error,
+        };
+        let range = file.stored_range()?;
+        let stored = usize::try_from(range.start)
+            .ok()
+            .zip(usize::try_from(range.end).ok())
+            .and_then(|(start, end)| root.child(start, end))
+            .ok_or_else(|| CodecError::malformed("ZIP payload escapes archive"))?;
+        // The ledger span of the stored payload names the entry; an empty
+        // payload has no span and belongs to the document, or with no
+        // document, to the span of its name.
+        let span_of = |payload: bool| {
+            ledger
+                .iter()
+                .find(|span| match &span.role {
+                    crate::native::ArchiveSpanRole::CompressedPayload(entry) => {
+                        payload && *entry == name
+                    }
+                    crate::native::ArchiveSpanRole::LocalName(entry) => !payload && *entry == name,
+                    _ => false,
+                })
+                .map(|span| span.id.clone())
+        };
+        let containing = span_of(true)
+            .or_else(|| {
+                persistence
+                    .is_some()
+                    .then(|| crate::native::native_id("document", "0"))
+            })
+            .or_else(|| span_of(false));
+        let mut part = Part::new(
+            crate::dialect::FORMAT,
+            "archive-entry",
+            stored,
+            held_classes(classify(&name)).iter().copied(),
+        )
+        .named(name.as_str());
+        if let Some(containing) = containing {
+            part = part.contained_in(Identity::new(containing).map_err(CodecError::malformed)?);
+        }
+        unreadable_names.insert(name.clone());
+        unreadable.push(UnreadableEntry { name, part, error });
+    }
     Ok(Scan {
         losses,
         entries: archive.container_entries(classify),
-        document,
-        schema_version,
-        document_xml,
-        unreadable_entries,
+        persistence,
+        unreadable,
+        unreadable_names,
         ledger,
         data,
     })
+}
+
+/// Admits the opened `Document.xml`, returning its view, the persistence
+/// document, and the metadata losses its declaration charges.
+fn admit_persistence<'a>(
+    ctx: &DecodeContext<'_>,
+    view: View<'a>,
+) -> Result<
+    (
+        View<'a>,
+        Persistence<'a>,
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+    ),
+    CodecError,
+> {
+    let bytes = view.window();
+    if let Some((_, object_count)) = xml_envelope_counts(bytes) {
+        ctx.charge_entities(object_count, "admit FCStd document objects")?;
+    }
+    let xml = admit_document(ctx, bytes)?;
+    let mut losses = Vec::new();
+    let (document, schema_version) = parse_document(&xml, &mut losses)?;
+    Ok((
+        view,
+        Persistence {
+            document,
+            schema_version,
+            xml,
+        },
+        losses,
+    ))
+}
+
+/// The content classes an entry of `role` can hold.
+fn held_classes(role: ContainerRole) -> &'static [ArenaClass] {
+    match role {
+        ContainerRole::Directory => &[],
+        ContainerRole::Brep | ContainerRole::GuiDocument | ContainerRole::Thumbnail => {
+            &[ArenaClass::Model]
+        }
+        _ => &ArenaClass::ALL,
+    }
 }
 
 pub(crate) fn entry_records(
@@ -201,10 +292,6 @@ pub(crate) fn entry_records(
     properties: &[PropertyRecord],
 ) -> Result<Vec<EntryRecord>, CodecError> {
     let mut records = Vec::new();
-    let mut unreadable_names = HashSet::new();
-    for entry in &scan.unreadable_entries {
-        unreadable_names.insert(entry.name.as_str());
-    }
     let references = {
         let mut references = HashMap::<&str, Vec<usize>>::new();
         for (index, property) in properties.iter().enumerate() {
@@ -220,7 +307,7 @@ pub(crate) fn entry_records(
     }?;
     for entry in &scan.entries {
         let Some(bytes) = scan.data.get(&entry.name).map(|view| view.window()) else {
-            if unreadable_names.contains(entry.name.as_str()) {
+            if scan.unreadable_names.contains(&entry.name) {
                 // Stored source-only bytes have no expanded-byte coverage.
                 continue;
             }
@@ -252,31 +339,20 @@ pub(crate) fn entry_records(
 }
 
 pub(crate) fn source_attributes(
-    scan: &Scan<'_>,
+    document: &DocumentFacts,
 ) -> Result<BTreeMap<NonBlankString, String>, CodecError> {
     let mut attributes = BTreeMap::new();
     for (key, value) in [
-        ("document_root", scan.document.root_name.clone()),
-        ("object_count", format!("{}", scan.document.object_count)),
+        ("document_root", document.root_name.clone()),
         (
             "document_kind",
-            scan.document.document_kind().as_str().to_owned(),
+            document.document_kind().as_str().to_owned(),
         ),
-        ("application_domains", scan.document.domains.join(",")),
-        ("archive_entry_count", format!("{}", scan.entries.len())),
-        ("physical_ledger_spans", format!("{}", scan.ledger.len())),
+        ("application_domains", document.domains.join(",")),
     ]
     .into_iter()
     .chain(
-        scan.ledger
-            .last()
-            .map(|last| {
-                Ok::<_, CodecError>(("physical_archive_bytes", format!("{}", last.span.end())))
-            })
-            .transpose()?,
-    )
-    .chain(
-        scan.document
+        document
             .program_version
             .as_ref()
             .map(|value| Ok::<_, CodecError>(("program_version", value.to_owned())))
@@ -290,15 +366,31 @@ pub(crate) fn source_attributes(
 }
 
 /// Summarize one scan.
-pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
-    let matched = crate::dialect::FcstdDialect::classify(&scan.document, &scan.schema_version);
+pub(crate) fn summarize(
+    ctx: &DecodeContext<'_>,
+    mut scan: Scan<'_>,
+) -> Result<ContainerSummary, CodecError> {
+    let given_up = std::mem::take(&mut scan.unreadable)
+        .into_iter()
+        .map(|entry| entry.give_up(ctx, None))
+        .collect::<Result<Vec<_>, _>>()?;
+    let scan = &scan;
+    let matched = scan.persistence.as_ref().map(|persistence| {
+        crate::dialect::FcstdDialect::classify(&persistence.document, &persistence.schema_version)
+    });
     let mut losses = Vec::new();
     for loss in scan
         .losses
         .iter()
-        .chain(crate::dialect::FcstdDialect::dialect_loss(&matched).iter())
+        .cloned()
+        .chain(given_up.iter().map(GivenUpPart::loss))
+        .chain(
+            matched
+                .as_ref()
+                .and_then(crate::dialect::FcstdDialect::dialect_loss),
+        )
     {
-        losses.push(loss.clone());
+        losses.push(loss);
     }
     let mut entries = Vec::new();
     for entry in &scan.entries {
@@ -313,27 +405,48 @@ pub(crate) fn summarize(scan: &Scan<'_>) -> ContainerSummary {
             attributes,
         });
     }
-    ContainerSummary::classified(
-        cadmpeg_core::dialect::DialectLayers::of(matched),
-        cadmpeg_ir::ContainerKind::Zip,
-        entries,
-        losses,
-        summary_notes(scan),
-    )
+    let kind = cadmpeg_ir::ContainerKind::Zip;
+    let notes = summary_notes(scan);
+    Ok(match matched {
+        Some(matched) => ContainerSummary::classified(
+            cadmpeg_core::dialect::DialectLayers::of(matched),
+            kind,
+            entries,
+            losses,
+            notes,
+        ),
+        None => {
+            ContainerSummary::unclassified(crate::dialect::FORMAT, kind, entries, losses, notes)
+        }
+    })
 }
 
 /// Notes shared by inspect and decode without reclassifying host identity.
 pub(crate) fn summary_notes(scan: &Scan<'_>) -> Vec<String> {
     let mut notes = Vec::new();
-    notes.extend([
-        format!("SchemaVersion={}", scan.schema_version),
-        format!("FileVersion={}", scan.document.file_version.as_str()),
-        format!("document root={}", scan.document.root_name),
-        format!("document kind={}", scan.document.document_kind().as_str()),
-        format!("object count={}", scan.document.object_count),
-        format!("physical ledger spans={} coverage=exact", scan.ledger.len()),
-    ]);
-    if let Some(version) = &scan.document.program_version {
+    if let Some(Persistence {
+        document,
+        schema_version,
+        ..
+    }) = &scan.persistence
+    {
+        notes.extend([
+            format!("SchemaVersion={schema_version}"),
+            format!("FileVersion={}", document.file_version.as_str()),
+            format!("document root={}", document.root_name),
+            format!("document kind={}", document.document_kind().as_str()),
+            format!("object count={}", document.object_count),
+        ]);
+    }
+    notes.push(format!(
+        "physical ledger spans={} coverage=exact",
+        scan.ledger.len()
+    ));
+    if let Some(version) = scan
+        .persistence
+        .as_ref()
+        .and_then(|persistence| persistence.document.program_version.as_ref())
+    {
         notes.push(format!("ProgramVersion={version}"));
     }
     notes
@@ -720,6 +833,24 @@ pub(crate) fn logical_ledger(
                 },
             )?;
         }
+    }
+    Ok(output)
+}
+
+/// The logical partition of entries no persistence document reads: each
+/// entry is one named opaque span.
+pub(crate) fn opaque_ledger(entries: &[EntryRecord]) -> Result<Vec<LogicalSpan>, CodecError> {
+    let mut output = Vec::new();
+    for entry in entries {
+        push_logical_span(
+            &mut output,
+            entry,
+            0,
+            entry.byte_len(),
+            LogicalClassification::NamedOpaque {
+                owner: entry.id().to_owned(),
+            },
+        )?;
     }
     Ok(output)
 }

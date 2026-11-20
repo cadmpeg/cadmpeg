@@ -120,6 +120,52 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
         u64_from_index(compact_paired_at)
     );
 
+    let legacy_header = DesignRecordHeader {
+        class_tag: "272".to_owned().try_into().unwrap(),
+        ..compact_header.clone()
+    };
+    let mut legacy_bytes = bytes[..tail_at].to_vec();
+    legacy_bytes[4..7].copy_from_slice(b"272");
+    legacy_bytes[22..26].copy_from_slice(&102u32.to_le_bytes());
+    compact_tail[27..31].copy_from_slice(&0x41u32.to_le_bytes());
+    compact_tail[58..62].copy_from_slice(&180u32.to_le_bytes());
+    legacy_bytes.extend_from_slice(&compact_tail);
+    indexed_header(&mut legacy_bytes, *b"262", 100);
+    indexed_header(&mut legacy_bytes, *b"328", 101);
+    indexed_header(&mut legacy_bytes, *b"432", 102);
+    legacy_bytes.extend_from_slice(&[0; 10]);
+    crate::test_support::push_marked_reference(&mut legacy_bytes, 100);
+    legacy_bytes.extend_from_slice(&1u32.to_le_bytes());
+    legacy_bytes.extend_from_slice(&1u32.to_le_bytes());
+    legacy_bytes.extend_from_slice(&1u32.to_le_bytes());
+    region_member(&mut legacy_bytes, 81, [0, 1, 1]);
+    legacy_bytes.push(1);
+    legacy_bytes.extend_from_slice(&0u32.to_le_bytes());
+    indexed_header(&mut legacy_bytes, *b"299", 102);
+    indexed_header(&mut legacy_bytes, *b"256", 180);
+    let marker_payload = legacy_bytes.len();
+    legacy_bytes.extend_from_slice(&[0; 18]);
+    indexed_header(&mut legacy_bytes, *b"256", 181);
+
+    let parse_legacy = |bytes: &[u8], owner| {
+        super::super::parse_sketch_profile_frame(
+            bytes,
+            "f3d:Design/BulkStream.dat",
+            1,
+            &legacy_header,
+            std::slice::from_ref(&entity),
+            Some((owner, &std::cell::OnceCell::new())),
+        )
+    };
+    let legacy = parse_legacy(&legacy_bytes, 777).expect("legacy Sketch-profile operand");
+    assert_eq!(legacy.entity_id, entity.entity_id);
+    let selection = legacy.region_selection.expect("nested selected region");
+    assert_eq!(selection.record_index, 102);
+    assert_eq!(selection.regions[0].members[0].curve_primary_id.get(), 81);
+    assert!(parse_legacy(&legacy_bytes, 778).is_none());
+    legacy_bytes[marker_payload] = 1;
+    assert!(parse_legacy(&legacy_bytes, 777).is_none());
+
     bytes.truncate(tail_at);
     let mut omitted_ordinal_tail = vec![0; 89];
     omitted_ordinal_tail[0] = 1;
@@ -963,13 +1009,117 @@ fn sketch_profile_region_selection_derives_companion_after_header_shaped_member(
 
 mod counted_frames;
 
+/// A loop of curves `ids` followed by its exterior byte.
+fn region_loop(bytes: &mut Vec<u8>, ids: &[u32], exterior: u8) {
+    bytes.extend_from_slice(&u32::try_from(ids.len()).unwrap().to_le_bytes());
+    for id in ids {
+        region_member(bytes, *id, [0, 1, 1]);
+    }
+    bytes.push(exterior);
+}
+
+/// A selection of two regions. The first is the union of two atomic
+/// regions split by curve 12; the second is one atomic region.
+fn atomic_region_frame(atomic_count: u32) -> (Vec<u8>, usize) {
+    let profile_record_index = 100;
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"266", profile_record_index);
+    indexed_header(&mut bytes, *b"263", profile_record_index + 1);
+    indexed_header(&mut bytes, *b"259", profile_record_index + 2);
+    indexed_header(&mut bytes, *b"327", profile_record_index + 3);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.push(1);
+    bytes.extend_from_slice(&profile_record_index.to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    region_loop(&mut bytes, &[10, 11], 1);
+    bytes.extend_from_slice(&atomic_count.to_le_bytes());
+    let atomic_at = bytes.len();
+    for ids in [[10, 12], [11, 12]] {
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        region_loop(&mut bytes, &ids, 1);
+    }
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    region_loop(&mut bytes, &[20], 1);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    indexed_header(&mut bytes, *b"261", profile_record_index + 3);
+    (bytes, atomic_at)
+}
+
+fn ring_ids(
+    rings: &[&crate::records::topology::sketch_profile::DesignSketchProfileRegion],
+) -> Vec<Vec<u32>> {
+    rings
+        .iter()
+        .map(|ring| {
+            ring.members
+                .iter()
+                .map(|member| member.curve_primary_id.get())
+                .collect()
+        })
+        .collect()
+}
+
+#[test]
+fn sketch_profile_region_selection_reads_the_atomic_regions_of_each_region() {
+    let (bytes, atomic_at) = atomic_region_frame(2);
+    let selection =
+        parse_sketch_profile_region_selection(&bytes, 100, 0).expect("profile-region selection");
+    assert_eq!(
+        selection
+            .regions
+            .iter()
+            .map(|region| region.region_ordinal)
+            .collect::<Vec<_>>(),
+        [0, 1]
+    );
+    assert_eq!(
+        selection
+            .atomic_regions
+            .iter()
+            .map(|atomic| (atomic.region_ordinal, atomic.loop_count_offset))
+            .collect::<Vec<_>>(),
+        [
+            (0, u64_from_index(atomic_at)),
+            (0, u64_from_index(atomic_at + 4 + 4 + 80 + 1))
+        ]
+    );
+    assert_eq!(
+        ring_ids(&selection.resolution_regions().expect("member rings")),
+        [vec![10, 12], vec![11, 12], vec![20]]
+    );
+}
+
+#[test]
+fn sketch_profile_region_selection_refuses_a_short_atomic_region_run() {
+    let (bytes, _) = atomic_region_frame(3);
+    assert_eq!(parse_sketch_profile_region_selection(&bytes, 100, 0), None);
+    let (mut bytes, atomic_at) = atomic_region_frame(2);
+    bytes[atomic_at + 4 + 4 + 80] = 2;
+    assert_eq!(parse_sketch_profile_region_selection(&bytes, 100, 0), None);
+}
+
+#[test]
+fn atomic_regions_that_omit_a_region_curve_select_no_member_rings() {
+    let (bytes, atomic_at) = atomic_region_frame(2);
+    let mut omitted = bytes;
+    // Curve 11 of the first region becomes curve 13 in its second atomic
+    // region, whose loop count follows the first atomic region's 89 bytes.
+    let member = atomic_at + 89 + 4 + 4;
+    omitted[member + 4..member + 8].copy_from_slice(&13u32.to_le_bytes());
+    let selection =
+        parse_sketch_profile_region_selection(&omitted, 100, 0).expect("profile-region selection");
+    assert!(selection.resolution_regions().is_none());
+}
+
 #[test]
 fn sketch_profile_region_selection_retains_partial_curve_incidence_words() {
     let (mut bytes, selection_at, _, _) = region_selection_frame();
     let first_member =
         selection_at + crate::layout::sketch_profile_region_selection_prefix::LEN + 4;
     let incidence = first_member
-        + crate::layout::sketch_profile_region_member::ZERO_WORDS_3
+        + crate::layout::sketch_profile_region_member::ZERO_WORD_AFTER_PRIMARY
         + std::mem::size_of::<[u32; 3]>();
     bytes[incidence + 4..incidence + 8].copy_from_slice(&11u32.to_le_bytes());
     bytes[incidence + 8..incidence + 12].copy_from_slice(&12u32.to_le_bytes());
@@ -979,6 +1129,33 @@ fn sketch_profile_region_selection_retains_partial_curve_incidence_words() {
     for offset in [incidence + 4, incidence + 8] {
         let mut invalid = bytes.clone();
         invalid[offset..offset + 4].copy_from_slice(&0u32.to_le_bytes());
+        assert!(parse_sketch_profile_region_selection(&invalid, 100, 0).is_none());
+    }
+}
+
+#[test]
+fn sketch_profile_region_member_retains_its_secondary_curve_identity() {
+    use crate::layout::sketch_profile_region_member as member;
+    let (mut bytes, selection_at, _, _) = region_selection_frame();
+    let first_member =
+        selection_at + crate::layout::sketch_profile_region_selection_prefix::LEN + 4;
+    let secondary = first_member + member::CURVE_SECONDARY_ID;
+    bytes[secondary..secondary + 4].copy_from_slice(&247u32.to_le_bytes());
+    let selection = parse_sketch_profile_region_selection(&bytes, 100, 0).unwrap();
+    let parsed = &selection.regions[0].members[0];
+    assert_eq!(
+        parsed.curve_secondary_id.map(std::num::NonZeroU32::get),
+        Some(247)
+    );
+    let round_trip: crate::records::topology::sketch_profile::DesignSketchProfileRegionMember =
+        serde_json::from_value(serde_json::to_value(parsed).unwrap()).unwrap();
+    assert_eq!(&round_trip, parsed);
+    for zero in [
+        member::ZERO_WORD_AFTER_PRIMARY,
+        member::ZERO_WORD_AFTER_SECONDARY,
+    ] {
+        let mut invalid = bytes.clone();
+        invalid[first_member + zero..first_member + zero + 4].copy_from_slice(&1u32.to_le_bytes());
         assert!(parse_sketch_profile_region_selection(&invalid, 100, 0).is_none());
     }
 }
@@ -1235,6 +1412,7 @@ fn sketch_region_companion_closes_before_a_later_face_recipe() {
                 scope_reference_ordinal: 0,
                 group_ownership: None,
                 next_byte_offset: None,
+                registered_frame: None,
                 header: &header,
             },
             &[recipe],

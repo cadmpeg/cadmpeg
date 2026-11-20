@@ -391,7 +391,7 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
             reference_type_offset: 0,
         });
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut native = cadmpeg_ir::native::NativeNamespace::default();
     native
         .set_arena(
@@ -693,8 +693,8 @@ fn fillet_sets_round_trip_and_belong_to_fillet_scopes() {
                 law: DesignFilletSetLaw::Constant {
                     radius_owner_record_index: 4,
                 },
-                tangency_weight_owner_record_index: 5,
-                tangent_chain: false,
+                tangency_weight_owner_record_index: Some(5),
+                tangent_chain: Some(false),
                 curvature_continuity: None,
             }],
         });
@@ -736,6 +736,7 @@ fn chamfer_sets_round_trip_and_belong_to_chamfer_scopes() {
                 auxiliary_record_index: 5,
                 entry_count: 1,
                 tangent_chain: true,
+                distance_reversed: false,
             }],
         });
     }

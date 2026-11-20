@@ -372,10 +372,7 @@ fn feature_owned_sketch_placement_follows_member_run_head_reference() {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
     bytes.extend_from_slice(&[0, 1]);
-    bytes.resize(
-        head_at + crate::design::decode::sketch::MEMBER_RUN_HEAD_FRAME,
-        0,
-    );
+    bytes.resize(head_at + crate::layout::sketch_explicit_member_head::LEN, 0);
 
     let entity = DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:design-entity-header#0".into(),
@@ -781,6 +778,75 @@ fn legacy_sketch_nurbs_payload() -> Vec<u8> {
     bytes
 }
 
+/// A reference-run NURBS record whose four local references are typed.
+fn typed_reference_run_sketch_nurbs_payload() -> Vec<u8> {
+    const POINT: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
+    let mut bytes = Vec::new();
+    lp_ascii(&mut bytes, "431");
+    bytes.extend_from_slice(&1200u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 9]);
+    bytes.push(1);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for (name, value) in [("crv_primary_id", 700u64), ("crv_secondary_id", 0)] {
+        lp_ascii(&mut bytes, name);
+        lp_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    assert_eq!(bytes.len(), 133);
+    bytes.extend_from_slice(&[0xff; 8]);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"432");
+    bytes.extend_from_slice(&1200u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 8]);
+    push_typed_member_reference(&mut bytes, 1201, POINT);
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&0.000_01f64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.push(1);
+    for target in [1202, 1203, 1204] {
+        push_typed_member_reference(&mut bytes, target, POINT);
+    }
+    bytes.extend_from_slice(&[1, 0]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&[0x95, 0xd6, 0x26, 0xe8, 0x0b, 0x2e, 0x11, 0x3e]);
+    for (values, count) in [
+        (vec![0.0f64, 0.0, 0.0, 1.0, 1.0, 1.0], 6u32),
+        (vec![1.0f64, 1.0, 1.0], 3),
+        (vec![0.0f64, 0.0, 0.0, 0.5, 0.75, 0.0, 1.0, 0.0, 0.0], 3),
+    ] {
+        bytes.extend_from_slice(&count.to_le_bytes());
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        for value in values {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes
+}
+
+#[test]
+fn typed_reference_run_sketch_nurbs_decodes_its_counted_arrays() {
+    let bytes = typed_reference_run_sketch_nurbs_payload();
+    let (geometry, end) = tested_decode_legacy_sketch_nurbs(&bytes, 0)
+        .transpose()
+        .expect("valid source scaling")
+        .expect("typed reference run NURBS");
+    let SketchCurveGeometry::Nurbs { geometry, .. } = geometry else {
+        panic!("expected NURBS");
+    };
+    assert_eq!(end, bytes.len());
+    assert_eq!(geometry.degree(), 2);
+    assert_eq!(geometry.knots(), [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(
+        geometry.poles().points().nth(1).copied().unwrap(),
+        Point3::new(5.0, 7.5, 0.0)
+    );
+    // The fifth byte after the fit tolerance is `01` in the typed form.
+    let mut invalid = bytes;
+    invalid[133 + 94] = 0;
+    assert!(tested_decode_legacy_sketch_nurbs(&invalid, 0).is_none());
+}
+
 #[test]
 fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
     let mut bytes = legacy_sketch_nurbs_payload();
@@ -962,13 +1028,24 @@ fn sketch_graph_point(record_index: u32) -> SketchPoint {
     .unwrap()
 }
 
+/// The Geometry member bytes from offset 11 through the zero byte after an
+/// empty display name, with a direct-container reference to record 300.
+fn push_unnamed_contained_member_head(bytes: &mut Vec<u8>) {
+    bytes.extend_from_slice(&[0; 25]);
+    bytes.push(1);
+    bytes.extend_from_slice(&300u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.push(0);
+}
+
 #[test]
 fn sketch_member_run_counts_base_point_and_stops_at_count() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"282");
     bytes.extend_from_slice(&100u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 41]);
+    push_unnamed_contained_member_head(&mut bytes);
     bytes.extend_from_slice(&3u32.to_le_bytes());
     for value in [1130u32, 1131, 1179] {
         bytes.push(1);
@@ -1085,7 +1162,7 @@ fn sketch_member_run_backfills_relation_free_owners() {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"282");
     bytes.extend_from_slice(&100u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 41]);
+    push_unnamed_contained_member_head(&mut bytes);
     bytes.extend_from_slice(&3u32.to_le_bytes());
     let mut member_offsets = Vec::new();
     member_offsets.push(u64_from_index(bytes.len() + 1));
@@ -1240,8 +1317,8 @@ fn compact_planar_line_admits_a_typed_trailing_reference() {
     assert!(truncated.is_none());
 }
 
-/// A compact planar line's z component is zero when it is at most one
-/// floating-point epsilon of the same vector's largest planar coordinate,
+/// A compact planar line's z component is zero when it is at most 1024
+/// floating-point epsilons of the same vector's largest planar coordinate,
 /// floored at 1 cm; a larger z keeps the line rejected.
 #[test]
 fn compact_planar_line_reads_sub_resolution_z_noise_as_zero() {
@@ -1253,13 +1330,18 @@ fn compact_planar_line_reads_sub_resolution_z_noise_as_zero() {
         0.5,
         f64::EPSILON
     ));
+    assert!(crate::design::decode::sketch::planar_z_is_zero(
+        0.0,
+        0.5,
+        1024.0 * f64::EPSILON
+    ));
     assert!(!crate::design::decode::sketch::planar_z_is_zero(
         0.0,
         0.5,
-        2.0 * f64::EPSILON
+        2048.0 * f64::EPSILON
     ));
     assert!(!crate::design::decode::sketch::planar_z_is_zero(
-        100.0, 0.0, 1.0e-12
+        100.0, 0.0, 1.0e-9
     ));
 
     let line = |z: f64| {
@@ -1420,6 +1502,72 @@ fn member_run_sketch_scope_prefers_the_scope_bound_to_the_entity() {
 }
 
 #[test]
+fn null_reference_sketch_head_preserves_its_solved_plane() {
+    const EPS_PROFILE_SEARCH: f64 = 1.0e-6;
+    let header = |bytes: &mut Vec<u8>, class: &[u8; 3], record: u32| {
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(class);
+        bytes.extend_from_slice(&record.to_le_bytes());
+    };
+    let transform = [
+        [1.0f64, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 2.0],
+        [0.0, -1.0, 0.0, 3.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let mut bytes = Vec::new();
+    header(&mut bytes, b"280", 100);
+    bytes.resize(40, 0);
+    let paired = bytes.len();
+    header(&mut bytes, b"281", 100);
+    bytes.extend_from_slice(&[0; 8]);
+    typed_sketch_reference(&mut bytes, 200);
+    let head = bytes.len();
+    header(&mut bytes, b"282", 200);
+    bytes.extend_from_slice(&[0; 11]);
+    for value in transform.into_iter().flatten() {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&[0, 0]);
+    header(&mut bytes, b"283", 201);
+    let entity = "Sketch_100".to_owned().try_into().unwrap();
+    let parse = |bytes: &[u8]| {
+        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+        crate::design::decode::sketch::parse_member_run_head_placement(bytes, 0, &entity, &records)
+    };
+    let mut placement = parse(&bytes).expect("null-reference explicit head");
+    assert_eq!(placement.frame_length(), 152);
+    assert_eq!(placement.paired_byte_offset(), u64_from_index(paired));
+    assert_eq!(
+        placement.transform_offset(),
+        Some(u64_from_index(head + 22))
+    );
+    assert_eq!(*placement.transform(), transform);
+    placement.id = "f3d:Design/BulkStream.dat:design-sketch-placement#110".into();
+    let (sketches, _) = crate::test_support::with_decode_context(|ctx| {
+        project_sketch_design(
+            ctx,
+            &SketchProjectInputs::new(&[placement], &[], &[], &[], &[]),
+            EPS_PROFILE_SEARCH,
+        )
+    })
+    .unwrap()
+    .into_tuple();
+    assert_eq!(sketches.len(), 1);
+    let (origin, normal, _) = sketches[0].resolved_placement().expect("resolved plane");
+    assert_eq!(origin.get(), Point3::new(10.0, 20.0, 30.0));
+    assert_eq!(normal.get(), Vector3::new(0.0, 1.0, 0.0));
+    for at in [head + 150, head + 151] {
+        let mut invalid = bytes.clone();
+        invalid[at] = 1;
+        assert!(parse(&invalid).is_none());
+    }
+    let mut invalid = bytes.clone();
+    invalid.insert(head + 152, 0);
+    assert!(parse(&invalid).is_none());
+}
+
+#[test]
 fn typed_profile_compact_sketch_head_supplies_identity_placement() {
     let header = |bytes: &mut Vec<u8>, class: &[u8; 3], record: u32| {
         bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -1461,4 +1609,50 @@ fn typed_profile_compact_sketch_head_supplies_identity_placement() {
     let mut invalid = bytes.clone();
     invalid.insert(head + 74, 0);
     assert!(parse(&invalid).is_none());
+}
+
+#[test]
+fn scope_placement_accepts_typed_container_and_frame_references() {
+    const EPS_PROFILE_SEARCH: f64 = 1.0e-6;
+    let entity = member_run_test_entity();
+    let mut bytes = Vec::new();
+    typed_sketch_reference(&mut bytes, 173);
+    typed_sketch_reference(&mut bytes, 185);
+    let scope_end = bytes.len();
+    crate::test_support::indexed_header(&mut bytes, *b"356", 185);
+    bytes.resize(scope_end + 55, 0);
+    let transform = [
+        [0.0f64, 0.0, 1.0, 12.0],
+        [1.0, 0.0, 0.0, 34.0],
+        [0.0, 1.0, 0.0, 56.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    for value in transform.into_iter().flatten() {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.resize(scope_end + 329, 0);
+    crate::test_support::indexed_header(&mut bytes, *b"259", 185);
+    let parse = |frame: &[u8]| {
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        super::super::parse_scope_sketch_placement(&bytes, frame, 177, &entity.entity_id, &records)
+    };
+    let mut placement = parse(&bytes[..scope_end]).expect("typed scope placement");
+    assert_eq!(placement.scope_record_index, Some(177));
+    assert_eq!(placement.entity_id, entity.entity_id);
+    assert_eq!(*placement.transform(), transform);
+    placement.id = format!("f3d:Design/BulkStream.dat:design-sketch-placement#{scope_end}");
+    let (sketches, _) = crate::test_support::with_decode_context(|ctx| {
+        project_sketch_design(
+            ctx,
+            &SketchProjectInputs::new(&[placement], &[], &[], &[], &[]),
+            EPS_PROFILE_SEARCH,
+        )
+    })
+    .unwrap()
+    .into_tuple();
+    let (origin, normal, u_axis) = sketches[0].resolved_placement().expect("resolved plane");
+    assert_eq!(origin.get(), Point3::new(120.0, 340.0, 560.0));
+    assert_eq!(normal.get(), Vector3::new(1.0, 0.0, 0.0));
+    assert_eq!(u_axis.get(), Vector3::new(0.0, 1.0, 0.0));
+    assert!(parse(&bytes[..scope_end - 1]).is_none());
 }

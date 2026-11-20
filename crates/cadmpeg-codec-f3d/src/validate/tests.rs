@@ -57,6 +57,7 @@ mod parameter_owner;
 mod parameter_scope;
 mod repro_fragments;
 mod revolve_target_roles;
+mod split_face;
 mod sweep_body_roles;
 mod thread_link;
 mod timeline;
@@ -422,7 +423,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
@@ -451,7 +452,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         .set_entities(crate::records::identity::ReferenceRun::located(entities));
     duplicate_type_owner
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
@@ -491,7 +492,7 @@ fn validation_requires_timeline_items_to_resolve_through_the_type_table() {
         .unwrap();
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
@@ -1532,6 +1533,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
                         side_extent_discriminator_offsets: [177, 190],
                         first_side_target_ordinal: None,
                         distance_tail: None,
+                        opaque_distance_word: None,
                         extent: DesignExtrudeExtent::OneSidedDistance,
                         direction_face_extend_offsets: [132, 136],
                         direction_reversed: false,
@@ -1799,7 +1801,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     native.design_record_headers.extend([wrapper, following]);
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();
@@ -1823,7 +1825,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
     });
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             ir.native.namespace_mut("f3d"),
         )
         .unwrap();

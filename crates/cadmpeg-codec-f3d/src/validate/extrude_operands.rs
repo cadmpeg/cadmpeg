@@ -271,6 +271,8 @@ pub(super) fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<
                         scope.reference_members().len(),
                     )
                 });
+            let inactive_along_distance = prologue.is_legacy_shifted_to_face()
+                && parameter_kind_values("AlongDistance").eq([0.0]);
             let extent_matches_operands = match extrude_extent {
                 records::feature::extrude::DesignExtrudeExtent::OneSidedDistance => {
                     has_one_along_carrier
@@ -279,7 +281,7 @@ pub(super) fn validate_extrude_parameter_operands(ctx: &Ctx, findings: &mut Vec<
                         && (!prologue.direction_reversed() || fixed_along_uses_reversal)
                 }
                 records::feature::extrude::DesignExtrudeExtent::OneSidedToFace => {
-                    along_count == 0
+                    (along_count == 0 || inactive_along_distance)
                         && fixed_lanes_are_to_face_lanes
                         && against_count == 0
                         && if target_shape_group_count == 1 {

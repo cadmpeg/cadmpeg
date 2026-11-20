@@ -45,7 +45,7 @@ fn planar_shared_edge_uses_native_accuracy_and_reports_the_lift() {
         .expect("native accuracy report");
     assert!(note.message.contains("1 emitted sheet faces"));
     assert!(note.message.contains("0.003000000 mm"));
-    assert!(ir.model.edges.iter().any(|edge| edge
+    assert!(ir.geometry.edges.iter().any(|edge| edge
         .tolerance
         .is_some_and(|t| (t.get() - 0.005).abs() < 1.0e-12)));
 }
@@ -54,7 +54,7 @@ fn planar_shared_edge_uses_native_accuracy_and_reports_the_lift() {
 fn planar_shared_edge_rejects_missing_or_insufficient_native_accuracy() {
     for accuracy in [None, Some(0.0005)] {
         let (ir, notes) = transfer_with_notes(offset_occurrence(accuracy));
-        assert_eq!(ir.model.faces.len(), 1);
+        assert_eq!(ir.geometry.faces.len(), 1);
         assert!(notes
             .iter()
             .all(|note| note.code.local_code() != "geometry.parameter-map-accuracy-inferred"));
@@ -101,12 +101,13 @@ fn map_accuracy_and_affine_position_are_labelled_inferred() {
             patches,
             &mut LaneRefusals::new(),
             &mut FamilyEntityAdmission::new(ctx),
+            &BodyRoots::new(),
         )
     })
     .expect("transfer inferred accuracy");
     let annotations = annotations.build();
     let edge = ir
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.tolerance.is_some_and(|t| t.get() > GAP_MM))
@@ -115,7 +116,7 @@ fn map_accuracy_and_affine_position_are_labelled_inferred() {
         annotations.exactness()[edge.id.as_str()].fields()["tolerance"],
         Exactness::Inferred
     );
-    assert!(ir.model.points.iter().any(|point| annotations
+    assert!(ir.geometry.points.iter().any(|point| annotations
         .exactness()
         .get(point.id.as_str())
         .is_some_and(|note| note.fields().get("position") == Some(&Exactness::Inferred))));
@@ -135,7 +136,7 @@ fn rejected_components_emit_no_optional_recovery_notes() {
         bound_mm: 0.004,
     });
     let (ir, notes) = transfer_with_notes(patches);
-    assert!(ir.model.faces.is_empty());
+    assert!(ir.geometry.faces.is_empty());
     for code in [
         "geometry.rolling-sheet-extended",
         "topology.affine-vertex-reconciled",

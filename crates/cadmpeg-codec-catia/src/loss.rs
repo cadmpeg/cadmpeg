@@ -71,6 +71,14 @@ pub(crate) enum CatiaLossCode {
     TopologyAffineVertexReconciled,
     /// A planar shared-edge lift uses a native parameter-map fit tolerance.
     GeometryParameterMapAccuracyInferred,
+    /// Bounded native plane charts emit neutral plane supports without their intervals.
+    GeometryPlaneBoundsNotTransferred,
+    /// Extended rational weight-row controls use an inferred expansion.
+    GeometrySurfaceWeightsInferred,
+    /// A model-space curve supplies a bounded plane projection.
+    GeometryPlanePcurveProjected,
+    /// A witnessed conic branch exceeds the incident face bounds.
+    GeometryConicBranchBoundsInferred,
     /// A sheet face uses a fitted surface carrier.
     GeometrySheetSurfaceFitted,
     /// A transferred rolling-ball fit uses adjusted rail points.
@@ -117,6 +125,10 @@ pub(crate) enum CatiaLossCode {
     TopologyB5GraphUnclosed,
     /// Fitted face subsets represent only part of a native body.
     TopologyOwnedPatchSubset,
+    /// Unselected native body rosters stay outside the neutral bounded subset.
+    TopologyUnselectedBodiesRetained,
+    /// Visible body references lack one complete allocation-scope resolution.
+    TopologyBodySelectionUnresolved,
     /// Non-rolling-ball face sense uses inferred roster and chart parity.
     TopologyOwnedPatchSenseInferred,
     /// An endpoint station admits both first-scalar and final-scalar tag readings.
@@ -153,6 +165,9 @@ pub(crate) enum CatiaLossCode {
     HistoryRelationDependenciesBounded,
     /// Typed two-definition value chains stay native without a neutral parameter.
     HistoryDefinitionChainsRetained,
+    /// Design parameters and `Range` nominals read stored `E7` and `E8` literals
+    /// as the values one and zero.
+    HistoryParameterLiteralAssumed,
     /// Materials, unbound NURBS caches, and document metadata were not transferred.
     AttributesMaterialsMetadataNotTransferred,
     /// Dimension scalars retain no admitted physical-quantity discriminator.
@@ -173,6 +188,10 @@ impl CatiaLossCode {
         Self::GeometryRollingSheetExtended,
         Self::TopologyAffineVertexReconciled,
         Self::GeometryParameterMapAccuracyInferred,
+        Self::GeometryPlaneBoundsNotTransferred,
+        Self::GeometrySurfaceWeightsInferred,
+        Self::GeometryPlanePcurveProjected,
+        Self::GeometryConicBranchBoundsInferred,
         Self::GeometrySheetSurfaceFitted,
         Self::GeometryRollingBallRailsAdjusted,
         Self::GeometryUnresolvedCarriers,
@@ -196,6 +215,8 @@ impl CatiaLossCode {
         Self::TopologyObjectStreamWorkSliceExhausted,
         Self::TopologyB5GraphUnclosed,
         Self::TopologyOwnedPatchSubset,
+        Self::TopologyUnselectedBodiesRetained,
+        Self::TopologyBodySelectionUnresolved,
         Self::TopologyOwnedPatchSenseInferred,
         Self::TopologyEndpointStationReadingInferred,
         Self::TopologySharedBoundaryReconciled,
@@ -214,6 +235,7 @@ impl CatiaLossCode {
         Self::HistoryConfigurationRowOrderBounded,
         Self::HistoryRelationDependenciesBounded,
         Self::HistoryDefinitionChainsRetained,
+        Self::HistoryParameterLiteralAssumed,
         Self::AttributesMaterialsMetadataNotTransferred,
         Self::AttributesDimensionQuantityUnresolved,
         Self::AttributesVisualizationUnbound,
@@ -232,9 +254,13 @@ impl CatiaLossCode {
             Self::GeometryCarrierSummary => "geometry.carrier-summary",
             Self::GeometryRollingSheetExtended => "geometry.rolling-sheet-extended",
             Self::TopologyAffineVertexReconciled => "topology.affine-vertex-reconciled",
+            Self::GeometryConicBranchBoundsInferred => "geometry.conic-branch-bounds-inferred",
             Self::GeometryParameterMapAccuracyInferred => {
                 "geometry.parameter-map-accuracy-inferred"
             }
+            Self::GeometryPlaneBoundsNotTransferred => "geometry.plane-bounds-not-transferred",
+            Self::GeometrySurfaceWeightsInferred => "geometry.surface-weights-inferred",
+            Self::GeometryPlanePcurveProjected => "geometry.plane-pcurve-projected",
             Self::GeometrySheetSurfaceFitted => "geometry.sheet-surface-fitted",
             Self::GeometryRollingBallRailsAdjusted => "geometry.rolling-ball-rails-adjusted",
             Self::GeometryUnresolvedCarriers => "geometry.unresolved-carriers",
@@ -260,6 +286,8 @@ impl CatiaLossCode {
             }
             Self::TopologyB5GraphUnclosed => "topology.b5-graph-unclosed",
             Self::TopologyOwnedPatchSubset => "topology.owned-patch-subset",
+            Self::TopologyUnselectedBodiesRetained => "topology.unselected-bodies-retained",
+            Self::TopologyBodySelectionUnresolved => "topology.body-selection-unresolved",
             Self::TopologyOwnedPatchSenseInferred => "topology.owned-patch-sense-inferred",
             Self::TopologyEndpointStationReadingInferred => {
                 "topology.endpoint-station-reading-inferred"
@@ -280,6 +308,7 @@ impl CatiaLossCode {
             Self::HistoryConfigurationRowOrderBounded => "history.configuration-row-order-bounded",
             Self::HistoryRelationDependenciesBounded => "history.relation-dependencies-bounded",
             Self::HistoryDefinitionChainsRetained => "history.definition-chains-retained",
+            Self::HistoryParameterLiteralAssumed => "history.parameter-literal-assumed",
             Self::AttributesMaterialsMetadataNotTransferred => {
                 "attributes.materials-metadata-not-transferred"
             }
@@ -320,13 +349,18 @@ impl CatiaLossCode {
             | Self::SourceAnnotationCollision
             | Self::SourceCatalogScanBounded
             | Self::GeometryVertexToleranceWidened
-            | Self::TopologySheetComponentsInferred => LossTaxonomy::DecodeDiagnostic,
+            | Self::TopologySheetComponentsInferred
+            | Self::HistoryParameterLiteralAssumed => LossTaxonomy::DecodeDiagnostic,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryRollingSheetExtended
             | Self::GeometryParameterMapAccuracyInferred
+            | Self::GeometrySurfaceWeightsInferred
+            | Self::GeometryPlanePcurveProjected
+            | Self::GeometryConicBranchBoundsInferred
             | Self::GeometrySheetSurfaceFitted
             | Self::GeometryRollingBallRailsAdjusted => LossTaxonomy::GeometryAgreementSampled,
-            Self::GeometryUnresolvedCarriers
+            Self::GeometryPlaneBoundsNotTransferred
+            | Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::GeometryPlaneParametersInvalid
             | Self::GeometryAnalyticPayloadInvalid
@@ -345,6 +379,7 @@ impl CatiaLossCode {
             | Self::TopologyObjectStreamWorkSliceExhausted
             | Self::TopologyB5GraphUnclosed
             | Self::TopologyOwnedPatchSubset
+            | Self::TopologyBodySelectionUnresolved
             | Self::TopologySheetPatchSearchBounded
             | Self::TopologyB5FacesWithheld
             | Self::TopologyB5PopulationBounded
@@ -367,6 +402,7 @@ impl CatiaLossCode {
             | Self::HistoryConfigurationRowOrderBounded
             | Self::HistoryRelationDependenciesBounded
             | Self::HistoryDefinitionChainsRetained => LossTaxonomy::FeatureHistoryRetained,
+            Self::TopologyUnselectedBodiesRetained => LossTaxonomy::FeatureHistoryRetained,
         }
     }
 
@@ -415,6 +451,10 @@ mod tests {
                 "geometry.rolling-sheet-extended",
                 "topology.affine-vertex-reconciled",
                 "geometry.parameter-map-accuracy-inferred",
+                "geometry.plane-bounds-not-transferred",
+                "geometry.surface-weights-inferred",
+                "geometry.plane-pcurve-projected",
+                "geometry.conic-branch-bounds-inferred",
                 "geometry.sheet-surface-fitted",
                 "geometry.rolling-ball-rails-adjusted",
                 "geometry.unresolved-carriers",
@@ -438,6 +478,8 @@ mod tests {
                 "topology.object-stream-work-slice-exhausted",
                 "topology.b5-graph-unclosed",
                 "topology.owned-patch-subset",
+                "topology.unselected-bodies-retained",
+                "topology.body-selection-unresolved",
                 "topology.owned-patch-sense-inferred",
                 "topology.endpoint-station-reading-inferred",
                 "topology.shared-boundary-reconciled",
@@ -456,6 +498,7 @@ mod tests {
                 "history.configuration-row-order-bounded",
                 "history.relation-dependencies-bounded",
                 "history.definition-chains-retained",
+                "history.parameter-literal-assumed",
                 "attributes.materials-metadata-not-transferred",
                 "attributes.dimension-quantity-unresolved",
                 "attributes.visualization-unbound",

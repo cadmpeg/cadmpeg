@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Saved mass properties compare at their serialized precision.
 
-use std::io::Cursor;
-use std::path::Path;
-
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::declared_measures::{
     DeclaredMeasure, DeclaredMeasureProvenance, DeclaredQuantity, DeclaredTarget,
 };
@@ -14,21 +10,10 @@ use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::CadIr;
 use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
 
-use crate::SldprtCodec;
-
-fn specimen(name: &str) -> DecodeResult {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/sldprt")
-        .join(name);
-    let bytes =
-        std::fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    SldprtCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap_or_else(|error| panic!("decode {}: {error}", path.display()))
-}
+use crate::test_support::nist::{ftc_06, ftc_08};
 
 fn findings(ir: &CadIr) -> Vec<Finding> {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let findings = cadmpeg_measure::declared_findings(&ctx, ir, MeasureOptions::default())
         .expect("measure declarations");
     ctx.finish_session().expect("measurement session");
@@ -101,7 +86,7 @@ fn assert_active_body_target(ir: &CadIr, measure: &DeclaredMeasure) {
     let [body] = bodies.as_slice() else {
         panic!("one active configuration body")
     };
-    assert_eq!(ir.model.bodies.len(), 1, "one document body");
+    assert_eq!(ir.geometry.bodies.len(), 1, "one document body");
     assert_eq!(
         measure.target,
         DeclaredTarget::Bodies {
@@ -136,7 +121,7 @@ fn assert_area(measure: &DeclaredMeasure, value: f64, source_error: f64) {
 
 #[test]
 fn ftc_08_saved_mass_properties_agree_with_active_body_at_six_decimal_precision() {
-    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    let result = ftc_08();
     let ir = result.ir();
     assert_eq!(ir.model.declared_measures.len(), 2);
     let volume = ir
@@ -162,7 +147,7 @@ fn ftc_08_saved_mass_properties_agree_with_active_body_at_six_decimal_precision(
 
 #[test]
 fn ftc_06_saved_area_mismatch_warns_while_orientation_keeps_volume_uncompared() {
-    let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
+    let result = ftc_06();
     let ir = result.ir();
     assert_eq!(ir.model.declared_measures.len(), 2);
     let volume = ir

@@ -8,8 +8,9 @@ use crate::loss::NxLossCode;
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::report::loss::LossNote;
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap};
 
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -169,6 +170,7 @@ fn attach_container_payloads(
             cadmpeg_core::decode::u64_from_index(bytes.len()),
             "retain NX opaque container payload",
         )?;
+        scan.note_untyped(&id, [ArenaClass::Model, ArenaClass::Design]);
         push_native_unknown(
             ctx,
             unknowns,
@@ -189,6 +191,23 @@ fn attach_indexed_om_unknowns(
     let object_sections = scan.container.indexed_om_sections();
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
         let entry_offset = entry.file_span().map_or(0, |(offset, _)| offset);
+        // A section's records decode into typed records, except a control
+        // block with no admitted complete grammar; a container-only decode
+        // decodes none of them.
+        let unclassified_control = section
+            .as_offset_only()
+            .is_some_and(|(control, _, records)| {
+                crate::om::offset_store_control_form(
+                    control.bytes,
+                    records.first().map(|record| record.bytes),
+                )
+                .is_none()
+            });
+        let note_untyped = |id: &UnknownId, is_control: bool| {
+            if ctx.container_only() || (unclassified_control && is_control) {
+                scan.note_untyped(id, [ArenaClass::Model, ArenaClass::Design]);
+            }
+        };
         match &section.store {
             crate::om::IndexedStore::Fixed { records } => {
                 for (record_index, record) in records.iter().enumerate() {
@@ -203,6 +222,7 @@ fn attach_indexed_om_unknowns(
                         cadmpeg_core::decode::u64_from_index(record.bytes.len()),
                         "retain NX indexed object-model record",
                     )?;
+                    note_untyped(&id, false);
                     push_native_unknown(
                         ctx,
                         unknowns,
@@ -227,6 +247,7 @@ fn attach_indexed_om_unknowns(
                         cadmpeg_core::decode::u64_from_index(record.bytes.len()),
                         "retain NX indexed object-model record",
                     )?;
+                    note_untyped(&id, record_index == 0);
                     push_native_unknown(
                         ctx,
                         unknowns,
@@ -286,40 +307,40 @@ struct GeometryArenas {
 }
 
 impl GeometryArenas {
-    fn take(model: &mut cadmpeg_ir::document::Model) -> Self {
+    fn take(geometry: &mut cadmpeg_ir::document::Topology) -> Self {
         Self {
-            bodies: std::mem::take(&mut model.bodies),
-            regions: std::mem::take(&mut model.regions),
-            shells: std::mem::take(&mut model.shells),
-            faces: std::mem::take(&mut model.faces),
-            loops: std::mem::take(&mut model.loops),
-            coedges: std::mem::take(&mut model.coedges),
-            edges: std::mem::take(&mut model.edges),
-            vertices: std::mem::take(&mut model.vertices),
-            points: std::mem::take(&mut model.points),
-            surfaces: std::mem::take(&mut model.surfaces),
-            curves: std::mem::take(&mut model.curves),
-            pcurves: std::mem::take(&mut model.pcurves),
-            procedural_surfaces: std::mem::take(&mut model.procedural_surfaces),
-            procedural_curves: std::mem::take(&mut model.procedural_curves),
+            bodies: std::mem::take(&mut geometry.bodies),
+            regions: std::mem::take(&mut geometry.regions),
+            shells: std::mem::take(&mut geometry.shells),
+            faces: std::mem::take(&mut geometry.faces),
+            loops: std::mem::take(&mut geometry.loops),
+            coedges: std::mem::take(&mut geometry.coedges),
+            edges: std::mem::take(&mut geometry.edges),
+            vertices: std::mem::take(&mut geometry.vertices),
+            points: std::mem::take(&mut geometry.points),
+            surfaces: std::mem::take(&mut geometry.surfaces),
+            curves: std::mem::take(&mut geometry.curves),
+            pcurves: std::mem::take(&mut geometry.pcurves),
+            procedural_surfaces: std::mem::take(&mut geometry.procedural_surfaces),
+            procedural_curves: std::mem::take(&mut geometry.procedural_curves),
         }
     }
 
-    fn put(self, model: &mut cadmpeg_ir::document::Model) {
-        model.bodies = self.bodies;
-        model.regions = self.regions;
-        model.shells = self.shells;
-        model.faces = self.faces;
-        model.loops = self.loops;
-        model.coedges = self.coedges;
-        model.edges = self.edges;
-        model.vertices = self.vertices;
-        model.points = self.points;
-        model.surfaces = self.surfaces;
-        model.curves = self.curves;
-        model.pcurves = self.pcurves;
-        model.procedural_surfaces = self.procedural_surfaces;
-        model.procedural_curves = self.procedural_curves;
+    fn put(self, geometry: &mut cadmpeg_ir::document::Topology) {
+        geometry.bodies = self.bodies;
+        geometry.regions = self.regions;
+        geometry.shells = self.shells;
+        geometry.faces = self.faces;
+        geometry.loops = self.loops;
+        geometry.coedges = self.coedges;
+        geometry.edges = self.edges;
+        geometry.vertices = self.vertices;
+        geometry.points = self.points;
+        geometry.surfaces = self.surfaces;
+        geometry.curves = self.curves;
+        geometry.pcurves = self.pcurves;
+        geometry.procedural_surfaces = self.procedural_surfaces;
+        geometry.procedural_curves = self.procedural_curves;
     }
 }
 
@@ -343,12 +364,12 @@ impl AttachSnapshot {
         unknowns: &[UnknownRecord],
         losses: &[LossNote],
     ) -> Self {
-        let geometry = GeometryArenas::take(&mut ir.model);
+        let geometry = GeometryArenas::take(&mut ir.geometry);
         let document = ir.clone();
-        geometry.put(&mut ir.model);
+        geometry.put(&mut ir.geometry);
         Self {
             document,
-            face_colors: ir.model.faces.iter().map(|face| face.color).collect(),
+            face_colors: ir.geometry.faces.iter().map(|face| face.color).collect(),
             annotations: annotations.clone(),
             unknowns: unknowns.len(),
             losses: losses.len(),
@@ -362,10 +383,10 @@ impl AttachSnapshot {
         unknowns: &mut Vec<UnknownRecord>,
         losses: &mut Vec<LossNote>,
     ) {
-        let geometry = GeometryArenas::take(&mut ir.model);
+        let geometry = GeometryArenas::take(&mut ir.geometry);
         *ir = self.document;
-        geometry.put(&mut ir.model);
-        for (face, color) in ir.model.faces.iter_mut().zip(self.face_colors) {
+        geometry.put(&mut ir.geometry);
+        for (face, color) in ir.geometry.faces.iter_mut().zip(self.face_colors) {
             face.color = color;
         }
         *annotations = self.annotations;
@@ -388,13 +409,7 @@ fn attach_records(
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
     assembly_occurrences::attach(ctx, ir, model, losses)?;
     for section in &model.om.object_record_identity_bounded_sections {
-        losses.push(NxLossCode::ObjectRecordIdentityBounded.note(format!(
-            "The identity graph of indexed OM entry {} reached its work bound of {} bytes; \
-             {} of its object records were kept without a stable identity.",
-            section.source_entry,
-            crate::native::om::MAX_STABLE_GRAPH_WORK,
-            section.records
-        )));
+        losses.push(section.loss());
     }
     if model.display_jt.arithmetic_lane_work_bounded {
         losses.push(NxLossCode::DisplayJtArithmeticLaneBounded.note(format!(
@@ -587,7 +602,7 @@ fn attach_part_attributes<'a>(
 
         ir.model.attributes.push(SourceAttribute {
             id,
-            target: AttributeTarget::Document,
+            target: AttributeTarget::Document.into(),
             name: attribute_title.to_string(),
             values: vec![AttributeValue::String(attribute_value.to_string())],
         });
@@ -728,7 +743,8 @@ fn attach_rm_appearances(
             id: binding_id,
             target: AppearanceTarget::Source {
                 source_id: binding.source_id.clone(),
-            },
+            }
+            .into(),
             appearance: appearance_id,
             source_entity_id: Some(binding.source_id),
             object_type: Some("RMFastLoad object ID".into()),
@@ -747,9 +763,9 @@ fn ensure_rm_color_appearance(
     annotation_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<AppearanceId, CodecError> {
     let color = Color::new(
-        definition.components[0].0.value(),
-        definition.components[1].0.value(),
-        definition.components[2].0.value(),
+        f64::from(definition.components[0].0.value()),
+        f64::from(definition.components[1].0.value()),
+        f64::from(definition.components[2].0.value()),
         1.0,
     )
     .ok_or_else(|| CodecError::Malformed("RM color components must be in [0, 1]".into()))?;
@@ -881,6 +897,9 @@ fn attach_jpeg_preview_assets(
     annotations: &mut AnnotationBuilder,
     unknowns: &mut Vec<UnknownRecord>,
 ) -> Result<(), CodecError> {
+    if ctx.container_only() {
+        return Ok(());
+    }
     let stream = StreamHandle::new(cadmpeg_ir::stream_name!("nx:container"));
     for (ordinal, entry) in scan
         .container
@@ -1059,7 +1078,7 @@ fn attach_current_feature_states(
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut current_bodies = Vec::new();
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         current_bodies.push(body.id.clone());
     }
     let Ok(active_features) = active_feature_closure(ir, &current_bodies) else {
@@ -1098,7 +1117,7 @@ fn attach_initial_segment_bodies(
             .map_or(&[][..], Vec::as_slice)
     };
     let has_binding = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .any(|body| !stream_bindings(body).is_empty());
@@ -1106,7 +1125,7 @@ fn attach_initial_segment_bodies(
         return Ok(None);
     }
 
-    let mut sorted_bodies = ir.model.bodies.iter().collect::<Vec<_>>();
+    let mut sorted_bodies = ir.geometry.bodies.iter().collect::<Vec<_>>();
     sorted_bodies.sort_by(|first, second| first.id.cmp(&second.id));
 
     let id: FeatureId = IdScope::native(cadmpeg_ir::identity_component!("feature-history")).id(
@@ -1180,7 +1199,13 @@ fn attach_feature_operations(
     let features = &model.features;
     let mut symbolic_threads =
         symbolic_thread::definitions(ctx, ir, &features.feature_symbolic_threads)?;
-    let parasolid_group_members = model.parasolid.group_members.as_slice();
+    let parasolid_group_members = cadmpeg_core::decode::unique_index(
+        model
+            .parasolid
+            .group_members
+            .iter()
+            .map(|member| (member.id.as_str(), member)),
+    );
     let data_blocks = model.om.data_blocks.as_slice();
     let expressions_by_id = expressions_by_id(&model.om.expressions);
     let body_bindings = model.segments.body_bindings.as_slice();
@@ -1885,7 +1910,7 @@ fn attach_feature_operations(
                 continue;
             };
             let (prefix, prefix_len) = stream_prefix(matched.stream, true)?;
-            let mut bodies = ir.model.bodies.iter().filter(|b| {
+            let mut bodies = ir.geometry.bodies.iter().filter(|b| {
                 let id = b.id.as_str().as_bytes();
                 id.strip_prefix(&prefix[..prefix_len])
                     .and_then(|s| std::str::from_utf8(s).ok())
@@ -1907,7 +1932,7 @@ fn attach_feature_operations(
     let partition_candidates = operation_body_group_partition_outputs_by_write(
         operation_body_writes,
         body_write_group_partition_uses,
-        &ir.model.bodies,
+        &ir.geometry.bodies,
     )?;
     merge_operation_body_outputs(
         &mut body_image_outputs_by_write,
@@ -2069,12 +2094,12 @@ fn attach_feature_operations(
         ir.model.semantic_annotations.push(annotation);
     }
     let projection_index = FeatureProjectionIndex::new(ProjectionArenas {
-        bodies: &ir.model.bodies,
-        regions: &ir.model.regions,
-        shells: &ir.model.shells,
-        faces: &ir.model.faces,
-        surfaces: &ir.model.surfaces,
-        procedural_surfaces: &ir.model.procedural_surfaces,
+        bodies: &ir.geometry.bodies,
+        regions: &ir.geometry.regions,
+        shells: &ir.geometry.shells,
+        faces: &ir.geometry.faces,
+        surfaces: &ir.geometry.surfaces,
+        procedural_surfaces: &ir.geometry.procedural_surfaces,
     });
     for (ordinal, label) in chronological_labels.into_iter().enumerate() {
         if !projects_neutral_feature(&label.value)
@@ -3772,7 +3797,7 @@ fn attach_feature_operations(
         let extrude_projection = if label.value == "EXTRUDE" {
             let mut output_kinds = Vec::new();
             for output in &outputs {
-                let Some(body) = ir.model.bodies.iter().find(|body| body.id == *output) else {
+                let Some(body) = ir.geometry.bodies.iter().find(|body| body.id == *output) else {
                     output_kinds.clear();
                     break;
                 };
@@ -4042,7 +4067,7 @@ fn attach_feature_operations(
                     write.id.as_str(),
                     operation_body_partition_uses,
                     body_write_group_partition_uses,
-                    parasolid_group_members,
+                    &parasolid_group_members,
                 )?;
                 let _body_len = BODY_PREFIX.len() + 10;
 
@@ -4251,7 +4276,7 @@ fn operation_body_write_result_group_members(
     body_write: &str,
     image_partition_uses: &[crate::native::features::FeatureOperationBodyPartitionUse],
     group_partition_uses: &[crate::native::features::FeatureBodyWriteGroupPartitionUse],
-    members: &[crate::native::parasolid::ParasolidGroupMember],
+    members: &HashMap<&str, Option<&crate::native::parasolid::ParasolidGroupMember>>,
 ) -> Result<FeatureResultGroupMembers, CodecError> {
     let mut matching_image_uses = image_partition_uses
         .iter()
@@ -4297,18 +4322,14 @@ fn operation_body_write_result_group_members(
 fn feature_result_group_members(
     partition_stream_ordinal: u32,
     member_ids: &[String],
-    members: &[crate::native::parasolid::ParasolidGroupMember],
+    members: &HashMap<&str, Option<&crate::native::parasolid::ParasolidGroupMember>>,
 ) -> Result<FeatureResultGroupMembers, CodecError> {
     use crate::native::parasolid::group_member::{GroupMemberTarget, GroupNodeFamily};
     let mut result = FeatureResultGroupMembers::default();
     for member_id in member_ids {
-        let mut matches = members.iter().filter(|member| member.id == *member_id);
-        let Some(member) = matches.next() else {
+        let Some(Some(member)) = members.get(member_id.as_str()).copied() else {
             continue;
         };
-        if matches.next().is_some() {
-            continue;
-        }
         if member.primary_stream_ordinal != partition_stream_ordinal {
             continue;
         }
@@ -4786,7 +4807,7 @@ fn segment_binding_body_indexes<'a>(
         let (prefix, prefix_len) = stream_prefix(binding.stream_ordinal, false)?;
         let mut stream_bodies = Vec::new();
 
-        for body in ir.model.bodies.iter().filter(|body| {
+        for body in ir.geometry.bodies.iter().filter(|body| {
             body.id
                 .as_str()
                 .as_bytes()
@@ -5200,31 +5221,31 @@ fn parasolid_topology_attribute_class_names<'a>(
 
 fn parasolid_topology_attribute_targets(ir: &CadIr) -> BTreeMap<String, AttributeTarget> {
     let mut targets = BTreeMap::new();
-    for shell in &ir.model.shells {
+    for shell in &ir.geometry.shells {
         targets.insert(
             shell.id.to_string(),
             AttributeTarget::Shell(shell.id.clone()),
         );
     }
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         targets.insert(face.id.to_string(), AttributeTarget::Face(face.id.clone()));
     }
-    for loop_ in &ir.model.loops {
+    for loop_ in &ir.geometry.loops {
         targets.insert(
             loop_.id.to_string(),
             AttributeTarget::Loop(loop_.id.clone()),
         );
     }
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         targets.insert(edge.id.to_string(), AttributeTarget::Edge(edge.id.clone()));
     }
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         targets.insert(
             coedge.id.to_string(),
             AttributeTarget::Coedge(coedge.id.clone()),
         );
     }
-    for vertex in &ir.model.vertices {
+    for vertex in &ir.geometry.vertices {
         targets.insert(
             vertex.id.to_string(),
             AttributeTarget::Vertex(vertex.id.clone()),
@@ -5362,7 +5383,7 @@ fn push_topology_attribute(
 ) {
     ir.model.attributes.push(SourceAttribute {
         id,
-        target: context.target.clone(),
+        target: context.target.clone().into(),
         name,
         values,
     });

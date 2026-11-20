@@ -104,7 +104,7 @@ impl Brep {
         }
         let mut attributed_faces = HashSet::new();
         for attribute in &self.asm.attributes {
-            if let AttributeTarget::Face(face) = &attribute.target {
+            if let AttributeTarget::Face(face) = &attribute.target.entity {
                 attributed_faces.insert(face.as_str());
             }
         }
@@ -114,6 +114,13 @@ impl Brep {
                 .entry(row.face.as_str())
                 .or_default()
                 .push(row.id.as_str());
+        }
+        let mut faces_by_shell = HashMap::<&str, Vec<&str>>::new();
+        for face in &self.asm.faces {
+            faces_by_shell
+                .entry(face.shell.as_str())
+                .or_default()
+                .push(face.id.as_str());
         }
         let mut edges_by_loop = HashMap::<&str, Vec<&str>>::new();
         for coedge in &self.asm.coedges {
@@ -139,19 +146,23 @@ impl Brep {
             let shells = shells.get(row.id.as_str()).map_or(&[][..], Vec::as_slice);
             let mut edge_count = 0_usize;
             let is_region = shells.iter().all(|shell| {
-                shell.wire_edges().is_empty()
-                    && shell.faces().iter().all(|face| {
-                        !attributed_faces.contains(face.as_str())
-                            && loops_by_face
-                                .get(face.as_str())
-                                .into_iter()
-                                .flatten()
-                                .flat_map(|ring| edges_by_loop.get(ring).into_iter().flatten())
-                                .all(|edge| {
-                                    edge_count += 1;
-                                    linked_edges.contains(edge)
-                                })
-                    })
+                shell.wire_edges().next().is_none()
+                    && faces_by_shell
+                        .get(shell.id.as_str())
+                        .into_iter()
+                        .flatten()
+                        .all(|face| {
+                            !attributed_faces.contains(face)
+                                && loops_by_face
+                                    .get(face)
+                                    .into_iter()
+                                    .flatten()
+                                    .flat_map(|ring| edges_by_loop.get(ring).into_iter().flatten())
+                                    .all(|edge| {
+                                        edge_count += 1;
+                                        linked_edges.contains(edge)
+                                    })
+                        })
             });
             if is_region && edge_count != 0 {
                 regions.insert(row.body.clone());
@@ -195,6 +206,15 @@ impl Brep {
                 bodies, regions, shells, faces, loops, coedges, edges, vertices, points, surfaces,
                 curves, pcurves
             );
+            for region in &self.asm.regions {
+                insert_brep_adjacency(&mut adjacency, region.body.as_str(), region.id.as_str());
+            }
+            for shell in &self.asm.shells {
+                insert_brep_adjacency(&mut adjacency, shell.region.as_str(), shell.id.as_str());
+            }
+            for face in &self.asm.faces {
+                insert_brep_adjacency(&mut adjacency, face.shell.as_str(), face.id.as_str());
+            }
             macro_rules! native_dependencies {
                 ($($field:ident => $owner:ident),*) => {$(
                     for row in &self.asm.$field {
@@ -259,7 +279,7 @@ impl Brep {
         self.asm.attributes = select_links(
             std::mem::take(&mut self.asm.attributes),
             &reachable,
-            |row| &row.target,
+            |row| &row.target.entity,
         );
         let mut annotations = Vec::new();
         for row in std::mem::take(&mut self.asm.annotation_records) {
@@ -365,11 +385,11 @@ mod tests {
                 bodies: vec![Body {
                     id: BodyId::mint("f3d:brep:entity#1").unwrap(),
                     kind: BodyKind::default(),
-                    regions: vec![],
                     transform: None,
                     name: Some("f3d:brep:entity#1".into()),
                     color: None,
                     visible: None,
+                    native_ref: None,
                 }],
                 points: vec![Point::new(
                     PointId::mint("f3d:brep:point#2").unwrap(),
@@ -450,13 +470,14 @@ mod tests {
     #[test]
     fn carrier_selection_keeps_its_procedure_and_support_surface() {
         use cadmpeg_ir::geometry::{ProceduralSurface, ProceduralSurfaceDefinition, Surface};
-        let mut model = cadmpeg_ir::examples::unit_cube().unwrap().model;
-        let carrier = model.faces[0].surface.clone();
+        let mut geometry = cadmpeg_ir::examples::unit_cube().unwrap().geometry;
+        let carrier = geometry.faces[0].surface.clone();
         let support = cadmpeg_ir::ids::SurfaceId::mint("f3d:brep:surface#support").unwrap();
-        model.surfaces.push(Surface {
+        geometry.surfaces.push(Surface {
             id: support.clone(),
-            geometry: model.surfaces[0].geometry.clone(),
+            geometry: geometry.surfaces[0].geometry.clone(),
             source_object: None,
+            native_ref: None,
         });
         let definition = ProceduralSurface::new(
             "f3d:brep:procedure#replica".try_into().unwrap(),
@@ -468,18 +489,18 @@ mod tests {
         );
         let mut brep = Brep {
             asm: AsmBrep {
-                bodies: model.bodies,
-                regions: model.regions,
-                shells: model.shells,
-                faces: model.faces,
-                loops: model.loops,
-                coedges: model.coedges,
-                edges: model.edges,
-                vertices: model.vertices,
-                points: model.points,
-                surfaces: model.surfaces,
-                curves: model.curves,
-                pcurves: model.pcurves,
+                bodies: geometry.bodies,
+                regions: geometry.regions,
+                shells: geometry.shells,
+                faces: geometry.faces,
+                loops: geometry.loops,
+                coedges: geometry.coedges,
+                edges: geometry.edges,
+                vertices: geometry.vertices,
+                points: geometry.points,
+                surfaces: geometry.surfaces,
+                curves: geometry.curves,
+                pcurves: geometry.pcurves,
                 procedural_surfaces: vec![(carrier, definition)],
                 ..AsmBrep::default()
             },

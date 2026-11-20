@@ -83,6 +83,7 @@ fn cylindrical_support_point_defines_its_radial_axis() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
 
     assert_eq!(
@@ -123,6 +124,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         },
         Face {
             id: FaceId::mint("test:model:entity#boss").expect("identity grammar"),
@@ -133,6 +135,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         },
         Face {
             id: FaceId::mint("test:model:entity#coaxial-bore-segment").expect("identity grammar"),
@@ -143,6 +146,7 @@ fn position_plane_owns_only_reversed_normal_cylinders() {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         },
     ];
 
@@ -254,6 +258,7 @@ fn generated_face_identities_resolve_primary_bore_axes() {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         })
         .collect::<Vec<_>>();
     let identities = [
@@ -373,6 +378,7 @@ fn counterbore_topology_assigns_unique_and_partitions_siblings() {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         })
         .collect::<Vec<_>>();
     let topology = HoleTopology {
@@ -562,6 +568,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let cone = Surface {
         id: SurfaceId::mint("test:model:entity#cone").expect("identity grammar"),
@@ -577,6 +584,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let face = Face {
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
@@ -590,6 +598,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     let loop_ = Loop {
         id: LoopId::mint("test:model:entity#loop").expect("identity grammar"),
@@ -601,6 +610,7 @@ fn hole_topology_uses_exact_cylinder_spans() {
             )
             .expect("valid loop ring"),
         ),
+        native_ref: None,
     };
     let coedge = Coedge {
         id: CoedgeId::mint("test:model:entity#coedge").expect("identity grammar"),
@@ -610,24 +620,30 @@ fn hole_topology_uses_exact_cylinder_spans() {
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
+        native_ref: None,
     };
     let edge = Edge {
         id: EdgeId::mint("test:model:entity#edge").expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
-        start: VertexId::mint("test:model:entity#start").expect("identity grammar"),
-        end: VertexId::mint("test:model:entity#end").expect("identity grammar"),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            VertexId::mint("test:model:entity#start").expect("identity grammar"),
+            VertexId::mint("test:model:entity#end").expect("identity grammar"),
+        )),
         tolerance: None,
+        native_ref: None,
     };
     let vertices = [
         Vertex {
             id: VertexId::mint("test:model:entity#start").expect("identity grammar"),
             point: PointId::mint("test:model:entity#start-point").expect("identity grammar"),
             tolerance: None,
+            native_ref: None,
         },
         Vertex {
             id: VertexId::mint("test:model:entity#end").expect("identity grammar"),
             point: PointId::mint("test:model:entity#end-point").expect("identity grammar"),
             tolerance: None,
+            native_ref: None,
         },
     ];
     let points = [
@@ -1000,6 +1016,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         })
         .collect::<Vec<_>>();
     let faces = surfaces
@@ -1015,6 +1032,7 @@ fn seeded_drilled_bore_candidates_exclude_claimed_axes_and_unresolved_competitor
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         })
         .collect::<Vec<_>>();
     let topology = HoleTopology {

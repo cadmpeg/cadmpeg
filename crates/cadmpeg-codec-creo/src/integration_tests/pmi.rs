@@ -5,8 +5,9 @@ use std::io::Cursor;
 use std::path::Path;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::design::parameter::{Deviations, Tolerance as DimensionTolerance};
 use cadmpeg_ir::pmi::{
-    DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition, PmiQuantity,
+    GeometricToleranceKind, PmiDefinition, PmiDimensionKind as DimensionKind, PmiQuantity,
     PmiTarget,
 };
 
@@ -182,7 +183,7 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
             .expect("datum")
     };
     assert!(
-        matches!(datum("A").targets.as_slice(), [PmiTarget::Face { face }] if face.as_str() == "creo:visibgeom:face#106")
+        matches!(datum("A").targets.as_slice(), [cadmpeg_ir::references::InstanceTarget { entity: PmiTarget::Face { face }, .. }] if face.as_str() == "creo:visibgeom:face#106")
     );
     for (label, center_x) in [("B", -325.0), ("C", 325.0)] {
         let [target] = datum(label).targets.as_slice() else {
@@ -228,41 +229,34 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
         let matches = dimensions
             .iter()
             .filter(|dimension| {
-                if dimension.kind() != &kind
-                    || !dimension.nominal().is_some_and(|value| {
+                if dimension.dimension != kind
+                    || !dimension.literal_nominal().is_some_and(|value| {
                         (value.value.get() - nominal).abs() < MAGNITUDE_TOLERANCE
                     })
                 {
                     return false;
                 }
-                match (limits, dimension.tolerance()) {
-                    (
-                        true,
-                        Some(DimensionTolerance::Limits {
-                            lower: actual_lower,
-                            upper: actual_upper,
-                        }),
-                    )
-                    | (
-                        false,
-                        Some(DimensionTolerance::PlusMinus {
-                            lower: actual_lower,
-                            upper: actual_upper,
-                        }),
-                    ) => {
-                        (actual_lower.value.get() - lower).abs() < MAGNITUDE_TOLERANCE
-                            && (actual_upper.value.get() - upper).abs() < MAGNITUDE_TOLERANCE
-                    }
-                    _ => false,
-                }
+                let (lower, upper) = if limits {
+                    (lower - nominal, upper - nominal)
+                } else {
+                    (lower, upper)
+                };
+                matches!(
+                    dimension.tolerance.as_ref(),
+                    Some(DimensionTolerance::Deviations(Deviations {
+                        lower: actual_lower,
+                        upper: actual_upper,
+                    })) if (actual_lower.get() - lower).abs() < MAGNITUDE_TOLERANCE
+                        && (actual_upper.get() - upper).abs() < MAGNITUDE_TOLERANCE
+                )
             })
             .count();
         assert_eq!(matches, count, "{kind:?}, {nominal}, {lower}, {upper}");
     }
     for nominal in [85.0, 50.0] {
         assert!(dimensions.iter().any(|dimension| {
-            dimension.kind() == &DimensionKind::Location
-                && dimension.nominal().is_some_and(|value| {
+            dimension.dimension == DimensionKind::Location
+                && dimension.literal_nominal().is_some_and(|value| {
                     (value.value.get() - nominal).abs() < POSITION_NOMINAL_TOLERANCE
                 })
         }));
@@ -276,8 +270,12 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
             continue;
         }
         targeted += 1;
-        let nominal = dimension.nominal().expect("targeted nominal").value.get();
-        match dimension.kind() {
+        let nominal = dimension
+            .literal_nominal()
+            .expect("targeted nominal")
+            .value
+            .get();
+        match &dimension.dimension {
             DimensionKind::Location => assert_slot_walls(&result, &item.targets),
             DimensionKind::Diameter => {
                 for target in &item.targets {
@@ -303,7 +301,10 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
 /// Assert the two opposed slot walls of the STEP twin's position targets:
 /// faces 805 and 801 at x = -192.5 and -107.5, or faces 852 and 848 at
 /// y = 25 and -25.
-fn assert_slot_walls(result: &cadmpeg_ir::codec::DecodeResult, targets: &[PmiTarget]) {
+fn assert_slot_walls(
+    result: &cadmpeg_ir::codec::DecodeResult,
+    targets: &[cadmpeg_ir::references::InstanceTarget<PmiTarget>],
+) {
     let [first, second] = targets else {
         panic!("two slot walls: {targets:?}")
     };
@@ -327,23 +328,29 @@ fn assert_slot_walls(result: &cadmpeg_ir::codec::DecodeResult, targets: &[PmiTar
     }
 }
 
-fn target_plane(result: &cadmpeg_ir::codec::DecodeResult, target: &PmiTarget) -> ([f64; 3], f64) {
-    let PmiTarget::Face { face } = target else {
+fn target_plane(
+    result: &cadmpeg_ir::codec::DecodeResult,
+    target: &cadmpeg_ir::references::InstanceTarget<PmiTarget>,
+) -> ([f64; 3], f64) {
+    let PmiTarget::Face { face } = &target.entity else {
         panic!("face target")
     };
     face_plane(result, face.as_str())
 }
 
-fn target_cylinder_radius(result: &cadmpeg_ir::codec::DecodeResult, target: &PmiTarget) -> f64 {
+fn target_cylinder_radius(
+    result: &cadmpeg_ir::codec::DecodeResult,
+    target: &cadmpeg_ir::references::InstanceTarget<PmiTarget>,
+) -> f64 {
     target_cylinder(result, target).2
 }
 
 /// The origin, unit axis, and radius of a face target's cylindrical carrier.
 fn target_cylinder(
     result: &cadmpeg_ir::codec::DecodeResult,
-    target: &PmiTarget,
+    target: &cadmpeg_ir::references::InstanceTarget<PmiTarget>,
 ) -> ([f64; 3], [f64; 3], f64) {
-    let PmiTarget::Face { face } = target else {
+    let PmiTarget::Face { face } = &target.entity else {
         panic!("face target")
     };
     let Some(cadmpeg_ir::geometry::SurfaceGeometry::Solved(
@@ -363,13 +370,13 @@ fn face_surface<'a>(
     result: &'a cadmpeg_ir::codec::DecodeResult,
     face: &str,
 ) -> Option<&'a cadmpeg_ir::geometry::SurfaceGeometry> {
-    let model = &result.ir().model;
-    let surface = &model
+    let geometry = &result.ir().geometry;
+    let surface = &geometry
         .faces
         .iter()
         .find(|item| item.id.as_str() == face)?
         .surface;
-    model
+    geometry
         .surfaces
         .iter()
         .find(|item| &item.id == surface)
@@ -534,7 +541,7 @@ fn keeps_a_tag_separate_when_unparsed_rows_can_repeat_its_label() {
     assert!(!datum_a.iter().any(|item| {
         item.targets
             .iter()
-            .any(|target| matches!(target, PmiTarget::Face { .. }))
+            .any(|target| matches!(target.entity, PmiTarget::Face { .. }))
     }));
 }
 

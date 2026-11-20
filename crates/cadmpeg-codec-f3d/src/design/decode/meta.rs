@@ -314,6 +314,16 @@ pub(crate) struct DecodedComponentNamingSpaces {
     pub(crate) unbound: usize,
 }
 
+/// Return whether a type-table row registers component naming-space entities.
+fn is_component_naming_space_type(design_type: &SegmentTypeData) -> bool {
+    design_type.module == COMPONENT_MODULE
+        && design_type
+            .base_type_guid
+            .value()
+            .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
+            .is_some_and(|base| base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID))
+}
+
 /// Decode each component entity's UUID-bound local naming space.
 pub(crate) fn decode_component_naming_spaces(
     scan: &ContainerScan,
@@ -327,16 +337,11 @@ pub(crate) fn decode_component_naming_spaces(
     {
         let meta = scan.parsed_metastream(&meta_entry.entry.name)?;
         let mut component_entities = HashSet::new();
-        for design_type in meta.types.iter().filter(|design_type| {
-            design_type.module == COMPONENT_MODULE
-                && design_type
-                    .base_type_guid
-                    .value()
-                    .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
-                    .is_some_and(|base| {
-                        base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
-                    })
-        }) {
+        for design_type in meta
+            .types
+            .iter()
+            .filter(|design_type| is_component_naming_space_type(design_type))
+        {
             for &entity_id in design_type.entities.values() {
                 component_entities.insert(entity_id);
             }
@@ -625,6 +630,37 @@ pub(super) fn design_primary_frames<'a>(
     Ok(frames)
 }
 
+pub(super) fn unambiguous_design_primary_frames<'a>(
+    bytes: &[u8],
+    meta: &'a crate::metastream::MetaStream,
+) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
+    use crate::layout::indexed_design_record_header as header;
+
+    let mut frames = design_primary_frames(bytes, meta)?;
+    let mut registered = HashMap::<u64, usize>::new();
+    for entity_id in meta.types.iter().flat_map(|row| row.entities.values()) {
+        *registered.entry(*entity_id).or_default() += 1;
+    }
+    frames.retain(|frame| registered.get(&frame.entity_id) == Some(&1));
+    for frame in &frames {
+        if frame
+            .start
+            .checked_add(header::LEN)
+            .is_none_or(|end| end > frame.member_end)
+            || (frame.member_end < frame.end
+                && frame
+                    .member_end
+                    .checked_add(header::LEN)
+                    .is_none_or(|end| end > frame.end))
+        {
+            return Err(CodecError::malformed(
+                "F3D indexed header exceeds its registered member extent",
+            ));
+        }
+    }
+    Ok(frames)
+}
+
 /// One primary `BulkStream` frame selected through a registered Design type.
 #[derive(Clone, Copy)]
 pub(super) struct TypedPrimaryFrame<'a> {
@@ -758,6 +794,7 @@ pub(crate) fn classify_origin_entity(
         return OriginClassification::Unknown;
     };
     let roles = stream_origin_roles(types, &entry);
+    let components = stream_component_count(types, &entry);
     let member = |first: u64, ordinal: u64| {
         let expected = if ordinal < 3 {
             OriginRole::Axis
@@ -799,8 +836,12 @@ pub(crate) fn classify_origin_entity(
             OriginEntity::Plane(ordinal - 3)
         });
     }
+    // A stream stores one origin per component, so as many complete runs as
+    // components leave no origin for a partial run to hold.
+    let complete_runs = roles.keys().filter(|&&first| is_complete(first)).count();
+    let every_origin_listed = components > 0 && complete_runs == components;
     if roles.get(&identity) == Some(&OriginRole::Conflict)
-        || candidate_runs().any(|(_, first)| is_partial(first))
+        || (!every_origin_listed && candidate_runs().any(|(_, first)| is_partial(first)))
     {
         return OriginClassification::Unknown;
     }
@@ -826,6 +867,20 @@ pub(crate) fn is_construction_plane_entity(
         return false;
     };
     stream_origin_roles(types, &entry).get(&identity) == Some(&OriginRole::Plane)
+}
+
+/// Number of distinct component naming-space entities the stream registers.
+fn stream_component_count(types: &[SegmentType], bulk_entry_name: &str) -> usize {
+    types
+        .iter()
+        .filter(|design_type| {
+            native_stream(design_type.id())
+                .is_some_and(|scope| meta_scope_matches_bulk(scope, bulk_entry_name))
+                && is_component_naming_space_type(design_type)
+        })
+        .flat_map(|design_type| design_type.entities.values().copied())
+        .collect::<HashSet<_>>()
+        .len()
 }
 
 /// Role of each listed entity. Registrations that disagree on the origin role
@@ -886,7 +941,7 @@ pub(super) fn stream_types_by_class_tag<'a>(
 
 /// Compare an encoded native `MetaStream` scope with the `BulkStream`'s sibling
 /// name without materializing either name.
-fn meta_scope_matches_bulk(scope: &str, bulk_entry_name: &str) -> bool {
+pub(crate) fn meta_scope_matches_bulk(scope: &str, bulk_entry_name: &str) -> bool {
     let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
         return false;
     };
