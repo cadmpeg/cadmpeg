@@ -533,6 +533,62 @@ fn sketch_records_use_the_primary_index_live_copy() {
 }
 
 #[test]
+fn every_two_opaque_byte_planar_tail_charges_its_marker_and_construction_readings() {
+    use crate::loss::F3dLossCode;
+
+    let (bytes, meta, _, live_curve_at, _, _) = indexed_sketch_fixture();
+    let mut losses = Vec::new();
+    decode_sketch_curve_identities_from_stream(&bytes, &meta, "Design/BulkStream.dat", &mut losses)
+        .expect("indexed sketch curves");
+    assert!(losses.is_empty());
+
+    let tail_at = live_curve_at + 133 + 96;
+    for marker in [0, 1] {
+        let mut tail = Vec::new();
+        for reference in [10u32, 11] {
+            tail.push(1);
+            tail.extend_from_slice(&reference.to_le_bytes());
+            tail.extend_from_slice(&[0; 6]);
+        }
+        tail.extend_from_slice(&[0, 0, 0, 7, 8, marker]);
+        tail.extend_from_slice(&1u32.to_le_bytes());
+        tail.push(1);
+        let mut short = bytes.clone();
+        short.splice(tail_at..tail_at, tail.iter().copied());
+        let mut short_meta = meta.clone();
+        for record in &mut short_meta.records {
+            if record.bulk_offset > u64_from_index(tail_at) {
+                record.bulk_offset += u64_from_index(tail.len());
+            }
+        }
+        let mut losses = Vec::new();
+        let curves = decode_sketch_curve_identities_from_stream(
+            &short,
+            &short_meta,
+            "Design/BulkStream.dat",
+            &mut losses,
+        )
+        .expect("indexed sketch curves with a short tail");
+        assert_eq!(curves[0].tail_marker, Some(marker));
+        let codes = losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            codes,
+            [
+                F3dLossCode::SketchCurveTailMarkerAssumed.kind(),
+                F3dLossCode::SketchCurveTailConstructionAssumed.kind(),
+            ],
+            "marker {marker}"
+        );
+        assert!(losses.iter().all(|loss| loss
+            .message
+            .starts_with("1 planar sketch curve(s) in Design/BulkStream.dat")));
+    }
+}
+
+#[test]
 fn sketch_text_record_decodes_typed_content_and_metrics() {
     let bytes = sketch_text_record(
         &[

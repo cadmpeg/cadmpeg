@@ -4044,7 +4044,7 @@ fn decode_sketch_curve_identities_from_stream(
     let frames = design_primary_frames(bytes, meta)?;
     let groups = collect_sketch_geometry_groups(bytes, meta, stream, &frames)?;
     let mut unlisted = Vec::new();
-    let mut assumed_markers = 0usize;
+    let mut short_tails = 0usize;
     let mut out = Vec::new();
     for frame in frames {
         let payload = &bytes[frame.start..frame.end];
@@ -4087,8 +4087,8 @@ fn decode_sketch_curve_identities_from_stream(
             .as_ref()
             .filter(|geometry| !matches!(geometry, SketchCurveGeometry::Nurbs { .. }))
             .and_then(|_| planar_curve_tail(payload, geometry_offset));
-        if planar_tail.is_some_and(|tail| tail.short && tail.marker != 0) {
-            assumed_markers += 1;
+        if planar_tail.is_some_and(|tail| tail.short) {
+            short_tails += 1;
         }
         let tail_marker = planar_tail.map(|tail| tail.marker);
         let backlink = trailing_sketch_owner_reference(payload)
@@ -4119,9 +4119,12 @@ fn decode_sketch_curve_identities_from_stream(
         });
     }
     push_unlisted_group_member_loss(losses, stream, "curve", &unlisted);
-    if assumed_markers != 0 {
+    if short_tails != 0 {
         losses.push(F3dLossCode::SketchCurveTailMarkerAssumed.note(format!(
-            "{assumed_markers} planar sketch curve(s) in {stream} store two opaque bytes in the tail; the nonzero byte before the u32 lane is read as the tail marker."
+            "{short_tails} planar sketch curve(s) in {stream} store two opaque bytes in the tail; the byte before the u32 lane is read as the tail marker."
+        )));
+        losses.push(F3dLossCode::SketchCurveTailConstructionAssumed.note(format!(
+            "{short_tails} planar sketch curve(s) in {stream} store two opaque bytes in the tail; a u32 lane of 1 is read as construction geometry."
         )));
     }
     Ok(out)

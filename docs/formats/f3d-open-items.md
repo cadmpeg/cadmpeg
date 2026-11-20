@@ -3694,8 +3694,14 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** Which byte of the three bytes between the zero pad and the u32 lane is the tail marker when a planar sketch-curve tail stores two opaque bytes?
 
-**Known.** `f3d.md` §3.1 "Immediately after the 96-byte analytic payload" gives the three-opaque-byte tail and the two-opaque-byte tail. The specification places the tail marker directly before the u32 lane in both forms.
+**Known.** `f3d.md` §3.1 "Immediately after the 96-byte analytic payload" gives the three-opaque-byte tail, where the tail marker directly precedes the u32 `1`, and the two-opaque-byte tail, where one byte follows the two opaque bytes and precedes the u32 lane. The decoder reads that byte as the tail marker and charges `sketch.curve-tail-marker-assumed` for every two-opaque-byte tail.
 
 **Need.** A two-opaque-byte tail with a nonzero byte before the u32 lane, and the counted region member lists that name or omit that curve.
 
-**Note.** The decoder reads the byte before the u32 lane as the tail marker and charges `sketch.curve-tail-marker-assumed` when that byte is nonzero.
+### DR-891. Construction flag of the two-opaque-byte planar curve tail
+
+**Question.** Does a u32 lane of `1` in a two-opaque-byte planar sketch-curve tail mark construction geometry?
+
+**Known.** In the three-opaque-byte tail the u32 after the tail marker is `1`, and the byte after it is the construction flag. In the two-opaque-byte tail the byte after the u32 lane is always `1`, and the lane is `0` or `1`. The decoder reads a lane of `1` as construction geometry and charges `sketch.curve-tail-construction-assumed` for every two-opaque-byte tail.
+
+**Need.** Two-opaque-byte tails of curves with a known construction status, for lane `0` and for lane `1`.
