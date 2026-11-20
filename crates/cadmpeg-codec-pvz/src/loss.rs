@@ -27,9 +27,6 @@ pub(crate) enum PvzLossCode {
     /// The ZIP central directory was unreadable and members were recovered
     /// from local headers.
     ContainerDirectoryRecovered,
-    /// The structure member did not decode: the package has no product
-    /// structure, and no geometry member is placed.
-    StructureMemberMalformed,
     /// A structure-member stream of an undefined type was not decoded.
     StructureStreamUndecoded,
     /// A property stream did not decode; none of its properties transferred.
@@ -62,9 +59,6 @@ pub(crate) enum PvzLossCode {
     StructurePlacementInvalid,
     /// A geometry element names a member that the package does not hold.
     GeometryMemberMissing,
-    /// A geometry member's container did not decode; none of its streams
-    /// transferred.
-    GeometryMemberMalformed,
     /// A geometry member that no definition names was not transferred.
     GeometryMemberUnreferenced,
     /// A geometry-member stream was not decoded.
@@ -135,7 +129,6 @@ impl PvzLossCode {
     const ALL: &'static [PvzLossCode] = &[
         Self::SourceDialectUnverified,
         Self::ContainerDirectoryRecovered,
-        Self::StructureMemberMalformed,
         Self::StructureStreamUndecoded,
         Self::StructurePropertyStreamMalformed,
         Self::StructureElementUndecoded,
@@ -151,7 +144,6 @@ impl PvzLossCode {
         Self::StructurePlacementNotSimilarity,
         Self::StructurePlacementInvalid,
         Self::GeometryMemberMissing,
-        Self::GeometryMemberMalformed,
         Self::GeometryMemberUnreferenced,
         Self::GeometryStreamUndecoded,
         Self::GeometryPreambleUndecoded,
@@ -186,7 +178,6 @@ impl PvzLossCode {
         match self {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::ContainerDirectoryRecovered => "container.directory-recovered",
-            Self::StructureMemberMalformed => "structure.member-malformed",
             Self::StructureStreamUndecoded => "structure.stream-undecoded",
             Self::StructurePropertyStreamMalformed => "structure.property-stream-malformed",
             Self::StructureElementUndecoded => "structure.element-undecoded",
@@ -202,7 +193,6 @@ impl PvzLossCode {
             Self::StructurePlacementNotSimilarity => "structure.placement-not-similarity",
             Self::StructurePlacementInvalid => "structure.placement-invalid",
             Self::GeometryMemberMissing => "geometry.member-missing",
-            Self::GeometryMemberMalformed => "geometry.member-malformed",
             Self::GeometryMemberUnreferenced => "geometry.member-unreferenced",
             Self::GeometryStreamUndecoded => "geometry.stream-undecoded",
             Self::GeometryPreambleUndecoded => "geometry.preamble-undecoded",
@@ -258,7 +248,6 @@ impl PvzLossCode {
             | Self::StructurePlacementNotSimilarity
             | Self::StructurePlacementInvalid
             | Self::GeometryMemberMissing
-            | Self::GeometryMemberMalformed
             | Self::GeometryMemberUnreferenced
             | Self::GeometryStreamUndecoded
             | Self::GeometryExactUndecoded
@@ -280,7 +269,6 @@ impl PvzLossCode {
             | Self::ExactFaceUnboundedOmitted
             | Self::ExactCoedgeDegenerateOmitted => Severity::Warning,
             Self::ExactSurfaceUntyped => Severity::Error,
-            Self::StructureMemberMalformed => Severity::Blocking,
         }
     }
 
@@ -288,9 +276,7 @@ impl PvzLossCode {
         match self {
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::ContainerDirectoryRecovered => LossTaxonomy::NoncanonicalSourceSyntax,
-            Self::StructureMemberMalformed
-            | Self::GeometryMemberMalformed
-            | Self::GeometryStreamUndecoded
+            Self::GeometryStreamUndecoded
             | Self::GeometryExactUndecoded
             | Self::TessellationEdgesNotTransferred
             | Self::TessellationMeshRejected => LossTaxonomy::GeometryNotTransferred,
@@ -420,7 +406,6 @@ mod tests {
             [
                 "source.dialect-unverified",
                 "container.directory-recovered",
-                "structure.member-malformed",
                 "structure.stream-undecoded",
                 "structure.property-stream-malformed",
                 "structure.element-undecoded",
@@ -436,7 +421,6 @@ mod tests {
                 "structure.placement-not-similarity",
                 "structure.placement-invalid",
                 "geometry.member-missing",
-                "geometry.member-malformed",
                 "geometry.member-unreferenced",
                 "geometry.stream-undecoded",
                 "geometry.preamble-undecoded",

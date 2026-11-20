@@ -1,17 +1,24 @@
 {
   "ir": {
-    "ir_version": "10",
-    "decode_depth": "full",
+    "ir_version": "11",
+    "fragment": false,
+    "scope": {
+      "model": true,
+      "design": true,
+      "process": true
+    },
     "source": {
       "identity": {
-        "classification": "classified",
+        "kind": "classified",
         "dialects": {
           "primary": {
             "dialect": "f3d:manifest-3-2-0-0",
             "declared": {
               "top_level_manifest_version": "3-2-0-0"
             },
-            "admission": "admitted"
+            "admission": {
+              "kind": "admitted"
+            }
           },
           "extra": [
             {
@@ -22,38 +29,37 @@
                 "save_format_major": "231",
                 "save_format_minor": "0"
               },
-              "admission": "admitted"
+              "admission": {
+                "kind": "admitted"
+              }
             }
           ]
         }
       },
       "attributes": {
         "active_brep": "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
-        "active_brep_sha256": "38630ab6494f356459e0ee34e122e2a86685f44db32f30456c5b4fbb02a7cf6c",
         "asset_folder": "FusionAssetName[Active]",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "product_family": "Autodesk Neutron",
         "product_version": "ASM 231.6.3.65535 OSX",
-        "save_date": "Tue Mar 31 16:16:19 2026",
-        "solved_record_len": "1597",
-        "zip_entry_count": "4"
+        "save_date": "Tue Mar 31 16:16:19 2026"
       }
     },
     "units": {
-      "length": "millimeter"
+      "length": "millimeter",
+      "angle": "radian",
+      "mass": "kilogram",
+      "time": "second"
     },
     "tolerances": {
       "linear": 9.999999999999999e-6,
       "angular": 1e-10
     },
-    "model": {
+    "geometry": {
       "bodies": [
         {
           "id": "f3d:brep:entity#1",
-          "kind": "sheet",
-          "regions": [
-            "f3d:brep:entity#2"
-          ]
+          "kind": "sheet"
         }
       ],
       "regions": [
@@ -69,12 +75,7 @@
         {
           "id": "f3d:brep:entity#3",
           "region": "f3d:brep:entity#2",
-          "members": [
-            {
-              "kind": "face",
-              "id": "f3d:brep:entity#4"
-            }
-          ]
+          "members": []
         }
       ],
       "faces": [
@@ -84,7 +85,7 @@
           "surface": "f3d:brep:entity#6",
           "sense": "forward",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "f3d:brep:entity#5"
             ]
@@ -101,7 +102,8 @@
               "f3d:brep:entity#7",
               "f3d:brep:entity#8",
               "f3d:brep:entity#9"
-            ]
+            ],
+            "vertex_uses": []
           }
         }
       ],
@@ -111,21 +113,24 @@
           "owner_loop": "f3d:brep:entity#5",
           "edge": "f3d:brep:entity#10",
           "radial_next": "f3d:brep:entity#7",
-          "sense": "forward"
+          "sense": "forward",
+          "pcurves": []
         },
         {
           "id": "f3d:brep:entity#8",
           "owner_loop": "f3d:brep:entity#5",
           "edge": "f3d:brep:entity#11",
           "radial_next": "f3d:brep:entity#8",
-          "sense": "forward"
+          "sense": "forward",
+          "pcurves": []
         },
         {
           "id": "f3d:brep:entity#9",
           "owner_loop": "f3d:brep:entity#5",
           "edge": "f3d:brep:entity#12",
           "radial_next": "f3d:brep:entity#9",
-          "sense": "forward"
+          "sense": "forward",
+          "pcurves": []
         }
       ],
       "edges": [
@@ -137,8 +142,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#13",
-          "end": "f3d:brep:entity#14"
+          "ends": {
+            "start": "f3d:brep:entity#13",
+            "end": "f3d:brep:entity#14"
+          }
         },
         {
           "id": "f3d:brep:entity#11",
@@ -148,8 +155,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#14",
-          "end": "f3d:brep:entity#15"
+          "ends": {
+            "start": "f3d:brep:entity#14",
+            "end": "f3d:brep:entity#15"
+          }
         },
         {
           "id": "f3d:brep:entity#12",
@@ -159,8 +168,10 @@
               1.0
             ]
           },
-          "start": "f3d:brep:entity#15",
-          "end": "f3d:brep:entity#13"
+          "ends": {
+            "start": "f3d:brep:entity#15",
+            "end": "f3d:brep:entity#13"
+          }
         }
       ],
       "vertices": [
@@ -207,21 +218,24 @@
         {
           "id": "f3d:brep:entity#6",
           "geometry": {
-            "kind": "plane",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           }
         }
@@ -230,29 +244,42 @@
       "subds": [],
       "pcurves": [],
       "procedural_surfaces": [],
-      "procedural_curves": [],
+      "procedural_curves": []
+    },
+    "model": {
+      "assets": [],
       "features": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "configurations": [
         {
           "id": "f3d:configuration:variant#59:FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg4:wide",
           "ordinal": 1,
+          "active": false,
           "name": "Wide",
           "properties": {
             "parameter:W": "25 mm",
             "property:Part Number": "W-1",
             "suppressed:S": "true"
           },
+          "parameter_overrides": {},
+          "parameter_values": {},
+          "feature_states": {},
           "native_ref": "f3d:configuration:entry#FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg"
         },
         {
           "id": "f3d:configuration:variant#59:FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg6:narrow",
           "ordinal": 0,
+          "active": false,
           "name": "Narrow",
           "properties": {
             "parameter:W": "10 mm",
             "property:Part Number": "N-1",
             "suppressed:S": "false"
           },
+          "parameter_overrides": {},
+          "parameter_values": {},
+          "feature_states": {},
           "native_ref": "f3d:configuration:entry#FusionAssetName[Active]/DesignConfigurationTable.123.dsgcfg"
         }
       ],
@@ -262,8 +289,26 @@
       "sketch_constraints": [],
       "spatial_sketches": [],
       "spatial_sketch_entities": [],
+      "spatial_sketch_constraints": [],
       "spreadsheets": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "id": "f3d:model:product-definition#root",
+          "bom_properties": {},
+          "storage": {
+            "kind": "file",
+            "document": {}
+          },
+          "bodies": [
+            "f3d:brep:entity#1"
+          ],
+          "tessellations": [],
+          "occurrences": [],
+          "instance_bodies": [],
+          "representations": [],
+          "sketches": []
+        }
+      ],
       "occurrences": [],
       "assembly_joints": [],
       "drawings": [],
@@ -275,7 +320,50 @@
       "appearance_bindings": [],
       "attributes": [],
       "pmi": [],
-      "presentation_layers": []
+      "presentation_layers": [],
+      "physical_materials": [],
+      "mass_properties": [],
+      "rigid_bodies": [],
+      "colliders": [],
+      "articulations": [],
+      "physics_scenes": [],
+      "solver_settings": [],
+      "declared_measures": [],
+      "point_clouds": [],
+      "history_bodies": []
+    },
+    "design": {
+      "scopes": [],
+      "containers": [],
+      "features": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketch_constraints": [],
+      "parameters": [],
+      "spreadsheets": [],
+      "sheet_metal_rules": [],
+      "programs": [],
+      "configurations": [],
+      "arrangements": [],
+      "publications": [],
+      "evaluations": [],
+      "names": []
+    },
+    "process": {
+      "setups": [],
+      "operations": [],
+      "features": [],
+      "groups": [],
+      "tools": [],
+      "presets": [],
+      "machines": [],
+      "programs": [],
+      "parameters": [],
+      "toolpaths": [],
+      "states": []
     },
     "native": {
       "f3d": {
@@ -860,14 +948,16 @@
   },
   "report": {
     "identity": {
-      "classification": "classified",
+      "kind": "classified",
       "dialects": {
         "primary": {
           "dialect": "f3d:manifest-3-2-0-0",
           "declared": {
             "top_level_manifest_version": "3-2-0-0"
           },
-          "admission": "admitted"
+          "admission": {
+            "kind": "admitted"
+          }
         },
         "extra": [
           {
@@ -878,42 +968,51 @@
               "save_format_major": "231",
               "save_format_minor": "0"
             },
-            "admission": "admitted"
+            "admission": {
+              "kind": "admitted"
+            }
           }
         ]
       }
     },
     "transfer": {
-      "transfer": "full",
+      "kind": "full",
       "geometry_transferred": true
     },
+    "coverage": {},
     "losses": [
       {
         "code": {
-          "scope": "namespaced",
-          "namespace": "f3d",
-          "code": "material.not-transferred",
-          "kind": "material_not_transferred"
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "material.not-transferred",
+            "kind": "material_not_transferred"
+          }
         },
         "severity": "warning",
         "message": "Materials/appearances (.protein assets, ACT/design assignments) were not transferred."
       },
       {
         "code": {
-          "scope": "namespaced",
-          "namespace": "f3d",
-          "code": "configuration.parameter-override-unbound",
-          "kind": "metadata_not_transferred"
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "configuration.parameter-override-unbound",
+            "kind": "metadata_not_transferred"
+          }
         },
         "severity": "warning",
         "message": "2 Design configuration parameter override(s) were retained without an unambiguous neutral parameter identity."
       },
       {
         "code": {
-          "scope": "namespaced",
-          "namespace": "f3d",
-          "code": "configuration.feature-suppression-unbound",
-          "kind": "metadata_not_transferred"
+          "kind": "namespaced",
+          "value": {
+            "namespace": "f3d",
+            "code": "configuration.feature-suppression-unbound",
+            "kind": "metadata_not_transferred"
+          }
         },
         "severity": "warning",
         "message": "2 Design configuration feature state(s) were retained without an unambiguous neutral feature identity."
@@ -923,9 +1022,15 @@
       "Design asset folder (from manifests): FusionAssetName[Active]",
       "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
       "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/Body1.smbh (1610 bytes uncompressed)"
-    ]
+    ],
+    "transfer_ledger": {
+      "entries": []
+    }
   },
   "source_fidelity": {
+    "decode_digest": "df4a914e370c6f3fd2fbf0906e5bc74fff9a27f4c9950d1aee25b52417291a57",
+    "file_digests": {},
+    "unrepresented": [],
     "annotations": {
       "provenance": {
         "f3d:brep:entity#1": {
@@ -1021,7 +1126,7 @@
       },
       "exactness": {
         "f3d:brep:entity#6": {
-          "scope": "fields",
+          "kind": "fields",
           "fields": {
             "geometry.normal": "derived",
             "geometry.u_axis": "derived"
@@ -1034,9 +1139,10 @@
         "stream": "f3d",
         "offset": 0,
         "bytes": {
-          "retention": "inline",
+          "kind": "inline",
           "data": "UEsDBAoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAATWFuaWZlc3QuZGF0BwAAADMtMi0wLTANAAAARnVzaW9uRG9jVHlwZQQAAAAuAGYAMwBkAA8AAABGAHUAcwBpAG8AbgAgAEQAbwBjAHUAbQBlAG4AdAARAAAAQQAgAEYAdQBzAGkAbwBuACAARABvAGMAdQBtAGUAbgB0ACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADIA0gQAABQAAAAkAAAAQABAKgcAAAALAAAAQXBwbGljYXRpb24BAAAAAwAAAENBTQQAAAAIAAAAUGFyYU1lc2gIAAAACQAAAFNpbUNvbW1vbjV1AAAPAAAAU2ltRkVBQ1NPYmplY3RzAgAAABAAAABTaW1GbHVpZER5bmFtaWNzAgAAABcAAABTaW1TdHJ1Y3R1cmFsQXR0cmlidXRlcxInAAAAAAAAACQAAAAwADAAMAAwADAAMAAwADAALQAwADAAMAAwAC0ANAAwADAAMAAtADgAMAAwADAALQAwADAAMAAwADAAMAAwADAAMAAwADAAMwABAAAADwAAAEYAdQBzAGkAbwBuAEEAcwBzAGUAdABOAGEAbQBlAAAAAAABCQAAAE4AQQBfAEUAWABQAE8AUgBUAFBLAwQKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL01hbmlmZXN0LmRhdA8AAABGAHUAcwBpAG8AbgBBAHMAcwBlAHQATgBhAG0AZQAkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADMAJAAAADAAMAAwADAAMAAwADAAMAAtADAAMAAwADAALQA0ADAAMAAwAC0AOAAwADAAMAAtADAAMAAwADAAMAAwADAAMAAwADAAMAA0AA8AAABGdXNpb25Bc3NldFR5cGUUAAAABAAAAAsAAABBcHBsaWNhdGlvbosAAAAIAAAAUGFyYU1lc2gNAAAABgAAAFNlcnZlciQAAAAIAAAAVm9sRmllbGQEAAAAEgAAAE5ldXRyb24zREFzc2V0VHlwZQAAAAAAAQAAABIAAABwaHlzaWNhbENoYW5nZUd1aWQkAAAAMAAwADAAMAAwADAAMAAwAC0AMAAwADAAMAAtADQAMAAwADAALQA4ADAAMAAwAC0AMAAwADAAMAAwADAAMAAwADAAMAAwADUAAAAAAAcAAAADAAAAAAAAABcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZRcAAABGdXNpb25EZXNpZ25TZWdtZW50VHlwZQEAAAAUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUUAAAARnVzaW9uQUNUU2VnbWVudFR5cGUCAAAAGAAAAEZ1c2lvbkJyb3dzZXJTZWdtZW50VHlwZRgAAABGdXNpb25Ccm93c2VyU2VnbWVudFR5cGVQSwMECgAAAAAAAAAhAD13T15KBgAASgYAADIAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQm9keTEuc21iaEFTTSBCaW5hcnlGaWxlODxaAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAMAAAAAAAAABxBBdXRvZGVzayBOZXV0cm9uBxVBU00gMjMxLjYuMy42NTUzNSBPU1gHGFR1ZSBNYXIgMzEgMTY6MTY6MTkgMjAyNgYAAAAAAABOQAaN7bWg98awPga7vdfZ33zbPQ0JYXNtaGVhZGVyBw0yMzEuNi4zLjY1NTM1EQ0EYm9keQz//////////wQqAAAAAAAAAAz//////////wwCAAAAAAAAAAz//////////wz//////////xENBnJlZ2lvbgz//////////wT//////////wz//////////wz//////////wwDAAAAAAAAAAwBAAAAAAAAABENBXNoZWxsDP//////////BP//////////DP//////////DP//////////DP//////////DAQAAAAAAAAADP//////////DAIAAAAAAAAAEQ0EZmFjZQz//////////wT//////////wz//////////wz//////////wwFAAAAAAAAAAwDAAAAAAAAAAz//////////wwGAAAAAAAAAAsLEQ0EbG9vcAz//////////wT//////////wz//////////wz//////////wwHAAAAAAAAAAwEAAAAAAAAABEOBXBsYW5lDQdzdXJmYWNlDP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8UAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAACxENBmNvZWRnZQz//////////wT//////////wz//////////wwIAAAAAAAAAAwJAAAAAAAAAAz//////////wwKAAAAAAAAAAsMBQAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MCQAAAAAAAAAMBwAAAAAAAAAM//////////8MCwAAAAAAAAALDAUAAAAAAAAABAAAAAAAAAAADP//////////EQ0GY29lZGdlDP//////////BP//////////DP//////////DAcAAAAAAAAADAgAAAAAAAAADP//////////DAwAAAAAAAAACwwFAAAAAAAAAAQAAAAAAAAAAAz//////////xENBGVkZ2UM//////////8E//////////8M//////////8MDQAAAAAAAAAGAAAAAAAAAAAMDgAAAAAAAAAGAAAAAAAA8D8M//////////8M//////////8LBwd1bmtub3duEQ0EZWRnZQz//////////wT//////////wz//////////wwOAAAAAAAAAAYAAAAAAAAAAAwPAAAAAAAAAAYAAAAAAADwPwz//////////wz//////////wsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DA8AAAAAAAAABgAAAAAAAAAADA0AAAAAAAAABgAAAAAAAPA/DP//////////DP//////////CwcHdW5rbm93bhENBnZlcnRleAz//////////wT//////////wz//////////wwKAAAAAAAAAAQAAAAAAAAAAAwQAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwKAAAAAAAAAAQBAAAAAAAAAAwRAAAAAAAAABENBnZlcnRleAz//////////wT//////////wz//////////wwMAAAAAAAAAAQAAAAAAAAAAAwSAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAABENBXBvaW50DP//////////BP//////////DP//////////EwAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAABENC2RlbHRhX3N0YXRlUEsDBAoAAAAAAAAAIQD2oaPsmRQAAJkUAAA7AAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vRGVzaWduQ29uZmlndXJhdGlvblRhYmxlLjEyMy5kc2djZmd7ImFzc2V0Ijp7ImF0dHJpYnV0ZXMiOnt9LCJjb21wb25lbnRzIjpbeyJuYW1lIjoidGFibGVWZXJzaW9uIiwicHJvcGVydGllcyI6eyJ0YWJsZVZlcnNpb24iOnsidHlwZSI6IkludDMyIiwidmFsdWUiOjF9fSwidHlwZSI6ImF1dG9kZXNrLmNvbmZpZ3VyYXRpb246Y29tcG9uZW50cy50YWJsZURhdGEtMS4wLjAifV0sImlkIjoiIiwicmV2aXNpb25JZCI6IiIsInR5cGUiOiJhdXRvZGVzay5jb25maWd1cmF0aW9uOmFzc2V0cy5jb25maWd1cmF0aW9uLTEuMC4wIn0sImNhY2hlZFJldklkcyI6e30sInRhYmxlcyI6W3siYXNzZXQiOnsiYXR0cmlidXRlcyI6eyJwaW06Y29uZmlndXJhdGlvbjp0YWJsZUlkIjoiMSJ9LCJjb21wb25lbnRzIjpbeyJuYW1lIjoidGFibGVEZWZpbml0aW9uIiwicHJvcGVydGllcyI6eyJjb2x1bW5EYXRhIjp7InR5cGUiOiJtYXA8YXV0b2Rlc2suY29uZmlndXJhdGlvbjpjb21wb25lbnRzLmNvbHVtbkRhdGEtMS4xLjA+IiwidmFsdWUiOnsiUCI6eyJ0eXBlIjoiYXV0b2Rlc2suY29uZmlndXJhdGlvbjpjb21wb25lbnRzLmNvbHVtbkRhdGEtMS4xLjAiLCJ2YWx1ZSI6eyJpZCI6eyJ0eXBlIjoiU3RyaW5nIiwidmFsdWUiOiJQIn0sImlzQ3VzdG9tIjp7InR5cGUiOiJCb29sIiwidmFsdWUiOmZhbHNlfSwib2JqZWN0Ijp7InR5cGUiOiJhdXRvZGVzay5jb25maWd1cmF0aW9uOmNvbXBvbmVudHMuY29uZmlndXJlZFByb3BlcnR5LTEuMC4wIiwidmFsdWUiOnsiaWQiOnsidHlwZSI6IlN0cmluZyIsInZhbHVlIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAwIn0sInByb3BlcnR5S2V5Ijp7InR5cGUiOiJTdHJpbmciLCJ2YWx1ZSI6IlBhcnQgTnVtYmVyIn0sInByb3BlcnR5U2V0Ijp7InR5cGUiOiJTdHJpbmciLCJ2YWx1ZSI6IiJ9LCJ0eXBlIjp7InR5cGUiOiJTdHJpbmciLCJ2YWx1ZSI6IlByb3BlcnR5In19fSwidGl0bGUiOnsidHlwZSI6IlN0cmluZyIsInZhbHVlIjoiUCJ9fX0sIlMiOnsidHlwZSI6ImF1dG9kZXNrLmNvbmZpZ3VyYXRpb246Y29tcG9uZW50cy5jb2x1bW5EYXRhLTEuMS4wIiwidmFsdWUiOnsiaWQiOnsidHlwZSI6IlN0cmluZyIsInZhbHVlIjoiUyJ9LCJpc0N1c3RvbSI6eyJ0eXBlIjoiQm9vbCIsInZhbHVlIjpmYWxzZX0sIm9iamVjdCI6eyJ0eXBlIjoiYXV0b2Rlc2suY29uZmlndXJhdGlvbjpjb21wb25lbnRzLmNvbmZpZ3VyZWRPYmplY3QtMS4wLjAiLCJ2YWx1ZSI6eyJpZCI6eyJ0eXBlIjoiU3RyaW5nIiwidmFsdWUiOiI0MCJ9LCJ0eXBlIjp7InR5cGUiOiJTdHJpbmciLCJ2YWx1ZSI6IkRjRmVhdHVyZSJ9fX0sInRpdGxlIjp7InR5cGUiOiJTdHJpbmciLCJ2YWx1ZSI6IlMifX19LCJXIjp7InR5cGUiOiJhdXRvZGVzay5jb25maWd1cmF0aW9uOmNvbXBvbmVudHMuY29sdW1uRGF0YS0xLjEuMCIsInZhbHVlIjp7ImlkIjp7InR5cGUiOiJTdHJpbmciLCJ2YWx1ZSI6IlcifSwiaXNDdXN0b20iOnsidHlwZSI6IkJvb2wiLCJ2YWx1ZSI6ZmFsc2V9LCJvYmplY3QiOnsidHlwZSI6ImF1dG9kZXNrLmNvbmZpZ3VyYXRpb246Y29tcG9uZW50cy5jb25maWd1cmVkT2JqZWN0LTEuMC4wIiwidmFsdWUiOnsiaWQiOnsidHlwZSI6IlN0cmluZyIsInZhbHVlIjoiNzEifSwidHlwZSI6eyJ0eXBlIjoiU3RyaW5nIiwidmFsdWUiOiJVc2VyUGFyYW1ldGVyVmFsdWUifX19LCJ0aXRsZSI6eyJ0eXBlIjoiU3RyaW5nIiwidmFsdWUiOiJXIn19fX19LCJpZCI6eyJ0eXBlIjoiU3RyaW5nIiwidmFsdWUiOiIxIn0sInRhYmxlTmFtZSI6eyJ0eXBlIjoiU3RyaW5nIiwidmFsdWUiOiJDb25maWd1cmF0aW9ucyJ9LCJ0YWJsZVR5cGUiOnsidHlwZSI6IlN0cmluZyIsInZhbHVlIjoiQ29uZmlndXJhdGlvbnMifX0sInR5cGUiOiJhdXRvZGVzay5jb25maWd1cmF0aW9uOmNvbXBvbmVudHMudGFibGVEZWZpbml0aW9uLTEuMS4wIn1dLCJpZCI6IiIsInJldmlzaW9uSWQiOiIiLCJ0eXBlIjoiYXV0b2Rlc2suY29uZmlndXJhdGlvbjphc3NldHMuY29uZmlndXJhdGlvblRhYmxlLTEuMS4wIn0sInJvd3MiOlt7ImFzc2V0Ijp7ImF0dHJpYnV0ZXMiOnsicGltOmNvbmZpZ3VyYXRpb246cm93SWQiOiJ3aWRlIiwicGltOmNvbmZpZ3VyYXRpb246cm93TmFtZSI6IldpZGUifSwiY29tcG9uZW50cyI6W3sibmFtZSI6InJvd0RhdGEiLCJwcm9wZXJ0aWVzIjp7ImNvbmZpZ1JldmlzaW9uSWQiOnsidHlwZSI6IlN0cmluZyIsInZhbHVlIjoicmV2aXNpb24td2lkZSJ9LCJkZWZhdWx0Ijp7InR5cGUiOiJCb29sIiwidmFsdWUiOmZhbHNlfSwicm93Q2VsbHMiOnsidHlwZSI6Im1hcDxhdXRvZGVzay5jb25maWd1cmF0aW9uOmNvbXBvbmVudHMucm93Q2VsbC0xLjAuMD4iLCJ2YWx1ZSI6eyJQIjp7InR5cGUiOiJhdXRvZGVzay5jb25maWd1cmF0aW9uOmNvbXBvbmVudHMucm93Q2VsbC0xLjAuMCIsInZhbHVlIjp7ImNvbHVtbklkIjp7InR5cGUiOiJTdHJpbmciLCJ2YWx1ZSI6IlAifSwiZGF0YSI6eyJ0eXBlIjoiYXV0b2Rlc2suY29uZmlndXJhdGlvbjpjb21wb25lbnRzLnZhcmlhbnQuc3RyaW5nLTEuMC4wIiwidmFsdWUiOnsidmFsdWUiOnsidHlwZSI6IlN0cmluZyIsInZhbHVlIjoiVy0xIn19fX19LCJTIjp7InR5cGUiOiJhdXRvZGVzay5jb25maWd1cmF0aW9uOmNvbXBvbmVudHMucm93Q2VsbC0xLjAuMCIsInZhbHVlIjp7ImNvbHVtbklkIjp7InR5cGUiOiJTdHJpbmciLCJ2YWx1ZSI6IlMifSwiZGF0YSI6eyJ0eXBlIjoiYXV0b2Rlc2suY29uZmlndXJhdGlvbjpjb21wb25lbnRzLnZhcmlhbnQuYm9vbC0xLjAuMCIsInZhbHVlIjp7InZhbHVlIjp7InR5cGUiOiJCb29sIiwidmFsdWUiOmZhbHNlfX19fX0sIlciOnsidHlwZSI6ImF1dG9kZXNrLmNvbmZpZ3VyYXRpb246Y29tcG9uZW50cy5yb3dDZWxsLTEuMC4wIiwidmFsdWUiOnsiY29sdW1uSWQiOnsidHlwZSI6IlN0cmluZyIsInZhbHVlIjoiVyJ9LCJkYXRhIjp7InR5cGUiOiJhdXRvZGVzay5jb25maWd1cmF0aW9uOmNvbXBvbmVudHMudmFyaWFudC5leHByZXNzaW9uLTEuMC4wIiwidmFsdWUiOnsiZXhwcmVzc2lvbiI6eyJ0eXBlIjoiU3RyaW5nIiwidmFsdWUiOiIyNSBtbSJ9LCJ2YWx1ZSI6eyJ0eXBlIjoiYXV0b2Rlc2suY29uZmlndXJhdGlvbjpjb21wb25lbnRzLnZhcmlhbnQuZmxvYXQ2NC0xLjAuMCIsInZhbHVlIjp7InZhbHVlIjp7InR5cGUiOiJGbG9hdDY0IiwidmFsdWUiOjIuNX19fX19fX19fX0sInR5cGUiOiJhdXRvZGVzay5jb25maWd1cmF0aW9uOmNvbXBvbmVudHMucm93RGF0YS0xLjAuMCJ9LHsibmFtZSI6InJvd0RlZmluaXRpb24iLCJwcm9wZXJ0aWVzIjp7ImlkIjp7InR5cGUiOiJTdHJpbmciLCJ2YWx1ZSI6IndpZGUifX0sInR5cGUiOiJhdXRvZGVzay5jb25maWd1cmF0aW9uOmNvbXBvbmVudHMucm93RGVmaW5pdGlvbi0xLjAuMCJ9XSwiaWQiOiIiLCJyZXZpc2lvbklkIjoiIiwidHlwZSI6ImF1dG9kZXNrLmNvbmZpZ3VyYXRpb246YXNzZXRzLnJvdy0xLjAuMCJ9fSx7ImFzc2V0Ijp7ImF0dHJpYnV0ZXMiOnsicGltOmNvbmZpZ3VyYXRpb246cm93SWQiOiJuYXJyb3ciLCJwaW06Y29uZmlndXJhdGlvbjpyb3dOYW1lIjoiTmFycm93In0sImNvbXBvbmVudHMiOlt7Im5hbWUiOiJyb3dEYXRhIiwicHJvcGVydGllcyI6eyJjb25maWdSZXZpc2lvbklkIjp7InR5cGUiOiJTdHJpbmciLCJ2YWx1ZSI6InJldmlzaW9uLW5hcnJvdyJ9LCJkZWZhdWx0Ijp7InR5cGUiOiJCb29sIiwidmFsdWUiOmZhbHNlfSwicm93Q2VsbHMiOnsidHlwZSI6Im1hcDxhdXRvZGVzay5jb25maWd1cmF0aW9uOmNvbXBvbmVudHMucm93Q2VsbC0xLjAuMD4iLCJ2YWx1ZSI6eyJQIjp7InR5cGUiOiJhdXRvZGVzay5jb25maWd1cmF0aW9uOmNvbXBvbmVudHMucm93Q2VsbC0xLjAuMCIsInZhbHVlIjp7ImNvbHVtbklkIjp7InR5cGUiOiJTdHJpbmciLCJ2YWx1ZSI6IlAifSwiZGF0YSI6eyJ0eXBlIjoiYXV0b2Rlc2suY29uZmlndXJhdGlvbjpjb21wb25lbnRzLnZhcmlhbnQuc3RyaW5nLTEuMC4wIiwidmFsdWUiOnsidmFsdWUiOnsidHlwZSI6IlN0cmluZyIsInZhbHVlIjoiTi0xIn19fX19LCJTIjp7InR5cGUiOiJhdXRvZGVzay5jb25maWd1cmF0aW9uOmNvbXBvbmVudHMucm93Q2VsbC0xLjAuMCIsInZhbHVlIjp7ImNvbHVtbklkIjp7InR5cGUiOiJTdHJpbmciLCJ2YWx1ZSI6IlMifSwiZGF0YSI6eyJ0eXBlIjoiYXV0b2Rlc2suY29uZmlndXJhdGlvbjpjb21wb25lbnRzLnZhcmlhbnQuYm9vbC0xLjAuMCIsInZhbHVlIjp7InZhbHVlIjp7InR5cGUiOiJCb29sIiwidmFsdWUiOnRydWV9fX19fSwiVyI6eyJ0eXBlIjoiYXV0b2Rlc2suY29uZmlndXJhdGlvbjpjb21wb25lbnRzLnJvd0NlbGwtMS4wLjAiLCJ2YWx1ZSI6eyJjb2x1bW5JZCI6eyJ0eXBlIjoiU3RyaW5nIiwidmFsdWUiOiJXIn0sImRhdGEiOnsidHlwZSI6ImF1dG9kZXNrLmNvbmZpZ3VyYXRpb246Y29tcG9uZW50cy52YXJpYW50LmV4cHJlc3Npb24tMS4wLjAiLCJ2YWx1ZSI6eyJleHByZXNzaW9uIjp7InR5cGUiOiJTdHJpbmciLCJ2YWx1ZSI6IjEwIG1tIn0sInZhbHVlIjp7InR5cGUiOiJhdXRvZGVzay5jb25maWd1cmF0aW9uOmNvbXBvbmVudHMudmFyaWFudC5mbG9hdDY0LTEuMC4wIiwidmFsdWUiOnsidmFsdWUiOnsidHlwZSI6IkZsb2F0NjQiLCJ2YWx1ZSI6MS4wfX19fX19fX19fSwidHlwZSI6ImF1dG9kZXNrLmNvbmZpZ3VyYXRpb246Y29tcG9uZW50cy5yb3dEYXRhLTEuMC4wIn0seyJuYW1lIjoicm93RGVmaW5pdGlvbiIsInByb3BlcnRpZXMiOnsiaWQiOnsidHlwZSI6IlN0cmluZyIsInZhbHVlIjoibmFycm93In19LCJ0eXBlIjoiYXV0b2Rlc2suY29uZmlndXJhdGlvbjpjb21wb25lbnRzLnJvd0RlZmluaXRpb24tMS4wLjAifV0sImlkIjoiIiwicmV2aXNpb25JZCI6IiIsInR5cGUiOiJhdXRvZGVzay5jb25maWd1cmF0aW9uOmFzc2V0cy5yb3ctMS4wLjAifX1dLCJ0YWJsZVZpZXciOnsiYXNzZXQiOnsiYXR0cmlidXRlcyI6e30sImNvbXBvbmVudHMiOlt7Im5hbWUiOiJ2aWV3RGF0YSIsInByb3BlcnRpZXMiOnsiY29sdW1uT3JkZXIiOnsidHlwZSI6IlN0cmluZyIsInZhbHVlIjpbIlAiLCJXIiwiUyJdfSwicm93T3JkZXIiOnsidHlwZSI6IlN0cmluZyIsInZhbHVlIjpbIm5hcnJvdyIsIndpZGUiXX19LCJ0eXBlIjoiYXV0b2Rlc2suY29uZmlndXJhdGlvbjpjb21wb25lbnRzLnRhYmxlVmlld0RhdGEtMS4wLjAifV0sImlkIjoiIiwicmV2aXNpb25JZCI6IiIsInR5cGUiOiJhdXRvZGVzay5jb25maWd1cmF0aW9uOmFzc2V0cy50YWJsZVZpZXctMS4wLjAifX19XSwidGVzdFJvd0RhdGEiOltdfVBLAQIKAwoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAAAAAAAAAAAACkgQAAAABNYW5pZmVzdC5kYXRQSwECCgMKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAAAAAAAAAAAApIFlAgAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vTWFuaWZlc3QuZGF0UEsBAgoDCgAAAAAAAAAhAD13T15KBgAASgYAADIAAAAAAAAAAAAAAKSB9AQAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0JyZXBzLkJsb2JQYXJ0cy9Cb2R5MS5zbWJoUEsBAgoDCgAAAAAAAAAhAPaho+yZFAAAmRQAADsAAAAAAAAAAAAAAKSBjgsAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0Rlc2lnbkNvbmZpZ3VyYXRpb25UYWJsZS4xMjMuZHNnY2ZnUEsFBgAAAAAEAAQAVQEAAIAgAAAAAA=="
-        }
+        },
+        "untyped": []
       }
     }
   }

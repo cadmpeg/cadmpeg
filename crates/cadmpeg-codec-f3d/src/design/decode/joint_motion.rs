@@ -2,13 +2,17 @@
 //! Joint motion: the freedom entries of a joint's motion record and the limit
 //! lanes of its joint record.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::{u64_from_index, View};
+use cadmpeg_core::decode::{bounded_len, u64_from_index, View};
 use cadmpeg_core::CodecError;
 
 use crate::container::ContainerScan;
+use crate::design::assembly::compact_placement_as_built_scope;
 use crate::design::{design_feature_family, DesignFeatureFamily};
+use crate::layout::assembly_motion_parent_entry as parent_entry;
+use crate::layout::assembly_motion_parent_run as parents;
+use crate::records::entity_header::SegmentType;
 use crate::records::feature::joint_motion::{
     DesignJointFreedomWord, DesignJointLimitLanes, DesignJointMotion, DesignJointRest,
 };
@@ -42,11 +46,22 @@ const LIMIT_VALUES_AFTER_SELF_REFERENCE: usize = 23;
 const REST_FLAG_AFTER_SELF_REFERENCE: usize = 13;
 const REST_VALUE_AFTER_SELF_REFERENCE: usize = 39;
 
+pub(crate) const JOINT_TYPE_GUID: &str = "7F5A0426-1D2A-4DC4-9F06-58631F69D2F5";
+const MOTION_TYPE_GUID: &str = "8C188F11-5D1B-4E1C-8E87-AF7214CA3C83";
+const OCCURRENCE_TYPE_GUID: &str = "CE2913AA-CFE0-4F04-9102-24424ED3BCFA";
+
+#[derive(Default)]
+struct AsBuiltJoints<'a> {
+    types: HashMap<u64, (&'a str, u32)>,
+    joints: HashSet<u32>,
+}
+
 /// Decode the motion of every joint whose motion record carries freedom
 /// entries, in every Design `BulkStream`.
 pub(crate) fn decode_joint_motions(
     scan: &ContainerScan<'_>,
     scopes: &[DesignParameterScope],
+    types: &[SegmentType],
 ) -> Result<Vec<DesignJointMotion>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
@@ -66,7 +81,31 @@ pub(crate) fn decode_joint_motions(
                 )
             })
             .collect();
-        out.extend(decode_stream(bytes, &entry.name, &assemble_scopes));
+        let joints: HashSet<_> = scopes
+            .iter()
+            .filter(|scope| {
+                crate::ids::native_stream(&scope.id) == Some(stream.as_str())
+                    && compact_placement_as_built_scope(scope)
+                    && scope
+                        .assembly_alignment()
+                        .is_some_and(|alignment| alignment.operand_path_refs().is_some())
+            })
+            .filter_map(|scope| scope.record_index.checked_sub(1))
+            .collect();
+        let as_built = AsBuiltJoints {
+            types: if joints.is_empty() {
+                HashMap::new()
+            } else {
+                super::meta::stream_types_by_entity(types, &entry.name)
+            },
+            joints,
+        };
+        out.extend(decode_stream(
+            bytes,
+            &entry.name,
+            &assemble_scopes,
+            &as_built,
+        ));
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
@@ -74,10 +113,11 @@ pub(crate) fn decode_joint_motions(
 
 /// The motions of one stream. `assemble_scopes` names the decoded scopes of
 /// the stream and whether each is an `Assemble` scope.
-pub(super) fn decode_stream(
+fn decode_stream(
     bytes: &[u8],
     entry_name: &str,
     assemble_scopes: &HashMap<u32, bool>,
+    as_built: &AsBuiltJoints<'_>,
 ) -> Vec<DesignJointMotion> {
     let headers: Vec<(usize, u32)> = indexed_record_offsets(bytes)
         .map(|header| (header.offset, header.record_index))
@@ -152,7 +192,10 @@ pub(super) fn decode_stream(
             index: motion_index,
         };
         let Some(joint_index) =
-            motion_joint(bytes, &records, &record_end, assemble_scopes, &motion)
+            as_built_motion_joint(bytes, &motion, &entries, as_built).or_else(|| {
+                motion_joint(bytes, &records, &record_end, assemble_scopes, &motion)
+                    .filter(|joint| !as_built.joints.contains(joint))
+            })
         else {
             continue;
         };
@@ -180,6 +223,52 @@ struct MotionRecord {
     start: usize,
     end: usize,
     index: u32,
+}
+
+fn as_built_motion_joint(
+    bytes: &[u8],
+    motion: &MotionRecord,
+    freedoms: &FreedomEntries,
+    as_built: &AsBuiltJoints<'_>,
+) -> Option<u32> {
+    let is_type = |index, guid: &str, version| {
+        as_built
+            .types
+            .get(&u64::from(index))
+            .is_some_and(|(actual, v)| *v == version && actual.eq_ignore_ascii_case(guid))
+    };
+    let &(guid, version) = as_built.types.get(&u64::from(motion.index))?;
+    if !guid.eq_ignore_ascii_case(MOTION_TYPE_GUID) || !matches!(version, 2 | 3) {
+        return None;
+    }
+    let record = bytes.get(motion.start..motion.end)?;
+    let count = bounded_len(
+        u64::from(View::u32_le_at(record, parents::COUNT)?),
+        parent_entry::LEN,
+        record.len().checked_sub(parents::FIRST_REFERENCE)?,
+    )?;
+    if !(1..=3).contains(&count) {
+        return None;
+    }
+    let run_end = parents::FIRST_REFERENCE + count * parent_entry::LEN;
+    let minimum_code = u64_from_index(motion.start + run_end + FREEDOM_ENTRY_PREFIX.len() + 4);
+    if freedoms.iter().any(|(code, entry)| {
+        code.offset < minimum_code
+            || code.offset + if entry.value.is_some() { 12 } else { 4 } > u64_from_index(motion.end)
+    }) {
+        return None;
+    }
+    let mut entries = record
+        .get(parents::FIRST_REFERENCE..run_end)?
+        .chunks_exact(parent_entry::LEN);
+    let joint = marked_record_reference(entries.next_back()?, parent_entry::REFERENCE)?;
+    (as_built.joints.contains(&joint)
+        && is_type(joint, JOINT_TYPE_GUID, version + 2)
+        && entries.all(|entry| {
+            marked_record_reference(entry, parent_entry::REFERENCE)
+                .is_some_and(|parent| is_type(parent, OCCURRENCE_TYPE_GUID, 2))
+        }))
+    .then_some(joint)
 }
 
 /// The joint record a motion record belongs to.

@@ -235,7 +235,7 @@ pub fn line_circle_intersections(
     let segment = segment.finish()?;
     // Form the determinant from the original coordinates. Normalizing the
     // direction first can rotate a distant, exactly incident line off a small circle.
-    let determinant = line_offset_determinant(start, end, center);
+    let mut determinant = line_offset_determinant(start, end, center);
     let perpendicular = determinant
         .finish()
         .map_or(Some(FiniteReal::ZERO), |value| value.quotient(segment).ok())?

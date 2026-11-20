@@ -171,3 +171,21 @@ fn a_listed_class_pair_keeps_its_own_count_field() {
     bytes[25..33].copy_from_slice(&201u64.to_le_bytes());
     assert_eq!(decoded(&bytes, &scope), None);
 }
+
+#[test]
+fn ordinary_base_feature_envelopes_select_their_layout_before_stream_local_classes() {
+    for classes in [("452", "266"), ("409", "262"), ("384", "264")] {
+        for metadata_width in [2, 6] {
+            for body_count in [1, 2] {
+                let (bytes, scope) = frame(Count::Ordinary, metadata_width, body_count, classes);
+                let expected = (0..u64_from_index(body_count))
+                    .map(|ordinal| [101 + ordinal, 201 + ordinal, 401 + ordinal])
+                    .collect();
+                assert_eq!(
+                    decoded(&bytes, &scope),
+                    Some((expected, 301, metadata_width))
+                );
+            }
+        }
+    }
+}

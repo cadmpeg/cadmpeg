@@ -19,7 +19,7 @@ fn square(left: f64) -> (Sketch, Vec<SketchEntity>) {
             serde_json::from_value(json!({
                 "id": format!("inventor:test:entity#{index}"),
                 "sketch": "inventor:test:sketch#1",
-                "construction": false,
+                "construction": false, "endpoint_refs": [],
                 "geometry": {
                     "kind": "line",
                     "start": {"u": start[0], "v": start[1]},
@@ -52,7 +52,7 @@ fn construction() -> RevolveConstruction {
             "kind": "sketch_regions",
             "value": {
                 "sketch": "inventor:test:sketch#1",
-                "regions": [{"region": "loops", "outer": 0}],
+                "regions": [{"kind": "loops", "outer": 0, "holes": []}],
             },
         }))
         .expect("profile"),

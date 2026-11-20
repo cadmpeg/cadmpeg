@@ -151,7 +151,7 @@ fn owner_carrier_candidate_requires_parameter_and_model_space_containment() {
 
     assert_eq!(
         owner_matches_a5_carrier(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &admitted,
             &surface
         ),
@@ -159,7 +159,7 @@ fn owner_carrier_candidate_requires_parameter_and_model_space_containment() {
     );
     assert_eq!(
         owner_matches_a5_carrier(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &outside_parameter_domain,
             &surface
         ),
@@ -167,7 +167,7 @@ fn owner_carrier_candidate_requires_parameter_and_model_space_containment() {
     );
     assert_eq!(
         owner_matches_a5_carrier(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &clipped_model_bounds,
             &surface
         ),
@@ -788,7 +788,7 @@ fn cylinder_generator_direction_requires_compatible_support_axes() {
 #[test]
 fn unknown_surface_membership_stays_open_but_nurbs_membership_is_geometric() {
     assert!(point_on_standard_face(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         Point3::new(100.0, -50.0, 7.0),
         &SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         None,
@@ -796,21 +796,21 @@ fn unknown_surface_membership_stays_open_but_nurbs_membership_is_geometric() {
     .expect("surface evaluator accepts the fixture"));
     let nurbs = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(unit_square_surface()));
     assert!(point_on_standard_face(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         Point3::new(0.5, 0.5, 0.0),
         &nurbs,
         None,
     )
     .expect("surface evaluator accepts the fixture"));
     assert!(!point_on_standard_face(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         Point3::new(0.5, 0.5, 0.1),
         &nurbs,
         None,
     )
     .expect("surface evaluator accepts the fixture"));
     assert!(!point_on_standard_face(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         Point3::new(100.0, -50.0, 7.0),
         &nurbs,
         None,
@@ -955,7 +955,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
     )
     .expect("build the decode context");
     let mut ir = CadIr::empty();
-    ir.model.points.extend([
+    ir.geometry.points.extend([
         Point::new(
             PointId::mint("catia:test:point#point-0").expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 0.0))
@@ -970,7 +970,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
         ),
     ]);
     let surface_id = SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -981,6 +981,7 @@ fn cached_face_point_membership_matches_the_source_predicate() {
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let bindings = [(surface_id.clone(), false, 0)];
     let surface_indices = HashMap::from([(surface_id, 0)]);
@@ -993,8 +994,8 @@ fn cached_face_point_membership_matches_the_source_predicate() {
         faces.contains(&0)
             == point_on_standard_face(
                 &ctx,
-                ir.model.points[point].position().get(),
-                &ir.model.surfaces[0].geometry,
+                ir.geometry.points[point].position().get(),
+                &ir.geometry.surfaces[0].geometry,
                 None,
             )
             .expect("surface evaluator accepts the fixture")
@@ -1003,11 +1004,11 @@ fn cached_face_point_membership_matches_the_source_predicate() {
 
 #[test]
 fn point_face_membership_matches_a_dense_face_point_table() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let finite = crate::test_support::test_b5::finite;
     let length = crate::test_support::test_b5::nonnegative_length;
     let mut ir = CadIr::empty();
-    ir.model.points.extend(
+    ir.geometry.points.extend(
         [
             [1.0, 0.0, 0.0],
             [0.0, 1.0, 0.0],
@@ -1063,15 +1064,16 @@ fn point_face_membership_matches_a_dense_face_point_table() {
         })
         .collect::<Vec<_>>();
     for (id, geometry) in surface_ids.iter().zip(geometries) {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: id.clone(),
             geometry,
             source_object: None,
+            native_ref: None,
         });
     }
     let surface_indices = surface_ids
         .iter()
-        .take(ir.model.surfaces.len())
+        .take(ir.geometry.surfaces.len())
         .cloned()
         .enumerate()
         .map(|(index, id)| (id, index))
@@ -1102,11 +1104,11 @@ fn point_face_membership_matches_a_dense_face_point_table() {
         .map(|((surface_id, ..), bounds)| {
             let Some(surface) = surface_indices
                 .get(surface_id)
-                .map(|index| &ir.model.surfaces[*index])
+                .map(|index| &ir.geometry.surfaces[*index])
             else {
                 return Vec::new();
             };
-            ir.model
+            ir.geometry
                 .points
                 .iter()
                 .map(|point| {
@@ -1125,7 +1127,7 @@ fn point_face_membership_matches_a_dense_face_point_table() {
     )
     .expect("build the face point membership cache");
 
-    assert_eq!(membership.len(), ir.model.points.len());
+    assert_eq!(membership.len(), ir.geometry.points.len());
     for (point, faces) in membership.iter().enumerate() {
         let dense_faces = (0..dense.len())
             .filter(|face| dense[*face].get(point) == Some(&true))
@@ -1158,21 +1160,21 @@ fn freeform_face_bounds_constrain_unknown_surface_endpoints() {
     };
     let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
     assert!(point_on_standard_face(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         Point3::new(2.0, 4.0, 6.0),
         &surface,
         Some(bounds),
     )
     .expect("surface evaluator accepts the fixture"));
     assert!(!point_on_standard_face(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         Point3::new(3.01, 3.0, 4.0),
         &surface,
         Some(bounds),
     )
     .expect("surface evaluator accepts the fixture"));
     assert!(!point_on_standard_face(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         Point3::new(3.0, 5.0, 7.0),
         &surface,
         Some(bounds),
@@ -1223,7 +1225,7 @@ fn standard_plane_line_inverts_to_exact_parameter_line() {
 fn standard_emission_reverses_face_pcurve_range() {
     for reversed in [false, true] {
         let mut ir = CadIr::empty();
-        ir.model.points.extend([
+        ir.geometry.points.extend([
             Point::new(
                 PointId::mint("catia:test:point#point-0").expect("identity grammar"),
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
@@ -1237,7 +1239,7 @@ fn standard_emission_reverses_face_pcurve_range() {
                 None,
             ),
         ]);
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1248,8 +1250,9 @@ fn standard_emission_reverses_face_pcurve_range() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: FaceId::mint("catia:standard:face#0").expect("identity grammar"),
             shell: ShellId::mint("catia:test:shell#shell-0").expect("identity grammar"),
             surface: SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
@@ -1258,6 +1261,7 @@ fn standard_emission_reverses_face_pcurve_range() {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
         let bindings = [(
             SurfaceId::mint("catia:test:surface#surface-0").expect("identity grammar"),
@@ -1329,7 +1333,7 @@ fn standard_emission_reverses_face_pcurve_range() {
         })
         .expect("valid source object identity");
 
-        let [loop_] = ir.model.loops.as_slice() else {
+        let [loop_] = ir.geometry.loops.as_slice() else {
             panic!("standard edge emission must create one loop");
         };
         let [vertex_use, closing_use] = loop_.anchored_vertex_uses() else {
@@ -1355,7 +1359,7 @@ fn standard_emission_reverses_face_pcurve_range() {
                 .expect("identity grammar")
         );
 
-        let [pcurve] = ir.model.coedges[0].pcurves.as_slice() else {
+        let [pcurve] = ir.geometry.coedges[0].pcurves.as_slice() else {
             panic!("standard line occurrence must retain its pcurve");
         };
         assert_eq!(
@@ -1378,14 +1382,14 @@ fn standard_planar_solid_emission_preserves_native_face_sense() {
     let mut ir = CadIr::empty();
     let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     for (index, [x, y, z]) in points.into_iter().enumerate() {
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#{index}")).expect("fixture point id"),
             FinitePoint3::new(Point3::new(x, y, z)).expect("finite fixture point"),
             None,
         ));
     }
     let surface_id = SurfaceId::mint("catia:test:surface#0").expect("fixture surface id");
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1396,17 +1400,18 @@ fn standard_planar_solid_emission_preserves_native_face_sense() {
             .expect("fixture plane"),
         )),
         source_object: None,
+        native_ref: None,
     });
-    ir.model.bodies.push(Body {
+    ir.geometry.bodies.push(Body {
         id: BodyId::mint("catia:test:body#0").expect("fixture body id"),
         kind: BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
-    ir.model.faces.push(Face {
+    ir.geometry.faces.push(Face {
         id: FaceId::mint("catia:standard:face#0").expect("fixture face id"),
         shell: ShellId::mint("catia:test:shell#0").expect("fixture shell id"),
         surface: surface_id.clone(),
@@ -1415,6 +1420,7 @@ fn standard_planar_solid_emission_preserves_native_face_sense() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     let edge_vertices = [[0, 1], [1, 2], [2, 0]];
     let supports = [1, 2, 3].map(|tag| StandardCurveSupport {
@@ -1473,9 +1479,9 @@ fn standard_planar_solid_emission_preserves_native_face_sense() {
     })
     .expect("emit planar solid face");
 
-    assert_eq!(ir.model.faces[0].sense, Sense::Reversed);
+    assert_eq!(ir.geometry.faces[0].sense, Sense::Reversed);
     assert_eq!(
-        ir.model.faces[0].loops.role(&ir.model.loops[0].id),
+        ir.geometry.faces[0].loops.role(&ir.geometry.loops[0].id),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
 }
@@ -1670,7 +1676,7 @@ fn invariant_face_carrier_binding_selects_a_sole_candidate() {
 #[test]
 fn face_boundary_witnesses_are_empty_without_faces() {
     let mut ir = CadIr::empty();
-    ir.model.points.push(Point::new(
+    ir.geometry.points.push(Point::new(
         PointId::mint("catia:test:point#a5-witness").expect("identity grammar"),
         FinitePoint3::new(Point3::new(1.0, 0.0, 0.0)).expect("finite point"),
         None,
@@ -1701,12 +1707,13 @@ fn a5_owner_binding_binds_no_surface_without_face_bounds() {
     );
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:standard:surface#a5-limit").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
-    ir.model.faces.push(Face {
+    ir.geometry.faces.push(Face {
         id: FaceId::mint("catia:standard:face#0").expect("identity grammar"),
         shell: ShellId::mint("catia:standard:shell#0").expect("identity grammar"),
         surface: surface_id,
@@ -1715,6 +1722,7 @@ fn a5_owner_binding_binds_no_surface_without_face_bounds() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     let source = StandardConsolidatedSource {
         data: &bytes,

@@ -167,6 +167,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             ),
             selector: 1,
             token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
+            token_integer: 0,
             design_references: vec![2265],
             ordinal: 0,
         },
@@ -177,6 +178,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             ),
             selector: 2,
             token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
+            token_integer: 0,
             design_references: vec![2265, 2266],
             ordinal: 0,
         },
@@ -187,6 +189,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             ),
             selector: 0,
             token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
+            token_integer: 0,
             design_references: vec![2265],
             ordinal: 0,
         },
@@ -232,7 +235,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     if let crate::records::feature::scope::DesignScopePayloadMut::Combine(slot) =
         combine_scope.payload_mut()
     {
-        *slot = Some(crate::records::feature::combine::DesignCombineOperation {
+        slot.operation = Some(crate::records::feature::combine::DesignCombineOperation {
             form: crate::records::feature::combine::DesignCombineForm::Standard,
             operation: cadmpeg_ir::features::BooleanKind::Join,
             operation_offset: 0,
@@ -248,6 +251,8 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
                 },
                 additional: Vec::new(),
             },
+
+            destination: Default::default(),
         });
     }
     let mut combine_recipe = recipe.clone();
@@ -268,6 +273,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
                 ),
                 selector: 1,
                 token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
+                token_integer: 0,
                 design_references: vec![2265],
                 ordinal: 0,
             },
@@ -278,6 +284,7 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
                 ),
                 selector: 2,
                 token: cadmpeg_core::text::NonBlankString::new("0").unwrap(),
+                token_integer: 0,
                 design_references: vec![2265, 2266],
                 ordinal: 0,
             },

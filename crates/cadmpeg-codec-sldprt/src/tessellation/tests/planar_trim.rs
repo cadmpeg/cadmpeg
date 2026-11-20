@@ -7,10 +7,10 @@ const EPS_AREA_SUM: f64 = 1e-10;
 
 #[test]
 fn sole_surface_owner_respects_its_planar_trim() {
-    let mut model = super::model_with_body();
-    let face = super::add_square_face(&mut model, "bounded", 0.);
-    super::set_shell_faces(&mut model, vec![face]);
-    model.tessellations.push(
+    let mut ir = super::model_with_body();
+    let face = super::add_square_face(&mut ir, "bounded", 0.);
+    super::set_shell_faces(&mut ir, &[face]);
+    ir.model.tessellations.push(
         cadmpeg_ir::tessellation::Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#outside")
                 .unwrap(),
@@ -26,14 +26,14 @@ fn sole_surface_owner_respects_its_planar_trim() {
         )
         .unwrap(),
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert!(
-        super::super::assign_unique_surface_owners(&ctx, &mut model, &mut Vec::new())
+        super::super::assign_unique_surface_owners(&ctx, &mut ir, &mut Vec::new())
             .unwrap()
             .is_empty()
     );
-    assert!(model.tessellations[0].faces.is_empty());
-    assert!(model.tessellations[0].body.is_none());
+    assert!(ir.model.tessellations[0].faces.is_empty());
+    assert!(ir.model.tessellations[0].body.is_none());
 }
 
 #[test]
@@ -53,34 +53,35 @@ fn owner_work_cap_leaves_tables_unassigned_and_names_the_bound() {
         )
         .unwrap()
     };
-    let model = || {
-        let mut model = super::model_with_body();
-        let face = super::add_square_face(&mut model, "bounded", 0.);
-        super::set_shell_faces(&mut model, vec![face]);
-        model
+    let ir = || {
+        let mut ir = super::model_with_body();
+        let face = super::add_square_face(&mut ir, "bounded", 0.);
+        super::set_shell_faces(&mut ir, &[face]);
+        ir.model
             .tessellations
             .push(mesh("synthetic:test:tessellation#first"));
-        model
+        ir.model
             .tessellations
             .push(mesh("synthetic:test:tessellation#second"));
-        model
+        ir
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
 
-    let mut unbounded = model();
+    let mut unbounded = ir();
     let mut losses = Vec::new();
     let assigned =
         super::super::assign_unique_surface_owners(&ctx, &mut unbounded, &mut losses).unwrap();
     assert_eq!(assigned.len(), 2);
     assert!(losses.is_empty());
 
-    let mut capped = model();
+    let mut capped = ir();
     let mut losses = Vec::new();
     let assigned =
         super::super::assign_unique_surface_owners_within(&ctx, &mut capped, &mut losses, 1)
             .unwrap();
     assert!(assigned.is_empty());
     assert!(capped
+        .model
         .tessellations
         .iter()
         .all(|mesh| mesh.faces.is_empty() && mesh.body.is_none()));
@@ -155,26 +156,40 @@ fn polygon_triangle_check_accepts_edges_on_the_outer_boundary() {
 
 #[test]
 fn single_planar_polygon_yields_a_planar_trim() {
-    let mut model = super::model_with_body();
-    let face_id = super::add_square_face(&mut model, "budget", 0.);
-    let loops = model.loops.iter().map(|entry| (&entry.id, entry)).collect();
-    let coedges = model
+    let mut ir = super::model_with_body();
+    let face_id = super::add_square_face(&mut ir, "budget", 0.);
+    let loops = ir
+        .geometry
+        .loops
+        .iter()
+        .map(|entry| (&entry.id, entry))
+        .collect();
+    let coedges = ir
+        .geometry
         .coedges
         .iter()
         .map(|entry| (&entry.id, entry))
         .collect();
-    let edges = model.edges.iter().map(|entry| (&entry.id, entry)).collect();
-    let vertices = model
+    let edges = ir
+        .geometry
+        .edges
+        .iter()
+        .map(|entry| (&entry.id, entry))
+        .collect();
+    let vertices = ir
+        .geometry
         .vertices
         .iter()
         .map(|entry| (&entry.id, entry))
         .collect();
-    let points = model
+    let points = ir
+        .geometry
         .points
         .iter()
         .map(|entry| (&entry.id, entry.position().get()))
         .collect();
-    let curves = model
+    let curves = ir
+        .geometry
         .curves
         .iter()
         .map(|entry| (&entry.id, &entry.geometry))
@@ -188,8 +203,14 @@ fn single_planar_polygon_yields_a_planar_trim() {
         curves: &curves,
         coordinate_scale: super::super::trim_coordinate_scale(&points),
     };
-    let face = model.faces.iter().find(|face| face.id == face_id).unwrap();
-    let surface = &model
+    let face = ir
+        .geometry
+        .faces
+        .iter()
+        .find(|face| face.id == face_id)
+        .unwrap();
+    let surface = &ir
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id == face.surface)

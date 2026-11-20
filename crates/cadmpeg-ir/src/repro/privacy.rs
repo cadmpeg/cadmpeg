@@ -83,7 +83,7 @@ pub(super) fn strip(
         .collect::<Result<_, _>>()?;
     replacements.extend(scopes);
     if let (Some(source), Some(codec)) = (value.get_mut("source"), source_codec) {
-        *source = serde_json::json!({"identity": {"classification": "unclassified", "format": codec}, "attributes": {}});
+        *source = serde_json::json!({"identity": {"kind": "unclassified", "format": codec}, "attributes": {}});
     }
     let empty = BTreeSet::new();
     for row in rows(&value)
@@ -116,12 +116,11 @@ pub(super) fn strip(
     Ok((value, roots))
 }
 
-#[cfg(feature = "schema")]
 fn tokens(value: &Value) -> Result<Tokens, CodecError> {
     static SCHEMA: std::sync::OnceLock<Result<Value, String>> = std::sync::OnceLock::new();
     let schema = SCHEMA
         .get_or_init(|| {
-            serde_json::to_value(crate::cadir_json_schema()).map_err(|error| error.to_string())
+            serde_json::from_str(crate::CADIR_JSON_SCHEMA).map_err(|error| error.to_string())
         })
         .as_ref()
         .map_err(CodecError::malformed)?;
@@ -130,14 +129,6 @@ fn tokens(value: &Value) -> Result<Tokens, CodecError> {
     Ok(tokens)
 }
 
-#[cfg(not(feature = "schema"))]
-fn tokens(_value: &Value) -> Result<Tokens, CodecError> {
-    Err(CodecError::NotImplemented(
-        "fragment privacy requires the cadmpeg-ir schema feature".into(),
-    ))
-}
-
-#[cfg(feature = "schema")]
 fn applies(schema: &Value, value: &Value) -> bool {
     if let Some(constant) = schema.get("const") {
         return constant == value;
@@ -164,7 +155,6 @@ fn applies(schema: &Value, value: &Value) -> bool {
     true
 }
 
-#[cfg(feature = "schema")]
 fn collect_tokens(
     root: &Value,
     schema: &Value,

@@ -190,6 +190,7 @@ fn validation_placement(
             visibility.ordinal_collection = std::num::NonZeroU64::new(100);
             visibility
         }),
+        display_name: None,
         class_tag: crate::records::references::DesignClassTag::try_from("112".to_owned()).unwrap(),
         record_index: 1,
         paired_class_tag: crate::records::references::DesignClassTag::try_from("112".to_owned())

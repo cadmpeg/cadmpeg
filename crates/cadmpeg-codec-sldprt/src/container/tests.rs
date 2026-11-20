@@ -632,7 +632,7 @@ fn oversized_block_candidate_is_skipped_without_fusing_the_session() {
         .copy_from_slice(&declared.to_le_bytes());
     source.extend(block);
     source.extend(make_block(0x21, "Kept", b"kept payload"));
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let scan = container::scan(&ctx, cadmpeg_core::decode::View::over_retained(&source)).unwrap();
     assert_eq!(scan.blocks.len(), 1);
     assert_eq!(scan.blocks[0].type_id, 0x21);
@@ -642,7 +642,7 @@ fn oversized_block_candidate_is_skipped_without_fusing_the_session() {
 #[test]
 fn compound_scan_preserves_malformed_open_error() {
     let error = container::scan(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         cadmpeg_core::decode::View::over_retained(&COMPOUND_FILE_MAGIC),
     )
     .err()
@@ -715,7 +715,7 @@ fn empty_native_block_still_requires_compressed_member_and_valid_crc() {
     let mut block = make_block(0x42, "Contents/Empty", &[]);
     block[super::block_hdr::CRC32..super::block_hdr::CRC32 + 4]
         .copy_from_slice(&1_u32.to_le_bytes());
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert!(
         super::try_block(&ctx, cadmpeg_core::decode::View::over_retained(&block), 0)
             .unwrap()
@@ -819,4 +819,65 @@ fn a_wrapped_section_name_is_its_name_without_the_suffix() {
     assert_eq!(unwrapped_name("Contents/Config-0"), "Contents/Config-0");
     assert_eq!(unwrapped_name("__ZLB__ZLB"), "__ZLB");
     assert_eq!(unwrapped_name("ZLB"), "ZLB");
+}
+
+#[test]
+fn stock_body_section_role_requires_a_configuration_suffix() {
+    for name in [
+        "Contents/Config-0-StockBodies",
+        "Contents\\Config-17-StockBodies",
+        "contents/config-2-stockbodies",
+    ] {
+        assert!(container::is_stock_bodies_section(name));
+    }
+    for name in [
+        "Contents/Config-0-Partition",
+        "Contents/Config-0-StockBodiesExtra",
+        "Contents/Config--StockBodies",
+        "Contents/Config-a-StockBodies",
+        "Contents/StockBodies",
+    ] {
+        assert!(!container::is_stock_bodies_section(name));
+    }
+}
+
+#[test]
+fn stock_body_partition_does_not_compete_for_active_geometry() {
+    let payload = parasolid_with_body(
+        ": TRANSMIT FILE (partition) created by modeller version 2400000",
+        "SCH_2400000_20000_13006",
+        &triangle_body(),
+    );
+    let mut source = outer_header();
+    source.extend(make_block(0x20, "Contents/Config-0-StockBodies", &payload));
+    let scan = crate::test_support::container::scan(&source);
+    assert!(container::select_active_parasolid_site(&scan).is_none());
+    source.extend(make_block(0x20, "Contents/Config-0-Partition", &payload));
+    let scan = crate::test_support::container::scan(&source);
+    let site = container::select_active_parasolid_site(&scan).unwrap();
+    assert_eq!(site.name(), "Contents/Config-0-Partition");
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    let streams = [
+        "Contents/Config-0-StockBodies",
+        "Contents/Config-0-Partition",
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, name)| {
+        container::compound_stream(
+            &ctx,
+            name.into(),
+            u32::try_from(index).unwrap(),
+            11,
+            payload.clone(),
+            None,
+        )
+        .unwrap()
+    })
+    .collect();
+    let scan = container::completed_scan(&ctx, &[], 0, Vec::new(), Vec::new(), Vec::new(), streams)
+        .unwrap();
+    let site = container::select_active_parasolid_site(&scan).unwrap();
+    assert_eq!(site.name(), "Contents/Config-0-Partition");
 }

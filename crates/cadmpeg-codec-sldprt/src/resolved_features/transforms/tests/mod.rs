@@ -36,6 +36,7 @@ pub(in crate::resolved_features) fn marker(
 mod frames;
 mod join;
 mod patterns;
+mod principal_top;
 mod profile;
 mod relation_links;
 mod relation_operands;

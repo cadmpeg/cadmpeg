@@ -156,6 +156,7 @@ fn move_body_selection_uses_unique_owning_history() {
         bodies: &[],
         regions: &[],
         shells: &[],
+        faces: &[],
     };
     let losses = bind_feature_body_selections(std::slice::from_mut(&mut feature), &inputs);
     assert!(losses.is_empty());
@@ -252,6 +253,7 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
         bodies: &[],
         regions: &[],
         shells: &[],
+        faces: &[],
     };
     super::super::bind_pattern_body_selections(
         std::slice::from_mut(&mut feature),
@@ -260,6 +262,7 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
             inputs.bodies,
             inputs.regions,
             inputs.shells,
+            inputs.faces,
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
@@ -280,34 +283,13 @@ fn pattern_body_seed_preserves_native_selection() {
                     if id == "f3d:Design/BulkStream.dat:design-construction-operand-group#20")));
 }
 
-#[test]
-fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
-    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
-    use crate::records::topology::body_recipe::{
-        DesignBodyRecipeOperand, DesignBodyRecipeOperandDraft, DesignOperandOwner,
-    };
-    use cadmpeg_ir::features::{
-        patterns::{PatternKind, PatternSeed},
-        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-    };
-
-    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:design-parameter-scope#10",
-        crate::records::feature::scope::DesignFeatureKind::CircularPattern,
-        10,
-    );
-    scope
-        .try_edit(|draft| {
-            draft.history_state_id = Some(42);
-            draft.previous_history_state_id = None;
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    let group_id = "f3d:Design/BulkStream.dat:design-construction-operand-group#20";
-    let group = DesignConstructionOperandGroup::try_from(
+/// Group record 20 of the scope with record index `scope_record_index`,
+/// whose one member is body recipe operand 21.
+fn body_operand_group(group_id: &str, scope_record_index: u32) -> DesignConstructionOperandGroup {
+    DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: group_id.into(),
-            scope_record_index: 10,
+            scope_record_index,
             scope_reference_ordinal: 0,
             record_index: 20,
             byte_offset: 0,
@@ -348,7 +330,84 @@ fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
             paired_byte_offset: 0,
         },
     )
-    .unwrap();
+    .unwrap()
+}
+
+/// Body recipe operand 21, the first member of group 20, resolved to body
+/// slot 1 in state 41.
+fn body_recipe_operand(
+    scope_record_index: u32,
+) -> crate::records::topology::body_recipe::DesignBodyRecipeOperand {
+    use crate::records::topology::body_recipe::{
+        DesignBodyRecipeOperand, DesignBodyRecipeOperandDraft, DesignOperandOwner,
+    };
+    DesignBodyRecipeOperand::try_new(DesignBodyRecipeOperandDraft {
+        id: "f3d:Design/BulkStream.dat:body-recipe-operand#21".into(),
+        scope_record_index,
+        owner: DesignOperandOwner::Group {
+            group_record_index: 20,
+            group_member_ordinal: 0,
+        },
+        record_index: 21,
+        byte_offset: 0,
+        class_tag: crate::records::references::DesignClassTag::try_from("350".to_owned()).unwrap(),
+        asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
+        asset_id_offset: 56,
+        context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
+        context_id_offset: 132,
+        selector_tail: None,
+        references: vec![
+            crate::records::topology::body_recipe::DesignBodyRecipeReference {
+                design_reference: 301,
+                design_reference_offset: 25,
+                form: 33,
+                form_offset: 33,
+                candidate_faces: Vec::new(),
+                preceding_candidate_faces: Vec::new(),
+                preceding_body_slots: Vec::new(),
+            },
+        ],
+        nested_record_index: 24,
+        nested_record_index_offset: 38,
+        recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#25".into(),
+        resolved_face_slot: None,
+        resolved_body_state_id: Some(41),
+        resolved_body_slot: Some(1),
+        resolved_body_face_slots: Vec::new(),
+        next_record_index: 25,
+        next_byte_offset: 256,
+    })
+    .unwrap()
+}
+
+#[test]
+fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
+    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
+    use cadmpeg_ir::features::{
+        patterns::{PatternKind, PatternSeed},
+        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    };
+
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#10",
+        crate::records::feature::scope::DesignFeatureKind::CircularPattern,
+        10,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(42);
+            draft.previous_history_state_id = None;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let group_id = "f3d:Design/BulkStream.dat:design-construction-operand-group#20";
+    let group = body_operand_group(group_id, 10);
     let topology = || AsmHistoricalTopology {
         bodies: vec![1],
         ..AsmHistoricalTopology::default()
@@ -397,49 +456,7 @@ fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
     );
     let histories = [history, unrelated_history];
 
-    let operand = DesignBodyRecipeOperand::try_new(DesignBodyRecipeOperandDraft {
-        id: "f3d:Design/BulkStream.dat:body-recipe-operand#21".into(),
-        scope_record_index: 10,
-        owner: DesignOperandOwner::Group {
-            group_record_index: 20,
-            group_member_ordinal: 0,
-        },
-        record_index: 21,
-        byte_offset: 0,
-        class_tag: crate::records::references::DesignClassTag::try_from("350".to_owned()).unwrap(),
-        asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-        )
-        .unwrap(),
-        asset_id_offset: 56,
-        context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-        )
-        .unwrap(),
-        context_id_offset: 132,
-        selector_tail: None,
-        references: vec![
-            crate::records::topology::body_recipe::DesignBodyRecipeReference {
-                design_reference: 301,
-                design_reference_offset: 25,
-                form: 33,
-                form_offset: 33,
-                candidate_faces: Vec::new(),
-                preceding_candidate_faces: Vec::new(),
-                preceding_body_slots: Vec::new(),
-            },
-        ],
-        nested_record_index: 24,
-        nested_record_index_offset: 38,
-        recipe_id: "f3d:Design/BulkStream.dat:construction-recipe#25".into(),
-        resolved_face_slot: None,
-        resolved_body_state_id: Some(41),
-        resolved_body_slot: Some(1),
-        resolved_body_face_slots: Vec::new(),
-        next_record_index: 25,
-        next_byte_offset: 256,
-    })
-    .unwrap();
+    let operand = body_recipe_operand(10);
     let mut feature = Feature {
         product_definition: None,
         id: FeatureId::mint("f3d:test:feature#pattern").unwrap(),
@@ -469,6 +486,7 @@ fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
         bodies: &[],
         regions: &[],
         shells: &[],
+        faces: &[],
     };
     super::super::bind_pattern_body_selections(
         std::slice::from_mut(&mut feature),
@@ -477,6 +495,7 @@ fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
             inputs.bodies,
             inputs.regions,
             inputs.shells,
+            inputs.faces,
             inputs.construction_recipes,
             inputs.persistent_design_links,
         ),
@@ -490,4 +509,238 @@ fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
                 [PatternSeed::Bodies(BodySelection::Historical { bodies, .. })]
                     if bodies.as_slice() == [expected])
     ));
+}
+
+/// An extrude whose state 77 inserts body slot 1 and a feature that selects
+/// that body: a pattern whose seed is the body in its own input state 79, or,
+/// with `remove`, a `RemoveBody` whose group 20 resolves to slot 1.
+fn generated_case(
+    live: &[cadmpeg_ir::topology::Body],
+    remove: bool,
+) -> (
+    cadmpeg_ir::features::Feature,
+    Vec<cadmpeg_ir::features::FeatureResultTopology>,
+) {
+    use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
+    use cadmpeg_ir::features::{
+        patterns::{PatternKind, PatternSeed},
+        BodyRetentionMode, BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
+        FeatureOperation,
+    };
+
+    let scope = |index: u32, state: i64, previous: i64| {
+        let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+            &format!("f3d:Design/BulkStream.dat:design-parameter-scope#{index}"),
+            crate::records::feature::scope::DesignFeatureKind::Move,
+            index,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.history_state_id = Some(state);
+                draft.previous_history_state_id = Some(previous);
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        scope
+    };
+    let scopes = [scope(5, 77, 2), scope(8, 80, 79)];
+    let feature = |id: &str, scope: &str, definition| Feature {
+        product_definition: None,
+        id: FeatureId::mint(id).unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: FeatureEvaluation::from_definition(definition),
+        native_ref: Some(scope.to_owned()),
+    };
+    let group_id = "f3d:Design/BulkStream.dat:design-construction-operand-group#20";
+    let pattern_id = FeatureId::mint("f3d:test:feature#mirror").unwrap();
+    let seed_body =
+        crate::ids::history_input_body_id(&crate::ids::feature_input_prefix(&pattern_id, 79), 1);
+    let seed = BodySelection::historical(
+        crate::ids::history_input_state_id(&crate::ids::feature_input_prefix(&pattern_id, 79)),
+        vec![seed_body],
+        group_id.to_owned(),
+    )
+    .unwrap();
+    let mut features = vec![
+        feature(
+            "f3d:test:feature#extrude",
+            &scopes[0].id,
+            FeatureDefinition::Operation(FeatureOperation::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::UNRESOLVED_CIRCULAR,
+            }),
+        ),
+        feature(
+            pattern_id.as_str(),
+            &scopes[1].id,
+            FeatureDefinition::Operation(if remove {
+                FeatureOperation::DeleteBody {
+                    bodies: BodySelection::Native(group_id.into()),
+                    mode: BodyRetentionMode::DeleteSelected,
+                }
+            } else {
+                FeatureOperation::Pattern {
+                    seeds: vec![PatternSeed::Bodies(seed)],
+                    pattern: PatternKind::UNRESOLVED_CIRCULAR,
+                }
+            }),
+        ),
+    ];
+    let groups = [body_operand_group(group_id, 8)];
+    let operands = [body_recipe_operand(8)];
+    let state = |state_id: i64, bodies: Vec<i64>| -> crate::test_support::history::State {
+        let versions = bodies
+            .iter()
+            .map(|body| crate::history_records::AsmEntityVersion {
+                entity_ref: *body,
+                record_ref: state_id,
+            })
+            .collect();
+        (
+            AsmDeltaState {
+                id: format!("f3d:history:asm-delta-state#{state_id}"),
+                parent: "history".into(),
+                byte_offset: 0,
+                state_id,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref: None,
+                next_ref: None,
+                node_index: state_id,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: Vec::new(),
+                records: Vec::new(),
+                transition: None,
+            },
+            Some(AsmHistoricalTopology {
+                bodies,
+                ..AsmHistoricalTopology::default()
+            }),
+            versions,
+        )
+    };
+    let histories = [crate::test_support::history::history(
+        "history".into(),
+        0,
+        None,
+        false,
+        vec![state(77, vec![1]), state(2, Vec::new())],
+    )];
+    let inputs = FeatureBodySelectionInputs {
+        scopes: &scopes,
+        groups: &groups,
+        body_recipe_operands: &operands,
+        construction_recipes: &[],
+        persistent_design_links: &[],
+        histories: &histories,
+        bodies: live,
+        regions: &[],
+        shells: &[],
+        faces: &[],
+    };
+    let results = crate::history::bind_generated_body_selections(
+        &mut features,
+        &inputs,
+        &std::collections::HashMap::new(),
+        None,
+        &mut Vec::new(),
+    );
+    (features.remove(1), results)
+}
+
+#[test]
+fn a_seed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_it() {
+    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
+    let (pattern, results) = generated_case(&[], false);
+    let FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
+        seeds, ..
+    }) = pattern.evaluation.definition()
+    else {
+        panic!("pattern definition");
+    };
+    let [PatternSeed::Bodies(BodySelection::Generated { bodies, native })] = seeds.as_slice()
+    else {
+        panic!("generated seed: {seeds:?}");
+    };
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(bodies[0].feature.as_str(), "f3d:test:feature#extrude");
+    assert_eq!(bodies[0].local_id.as_str(), "1");
+    assert_eq!(
+        native.as_str(),
+        "f3d:Design/BulkStream.dat:design-construction-operand-group#20"
+    );
+    assert!(pattern
+        .dependencies
+        .as_slice()
+        .iter()
+        .any(|dependency| dependency.as_str() == "f3d:test:feature#extrude"));
+    let [result] = results.as_slice() else {
+        panic!("one result state");
+    };
+    assert_eq!(result.output_of.as_str(), "f3d:test:feature#extrude");
+    assert_eq!(
+        result
+            .bodies()
+            .iter()
+            .map(cadmpeg_core::text::NonBlankString::as_str)
+            .collect::<Vec<_>>(),
+        ["1"]
+    );
+}
+
+#[test]
+fn a_seed_body_the_final_model_keeps_stays_historical() {
+    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
+    let mut body = cadmpeg_ir::examples::unit_cube()
+        .unwrap()
+        .geometry
+        .bodies
+        .remove(0);
+    body.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#1").unwrap();
+    let (pattern, results) = generated_case(std::slice::from_ref(&body), false);
+    assert!(results.is_empty());
+    assert!(matches!(
+        pattern.evaluation.definition(),
+        FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern { seeds, .. })
+            if matches!(seeds.as_slice(), [PatternSeed::Bodies(BodySelection::Historical { .. })])
+    ));
+    assert!(pattern.dependencies.is_empty());
+}
+
+#[test]
+fn a_removed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_it() {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    let (remove, results) = generated_case(&[], true);
+    let FeatureDefinition::Operation(FeatureOperation::DeleteBody {
+        bodies: BodySelection::Generated { bodies, native },
+        ..
+    }) = remove.evaluation.definition()
+    else {
+        panic!("generated removal: {:?}", remove.evaluation.definition());
+    };
+    assert_eq!(
+        bodies
+            .iter()
+            .map(|body| (body.feature.as_str(), body.local_id.as_str()))
+            .collect::<Vec<_>>(),
+        [("f3d:test:feature#extrude", "1")]
+    );
+    assert_eq!(
+        native.as_str(),
+        "f3d:Design/BulkStream.dat:design-construction-operand-group#20"
+    );
+    assert!(remove
+        .dependencies
+        .as_slice()
+        .iter()
+        .any(|dependency| dependency.as_str() == "f3d:test:feature#extrude"));
+    assert_eq!(results.len(), 1);
 }

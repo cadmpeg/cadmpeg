@@ -12,11 +12,15 @@ use cadmpeg_ir::topology::BodyKind;
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
 use crate::records::feature::extrude::DesignExtrudeOperation;
-use crate::records::feature::path_features::DesignPipeConstruction;
+use crate::records::feature::path_features::{
+    DesignPipeConstruction, DesignPipeSection, DesignPipeSectionShape,
+};
 use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
 use crate::records::parameters::DesignParameterOwner;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
 use crate::records::topology::extrude_selection::DesignOperandRole;
+
+pub(crate) mod projection;
 
 /// Native records and saved topology that bind a Pipe's section.
 pub(crate) struct PipeSectionInputs<'a> {
@@ -30,9 +34,11 @@ pub(crate) struct PipeSectionInputs<'a> {
     pub(crate) linear_tolerance: f64,
 }
 
-/// How a Pipe's result faces settle its circular section.
+/// How a Pipe's circular section is settled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SectionReading {
+    /// The section frame stores the circular shape.
+    Read,
     /// Unchanged new-body result faces fit the circle.
     Inferred,
     /// No unchanged new-body result exists to test the circle against.
@@ -42,18 +48,24 @@ enum SectionReading {
 /// How a Pipe's fractions settle its whole-path extent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ExtentReading {
-    /// Both fractions equal one.
+    /// Both fractions equal one in a Pipe without a point-selection pair.
+    OpenPath,
+    /// Both fractions equal one in a Pipe with a point-selection pair.
     BothUnit,
     /// One fraction equals one and the other zero.
     OneUnit,
 }
 
 impl ExtentReading {
-    fn of(forward: f64, reverse: f64) -> Option<Self> {
+    fn of(forward: f64, reverse: f64, point_selected: bool) -> Option<Self> {
         let unit = |value: f64| value == 1.0;
         let zero = |value: f64| value == 0.0;
         if unit(forward) && unit(reverse) {
-            Some(Self::BothUnit)
+            Some(if point_selected {
+                Self::BothUnit
+            } else {
+                Self::OpenPath
+            })
         } else if unit(forward) && zero(reverse) || zero(forward) && unit(reverse) {
             Some(Self::OneUnit)
         } else {
@@ -63,21 +75,17 @@ impl ExtentReading {
 }
 
 /// Project each native Pipe with whole-path fractions as a Sweep of a
-/// circular region along its path group. A new-body Pipe whose result bodies
-/// no later feature changes projects only when its result faces fit the
-/// circle.
+/// circular region along its path group. A Pipe whose section frame stores
+/// another shape value stays native. Without a read shape, a new-body
+/// Pipe whose result bodies no later feature changes projects only when its
+/// result faces fit the circle.
 #[must_use]
+#[cfg(test)]
 pub(crate) fn bind_circular_pipe_sections(
     features: &mut [Feature],
     inputs: &PipeSectionInputs<'_>,
 ) -> Vec<LossNote> {
-    let mut surfaces = HashMap::<&SurfaceId, Option<&Surface>>::new();
-    for surface in inputs.surfaces {
-        surfaces
-            .entry(&surface.id)
-            .and_modify(|slot| *slot = None)
-            .or_insert(Some(surface));
-    }
+    let surfaces = surface_index(inputs.surfaces);
     let definitions = features
         .iter()
         .map(|feature| circular_pipe_sweep(feature, features, inputs, &surfaces))
@@ -88,27 +96,50 @@ pub(crate) fn bind_circular_pipe_sections(
             continue;
         };
         feature.evaluation.set_definition(definition);
-        losses.push(match section {
-            SectionReading::Inferred => F3dLossCode::FeaturePipeCircularSectionInferred.note(format!(
+        losses.extend(circular_losses(feature, section, extent));
+    }
+    losses
+}
+
+fn surface_index(surfaces: &[Surface]) -> HashMap<&SurfaceId, Option<&Surface>> {
+    let mut indexed = HashMap::new();
+    for surface in surfaces {
+        indexed
+            .entry(&surface.id)
+            .and_modify(|slot| *slot = None)
+            .or_insert(Some(surface));
+    }
+    indexed
+}
+
+fn circular_losses(
+    feature: &Feature,
+    section: SectionReading,
+    extent: ExtentReading,
+) -> Vec<LossNote> {
+    let mut losses = Vec::new();
+    losses.extend(match section {
+            SectionReading::Read => None,
+            SectionReading::Inferred => Some(F3dLossCode::FeaturePipeCircularSectionInferred.note(format!(
                 "feature {}: the Pipe section is inferred as a circle from the planes, cylinders and tori of its result bodies",
                 feature.id
-            )),
-            SectionReading::Assumed => F3dLossCode::FeaturePipeCircularSectionAssumed.note(format!(
+            ))),
+            SectionReading::Assumed => Some(F3dLossCode::FeaturePipeCircularSectionAssumed.note(format!(
                 "feature {}: no unchanged new-body result tests the Pipe section, and the section is assumed to be a circle",
                 feature.id
-            )),
+            ))),
         });
-        losses.push(match extent {
-            ExtentReading::BothUnit => F3dLossCode::FeaturePipeWholePathExtentAssumed.note(format!(
-                "feature {}: the Pipe forward and reverse fractions are 1, and the sweep is assumed to cover its whole path group",
+    losses.extend(match extent {
+            ExtentReading::OpenPath => None,
+            ExtentReading::BothUnit => Some(F3dLossCode::FeaturePipeWholePathExtentAssumed.note(format!(
+                "feature {}: the Pipe forward and reverse fractions are 1 and a point selection places its section, and the sweep is assumed to cover its whole path group",
                 feature.id
-            )),
-            ExtentReading::OneUnit => F3dLossCode::FeaturePipePathEndSectionAssumed.note(format!(
-                "feature {}: one Pipe fraction is 1 and the other 0, and the section is assumed to lie at the path end where the unit fraction starts, so the sweep covers its whole path group",
+            ))),
+            ExtentReading::OneUnit => Some(F3dLossCode::FeaturePipePathEndSectionAssumed.note(format!(
+                "feature {}: one Pipe fraction is 1 and the other 0, and the section is assumed to lie where the unit fraction starts on the path, so the sweep covers its whole path group",
                 feature.id
-            )),
-        });
-    }
+            ))),
+    });
     losses
 }
 
@@ -143,7 +174,7 @@ fn circular_pipe_sweep(
         return None;
     };
     let [forward, reverse, size, thickness] = pipe_values(scope, construction, inputs.owners)?;
-    let extent = ExtentReading::of(forward, reverse)?;
+    let extent = ExtentReading::of(forward, reverse, construction.point_selection.is_some())?;
     let stream = native_stream(&scope.id)?;
     let path = only(inputs.groups.iter().filter(|group| {
         native_stream(&group.id) == Some(stream)
@@ -154,14 +185,17 @@ fn circular_pipe_sweep(
     let outer_radius = size * 10.0 / 2.0;
     let wall = construction.is_hollow.then_some(thickness * 10.0);
     let inner_radius = wall.map(|wall| outer_radius - wall);
-    let section = if construction.operation == DesignExtrudeOperation::NewBody
-        && !feature.evaluation.outputs().is_empty()
-        && result_bodies_unchanged(feature, features)
-    {
-        result_faces_fit_circle(feature, inputs, surfaces, outer_radius, inner_radius)
-            .then_some(SectionReading::Inferred)?
-    } else {
-        SectionReading::Assumed
+    let section = match construction.section.map(DesignPipeSection::shape) {
+        Some(Some(DesignPipeSectionShape::Circular)) => SectionReading::Read,
+        Some(_) => return None,
+        None if construction.operation == DesignExtrudeOperation::NewBody
+            && !feature.evaluation.outputs().is_empty()
+            && result_bodies_unchanged(feature, features) =>
+        {
+            result_faces_fit_circle(feature, inputs, surfaces, outer_radius, inner_radius)
+                .then_some(SectionReading::Inferred)?
+        }
+        None => SectionReading::Assumed,
     };
     let op = match construction.operation {
         DesignExtrudeOperation::NewBody => SolidSweepOperation::NewBody,
@@ -261,15 +295,11 @@ fn result_faces_fit_circle(
         if body.kind != BodyKind::Solid {
             return false;
         }
-        for region_id in &body.regions {
-            let Some(region) = only(
-                inputs
-                    .regions
-                    .iter()
-                    .filter(|region| region.id == *region_id),
-            ) else {
-                return false;
-            };
+        for region in inputs
+            .regions
+            .iter()
+            .filter(|region| region.body == body.id)
+        {
             shells.extend(region.shells.iter());
         }
     }

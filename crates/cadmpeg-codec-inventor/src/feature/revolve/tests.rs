@@ -189,7 +189,7 @@ mod axis_side {
                 serde_json::from_value(json!({
                     "id": format!("inventor:test:entity#{index}"),
                     "sketch": "inventor:test:sketch#1",
-                    "construction": false,
+                    "construction": false, "endpoint_refs": [],
                     "geometry": {
                         "kind": "line",
                         "start": {"u": start[0], "v": start[1]},
@@ -228,7 +228,7 @@ mod axis_side {
             "kind": "sketch_regions",
             "value": {
                 "sketch": "inventor:test:sketch#1",
-                "regions": [{"region": "loops", "outer": 0}],
+                "regions": [{"kind": "loops", "outer": 0, "holes": []}],
             },
         }))
         .expect("profile")
@@ -285,7 +285,7 @@ mod axis_side {
         let entity = serde_json::from_value(json!({
             "id": "inventor:test:entity#0",
             "sketch": "inventor:test:sketch#1",
-            "construction": false,
+            "construction": false, "endpoint_refs": [],
             "geometry": geometry,
         }))
         .expect("curve entity");

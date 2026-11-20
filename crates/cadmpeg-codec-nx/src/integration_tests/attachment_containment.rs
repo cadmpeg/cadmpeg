@@ -27,6 +27,7 @@ fn malformed() -> CodecError {
 
 fn resource_limit() -> CodecError {
     CodecError::ResourceLimit(ResourceLimit {
+        scope: cadmpeg_core::decode::LimitScope::for_dimension(ResourceDimension::Entities),
         dimension: ResourceDimension::Entities,
         reason: ResourceFailure::BudgetExceeded,
         limit: 1,
@@ -86,19 +87,23 @@ fn attachment_failure_keeps_geometry_and_reports_one_error_loss() {
     assert!(attachment_failures(&complete).is_empty());
     assert!(!complete.ir().model.configurations.is_empty());
     assert!(!complete.ir().model.attributes.is_empty());
-    assert!(!complete.ir().model.faces.is_empty());
+    assert!(!complete.ir().geometry.faces.is_empty());
 
     let contained = decode_failing_at(prt_with_arrangements(), Point::Exit);
-    let (model, complete_model) = (&contained.ir().model, &complete.ir().model);
-    assert_eq!(model.bodies, complete_model.bodies);
-    assert_eq!(model.shells, complete_model.shells);
-    assert_eq!(model.faces, complete_model.faces);
-    assert_eq!(model.loops, complete_model.loops);
-    assert_eq!(model.coedges, complete_model.coedges);
-    assert_eq!(model.edges, complete_model.edges);
-    assert_eq!(model.vertices, complete_model.vertices);
-    assert_eq!(model.surfaces, complete_model.surfaces);
-    assert_eq!(model.curves, complete_model.curves);
+    let (model, geometry, complete_geometry) = (
+        &contained.ir().model,
+        &contained.ir().geometry,
+        &complete.ir().geometry,
+    );
+    assert_eq!(geometry.bodies, complete_geometry.bodies);
+    assert_eq!(geometry.shells, complete_geometry.shells);
+    assert_eq!(geometry.faces, complete_geometry.faces);
+    assert_eq!(geometry.loops, complete_geometry.loops);
+    assert_eq!(geometry.coedges, complete_geometry.coedges);
+    assert_eq!(geometry.edges, complete_geometry.edges);
+    assert_eq!(geometry.vertices, complete_geometry.vertices);
+    assert_eq!(geometry.surfaces, complete_geometry.surfaces);
+    assert_eq!(geometry.curves, complete_geometry.curves);
     assert!(model.configurations.is_empty());
     assert!(model.attributes.is_empty());
     assert!(model.features.is_empty());
@@ -124,7 +129,7 @@ fn attachment_failure_without_geometry_keeps_the_container_decode() {
 
     let contained = decode_failing_at(composed_feature_history_prt(), Point::Exit);
     assert!(contained.ir().model.features.is_empty());
-    assert!(contained.ir().model.faces.is_empty());
+    assert!(contained.ir().geometry.faces.is_empty());
     assert_one_error_loss(&contained);
 }
 

@@ -17,7 +17,7 @@ fn retained_f3d_round_trips_user_knot_edits_and_extension_removal() {
         .expect("source decode");
     let (mut edited, _, fidelity) = decoded.into_parts();
     let mut unsupported = edited.clone();
-    unsupported.model.subds[0]
+    unsupported.geometry.subds[0]
         .cage
         .edit_vertices(|vertices| {
             vertices[0].set_point(
@@ -29,14 +29,16 @@ fn retained_f3d_round_trips_user_knot_edits_and_extension_removal() {
             Ok(())
         })
         .expect("admitted cage vertex edit");
-    let error = crate::test_support::plan_inherited_write(&unsupported, &fidelity, &mut Vec::new())
-        .expect_err("a user-knot patch must not approve other cage edits");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(message)
-        if message.contains("unchanged cage geometry and topology"))
+    crate::test_support::assert_written_with_loss(
+        &unsupported,
+        Some(&fidelity),
+        &crate::loss::F3dLossCode::WriterPatchDeclined
+            .kind()
+            .to_string(),
+        "unchanged cage geometry and topology",
     );
 
-    edited.model.subds[0]
+    edited.geometry.subds[0]
         .cage
         .edit_edges(|edges| {
             edges[0].user_knot = Some(SubdUserKnot::Override(
@@ -51,9 +53,9 @@ fn retained_f3d_round_trips_user_knot_edits_and_extension_removal() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(&encoded), &DecodeOptions::default())
         .expect("read user knots");
-    assert_eq!(round_trip.ir().model.subds, edited.model.subds);
+    assert_eq!(round_trip.ir().geometry.subds, edited.geometry.subds);
     let (mut removed, _, fidelity) = round_trip.into_parts();
-    removed.model.subds[0]
+    removed.geometry.subds[0]
         .cage
         .edit_edges(|edges| {
             for edge in edges {
@@ -68,5 +70,5 @@ fn retained_f3d_round_trips_user_knot_edits_and_extension_removal() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("read extension removal");
-    assert_eq!(round_trip.ir().model.subds, removed.model.subds);
+    assert_eq!(round_trip.ir().geometry.subds, removed.geometry.subds);
 }

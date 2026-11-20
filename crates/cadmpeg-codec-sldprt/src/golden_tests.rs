@@ -12,10 +12,10 @@ use std::io::Cursor;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions, DecodeResult};
 use cadmpeg_ir::features::{ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination};
 use cadmpeg_ir::report::export::WritePath;
-use cadmpeg_measure::test_support::round_trip::{measures_agree, measures_decide};
+use cadmpeg_measure::test_support::round_trip::{measures_agree_with, measures_decide};
 use cadmpeg_test_support::golden::{
     elide_local_digests, snapshot_text, snapshots_agree, Branch, Harness,
 };
@@ -112,17 +112,25 @@ const SECTION_SCOPED_IDENTIFIERS: [&str; 6] = [
 /// Compare neutral semantics after mapping source section positions through
 /// their unique admitted member names. Native and source metadata are excluded.
 fn neutral_document(bytes: &[u8]) -> String {
-    let value =
-        match SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default()) {
-            Ok(result) => {
-                let scan = crate::test_support::container::scan(bytes);
-                let sections =
-                    section_identities(&scan).expect("unique admitted source member identities");
-                normalized_document(result.ir(), &sections)
-            }
-            Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
-        };
+    neutral_text(bytes, &decode_container(bytes))
+}
+
+/// [`neutral_document`] of `bytes` from their decode `decoded`.
+fn neutral_text(bytes: &[u8], decoded: &Result<DecodeResult, DecodeFailure>) -> String {
+    let value = match decoded {
+        Ok(result) => {
+            let scan = crate::test_support::container::scan(bytes);
+            let sections =
+                section_identities(&scan).expect("unique admitted source member identities");
+            normalized_document(result.ir(), &sections)
+        }
+        Err(error) => serde_json::json!({ "decode_error": error.to_string() }),
+    };
     snapshot_text(&value)
+}
+
+fn decode_container(bytes: &[u8]) -> Result<DecodeResult, DecodeFailure> {
+    SldprtCodec.decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
 }
 
 /// Every committed golden still matches what the codec produces.
@@ -172,8 +180,8 @@ fn fixtures_survive_the_semantic_write_path() {
             });
             continue;
         }
-        let expected = neutral_document(&bytes);
-        let source = bytes.clone();
+        let source = decode_container(&bytes);
+        let expected = neutral_text(&bytes, &source);
         semantic_roundtrip(&SldprtCodec, &name, &bytes, |outcome| match outcome {
             SemanticOutcome::Written { report, bytes, .. } => {
                 written_count += 1;
@@ -181,10 +189,11 @@ fn fixtures_survive_the_semantic_write_path() {
                     matches!(report.write_path(), WritePath::Patched { .. }),
                     "fixture `{name}`: retained records fed the write, so it patched rather than synthesized"
                 );
-                if let Err(mismatch) = snapshots_agree(&expected, &neutral_document(bytes)) {
+                let written = decode_container(bytes);
+                if let Err(mismatch) = snapshots_agree(&expected, &neutral_text(bytes, &written)) {
                     panic!("fixture `{name}`: the semantically written container decodes to a different document: {mismatch}");
                 }
-                if written_measures_agree(&name, &source, bytes) {
+                if written_measures_agree(&name, &source, &written) {
                     measured_count += 1;
                 }
             }
@@ -212,20 +221,21 @@ fn fixtures_survive_the_semantic_write_path() {
 /// authored cylinder, sphere and NURBS solids among them.
 const MEASURED_FIXTURE_FLOOR: usize = 16;
 
-/// Decodes `source` and `written` and, when the source measures a
-/// comparable body, asserts that both measure the same. Returns whether the
+/// When the decoded `source` measures a comparable body, asserts that the
+/// decoded `written` container measures the same. Returns whether the
 /// source measures a comparable body.
-fn written_measures_agree(name: &str, source: &[u8], written: &[u8]) -> bool {
-    let decode = |bytes: &[u8]| {
-        SldprtCodec
-            .decode(&mut Cursor::new(bytes.to_vec()), &DecodeOptions::default())
-            .unwrap_or_else(|_| panic!("fixture `{name}`: a container does not decode"))
+fn written_measures_agree(
+    name: &str,
+    source: &Result<DecodeResult, DecodeFailure>,
+    written: &Result<DecodeResult, DecodeFailure>,
+) -> bool {
+    let (Ok(before), Ok(after)) = (source, written) else {
+        panic!("fixture `{name}`: a container does not decode");
     };
-    let before = decode(source);
-    if !measures_decide(name, before.ir()).expect("the fixture is measured") {
+    let Some(report) = measures_decide(name, before.ir()).expect("the fixture is measured") else {
         return false;
-    }
-    measures_agree(name, before.ir(), decode(written).ir())
+    };
+    measures_agree_with(name, before.ir(), report, after.ir())
         .expect("the round trip keeps its measured geometry");
     true
 }
@@ -357,16 +367,16 @@ fn depths(ir: &mut cadmpeg_ir::CadIr) -> Vec<f64> {
 
 /// The size of each topological arena, so a rewrite that loses one fails.
 fn arena_sizes(ir: &cadmpeg_ir::CadIr) -> [usize; 8] {
-    let model = &ir.model;
+    let geometry = &ir.geometry;
     [
-        model.bodies.len(),
-        model.regions.len(),
-        model.shells.len(),
-        model.faces.len(),
-        model.loops.len(),
-        model.coedges.len(),
-        model.edges.len(),
-        model.vertices.len(),
+        geometry.bodies.len(),
+        geometry.regions.len(),
+        geometry.shells.len(),
+        geometry.faces.len(),
+        geometry.loops.len(),
+        geometry.coedges.len(),
+        geometry.edges.len(),
+        geometry.vertices.len(),
     ]
 }
 
@@ -511,7 +521,7 @@ fn complete_authored_golden_inputs_have_typed_geometry_and_active_configuration(
             1,
             "{name}"
         );
-        assert_eq!(ir.model.surfaces.len(), 1, "{name}: one face carrier");
+        assert_eq!(ir.geometry.surfaces.len(), 1, "{name}: one face carrier");
         let expected_curves = match name {
             "authored_complete_planar" | "authored_complete_history" => 0,
             "authored_complete_cylinder" => 3,
@@ -520,11 +530,11 @@ fn complete_authored_golden_inputs_have_typed_geometry_and_active_configuration(
             _ => unreachable!(),
         };
         assert_eq!(
-            ir.model.curves.len(),
+            ir.geometry.curves.len(),
             expected_curves,
             "{name}: exact curve carriers"
         );
-        let surface = &ir.model.surfaces[0].geometry;
+        let surface = &ir.geometry.surfaces[0].geometry;
         match name {
             "authored_complete_planar" | "authored_complete_history" => assert!(matches!(
                 surface,
@@ -546,7 +556,7 @@ fn complete_authored_golden_inputs_have_typed_geometry_and_active_configuration(
                 assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
                 assert_eq!(nurbs.poles().len(), 4);
                 assert_eq!(
-                    ir.model
+                    ir.geometry
                         .curves
                         .iter()
                         .filter(|curve| matches!(
@@ -588,20 +598,30 @@ fn a_planar_face_loop_runs_counter_clockwise_about_its_normal() {
     let result = SldprtCodec
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .expect("planar fixture decodes");
-    let model = &result.ir().model;
+    let geometry = &result.ir().geometry;
     let position = |vertex: &cadmpeg_ir::ids::VertexId| {
-        let vertex = model.vertices.iter().find(|v| &v.id == vertex).unwrap();
-        let point = model.points.iter().find(|p| p.id == vertex.point).unwrap();
+        let vertex = geometry.vertices.iter().find(|v| &v.id == vertex).unwrap();
+        let point = geometry
+            .points
+            .iter()
+            .find(|p| p.id == vertex.point)
+            .unwrap();
         point.position().get()
     };
     // The face is forward on the plane z = 0 with normal +z.
     let mut twice_area = 0.0;
-    for id in model.loops[0].coedges() {
-        let coedge = model.coedges.iter().find(|c| &c.id == id).unwrap();
-        let edge = model.edges.iter().find(|e| e.id == coedge.edge).unwrap();
+    for id in geometry.loops[0].coedges() {
+        let coedge = geometry.coedges.iter().find(|c| &c.id == id).unwrap();
+        let edge = geometry.edges.iter().find(|e| e.id == coedge.edge).unwrap();
         let (start, end) = match coedge.sense {
-            cadmpeg_ir::topology::Sense::Forward => (&edge.start, &edge.end),
-            cadmpeg_ir::topology::Sense::Reversed => (&edge.end, &edge.start),
+            cadmpeg_ir::topology::Sense::Forward => (
+                &edge.ends.as_ref().unwrap().start,
+                &edge.ends.as_ref().unwrap().end,
+            ),
+            cadmpeg_ir::topology::Sense::Reversed => (
+                &edge.ends.as_ref().unwrap().end,
+                &edge.ends.as_ref().unwrap().start,
+            ),
         };
         let (a, b) = (position(start), position(end));
         twice_area += a.x * b.y - b.x * a.y;
@@ -660,22 +680,24 @@ fn normalize_identifier(id: &str, sections: &BTreeMap<u64, String>) -> Option<St
 
 /// Arena storage order is not a semantic nested-list order.
 fn canonicalize_model_arena_order(document: &mut serde_json::Value) {
-    let Some(model) = document
-        .get_mut("model")
-        .and_then(serde_json::Value::as_object_mut)
-    else {
-        return;
-    };
-    for arena in model.values_mut() {
-        let Some(rows) = arena.as_array_mut() else {
+    for home in ["geometry", "model"] {
+        let Some(arenas) = document
+            .get_mut(home)
+            .and_then(serde_json::Value::as_object_mut)
+        else {
             continue;
         };
-        let ids = rows
-            .iter()
-            .map(|row| row.get("id").and_then(serde_json::Value::as_str))
-            .collect::<Option<BTreeSet<_>>>();
-        if ids.is_some_and(|ids| ids.len() == rows.len()) {
-            rows.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+        for arena in arenas.values_mut() {
+            let Some(rows) = arena.as_array_mut() else {
+                continue;
+            };
+            let ids = rows
+                .iter()
+                .map(|row| row.get("id").and_then(serde_json::Value::as_str))
+                .collect::<Option<BTreeSet<_>>>();
+            if ids.is_some_and(|ids| ids.len() == rows.len()) {
+                rows.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+            }
         }
     }
 }
@@ -684,30 +706,41 @@ fn normalized_document(
     ir: &cadmpeg_ir::CadIr,
     sections: &BTreeMap<u64, String>,
 ) -> serde_json::Value {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let original_geometry =
+        serde_json::to_value(&ir.geometry).expect("serialize original geometry");
     let original_model = serde_json::to_value(&ir.model).expect("serialize original model");
     let mut opaque_references = BTreeMap::new();
     let mut declared_replacements = BTreeMap::new();
+    let mut geometry = cadmpeg_ir::document::Topology::default();
     let mut model = cadmpeg_ir::document::Model::default();
-    model
-        .extend_rewritten(
-            ir.model.clone(),
-            &mut DeclaredSectionIdentityRewrite {
-                ctx: &ctx,
-                sections,
-                opaque_references: &mut opaque_references,
-                declared_replacements: &mut declared_replacements,
-            },
-        )
+    let mut rewrite = DeclaredSectionIdentityRewrite {
+        ctx: &ctx,
+        sections,
+        opaque_references: &mut opaque_references,
+        declared_replacements: &mut declared_replacements,
+    };
+    geometry
+        .extend_rewritten(ir.geometry.clone(), &mut rewrite)
         .expect("rewrite only schema-declared source identities");
+    model
+        .extend_rewritten(ir.model.clone(), &mut rewrite)
+        .expect("rewrite only schema-declared source identities");
+    let mut normalized_geometry = serde_json::to_value(&geometry).expect("serialize geometry");
     let mut normalized_model = serde_json::to_value(&model).expect("serialize model");
-    restore_typed_opaque_references(
-        &original_model,
-        &mut normalized_model,
-        &opaque_references,
-        &declared_replacements,
-    );
+    for (original, normalized) in [
+        (&original_geometry, &mut normalized_geometry),
+        (&original_model, &mut normalized_model),
+    ] {
+        restore_typed_opaque_references(
+            original,
+            normalized,
+            &opaque_references,
+            &declared_replacements,
+        );
+    }
     let mut document = serde_json::json!({
+        "geometry": normalized_geometry,
         "model": normalized_model,
         "units": { "length": "millimeter" },
         "tolerances": serde_json::to_value(ir.tolerances).expect("serialize tolerances"),
@@ -805,7 +838,7 @@ fn normalized_comparison_preserves_references_depth_values_and_nested_order() {
         .expect("complete history decode");
     let original = normalized_document(result.ir(), &sections);
     let mut changed = result.ir().clone();
-    changed.model.coedges[0].owner_loop =
+    changed.geometry.coedges[0].owner_loop =
         cadmpeg_ir::ids::LoopId::mint("sldprt:brep:loop#999").expect("authored distinct reference");
     assert_ne!(original, normalized_document(&changed, &sections));
     let mut changed = result.ir().clone();

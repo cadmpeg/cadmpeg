@@ -73,9 +73,11 @@ pub(crate) mod compact_reference_planes;
 
 pub(crate) mod component_paths;
 
-mod curves;
+pub(crate) mod curves;
 
 pub(crate) mod dimensions;
+
+pub(crate) mod extrusion_start;
 
 pub(crate) mod direct_edits;
 
@@ -99,6 +101,7 @@ pub(crate) mod operations;
 
 pub(crate) mod parameters;
 
+pub(crate) mod profile_data;
 pub(crate) mod profiles;
 
 pub(crate) mod projections;
@@ -121,7 +124,11 @@ pub(crate) mod selections;
 
 mod sketch_edges;
 
+mod sketch_lists;
+
 pub(crate) mod sketch_projection;
+
+pub(crate) mod sketch_supports;
 
 mod sketch_write;
 

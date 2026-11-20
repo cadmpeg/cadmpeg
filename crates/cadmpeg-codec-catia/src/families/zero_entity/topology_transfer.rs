@@ -159,7 +159,7 @@ pub(super) fn transfer_closed_face_topology(
             let face = run.face.as_ref()?;
             let surface_id = surface_ids_by_position.get(&run.carrier_pos)?;
             let surface_geometry = ir
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == *surface_id)
@@ -197,7 +197,7 @@ pub(super) fn transfer_closed_face_topology(
                     let curve =
                         copied_id!(support_curve_ids.get(&support_record_ordinal)?, CurveId);
                     if !ir
-                        .model
+                        .geometry
                         .curves
                         .iter()
                         .any(|candidate| candidate.id == curve)
@@ -260,7 +260,7 @@ pub(super) fn transfer_closed_face_topology(
 
         for occurrence in &mut occurrences {
             let curve_geometry = ir
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == occurrence.curve)
@@ -329,7 +329,7 @@ pub(super) fn transfer_closed_face_topology(
                             "zero-entity edge curve reversed onto its coedge",
                         );
                         let curve = ir
-                            .model
+                            .geometry
                             .curves
                             .iter_mut()
                             .find(|curve| curve.id == occurrence.curve)?;
@@ -381,7 +381,7 @@ pub(super) fn transfer_closed_face_topology(
                             .map(|pcurve| pcurve.parameter_range)
                     })?;
                     let curve = ir
-                        .model
+                        .geometry
                         .curves
                         .iter_mut()
                         .find(|curve| curve.id == occurrence.curve)?;
@@ -548,7 +548,7 @@ pub(super) fn transfer_closed_face_topology(
             if let Err(error) = admission.charge() {
                 return Some(Err(error));
             }
-            ir.model.points.push(Point::new(
+            ir.geometry.points.push(Point::new(
                 copied_id!(point_ids[index], PointId),
                 *locus,
                 None,
@@ -572,8 +572,9 @@ pub(super) fn transfer_closed_face_topology(
                 id: copied_id!(vertex_ids[index], VertexId),
                 point: copied_id!(point_ids[index], PointId),
                 tolerance: Some(MODEL_POINT_TOLERANCE),
+                native_ref: None,
             };
-            ir.model.vertices.push(vertex);
+            ir.geometry.vertices.push(vertex);
         }
 
         for occurrence in &occurrences {
@@ -605,8 +606,9 @@ pub(super) fn transfer_closed_face_topology(
                     )?),
                     None,
                 ),
+                native_ref: None,
             };
-            ir.model.pcurves.push(pcurve);
+            ir.geometry.pcurves.push(pcurve);
         }
 
         let mut occurrence_vertex_pairs = Vec::new();
@@ -659,11 +661,11 @@ pub(super) fn transfer_closed_face_topology(
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations
-                .derived(&edge_id, "start")
+                .derived(&edge_id, "ends.start")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             admitted!(annotations
-                .derived(&edge_id, "end")
+                .derived(&edge_id, "ends.end")
                 .map(|_| ())
                 .map_err(cadmpeg_core::CodecError::from));
             if param_range.is_some() {
@@ -682,11 +684,14 @@ pub(super) fn transfer_closed_face_topology(
                     param_range,
                 )
                 .ok()?,
-                start: copied_id!(oriented_vertices[0], VertexId),
-                end: copied_id!(oriented_vertices[1], VertexId),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    copied_id!(oriented_vertices[0], VertexId),
+                    copied_id!(oriented_vertices[1], VertexId),
+                )),
                 tolerance: Some(MODEL_POINT_TOLERANCE),
+                native_ref: None,
             };
-            ir.model.edges.push(edge);
+            ir.geometry.edges.push(edge);
             edge_ids.push(edge_id);
         }
 
@@ -758,8 +763,9 @@ pub(super) fn transfer_closed_face_topology(
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             };
-            ir.model.faces.push(face_record);
+            ir.geometry.faces.push(face_record);
 
             for (loop_index, loop_record) in face.loops.iter().flatten().enumerate() {
                 let loop_id = &loop_ids[loop_index];
@@ -815,8 +821,9 @@ pub(super) fn transfer_closed_face_topology(
                     id: copied_id!(loop_id, LoopId),
                     face: copied_id!(face_id, FaceId),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+                    native_ref: None,
                 };
-                ir.model.loops.push(loop_entity);
+                ir.geometry.loops.push(loop_entity);
 
                 for (member_index, support_record_ordinal) in loop_record
                     .support_record_ordinals
@@ -930,8 +937,9 @@ pub(super) fn transfer_closed_face_topology(
                         sense,
                         pcurves,
                         use_curve,
+                        native_ref: None,
                     };
-                    ir.model.coedges.push(coedge);
+                    ir.geometry.coedges.push(coedge);
                     coedges_by_support.insert(support_record_ordinal, coedge_id);
                 }
             }
@@ -941,13 +949,13 @@ pub(super) fn transfer_closed_face_topology(
             let first = coedges_by_support.get(&candidate.uses[0].support_record_ordinal)?;
             let second = coedges_by_support.get(&candidate.uses[1].support_record_ordinal)?;
             let second_copy = copied_id!(second, CoedgeId);
-            ir.model
+            ir.geometry
                 .coedges
                 .iter_mut()
                 .find(|coedge| coedge.id == *first)?
                 .radial_next = second_copy;
             let first_copy = copied_id!(first, CoedgeId);
-            ir.model
+            ir.geometry
                 .coedges
                 .iter_mut()
                 .find(|coedge| coedge.id == *second)?
@@ -966,24 +974,19 @@ pub(super) fn transfer_closed_face_topology(
             .derived(&body_id, "kind")
             .map(|_| ())
             .map_err(cadmpeg_core::CodecError::from));
-        admitted!(annotations
-            .derived(&body_id, "regions")
-            .map(|_| ())
-            .map_err(cadmpeg_core::CodecError::from));
         if let Err(error) = admission.charge() {
             return Some(Err(error));
         }
-        let regions = vec![copied_id!(region_id, RegionId)];
         let body = Body {
             id: copied_id!(body_id, BodyId),
             kind: BodyKind::Solid,
-            regions,
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         };
-        ir.model.bodies.push(body);
+        ir.geometry.bodies.push(body);
         admitted!(annotate(
             annotations,
             &region_id,
@@ -1008,8 +1011,9 @@ pub(super) fn transfer_closed_face_topology(
             id: copied_id!(region_id, RegionId),
             body: body_id,
             shells,
+            native_ref: None,
         };
-        ir.model.regions.push(region);
+        ir.geometry.regions.push(region);
         admitted!(annotate(
             annotations,
             &shell_id,
@@ -1022,15 +1026,14 @@ pub(super) fn transfer_closed_face_topology(
             .derived(&shell_id, "region")
             .map(|_| ())
             .map_err(cadmpeg_core::CodecError::from));
-        admitted!(annotations
-            .derived(&shell_id, "faces")
-            .map(|_| ())
-            .map_err(cadmpeg_core::CodecError::from));
         if let Err(error) = admission.charge() {
             return Some(Err(error));
         }
-        let shell = Shell::new(shell_id, region_id, face_ids, Vec::new(), Vec::new()).ok()?;
-        ir.model.shells.push(shell);
+        if face_ids.is_empty() {
+            return None;
+        }
+        let shell = Shell::new(shell_id, region_id);
+        ir.geometry.shells.push(shell);
 
         Some(Ok(ZeroEntityTopologyCounts {
             bodies: 1,
@@ -1334,7 +1337,7 @@ mod tests {
             })
             .collect::<HashMap<_, _>>();
         let mut ir = CadIr::empty();
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1345,6 +1348,7 @@ mod tests {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
         for run in &runs {
             for support in &run.supports {
@@ -1352,7 +1356,7 @@ mod tests {
                     .model_endpoints
                     .expect("test endpoints")
                     .map(FinitePoint3::get);
-                ir.model.curves.push(Curve {
+                ir.geometry.curves.push(Curve {
                     parameter_range: None,
                     id: curve_ids[&support.record_ordinal].clone(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1365,6 +1369,7 @@ mod tests {
                         .expect("valid LineCurve fixture"),
                     )),
                     source_object: None,
+                    native_ref: None,
                 });
             }
         }
@@ -1394,8 +1399,8 @@ mod tests {
             refused.is_none(),
             "source vertex binding contradicts its coordinates"
         );
-        assert!(refused_ir.model.edges.is_empty());
-        assert!(refused_ir.model.vertices.is_empty());
+        assert!(refused_ir.geometry.edges.is_empty());
+        assert!(refused_ir.geometry.vertices.is_empty());
         let mut no_root_ir = ir.clone();
         let mut no_root_annotations = AnnotationBuilder::new();
         let no_root_counts = crate::test_support::with_service_context(|ctx| {
@@ -1422,7 +1427,7 @@ mod tests {
         assert_eq!(no_root_counts.faces, 2);
         assert_eq!(
             no_root_ir
-                .model
+                .geometry
                 .edges
                 .iter()
                 .map(|e| e.id.as_str())
@@ -1435,7 +1440,7 @@ mod tests {
         );
         assert_eq!(
             no_root_ir
-                .model
+                .geometry
                 .vertices
                 .iter()
                 .map(|v| v.id.as_str())
@@ -1447,15 +1452,15 @@ mod tests {
             ]
         );
         assert!(no_root_ir
-            .model
+            .geometry
             .coedges
             .iter()
             .all(|c| (50..56)
                 .any(|u| c.id.as_str() == format!("catia:zero-entity:topology-coedge#{u}"))));
 
-        assert_eq!(no_root_ir.model.bodies[0].kind, BodyKind::Solid);
+        assert_eq!(no_root_ir.geometry.bodies[0].kind, BodyKind::Solid);
         assert!(crate::assemble::neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut no_root_ir,
             &[]
         )
@@ -1493,16 +1498,19 @@ mod tests {
         assert_eq!(counts.edges, 3);
         assert_eq!(counts.vertices, 3);
         assert_eq!(counts.coedges, 6);
-        assert_eq!(ir.model.bodies[0].kind, BodyKind::Solid);
-        assert_eq!(ir.model.shells[0].faces().len(), 2);
-        assert!(ir.model.coedges.iter().all(|coedge| {
-            ir.model
+        assert_eq!(ir.geometry.bodies[0].kind, BodyKind::Solid);
+        assert_eq!(
+            ir.geometry.shell_faces(&ir.geometry.shells[0].id).count(),
+            2
+        );
+        assert!(ir.geometry.coedges.iter().all(|coedge| {
+            ir.geometry
                 .coedges
                 .iter()
                 .any(|candidate| candidate.id == coedge.radial_next)
         }));
         assert!(crate::assemble::neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &[]
         )
@@ -1533,7 +1541,7 @@ mod tests {
             })
             .collect::<HashMap<_, _>>();
         let mut ir = CadIr::empty();
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint("catia:test:surface#0").expect("identity grammar"),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1544,6 +1552,7 @@ mod tests {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         });
         for run in &runs {
             for support in &run.supports {
@@ -1573,11 +1582,12 @@ mod tests {
                         .expect("valid LineCurve fixture"),
                     ))
                 };
-                ir.model.curves.push(Curve {
+                ir.geometry.curves.push(Curve {
                     parameter_range: None,
                     id: curve_ids[&support.record_ordinal].clone(),
                     geometry,
                     source_object: None,
+                    native_ref: None,
                 });
             }
         }
@@ -1606,7 +1616,7 @@ mod tests {
 
         assert_eq!(counts.edges, 3);
         assert!(matches!(
-            ir.model
+            ir.geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == curve_ids[&5])
@@ -1615,7 +1625,7 @@ mod tests {
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
         ));
         assert!(crate::assemble::neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &[]
         )
@@ -1638,7 +1648,7 @@ mod tests {
         let curve_ids = HashMap::new();
         let run_with = |ctx: &DecodeContext<'_>| {
             let mut ir = CadIr::empty();
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1649,6 +1659,7 @@ mod tests {
                     .expect("valid plane"),
                 )),
                 source_object: None,
+                native_ref: None,
             });
             let mut annotations = AnnotationBuilder::new();
             let mut admission = crate::families::FamilyEntityAdmission::new(ctx);
@@ -1690,7 +1701,7 @@ mod tests {
         let curve_ids = HashMap::new();
         let run_with = |ctx: &DecodeContext<'_>| {
             let mut ir = CadIr::empty();
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1701,6 +1712,7 @@ mod tests {
                     .expect("valid plane"),
                 )),
                 source_object: None,
+                native_ref: None,
             });
             transfer_closed_face_topology(
                 &mut crate::families::FamilyEntityAdmission::new(ctx),

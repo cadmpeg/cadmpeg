@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 use serde::{
     de::{value::Error, value::F64Deserializer, value::SeqDeserializer, IntoDeserializer, Visitor},
     Deserialize, Deserializer,
@@ -163,7 +163,7 @@ fn the_containing_row_separates_an_absent_quartet_from_a_stated_one() {
 }
 
 #[test]
-fn the_direct_surface_requires_the_bounds_key_and_accepts_null() {
+fn the_direct_surface_leaves_out_absent_bounds_and_refuses_null() {
     for raw in [
         None,
         Some([None; 4]),
@@ -175,10 +175,7 @@ fn the_direct_surface_requires_the_bounds_key_and_accepts_null() {
             raw.map(RecordBounds::try_from).transpose().unwrap(),
         );
         let mut wire = serde_json::to_value(&surface).unwrap();
-        assert!(wire.get("record_bounds").is_some());
-        if raw.is_none() {
-            assert!(wire["record_bounds"].is_null());
-        }
+        assert_eq!(wire.get("record_bounds").is_some(), raw.is_some());
         let decoded: ProceduralSurface = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(
             decoded
@@ -186,12 +183,9 @@ fn the_direct_surface_requires_the_bounds_key_and_accepts_null() {
                 .map(|bounds| bounds.get().map(|slot| slot.map(f64::to_bits))),
             raw.map(|bounds| bounds.map(|slot| slot.map(f64::to_bits)))
         );
-        wire.as_object_mut().unwrap().remove("record_bounds");
+        wire["record_bounds"] = serde_json::Value::Null;
         let error = serde_json::from_value::<ProceduralSurface>(wire).unwrap_err();
-        assert!(
-            error.to_string().contains("missing field `record_bounds`"),
-            "{error}"
-        );
+        assert!(error.to_string().contains("record_bounds"), "{error}");
     }
 }
 

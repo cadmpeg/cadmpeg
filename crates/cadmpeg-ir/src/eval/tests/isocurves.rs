@@ -27,7 +27,7 @@ fn surface(rational: bool) -> NurbsSurface {
 fn isocurve_keeps_free_axis_knots_and_the_surface_weight_form() {
     for rational in [false, true] {
         let surface = surface(rational);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let curve = nurbs_surface_isocurve(&ctx, &surface, SurfaceParameterAxis::U, 0.5)
             .unwrap()
             .unwrap();

@@ -389,9 +389,9 @@ fn derived_keeps_translated_source_placement_without_changing_stored_result_geom
         let ordinary = decoded(&derived_at_version(false, version).0, &base)
             .into_parts()
             .0;
-        assert_eq!(ir.model.bodies, ordinary.model.bodies);
-        assert_eq!(ir.model.points, ordinary.model.points);
-        assert_eq!(ir.model.surfaces, ordinary.model.surfaces);
+        assert_eq!(ir.geometry.bodies, ordinary.geometry.bodies);
+        assert_eq!(ir.geometry.points, ordinary.geometry.points);
+        assert_eq!(ir.geometry.surfaces, ordinary.geometry.surfaces);
         let arena = DecodeArena::new();
         let (ctx, _) =
             DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");

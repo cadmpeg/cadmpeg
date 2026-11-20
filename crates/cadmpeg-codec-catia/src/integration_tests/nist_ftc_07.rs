@@ -4,8 +4,9 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use std::path::Path;
+use std::sync::LazyLock;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
@@ -13,17 +14,21 @@ use cadmpeg_ir::math::Point3;
 
 use crate::CatiaCodec;
 
-#[test]
-fn nist_ftc_07_transfers_every_solid_face_carrier() {
+static FTC_07: LazyLock<DecodeResult> = LazyLock::new(|| {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
     let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
-    let decoded = CatiaCodec
+    CatiaCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode FTC-07 CATPart");
-    let model = &decoded.ir().model;
+        .expect("decode FTC-07 CATPart")
+});
+
+#[test]
+fn nist_ftc_07_transfers_every_solid_face_carrier() {
+    let decoded = &*FTC_07;
+    let geometry = &decoded.ir().geometry;
     assert_eq!(
-        model
+        geometry
             .faces
             .iter()
             .filter(|face| face.id.as_str().starts_with("catia:standard:face#"))
@@ -31,8 +36,8 @@ fn nist_ftc_07_transfers_every_solid_face_carrier() {
         304
     );
     let mut nurbs = 0;
-    for face in &model.faces {
-        let surface = model
+    for face in &geometry.faces {
+        let surface = geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == face.surface)
@@ -52,25 +57,30 @@ fn nist_ftc_07_transfers_every_solid_face_carrier() {
         .arena_as("consolidated_a5_charts")
         .expect("reload native chart records");
     assert_eq!(charts.len(), 20);
+    let inferences: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "geometry.conic-branch-bounds-inferred")
+        .collect();
+    assert_eq!(inferences.len(), 28);
+    assert!(inferences
+        .iter()
+        .all(|loss| loss.message.contains("stored-box excess")));
 }
 
 #[test]
 fn nist_ftc_07_circular_edge_agrees_with_both_face_curves() {
     const STEP_EDGE_LENGTH_MM: f64 = 2.367_294_783_918_816_3;
     const LENGTH_TOLERANCE_MM: f64 = 2e-3;
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
-    let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
-    let decoded = CatiaCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode FTC-07 CATPart");
-    let model = &decoded.ir().model;
-    let edge = model
+    let decoded = &*FTC_07;
+    let geometry = &decoded.ir().geometry;
+    let edge = geometry
         .edges
         .iter()
         .find(|edge| edge.id.as_str() == "catia:standard:edge#259")
         .expect("edge");
-    let curve = model
+    let curve = geometry
         .curves
         .iter()
         .find(|curve| Some(&curve.id) == edge.curve())
@@ -91,12 +101,12 @@ fn nist_ftc_07_circular_edge_agrees_with_both_face_curves() {
         ("catia:standard:surf#10", "catia:standard:pcurve#10:0:0"),
         ("catia:standard:surf#139", "catia:standard:pcurve#139:0:5"),
     ] {
-        let surface = model
+        let surface = geometry
             .surfaces
             .iter()
             .find(|item| item.id.as_str() == surface_id)
             .expect("face surface");
-        let pcurve = model
+        let pcurve = geometry
             .pcurves
             .iter()
             .find(|item| item.id.as_str() == pcurve_id)
@@ -118,7 +128,23 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
     const ENDPOINT_TOLERANCE_MM: f64 = 2.0e-5;
     const STEP_SAMPLE_TOLERANCE_MM: f64 = 1.0e-4;
     const PLANE_JET_EDGES: [usize; 8] = [418, 425, 436, 443, 700, 728, 753, 761];
-    const STEP_BOUNDARY_MIDPOINTS_MM: [(usize, [f64; 3]); 64] = [
+    // Archived CATIA measurements: ftc07-native-edges.tsv, columns xm, ym, zm.
+    const NATIVE_BOUNDARY_SAMPLES_MM: [(usize, [f64; 3]); 8] = [
+        (418, [-94.612_545_562, -103.517_572_058, -96.624_369_478]),
+        (425, [141.074_369_346, -103.517_579_625, -69.212_551_771]),
+        (436, [-94.612_198_362, -103.517_913_248, 96.624_363_522]),
+        (443, [-141.074_363_413, -103.517_919_495, 69.212_205_915]),
+        (700, [94.612_198_458, -103.517_913_155, 96.624_363_524]),
+        (728, [-141.074_363_412, -103.517_919_588, -69.212_205_819]),
+        (753, [94.612_198_362, -103.517_913_248, -96.624_363_522]),
+        (761, [141.074_363_413, -103.517_919_495, 69.212_205_915]),
+    ];
+    // Preserve independent STEP witnesses alongside the native CATIA samples.
+    // Source: corpus/nist-pmi/step/nist_ftc_07_asme1_ap242-e2.stp; inches × 25.4.
+    // These eight plane-jet rows are unchanged from upstream 9c4e34b5d.
+    // Edge → STEP spline: 418→#6008, 425→#9996, 436→#1581, 443→#1533,
+    // 700→#2798, 728→#4038, 753→#5867, 761→#6073.
+    const STEP_BOUNDARY_SAMPLES_MM: [(usize, [f64; 3]); 64] = [
         (418, [-94.611_231_844, -103.516_638_909, -96.624_385_766]),
         (425, [141.074_385_766, -103.516_638_905, -69.211_231_846]),
         (436, [-94.611_234_209, -103.516_636_583, 96.624_385_806]),
@@ -184,15 +210,10 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
         (764, [139.561_823_278, -104.256_042_271, 70.771_719_768]),
         (809, [139.561_883_141, -104.254_327_504, -70.770_057_607]),
     ];
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
-    let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
-    let decoded = CatiaCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode FTC-07 CATPart");
-    let model = &decoded.ir().model;
-    let surfaces: HashMap<_, _> = model.surfaces.iter().map(|s| (&s.id, s)).collect();
-    let freeform_faces: HashSet<_> = model
+    let decoded = &*FTC_07;
+    let geometry = &decoded.ir().geometry;
+    let surfaces: HashMap<_, _> = geometry.surfaces.iter().map(|s| (&s.id, s)).collect();
+    let freeform_faces: HashSet<_> = geometry
         .faces
         .iter()
         .filter(|face| {
@@ -203,13 +224,13 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
         })
         .map(|face| &face.id)
         .collect();
-    let freeform_loops: HashSet<_> = model
+    let freeform_loops: HashSet<_> = geometry
         .loops
         .iter()
         .filter(|boundary| freeform_faces.contains(&boundary.face))
         .map(|boundary| &boundary.id)
         .collect();
-    let boundary_edges: HashSet<_> = model
+    let boundary_edges: HashSet<_> = geometry
         .coedges
         .iter()
         .filter(|coedge| freeform_loops.contains(&coedge.owner_loop))
@@ -217,12 +238,12 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
         .collect();
     assert_eq!(freeform_faces.len(), 20);
     assert_eq!(boundary_edges.len(), 112);
-    let curves: HashMap<_, _> = model
+    let curves: HashMap<_, _> = geometry
         .curves
         .iter()
         .map(|curve| (&curve.id, curve))
         .collect();
-    let edges: HashMap<_, _> = model
+    let edges: HashMap<_, _> = geometry
         .edges
         .iter()
         .map(|edge| (edge.id.as_str(), edge))
@@ -230,7 +251,7 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
     let mut circle_count = 0;
     let mut nurbs_count = 0;
     let mut unresolved = Vec::new();
-    for edge in model
+    for edge in geometry
         .edges
         .iter()
         .filter(|edge| boundary_edges.contains(&edge.id))
@@ -250,32 +271,32 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
         "unresolved freeform boundary curves: {unresolved:?}"
     );
     assert_eq!(circle_count, 48);
-    assert_eq!(nurbs_count, STEP_BOUNDARY_MIDPOINTS_MM.len());
-    let points: HashMap<_, _> = model
+    assert_eq!(nurbs_count, STEP_BOUNDARY_SAMPLES_MM.len());
+    let points: HashMap<_, _> = geometry
         .points
         .iter()
         .map(|point| (&point.id, point.position().get()))
         .collect();
-    let vertices: HashMap<_, _> = model
+    let vertices: HashMap<_, _> = geometry
         .vertices
         .iter()
         .map(|vertex| (&vertex.id, points[&vertex.point]))
         .collect();
-    let pcurves: HashMap<_, _> = model
+    let pcurves: HashMap<_, _> = geometry
         .pcurves
         .iter()
         .map(|pcurve| (&pcurve.id, pcurve))
         .collect();
-    let loop_faces: HashMap<_, _> = model
+    let loop_faces: HashMap<_, _> = geometry
         .loops
         .iter()
         .map(|boundary| (&boundary.id, &boundary.face))
         .collect();
-    let faces: HashMap<_, _> = model.faces.iter().map(|face| (&face.id, face)).collect();
+    let faces: HashMap<_, _> = geometry.faces.iter().map(|face| (&face.id, face)).collect();
     let mut freeform_pcurve_uses = 0;
     let mut plane_pcurve_uses = 0;
     let admission = cadmpeg_ir::eval::admission::EvaluationAdmission::Standard;
-    for (ordinal, [x, y, z]) in STEP_BOUNDARY_MIDPOINTS_MM {
+    for (ordinal, [x, y, z]) in STEP_BOUNDARY_SAMPLES_MM {
         let id = format!("catia:standard:edge#{ordinal}");
         let edge = edges[id.as_str()];
         assert!(boundary_edges.contains(&edge.id));
@@ -291,8 +312,8 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
         let end = cadmpeg_ir::eval::decode::curve_point(admission, &curve.geometry, last)
             .unwrap_or_else(|error| panic!("{id}: curve end at {last}: {error:?}"))
             .get();
-        let vertex_start = vertices[&edge.start];
-        let vertex_end = vertices[&edge.end];
+        let vertex_start = vertices[&edge.ends.as_ref().unwrap().start];
+        let vertex_end = vertices[&edge.ends.as_ref().unwrap().end];
         let endpoint_error = start.distance(vertex_start).max(end.distance(vertex_end));
         assert!(
             endpoint_error < ENDPOINT_TOLERANCE_MM,
@@ -307,12 +328,43 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
                     )
                 })
                 .get();
-        let midpoint_error = midpoint.distance(Point3::new(x, y, z));
-        assert!(
-            midpoint_error < STEP_SAMPLE_TOLERANCE_MM,
-            "{id}: STEP midpoint error {midpoint_error} mm"
-        );
-        for coedge in model.coedges.iter().filter(|coedge| coedge.edge == edge.id) {
+        let expected = Point3::new(x, y, z);
+        let midpoint_error = midpoint.distance(expected);
+        if PLANE_JET_EDGES.contains(&ordinal) {
+            let Some(SolvedCurveGeometry::Nurbs(spline)) = curve.geometry.solved() else {
+                panic!("NURBS boundary");
+            };
+            let native = NATIVE_BOUNDARY_SAMPLES_MM
+                .iter()
+                .find(|(edge, _)| *edge == ordinal)
+                .expect("native CATIA SPA witness")
+                .1;
+            let native = Point3::new(native[0], native[1], native[2]);
+            let witness = crate::test_support::with_service_context(|ctx| {
+                cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+                    ctx,
+                    spline,
+                    native,
+                    STEP_SAMPLE_TOLERANCE_MM,
+                    first.midpoint(last),
+                )
+            })
+            .expect("native curve witness search");
+            assert!(
+                witness.is_some_and(|t| (first..=last).contains(&t.get())),
+                "{id}: native SPA sample must lie on the model curve"
+            );
+        } else {
+            assert!(
+                midpoint_error < STEP_SAMPLE_TOLERANCE_MM,
+                "{id}: STEP midpoint error {midpoint_error} mm"
+            );
+        }
+        for coedge in geometry
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.edge == edge.id)
+        {
             let face = faces[loop_faces[&coedge.owner_loop]];
             let surface = surfaces[&face.surface];
             let plane_jet = PLANE_JET_EDGES.contains(&ordinal)
@@ -375,25 +427,70 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
             }
             if plane_jet {
                 plane_pcurve_uses += 1;
-                let [cfirst, clast] = if direct <= reverse {
-                    [first, last]
-                } else {
-                    [last, first]
+                let tolerance = pcurve
+                    .metadata
+                    .fit_tolerance()
+                    .expect("class-25 fitted accuracy")
+                    .get();
+                let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) =
+                    &surface.geometry
+                else {
+                    panic!("planar carrier");
                 };
-                for (point, fraction) in lifted.iter().zip([0.0, 0.25, 0.5, 0.75, 1.0]) {
-                    let parameter = cfirst * (1.0 - fraction) + clast * fraction;
-                    let expected = cadmpeg_ir::eval::decode::curve_point(
+                let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } =
+                    &pcurve.geometry
+                else {
+                    panic!("stored plane jet");
+                };
+                assert_eq!(nurbs.degree(), 5, "stored quintic jet");
+                let u = *plane.frame().reference().as_raw();
+                let v = plane.frame().axis().as_raw().cross(u);
+                let stored = nurbs
+                    .lift(|uv| plane.origin().get().translated(u, uv.u).translated(v, uv.v))
+                    .expect("stored plane curve lift");
+                let witness = crate::test_support::with_service_context(|ctx| {
+                    cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+                        ctx,
+                        &stored,
+                        expected,
+                        STEP_SAMPLE_TOLERANCE_MM,
+                        pfirst.midpoint(plast),
+                    )
+                })
+                .expect("original STEP witness search");
+                assert!(
+                    witness.is_some_and(|t| (pfirst.min(plast)..=pfirst.max(plast)).contains(&t.get())),
+                    "{id}: original STEP witness must remain on the stored plane pcurve"
+                );
+                let Some(SolvedCurveGeometry::Nurbs(model)) = curve.geometry.solved() else {
+                    panic!("model spline");
+                };
+                for point in lifted.iter().copied().chain([expected]) {
+                    let witness = crate::test_support::with_service_context(|ctx| {
+                        cadmpeg_ir::eval::nurbs_curve_parameter_near_point(
+                            ctx,
+                            model,
+                            point,
+                            tolerance,
+                            first.midpoint(last),
+                        )
+                    })
+                    .expect("fitted model witness search");
+                    let parameter = witness
+                        .expect("model curve fit witness")
+                        .get()
+                        .clamp(first, last);
+                    let fitted = cadmpeg_ir::eval::decode::curve_point(
                         admission,
                         &curve.geometry,
                         parameter,
                     )
-                    .expect("plane-jet curve point")
+                    .expect("active model curve point")
                     .get();
-                    let miss = point.distance(expected);
                     assert!(
-                        miss < ENDPOINT_TOLERANCE_MM,
-                        "{id}: {} plane rechart misses the edge by {miss} mm",
-                        pcurve.id
+                        fitted.distance(point) <= tolerance,
+                        "{id}: stored-plane-to-model gap {} exceeds class-25 bound {tolerance} mm",
+                        fitted.distance(point)
                     );
                 }
             }
@@ -401,20 +498,28 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
     }
     assert_eq!(freeform_pcurve_uses, 72);
     assert_eq!(plane_pcurve_uses, PLANE_JET_EDGES.len());
+    assert_eq!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code.local_code() == "geometry.parameter-map-accuracy-inferred"
+                    && loss.message.contains("stored plane pcurve")
+            })
+            .count(),
+        PLANE_JET_EDGES.len()
+    );
 }
 
 #[test]
 fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
     use cadmpeg_ir::topology::BodyKind;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
-    let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
-    let decoded = CatiaCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode FTC-07 CATPart");
+    let decoded = &*FTC_07;
     let model = &decoded.ir().model;
-    let solid_faces: HashSet<_> = model
+    let geometry = &decoded.ir().geometry;
+    let solid_faces: HashSet<_> = geometry
         .faces
         .iter()
         .filter(|face| face.id.as_str().starts_with("catia:standard:face#"))
@@ -423,7 +528,7 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
     let colored_solid_faces: HashSet<_> = model
         .appearance_bindings
         .iter()
-        .filter_map(|binding| match &binding.target {
+        .filter_map(|binding| match &binding.target.entity {
             cadmpeg_ir::appearance::AppearanceTarget::Face(face) if solid_faces.contains(face) => {
                 Some(face)
             }
@@ -432,7 +537,7 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
         .collect();
     assert_eq!(solid_faces.len(), 304);
     assert_eq!(colored_solid_faces, solid_faces);
-    let sheets: Vec<_> = model
+    let sheets: Vec<_> = geometry
         .bodies
         .iter()
         .filter(|body| body.kind == BodyKind::Sheet)
@@ -440,31 +545,21 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
     assert_eq!(sheets.len(), 2);
     let mut areas = Vec::new();
     for body in sheets {
-        let [region_id] = body.regions.as_slice() else {
+        let [region] = geometry.body_regions(&body.id).collect::<Vec<_>>()[..] else {
             panic!("one region per sheet")
         };
-        let region = model
-            .regions
-            .iter()
-            .find(|region| &region.id == region_id)
-            .expect("sheet region");
         let [shell_id] = region.shells.as_slice() else {
             panic!("one shell per sheet")
         };
-        let shell = model
+        let shell = geometry
             .shells
             .iter()
             .find(|shell| &shell.id == shell_id)
             .expect("sheet shell");
-        let [face_id] = shell.faces() else {
+        let [face] = geometry.shell_faces(&shell.id).collect::<Vec<_>>()[..] else {
             panic!("one face per sheet")
         };
-        let face = model
-            .faces
-            .iter()
-            .find(|face| &face.id == face_id)
-            .expect("sheet face");
-        let surface = model
+        let surface = geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == face.surface)
@@ -473,7 +568,7 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
             surface.geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
         ));
-        let boundaries: Vec<_> = model
+        let boundaries: Vec<_> = geometry
             .loops
             .iter()
             .filter(|boundary| boundary.face == face.id)
@@ -481,7 +576,7 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
         let [boundary] = boundaries.as_slice() else {
             panic!("one boundary per sheet")
         };
-        let coedges: Vec<_> = model
+        let coedges: Vec<_> = geometry
             .coedges
             .iter()
             .filter(|coedge| coedge.owner_loop == boundary.id)
@@ -489,24 +584,24 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
         assert_eq!(coedges.len(), 3);
         let mut vertex_ids = HashSet::new();
         for coedge in coedges {
-            let edge = model
+            let edge = geometry
                 .edges
                 .iter()
                 .find(|edge| edge.id == coedge.edge)
                 .expect("sheet edge");
-            vertex_ids.insert(&edge.start);
-            vertex_ids.insert(&edge.end);
+            vertex_ids.insert(&edge.ends.as_ref().unwrap().start);
+            vertex_ids.insert(&edge.ends.as_ref().unwrap().end);
         }
         assert_eq!(vertex_ids.len(), 3);
         let points: Vec<_> = vertex_ids
             .into_iter()
             .map(|id| {
-                let vertex = model
+                let vertex = geometry
                     .vertices
                     .iter()
                     .find(|vertex| &vertex.id == id)
                     .expect("sheet vertex");
-                model
+                geometry
                     .points
                     .iter()
                     .find(|point| point.id == vertex.point)
@@ -531,5 +626,94 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
             (actual - expected).abs() < 1.0e-5,
             "sheet area {actual} vs STEP {expected}"
         );
+    }
+}
+
+#[test]
+fn nist_ftc_07_planar_rims_classify_and_counterwind_their_holes() {
+    use cadmpeg_ir::topology::{FaceLoops, Sense};
+    let decoded = &*FTC_07;
+    let geometry = &decoded.ir().geometry;
+    let edges: HashMap<_, _> = geometry.edges.iter().map(|edge| (&edge.id, edge)).collect();
+    let curves: HashMap<_, _> = geometry
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, curve))
+        .collect();
+    let coedges: HashMap<_, _> = geometry
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, coedge))
+        .collect();
+    for (ordinal, hole_count) in [(245, 5), (58, 1), (266, 6), (287, 3), (288, 2)] {
+        let id = format!("catia:standard:face#{ordinal}");
+        let face = geometry
+            .faces
+            .iter()
+            .find(|face| face.id.as_str() == id)
+            .expect("planar rim");
+        let surface = geometry
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == face.surface)
+            .expect("rim carrier");
+        let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = &surface.geometry else {
+            panic!("planar rim carrier");
+        };
+        let FaceLoops::Classified { outer, inner } = &face.loops else {
+            panic!("classified rim boundaries");
+        };
+        assert_eq!(inner.len(), hole_count);
+        let area = |id: &cadmpeg_ir::ids::LoopId| {
+            let boundary = geometry
+                .loops
+                .iter()
+                .find(|boundary| &boundary.id == id)
+                .expect("rim boundary");
+            let mut points = Vec::new();
+            let cadmpeg_ir::topology::LoopBoundary::Ring(ring) = &boundary.boundary else {
+                panic!("curve boundary");
+            };
+            for id in ring.coedges() {
+                let coedge = coedges[id];
+                let edge = edges[&coedge.edge];
+                let curve = curves[edge.curve().expect("rim curve")];
+                let [mut first, mut last] = edge.param_range().expect("rim interval").get();
+                if coedge.sense == Sense::Reversed {
+                    std::mem::swap(&mut first, &mut last);
+                }
+                for index in 0..16 {
+                    let fraction = f64::from(index) / 16.0;
+                    points.push(
+                        cadmpeg_ir::eval::decode::curve_point(
+                            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                            &curve.geometry,
+                            first * (1.0 - fraction) + last * fraction,
+                        )
+                        .expect("rim point")
+                        .get(),
+                    );
+                }
+            }
+            points
+                .iter()
+                .zip(points.iter().cycle().skip(1))
+                .take(points.len())
+                .map(|(a, b)| {
+                    a.vector_from(plane.origin().get())
+                        .cross(b.vector_from(plane.origin().get()))
+                        .dot(*plane.frame().axis().as_raw())
+                })
+                .sum::<f64>()
+                * 0.5
+        };
+        let outer_area = area(outer);
+        assert!(outer_area.abs() > 1.0);
+        for hole in inner {
+            assert!(
+                outer_area * area(hole) < 0.0,
+                "rim hole counterwinds the outer boundary"
+            );
+        }
     }
 }

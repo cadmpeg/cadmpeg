@@ -50,14 +50,6 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must know the link grammar that walks such a ring.
 
-### BC-11. Vertexless ring-edge admission
-
-**Question.** Which native record admits a vertexless ring edge onto its carrier?
-
-**Known.** `decode.rs` admits a vertexless ring edge only with reciprocal opposite FINs on the same unbounded circle carrier, a face-owned single-FIN loop, and at most one sheet dummy; every other vertexless ring edge stays native under `TopologyRingEdgeWithheld`, with vertices as stored (#517).
-
-**Need.** We must know the native admission record that places such an edge on its carrier.
-
 ## 2. Geometry carriers
 
 ### GC-02. Missing intersection witnesses
@@ -70,11 +62,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### GC-04. Offset-surface admission
 
-**Question.** Which complete support and selected-set relation validates an unchecked offset for exact transfer, including negative support sense and full canonical indexes?
+**Question.** Which sense relation, distance band and bounded support domain admit an unchecked offset with negative support sense, a distance within model resolution or a partially typed support graph?
 
-**Known.** `sldprt.md` §7.5 defines the complete status, unused logical, support, distance and scale fields. The current short grammar requires the scale lane and withholds invalid, unchecked and zero-distance offsets while retaining their raw source and index claims. Scale does not multiply distance; FACE sense does not change its sign.
+**Known.** `sldprt.md` §7.5 defines the validity-check state, unused logical, support, distance and nullable scale. A complete node graph with unique positively sensed supports carries the unchecked offset equation through typed analytic, NURBS and swept supports. The node reader resolves canonical pointer indexes. Unchecked transfer requires a distance beyond model resolution. Negative support sense, opaque support dependencies and bounded faces with intersection-chart trims retain unresolved validity.
 
-**Need.** Exact unchecked admission needs a selected typed support, equal carrier/support senses, nonzero distance outside modeller resolution, an acyclic support graph and a valid selected surface set. Wide identities and pointers need one canonical index domain across every dependent carrier.
+**Need.** Resolve negative support orientation against the neutral carrier normal, the validity of offsets within model resolution, and the selected parameter domain when the support graph contains an opaque dependency.
 
 ### GC-05. Variable-radius law and result parameterization
 
@@ -143,6 +135,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 **Known.** `sldprt.md` §7.1 "The line direction is unit length." gives each field in the open interval (0, 1), the cone identity within `1e-9`, and the half-angle `atan2(sin, cos)`. `siemens_nx.md` §6.1 gives the same rule. The SLDPRT decoder omits a CONE node with a negative field and reports `geometry.cone-half-angle-sign-unresolved`; the NX decoder reports `carrier.cone-half-angle-sign-unresolved`.
 
 **Need.** We must know whether a signed half-angle is a valid cone or a different surface before a negative field can transfer as exact geometry.
+
+### GC-51. Intersection guide parameterization
+
+**Question.** Which guide constraint binds a chart parameter to the exact intersection of its two support surfaces?
+
+**Known.** §7.3 defines the support pointers, chart interval, terminators and optional support-UV caches. The three-dimensional chart bounds its positional approximation with `chordal_error`. A bounded offset FACE can use these intersection edges.
+
+**Need.** Derive the exact parameterization and branch selection from the chart and supports. The neutral representation needs a guide-curve relation or certified coincident support pcurves.
+
+**Conflict.** A positional cache evaluates the interpolated chart. The exact intersection lies on both supports.
+
+**Note.** An unchecked offset face with these trims keeps opaque geometry and `geometry.offset-validity-unresolved`.
 
 ## 3. Container metadata
 
@@ -425,6 +429,18 @@ Two omitted owner-qualified construction circles have separate current/extended 
 
 **Need.** We must know the selector values to terminate the extrusion at the correct edge endpoint.
 
+### DI-16. Extrusion travel sense relative to the profile frame
+
+**Question.** Which native fields set the signed extrusion travel relative to the profile frame?
+
+**Known.** The compact end-spec has Boolean words at anchor +8 and +12. Its direction-count word and termination codes define the extent form. A nested planar profile has a surface normal and a face sense.
+
+**Need.** Controlled opposite-travel definitions with the same owned profile, plane reference, end-spec form, and surviving end caps must establish each sense field and its composition with the profile frame.
+
+**Conflict.** The Boolean end-spec words and nested face senses each occur with both travel senses in final-cap witnesses.
+
+**Note.** Later features can consume an extrusion end cap. A missing final cap leaves the historical travel witness unresolved.
+
 ### DI-17. Second-direction codes without a defined second side
 
 **Question.** Does a nonzero second-direction code take effect when the direction count at anchor +4 is `1`? What second side does a second-direction code other than `0` or `1` define when anchor +4 is `0`, and what do first-direction codes `2` through `5` define with `0` at anchor +4?
@@ -644,6 +660,14 @@ resolve a seed feature?
 
 **Need.** We must draw these points to type the relations that name them.
 
+### DI-70. Geometry of unresolved line-or-circle and arc handles
+
+**Question.** Which sketch records carry the geometry of a line-or-circle or arc handle that no marker layout in `sldprt.md` resolves?
+
+**Known.** `sldprt.md` gives coordinate-bearing marker codes `1` and `2` as line-or-circle and arc geometry handles. A handle whose record is a curve record of a framed `sgSketch` object with selector bit 0 clear takes its geometry from the point records its indices select (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). When that record is a line with an identifier trailer (open item EV-29), or when the handle's two read endpoints coincide, the entity takes that geometry and the decoder charges `sketch.handle-reading-assumed`. Three kinds of handle remain. In a record of the compact `ff ff 07 00 01` generation with no f32 `-1` at +13, the same endpoint, sense and centre cell stands 14 bytes earlier: endpoint indices at +42 and +44, f64 `-1` at +50, the sense at +58 and the centre index at +62; the 14-byte header and point-record bounds of its `sgSketch` object are not framed. A handle whose selector has bit 0 set is open item EV-27. A handle whose `sgSketch` header is not framed has no point-record list. After its last sketch-geometry pass, the decoder gives each remaining entity native kind `sldprt:line-or-circle-handle` or `sldprt:arc-handle`, keeps its identity and relations, and charges `sketch.handle-unresolved`. An arc handle whose inline center and endpoints define no minor arc joins its sketch after that pass, with native kind `sldprt:arc-handle`, its identity and relations, and the same loss. A line handle whose two read endpoints coincide, one of them read from a legacy 140-byte single-incidence profile-point record (`sldprt.md` §2), keeps native kind `sldprt:line-or-circle-handle` and charges `sketch.line-degenerate` when its curve record gives no geometry. A handle whose read values define no valid line, circle, or ellipse emits no entity, and neither does a kept handle that stores its own coordinates without the geometry locus `05 00 01 00` at marker +23.
+
+**Need.** We must read these handles to complete the sketch geometry and its profiles.
+
 
 ### DI-47. Relation-table framing
 
@@ -798,7 +822,9 @@ resolve a seed feature?
 
 **Known.** `sldprt.md` §2.1 maps the `<GTOL-name>` tokens to characteristics. One FTC-08 display stores two `<IGTOL-FLAT>` rows with `.03` and `.015` and the free-state modifier on the first. Its face reference selects the face that the two `GdtFlatness` annotations `Flatness1` and `Flatness2` target, with magnitudes `.762` and `.381` mm.
 
-**Need.** Establish whether `IGTOL-` names the same characteristic as `GTOL-` with a display variant, so that such a display depicts its annotations.
+**Need.** Establish the prefix's general role and the remaining `IGTOL-` characteristic meanings.
+
+**Note.** The decoder associates an `IGTOL-FLAT` display with its flatness annotations when the owner or face references select the complete set of at least two rows and all positive row magnitudes agree through one common unit factor. It reports `pmi.swift-internal-flatness-symbol-assumed` for that reading. Other internal symbols remain unresolved.
 
 
 ### DI-64. End of the last SWIFT geometric-tolerance display
@@ -810,6 +836,30 @@ resolve a seed feature?
 **Need.** Bound that display, so that its note, rows, and feature or face references decode.
 
 **Note.** The decoder discards that display and reports `pmi.swift-presentation-unframed`.
+
+### DI-65. Indexed-circle array and plane ownership
+
+**Question.** Which native ownership fields associate equal-endpoint arc arrays with their point arrays and model-space sketch frames?
+
+**Known.** The counted sketch arrays preserve point slots and contour ordinals. The current-prefix equal-endpoint arc form has native value zero, centre slot zero, sweep selector one, and four signed reference sentinels. The indexed-curve grammar in §2 supplies these fields. The marker classifier labels this form as a point; projection lacks its coordinate pair.
+
+**Need.** Explicit array, profile, and plane ownership must select the point block and model-space frame, with carrier and applicable start-cap agreement.
+
+**Conflict.** The first-point centre and indexed radial-witness reading has contrary carrier cases under the decoded sketch placements. The compact extended-prefix and legacy equal-endpoint readings also have contrary carrier cases.
+
+**Note.** Retain these records under their current projection until the mapping resolves.
+
+### DI-68. Extrusion end-spec ownership and depth attribution
+
+**Question.** Which serialized children define the active termination kind, depth, direction, and second side of each withheld extrusion extent?
+
+**Known.** The unresolved-termination census contains 100 features in 33 parts. The primary cause counts assign each feature to one cause. Display-length parsing accounts for 64 features in 15 parts and two independent design groups. Its 66 direction-depth pairs contain 62 equal pairs and four unequal pairs in three features. Finite-cap checks give 25 agreements, two contrary cases, and 36 unavailable results in one group; the second group gives one agreement, zero contrary cases, and zero unavailable results. Face-reference forms account for 16 features in five parts and two groups. Vertex-reference forms account for five features in four parts and three groups. Traversal-tail forms account for four features in four parts and three groups. Unbound depth scalars account for four features in four parts and one group. Unsupported second-side codes account for three features in three parts and two groups. Unavailable end-spec headers account for two features in two parts and two groups. An additional first-direction code and surface-extrusion ownership each account for one feature in one part and one group. Configuration consensus disagreements account for zero features. The start type of the `moFromEndSpec_c` object reads as type 0 in 164 objects, type 5 in 14 objects in six parts of two independent design groups, and type 1 in two objects in two parts of two groups. Each type 5 and type 1 start stays unresolved. Eleven type 5 extrusions have a sketch frame that is not a fallback frame, ten in the first group and one in the second. Their owned cap faces place the near cap at the scalar distance from the sketch plane on the normal side in six extrusions and on the opposite side in five, and place the far cap beyond the near cap in seven and between the near cap and the sketch plane in four.
+
+**Need.** Bind each active end-spec, depth scalar, travel direction, and second-side reference to its extrusion. Bind the side of the sketch plane on which a type 5 start lies and the meaning of a type 1 start to the extrusion. Check every proposed admission against the decoded B-rep cap distances in at least two independent design groups, including both caps for a two-sided or symmetric extent. Available truth and export geometry supply supplementary checks.
+
+**Conflict.** A decoded termination kind can coexist with an unresolved length. A retained display length and a named scalar can coexist with an incomplete depth binding. The scalar can equal the separation of surviving caps while their distances from the bound profile plane differ from the scalar. The side of the sketch plane on which a type 5 start lies differs between extrusions of the first design group with the same implicit travel direction.
+
+**Note.** Each census cause retains its unresolved extent and decode loss until its ownership and geometry checks succeed.
 
 ## 6. Container record semantics
 
@@ -1024,6 +1074,40 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Note.** A full turn sweeps the same region in either sense, so it does not answer this question.
 
+### EV-27. Sketch curve records with selector bit 0 set
+
+**Question.** What do the endpoint and centre indices of a sketch curve record select when bit 0 of its selector (+37) is set?
+
+**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. With bit 0 clear, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
+
+**Need.** The field or list that gives such a record's curve, checked against the faces its feature produces.
+
+### EV-28. Sensed curve records whose endpoints differ from their marker endpoints
+
+**Question.** Which endpoints does a sketch curve record with sense `1` or `-1` join when its point-record positions and the `sldprt.md` §2 marker rules select different points?
+
+**Known.** A curve marker that the §2 rules read as a straight line is an arc when its framed `sgSketch` curve record has selector bit 0 clear, sense `1` or `-1`, and point records at the marker's two endpoints (`sldprt.md` §2 "A curve marker that these rules read as a straight line"). In other sensed records the endpoint indices select point records at other positions, or equal indices select a full circle, or the selected endpoints lie at different distances from the selected centre. In others the endpoint point records stand at the marker endpoints, and the arc about the centre point record, placed in the sketch, ends off one marker endpoint by more than the linear resolution. Placed through the point records, the arc of such a record can coincide with a circular B-rep edge of its feature that has the record's radius and sweep. The line that the §2 rules give meets the sketch's other curves at both ends more often than that arc. The decoder keeps the line and charges `sketch.arc-record-conflict` with the reason.
+
+**Need.** The field or index domain that relates these records' point-record positions to the §2 marker roster, checked against the edges and side faces their features produce.
+
+### EV-29. Endpoints of sketch curve lines with an identifier trailer
+
+**Question.** What do the endpoint values of an `sgSketch` curve-record line with an identifier trailer select?
+
+**Known.** The line has the eight zero bytes at +56 and selector (+37) bit 0 clear, and stores u32 `1` at +84, or u32 `0` at +84 and an identity other than `0` and `ff ff ff ff` at +88. `sldprt.md` §2 reads the trailer-`1` form as direct point-object identifiers ("A current-prefix 92-byte direct profile line") and the trailer-`0` form as one-based ordinals in the feature's coordinate-bearing marker roster ("The current, compact legacy, and extended marker prefixes have a solved curve"). Other curve records with selector bit 0 clear index the point records of their `sgSketch` object by zero-based position (§2.3). Read that way, trailer-`0` endpoints match the endpoints of a B-rep line edge more often than the one-based ordinals do. The decoder applies the §2 reading. A handle that reading leaves unread takes the line between the point records at its positions, and the decoder charges `sketch.handle-reading-assumed`.
+
+**Need.** For both trailer forms, the point pairs that each reading selects, compared with the B-rep line edges of the feature that consumes the sketch.
+
+**Conflict.** For one record, the §2 reading and the point-record positions can select different point pairs.
+
+### EV-30. Sketch curve records of curve type 2
+
+**Question.** What does curve type `2` select in an `sgSketch` curve record, and how does the decoder type its geometry?
+
+**Known.** `sldprt.md` §2.3 states the curve types `0`, `0x40`, `1` and `0xffff`. Records of curve type `2` occur, and each uses the legacy record layout. The decoder keeps the line another pass drew on such a marker, and charges `sketch.arc-record-conflict` with the reason that names the unknown sense word.
+
+**Need.** For each curve-type-2 record, its point records and fields against the B-rep edges of the feature that consumes the sketch.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?
@@ -1031,3 +1115,62 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Known.** `sldprt.md` §2.2 gives the stream framing. The trailing bytes lie outside every top-level object. The specification gives no field that names them.
 
 **Need.** A writer that reemits the stream has to know whether to write them.
+
+### GC-31. Mesh facet payload and ownership
+
+**Question.** How do the mesh receive index and auxiliary partition data select complete vertex and triangle arrays for each mesh-support face?
+
+**Known.** `parasolid.md` §3 defines the type-201 MESH field list and the reciprocal MESH/FACE link through SHELL to BODY. A MESH node can carry null `psm_imesh`, `pff_imesh`, and `rcv_key` pointers with a positive `rcv_index`. The same partition section can contain a separate `: MESH FILE` stream with type-189 PSM_MESH nodes, type-191 integer combs, type-193 vector combs, and their typed teeth. PSM_MESH owner pointers can be null. Its pool and index fields link to comb records; comb teeth arrays link to typed value arrays. The IR admits indexed triangle tessellations with body and face references, and polygonal support surfaces with a chordal-deflection bound. The decoder reports the distinct mesh-body count with `sldprt/geometry.mesh-body-not-transferred` and retains the source image.
+
+**Need.** Establish the cross-stream receive-index mapping, precision and comb encodings, coordinate units, triangle grouping, orientation, and complete per-body ownership. Check each reconstructed mesh against independent body areas and volumes before transfer.
+
+### SF-01. Remaining Top reference forms and profile coordinates
+
+**Question.** Which placement and coordinate convention applies to declared Top references, lane-default Front references, mixed or enclosing-context component records, lane component references, block definitions, and nested profile streams?
+
+**Known.** `sldprt.md` §3.3 defines local Top component placement and intrinsic marker coordinates for marker and compact profile objects with a profile or immediate-context Front reference. The declared Top fallback retains U=+X and N=+Z. The retained Front lane fallback uses N=-Y and U=-Z. Nested profile streams carry their own coordinate records.
+
+**Need.** Determine the byte fields that bind each remaining reference form to its profile coordinates and normal direction. Establish each complete rule with independent profile and mirrored-polarity controls.
+
+**Conflict.** The local component's N=+Y and the declared fallback's N=+Z select different normal axes.
+
+### SF-02. Right component ownership and profile coordinates
+
+**Question.** Which native role or operand field binds a Right component to the sketch support plane and selects the profile coordinate convention?
+
+**Known.** A complete profile-local `(4,1)` component occurs with a scoped Front declaration or a lane-default Front reference. The scoped declaration lies in the profile or its immediate context. The matrix identifies the referenced frame. The intrinsic component mapping can lose finite carrier support on the retained profile plane in both forms. The decoder retains the existing profile binding when the component source conflicts with it.
+
+**Need.** Establish the support-plane role and profile coordinate rule from explicit fields, including the enclosing reference and operand path. Distinguish finite support from intersections with carrier extensions. Establish each selected form with independent designs, mirrored-polarity controls, and per-sample carrier retention.
+
+**Conflict.** The Right matrix normal is +X. The retained Front component fallback normal is -Y.
+
+**Note.** Right component mappings retain their current interpretation and losses. The scoped and lane Front fallbacks retain their frames. Section 3.3 defines local Top component profile placement.
+
+### DI-69. Extrusion Boolean carriers
+
+**Question.** Which complete feature-input carriers select the Boolean operation of the remaining extrusion forms?
+
+**Known.** The withheld set has 45 features in 19 parts and 9 independent design groups. Sheet extrusions account for 24 features in 13 parts and 6 groups. Extended-reference continuations account for 12 features in 2 parts and 2 groups. Terminated headers account for 3 features in 3 parts and 2 groups. Compact join class bindings account for 6 features in 3 parts and 2 groups. The 62 saved configuration states have unresolved operations.
+
+**Need.** Establish the class-scoped operation carrier and the configuration-local state against producing-face orientation and body ownership.
+
+**Note.** Withheld operations retain their existing losses.
+
+### DI-71. Profile chains of marker sketches with dimensioned circles
+
+**Question.** Which feature-input records give the complete closed curve set of a marker-backed sketch whose only closed curve is a dimensioned circle?
+
+**Known.** A circular dimension on a point handle projects one circle with the dimension radius, centered on the handle. The sketch then has no profile chain, and an extrusion that names its sketch feature keeps the feature reference. The affected set has 36 extrusion and revolution features in 36 parts and 30 independent designs. Of 39 extrusions whose sketch has exactly one circle, 25 have a cylinder face that is coaxial with the circle and has its radius. In the other 14, no cylinder face has both the axis and the radius. Other coordinate handles of the same sketch lie at radii of further coaxial cylinder faces.
+
+**Need.** Establish the records that give every circle and curve of these sketches, so that a profile chain is admitted only when the sketch curve set is complete. Prove each chain against the produced side faces.
+
+**Conflict.** One dimensioned circle can be one of several concentric profile circles. A whole-sketch profile from that circle alone fills the region inside the outer circle.
+
+### DI-72. Length unit codes and the three-word unit base
+
+**Question.** Which length units do the codes other than `0`, `1` and `3` of the `moLengthUserUnits_c` unit word name, and is the u16 after a 44-byte base that word?
+
+**Known.** Code `0` is millimetre, `1` centimetre and `3` inch: each agrees with the quotient of a stored length and its Keywords display in every document that stores both. Some compound documents write three u32 words where the base holds four, so the base is 44 bytes, a u16 follows it, then the dual length unit object, whose first u32 is `2`; those documents store no length beside its display.
+
+**Need.** Documents of each form that store a length scalar beside its Keywords display, so the quotient names the unit.
+

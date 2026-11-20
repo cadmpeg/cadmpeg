@@ -5,10 +5,8 @@
 
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
-    ExternalDocument, Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind,
-    PrototypeReference,
+    ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
 };
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
 
@@ -33,50 +31,56 @@ fn assembly_id() -> ProductDefinitionId {
     ProductDefinitionId::mint("test:model:product-definition#assembly").expect("identity")
 }
 
+fn root_id() -> ProductDefinitionId {
+    ProductDefinitionId::mint("test:model:product-definition#root").expect("identity")
+}
+
 fn definition(id: ProductDefinitionId, bodies: Vec<cadmpeg_ir::ids::BodyId>) -> ProductDefinition {
-    ProductDefinition {
-        sketches: Vec::default(),
-        id,
-        kind: ProductDefinitionKind::Part,
-        source_name: None,
-        label: None,
-        description: None,
-        part_number: None,
-        bom_properties: std::collections::BTreeMap::default(),
-        bodies,
-        native_ref: None,
-    }
+    let mut definition = ProductDefinition::new(id, Storage::Embedded);
+    definition.kind = Some(ProductDefinitionKind::Part);
+    definition.bodies = bodies;
+    definition
 }
 
-fn occurrence(key: &str, parent: Option<&str>, transform: [[f64; 4]; 3]) -> Occurrence {
-    placing(definition_id(), key, parent, transform)
+fn occurrence(key: &str, transform: [[f64; 4]; 3]) -> Occurrence {
+    placing(definition_id(), key, transform)
 }
 
-fn placing(
-    prototype: ProductDefinitionId,
-    key: &str,
-    parent: Option<&str>,
-    transform: [[f64; 4]; 3],
-) -> Occurrence {
-    Occurrence {
-        id: occurrence_id(key),
-        prototype: PrototypeReference::Local {
-            definition: prototype,
-        },
-        parent: parent.map_or(OccurrenceParent::Root {}, |parent| {
-            OccurrenceParent::Occurrence {
-                occurrence: occurrence_id(parent),
-            }
-        }),
-        ordinal: 0,
-        transform: Transform::affine(transform).expect("transform"),
-        linked_prototype: None,
-        scale: [FiniteReal::ONE; 3],
-        name: None,
-        visible: None,
-        link: None,
-        native_ref: None,
-    }
+fn placing(prototype: ProductDefinitionId, key: &str, transform: [[f64; 4]; 3]) -> Occurrence {
+    Occurrence::new(
+        occurrence_id(key),
+        prototype,
+        Some(Transform::affine(transform).expect("transform")),
+    )
+}
+
+/// Adds `occurrence` after the occurrences the definition `owner` owns.
+fn place(ir: &mut CadIr, owner: &ProductDefinitionId, occurrence: Occurrence) {
+    ir.model
+        .product_definitions
+        .iter_mut()
+        .find(|definition| &definition.id == owner)
+        .expect("owner")
+        .occurrences
+        .push(occurrence.id.clone());
+    ir.model.occurrences.push(occurrence);
+}
+
+/// Points `inner` at a new definition stored in `document`, which is not
+/// read.
+fn place_inner_externally(ir: &mut CadIr, document: ExternalDocument) {
+    let external =
+        ProductDefinitionId::mint("test:model:product-definition#external").expect("identity");
+    ir.model.product_definitions.push(ProductDefinition::new(
+        external.clone(),
+        Storage::External(document),
+    ));
+    ir.model
+        .occurrences
+        .iter_mut()
+        .find(|occurrence| occurrence.id == occurrence_id("inner"))
+        .expect("inner")
+        .prototype = external;
 }
 
 /// The move by (100, 0, 0).
@@ -94,33 +98,35 @@ const TURN_AND_MOVE_Y: [[f64; 4]; 3] = [
 ];
 
 /// The box from (0, 0, 0) to (2, 3, 4), its body moved by (0, 0, 5), in the
-/// `block` definition. `single` places `block` at the root by (100, 0, 0).
-/// `top` places the `assembly` definition, which lists no body, at the root
-/// by (100, 0, 0); `inner` places `block` inside `top`, turning +z onto +x
-/// and +x onto −z and moving by (0, 50, 0).
+/// `block` definition. The root definition owns `top` and `single`. `single`
+/// places `block` by (100, 0, 0). `top` places the `assembly` definition,
+/// which lists no body, by (100, 0, 0); `assembly` owns `inner`, which places
+/// `block`, turning +z onto +x and +x onto −z and moving by (0, 50, 0).
 fn placed_block() -> CadIr {
     let mut ir = cuboid([0.0; 3], [2.0, 3.0, 4.0]);
-    ir.model.bodies[0].transform = Transform::affine([
+    ir.geometry.bodies[0].transform = Transform::affine([
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 1.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 5.0],
     ]);
     ir.model.product_definitions.push(definition(
         definition_id(),
-        vec![ir.model.bodies[0].id.clone()],
+        vec![ir.geometry.bodies[0].id.clone()],
     ));
     ir.model
         .product_definitions
         .push(definition(assembly_id(), Vec::new()));
-    ir.model
-        .occurrences
-        .push(placing(assembly_id(), "top", None, MOVE_X));
-    let mut single = occurrence("single", None, MOVE_X);
-    single.ordinal = 1;
-    ir.model.occurrences.push(single);
-    ir.model
-        .occurrences
-        .push(occurrence("inner", Some("top"), TURN_AND_MOVE_Y));
+    ir.model.product_definitions.push(ProductDefinition::root(
+        root_id(),
+        ExternalDocument::default(),
+    ));
+    place(&mut ir, &root_id(), placing(assembly_id(), "top", MOVE_X));
+    place(&mut ir, &root_id(), occurrence("single", MOVE_X));
+    place(
+        &mut ir,
+        &assembly_id(),
+        occurrence("inner", TURN_AND_MOVE_Y),
+    );
     ir.finalize();
     ir
 }
@@ -235,7 +241,10 @@ fn rows_are_placed_by_the_body_transform_then_the_occurrence_chain() {
         }
         let block = report.occurrence().as_ref().expect("occurrence block");
         assert!(block.unavailable().is_none());
-        assert_eq!(block.bodies(), &[ir.model.bodies[0].id.as_str().to_owned()]);
+        assert_eq!(
+            block.bodies(),
+            &[ir.geometry.bodies[0].id.as_str().to_owned()]
+        );
         assert_eq!(block.prototype().as_deref(), Some(prototype.as_str()));
     }
     let top = in_occurrence(&ir, "top");
@@ -252,7 +261,7 @@ fn rows_are_placed_by_the_body_transform_then_the_occurrence_chain() {
     assert_eq!(descendant.parent(), occurrence_id("top").as_str());
     assert_eq!(
         descendant.bodies(),
-        &[ir.model.bodies[0].id.as_str().to_owned()]
+        &[ir.geometry.bodies[0].id.as_str().to_owned()]
     );
     let expected = [
         [0.0, 0.0, 1.0, 100.0],
@@ -317,11 +326,11 @@ fn a_scaled_occurrence_in_the_chain_gives_no_rows() {
         .iter_mut()
         .find(|occurrence| occurrence.id == occurrence_id("top"))
         .expect("top");
-    top.scale = [
-        FiniteReal::new(2.0).expect("scale"),
-        FiniteReal::ONE,
-        FiniteReal::ONE,
-    ];
+    top.transform = Transform::affine([
+        [2.0, 0.0, 0.0, 100.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ]);
     let report = in_occurrence(&ir, "inner");
     assert_no_rows(
         &report,
@@ -339,16 +348,7 @@ fn a_scaled_occurrence_in_the_chain_gives_no_rows() {
 #[test]
 fn an_external_prototype_gives_no_rows() {
     let mut ir = placed_block();
-    let inner = ir
-        .model
-        .occurrences
-        .iter_mut()
-        .find(|occurrence| occurrence.id == occurrence_id("inner"))
-        .expect("inner");
-    inner.prototype = PrototypeReference::External {
-        document: ExternalDocument::Missing {},
-        object: None,
-    };
+    place_inner_externally(&mut ir, ExternalDocument::path("block.ipt"));
     let report = in_occurrence(&ir, "inner");
     assert_no_rows(
         &report,
@@ -360,13 +360,7 @@ fn an_external_prototype_gives_no_rows() {
 #[test]
 fn an_external_prototype_in_the_subtree_gives_no_rows() {
     let mut ir = placed_block();
-    let inner = ir
-        .model
-        .occurrences
-        .iter_mut()
-        .find(|occurrence| occurrence.id == occurrence_id("inner"))
-        .expect("inner");
-    inner.prototype = PrototypeReference::Unresolved {};
+    place_inner_externally(&mut ir, ExternalDocument::default());
     let report = in_occurrence(&ir, "top");
     assert_no_rows(
         &report,
@@ -380,15 +374,13 @@ fn an_external_prototype_in_the_subtree_gives_no_rows() {
 #[test]
 fn a_body_placed_twice_in_the_subtree_gives_no_rows() {
     let mut ir = placed_block();
-    let mut twin = occurrence("twin", Some("top"), MOVE_X);
-    twin.ordinal = 1;
-    ir.model.occurrences.push(twin);
+    place(&mut ir, &assembly_id(), occurrence("twin", MOVE_X));
     ir.finalize();
     let report = in_occurrence(&ir, "top");
     assert_no_rows(
         &report,
         UnavailableReason::PlacementOccurrenceBodyRepeated,
-        ir.model.bodies[0].id.as_str(),
+        ir.geometry.bodies[0].id.as_str(),
     );
 }
 
@@ -397,9 +389,12 @@ fn a_body_placed_twice_in_the_subtree_gives_no_rows() {
 #[test]
 fn an_occurrence_with_no_body_in_its_subtree_gives_no_rows() {
     let mut ir = placed_block();
-    let mut empty = placing(assembly_id(), "empty", None, MOVE_X);
-    empty.ordinal = 2;
-    ir.model.occurrences.push(empty);
+    let hollow =
+        ProductDefinitionId::mint("test:model:product-definition#hollow").expect("identity");
+    ir.model
+        .product_definitions
+        .push(definition(hollow.clone(), Vec::new()));
+    place(&mut ir, &root_id(), placing(hollow, "empty", MOVE_X));
     ir.finalize();
     let report = in_occurrence(&ir, "empty");
     assert_no_rows(
@@ -415,12 +410,19 @@ fn an_occurrence_with_no_body_in_its_subtree_gives_no_rows() {
     assert_eq!(category, Some(Category::Undefined));
 }
 
+/// Without `top`, nothing places `assembly`, so the chain from `inner`
+/// stops at a definition that is not the root.
 #[test]
-fn a_chain_with_a_missing_parent_gives_no_rows() {
+fn a_chain_whose_owner_is_not_placed_gives_no_rows() {
     let mut ir = placed_block();
     ir.model
         .occurrences
         .retain(|occurrence| occurrence.id != occurrence_id("top"));
+    for definition in &mut ir.model.product_definitions {
+        definition
+            .occurrences
+            .retain(|occurrence| occurrence != &occurrence_id("top"));
+    }
     let report = in_occurrence(&ir, "inner");
     assert_no_rows(
         &report,
@@ -432,7 +434,7 @@ fn a_chain_with_a_missing_parent_gives_no_rows() {
 #[test]
 fn selectors_outside_the_prototype_and_unknown_occurrences_are_refused() {
     let mut ir = cuboid([10.0; 3], [11.0; 3]);
-    let other_body = ir.model.bodies[0].id.clone();
+    let other_body = ir.geometry.bodies[0].id.clone();
     let block = placed_block();
     let unknown = measure_in(
         &block,
@@ -469,4 +471,113 @@ fn selectors_outside_the_prototype_and_unknown_occurrences_are_refused() {
         outside,
         Err(MeasureError::OutsideOccurrence { .. })
     ));
+}
+
+/// An override of `top` that places `inner` by (0, 0, 10) in place of its
+/// own transform (§8.1): `top ∘ override ∘ body` moves the centroid
+/// (1, 1.5, 7) to (101, 1.5, 17), in the space of `inner` and in the subtree
+/// of `top` alike.
+#[test]
+fn an_override_of_the_top_level_occurrence_places_its_nested_instance() {
+    use cadmpeg_ir::design::selection::{OccurrencePath, PathStep, StepRef};
+    let mut ir = placed_block();
+    let moved = Transform::affine([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 10.0],
+    ])
+    .expect("transform");
+    ir.model
+        .occurrences
+        .iter_mut()
+        .find(|occurrence| occurrence.id == occurrence_id("top"))
+        .expect("top")
+        .overrides
+        .push(cadmpeg_ir::products::NestedOverride {
+            path: OccurrencePath(vec![PathStep {
+                occurrence: StepRef::Occurrence(occurrence_id("inner")),
+                configuration: None,
+            }]),
+            transform: Some(moved),
+            suppressed: None,
+            visible: None,
+            representation: None,
+        });
+    for key in ["inner", "top"] {
+        let report = in_occurrence(&ir, key);
+        let [body] = report.bodies().as_slice() else {
+            panic!("one body row");
+        };
+        assert_point(
+            body.centroid().as_ref().expect("centroid"),
+            [101.0, 1.5, 17.0],
+        );
+    }
+}
+
+/// `placed_block` with the root also placing `assembly` at the identity as
+/// `again`, so that `inner` has two instances.
+fn assembly_placed_twice() -> CadIr {
+    let mut ir = placed_block();
+    place(
+        &mut ir,
+        &root_id(),
+        placing(
+            assembly_id(),
+            "again",
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ],
+        ),
+    );
+    ir.finalize();
+    ir
+}
+
+fn in_occurrence_through(ir: &CadIr, above: &[&str], key: &str) -> MeasureReport {
+    measure_in(
+        ir,
+        &Selection {
+            occurrence: Some(occurrence_id(key)),
+            occurrence_above: above.iter().map(|above| occurrence_id(above)).collect(),
+            ..Selection::default()
+        },
+    )
+    .expect("measured")
+}
+
+/// `inner` through `top` is placed as in
+/// `rows_are_placed_by_the_body_transform_then_the_occurrence_chain`, with
+/// its centroid at (107, 51.5, −1). Through `again`, the identity, the
+/// centroid is `inner`'s own (7, 51.5, −1). Without a listed occurrence the
+/// owner of `inner` is placed twice and the chain is broken; through
+/// `single`, which does not place that owner, it is broken too, and a
+/// listed occurrence that repeats breaks it.
+#[test]
+fn listed_occurrences_select_one_instance_of_a_reused_subassembly() {
+    let ir = assembly_placed_twice();
+    for (above, centroid) in [("top", [107.0, 51.5, -1.0]), ("again", [7.0, 51.5, -1.0])] {
+        let report = in_occurrence_through(&ir, &[above], "inner");
+        let [body] = report.bodies().as_slice() else {
+            panic!("{above}: one body row");
+        };
+        assert_point(body.centroid().as_ref().expect("centroid"), centroid);
+        let block = report.occurrence().as_ref().expect("occurrence block");
+        assert_eq!(
+            block.chain().as_slice(),
+            [
+                occurrence_id(above).as_str().to_owned(),
+                occurrence_id("inner").as_str().to_owned(),
+            ]
+        );
+    }
+    for above in [&[][..], &["single"][..], &["top", "inner"][..]] {
+        assert_no_rows(
+            &in_occurrence_through(&ir, above, "inner"),
+            UnavailableReason::PlacementOccurrenceChainBroken,
+            occurrence_id("inner").as_str(),
+        );
+    }
 }

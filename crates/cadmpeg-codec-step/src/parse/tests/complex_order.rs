@@ -4,15 +4,16 @@
 #![allow(clippy::unwrap_used)]
 
 #[test]
-fn parser_omits_duplicate_complex_partial_names() {
+fn parser_gives_up_duplicate_complex_partial_names() {
     let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=(B()A()B());ENDSEC;END-ISO-10303-21;";
-    let (parsed, diagnostics) =
-        crate::test_support::with_service_context(source, crate::parse::parse_inner)
-            .expect("duplicate partials omit the bounded instance");
+    let (parsed, _) = crate::test_support::with_service_context(source, crate::parse::parse_inner)
+        .expect("duplicate partials give up the bounded instance");
     assert!(parsed.records().is_empty());
-    assert!(diagnostics.iter().any(|item| item.kind
-        == crate::parse::ParseDiagnosticKind::RecordOmitted
-        && item.message.contains("duplicate complex partial name")));
+    assert!(parsed.given_up().iter().any(|statement| matches!(
+        &statement.cause,
+        crate::parse::GiveUpCause::Syntax(message)
+            if message.contains("duplicate complex partial name")
+    )));
 }
 
 #[test]

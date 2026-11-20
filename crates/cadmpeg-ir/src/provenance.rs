@@ -5,6 +5,7 @@
 //! documents store exactness and source locations in
 //! [`crate::annotations::Annotations`].
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -192,7 +193,7 @@ impl<'de> Deserialize<'de> for CodecFormat {
 /// Whether source geometry is a standalone object or a support of another object.
 /// Supports retain their mathematics when their owner cannot be projected; writers
 /// must not promote them to standalone geometry merely because they are unused.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum SourceGeometryRole {
@@ -255,7 +256,6 @@ pub struct SourceObjectAssociation {
     )]
     pub layer: Option<String>,
     /// Native instance identifiers from outermost to innermost.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub instance_path: Vec<String>,
 }
 
@@ -607,7 +607,7 @@ impl JsonSchema for Provenance<SourceLocation> {
 }
 
 /// How an entity or field value was established from its source.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -628,7 +628,7 @@ mod tests {
     #[cfg(feature = "schema")]
     use super::StreamName;
     use super::{CodecFormat, SourceObjectAssociation, SourceProvenance};
-    use cadmpeg_test_support::wire;
+    use crate::test_support::wire;
 
     #[cfg(feature = "schema")]
     #[test]
@@ -720,12 +720,12 @@ mod tests {
 
     #[test]
     fn source_object_identity_is_nonempty_and_preserves_wire() {
-        let wire = serde_json::json!({"format": "step", "object_id": "#42"});
+        let wire = serde_json::json!({"format": "step", "object_id": "#42", "instance_path": []});
         let value: SourceObjectAssociation =
             serde_json::from_value(wire.clone()).expect("nonempty identity");
         assert_eq!(serde_json::to_value(value).expect("serialize"), wire);
         let error = serde_json::from_value::<SourceObjectAssociation>(
-            serde_json::json!({"format": "step", "object_id": ""}),
+            serde_json::json!({"format": "step", "object_id": "", "instance_path": []}),
         )
         .expect_err("empty identity");
         assert!(error.to_string().contains("object_id"));
@@ -735,7 +735,7 @@ mod tests {
     fn source_geometry_role_preserves_ownership_and_requires_omission_for_absence() {
         for role in ["independent", "support"] {
             let wire = serde_json::json!({
-                "format": "iges", "object_id": "D1", "geometry_role": role
+                "format": "iges", "object_id": "D1", "instance_path": [], "geometry_role": role
             });
             let value: SourceObjectAssociation =
                 serde_json::from_value(wire.clone()).expect("source ownership");
@@ -743,7 +743,7 @@ mod tests {
         }
         for role in [serde_json::Value::Null, serde_json::json!("unknown")] {
             let error = serde_json::from_value::<SourceObjectAssociation>(serde_json::json!({
-                "format": "iges", "object_id": "D1", "geometry_role": role
+                "format": "iges", "object_id": "D1", "instance_path": [], "geometry_role": role
             }))
             .expect_err("invalid ownership");
             assert!(error.to_string().contains("geometry_role"));

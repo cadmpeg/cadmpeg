@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized SLDPRT compound-document images.
 
+mod extrude_direction;
+mod mesh_bodies;
+mod profile_data;
+mod root_definition;
+mod scalar_relation_values;
 mod swift_nominal;
 
 use cadmpeg_test_support::{wire, EditableDecodeResult};
@@ -57,7 +62,7 @@ fn assert_valid(result: &EditableDecodeResult) {
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{validation:#?}");
     let native = crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         result.ir(),
     )
     .unwrap();
@@ -131,11 +136,11 @@ fn parasolid_pipeline_composes_closed_open_analytic_freeform_and_degenerate_topo
         let result = decode(sldprt_with_body(&body));
         saw_solid |= result
             .ir()
-            .model
+            .geometry
             .bodies
             .iter()
             .any(|body| body.kind == cadmpeg_ir::topology::BodyKind::Solid);
-        saw_pcurve |= !result.ir().model.pcurves.is_empty();
+        saw_pcurve |= !result.ir().geometry.pcurves.is_empty();
         assert!(result.report().geometry_transferred());
         assert_valid(&result);
     }
@@ -152,7 +157,7 @@ fn configuration_pipeline_merges_partition_deltas_colliding_sites_and_membership
     for bytes in fixtures {
         let result = decode(bytes);
         assert!(result.report().geometry_transferred());
-        assert!(!result.ir().model.bodies.is_empty());
+        assert!(!result.ir().geometry.bodies.is_empty());
         assert_valid(&result);
     }
 }
@@ -199,11 +204,11 @@ fn presentation_pipeline_binds_materials_face_colors_tessellation_and_pmi() {
     assert!(!display.ir().model.tessellations.is_empty());
     assert_eq!(
         display.ir().model.tessellations[0].faces,
-        [display.ir().model.faces[0].id.clone()]
+        [display.ir().geometry.faces[0].id.clone()]
     );
     assert_eq!(
         display.ir().model.tessellations[0].body.as_ref(),
-        Some(&display.ir().model.bodies[0].id)
+        Some(&display.ir().geometry.bodies[0].id)
     );
     let tessellation_exactness = &display.source_fidelity().annotations.exactness()
         [display.ir().model.tessellations[0].id.as_str()];
@@ -240,11 +245,10 @@ fn tessellation_geometry_does_not_choose_between_coincident_faces() {
     let mut decoded = decoded;
     decoded.ir_mut().model.tessellations[0].body = None;
     decoded.ir_mut().model.tessellations[0].faces.clear();
-    let mut coincident = decoded.ir().model.faces[0].clone();
+    let mut coincident = decoded.ir().geometry.faces[0].clone();
     coincident.id =
         cadmpeg_ir::ids::FaceId::mint("sldprt:brep:face#coincident").expect("identity grammar");
-    decoded.ir_mut().model.shells[0].add_face(coincident.id.clone());
-    decoded.ir_mut().model.faces.push(coincident);
+    decoded.ir_mut().geometry.faces.push(coincident);
 
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy::service();
@@ -252,7 +256,7 @@ fn tessellation_geometry_does_not_choose_between_coincident_faces() {
         .expect("test context");
     let _ = crate::tessellation::assign_unique_surface_owners(
         &ctx,
-        &mut decoded.ir_mut().model,
+        &mut decoded.ir_mut(),
         &mut Vec::new(),
     )
     .unwrap();
@@ -277,8 +281,8 @@ fn retained_writer_pipeline_regenerates_geometry_and_preserves_unedited_sections
     .expect("semantic SLDPRT write");
     let round_trip = decode(bytes);
     assert_eq!(
-        round_trip.ir().model.points[0].position().get().x,
-        edited.model.points[0].position().get().x
+        round_trip.ir().geometry.points[0].position().get().x,
+        edited.geometry.points[0].position().get().x
     );
     assert!(!round_trip.ir().model.features.is_empty());
     assert_valid(&round_trip);
@@ -288,8 +292,8 @@ fn retained_writer_pipeline_regenerates_geometry_and_preserves_unedited_sections
 fn authored_with_retained_native_envelope_writer_pipeline_round_trips_a_cube_and_rejects_unrepresentable_ir(
 ) {
     let first = EditableDecodeResult::from(encode_decode_result(&source_less_cube()));
-    assert_eq!(first.ir().model.faces.len(), 6);
-    assert_eq!(first.ir().model.edges.len(), 12);
+    assert_eq!(first.ir().geometry.faces.len(), 6);
+    assert_eq!(first.ir().geometry.edges.len(), 12);
     assert_valid(&first);
 
     let mut bytes = Vec::new();
@@ -473,12 +477,12 @@ fn explicit_cross_dialect_synthesis_without_consuming_native_framing_is_refused(
 fn the_patch_path_names_the_preserved_dialect() {
     let result = decode(versioned_part());
     assert!(
-        !result.ir().model.points.is_empty(),
+        !result.ir().geometry.points.is_empty(),
         "the patch lane needs an editable point"
     );
     let mut edited = result.ir().clone();
-    let moved = edited.model.points[0].position().get();
-    edited.model.points[0].set_position(
+    let moved = edited.geometry.points[0].position().get();
+    edited.geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 1.0,
             moved.y,
@@ -762,3 +766,53 @@ fn reused_tag_conflict_withholds_the_persistent_join() {
         loss_codes(&conflicted)
     );
 }
+
+#[test]
+fn ignored_spun_profile_interval_reaches_the_decode_report() {
+    use crate::test_support::parasolid::{circle_carrier, sphere_carrier};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+
+    let sphere = sphere_carrier(100, [0.0; 3], 1.0);
+    let mut body = sphere_patch_body().split_off(sphere.len());
+    body.extend(circle_carrier(6, [0.0; 3], [0.0, 1.0, 0.0], 1.0));
+    body.extend([0x00, 0x44]);
+    body.extend(100_u16.to_be_bytes());
+    body.extend(7_u32.to_be_bytes());
+    for value in [1_u16, 2, 3, 4, 1] {
+        body.extend(value.to_be_bytes());
+    }
+    body.push(b'+');
+    body.extend(6_u16.to_be_bytes());
+    for value in [
+        0.0_f64,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        -1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        4.0 * std::f64::consts::PI,
+    ] {
+        body.extend(value.to_be_bytes());
+    }
+    let result = decode(sldprt_with_body(&body));
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert!(matches!(
+        result.ir().geometry.surfaces[0].geometry,
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
+    ));
+    assert!(result.report().losses.iter().any(|note| {
+        note.code.local_code() == "geometry.spun-profile-interval-ignored"
+            && note
+                .message
+                .contains(&format!("[0, {}]", 4.0 * std::f64::consts::PI))
+    }));
+}
+
+mod principal_plane_frames;

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::history::{
-    face_operand_support_candidates, historical_face_support_contexts, TopologyQueryCache,
-};
+use crate::history::face_support::historical_face_support_contexts;
+use crate::history::{face_operand_support_candidates, TopologyQueryCache};
 use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalTopology};
 use crate::records::dimensions::DesignRecipeReference;
 use cadmpeg_ir::ids::FaceId;
@@ -17,6 +16,7 @@ fn reference() -> DesignRecipeReference {
         selector: 2,
         selector_offset: 0,
         token: "37".into(),
+        token_integer: 0,
         token_offset: 4,
         design_reference: -73,
         design_reference_offset: 8,
@@ -99,4 +99,64 @@ fn extrude_support_requires_the_recipe_design_reference() {
             candidates
         );
     }
+}
+
+#[test]
+fn a_support_context_states_the_unique_preceding_plane_or_cylinder() {
+    use crate::history_records::{AsmHistoricalCylinder, AsmHistoricalPlane};
+    use crate::records::topology::historical_context::DesignHistoricalSurfaceGeometry;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let history =
+        crate::test_support::history::history("f3d:history".into(), 0, None, false, Vec::new());
+    let cylinder = AsmHistoricalCylinder {
+        surface: 20,
+        origin: Point3::new(1.0, 2.0, 3.0),
+        axis: Vector3::new(1.0, 0.0, 0.0),
+        radius: 3.25,
+    };
+    let plane = AsmHistoricalPlane {
+        surface: 20,
+        origin: Point3::new(0.0, 0.0, 2.5),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+    };
+    let surface = |cylinders: Vec<AsmHistoricalCylinder>, planes: Vec<AsmHistoricalPlane>| {
+        let topology = AsmHistoricalTopology {
+            faces: vec![4],
+            face_surfaces: vec![AsmHistoricalCarrierBinding {
+                entity: 4,
+                carrier: 20,
+            }],
+            surface_cylinders: cylinders,
+            surface_planes: planes,
+            ..Default::default()
+        };
+        let contexts = historical_face_support_contexts(
+            &[face(4)],
+            &history,
+            &topology,
+            &HashSet::new(),
+            &mut TopologyQueryCache::default(),
+        );
+        assert_eq!(contexts.len(), 1);
+        contexts[0].preceding_surface.clone()
+    };
+    assert_eq!(
+        surface(vec![cylinder.clone()], Vec::new()),
+        Some(DesignHistoricalSurfaceGeometry::Cylinder {
+            origin: cylinder.origin,
+            axis: cylinder.axis,
+            radius: 3.25,
+        })
+    );
+    assert_eq!(
+        surface(Vec::new(), vec![plane.clone()]),
+        Some(DesignHistoricalSurfaceGeometry::Plane {
+            origin: plane.origin,
+            normal: plane.normal,
+        })
+    );
+    assert_eq!(surface(vec![cylinder.clone()], vec![plane]), None);
+    assert_eq!(surface(vec![cylinder.clone(), cylinder], Vec::new()), None);
+    assert_eq!(surface(Vec::new(), Vec::new()), None);
 }

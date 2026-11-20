@@ -76,7 +76,7 @@ fn sweep_spine_tangent_with_overflowing_norm_keeps_its_direction() {
 fn law_sweep_maps_wide_profile_interval_into_finite_nurbs_domain() {
     let profile = CurveId::mint("test:model:curve#wide-sweep-profile").unwrap();
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: profile.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -90,6 +90,7 @@ fn law_sweep_maps_wide_profile_interval_into_finite_nurbs_domain() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let index = crate::index::ModelIndex::build(&ir);
     let range = [finite(-f64::MAX), finite(f64::MAX)];
@@ -236,7 +237,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     let construction_id = ProceduralSurfaceId::mint("test:model:entity#profile-frame-construction")
         .expect("valid identity");
     let mut ir = CadIr::empty();
-    ir.model.curves = vec![
+    ir.geometry.curves = vec![
         Curve {
             parameter_range: None,
             id: profile_id.clone(),
@@ -251,6 +252,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Curve {
             parameter_range: None,
@@ -266,17 +268,19 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
     ];
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction_id.clone(),
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
-    ir.model.procedural_surfaces.push(procedural_surface! {
+    ir.geometry.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
         definition: ProceduralSurfaceDefinition::Sweep(crate::geometry::surface_payloads::SweepSurfacePayload::try_new(profile_id, spine_id, Some(Box::new(SweepSurfaceConstruction {
                 primary_kind: 0,
@@ -365,11 +369,11 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     assert_eq!(partials.du, Vector3::new(0.0, -2.0, 0.0));
     assert_eq!(partials.dv, Vector3::new(-2.0, 0.0, 1.0));
 
-    let SurfaceGeometry::Procedural { cache, .. } = &mut ir.model.surfaces[0].geometry else {
+    let SurfaceGeometry::Procedural { cache, .. } = &mut ir.geometry.surfaces[0].geometry else {
         panic!("fixture surface must retain its construction");
     };
     *cache = Some(SolvedSurfaceGeometry::Nurbs(bilinear_surface()));
-    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+    ir.geometry.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Sweep(definition_payload) = definition else {
             unreachable!()
         };
@@ -417,7 +421,7 @@ fn law_sweep_evaluation_applies_profile_scale_and_current_cache() {
     assert_eq!(cached_partials.du, Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(cached_partials.dv, Vector3::new(0.0, 1.0, 0.0));
 
-    ir.model.procedural_surfaces[0].edit_definition(|definition| {
+    ir.geometry.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Sweep(definition_payload) = definition else {
             unreachable!()
         };
@@ -534,7 +538,7 @@ pub(super) fn law_sweep_model(first_law: LawExpression) -> (CadIr, SurfaceId) {
     let spine_id = CurveId::mint("test:model:entity#spine").expect("valid identity");
     let surface_id = SurfaceId::mint("test:model:entity#cacheless-sweep").expect("valid identity");
     let mut ir = CadIr::empty();
-    ir.model.curves = vec![
+    ir.geometry.curves = vec![
         Curve {
             parameter_range: None,
             id: profile_id.clone(),
@@ -546,6 +550,7 @@ pub(super) fn law_sweep_model(first_law: LawExpression) -> (CadIr, SurfaceId) {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Curve {
             parameter_range: None,
@@ -558,9 +563,10 @@ pub(super) fn law_sweep_model(first_law: LawExpression) -> (CadIr, SurfaceId) {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
     ];
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: ProceduralSurfaceId::mint(
@@ -570,8 +576,9 @@ pub(super) fn law_sweep_model(first_law: LawExpression) -> (CadIr, SurfaceId) {
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
-    ir.model.procedural_surfaces.push(procedural_surface! {
+    ir.geometry.procedural_surfaces.push(procedural_surface! {
         id: ProceduralSurfaceId::mint("test:model:entity#cacheless-sweep-construction").expect("valid identity"),
         definition: ProceduralSurfaceDefinition::Sweep(crate::geometry::surface_payloads::SweepSurfacePayload::try_new(profile_id, spine_id, Some(Box::new(SweepSurfaceConstruction {
                 primary_kind: 0,
@@ -641,7 +648,7 @@ fn a_law_sweep_whose_law_overflows_reaches_no_coordinate() {
         model_surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
             &ir,
-            &ir.model.surfaces[0].geometry,
+            &ir.geometry.surfaces[0].geometry,
             0.5,
             1.0,
         ),
@@ -693,7 +700,7 @@ fn a_law_sweep_whose_law_derivative_has_no_value_keeps_its_point() {
         model_surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
             &ir,
-            &ir.model.surfaces[0].geometry,
+            &ir.geometry.surfaces[0].geometry,
             0.5,
             0.0
         ),
@@ -799,7 +806,7 @@ fn sweep_text_projections_ignore_whitespace() {
             .unwrap(),
         variables: Vec::new(),
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         crate::eval::sweep_law::sweep_scale(EvaluationAdmission::Decode(&ctx), &scale),
         Ok(Some(Vector3::new(2.0, 3.0, 4.0)))

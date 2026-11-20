@@ -1016,10 +1016,10 @@ mod nx {
         fn single_part_seed_decodes_its_analytic_carriers() {
             let bytes = cadmpeg_fuzz::seeds::nx::single_part_prt().expect("single_part seed");
             let result = decode_single_partition(&bytes);
-            let model = &result.ir().model;
-            assert_eq!(model.points.len(), 1);
+            let geometry = &result.ir().geometry;
+            assert_eq!(geometry.points.len(), 1);
             let surface_count = |kind: fn(&SolvedSurfaceGeometry) -> bool| {
-                model
+                geometry
                     .surfaces
                     .iter()
                     .filter(|surface| {
@@ -1036,7 +1036,7 @@ mod nx {
                 1
             );
             assert_eq!(
-                model
+                geometry
                     .curves
                     .iter()
                     .filter(|curve| matches!(
@@ -1052,15 +1052,15 @@ mod nx {
         fn topology_part_seed_decodes_its_connected_sheet() {
             let bytes = super::topology_part_prt().expect("topology_part seed");
             let result = decode_single_partition(&bytes);
-            let model = &result.ir().model;
-            assert_eq!(model.bodies.len(), 1);
-            assert_eq!(model.regions.len(), 1);
-            assert_eq!(model.shells.len(), 1);
-            assert_eq!(model.faces.len(), 1);
-            assert_eq!(model.loops.len(), 1);
-            assert_eq!(model.coedges.len(), 1);
-            assert_eq!(model.edges.len(), 1);
-            assert_eq!(model.vertices.len(), 1);
+            let geometry = &result.ir().geometry;
+            assert_eq!(geometry.bodies.len(), 1);
+            assert_eq!(geometry.regions.len(), 1);
+            assert_eq!(geometry.shells.len(), 1);
+            assert_eq!(geometry.faces.len(), 1);
+            assert_eq!(geometry.loops.len(), 1);
+            assert_eq!(geometry.coedges.len(), 1);
+            assert_eq!(geometry.edges.len(), 1);
+            assert_eq!(geometry.vertices.len(), 1);
         }
 
         #[test]
@@ -1121,12 +1121,12 @@ mod nx {
         fn bspline_part_seed_decodes_its_nurbs_surface_and_curve() {
             let bytes = super::bspline_part_prt().expect("bspline_part seed");
             let result = decode_single_partition(&bytes);
-            let model = &result.ir().model;
-            assert!(model.surfaces.iter().any(|surface| matches!(
+            let geometry = &result.ir().geometry;
+            assert!(geometry.surfaces.iter().any(|surface| matches!(
                 surface.geometry,
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
             )));
-            assert!(model.curves.iter().any(|curve| matches!(
+            assert!(geometry.curves.iter().any(|curve| matches!(
                 curve.geometry,
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
             )));

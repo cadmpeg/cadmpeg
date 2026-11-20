@@ -6,6 +6,24 @@ use super::{attributes, Value};
 
 const VALUE_TOLERANCE: f64 = 1.0e-12;
 
+#[test]
+fn logical_values_preserve_true_false_and_unknown() {
+    for (bytes, expected) in [
+        (&[0][..], Some(false)),
+        (&[1][..], Some(true)),
+        (&[2][..], None),
+        (&[0xf6][..], None),
+    ] {
+        let mut view = View::over_retained(bytes);
+        assert!(matches!(super::typed_value(&mut view, 0x35, false),
+            Some(Value::Logical(actual)) if actual == expected));
+        assert!(view.unread().is_empty());
+    }
+    for bytes in [&[][..], &[0xeb, 0, 0, 0][..]] {
+        assert!(super::typed_value(&mut View::over_retained(bytes), 0x35, false).is_none());
+    }
+}
+
 fn fixture() -> Vec<u8> {
     let prototype = b"\xe3\xe0\x0aname\0PART_NUMBER\0\xe0\x00value\0\xe2\xe0\x01type\0\x33\xe0\x0avalue(s_val)\0PART\0\xe0\x01ref_id\0\xf1\xf6\xe0\x01ref_type\0\x02\xe0\x0aref_name\0\xe1\xe0\x0aunit\0\xe1\xe0\x01designated\0\x01\xf1\xf7\x1b";
     let kind = b"\xe3PTC_GTOL_TYPE\0\xe2\x33\xf7\x1fPOSITION\0\x2a\x03\xe1\xe1\x00";

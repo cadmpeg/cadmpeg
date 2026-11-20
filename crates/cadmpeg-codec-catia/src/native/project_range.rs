@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::Model;
+use cadmpeg_ir::document::Topology;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::FaceId;
 use serde::{Deserialize, Serialize};
@@ -47,8 +47,8 @@ fn diameter(entity: &CatiaEntityRecord) -> Option<f64> {
         || !matches!(
             interval.interval.slots,
             Some([
-                RangeIntervalSlot::Unset { .. },
-                RangeIntervalSlot::Unset { .. }
+                RangeIntervalSlot::ZeroLiteral { .. },
+                RangeIntervalSlot::ZeroLiteral { .. }
             ])
         )
     {
@@ -270,12 +270,12 @@ fn origin(
 
 fn faces(
     _ctx: &DecodeContext<'_>,
-    model: &Model,
+    geometry: &Topology,
     origin: [f64; 3],
     diameter: f64,
 ) -> Option<[FaceId; 2]> {
     let mut carriers = Vec::new();
-    for surface in &model.surfaces {
+    for surface in &geometry.surfaces {
         let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(cylinder)) = &surface.geometry
         else {
             continue;
@@ -311,7 +311,7 @@ fn faces(
     }
     let mut selected = Vec::new();
     let mut used = [0_u8; 2];
-    for face in &model.faces {
+    for face in &geometry.faces {
         if &face.surface == first.0 || &face.surface == second.0 {
             if selected.len() == 2 {
                 return None;
@@ -334,7 +334,7 @@ fn faces(
 pub(crate) fn bind(
     ctx: &DecodeContext<'_>,
     native: &mut CatiaNative,
-    model: &Model,
+    geometry: &Topology,
     scope: &ModelingGraphScope,
 ) -> Result<(), CodecError> {
     let mut has_project_range = false;
@@ -399,7 +399,7 @@ pub(crate) fn bind(
         let Some(origin) = origin(frame, &records, &identities) else {
             continue;
         };
-        let Some(faces) = faces(ctx, model, origin, diameter) else {
+        let Some(faces) = faces(ctx, geometry, origin, diameter) else {
             continue;
         };
         let target = ProjectRangeTarget {

@@ -60,7 +60,7 @@ mod tests {
         let mut ir = CadIr::empty();
         ir.model.parameters.push(
             serde_json::from_value(serde_json::json!({
-                "id": "test:model:parameter#cell", "name": "cell", "expression": "7"
+                "id": "test:model:parameter#cell", "name": "cell", "expression": "7", "ordinal": 0, "dependencies": [], "properties": {}
             }))
             .unwrap(),
         );
@@ -76,11 +76,12 @@ mod tests {
                 "cells": [
                     {"address": "A1", "parameter": "test:model:parameter#cell"},
                     {"address": "A2", "parameter": "test:model:parameter#missing"}
-                ]
+                ],
+                "column_widths": [], "row_heights": [], "merged_ranges": []
             }))
             .unwrap(),
         );
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut findings = Vec::new();
         check_spreadsheets(&ir, &mut findings);
         assert_eq!(
