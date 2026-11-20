@@ -98,7 +98,7 @@ fn archive_parameter_classes_serialize_as_snake_case() {
 
 fn lanes_of(bytes: &[u8]) -> (Vec<crate::records::FeatureInputLane>, Vec<LossNote>) {
     let scan = scan(bytes);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut annotations = Annotations::default();
     let mut losses = Vec::new();
     let (lanes, _) =

@@ -38,7 +38,7 @@ fn structure(definitions: Vec<Definition>) -> Structure {
 }
 
 fn expand(structure: &Structure) -> (CadIr, Vec<cadmpeg_ir::report::loss::LossKind>) {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
     definitions(&ctx, structure, &mut ir, &mut losses).unwrap();
@@ -247,6 +247,38 @@ fn roots_count_toward_the_occurrence_limit() {
     );
 }
 
+#[test]
+fn the_document_root_over_several_leaf_tops_is_charged_once() {
+    let tops = structure(vec![definition("A", &[]), definition("B", &[])]);
+    // Two definitions, the two occurrences placing them, and the document.
+    let expand_within = |max_entities| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_entities = max_entities;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits the service input limit");
+        let mut ir = CadIr::empty();
+        let mut losses = Vec::new();
+        definitions(&ctx, &tops, &mut ir, &mut losses)?;
+        occurrences(&ctx, &tops, &mut ir, &mut losses)?;
+        Ok::<_, CodecError>(ir)
+    };
+    let error = expand_within(4).expect_err("five entities exceed four");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::Entities
+            && limit.operation == "pvz_document"));
+    let ir = expand_within(5).expect("five entities fit five");
+    assert_eq!(ir.entity_count(), 5);
+    let roots: Vec<_> = ir
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| definition.is_root())
+        .map(|definition| definition.id.to_string())
+        .collect();
+    assert_eq!(roots, ["pvz:model:document#0"]);
+}
+
 fn retained_refusal(result: &Result<(), CodecError>) -> bool {
     matches!(
         result,
@@ -263,7 +295,7 @@ fn a_shared_name_is_charged_each_time_it_enters_the_model() {
             ..definition("", &[])
         })
         .collect();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
     assert!(retained_refusal(&definitions(
@@ -277,7 +309,7 @@ fn a_shared_name_is_charged_each_time_it_enters_the_model() {
     for child in &mut root.occurrences {
         child.feature_id = Rc::clone(&name);
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = CadIr::empty();
     assert!(retained_refusal(&occurrences(
         &ctx,
@@ -320,7 +352,7 @@ fn properties_become_bom_properties_keyed_by_stream() {
 
 #[test]
 fn a_mesh_with_a_non_finite_vertex_is_rejected() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let geometry = MemberGeometry {
         appearances: crate::ol::AppearanceTable::default(),
         meshes: vec![
@@ -407,7 +439,7 @@ fn placement_defects_and_deep_chains_are_reported() {
     );
 
     let depth = usize::try_from(
-        cadmpeg_test_support::service_decode_context()
+        cadmpeg_core::decode::test_support::service_decode_context()
             .policy()
             .limits
             .max_recursion_depth,
@@ -457,7 +489,7 @@ fn an_appearance_colour_outside_the_unit_range_is_rejected() {
             (STREAM_SURFACE_TESSELLATION, surface),
         ],
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let geometry =
         crate::ol::decode(&ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
     let mut ir = CadIr::empty();

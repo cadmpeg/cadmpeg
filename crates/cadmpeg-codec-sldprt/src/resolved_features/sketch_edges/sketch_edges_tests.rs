@@ -532,7 +532,7 @@ fn a_cubic_edge_trims_to_its_interior_vertices() {
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
     let curves = HashMap::from([(&curve_id, &geometry)]);
     let vertex_tolerances = HashMap::from([(&start_vertex, None), (&end_vertex, None)]);
-    let context = cadmpeg_test_support::service_decode_context();
+    let context = cadmpeg_core::decode::test_support::service_decode_context();
     let range = super::nurbs_edge_trim_range(
         &context,
         &edge,

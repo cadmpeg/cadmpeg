@@ -490,7 +490,7 @@ mod tests {
 
     fn scan(source: &[u8]) -> Result<super::super::ContainerScan<'_>, CodecError> {
         super::super::scan(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             View::over_retained(source),
         )
     }

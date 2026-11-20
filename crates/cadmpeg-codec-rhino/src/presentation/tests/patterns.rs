@@ -381,7 +381,7 @@ fn linetype_install_retains_model_distances_without_physical_units() {
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete linetype document");
         let mut ir = CadIr::empty();
         let installed = install(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut ir,
         )
@@ -431,7 +431,7 @@ fn hatch_install_retains_document_distances_without_physical_units() {
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete hatch document");
         let mut ir = CadIr::empty();
         let installed = install(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut ir,
         )
@@ -497,7 +497,7 @@ fn modern_hatch_pattern_uses_its_explicit_unit_binding() {
         let scan = crate::container::scan_owned(bytes.clone()).expect("complete hatch document");
         let mut ir = CadIr::empty();
         let installed = install(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut ir,
         )
@@ -590,7 +590,7 @@ fn solid_hatch_pattern_needs_no_length_binding() {
         ir.native
             .namespace_mut("rhino")
             .set_arena(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 "hatch_patterns",
                 &[pattern],
             )

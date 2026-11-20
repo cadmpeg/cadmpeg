@@ -421,10 +421,8 @@ impl<'ir> Writer<'ir> {
                 (definition.id.clone(), name)
             })
             .collect();
-        let owned = ir
-            .model
-            .product_definitions
-            .iter()
+        // The document root's bodies are the layer's own.
+        let owned = cadmpeg_ir::products::stated_definitions(&ir.model.product_definitions)
             .flat_map(|definition| definition.bodies.iter().cloned())
             .collect();
         // A definition is above parts when an occurrence it owns places a
@@ -515,9 +513,9 @@ impl<'ir> Writer<'ir> {
     }
 
     fn layer(&mut self) -> String {
-        // A root definition the source names, or one that owns bodies, is
-        // written as the root prim; an unnamed one is the layer itself, and
-        // its occurrences are the root prims.
+        // A root definition the source names, or one that owns bodies beside
+        // stating structure, is written as the root prim; an unnamed one is
+        // the layer itself, and its occurrences are the root prims.
         let root_definition = self
             .ir
             .model
@@ -526,9 +524,10 @@ impl<'ir> Writer<'ir> {
             .find(|definition| definition.is_root());
         let root_prim = root_definition
             .filter(|definition| {
-                definition.source_name.is_some()
-                    || definition.label.is_some()
-                    || !definition.bodies.is_empty()
+                !definition.is_document_root()
+                    && (definition.source_name.is_some()
+                        || definition.label.is_some()
+                        || !definition.bodies.is_empty())
             })
             .and_then(|definition| {
                 let id = cadmpeg_ir::ids::OccurrenceId::mint(format!(

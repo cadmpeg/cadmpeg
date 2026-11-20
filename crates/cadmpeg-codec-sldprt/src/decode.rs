@@ -28,7 +28,7 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::boundary_fill::BoundaryFillCell;
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::hash::digest::Sha256Digest;
-use cadmpeg_ir::ids::{AppearanceId, UnknownId};
+use cadmpeg_ir::ids::{AppearanceId, ProductDefinitionId, UnknownId};
 
 use crate::loss::SldprtLossCode;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -321,6 +321,14 @@ fn append_tessellation_losses(ir: &CadIr, report: &mut DecodeBody) {
     }
 }
 
+/// The root definition of a part file: the part it holds at its top.
+pub(crate) fn root_definition_id() -> ProductDefinitionId {
+    ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("sldprt", "model", "product-definition"),
+        cadmpeg_ir::identity_key!("root"),
+    )
+}
+
 fn decode_result(
     ctx: &DecodeContext<'_>,
     decode_digest: Sha256Digest,
@@ -342,6 +350,28 @@ fn decode_result(
         source_fidelity.retain_unknown_records("source", [source_image])?;
     }
     retention.apply(&mut source_fidelity)?;
+    // A scoped root lists only the bodies of its current states. The bodies
+    // of a configuration that is not active are stated by that
+    // configuration's evaluation (§5.4) and stay in the geometry unlisted,
+    // as a scoped CATIA or Rhino root leaves its own (interim, errata A1).
+    let current = (!ir.design.scopes.is_empty()).then(|| {
+        ir.design
+            .scopes
+            .iter()
+            .flat_map(|scope| &scope.current)
+            .flat_map(|state| &state.bodies)
+            .cloned()
+            .collect::<std::collections::HashSet<_>>()
+    });
+    if let Some(root) = ir.state_root_definition(
+        ctx,
+        root_definition_id(),
+        cadmpeg_ir::products::ExternalDocument::default(),
+    )? {
+        if let Some(current) = &current {
+            root.bodies.retain(|body| current.contains(body));
+        }
+    }
     stamp_local_digests(ctx, &mut ir)?;
     Ok(Decoded {
         ir,
@@ -2166,7 +2196,7 @@ pub(crate) fn append_design_losses(
     Ok(())
 }
 
-fn configuration_source_needs_update(
+pub(crate) fn configuration_source_needs_update(
     ir: &CadIr,
     configuration: &cadmpeg_ir::features::DesignConfiguration,
 ) -> bool {
@@ -4231,10 +4261,16 @@ fn build_geometry_ir(
         project_design(
             ctx,
             &mut ir,
-            &native.feature_histories,
-            &native.feature_input_lanes,
-            current_bodies,
-            rollback,
+            crate::design_v11::Part {
+                histories: &native.feature_histories,
+                lanes: &native.feature_input_lanes,
+                bodies: current_bodies,
+                persistent: crate::design_v11::Persistent {
+                    faces: &brep.native_face_identities,
+                    bodies: &brep.native_body_identities,
+                },
+                rollback,
+            },
             &mut pmi_losses,
         )?;
     }
@@ -4251,13 +4287,10 @@ fn build_geometry_ir(
 fn project_design(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    histories: &[crate::records::FeatureHistory],
-    lanes: &[crate::records::FeatureInputLane],
-    bodies: Vec<cadmpeg_ir::ids::BodyId>,
-    rollback: crate::rollback::Reading,
+    part: crate::design_v11::Part<'_>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
-    let added = crate::design_v11::project(ir, histories, lanes, bodies, rollback, losses)?;
+    let added = crate::design_v11::project(ctx, ir, part, losses)?;
     ctx.charge_entities(u64_from_index(added), "admit SLDPRT design records")
 }
 
@@ -5116,10 +5149,16 @@ fn build_metadata_ir(
         project_design(
             ctx,
             &mut ir,
-            &native.feature_histories,
-            &native.feature_input_lanes,
-            bodies,
-            rollback,
+            crate::design_v11::Part {
+                histories: &native.feature_histories,
+                lanes: &native.feature_input_lanes,
+                bodies,
+                persistent: crate::design_v11::Persistent {
+                    faces: &[],
+                    bodies: &[],
+                },
+                rollback,
+            },
             &mut pmi_losses,
         )?;
     }

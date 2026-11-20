@@ -7,24 +7,30 @@
 //! bodies of the current geometry. The feature tree is one ordered timeline
 //! whose current state, at its rollback position (`docs/formats/sldprt.md`
 //! §3.4), holds those bodies; the scope holds the part's parameters and
-//! configurations. A part whose history holds no feature, or that has no
-//! history the decoder reads, states no design.
+//! configurations, and an evaluation of each other configuration's stored
+//! state. The name tables of those states come from the persistent ids of
+//! their faces and bodies. A part whose history holds no feature, or that has
+//! no history the decoder reads, states no design.
 
 mod configurations;
+mod names;
 mod operation;
 mod parameters;
+mod states;
 #[cfg(test)]
 mod tests;
 mod tree;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::feature::Feature;
 use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::names::NameTable;
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
@@ -36,22 +42,40 @@ use crate::loss::SldprtLossCode;
 use crate::records::{FeatureHistory, FeatureInputLane};
 use crate::rollback::{Reading, Unread};
 
+pub(crate) use names::Persistent;
+
+/// What a part's design is projected from.
+pub(crate) struct Part<'a> {
+    pub(crate) histories: &'a [FeatureHistory],
+    /// The `ResolvedFeatures` lanes whose scalars type the v10 parameters.
+    pub(crate) lanes: &'a [FeatureInputLane],
+    /// The bodies of the current geometry: those of the active
+    /// configuration.
+    pub(crate) bodies: Vec<BodyId>,
+    /// The persistent ids of every decoded face and body.
+    pub(crate) persistent: Persistent<'a>,
+    /// What the stored marks state of the rollback position.
+    pub(crate) rollback: Reading,
+}
+
 /// Project the design of a part document into `ir.design`, beside its v10
-/// records, and state the part's root definition.
-///
-/// `lanes` are the `ResolvedFeatures` lanes whose scalars type the v10
-/// parameters. `bodies` are the bodies of the current geometry: those of the
-/// active configuration. `rollback` is what the stored marks state of the
-/// rollback position; a reading that does not fix it adds its reason to
-/// `losses`. Returns the number of records added.
+/// records, and state the part's root definition. A rollback reading that
+/// does not fix the position, and a configuration whose state cannot be
+/// stated, add their reasons to `losses`. Returns the number of records
+/// added.
 pub(crate) fn project(
+    ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    histories: &[FeatureHistory],
-    lanes: &[FeatureInputLane],
-    bodies: Vec<BodyId>,
-    rollback: Reading,
+    part: Part<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<usize, CodecError> {
+    let Part {
+        histories,
+        lanes,
+        bodies,
+        persistent,
+        rollback,
+    } = part;
     let timeline = tree::timeline(histories)?;
     if timeline.features.is_empty() {
         return Ok(0);
@@ -78,6 +102,22 @@ pub(crate) fn project(
         .then(|| current_state(at, bodies.clone()))
         .into_iter()
         .collect();
+    let names = names::Names::new(persistent, histories, &timeline.features_by_record);
+    let table = names.entries(&ir.geometry, &bodies, |_| true);
+    let (evaluations, state_records) = states::configuration_states(
+        ctx,
+        ir,
+        &states::Scope {
+            definition: &definition,
+            timeline: &id,
+            features: &timeline.features,
+            configurations: &configurations.records,
+            active: configurations.active.as_ref(),
+            current: &bodies,
+        },
+        &names,
+        losses,
+    )?;
     let container = Container::Ordered {
         id,
         kind: OrderedKind::Timeline,
@@ -87,7 +127,13 @@ pub(crate) fn project(
         placement: None,
     };
     let features = timeline.features;
-    let added = 3 + features.len() + parameters.len() + configurations.records.len();
+    let added = 3
+        + features.len()
+        + parameters.len()
+        + configurations.records.len()
+        + table.len()
+        + evaluations.len()
+        + state_records;
     let mut root = ProductDefinition::root(definition.clone(), ExternalDocument::default());
     root.kind = Some(ProductDefinitionKind::Part);
     root.bodies = bodies;
@@ -104,6 +150,8 @@ pub(crate) fn project(
     ir.design.features.extend(features);
     ir.design.parameters.extend(parameters);
     ir.design.configurations.extend(configurations.records);
+    ir.design.evaluations.extend(evaluations);
+    ir.design.names = NameTable::from(table);
     Ok(added)
 }
 
