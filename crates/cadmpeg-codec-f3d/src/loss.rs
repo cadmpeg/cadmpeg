@@ -1139,7 +1139,8 @@ pub(crate) enum F3dLossCode {
     SketchRegionBodyOmitted,
     /// Edges reference a procedural 3D curve with no decodable B-spline cache.
     ProceduralCurveUndecoded,
-    /// Vertex tolerance is widened to cover exact cache endpoints.
+    /// Vertex tolerance is widened to cover the ends of its edges' curves:
+    /// exact cache endpoints on read, the vertices of a ranged open edge on write.
     VertexToleranceWidened,
     /// A cache-first spring support pcurve has no admitted endpoint relation.
     SpringSupportPcurveUnresolved,
@@ -1204,7 +1205,7 @@ pub(crate) enum F3dLossCode {
     /// A face on a carrier F3D has no form for was not written; its body was
     /// written open, without it.
     WriterFaceOmitted,
-    /// Geometry no written body uses was not written.
+    /// Geometry was not written as the source states it.
     WriterGeometryOmitted,
     /// An appearance was not written.
     WriterAppearanceOmitted,
