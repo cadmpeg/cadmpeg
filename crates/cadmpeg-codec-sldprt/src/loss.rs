@@ -125,14 +125,10 @@ pub(crate) enum SldprtLossCode {
     /// A sketch line handle keeps its marker role because its two read
     /// endpoints coincide.
     SketchLineDegenerate,
-    /// A sketch line keeps the chord its marker reading gives although its
-    /// `sgSketch` curve record states an arc or another form.
+    /// A sketch line keeps the line its marker reading gives although its
+    /// `sgSketch` curve record states an arc or another form that gives no
+    /// entity.
     SketchArcRecordConflict,
-    /// A sketch handle takes its `sgSketch` curve record's geometry by
-    /// point-record position, a reading the format does not establish for a
-    /// line with an identifier trailer and that the handle's own read
-    /// endpoints contradict when they coincide.
-    SketchHandleReadingAssumed,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,
     /// Native sketch relation has no projected neutral constraint.
@@ -396,7 +392,6 @@ impl SldprtLossCode {
         Self::SketchHandleUnresolved,
         Self::SketchLineDegenerate,
         Self::SketchArcRecordConflict,
-        Self::SketchHandleReadingAssumed,
         Self::SketchProfileRejected,
         Self::SketchRelationUnprojected,
         Self::SketchRelationMultiplyProjected,
@@ -536,7 +531,6 @@ impl SldprtLossCode {
             Self::SketchHandleUnresolved => "sketch.handle-unresolved",
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
-            Self::SketchHandleReadingAssumed => "sketch.handle-reading-assumed",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
@@ -708,7 +702,6 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
-            | Self::SketchHandleReadingAssumed
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
@@ -927,7 +920,6 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
-            | Self::SketchHandleReadingAssumed
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
@@ -1157,7 +1149,6 @@ mod tests {
                 "sketch.handle-unresolved",
                 "sketch.line-degenerate",
                 "sketch.arc-record-conflict",
-                "sketch.handle-reading-assumed",
                 "sketch.profile-rejected",
                 "sketch.relation-unprojected",
                 "sketch.relation-multiply-projected",
