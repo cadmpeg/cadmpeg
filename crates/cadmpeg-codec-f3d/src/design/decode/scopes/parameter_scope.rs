@@ -1194,8 +1194,8 @@ pub(crate) fn admit_history_bound_scope_variants(
     Ok(superseded)
 }
 
-/// Compare two same-index scope envelopes after removing source-location and
-/// dynamic-class fields. An equivalent envelope is one serialization of the
+/// Compare two same-index scope envelopes after removing source-location,
+/// dynamic-class and evaluation-state fields (history states, tail flags). An equivalent envelope is one serialization of the
 /// same logical scope; the later envelope supersedes the earlier one when no
 /// decoded ASM state pair can select a revision.
 fn equivalent_scope_variant_payload(
@@ -1268,6 +1268,7 @@ fn strip_scope_variant_provenance(
                             | "frame_length"
                             | "history_state_id"
                             | "previous_history_state_id"
+                            | "tail_flags"
                             | "paired_class_tag"
                     )
                 {

@@ -316,27 +316,26 @@ fn flagged_thicken_variants(suppressed: [bool; 2]) -> Vec<DesignParameterScope> 
     scopes
 }
 
-/// The tail flags are payload and their byte location is provenance: the
-/// later of two envelopes with equal flags is retained, and two envelopes
-/// whose flags differ stay unresolved.
+/// The tail flags are evaluation state: two envelopes that differ only in
+/// their flags or the flags' location are equivalent, and the later one is
+/// retained with its flags.
 #[test]
-fn scope_variants_compare_tail_flags_without_their_location() {
-    let mut equivalent = flagged_thicken_variants([true, true]);
-    with_test_ctx(|ctx| {
-        admit_history_bound_scope_variants(ctx, &mut equivalent, &[], &Default::default())
-    })
-    .expect("equivalent envelopes");
-    assert_eq!(equivalent.len(), 1);
-    assert_eq!(equivalent[0].byte_offset(), 200);
-
-    let mut different = flagged_thicken_variants([true, false]);
-    assert!(with_test_ctx(|ctx| admit_history_bound_scope_variants(
-        ctx,
-        &mut different,
-        &[],
-        &Default::default()
-    ))
-    .is_err());
+fn scope_variants_that_differ_only_in_tail_flags_are_equivalent() {
+    for suppressed in [[true, true], [true, false]] {
+        let mut variants = flagged_thicken_variants(suppressed);
+        with_test_ctx(|ctx| {
+            admit_history_bound_scope_variants(ctx, &mut variants, &[], &Default::default())
+        })
+        .expect("equivalent envelopes");
+        let [retained] = variants.as_slice() else {
+            panic!("one retained envelope")
+        };
+        assert_eq!(retained.byte_offset(), 200);
+        assert_eq!(
+            retained.tail_flags.map(|flags| flags.suppressed),
+            Some(suppressed[1])
+        );
+    }
 }
 
 #[test]
