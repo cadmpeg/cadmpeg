@@ -683,3 +683,80 @@ fn a_document_with_no_body_writes_the_timeline_with_no_item() {
     assert!(!loss(&report, "export/output.empty").is_empty());
     assert_eq!(loss(&report, "export/evaluation.missing").len(), 1);
 }
+
+#[test]
+fn a_container_or_attribute_parameter_is_written_without_its_owner() {
+    let mut ir = scoped_cube();
+    let timeline = ContainerId::mint("test:design:container#timeline").expect("identity grammar");
+    let attribute =
+        cadmpeg_ir::ids::AttributeId::mint("test:model:attribute#mass").expect("identity grammar");
+    let mut bound = parameter(
+        "bound",
+        "Bound",
+        neutral(number(4.0, Some(UnitSymbol::Mm))),
+        Some(4.0),
+    );
+    bound.owner = Some(ParameterOwner::Container(timeline.clone()));
+    let mut linked = parameter(
+        "linked",
+        "Linked",
+        neutral(number(7.0, Some(UnitSymbol::Mm))),
+        Some(7.0),
+    );
+    linked.owner = Some(ParameterOwner::Attribute(attribute.clone()));
+    ir.design.parameters.extend([bound, linked]);
+    let (report, decoded_ir) = write(&ir);
+    assert_length(&decoded_ir, "Bound", "4 mm", 4.0);
+    assert_length(&decoded_ir, "Linked", "7 mm", 7.0);
+    let unwritable = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "export/value.unwritable")
+        .collect::<Vec<_>>();
+    assert_eq!(unwritable.len(), 1, "{:#?}", report.losses);
+    assert_eq!(unwritable[0].severity, Severity::Warning);
+    let message = &unwritable[0].message;
+    assert!(
+        message.contains(&format!(
+            "{} (owner container {timeline})",
+            parameter_id("bound")
+        )),
+        "{message}"
+    );
+    assert!(
+        message.contains(&format!(
+            "{} (owner attribute {attribute})",
+            parameter_id("linked")
+        )),
+        "{message}"
+    );
+    assert!(!message.contains(parameter_id("d1").as_str()), "{message}");
+    assert!(
+        !message.contains(parameter_id("width").as_str()),
+        "{message}"
+    );
+}
+
+#[test]
+fn an_integer_parameter_is_written_as_a_real_with_a_note() {
+    let mut ir = scoped_cube();
+    let mut count = parameter("count", "Count", neutral(number(4.0, None)), None);
+    count.kind = ValueKind::Integer;
+    count.value = Some(ParameterValue::Integer(4));
+    ir.design.parameters.push(count);
+    let (report, decoded_ir) = write(&ir);
+    assert!(decoded_ir
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "Count"));
+    let notes = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::WriterIntegerAsReal.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(notes.len(), 1, "{:#?}", report.losses);
+    assert_eq!(notes[0].severity, Severity::Info);
+    assert!(notes[0].message.contains(parameter_id("count").as_str()));
+    assert!(!notes[0].message.contains(parameter_id("width").as_str()));
+}

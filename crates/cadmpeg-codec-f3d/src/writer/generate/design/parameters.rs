@@ -6,15 +6,20 @@
 //! one, and its feature's `export:evaluation.missing` names it. A parameter is
 //! written in dependency order, under a legal and unique Fusion name, with its
 //! expression where the Fusion form of every construct is established and as
-//! its cached value otherwise (`export:parameter.flattened`).
+//! its cached value otherwise (`export:parameter.flattened`). A parameter
+//! owned by a container or an attribute is written without that binding
+//! (`export:value.unwritable`), and an integer parameter as a real
+//! (`f3d:writer.integer-as-real`).
 
 use std::collections::{BTreeSet, HashMap};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{parameter_flattened, parameter_renamed};
+use cadmpeg_ir::codec::write::{parameter_flattened, parameter_renamed, value_unwritable};
 use cadmpeg_ir::design::dimension::ParameterRef;
 use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken};
-use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition, ParameterValue};
+use cadmpeg_ir::design::parameter::{
+    DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
+};
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitSymbol, ValueKind};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::ParameterId;
@@ -138,6 +143,8 @@ pub(in crate::writer::generate) fn plan(
     let mut flattened = Vec::new();
     let mut unwritten = Vec::new();
     let mut renamed = Vec::new();
+    let mut unbound = Vec::new();
+    let mut integers = Vec::new();
     for index in order {
         let (parameter, form) = candidates[index];
         let unit = form.unit(parameter.unit.as_ref());
@@ -179,6 +186,18 @@ pub(in crate::writer::generate) fn plan(
                 parameter.id,
                 source_name.map_or_else(|| "no name".to_owned(), |name| format!("`{name}`")),
             ));
+        }
+        match &parameter.owner {
+            Some(ParameterOwner::Container(container)) => {
+                unbound.push(format!("{} (owner container {container})", parameter.id));
+            }
+            Some(ParameterOwner::Attribute(attribute)) => {
+                unbound.push(format!("{} (owner attribute {attribute})", parameter.id));
+            }
+            Some(ParameterOwner::Feature(_)) | None => {}
+        }
+        if matches!(parameter.kind, ValueKind::Integer) {
+            integers.push(parameter.id.to_string());
         }
         written_names.insert(&parameter.id, name);
         written_values.insert(&parameter.id, canonical);
@@ -222,6 +241,19 @@ pub(in crate::writer::generate) fn plan(
         "renames these parameters to legal, unique Fusion names",
         renamed,
     ));
+    losses.extend(value_unwritable(
+        "F3D",
+        "writes these parameters as user parameters without their owners: a Fusion user parameter is bound to no container or attribute",
+        unbound,
+    ));
+    if !integers.is_empty() {
+        integers.sort_unstable();
+        losses.push(F3dLossCode::WriterIntegerAsReal.note(format!(
+            "{} integer parameter(s) were written as Fusion user parameters, which hold a real: {}",
+            integers.len(),
+            integers.join(", ")
+        )));
+    }
     ParameterPlan { written, losses }
 }
 

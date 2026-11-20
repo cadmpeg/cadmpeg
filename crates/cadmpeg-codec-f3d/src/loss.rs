@@ -1133,6 +1133,9 @@ pub(crate) enum F3dLossCode {
     WriterAppearanceOmitted,
     /// The retained source could not carry an edit; the file was regenerated.
     WriterPatchDeclined,
+    /// An integer parameter was written as a Fusion user parameter, which
+    /// holds a real.
+    WriterIntegerAsReal,
     /// An embedded kernel carrier was read with an unverified ACIS grammar.
     KernelDialectUnverified,
     /// An embedded kernel carrier could not be framed for dialect inspection.
@@ -1892,6 +1895,7 @@ impl F3dLossCode {
         Self::BodyDisplayNameAmbiguous,
         Self::WorkPlaneDisplayNameAmbiguous,
         Self::WorkPlaneDisplayNameUndecoded,
+        Self::WriterIntegerAsReal,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -2947,6 +2951,7 @@ impl F3dLossCode {
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
             Self::WriterPatchDeclined => "writer.patch-declined",
+            Self::WriterIntegerAsReal => "writer.integer-as-real",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
             Self::DialectLayerCollision => "source.dialect-layer-collision",
@@ -3048,6 +3053,7 @@ impl F3dLossCode {
             Self::WriterGeometryOmitted => Severity::Warning,
             Self::WriterAppearanceOmitted => Severity::Warning,
             Self::WriterPatchDeclined => Severity::Warning,
+            Self::WriterIntegerAsReal => Severity::Info,
             Self::ScopeOwnerUnresolved
             | Self::ScopeOutputOwnerUnresolved
             | Self::OperationPoseApplied
@@ -3783,6 +3789,7 @@ impl F3dLossCode {
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
+            Self::WriterIntegerAsReal => LossTaxonomy::ParametricRecordOmitted,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
             | Self::PlacementConstructionUntyped
@@ -5206,6 +5213,7 @@ mod tests {
                 "design.body-display-name-ambiguous",
                 "work-plane.display-name-ambiguous",
                 "work-plane.display-name-undecoded",
+                "writer.integer-as-real",
             ]
         );
     }
