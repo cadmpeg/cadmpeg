@@ -930,6 +930,19 @@ the owned loop and its endpoint incidences. Control `0e` on a cylinder
 stores a constant V value and uses the cylinder's U limits. A line record
 defines the locus through its stored origin. An exact incidence can select
 a station beyond its stored interval.
+A consolidated class-`5d` vertex selects its class-`05` incidence roster with
+one allocation reference followed by terminal `00`. Its wide forward-reference
+production is five bytes:
+
+| Offset | Type | Meaning |
+| --- | --- | --- |
+| `+0` | `u8` | wide roster-reference marker `0e` |
+| `+1` | `u24le` | forward allocation ordinal |
+| `+4` | `u8` | roster-reference terminal `00` |
+
+The ordinal starts at the allocation end of the vertex record. The selected
+class-`05` record belongs to the same bounded source.
+
 The owned vertex's class-`05` incidence roster supplies the active endpoint
 when a class-`06` member names the occurrence curve. A two-reference
 incidence with tail `80 <t:f64le>` assigns `t` to the second reference.

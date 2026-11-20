@@ -1527,6 +1527,19 @@ Parsed by:
 | 42 | 8 | `direction_v_y` | `f64` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
 | 50 | 32 | `bounds` | `f64[4]` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
 
+## `consolidated_vertex_wide_roster`
+
+Spec §6.4 · layout: byte offsets · size: 5 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/stations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | \| `+0` \| `u8` \| wide roster-reference marker `0e` \| · value `14` |
+| 1 | 3 | `ordinal` | `u24` | little | spec | \| `+1` \| `u24le` \| forward allocation ordinal \| |
+| 4 | 1 | `terminal` | `u8` | little | spec | \| `+4` \| `u8` \| roster-reference terminal `00` \| · value `0` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

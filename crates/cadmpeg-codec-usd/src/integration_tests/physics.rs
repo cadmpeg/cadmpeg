@@ -423,3 +423,58 @@ fn initial_velocities_survive_a_write_and_unread_body_properties_are_reported() 
     assert!(close(again.linear_velocity.unwrap().get().x, 100.0));
     assert!(again.starts_asleep);
 }
+
+/// A cylindrical joint is a generic joint that locks the other four degrees of
+/// freedom and limits the two it leaves free: the turn about z in degrees and
+/// the travel along z in metres.
+#[test]
+fn a_cylindrical_joint_limits_its_free_axes() {
+    let mut ir = decode(LAYER).ir().clone();
+    let joint = ir.model.assembly_joints.remove(0);
+    let JointOperands::Pair { connectors, .. } = joint.operands() else {
+        panic!("a paired joint");
+    };
+    let kind = PairedJointKind::Cylindrical {
+        angle: None,
+        distance: None,
+        angular_limits: JointLimits::new(
+            Some(-std::f64::consts::FRAC_PI_6),
+            Some(std::f64::consts::FRAC_PI_3),
+        ),
+        linear_limits: JointLimits::new(Some(0.0), Some(20.0)),
+    };
+    let cylindrical = cadmpeg_ir::products::AssemblyJoint::paired(
+        joint.id.clone(),
+        kind,
+        (**connectors).clone(),
+        None,
+    );
+    ir.model.assembly_joints.push(cylindrical);
+    let (text, _) = encode(&ir);
+    let prim = text
+        .split("def PhysicsJoint")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no generic joint:\n{text}"));
+    for axis in ["transX", "transY", "rotX", "rotY", "rotZ", "transZ"] {
+        assert!(
+            prim.contains(&format!("\"PhysicsLimitAPI:{axis}\"")),
+            "{text}"
+        );
+    }
+    let value = |name: &str| -> f64 {
+        let at = prim
+            .find(&format!("float {name} = "))
+            .unwrap_or_else(|| panic!("no {name}:\n{text}"));
+        prim[at + name.len() + 9..]
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .parse()
+            .unwrap()
+    };
+    assert!(close(value("limit:rotZ:physics:low"), -30.0), "{text}");
+    assert!(close(value("limit:rotZ:physics:high"), 60.0), "{text}");
+    assert!(close(value("limit:transZ:physics:low"), 0.0), "{text}");
+    assert!(close(value("limit:transZ:physics:high"), 0.02), "{text}");
+}
