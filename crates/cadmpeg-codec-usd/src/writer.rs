@@ -231,6 +231,9 @@ struct Unwritten {
     /// Faces of bodies with no tessellation that do not mesh, with the
     /// reason.
     unmeshed: Vec<String>,
+    /// Triangle groups that name the face whose triangles they hold. No
+    /// `GeomSubset` property states the face.
+    group_faces: usize,
 }
 
 /// The placement of a prim: its up-axis turn, transform, per-axis scale,
@@ -1413,6 +1416,9 @@ impl<'ir> Writer<'ir> {
         }
         let mut subsets = Names::default();
         for (group, binding) in tessellation.triangle_groups().iter().zip(bound) {
+            if group.face.is_some() {
+                self.unwritten.group_faces += 1;
+            }
             // A group with no source identity holds the triangles that the
             // named groups do not; it needs no subset.
             let Some(source) = group.source_id.as_deref() else {
@@ -1852,6 +1858,12 @@ impl<'ir> Writer<'ir> {
                 "{} curves with no line or NURBS form and {free_surfaces} surfaces that no face \
                  uses were not written",
                 unwritten.free_carriers
+            )));
+        }
+        if unwritten.group_faces > 0 {
+            losses.push(UsdLossCode::ExportGroupFaceNotWritten.note(format!(
+                "{} triangle group faces were not written",
+                unwritten.group_faces
             )));
         }
         if unwritten.channels > 0 {

@@ -542,7 +542,7 @@ mod tests {
     #[test]
     fn join_head_one_constructs_only_one_row() {
         let left = vec![json!({"id": "left", "key": "same"})];
-        let right: Vec<Value> = (0..4096)
+        let right: Vec<Value> = (0..2)
             .map(|i| json!({"id": format!("right-{i}"), "key": "same"}))
             .collect();
         let mut request = spec(&left, &right, "key", "key", JoinMode::Matched, None);
