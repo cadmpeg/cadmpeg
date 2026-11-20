@@ -170,6 +170,15 @@ pub(crate) enum Unwritten {
     SavedProperty,
     /// A retained record the document no longer states; its bytes are kept.
     Removed,
+    /// The record's retained member is written as stored: the source holds
+    /// it in more than one member, unnamed, or with bytes its envelope
+    /// member does not hold.
+    OwnerCarried,
+    /// The source fidelity holds no bytes of the record's member.
+    OwnerUnavailable,
+    /// The record's member is generated from other records, which replace
+    /// the patched member.
+    OwnerRegenerated,
 }
 
 /// What the output holds for one attribute the semantic exporter did not
@@ -206,6 +215,16 @@ impl Unwritten {
                 "are saved-property edits the SLDPRT semantic exporter cannot serialize"
             }
             Self::Removed => "are no longer stated by the document",
+            Self::OwnerCarried => {
+                "are stored in a retained member the SLDPRT semantic exporter does not patch: \
+                 one of several, unnamed, or unlike its source envelope member"
+            }
+            Self::OwnerUnavailable => {
+                "are stored in a member whose bytes the source fidelity does not hold"
+            }
+            Self::OwnerRegenerated => {
+                "are stored in a member the SLDPRT semantic exporter generates from other records"
+            }
         }
     }
 

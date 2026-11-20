@@ -193,12 +193,11 @@ pub(super) fn build(
     let shared_central = retained
         .as_ref()
         .and_then(|retained| retained.shared(|member| member.central));
-    let mut used = vec![
-        false;
-        retained
-            .as_ref()
-            .map_or(0, |retained| retained.members.len())
-    ];
+    let mut used = retained
+        .iter()
+        .flat_map(|retained| &retained.members)
+        .map(|_| false)
+        .collect::<Vec<_>>();
     let mut output = header.to_vec();
     let mut central_entries = Vec::new();
     let mut written = Vec::new();

@@ -1026,14 +1026,19 @@ fn patched_retained_metadata(
         cadmpeg_ir::Exactness::ByteExact,
     )?;
     let mut sections = vec![("SWObjects".to_owned(), payload)];
+    let owners = crate::writer::metadata_owners::MetadataOwners {
+        patchable: sections.clone(),
+        ..Default::default()
+    };
     let mut unwritten = UnwrittenAttributes::default();
     crate::writer::patch_retained_swobjects_metadata(
         &ir,
         &annotations,
+        &owners,
         &mut sections,
         1.0,
         &mut unwritten,
-    )?;
+    );
     Ok((sections.remove(0).1, unwritten))
 }
 
@@ -1180,15 +1185,19 @@ fn retained_part_edits_require_root_ownership_and_preserve_scalar_form() {
         )
         .unwrap();
         let mut sections = vec![("SWObjects".to_owned(), payload.clone())];
+        let owners = crate::writer::metadata_owners::MetadataOwners {
+            patchable: sections.clone(),
+            ..Default::default()
+        };
         let mut unwritten = UnwrittenAttributes::default();
         crate::writer::patch_retained_swobjects_metadata(
             &ir,
             &annotations,
+            &owners,
             &mut sections,
             1.0,
             &mut unwritten,
-        )
-        .unwrap();
+        );
         assert_eq!(unwritten.reason(id), Some(Unwritten::NoSerializer));
         assert_eq!(sections[0].1, payload);
     }
@@ -1506,13 +1515,25 @@ fn configuration_manager_edits_keep_the_retained_tuple_at_the_writer_entry() {
             &original[manager_at..manager_at + 145]
         );
     }
-    assert!(crate::writer::write_semantic_with_records(
+    // With no retained record every metadata record is generated, and the
+    // manager tuple has no generator.
+    let output = crate::writer::write_semantic_with_records(
         &baseline,
         &fidelity.annotations,
         &[],
         &mut Vec::new(),
     )
-    .is_err());
+    .unwrap();
+    let manager = baseline
+        .model
+        .attributes
+        .iter()
+        .find(|a| a.name == "configuration_manager")
+        .unwrap();
+    assert_eq!(
+        output.unwritten.reason(manager.id.as_str()),
+        Some(Unwritten::NoSerializer)
+    );
 }
 
 /// A decoded part whose `SWObjects` section holds its metadata records, its

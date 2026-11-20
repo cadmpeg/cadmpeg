@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Cursor;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::AttributeValue;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::EditableDecodeResult;
@@ -14,6 +14,8 @@ use crate::test_support::container::{
 use crate::test_support::history::resolved_features_payload;
 use crate::test_support::native::sldprt_native;
 use crate::test_support::parasolid::{parasolid_with_body, triangle_body};
+use crate::writer::metadata_owners::{metadata_owners, MetadataOwners};
+use crate::writer::{MetadataMembers, Unwritten, UnwrittenAttributes};
 use crate::SldprtCodec;
 
 const MEMBER: &str = "Contents/Config-0-ResolvedFeatures";
@@ -71,6 +73,24 @@ fn shared_member_with_partition(
     (EditableDecodeResult::from(decoded), payload)
 }
 
+fn members(originals: &[(String, Vec<u8>)]) -> MetadataMembers {
+    MetadataMembers {
+        originals: originals.iter().cloned().collect(),
+        written: BTreeMap::new(),
+    }
+}
+
+fn bounding_envelope_id(ir: &cadmpeg_ir::CadIr) -> String {
+    ir.model
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "bounding_envelope")
+        .unwrap()
+        .id
+        .as_str()
+        .to_owned()
+}
+
 fn edit_radius(ir: &mut cadmpeg_ir::CadIr) {
     let attribute = ir
         .model
@@ -82,6 +102,31 @@ fn edit_radius(ir: &mut cadmpeg_ir::CadIr) {
         panic!("bbox vector")
     };
     values[3] = cadmpeg_ir::scalar::FiniteReal::new(41.0).unwrap();
+}
+
+#[test]
+fn metadata_edit_without_the_source_image_patches_the_retained_member() {
+    let (mut decoded, original) = shared_member();
+    edit_radius(&mut decoded.ir_mut());
+    crate::test_support::make_source_image_unavailable(decoded.source_fidelity_mut());
+    let mut written = Vec::new();
+    crate::test_support::plan_inherited_write(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut written,
+    )
+    .unwrap();
+    let scan = crate::test_support::container::scan(&written);
+    let members: Vec<_> = scan
+        .blocks
+        .iter()
+        .filter(|block| block.section.name() == Some(MEMBER))
+        .collect();
+    assert_eq!(members.len(), 1);
+    let mut expected = original;
+    let start = expected.len() - 8;
+    expected[start..].copy_from_slice(&0.041f64.to_le_bytes());
+    assert_eq!(members[0].payload, expected);
 }
 
 #[test]
@@ -134,7 +179,7 @@ fn metadata_edit_in_a_shared_feature_member_is_written_once() {
 }
 
 #[test]
-fn a_real_feature_rename_survives_unchanged_metadata_in_the_same_member() {
+fn a_real_feature_rename_replaces_a_patched_member_and_charges_its_metadata() {
     let (decoded, original) = shared_member();
     let native = sldprt_native(decoded.ir());
     let lane = &native.feature_input_lanes[0];
@@ -154,14 +199,15 @@ fn a_real_feature_rename_survives_unchanged_metadata_in_the_same_member() {
     .unwrap();
     assert_eq!(names[0].value, "RenamedSketchLong1");
     let originals = vec![(MEMBER.to_owned(), original.clone())];
+    let mut members = members(&originals);
+    let mut unwritten = UnwrittenAttributes::default();
     let mut sections = originals.clone();
-    crate::writer::push_generated_metadata_member(
+    members.push(
         &mut sections,
-        &originals,
+        &mut unwritten,
         MEMBER.to_owned(),
         generated.clone(),
-    )
-    .unwrap();
+    );
     assert_eq!(sections, vec![(MEMBER.to_owned(), generated.clone())]);
     assert_eq!(
         &generated[generated.len() - 32..],
@@ -170,26 +216,30 @@ fn a_real_feature_rename_survives_unchanged_metadata_in_the_same_member() {
 
     let mut ir = decoded.ir().clone();
     edit_radius(&mut ir);
+    let owners = MetadataOwners {
+        patchable: originals.clone(),
+        ..MetadataOwners::default()
+    };
     let mut patched = originals.clone();
-    crate::writer::patch_retained_swobjects_metadata(
+    members.written = crate::writer::patch_retained_swobjects_metadata(
         &ir,
         &decoded.source_fidelity().annotations,
+        &owners,
         &mut patched,
         0.001,
-        &mut crate::writer::UnwrittenAttributes::default(),
-    )
-    .unwrap();
-    assert_ne!(patched[0].1, original);
-    let error = crate::writer::push_generated_metadata_member(
-        &mut patched,
-        &originals,
-        MEMBER.to_owned(),
-        generated,
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, CodecError::NotImplemented(detail) if detail.contains("conflicting metadata and generated payload edits"))
+        &mut unwritten,
     );
+    assert_ne!(patched[0].1, original);
+    let bbox = bounding_envelope_id(&ir);
+    assert_eq!(members.written[MEMBER], std::slice::from_ref(&bbox));
+    members.push(
+        &mut patched,
+        &mut unwritten,
+        MEMBER.to_owned(),
+        generated.clone(),
+    );
+    assert_eq!(patched, vec![(MEMBER.to_owned(), generated)]);
+    assert_eq!(unwritten.reason(&bbox), Some(Unwritten::OwnerRegenerated));
 }
 
 #[test]
@@ -201,6 +251,7 @@ fn identical_outputs_and_both_insertion_orders_reconcile_one_member() {
         "Contents/Config-0-Partition",
     ] {
         let originals = vec![(name.to_owned(), b"original".to_vec())];
+        let members = members(&originals);
         for (first, second, expected) in [
             (
                 b"original".as_slice(),
@@ -219,47 +270,50 @@ fn identical_outputs_and_both_insertion_orders_reconcile_one_member() {
             ),
         ] {
             let mut sections = Vec::new();
-            crate::writer::push_generated_metadata_member(
+            let mut unwritten = UnwrittenAttributes::default();
+            members.push(
                 &mut sections,
-                &originals,
+                &mut unwritten,
                 name.to_owned(),
                 first.to_vec(),
-            )
-            .unwrap();
-            crate::writer::push_generated_metadata_member(
+            );
+            members.push(
                 &mut sections,
-                &originals,
+                &mut unwritten,
                 name.to_owned(),
                 second.to_vec(),
-            )
-            .unwrap();
+            );
             assert_eq!(sections, vec![(name.to_owned(), expected.to_vec())]);
         }
     }
 }
 
+fn owners_of(
+    decoded: &EditableDecodeResult,
+    records: &[crate::SourceRecord<'_>],
+    annotations: &cadmpeg_ir::Annotations,
+) -> MetadataOwners {
+    metadata_owners(decoded.ir(), records, annotations, None, &HashSet::new())
+}
+
 #[test]
-fn the_actual_owned_stream_is_required_even_if_a_lookalike_member_exists() {
+fn the_actual_owned_stream_is_unavailable_even_if_a_lookalike_member_exists() {
     let (decoded, _) = shared_member();
     let mut records = crate::source_records(decoded.ir(), decoded.source_fidelity()).unwrap();
     let annotations = &decoded.source_fidelity().annotations;
-    assert!(
-        crate::writer::retained_swobjects_sections(decoded.ir(), &records, annotations)
-            .unwrap()
-            .iter()
-            .any(|(name, _)| name == MEMBER)
-    );
+    assert!(owners_of(&decoded, &records, annotations)
+        .patchable
+        .iter()
+        .any(|(name, _)| name == MEMBER));
     records.retain(|record| {
         annotations
             .provenance
             .get(record.id.as_str())
             .is_none_or(|provenance| provenance.stream() != MEMBER)
     });
-    let error = crate::writer::retained_swobjects_sections(decoded.ir(), &records, annotations)
-        .unwrap_err();
-    assert!(
-        matches!(error, CodecError::Malformed(detail) if detail.contains(MEMBER) && detail.contains("no retained source member"))
-    );
+    let owners = owners_of(&decoded, &records, annotations);
+    assert!(owners.unavailable.contains(MEMBER));
+    assert!(owners.patchable.is_empty());
     let records = crate::source_records(decoded.ir(), decoded.source_fidelity()).unwrap();
     let owner = records
         .iter()
@@ -281,11 +335,12 @@ fn the_actual_owned_stream_is_required_even_if_a_lookalike_member_exists() {
         cadmpeg_ir::Exactness::ByteExact,
     )
     .unwrap();
-    let error =
-        crate::writer::retained_swobjects_sections(decoded.ir(), &records, &lookalike_annotations)
-            .unwrap_err();
-    assert!(
-        matches!(error, CodecError::Malformed(detail) if detail.contains(MEMBER) && detail.contains("no retained source member"))
+    let owners = owners_of(&decoded, &records, &lookalike_annotations);
+    assert!(owners.unavailable.contains(MEMBER));
+    assert!(owners.patchable.is_empty());
+    assert_eq!(
+        owners.unpatched(MEMBER),
+        Some((Unwritten::OwnerUnavailable, crate::writer::Held::Nothing))
     );
 }
 
@@ -332,8 +387,8 @@ fn unsupported_manager_fields_keep_a_retained_member() {
         id: record_id,
         data: Some(&payload),
     });
-    let mut sections =
-        crate::writer::retained_swobjects_sections(&ir, &records, &annotations).unwrap();
+    let owners = metadata_owners(&ir, &records, &annotations, None, &HashSet::new());
+    let mut sections = owners.patchable.clone();
     assert_eq!(
         sections
             .iter()
@@ -346,11 +401,11 @@ fn unsupported_manager_fields_keep_a_retained_member() {
     crate::writer::patch_retained_swobjects_metadata(
         &ir,
         &annotations,
+        &owners,
         &mut sections,
         0.001,
         &mut unwritten,
-    )
-    .unwrap();
+    );
     assert_eq!(
         unwritten.reason(attribute_id.as_str()),
         Some(crate::writer::Unwritten::NoSerializer)
@@ -359,7 +414,7 @@ fn unsupported_manager_fields_keep_a_retained_member() {
 }
 
 #[test]
-fn duplicate_physical_metadata_owners_are_ambiguous_even_with_identical_bytes() {
+fn duplicate_physical_metadata_owners_are_carried_and_their_excess_named() {
     let (decoded, _) = shared_member();
     let mut records = crate::source_records(decoded.ir(), decoded.source_fidelity()).unwrap();
     let mut annotations = decoded.source_fidelity().annotations.clone();
@@ -386,15 +441,29 @@ fn duplicate_physical_metadata_owners_are_ambiguous_even_with_identical_bytes() 
     )
     .unwrap();
     records.push(duplicate);
-    let error = crate::writer::retained_swobjects_sections(decoded.ir(), &records, &annotations)
-        .unwrap_err();
-    assert!(
-        matches!(error, CodecError::NotImplemented(detail) if detail.contains("ambiguous retained members"))
+    let owners = owners_of(&decoded, &records, &annotations);
+    assert!(owners.carried.contains(MEMBER));
+    assert!(owners.patchable.is_empty());
+    assert_eq!(
+        owners.unpatched(MEMBER),
+        Some((Unwritten::OwnerCarried, crate::writer::Held::Source))
     );
+    let (blocks, excess) = crate::writer::opaque_blocks(
+        decoded.ir(),
+        &records,
+        &annotations,
+        &HashSet::new(),
+        &HashMap::from([(MEMBER.to_owned(), 1)]),
+        true,
+        false,
+    )
+    .unwrap();
+    assert!(blocks.iter().all(|(name, _)| name != MEMBER));
+    assert_eq!(excess, ["sldprt:file:block#999_999"]);
 }
 
 #[test]
-fn digest_only_metadata_owner_cannot_supply_a_patch_payload() {
+fn digest_only_metadata_owner_is_unavailable() {
     let (decoded, _) = shared_member();
     let mut records = crate::source_records(decoded.ir(), decoded.source_fidelity()).unwrap();
     let annotations = &decoded.source_fidelity().annotations;
@@ -408,28 +477,9 @@ fn digest_only_metadata_owner_cannot_supply_a_patch_payload() {
         })
         .unwrap();
     record.data = None;
-    let error = crate::writer::retained_swobjects_sections(decoded.ir(), &records, annotations)
-        .unwrap_err();
-    assert!(matches!(error, CodecError::Malformed(detail) if detail.contains("has no bytes")));
-}
-
-#[test]
-fn generated_output_cannot_select_one_of_two_owned_members() {
-    let originals = vec![(MEMBER.to_owned(), b"original".to_vec())];
-    let mut sections = vec![
-        (MEMBER.to_owned(), b"original".to_vec()),
-        (MEMBER.to_owned(), b"other".to_vec()),
-    ];
-    let error = crate::writer::push_generated_metadata_member(
-        &mut sections,
-        &originals,
-        MEMBER.to_owned(),
-        b"patched".to_vec(),
-    )
-    .unwrap_err();
-    assert!(
-        matches!(error, CodecError::NotImplemented(detail) if detail.contains("ambiguous output members"))
-    );
+    let owners = owners_of(&decoded, &records, annotations);
+    assert!(owners.unavailable.contains(MEMBER));
+    assert!(!owners.replay());
 }
 
 #[test]
@@ -458,7 +508,7 @@ fn source_unit_code_uses_its_separate_units_route() {
         values: vec![Some(AttributeValue::Integer(1))],
         native_ref: None,
     });
-    let retained = crate::writer::retained_swobjects_sections(&ir, &records, &annotations).unwrap();
+    let retained = metadata_owners(&ir, &records, &annotations, None, &HashSet::new()).patchable;
     assert_eq!(
         retained
             .iter()
@@ -907,7 +957,7 @@ fn metadata_edits_preserve_configuration_xml_and_explicit_renames_update_it() {
 }
 
 #[test]
-fn duplicate_feature_owned_names_refuse_ambiguous_source_member_identity() {
+fn duplicate_feature_owned_names_write_each_retained_member() {
     let mut payload = resolved_features_payload(&[0]);
     payload.extend(b"moBBoxCenterData_c");
     payload.extend(1u32.to_le_bytes());
@@ -928,16 +978,22 @@ fn duplicate_feature_owned_names_refuse_ambiguous_source_member_identity() {
     let mut decoded = EditableDecodeResult::from(decoded);
     edit_radius(&mut decoded.ir_mut());
     let mut written = Vec::new();
-    let error = crate::test_support::plan_inherited_write(
+    crate::test_support::plan_inherited_write(
         decoded.ir(),
         decoded.source_fidelity(),
         &mut written,
     )
-    .unwrap_err();
-    assert!(matches!(error, CodecError::NotImplemented(_)));
-    assert!(
-        error.to_string().contains("ambiguous retained owners"),
-        "{error}"
-    );
-    assert!(written.is_empty());
+    .unwrap();
+    let scan = crate::test_support::container::scan(&written);
+    let owned: Vec<_> = scan
+        .blocks
+        .iter()
+        .filter(|block| block.section.name() == Some(member))
+        .collect();
+    assert_eq!(owned.len(), 2);
+    assert!(owned.iter().all(|block| block.payload == opaque));
+    let rewritten = SldprtCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(sldprt_native(rewritten.ir()).feature_input_lanes.len(), 3);
 }
