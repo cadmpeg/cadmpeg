@@ -282,6 +282,9 @@ pub(crate) enum F3dLossCode {
     /// A joint operand path continues inside an unmerged inserted document; the
     /// remaining keys stay a nested occurrence path.
     AssemblyOperandNestedPathRetained,
+    /// A projected joint reads an occurrence path with a nonzero identity-pair
+    /// word as though the word were zero.
+    AssemblyOperandPathWordAssumed,
     /// An F3Z drawing root was omitted while its derived 3D model transferred.
     DrawingDocumentOmitted,
     /// ASM history estimated retained size exceeded the session's remaining retained-byte allowance.
@@ -1139,7 +1142,8 @@ pub(crate) enum F3dLossCode {
     SketchRegionBodyOmitted,
     /// Edges reference a procedural 3D curve with no decodable B-spline cache.
     ProceduralCurveUndecoded,
-    /// Vertex tolerance is widened to cover exact cache endpoints.
+    /// Vertex tolerance is widened to cover the ends of its edges' curves:
+    /// exact cache endpoints on read, the vertices of a ranged open edge on write.
     VertexToleranceWidened,
     /// A cache-first spring support pcurve has no admitted endpoint relation.
     SpringSupportPcurveUnresolved,
@@ -1204,7 +1208,7 @@ pub(crate) enum F3dLossCode {
     /// A face on a carrier F3D has no form for was not written; its body was
     /// written open, without it.
     WriterFaceOmitted,
-    /// Geometry no written body uses was not written.
+    /// Geometry was not written as the source states it.
     WriterGeometryOmitted,
     /// An appearance was not written.
     WriterAppearanceOmitted,
@@ -1417,6 +1421,7 @@ impl F3dLossCode {
         Self::AssemblyExtendedTailAssumed,
         Self::AssemblyExtendedTypedTailAssumed,
         Self::AssemblyOperandNestedPathRetained,
+        Self::AssemblyOperandPathWordAssumed,
         Self::DrawingDocumentOmitted,
         Self::HistoryBindingBudgetExceeded,
         Self::HistoryBindingWorkExceeded,
@@ -2237,6 +2242,7 @@ impl F3dLossCode {
             Self::AssemblyExtendedTailAssumed => "assembly.extended-tail-assumed",
             Self::AssemblyExtendedTypedTailAssumed => "assembly.extended-typed-tail-assumed",
             Self::AssemblyOperandNestedPathRetained => "assembly.operand-nested-path-retained",
+            Self::AssemblyOperandPathWordAssumed => "assembly.operand-path-word-assumed",
             Self::DrawingDocumentOmitted => "drawing.document-omitted",
             Self::HistoryBindingBudgetExceeded => "history.binding-budget-exceeded",
             Self::HistoryBindingWorkExceeded => "history.binding-work-exceeded",
@@ -3359,6 +3365,7 @@ impl F3dLossCode {
             | Self::AssemblyExtendedTailAssumed
             | Self::AssemblyExtendedTypedTailAssumed
             | Self::AssemblyOperandNestedPathRetained
+            | Self::AssemblyOperandPathWordAssumed
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
             | Self::DrawingDocumentOmitted
@@ -4566,6 +4573,7 @@ impl F3dLossCode {
             | Self::AssemblyExtendedTailAssumed
             | Self::AssemblyExtendedTypedTailAssumed
             | Self::AssemblyOperandNestedPathRetained
+            | Self::AssemblyOperandPathWordAssumed
             | Self::AssemblyOperandDescentAmbiguous
             | Self::AssemblyRootPathIdentitiesNative
             | Self::HistoryOnlyBodyOmitted => LossTaxonomy::FeatureHistoryRetained,
@@ -4879,6 +4887,7 @@ mod tests {
                 "assembly.extended-tail-assumed",
                 "assembly.extended-typed-tail-assumed",
                 "assembly.operand-nested-path-retained",
+                "assembly.operand-path-word-assumed",
                 "drawing.document-omitted",
                 "history.binding-budget-exceeded",
                 "history.binding-work-exceeded",
