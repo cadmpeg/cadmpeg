@@ -1766,7 +1766,7 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Note.** The decoder admits an entry count of `0` or one entry for each face-selection pair. It reads an extended standard Thread with modeled flag `1` and entry count `0` as modeled and charges `feature.thread-modeled-entries-absent`. It reads the thread class after the entries and keeps the entry bytes only in the retained source image.
 
-### DR-887. Diameter of a fractional Thread nominal size
+### DR-897. Diameter of a fractional Thread nominal size
 
 **Question.** Which diameter does a fractional Thread nominal size state?
 
