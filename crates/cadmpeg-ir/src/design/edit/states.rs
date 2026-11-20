@@ -7,8 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value as Json;
 
-use super::{EditError, malformed};
-use crate::CadIr;
+use super::{malformed, EditError};
 use crate::design::evaluation::{CurrentState, Evaluation, StateBase, StateContent, StateDelta};
 use crate::design::ids::EvaluationId;
 use crate::design::names::NameEntry;
@@ -18,6 +17,7 @@ use crate::document::Topology;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::schema::ArenaRecord;
 use crate::transform::Transform;
+use crate::CadIr;
 
 /// Calls `$apply!` with every arena of `Topology` and its `RecordRef` arm.
 macro_rules! topology_arenas {

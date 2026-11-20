@@ -335,10 +335,9 @@ fn chain_at_the_bound_resolves_and_one_past_is_refused() {
         max_state_chain_depth: 2,
         ..ResourceLimits::default()
     };
-    assert!(
-        ir.resolved_evaluation_state(&id("evaluation", 2), &limits)
-            .is_ok()
-    );
+    assert!(ir
+        .resolved_evaluation_state(&id("evaluation", 2), &limits)
+        .is_ok());
     assert_eq!(
         ir.resolved_evaluation_state(&id("evaluation", 3), &limits),
         Err(StateResolutionError::ChainDepthExceeded { limit: 2 })
