@@ -135,6 +135,35 @@ fn current_state_selects_reached_records_names_owners_and_poses() {
 }
 
 #[test]
+fn current_state_and_current_based_evaluation_include_instance_bodies() {
+    let mut ir = current_document();
+    ir.geometry.bodies.push(body(2));
+    ir.model.product_definitions[1]
+        .instance_bodies
+        .push(crate::products::InstanceBodies {
+            occurrence: path(),
+            bodies: vec![id("body", 2)],
+        });
+    ir.design.scopes[0].current[0].bodies.push(id("body", 2));
+    let current = ir
+        .resolved_current_state(&id("definition", 1), &position(1))
+        .unwrap();
+    assert_eq!(
+        current.instance_bodies(),
+        &BTreeMap::from([(path(), vec![id("body", 2)])])
+    );
+
+    ir.design.evaluations = vec![evaluation(1, StateBase::Current(position(1)))];
+    let evaluated = ir
+        .resolved_evaluation_state(&id("evaluation", 1), &ResourceLimits::default())
+        .unwrap();
+    assert_eq!(
+        evaluated.instance_bodies(),
+        &BTreeMap::from([(path(), vec![id("body", 2)])])
+    );
+}
+
+#[test]
 fn evaluation_composes_current_base_and_all_delta_maps() {
     let mut ir = current_document();
     let mut first = evaluation(1, StateBase::Current(position(1)));
@@ -306,9 +335,10 @@ fn chain_at_the_bound_resolves_and_one_past_is_refused() {
         max_state_chain_depth: 2,
         ..ResourceLimits::default()
     };
-    assert!(ir
-        .resolved_evaluation_state(&id("evaluation", 2), &limits)
-        .is_ok());
+    assert!(
+        ir.resolved_evaluation_state(&id("evaluation", 2), &limits)
+            .is_ok()
+    );
     assert_eq!(
         ir.resolved_evaluation_state(&id("evaluation", 3), &limits),
         Err(StateResolutionError::ChainDepthExceeded { limit: 2 })

@@ -7,7 +7,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::Value as Json;
 
-use super::{malformed, EditError};
+use super::{EditError, malformed};
+use crate::CadIr;
 use crate::design::evaluation::{CurrentState, Evaluation, StateBase, StateContent, StateDelta};
 use crate::design::ids::EvaluationId;
 use crate::design::names::NameEntry;
@@ -17,7 +18,6 @@ use crate::document::Topology;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::schema::ArenaRecord;
 use crate::transform::Transform;
-use crate::CadIr;
 
 /// Calls `$apply!` with every arena of `Topology` and its `RecordRef` arm.
 macro_rules! topology_arenas {
@@ -328,10 +328,29 @@ impl CadIr {
             .filter_map(|body| Some((body.clone(), self.body_owner(body)?.clone())))
             .filter(|(_, owner)| owner != scope)
             .collect();
+        let bodies: std::collections::BTreeSet<&BodyId> = current.bodies.iter().collect();
+        let spanned = self.spanned_definitions(scope);
+        let instance_bodies = self
+            .model
+            .product_definitions
+            .iter()
+            .filter(|definition| spanned.contains(definition.id.as_str()))
+            .flat_map(|definition| &definition.instance_bodies)
+            .filter_map(|entry| {
+                let kept: Vec<BodyId> = entry
+                    .bodies
+                    .iter()
+                    .filter(|body| bodies.contains(body))
+                    .cloned()
+                    .collect();
+                (!kept.is_empty()).then(|| (entry.occurrence.clone(), kept))
+            })
+            .collect();
         Ok(State {
             records,
             names,
             owners,
+            instance_bodies,
             poses: current.poses.clone(),
             ..State::default()
         })
