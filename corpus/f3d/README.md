@@ -199,6 +199,10 @@ copy's translation and the face count after the pattern.
   20. 36 faces.
 - `sym_extent_q7.f3d`: quantity 7 along x. x = −20, −40/3, −20/3, 0, 20/3,
   40/3, 20. 41 faces.
+- `sym_extent_q8.f3d`: quantity 8 along x. x = −15 … 20 in steps of 5.
+  46 faces.
+- `sym_extent_q4_negative.f3d`: quantity 4 along x at Extent −20 mm.
+  x = 10, 0, −10, −20. 26 faces.
 - `sym_extent_q5_dir2only.f3d`: quantity 5 along y in direction two; direction
   one has quantity 1. y = −20, −10, 0, 10, 20. 31 faces.
 - `sym_extent_q4x5.f3d`: 4 along x by 5 along y, both symmetric.

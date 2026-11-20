@@ -1304,6 +1304,30 @@ sha256 = "54ce2770feb721620c695ec91d87f9c7da8f510efdf92d4fdc2d9b58b4b6e7e6"
 notes = "CC0 Fusion API save. Rectangular pattern of a cut, quantity 7, Extent 20 mm; direction one Symmetric on."
 
 [[file]]
+filename = "f3d/sym_extent_q8.f3d"
+format = "f3d"
+dialect = "f3d:manifest-3-2-0-0"
+author = "ZorbaTHut"
+authoring_app = "Autodesk Fusion"
+authoring_app_version = "2706.1.17"
+acquisition_date = "2026-11-20"
+license = "CC0-1.0"
+sha256 = "64e1ed86b2a0603d814202a1da805fd899c5d35a7ed73751e59c3669d476a647"
+notes = "CC0 Fusion API save. Rectangular pattern of a cut, quantity 8, Extent 20 mm; direction one Symmetric on."
+
+[[file]]
+filename = "f3d/sym_extent_q4_negative.f3d"
+format = "f3d"
+dialect = "f3d:manifest-3-2-0-0"
+author = "ZorbaTHut"
+authoring_app = "Autodesk Fusion"
+authoring_app_version = "2706.1.17"
+acquisition_date = "2026-11-20"
+license = "CC0-1.0"
+sha256 = "5a371aa1b748bdbc5590a35c84b7ba6d85008d0bcb28652f05c66ac31502efa9"
+notes = "CC0 Fusion API save. Rectangular pattern of a cut, quantity 4, Extent -20 mm; direction one Symmetric on."
+
+[[file]]
 filename = "f3d/sym_extent_q5_dir2only.f3d"
 format = "f3d"
 dialect = "f3d:manifest-3-2-0-0"

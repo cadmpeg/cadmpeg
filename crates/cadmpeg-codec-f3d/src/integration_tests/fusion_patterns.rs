@@ -304,10 +304,11 @@ fn direction_offsets(direction: &serde_json::Value) -> Vec<[f64; 3]> {
 #[test]
 fn a_symmetric_extent_direction_places_its_copies_where_fusion_does() {
     // Fusion API readback of each copy's translation, in mm. The plate slot is
-    // patterned with distance type Extent 20 mm along +x, +y, or both.
+    // patterned with distance type Extent 20 mm along +x, +y, or both, or
+    // with Extent -20 mm along x.
     const EPS_POSITION_MM: f64 = 1.0e-9;
     let third = 20.0 / 3.0;
-    let files: [(&[u8], Vec<f64>, Vec<f64>); 6] = [
+    let files: [(&[u8], Vec<f64>, Vec<f64>); 8] = [
         (
             include_bytes!("../../../../corpus/f3d/sym_extent_q2.f3d"),
             vec![0.0, 20.0],
@@ -326,6 +327,16 @@ fn a_symmetric_extent_direction_places_its_copies_where_fusion_does() {
         (
             include_bytes!("../../../../corpus/f3d/sym_extent_q7.f3d"),
             vec![-20.0, -2.0 * third, -third, 0.0, third, 2.0 * third, 20.0],
+            vec![0.0],
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/sym_extent_q8.f3d"),
+            vec![-15.0, -10.0, -5.0, 0.0, 5.0, 10.0, 15.0, 20.0],
+            vec![0.0],
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/sym_extent_q4_negative.f3d"),
+            vec![10.0, 0.0, -10.0, -20.0],
             vec![0.0],
         ),
         (
@@ -369,4 +380,19 @@ fn a_symmetric_extent_direction_places_its_copies_where_fusion_does() {
             );
         }
     }
+}
+
+#[test]
+fn a_negative_symmetric_extent_reverses_the_direction_and_its_extra_instance() {
+    // Fusion places the four copies at x = 10, 0, -10 and -20 mm: the
+    // signed-distance side holds the extra instance.
+    let ir = decoded(include_bytes!(
+        "../../../../corpus/f3d/sym_extent_q4_negative.f3d"
+    ));
+    let pattern = &definition(&ir, "R-Pattern 1")["value"]["value"]["pattern"];
+    assert_eq!(pattern["kind"], "linear", "{pattern}");
+    assert_eq!(pattern["direction"], json!({"x": -1.0, "y": 0.0, "z": 0.0}));
+    assert_eq!(pattern["spacing"], 10.0);
+    assert_eq!(pattern["count"], 4);
+    assert_eq!(pattern["symmetric"], true);
 }
