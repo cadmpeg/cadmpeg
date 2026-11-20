@@ -4,11 +4,12 @@
 //! "Side-face walk"), decoded back and read from the archive's Design
 //! segment.
 
+use cadmpeg_ir::design::construction::Construction;
 use cadmpeg_ir::design::container::Container;
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
-use cadmpeg_ir::design::ops::sketch::{DefiningRole, PlanarCurve};
+use cadmpeg_ir::design::ops::sketch::{DefiningRole, PlanarCurve, SketchPlane};
 use cadmpeg_ir::design::ops::swept::{Extrude, ExtrudeDirection, ExtrudeOrigin};
 use cadmpeg_ir::design::options::{
     BodyForm, Boolean, NativeOptions, SolidOutput, SymmetricMeasure,
@@ -26,10 +27,10 @@ use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::SketchId;
 
 use super::super::extrude::{ring, LoopEntry};
-use super::super::sketch::{CurveGeometry, OriginPlane, PlannedCurve, PlannedSketch};
+use super::super::sketch::{CurveGeometry, OriginPlane, PlannedCurve, PlannedSketch, Support};
 use super::roster::segment;
 use super::sketch::{
-    datum, feature, feature_id, frame, picked, point2, principal, sketch_id, Source,
+    datum, feature, feature_id, frame, picked, point2, principal, sketch_id, unread, Source,
 };
 use super::{
     loss, neutral, number, parameter_id, scoped_cube, write, write_bytes, EXTRUDE, SKETCH,
@@ -582,13 +583,14 @@ fn planned<'a>(
     PlannedSketch {
         feature: id,
         sketch,
-        plane: OriginPlane::Xy,
+        support: Support::Origin(OriginPlane::Xy),
         mirrored: false,
         points,
         curves,
         relations: Vec::new(),
         candidates: Vec::new(),
         dimensions: Vec::new(),
+        losses: Vec::new(),
     }
 }
 
@@ -638,7 +640,7 @@ fn the_walk_starts_at_the_last_line_and_runs_counterclockwise() {
     let circle = PlannedSketch {
         feature: &id,
         sketch: &sketch,
-        plane: OriginPlane::Xy,
+        support: Support::Origin(OriginPlane::Xy),
         mirrored: false,
         points: vec![[0.0, 0.0]],
         curves: vec![PlannedCurve {
@@ -651,6 +653,7 @@ fn the_walk_starts_at_the_last_line_and_runs_counterclockwise() {
         relations: Vec::new(),
         candidates: Vec::new(),
         dimensions: Vec::new(),
+        losses: Vec::new(),
     };
     assert_eq!(ring(&circle, TOLERANCE), Ok(vec![entry(0, false)]));
 }
@@ -665,6 +668,29 @@ fn a_failure_in_the_extrude_records_keeps_the_sketches_and_the_base_feature() {
         missing.contains(&format!(
             "{EXTRUDE} (the Base Feature holds it: the writer cannot write its records (not implemented yet: a test failure of the Extrude records)"
         )),
+        "{missing}"
+    );
+}
+
+#[test]
+fn an_extrude_of_a_sketch_on_a_construction_plane_stays_in_the_base_feature() {
+    let mut ir = sketch_and_extrude(blind(), false);
+    let profile = ir
+        .design
+        .sketches
+        .iter_mut()
+        .find(|sketch| sketch.id == sketch_id("profile"))
+        .expect("the profile sketch");
+    profile.plane = SketchPlane::Placed(Box::new(Construction {
+        inputs: vec![unread()],
+        resolved: Some(frame([0.0, 0.0, 5.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0])),
+        ..Construction::default()
+    }));
+    let (report, decoded) = write(&ir);
+    assert_eq!(kinds(&decoded), ["sketch", "base"]);
+    let missing = loss(&report, EVALUATION_MISSING).join("\n");
+    assert!(
+        missing.contains(EXTRUDE) && missing.contains("its sketch lies on a construction plane"),
         "{missing}"
     );
 }
