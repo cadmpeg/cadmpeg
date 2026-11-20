@@ -3732,7 +3732,7 @@ A cross-segment reference is 15 bytes: `01`, the u64 target record index, `00`, 
 
 **Record indices of the roster.** The roster leaves the record indices 8, 9, 35, 179 to 183, and 216 to 218 unused. The MetaStream next-entity-ID counter is greater than every record index: `225` for the one-body roster. The named-entity ID list holds the records that store an LP-ASCII name at offset 15, which are records 0, 1, 4, 43, 44, 45, 46, 161, 177, 184, 185, 186, and 191. The secondary index has one entry for each record that stores a paired header, with the BulkStream offset of that header.
 
-**Fixed records of the roster.** These records have the same bytes in every `Base Feature` design apart from their indexed headers. Offsets are record-relative; "zero bytes" are runs of `00`. A reference to record 0 is the eleven bytes `01`, eight zero bytes, `00 00`.
+**Fixed records of the roster.** These records have the same bytes in every `Base Feature` design apart from their indexed headers and the body count of record 191. Offsets are record-relative; "zero bytes" are runs of `00`. A reference to record 0 is the eleven bytes `01`, eight zero bytes, `00 00`.
 
 | Index | Type, version, length | Layout |
 |---|---|---|
@@ -4080,7 +4080,7 @@ The pairs of each map and the two keys are in any order. A paired header, 4 zero
 | `Images.BlobParts/` | an empty directory |
 | `Properties.dat` (archive root) | four zero bytes |
 
-In a design with one result body, the snapshot stream stores the solved part of the history stream. Its records are the records of the history stream before the history partition, in the same order and with the same topology and geometry, with these differences: the flags word is `2` (bit 0 clear), `scale` is `10.0` where the history stream stores `40.0`, the `body` record stores entity-id integer `-1` where the history stream stores `0`, the body carries no generic-tag attribute (each face keeps its own), and the stream ends at `End-of-ASM-data` with no history partition. Removing the body attribute renumbers the later records.
+In a design with one result body, the snapshot stream stores the solved part of the history stream. Its records are the records of the history stream before the history partition, in the same order and with the same topology and geometry, with these differences: the flags word is `2` (bit 0 clear), `scale` is `10.0` where the history stream stores `40.0`, the `body` record stores entity-id integer `-1` where the history stream stores `0`, the body carries no generic-tag attribute (each face keeps its own) and can also omit its timestamp attribute, and the stream ends at `End-of-ASM-data` with no history partition. Each omitted attribute renumbers the later records.
 
 **Names in the B-rep of a Base Feature.** Let `I` be the persistent identity of the `Base Feature` scope. Each result body carries a generic-tag attribute of envelope version `3` with one body group: entity kind `3`, decimal Design id `I`, the body ordinal from `1`, and `0`, `0`. Each face of a result body carries a generic-tag attribute of envelope version `3` with one face group: a selector equal to the number of decimal digits of the token, the decimal token, token integer `0`, one Design reference `-I`, and terminator `0`. In each body, the face tokens increase by one along the body's lump, shell, and face chains. The first face of the first body has token `0`. The faces of a body with `F` faces that is the only result body therefore have the tokens `0` to `F - 1`.
 
