@@ -400,8 +400,31 @@ fn blind_holes_require_drill_point_and_depth_reference_and_read_thread_facts() {
 }
 
 #[test]
+fn inch_thread_pitches_convert_to_millimetres() {
+    let bytes = edit(&fixture("hole-forms"), |path, response| {
+        if path.ends_with("features.json") {
+            parameter(&mut response["features"][5], "standardTappedOrClearance")["value"]
+                ["pitch"] = json!("0.25 in");
+        }
+    });
+    let result = decode(&bytes);
+    let wire = wire(&result);
+    let pitch = wire["model"]["features"][5]["definition"]["value"]["value"]["shape"]
+        ["construction"]["value"]["specification"]["pitch"]
+        .as_f64()
+        .unwrap();
+    assert!((pitch - 6.35).abs() < 1e-9, "{pitch}");
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("kept the thread without pitch")));
+    validate(result);
+}
+
+#[test]
 fn unresolved_thread_pitches_keep_threads_and_charge_a_loss() {
-    for pitch in [json!("0.25 in"), json!("0 mm"), json!(0.7), json!("0.7")] {
+    for pitch in [json!("0 in"), json!("0 mm"), json!(0.7), json!("0.7")] {
         let bytes = edit(&fixture("hole-forms"), |path, response| {
             if path.ends_with("features.json") {
                 parameter(&mut response["features"][5], "standardTappedOrClearance")["value"]

@@ -1068,6 +1068,7 @@ fn specification(
             };
             match unit {
                 "mm" => Some(n),
+                "in" => Some(n * 25.4),
                 "tpi" if n > 0.0 => Some(25.4 / n),
                 _ => None,
             }
