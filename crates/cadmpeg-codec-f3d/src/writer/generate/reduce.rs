@@ -168,6 +168,11 @@ impl<'a> Reduction<'a> {
             && super::design::root_scope(&self.ir).is_some()
     }
 
+    /// Whether a fallback dropped the root definition's design scope.
+    pub(super) fn drops_neutral_design(&self) -> bool {
+        self.neutral_dropped
+    }
+
     /// The losses, with `export:output.empty` when no geometry is written.
     pub(super) fn finish(mut self) -> Vec<LossNote> {
         for (body, faces) in std::mem::take(&mut self.opened) {

@@ -6,11 +6,11 @@
 //! It runs where no native Design record is written and the document holds a
 //! design scope for its root definition. It charges a loss for every design
 //! scope, container, feature and parameter it does not write, for the root
-//! scope's configuration, arrangements and occurrence states, and for every
-//! current state's `Stale` or `Failed` status and poses. A failure
-//! here is a [`super::reduce::Stage::NeutralDesign`] failure, whose only
-//! fallback is to write no design ([`dropped_records`]): it never drops a
-//! body.
+//! scope's configuration, arrangements and occurrence states, for every
+//! current state's `Stale` or `Failed` status and poses, and for every stored
+//! evaluation. A failure here is a [`super::reduce::Stage::NeutralDesign`]
+//! failure, whose only fallback is to write no design ([`dropped_records`]):
+//! it never drops a body.
 
 mod base_feature;
 mod expression;
@@ -25,12 +25,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 
-use cadmpeg_ir::codec::write::{evaluation_missing, evaluation_stale};
+use cadmpeg_ir::codec::write::{
+    evaluation_missing, evaluation_stale, ArenaDisposition, DesignArenaDispositions,
+};
 use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::parameter::ParameterOwner;
-use cadmpeg_ir::design::refs::{Member, Position};
+use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::selection::StepRef;
 use cadmpeg_ir::document::CadIr;
@@ -59,6 +61,17 @@ pub(super) fn requested_test_failure() -> Option<cadmpeg_core::CodecError> {
         cadmpeg_core::CodecError::NotImplemented("a test failure of the design module".into())
     })
 }
+
+/// The design arenas where the design is dropped: [`dropped_records`]
+/// charges each of their records.
+pub(super) const DROPPED: DesignArenaDispositions = DesignArenaDispositions {
+    scopes: ArenaDisposition::Dropped,
+    containers: ArenaDisposition::Dropped,
+    features: ArenaDisposition::Dropped,
+    parameters: ArenaDisposition::Dropped,
+    evaluations: ArenaDisposition::Dropped,
+    ..DesignArenaDispositions::uniform(ArenaDisposition::Omitted)
+};
 
 /// What the writer writes of the root definition's design scope.
 pub(super) struct NeutralDesign<'a> {
@@ -102,7 +115,7 @@ pub(super) fn plan(target: &CadIr) -> Option<NeutralDesign<'_>> {
     .into_iter()
     .collect::<Vec<_>>();
     losses.extend(unwritten_records(target, scope));
-    losses.extend(current_states(target));
+    losses.extend(states(target));
     Some(NeutralDesign {
         parameters,
         base_feature: base_feature::plan(target),
@@ -179,11 +192,12 @@ pub(super) fn restated_parameters(target: &CadIr) -> BTreeSet<&str> {
 }
 
 /// The losses of a design the writer drops: every design scope, container,
-/// feature and parameter of the document, and the current states' values.
+/// feature, parameter and evaluation of the document, and the current
+/// states' values.
 pub(super) fn dropped_records(target: &CadIr, reason: &str) -> Vec<LossNote> {
     let design = &target.design;
     let unwritten = format!("the F3D writer writes no design ({reason})");
-    let mut losses = current_states(target);
+    let mut losses = states(target);
     losses.extend(evaluation_missing(
         "F3D",
         &format!("stores no design for these features ({reason})"),
@@ -219,18 +233,17 @@ pub(super) fn dropped_records(target: &CadIr, reason: &str) -> Vec<LossNote> {
     losses
 }
 
-/// The losses of the current states' values that the written bodies do not
-/// carry: a `Stale` or `Failed` status, and each pose.
-fn current_states(target: &CadIr) -> Vec<LossNote> {
+/// The losses of the scopes' states: a current state's `Stale` or `Failed`
+/// status and each pose, which the written bodies do not carry, and every
+/// evaluation, which no written record holds.
+fn states(target: &CadIr) -> Vec<LossNote> {
     let mut stale = Vec::new();
     let mut poses = Vec::new();
+    let mut evaluations = Vec::new();
     for scope in &target.design.scopes {
         let definition = &scope.definition;
         for state in &scope.current {
-            let at = match &state.at {
-                Position::Start(container) => format!("at the start of {container}"),
-                Position::After(member) => format!("after {}", member_id(member)),
-            };
+            let at = position(&state.at);
             match state.status {
                 EvaluationStatus::Current => {}
                 EvaluationStatus::Stale => {
@@ -254,10 +267,29 @@ fn current_states(target: &CadIr) -> Vec<LossNote> {
             }));
         }
     }
+    for evaluation in &target.design.evaluations {
+        let of = match &evaluation.of {
+            Evaluated::State(at) => format!("state {}", position(at)),
+            Evaluated::Tool(feature) => format!("tool body of {feature}"),
+        };
+        let configuration = evaluation
+            .configuration
+            .as_ref()
+            .map_or_else(String::new, |id| format!(" in configuration {id}"));
+        let entry = format!(
+            "{}: {} {of}{configuration}",
+            evaluation.id, evaluation.scope
+        );
+        match evaluation.status {
+            EvaluationStatus::Current => evaluations.push(entry),
+            EvaluationStatus::Stale => stale.push(format!("{entry} (stale)")),
+            EvaluationStatus::Failed => stale.push(format!("{entry} (failed)")),
+        }
+    }
     let mut losses = Vec::new();
     losses.extend(evaluation_stale(
         "F3D",
-        "stores no stale or failure mark, and writes these current states as current bodies",
+        "stores no stale or failure mark: it writes these current states as current bodies and writes no evaluation",
         stale,
     ));
     losses.extend(named_loss(
@@ -266,7 +298,20 @@ fn current_states(target: &CadIr) -> Vec<LossNote> {
         "the F3D writer writes no occurrence pose of a current state",
         poses,
     ));
+    losses.extend(named_loss(
+        F3dLossCode::WriterDesignRecordOmitted,
+        "evaluation",
+        "the F3D design holds its current bodies alone, with no stored evaluation",
+        evaluations,
+    ));
     losses
+}
+
+fn position(at: &Position) -> String {
+    match at {
+        Position::Start(container) => format!("at the start of {container}"),
+        Position::After(member) => format!("after {}", member_id(member)),
+    }
 }
 
 /// The losses of the design records outside the root scope's written form:

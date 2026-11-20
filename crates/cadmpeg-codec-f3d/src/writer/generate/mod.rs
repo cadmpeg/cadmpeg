@@ -52,7 +52,7 @@ pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<Genera
     let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(target, |_| true)?;
     let mut reduction = Reduction::new(lowered.as_ref());
     reduction.prepare()?;
-    let (mut staged, coverage, design_losses) = loop {
+    let (mut staged, mut coverage, design_losses) = loop {
         let mut staged = tempfile::tempfile()?;
         match attempt(
             reduction.ir(),
@@ -64,6 +64,9 @@ pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<Genera
             Err(failure) => reduction.degrade(failure, writes_alone)?,
         }
     };
+    if reduction.drops_neutral_design() {
+        coverage.design = design::DROPPED;
+    }
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
     let mut losses = reduction.finish();
@@ -393,6 +396,7 @@ fn coverage(write_design: bool, parameters: ArenaDisposition, neutral: bool) -> 
                 containers: Reported,
                 features: Reported,
                 parameters: Reported,
+                evaluations: Dropped,
                 ..cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted)
             }
         } else {
