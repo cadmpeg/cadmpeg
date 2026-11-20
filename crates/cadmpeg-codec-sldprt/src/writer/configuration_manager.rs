@@ -10,7 +10,9 @@ pub(super) fn validate(
 ) -> Result<(), CodecError> {
     for attribute in super::metadata_attributes(ir)
         .into_iter()
-        .filter(|attribute| attribute.name == "configuration_manager")
+        .filter(|attribute| {
+            attribute.name == "configuration_manager" && !super::states_no_value(attribute)
+        })
     {
         let valid = attribute.target.entity == AttributeTarget::Document
             && annotations

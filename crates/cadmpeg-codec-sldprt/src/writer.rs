@@ -1328,6 +1328,7 @@ fn patch_retained_swobjects_metadata(
     let mut attributes = metadata_attributes(ir)
         .into_iter()
         .filter(|attribute| attribute.name != "source_linear_unit_code")
+        .filter(|attribute| !states_no_value(attribute))
         .map(|attribute| {
             let provenance = annotations
                 .provenance
@@ -2104,6 +2105,13 @@ fn scaled<const N: usize>(values: [f64; N], scale: f64) -> Option<[f64; N]> {
         .then_some(products)
 }
 
+/// Whether `attribute` states no value at some position. No metadata record
+/// has such a reading: the patch writer keeps the record's retained bytes, the
+/// generator writes no record for it, and `WriterAttributesOmitted` names it.
+fn states_no_value(attribute: &cadmpeg_ir::attributes::SourceAttribute) -> bool {
+    attribute.values.iter().any(Option::is_none)
+}
+
 /// This codec's document attributes, ordered by source payload position.
 ///
 /// Arena order is by identifier name; writing that order would move every
@@ -2135,6 +2143,9 @@ fn metadata_payloads(
     let mut objects = Vec::new();
     let mut unit_code = None;
     for attribute in metadata_attributes(ir) {
+        if states_no_value(attribute) {
+            continue;
+        }
         if attribute.target.entity != AttributeTarget::Document {
             return Err(CodecError::NotImplemented(
                 "SLDPRT semantic writer does not support entity attributes".into(),
