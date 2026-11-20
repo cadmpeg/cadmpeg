@@ -900,10 +900,12 @@ fn semantic_writer_expands_indexed_tessellation() {
 
     let attributed = mesh
         .clone()
-        .with_triangle_groups(vec![cadmpeg_ir::tessellation::TessellationTriangleGroup {
-            source_id: Some("synthetic:test:group#0".into()),
-            triangles: vec![0, 1],
-        }])
+        .with_triangle_groups(vec![
+            cadmpeg_ir::tessellation::TessellationTriangleGroup::new(
+                Some("synthetic:test:group#0".into()),
+                vec![0, 1],
+            ),
+        ])
         .expect("valid triangle group partition");
     assert!(matches!(
         crate::writer::sequential_tessellation(&attributed),
