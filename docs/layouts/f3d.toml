@@ -47105,6 +47105,166 @@ source = "spec"
 anchor = "`base_feature_body_map_companion_prefix`"
 
 [[record]]
+name = "base_feature_body_map"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "`base_feature_body_map`"
+size = 149
+note = "Record 197 for one result body (`N = 1`); the basename holds a 36-character UUID."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "`base_feature_body_map`"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[10]"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+source = "spec"
+anchor = "`base_feature_body_map`"
+
+[[record.field]]
+name = "body_count"
+offset = 21
+type = "u32"
+value = 1
+source = "spec"
+anchor = "`base_feature_body_map`"
+
+[[record.field]]
+name = "body_position"
+offset = 25
+type = "u64"
+value = 0
+source = "spec"
+anchor = "`base_feature_body_map`"
+
+[[record.field]]
+name = "body_reference_index"
+offset = 33
+type = "u64"
+value = 187
+source = "spec"
+anchor = "`base_feature_body_map`"
+
+[[record.field]]
+name = "body_owner"
+offset = 41
+type = "bytes[11]"
+source = "spec"
+anchor = "`base_feature_body_map`"
+
+[[record.field]]
+name = "separator"
+offset = 52
+type = "u8"
+value = 0
+source = "spec"
+anchor = "`base_feature_body_map`"
+
+[[record.field]]
+name = "basename_length"
+offset = 53
+type = "u32"
+value = 46
+source = "spec"
+anchor = "`base_feature_body_map`"
+
+[[record.field]]
+name = "basename"
+offset = 57
+type = "bytes[92]"
+source = "spec"
+anchor = "`base_feature_body_map`"
+
+[[record]]
+name = "base_feature_snapshot_body_map"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "`base_feature_snapshot_body_map`"
+size = 158
+note = "Record 195 for one result body (`N = 1`); the basename holds a 36-character UUID."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "`base_feature_snapshot_body_map`"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[10]"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+source = "spec"
+anchor = "`base_feature_snapshot_body_map`"
+
+[[record.field]]
+name = "companion"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "`base_feature_snapshot_body_map`"
+
+[[record.field]]
+name = "body_count"
+offset = 32
+type = "u32"
+value = 1
+source = "spec"
+anchor = "`base_feature_snapshot_body_map`"
+
+[[record.field]]
+name = "body_position"
+offset = 36
+type = "u64"
+value = 0
+source = "spec"
+anchor = "`base_feature_snapshot_body_map`"
+
+[[record.field]]
+name = "body_reference_index"
+offset = 44
+type = "u64"
+source = "spec"
+anchor = "`base_feature_snapshot_body_map`"
+
+[[record.field]]
+name = "body_owner"
+offset = 52
+type = "bytes[11]"
+source = "spec"
+anchor = "`base_feature_snapshot_body_map`"
+
+[[record.field]]
+name = "separator"
+offset = 63
+type = "u8"
+value = 0
+source = "spec"
+anchor = "`base_feature_snapshot_body_map`"
+
+[[record.field]]
+name = "basename_length"
+offset = 64
+type = "u32"
+value = 45
+source = "spec"
+anchor = "`base_feature_snapshot_body_map`"
+
+[[record.field]]
+name = "basename"
+offset = 68
+type = "bytes[90]"
+source = "spec"
+anchor = "`base_feature_snapshot_body_map`"
+
+[[record]]
 name = "base_feature_scene_node"
 kind = "byte"
 section = "Records of a Base Feature design"
