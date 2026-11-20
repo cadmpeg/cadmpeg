@@ -129,10 +129,8 @@ pub(super) struct Reduction<'a> {
     losses: Vec<LossNote>,
     design_dropped: bool,
     neutral_dropped: bool,
-    /// Why the design scope is written without its `Sketch` items.
-    sketch_failure: Option<String>,
-    /// Why the design scope writes its extrude in the Base Feature.
-    extrude_failure: Option<String>,
+    /// The parts of the design scope's form dropped after a failure.
+    fallback: super::design::Fallback,
 }
 
 impl<'a> Reduction<'a> {
@@ -142,8 +140,7 @@ impl<'a> Reduction<'a> {
             losses: Vec::new(),
             design_dropped: false,
             neutral_dropped: false,
-            sketch_failure: None,
-            extrude_failure: None,
+            fallback: super::design::Fallback::default(),
         }
     }
 
@@ -166,16 +163,10 @@ impl<'a> Reduction<'a> {
             && super::design::root_scope(&self.ir).is_some()
     }
 
-    /// Why the design scope is written without its `Sketch` items, after a
-    /// failure with them.
-    pub(super) fn sketch_failure(&self) -> Option<&str> {
-        self.sketch_failure.as_deref()
-    }
-
-    /// Why the design scope writes its extrude in the Base Feature, after a
-    /// failure with its `Extrude` item.
-    pub(super) fn extrude_failure(&self) -> Option<&str> {
-        self.extrude_failure.as_deref()
+    /// The parts of the design scope's form dropped after a failure with
+    /// them.
+    pub(super) fn fallback(&self) -> &super::design::Fallback {
+        &self.fallback
     }
 
     /// The losses, with `export:output.empty` when no geometry is written.
@@ -245,9 +236,7 @@ impl<'a> Reduction<'a> {
         let progressed = match stage {
             Stage::Archive => false,
             Stage::NeutralDesign => {
-                self.drop_extrude(&reason)
-                    || self.drop_sketches(&reason)
-                    || self.drop_neutral_design(&reason)
+                self.drop_design_part(&reason) || self.drop_neutral_design(&reason)
             }
             Stage::Brep => {
                 self.drop_unwritable_bodies(&reason, Stage::Brep, &writes_alone)?
@@ -964,31 +953,11 @@ impl<'a> Reduction<'a> {
         true
     }
 
-    /// Write the design scope's extrude in the Base Feature: the design plan
-    /// names it with the reason.
-    fn drop_extrude(&mut self, reason: &str) -> bool {
-        if !self.writes_neutral_design()
-            || self.extrude_failure.is_some()
-            || self.sketch_failure.is_some()
-            || !super::design::writes_extrude(&self.ir)
-        {
-            return false;
-        }
-        self.extrude_failure = Some(reason.to_owned());
-        true
-    }
-
-    /// Write the design scope without its `Sketch` items: the design plan
-    /// charges each sketch it drops.
-    fn drop_sketches(&mut self, reason: &str) -> bool {
-        if !self.writes_neutral_design()
-            || self.sketch_failure.is_some()
-            || !super::design::writes_sketches(&self.ir)
-        {
-            return false;
-        }
-        self.sketch_failure = Some(reason.to_owned());
-        true
+    /// Write the design scope without its next droppable part (its sketch
+    /// dimensions, its `Extrude` item, its `Sketch` items, in that order):
+    /// the design plan charges what the part held.
+    fn drop_design_part(&mut self, reason: &str) -> bool {
+        self.writes_neutral_design() && self.fallback.drop_next(&self.ir, reason)
     }
 
     /// Write no design scope: its features and parameters are charged.

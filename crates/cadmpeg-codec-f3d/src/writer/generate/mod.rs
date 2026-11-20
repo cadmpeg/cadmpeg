@@ -57,8 +57,7 @@ pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<Genera
             reduction.ir(),
             reduction.writes_design(),
             reduction.writes_neutral_design(),
-            reduction.sketch_failure(),
-            reduction.extrude_failure(),
+            reduction.fallback(),
             &mut staged,
         ) {
             Ok((coverage, losses)) => break (staged, coverage, losses),
@@ -84,8 +83,7 @@ fn writes_alone(target: &CadIr, native: &crate::native::F3dNative, stage: Stage)
             target,
             false,
             false,
-            None,
-            None,
+            &design::Fallback::default(),
             &mut std::io::Cursor::new(Vec::new()),
         )
         .is_ok(),
@@ -105,16 +103,14 @@ fn encode_brep(
 
 /// Write `target` once. `write_design` states whether its native Design
 /// records are written, and `write_neutral` whether its design scope is;
-/// `sketch_failure` is why the design scope is written without its `Sketch`
-/// items, and `extrude_failure` why it writes its extrude in the Base
-/// Feature. A failure names the stage that failed. Returns the arena coverage
+/// `fallback` names the parts of the design scope's form dropped after a
+/// failure. A failure names the stage that failed. Returns the arena coverage
 /// and the losses of the design scope's records.
 fn attempt<W: Write + Seek>(
     target: &CadIr,
     write_design: bool,
     write_neutral: bool,
-    sketch_failure: Option<&str>,
-    extrude_failure: Option<&str>,
+    fallback: &design::Fallback,
     staged: W,
 ) -> Result<(ArenaDispositions, Vec<LossNote>), Failure> {
     #[cfg(test)]
@@ -122,7 +118,7 @@ fn attempt<W: Write + Seek>(
         return Err(Failure::neutral_design(error));
     }
     let mut neutral = if write_neutral {
-        design::plan(target, sketch_failure, extrude_failure).map_err(Failure::neutral_design)?
+        design::plan(target, fallback).map_err(Failure::neutral_design)?
     } else {
         None
     };

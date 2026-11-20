@@ -10,6 +10,7 @@ mod browser;
 mod component;
 pub(super) mod extrude;
 mod fixed;
+mod owned;
 mod rows;
 pub(super) mod segment;
 pub(super) mod sketches;
@@ -273,6 +274,36 @@ impl Context<'_> {
         Ok(())
     }
 
+    /// The parameter records whose tails name the parameter collection, in
+    /// ascending record index: the user parameters and the parameters the
+    /// timeline items own.
+    pub(super) fn collected_parameters(&self) -> Vec<u32> {
+        let mut parameters = self.roster.parameters.clone();
+        for sketch in &self.roster.sketches.items {
+            parameters.extend(sketch.parameters());
+        }
+        if let Some(records) = &self.roster.extrude {
+            parameters.extend([records.along[1], records.taper[1]]);
+        }
+        parameters.sort_unstable();
+        parameters
+    }
+
+    /// The largest source ordinal of the parameters the timeline items own,
+    /// `0` without one: the timeline context value.
+    pub(super) fn context_value(&self) -> u64 {
+        let dimensions = self
+            .sketches
+            .iter()
+            .flat_map(|sketch| &sketch.dimensions)
+            .map(|dimension| dimension.parameter.ordinal);
+        let extrude = self
+            .extrude
+            .into_iter()
+            .flat_map(|plan| [plan.along.ordinal, plan.taper.ordinal]);
+        dimensions.chain(extrude).max().map_or(0, u64::from)
+    }
+
     /// The timeline item whose scope the browser node of a result body
     /// names: the `Extrude` scope, else the `Base Feature` scope.
     pub(super) fn item_scope(&self) -> u32 {
@@ -301,6 +332,9 @@ pub(super) fn type_table(roster: &Roster, sheet: bool) -> Result<TypeTable, Code
     }
     if roster.extrude.is_some() {
         known.extend(super::types::EXTRUDE_ANCESTORS);
+    }
+    if roster.sketches.has_dimensions() {
+        known.extend(super::types::DIMENSION_ANCESTORS);
     }
     TypeTable::new(roster.rows(), &known)
 }
@@ -385,6 +419,7 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         None => notes.extend(super::base_feature::item_tail_loss(SCOPE)),
         Some(records) => notes.extend(extrude::losses(ctx, records)),
     }
+    notes.extend(sketches::dimensions::losses(ctx));
     notes.extend(record_residual_unavailable(
         "F3D",
         "fits the HOME camera, the AssetSettings view blocks and the scene radius to the body boxes by a rule f3d-open-items.md DR-896 leaves open",

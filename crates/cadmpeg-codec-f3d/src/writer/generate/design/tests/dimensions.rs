@@ -1,0 +1,699 @@
+// SPDX-License-Identifier: Apache-2.0
+//! The dimensions of a written sketch as Fusion sketch dimensions (f3d.md
+//! §3.1, "Sketch dimensions"), decoded back and read from the archive's
+//! Design segment.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use cadmpeg_ir::design::container::Container;
+use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::expr::{BinaryOp, Node};
+use cadmpeg_ir::design::ops::sketch::{
+    AngleOperands, DefiningRole, DistanceAxis, Planar, PlanarCurve, RadialMeasure, SketchRelation,
+};
+use cadmpeg_ir::design::parameter::DesignParameter;
+use cadmpeg_ir::design::refs::Member;
+use cadmpeg_ir::design::selection::PrincipalEntity;
+use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::ParameterValue;
+use cadmpeg_ir::report::export::ExportReport;
+use cadmpeg_ir::scalar::{Angle, PositiveLength};
+use cadmpeg_ir::sketches::SketchConstraintDefinitionInput as Kind;
+
+use super::roster::{segment, Segment};
+use super::sketch::{constraint_id, frame, picked, point2, principal, Source};
+use super::{
+    loss, neutral, number, parameter, parameter_id, reference, scoped_cube, u32_at, u64_at, write,
+    write_bytes,
+};
+use crate::loss::F3dLossCode;
+
+const TOLERANCE: f64 = 1e-9;
+const SKETCH: &str = "dims";
+/// The tilt of line `m` from the sketch's x axis.
+const TILT: f64 = std::f64::consts::FRAC_PI_6;
+/// The rectangle's diagonal, in mm.
+fn diagonal() -> f64 {
+    40.0_f64.hypot(20.0)
+}
+/// The dimension constraints and the parameters they bind.
+const DIMENSIONS: [(&str, &str); 7] = [
+    ("side", "Side"),
+    ("gap", "Gap"),
+    ("across", "Across"),
+    ("up", "Up"),
+    ("hole", "Hole"),
+    ("bend", "Bend"),
+    ("tilt", "Tilt"),
+];
+
+/// Every `writer.sketch-content-omitted` note of `report`.
+fn omitted(report: &ExportReport) -> String {
+    loss(
+        report,
+        &F3dLossCode::WriterSketchContentOmitted.kind().to_string(),
+    )
+    .join("\n")
+}
+
+fn length(key: &str, name: &str, millimetres: f64) -> DesignParameter {
+    parameter(
+        key,
+        name,
+        neutral(number(millimetres, Some(UnitSymbol::Mm))),
+        Some(millimetres),
+    )
+}
+
+fn bound<T>(key: &str) -> Dimension<T> {
+    Dimension::Parameter(parameter_id(key))
+}
+
+/// The unit cube with one sketch on `plane`, whose x and y axes are `x` and
+/// `y`: a 40 by 20 rectangle `p1`..`p4`, `l1`..`l4`; a circle of diameter 8
+/// about `cc` (15, 10); an arc of radius 3 about `ac` (30, 10); and a line
+/// `m` at 30° to `l1`. Its seven dimensions bind `Side` (the diagonal `p1`
+/// to `p3`), `Gap = 20 mm` (`l1` to `l3`), `Across = 15 mm` (horizontal, `p1`
+/// to `cc`), `Up = 10 mm` (vertical, `p1` to `cc`), `Hole = 8 mm`
+/// (diameter), `Bend = 3 mm` (radius) and `Tilt = 30 deg` (`l1` to `m`).
+fn dimensioned(plane: PrincipalEntity, x: [f64; 3], y: [f64; 3]) -> CadIr {
+    let mut ir = scoped_cube();
+    let mut source = Source::new(SKETCH, picked(principal(plane)), frame([0.0; 3], x, y));
+    let corners = [(0.0, 0.0), (40.0, 0.0), (40.0, 20.0), (0.0, 20.0)];
+    for (index, (u, v)) in corners.iter().enumerate() {
+        let start_of = format!("l{}", index + 1);
+        let end_of = format!("l{}", (index + 3) % 4 + 1);
+        source.entity(
+            &format!("p{}", index + 1),
+            PlanarCurve::Point(point2(*u, *v)),
+            &[
+                (start_of.as_str(), DefiningRole::Start),
+                (end_of.as_str(), DefiningRole::End),
+            ],
+        );
+    }
+    for (index, start) in corners.iter().enumerate() {
+        let end = corners[(index + 1) % 4];
+        source.entity(
+            &format!("l{}", index + 1),
+            PlanarCurve::Line {
+                start: point2(start.0, start.1),
+                end: point2(end.0, end.1),
+            },
+            &[],
+        );
+    }
+    let (sin, cos) = TILT.sin_cos();
+    let tip = (50.0 + 20.0 * cos, 20.0 * sin);
+    source
+        .entity(
+            "cc",
+            PlanarCurve::Point(point2(15.0, 10.0)),
+            &[("c", DefiningRole::Center)],
+        )
+        .entity(
+            "c",
+            PlanarCurve::Circle {
+                center: point2(15.0, 10.0),
+                radius: PositiveLength::new(4.0).expect("a radius"),
+            },
+            &[],
+        )
+        .entity(
+            "ac",
+            PlanarCurve::Point(point2(30.0, 10.0)),
+            &[("a", DefiningRole::Center)],
+        )
+        .entity(
+            "a",
+            PlanarCurve::Arc {
+                center: point2(30.0, 10.0),
+                radius: PositiveLength::new(3.0).expect("a radius"),
+                start: Angle::ZERO,
+                end: Angle::QUARTER_TURN,
+            },
+            &[],
+        )
+        .entity(
+            "q1",
+            PlanarCurve::Point(point2(50.0, 0.0)),
+            &[("m", DefiningRole::Start)],
+        )
+        .entity(
+            "q2",
+            PlanarCurve::Point(point2(tip.0, tip.1)),
+            &[("m", DefiningRole::End)],
+        )
+        .entity(
+            "m",
+            PlanarCurve::Line {
+                start: point2(50.0, 0.0),
+                end: point2(tip.0, tip.1),
+            },
+            &[],
+        );
+    let distance = |a: &str, b: &str, along, key: &str| SketchRelation::<Planar>::Distance {
+        a: source.operand(a),
+        b: source.operand(b),
+        along: Some(along),
+        doubled: None,
+        value: bound(key),
+    };
+    let relations = [
+        ("side", distance("p1", "p3", DistanceAxis::Aligned, "side")),
+        ("gap", distance("l1", "l3", DistanceAxis::Aligned, "gap")),
+        (
+            "across",
+            distance("p1", "cc", DistanceAxis::Horizontal, "across"),
+        ),
+        ("up", distance("p1", "cc", DistanceAxis::Vertical, "up")),
+        (
+            "hole",
+            SketchRelation::Radial {
+                of: super::sketch::entity_id(SKETCH, "c"),
+                measure: RadialMeasure::Diameter,
+                value: bound("hole"),
+            },
+        ),
+        (
+            "bend",
+            SketchRelation::Radial {
+                of: super::sketch::entity_id(SKETCH, "a"),
+                measure: RadialMeasure::Radius,
+                value: bound("bend"),
+            },
+        ),
+        (
+            "tilt",
+            SketchRelation::Angle {
+                between: AngleOperands::Between([source.operand("l1"), source.operand("m")]),
+                sector: None,
+                value: bound("tilt"),
+            },
+        ),
+    ];
+    for (name, relation) in relations {
+        source.constraint(name, relation);
+    }
+    let id = source.add_to(&mut ir);
+    let Some(Container::Ordered { members, .. }) = ir.design.containers.first_mut() else {
+        panic!("the cube's timeline");
+    };
+    members.insert(0, Member::Feature(id));
+    let mut tilt = parameter(
+        "tilt",
+        "Tilt",
+        neutral(number(30.0, Some(UnitSymbol::Deg))),
+        Some(TILT),
+    );
+    tilt.kind = ValueKind::Quantity(Quantity::ANGLE);
+    ir.design.parameters.extend([
+        length("side", "Side", diagonal()),
+        length("gap", "Gap", 20.0),
+        length("across", "Across", 15.0),
+        length("up", "Up", 10.0),
+        length("hole", "Hole", 8.0),
+        length("bend", "Bend", 3.0),
+        tilt,
+    ]);
+    ir
+}
+
+/// The fixture on `XY`.
+fn on_xy() -> CadIr {
+    dimensioned(PrincipalEntity::XyPlane, [1.0, 0.0, 0.0], [0.0, 1.0, 0.0])
+}
+
+/// The kind of a decoded constraint and the parameter it binds.
+fn binding(kind: &Kind) -> Option<(&'static str, &cadmpeg_ir::features::ParameterId)> {
+    Some(match kind {
+        Kind::Distance { parameter, .. } => ("distance", parameter),
+        Kind::DistanceLoci { parameter, .. } => ("distance_loci", parameter),
+        Kind::HorizontalDistance { parameter, .. } => ("horizontal_distance", parameter),
+        Kind::VerticalDistance { parameter, .. } => ("vertical_distance", parameter),
+        Kind::Radius { parameter, .. } => ("radius", parameter),
+        Kind::Diameter { parameter, .. } => ("diameter", parameter),
+        Kind::Angle { parameter, .. } => ("angle", parameter),
+        Kind::Native {
+            parameter: Some(parameter),
+            ..
+        } => ("native", parameter),
+        _ => return None,
+    })
+}
+
+/// The kinds of the decoded constraints bound to each parameter, by the
+/// parameter's name.
+fn bound_kinds(decoded: &CadIr) -> BTreeMap<String, BTreeSet<&'static str>> {
+    let mut out = BTreeMap::<String, BTreeSet<&'static str>>::new();
+    for constraint in &decoded.model.sketch_constraints {
+        let Some((kind, id)) = binding(constraint.definition.kind()) else {
+            continue;
+        };
+        let name = decoded
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| &parameter.id == id)
+            .map_or_else(|| id.to_string(), |parameter| parameter.name.clone());
+        out.entry(name).or_default().insert(kind);
+    }
+    out
+}
+
+#[test]
+fn dimensions_decode_back_by_kind() {
+    // Each plane with whether the source x axis lies along Fusion's u axis.
+    let planes = [
+        (
+            "XY",
+            PrincipalEntity::XyPlane,
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            true,
+        ),
+        (
+            "XZ",
+            PrincipalEntity::XzPlane,
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+            false,
+        ),
+        (
+            "YZ",
+            PrincipalEntity::YzPlane,
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            true,
+        ),
+        (
+            "-Y",
+            PrincipalEntity::XzPlane,
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            true,
+        ),
+    ];
+    for (name, plane, x, y, x_along_u) in planes {
+        let (report, decoded) = write(&dimensioned(plane, x, y));
+        let kinds = bound_kinds(&decoded);
+        let (across, up) = if x_along_u {
+            ("horizontal_distance", "vertical_distance")
+        } else {
+            ("vertical_distance", "horizontal_distance")
+        };
+        for (parameter, kind) in [
+            ("Side", "distance_loci"),
+            ("Gap", "distance"),
+            ("Across", across),
+            ("Up", up),
+            ("Hole", "diameter"),
+            ("Bend", "radius"),
+            ("Tilt", "angle"),
+        ] {
+            assert_eq!(
+                kinds.get(parameter),
+                Some(&BTreeSet::from([kind])),
+                "{name} {parameter}: {kinds:#?}"
+            );
+        }
+        let omitted = omitted(&report);
+        for (constraint, _) in DIMENSIONS {
+            assert!(
+                !omitted.contains(constraint_id(SKETCH, constraint).as_str()),
+                "{name}: {omitted}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_dimension_parameter_is_owned_by_its_sketch() {
+    let (_, decoded) = write(&on_xy());
+    let sketch = decoded
+        .model
+        .features
+        .iter()
+        .find(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Sketch { .. }
+                )
+            )
+        })
+        .expect("the decoded sketch");
+    for (_, name) in DIMENSIONS {
+        let parameter = decoded
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == name)
+            .unwrap_or_else(|| panic!("{name}: {:#?}", decoded.model.parameters));
+        assert_eq!(parameter.owner.as_ref(), Some(&sketch.id), "{name}");
+    }
+    let tilt = decoded
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Tilt")
+        .expect("Tilt");
+    assert!(
+        matches!(&tilt.value, Some(ParameterValue::Angle(angle)) if (angle.get() - TILT).abs() <= TOLERANCE),
+        "{tilt:#?}"
+    );
+    assert!(decoded
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "Width" && parameter.owner.is_none()));
+}
+
+/// One dimension frame read from the Design segment.
+struct WrittenFrame {
+    mask: u64,
+    prefix: String,
+    text: String,
+    measurement: Vec<u8>,
+}
+
+fn utf16(bytes: &[u8], at: &mut usize) -> String {
+    let units = usize::try_from(u32_at(bytes, *at)).expect("length");
+    let text = bytes[*at + 4..*at + 4 + 2 * units]
+        .chunks_exact(2)
+        .map(|unit| u16::from_le_bytes([unit[0], unit[1]]))
+        .collect::<Vec<_>>();
+    *at += 4 + 2 * units;
+    String::from_utf16(&text).expect("UTF-16")
+}
+
+fn f64_at(bytes: &[u8], at: usize) -> f64 {
+    f64::from_le_bytes(bytes[at..at + 8].try_into().expect("eight bytes"))
+}
+
+/// The records of the types whose GUID starts with `prefix`.
+fn records_of(design: &Segment, prefix: &str) -> Vec<u64> {
+    design
+        .primary
+        .iter()
+        .map(|(index, _)| *index)
+        .filter(|index| design.type_of(*index).0.starts_with(prefix))
+        .collect()
+}
+
+/// Every dimension frame: the measurement of its type (f3d.md §3.1: 129
+/// bytes linear, 153 radial or diameter, 146 angular), the 91-byte text
+/// frame, the prefix, the text, and the kind block (52 bytes linear, else
+/// 32) whose last eight bytes are the mask.
+fn written_frames(design: &Segment) -> Vec<WrittenFrame> {
+    let mut frames = Vec::new();
+    for (prefix, measurement, kind) in [
+        ("8C780195", 129, 52),
+        ("6EEAFDE5", 146, 32),
+        ("664AD49F", 153, 32),
+        ("8EDAC24D", 153, 32),
+    ] {
+        for index in records_of(design, prefix) {
+            let bytes = design.record(index);
+            let operands = usize::try_from(u32_at(bytes, 20)).expect("count");
+            let mut at = 24 + 15 * operands;
+            assert_eq!(bytes[at], 0, "record {index}: no property block");
+            at += 1;
+            let measured = bytes[at..at + measurement].to_vec();
+            at += measurement + 91;
+            let prefix = utf16(bytes, &mut at);
+            let text = utf16(bytes, &mut at);
+            frames.push(WrittenFrame {
+                mask: u64_at(bytes, at + kind - 8),
+                prefix,
+                text,
+                measurement: measured,
+            });
+        }
+    }
+    frames
+}
+
+#[test]
+fn a_frame_stores_its_text_and_prefix() {
+    let (_, decoded, bytes) = write_bytes(&on_xy());
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    let frames = written_frames(&design);
+    let masks = frames
+        .iter()
+        .map(|frame| frame.mask)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        masks,
+        BTreeSet::from([0x4000, 0x40_0000, 0x80_0000, 0x1_0000, 0x2_0000, 0x8000])
+    );
+    let expressions = decoded
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| parameter.expression.as_str())
+        .collect::<BTreeSet<_>>();
+    for frame in &frames {
+        assert!(
+            expressions.contains(frame.text.as_str()),
+            "{} among {expressions:?}",
+            frame.text
+        );
+        let expected = match frame.mask {
+            0x1_0000 => "\u{d8}",
+            0x2_0000 => "R",
+            _ => "",
+        };
+        assert_eq!(frame.prefix, expected, "mask {:#x}", frame.mask);
+    }
+    let aligned = frames
+        .iter()
+        .filter(|frame| frame.mask == 0x4000)
+        .map(|frame| f64_at(&frame.measurement, 97))
+        .collect::<Vec<_>>();
+    assert_eq!(aligned.len(), 2);
+    for expected in [diagonal() / 10.0, 2.0] {
+        assert!(
+            aligned
+                .iter()
+                .any(|value| (value - expected).abs() <= TOLERANCE),
+            "{aligned:?}"
+        );
+    }
+    let radius = |mask| {
+        frames
+            .iter()
+            .find(|frame| frame.mask == mask)
+            .map(|frame| f64_at(&frame.measurement, 145))
+            .expect("a radial frame")
+    };
+    assert!((radius(0x1_0000) - 0.4).abs() <= TOLERANCE);
+    assert!((radius(0x2_0000) - 0.3).abs() <= TOLERANCE);
+    let angle = frames
+        .iter()
+        .find(|frame| frame.mask == 0x8000)
+        .map(|frame| f64_at(&frame.measurement, 0))
+        .expect("the angular frame");
+    assert!((angle - TILT).abs() <= TOLERANCE, "{angle}");
+}
+
+#[test]
+fn a_referenced_parameter_stays_a_user_parameter() {
+    let mut ir = on_xy();
+    ir.design.parameters.push(parameter(
+        "twice",
+        "Twice",
+        neutral(Node::Binary {
+            op: BinaryOp::Multiply,
+            left: Box::new(reference("gap")),
+            right: Box::new(number(2.0, None)),
+        }),
+        Some(40.0),
+    ));
+    let operand = |name: &str| {
+        cadmpeg_ir::design::ops::sketch::Operand::Entity(super::sketch::entity_id(SKETCH, name))
+    };
+    ir.design
+        .sketch_constraints
+        .push(cadmpeg_ir::design::ops::sketch::SketchConstraint {
+            id: constraint_id(SKETCH, "twice"),
+            sketch: super::sketch::sketch_id(SKETCH),
+            relation: SketchRelation::Distance {
+                a: operand("l2"),
+                b: operand("l4"),
+                along: Some(DistanceAxis::Aligned),
+                doubled: None,
+                value: bound("twice"),
+            },
+            name: None,
+            active: None,
+            native_options: cadmpeg_ir::design::options::NativeOptions::new(),
+            source_settings: cadmpeg_ir::design::options::NativeOptions::new(),
+            native_ref: None,
+        });
+    let (_, decoded, bytes) = write_bytes(&ir);
+    let gap = decoded
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Gap")
+        .expect("Gap");
+    assert!(gap.owner.is_none(), "{gap:#?}");
+    let kinds = bound_kinds(&decoded);
+    for name in ["d2", "Twice"] {
+        assert_eq!(
+            kinds.get(name),
+            Some(&BTreeSet::from(["distance"])),
+            "{name}: {kinds:#?}"
+        );
+    }
+    let owned = decoded
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "d2")
+        .expect("d2");
+    assert_eq!(owned.expression, "Gap");
+    let frames = written_frames(&segment(&bytes, "FusionDesignSegmentType1"));
+    let formula = frames
+        .iter()
+        .filter(|frame| frame.prefix == "fx: ")
+        .map(|frame| frame.text.as_str())
+        .collect::<BTreeSet<_>>();
+    assert!(formula.contains("Gap"), "{formula:?}");
+    assert_eq!(formula.len(), 2, "{formula:?}");
+}
+
+#[test]
+fn a_dimension_that_disagrees_with_its_geometry_is_omitted() {
+    let mut ir = on_xy();
+    let side = ir
+        .design
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == parameter_id("side"))
+        .expect("Side");
+    *side = length("side", "Side", diagonal() + 1.0);
+    let (report, decoded) = write(&ir);
+    let omitted = omitted(&report);
+    assert!(
+        omitted.contains(&format!(
+            "{}: its value disagrees with its written geometry",
+            constraint_id(SKETCH, "side")
+        )),
+        "{omitted}"
+    );
+    let side = decoded
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Side")
+        .expect("Side");
+    assert!(side.owner.is_none());
+    assert_eq!(decoded.model.sketches.len(), 1);
+    assert!(bound_kinds(&decoded).contains_key("Gap"));
+}
+
+#[test]
+fn a_rotated_horizontal_distance_is_omitted() {
+    let (sin, cos) = TILT.sin_cos();
+    let (report, decoded) = write(&dimensioned(
+        PrincipalEntity::XyPlane,
+        [cos, sin, 0.0],
+        [-sin, cos, 0.0],
+    ));
+    let omitted = omitted(&report);
+    for constraint in ["across", "up"] {
+        assert!(
+            omitted.contains(constraint_id(SKETCH, constraint).as_str()),
+            "{omitted}"
+        );
+    }
+    assert!(
+        omitted.contains("its source axis lies along neither axis of Fusion's sketch frame"),
+        "{omitted}"
+    );
+    assert!(bound_kinds(&decoded).contains_key("Side"));
+}
+
+#[test]
+fn the_container_scope_and_collections_list_the_dimensions() {
+    let (_, decoded, bytes) = write_bytes(&on_xy());
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    let [scope] = records_of(&design, "8DA771B7")[..] else {
+        panic!("one Sketch scope");
+    };
+    let frame = design.record(scope);
+    assert_eq!(u32_at(frame, 22), 7);
+    let owners = (0..7)
+        .map(|owner| u64_at(frame, 26 + 11 * owner + 1))
+        .collect::<Vec<_>>();
+    for owner in &owners {
+        assert!(design.type_of(*owner).0.starts_with("D91D429C"), "{owner}");
+    }
+    let table = 144 + 11 * 7;
+    assert_eq!(u32_at(frame, table), 2 + 7);
+    assert_eq!(
+        (0..7)
+            .map(|owner| u64_at(frame, table + 4 + 22 + 11 * owner + 1))
+            .collect::<Vec<_>>(),
+        owners
+    );
+
+    let collection = design.record(199);
+    let members = (0..usize::try_from(u32_at(collection, 40)).expect("count"))
+        .map(|member| u64_at(collection, 44 + 11 * member + 1))
+        .collect::<Vec<_>>();
+    let at = members
+        .iter()
+        .position(|member| *member == scope)
+        .expect("the scope");
+    assert_eq!(members[at + 3..at + 10], owners[..]);
+
+    let parameters = records_of(&design, "B0556F58");
+    let [collection] = parameters[..] else {
+        panic!("one parameter collection");
+    };
+    assert_eq!(
+        usize::try_from(u32_at(design.record(collection), 30)).expect("count"),
+        decoded.model.parameters.len()
+    );
+
+    let context = design.record(198);
+    let mut at = 21 + 4 + 11 * usize::try_from(u32_at(context, 21)).expect("count");
+    let counters = u32_at(context, at);
+    at += 4;
+    for _ in 0..counters {
+        at += 4 + usize::try_from(u32_at(context, at)).expect("length") + 8;
+    }
+    assert_eq!(u64_at(context, at), 7);
+}
+
+#[test]
+fn a_failure_in_the_dimension_records_keeps_the_sketches() {
+    super::super::FAIL_NEXT_DIMENSIONS.with(|fail| fail.set(true));
+    let (report, decoded) = write(&on_xy());
+    assert_eq!(decoded.model.sketches.len(), 1);
+    assert!(
+        bound_kinds(&decoded).is_empty(),
+        "{:#?}",
+        bound_kinds(&decoded)
+    );
+    let omitted = omitted(&report);
+    assert!(
+        omitted.contains("the writer failed with the sketch's dimensions (not implemented yet: a test failure of the dimension records)"),
+        "{omitted}"
+    );
+    for (constraint, _) in DIMENSIONS {
+        assert!(
+            omitted.contains(constraint_id(SKETCH, constraint).as_str()),
+            "{omitted}"
+        );
+    }
+    assert!(decoded
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "Side" && parameter.owner.is_none()));
+}
