@@ -3,7 +3,13 @@
 use super::super::parameter_scope::admit_history_bound_scope_variants;
 use crate::history_records::AsmHistory;
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
-use crate::records::feature::scope::DesignParameterScope;
+use crate::records::feature::patterns::DesignPathPatternSettings;
+use crate::records::feature::scope::{
+    DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
+};
+use crate::records::feature::sheet_metal::fold::DesignUnfoldOperation;
+use crate::records::identity::Located;
+use crate::test_support::real;
 
 fn with_test_ctx<T>(run: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T) -> T {
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -237,15 +243,19 @@ fn retains_later_equivalent_scope_envelope_without_history_binding() {
     assert_eq!(scopes[0].byte_offset(), 200);
 }
 
-/// Two same-index Thicken envelopes without a history binding, the second at
-/// a later byte offset, whose signed thicknesses are `first` and `second`.
-fn thicken_variants(first: f64, second: f64) -> Vec<DesignParameterScope> {
-    [(100, first), (200, second)]
+/// Two same-index `kind` envelopes without a history binding, at byte offsets
+/// 100 and 200. `fill` completes the envelope with copy number 0 or 1.
+fn relocated_variants(
+    kind: &DesignFeatureKind,
+    fill: impl Fn(&mut DesignParameterScope, usize),
+) -> Vec<DesignParameterScope> {
+    [100, 200]
         .into_iter()
-        .map(|(byte_offset, thickness)| {
+        .enumerate()
+        .map(|(copy, byte_offset)| {
             let mut scope = DesignParameterScope::empty(
                 &format!("f3d:stream:design-parameter-scope#{byte_offset}"),
-                crate::records::feature::scope::DesignFeatureKind::Thicken,
+                kind.clone(),
                 42,
             );
             scope
@@ -259,24 +269,126 @@ fn thicken_variants(first: f64, second: f64) -> Vec<DesignParameterScope> {
                     draft.layout_fixture_tail();
                 })
                 .unwrap();
-            let crate::records::feature::scope::DesignScopePayloadMut::Thicken(slot) =
-                scope.payload_mut()
-            else {
-                panic!("a Thicken scope holds a Thicken payload");
-            };
-            *slot = Some(
-                crate::records::feature::direct_face::DesignThickenOperation {
-                    signed_thickness: Some(crate::test_support::real(thickness)),
-                    thickness_record_index: 74,
-                    thickness_offset: Some(byte_offset + 40),
-                    symmetric: false,
-                    tangent_chain: true,
-                    ..Default::default()
-                },
-            );
+            fill(&mut scope, copy);
             scope
         })
         .collect()
+}
+
+/// Two same-index Thicken envelopes without a history binding, the second at
+/// a later byte offset, whose signed thicknesses are `first` and `second`.
+fn thicken_variants(first: f64, second: f64) -> Vec<DesignParameterScope> {
+    relocated_variants(&DesignFeatureKind::Thicken, |scope, copy| {
+        let at = scope.byte_offset();
+        let DesignScopePayloadMut::Thicken(slot) = scope.payload_mut() else {
+            panic!("a Thicken scope holds a Thicken payload");
+        };
+        *slot = Some(
+            crate::records::feature::direct_face::DesignThickenOperation {
+                signed_thickness: Some(real([first, second][copy])),
+                thickness_record_index: 74,
+                thickness_offset: Some(at + 40),
+                symmetric: false,
+                tangent_chain: true,
+                ..Default::default()
+            },
+        );
+    })
+}
+
+/// Two envelopes as `relocated_variants` builds them, labeled `labels`. Each
+/// label and each located payload value lies inside its own envelope, so the
+/// copies store every location at a different byte offset.
+fn labeled_variants(kind: &DesignFeatureKind, labels: [&str; 2]) -> Vec<DesignParameterScope> {
+    relocated_variants(kind, |scope, copy| {
+        let at = scope.byte_offset();
+        let located = |value: u32, delta| Located {
+            value,
+            offset: at + delta,
+        };
+        scope.label = Some(Located {
+            value: labels[copy].to_owned(),
+            offset: scope.feature_ordinal_offset() + 8,
+        });
+        match scope.payload_mut() {
+            DesignScopePayloadMut::Unfold(slot) => {
+                *slot = Some(DesignUnfoldOperation {
+                    control: Located {
+                        value: 1,
+                        offset: at + 20,
+                    },
+                    prefix_end: at + 40,
+                    bend_group: located(7, 24),
+                    settings: located(8, 28),
+                    wrapper: located(9, 32),
+                    stationary_group: located(10, 36),
+                    rule_record_index: None,
+                    rule_reference_assumed: false,
+                    rule_material_scalar: Some(Located {
+                        value: real(0.5),
+                        offset: at + 44,
+                    }),
+                });
+            }
+            DesignScopePayloadMut::PathPattern(slot) => {
+                *slot = Some(DesignPathPatternSettings {
+                    settings_record_index: Some(5),
+                    settings_byte_offset: Some(at + 300),
+                    total_extent: Some(Located {
+                        value: true,
+                        offset: at + 310,
+                    }),
+                    start_record_index: Some(6),
+                    start_frame_end: Some(at + 400),
+                    start_parameter: Some(Located {
+                        value: real(0.25),
+                        offset: at + 390,
+                    }),
+                    ..Default::default()
+                });
+            }
+            _ => {}
+        }
+    })
+}
+
+/// A renamed feature can be stored twice. Copies that differ only in where
+/// they store the label and the located payload values are one logical scope:
+/// the later copy is retained. Copies whose label texts differ stay
+/// unresolved.
+#[test]
+fn relocated_identical_scope_copies_are_equivalent() {
+    for kind in [
+        DesignFeatureKind::Thicken,
+        DesignFeatureKind::Unfold,
+        DesignFeatureKind::PathPattern,
+    ] {
+        let mut copies = labeled_variants(&kind, ["Renamed", "Renamed"]);
+        with_test_ctx(|ctx| {
+            admit_history_bound_scope_variants(ctx, &mut copies, &[], &Default::default())
+        })
+        .unwrap_or_else(|error| panic!("{kind:?} copies are equivalent: {error}"));
+        let [retained] = copies.as_slice() else {
+            panic!("one retained {kind:?} envelope")
+        };
+        assert_eq!(retained.byte_offset(), 200);
+        assert_eq!(
+            retained.label.as_ref().map(|label| label.value.as_str()),
+            Some("Renamed")
+        );
+
+        let mut different = labeled_variants(&kind, ["Renamed", "Renamed 2"]);
+        assert!(
+            with_test_ctx(|ctx| admit_history_bound_scope_variants(
+                ctx,
+                &mut different,
+                &[],
+                &Default::default()
+            ))
+            .is_err(),
+            "{kind:?} copies with different labels"
+        );
+    }
 }
 
 /// The payload comparison states every difference of a checked float: the

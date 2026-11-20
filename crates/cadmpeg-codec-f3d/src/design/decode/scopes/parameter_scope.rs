@@ -1195,7 +1195,10 @@ pub(crate) fn admit_history_bound_scope_variants(
 }
 
 /// Compare two same-index scope envelopes after removing source-location,
-/// dynamic-class and evaluation-state fields (history states, tail flags). An equivalent envelope is one serialization of the
+/// dynamic-class and evaluation-state fields (history states, tail flags).
+/// Source locations are the `*_offset` and `*_offsets` fields, the `offset`
+/// of each located value, and the byte positions `prefix_end` and
+/// `start_frame_end`. An equivalent envelope is one serialization of the
 /// same logical scope; the later envelope supersedes the earlier one when no
 /// decoded ASM state pair can select a revision.
 fn equivalent_scope_variant_payload(
@@ -1256,8 +1259,17 @@ fn strip_scope_variant_provenance(
             }
         }
         serde_json::Value::Object(fields) => {
+            // A located value (`Located`, `RecordedValue`) is the pair
+            // `{"value", "offset"}`; its `offset` is a byte location.
+            let located = fields.len() == 2
+                && fields.contains_key("value")
+                && fields.get("offset").is_some_and(serde_json::Value::is_u64);
             fields.retain(|key, _| {
-                if key.ends_with("_offset") || key.ends_with("_offsets") {
+                if key.ends_with("_offset")
+                    || key.ends_with("_offsets")
+                    || (located && key == "offset")
+                    || matches!(key.as_str(), "prefix_end" | "start_frame_end")
+                {
                     return false;
                 }
                 if top_level
