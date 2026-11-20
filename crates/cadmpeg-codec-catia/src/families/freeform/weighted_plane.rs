@@ -64,9 +64,12 @@ pub(super) fn project_curve(
             curve.degree(),
             curve.knots().to_vec(),
             controls,
-            curve
-                .weights()
-                .map(|weights| weights.into_iter().map(|weight| weight.get()).collect()),
+            curve.weights().map(|weights| {
+                weights
+                    .into_iter()
+                    .map(cadmpeg_ir::scalar::NonZeroReal::get)
+                    .collect()
+            }),
             curve.periodic(),
         ),
         refusal,
