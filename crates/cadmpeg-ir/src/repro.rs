@@ -255,11 +255,15 @@ fn compact_json<T: Serialize + ?Sized>(value: &T, limit: usize) -> Result<Vec<u8
         in_string: false,
         escaped: false,
     };
-    write_serde_json(CanonicalAdmission::unlimited(), &mut projection, value).map_err(|error| {
-        match error {
-            CanonicalJsonError::Serialize(error) => CodecError::malformed(error),
-            error => CodecError::malformed(error),
-        }
+    write_serde_json(
+        CanonicalAdmission::unlimited(),
+        None,
+        &mut projection,
+        value,
+    )
+    .map_err(|error| match error {
+        CanonicalJsonError::Serialize(error) => CodecError::malformed(error),
+        error => CodecError::malformed(error),
     })?;
     Ok(projection.bytes)
 }
