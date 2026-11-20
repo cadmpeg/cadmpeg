@@ -970,6 +970,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         thread.payload_mut()
     {
         *slot = Some(DesignThreadConstruction {
+            angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
             form: DesignThreadForm::Compact(None),
             designation_offset: 0,
             designation: cadmpeg_core::text::NonBlankString::new("M3.5x0.6").unwrap(),

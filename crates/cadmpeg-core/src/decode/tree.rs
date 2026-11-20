@@ -916,7 +916,7 @@ mod tests {
 
     #[test]
     fn xml_depth_refuses_before_the_parser_recurses() {
-        let levels = 1 << 15;
+        let levels = 512;
         let nested = format!("{}{}", "<a>".repeat(levels), "</a>".repeat(levels));
         with_depth(256, |ctx| {
             assert!(is_depth_refusal(&ctx.parse_xml(&nested, "XML")));

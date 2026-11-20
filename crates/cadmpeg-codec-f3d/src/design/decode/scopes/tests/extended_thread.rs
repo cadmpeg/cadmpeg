@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::decode::scopes::thread::{exact_thread_construction, thread_modeled_flag_loss};
+use crate::design::decode::scopes::thread::{
+    exact_thread_construction, thread_modeled_entries_loss, thread_modeled_flag_loss,
+};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::thread::{
     DesignThreadConstruction, DesignThreadExtended, DesignThreadForm,
@@ -299,10 +301,33 @@ fn the_entry_count_and_the_tail_flag_state_a_modeled_thread() {
     let cosmetic = Fixture::cosmetic().decode().expect("cosmetic thread");
     assert!(!cosmetic.modeled);
     assert!(thread_modeled_flag_loss(&scope, &cosmetic).is_none());
-    let mut cases = Vec::new();
     let mut flagged = Fixture::cosmetic();
     flagged.modeled_flag = 1;
-    cases.push(("flag without entry", flagged));
+    let flagged_construction = flagged.decode().expect("flag without entry");
+    assert!(flagged_construction.modeled);
+    assert_eq!(
+        flagged_construction.form,
+        DesignThreadForm::StandardExtended
+    );
+    let mut framed_scope = scope.clone();
+    framed_scope
+        .try_edit(|draft| {
+            draft.frame_length = 600;
+            draft.paired_byte_offset = 600;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert_eq!(
+        thread_modeled_entries_loss(&flagged.bytes(), &framed_scope, &flagged_construction)
+            .expect("entries-absent loss")
+            .code,
+        crate::loss::F3dLossCode::ThreadModeledEntriesAbsent.kind()
+    );
+    assert!(
+        thread_modeled_entries_loss(&Fixture::modeled().bytes(), &framed_scope, &construction)
+            .is_none()
+    );
+    let mut cases = Vec::new();
     let mut two = Fixture::modeled();
     two.entries = 2;
     cases.push(("two entries", two));

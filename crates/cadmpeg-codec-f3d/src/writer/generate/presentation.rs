@@ -113,16 +113,16 @@ impl GeneratedDesignRegistry {
         let mut suffixes = BTreeSet::new();
         let mut pending = Vec::new();
 
-        for (ordinal, body) in target.geometry.bodies.iter().enumerate() {
+        for body in &target.geometry.bodies {
             let Some(visible) = body.visible else {
                 continue;
             };
             let metadata = visibility_by_body.get(body.id.as_str()).copied();
             let asm_body_key = match metadata {
                 Some(metadata) => metadata.asm_body_key(),
-                None => u64::try_from(source_less_body_key(attributes, body, ordinal)?).map_err(
-                    |_| CodecError::NotImplemented("source-less ASM body key is negative".into()),
-                )?,
+                None => u64::try_from(source_less_body_key(attributes, body)?).map_err(|_| {
+                    CodecError::NotImplemented("source-less ASM body key is negative".into())
+                })?,
             };
             let entity_suffix = metadata.map_or(asm_body_key, |metadata| metadata.entity_suffix);
             if body_map.insert(asm_body_key, entity_suffix).is_some() {

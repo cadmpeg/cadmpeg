@@ -302,11 +302,13 @@ fn resolve_body_recipe_operand_preceding_body(
     }
 }
 
-fn body_recipe_operand_history_pair<'a>(
+/// The state pair of a body recipe operand, and whether the BREP of its
+/// candidate faces selects the history among several that hold the pair.
+pub(super) fn body_recipe_operand_history_pair<'a>(
     operand: &crate::records::topology::body_recipe::DesignBodyRecipeOperand,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &'a [AsmHistory],
-) -> Option<(&'a AsmHistory, &'a AsmDeltaState, &'a AsmDeltaState)> {
+) -> Option<((&'a AsmHistory, &'a AsmDeltaState, &'a AsmDeltaState), bool)> {
     let stream = crate::ids::native_stream(&operand.id)?;
     let mut matching_scopes = scopes.iter().filter(|scope| {
         scope.record_index == operand.scope_record_index
@@ -318,9 +320,16 @@ fn body_recipe_operand_history_pair<'a>(
     }
     let state_id = scope.history_state_id()?;
     let previous_state_id = effective_scope_previous_history_state_id(scope, histories)?;
-    let (history, state, previous) =
-        unique_history_state_pair(histories, state_id, previous_state_id)?;
-    Some((history, state, previous))
+    if let Some(pair) = unique_history_state_pair(histories, state_id, previous_state_id) {
+        return Some((pair, false));
+    }
+    super::linked_states::operand_brep_history_state_pair(
+        operand,
+        histories,
+        state_id,
+        previous_state_id,
+    )
+    .map(|pair| (pair, true))
 }
 
 /// History, state and previous-state indexes of a body recipe operand.
@@ -329,7 +338,8 @@ fn body_recipe_operand_state_indexes(
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
 ) -> Option<(usize, usize, usize)> {
-    let (history, state, previous) = body_recipe_operand_history_pair(operand, scopes, histories)?;
+    let ((history, state, previous), _) =
+        body_recipe_operand_history_pair(operand, scopes, histories)?;
     let (history_index, state_index) = history_state_indexes(histories, history, state)?;
     let (_, previous_index) = history_state_indexes(histories, history, previous)?;
     Some((history_index, state_index, previous_index))

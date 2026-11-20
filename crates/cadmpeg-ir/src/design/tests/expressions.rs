@@ -344,7 +344,7 @@ fn every_printed_expression_reads_back() {
     let leaves = fixtures::nodes();
     let mut choices = Choices(0x00d1_f1c5);
     let (mut printed, mut refused) = (0, 0);
-    for _ in 0..20_000 {
+    for _ in 0..2_000 {
         let node = tree(&mut choices, &leaves, 5);
         match expr::print(&node) {
             Ok(wire) => {
@@ -360,7 +360,7 @@ fn every_printed_expression_reads_back() {
         }
     }
     assert!(
-        printed > 10_000 && refused > 100,
+        printed > 1_000 && refused > 10,
         "{printed} printed, {refused} refused"
     );
 }

@@ -97,6 +97,7 @@ fn split_face_collector_retains_metadata_selected_carrier_header_for_native_admi
 #[test]
 fn compact_thread_trailer_record_is_a_related_record() {
     let construction = DesignThreadConstruction {
+        angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
         form: DesignThreadForm::Compact(Some(crate::records::identity::Located {
             value: std::num::NonZeroU32::new(2075).unwrap(),
             offset: 144,

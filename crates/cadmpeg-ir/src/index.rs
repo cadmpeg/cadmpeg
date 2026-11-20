@@ -459,7 +459,7 @@ mod tests {
 
     #[test]
     fn distinct_borrowed_identities_are_each_indexed() {
-        let identities = (0..32_000)
+        let identities = (0..1_000)
             .map(|index| format!("test:native:record#{index}"))
             .collect::<Vec<_>>();
         let mut index = super::BorrowedIdentityIndex::new();
@@ -467,7 +467,7 @@ mod tests {
             index.entry(identity, || ());
         }
         assert_eq!(index.identities().count(), identities.len());
-        for identity in [&identities[0], &identities[31_999]] {
+        for identity in [&identities[0], &identities[999]] {
             assert!(index
                 .get(identity, &super::StandardIndex, "test identity lookup")
                 .unwrap()

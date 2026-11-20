@@ -26,6 +26,6 @@ rewrite_enum!(TessellationMesh<P, N>, [P, N]; {
     ShadedStrips {strips},
 });
 rewrite_record!(TessellationTextureAssignment, []; {source_id, texture, triangles});
-rewrite_record!(TessellationTriangleGroup, []; {source_id, triangles});
+rewrite_record!(TessellationTriangleGroup, []; {source_id, face, triangles});
 rewrite_scalar!(TextureCoordinateAddressing);
 rewrite_record!(TextureCoordinates, []; {name, addressing, values});

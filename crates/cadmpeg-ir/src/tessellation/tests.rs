@@ -148,10 +148,7 @@ fn checked_vertex_lanes_pair_without_retesting_coordinates() {
 }
 
 fn group(source_id: Option<&str>, triangles: Vec<u32>) -> TessellationTriangleGroup {
-    TessellationTriangleGroup {
-        source_id: source_id.map(str::to_owned),
-        triangles,
-    }
+    TessellationTriangleGroup::new(source_id.map(str::to_owned), triangles)
 }
 
 fn assignment(source_id: Option<&str>, triangles: Vec<u32>) -> TessellationTextureAssignment {
@@ -839,4 +836,33 @@ fn a_tessellation_writes_the_state_it_names_and_refuses_a_null_one() {
     );
     assert_eq!(serde_json::from_value::<Tessellation>(wire).unwrap(), value);
     rejects_wire_field("state", serde_json::Value::Null);
+}
+
+#[test]
+fn triangle_groups_name_each_face_at_most_once() {
+    let face = crate::ids::FaceId::mint("test:mesh:face#0").unwrap();
+    let groups = vec![
+        group(None, vec![0]).with_face(face.clone()),
+        group(None, vec![1]).with_face(face),
+    ];
+    assert!(mesh().with_triangle_groups(groups.clone()).is_err());
+    rejects_wire_field("triangle_groups", groups);
+}
+
+#[test]
+fn a_triangle_group_states_its_face_only_when_it_has_one() {
+    let face = crate::ids::FaceId::mint("test:mesh:face#0").unwrap();
+    let plain = serde_json::to_value(group(Some("a"), vec![0])).unwrap();
+    assert_eq!(
+        plain,
+        serde_json::json!({ "source_id": "a", "triangles": [0] })
+    );
+    let faced = group(Some("a"), vec![0]).with_face(face.clone());
+    let value = serde_json::to_value(&faced).unwrap();
+    assert_eq!(
+        value,
+        serde_json::json!({ "source_id": "a", "face": "test:mesh:face#0", "triangles": [0] })
+    );
+    let back: TessellationTriangleGroup = serde_json::from_value(value).unwrap();
+    assert_eq!(back.face, Some(face));
 }

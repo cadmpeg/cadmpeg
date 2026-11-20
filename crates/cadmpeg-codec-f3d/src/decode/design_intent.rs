@@ -1970,6 +1970,11 @@ fn extend_related_design_records(
         geometry.persistent_subentity_tags,
         &design.design_parameter_scopes,
     );
+    profile_losses.extend(crate::history::linked_states::inferred_history_losses(
+        &design.design_body_recipe_operands,
+        &design.design_parameter_scopes,
+        &design.asm_histories,
+    ));
     crate::history::body_recipe_operands::bind_body_recipe_operand_history_candidates(
         &mut design.design_body_recipe_operands,
         &prereqs.construction_recipes,

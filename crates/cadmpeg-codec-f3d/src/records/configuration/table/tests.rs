@@ -89,7 +89,8 @@ fn table_rows_follow_row_order_and_type_each_cell() {
                 "D",
                 ConfiguredValue::OwnedParameter {
                     owner_record_index: 330,
-                    expression: "10.00 mm".into()
+                    expression: "10.00 mm".into(),
+                    value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap()
                 }
             ),
             (
@@ -103,7 +104,8 @@ fn table_rows_follow_row_order_and_type_each_cell() {
                 "H",
                 ConfiguredValue::Parameter {
                     record_index: 202,
-                    expression: "35 mm".into()
+                    expression: "35 mm".into(),
+                    value: cadmpeg_ir::scalar::FiniteReal::new(1.0).unwrap()
                 }
             ),
             (

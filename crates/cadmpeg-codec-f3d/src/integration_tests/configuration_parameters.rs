@@ -116,9 +116,10 @@ fn configuration_parameter_cells_bind_to_neutral_parameter_identity() {
         .unwrap();
     let configurations = &decoded.ir().model.configurations;
     assert_eq!(configurations.len(), 2);
-    for (ordinal, name, expression, active) in
-        [(0, "Small", "10 mm", false), (1, "Large", "30 mm", true)]
-    {
+    for (ordinal, name, expression, active, millimetres) in [
+        (0, "Small", "10 mm", false, 10.0),
+        (1, "Large", "30 mm", true, 30.0),
+    ] {
         let configuration = configurations
             .iter()
             .find(|c| c.name.as_deref() == Some(name))
@@ -131,6 +132,12 @@ fn configuration_parameter_cells_bind_to_neutral_parameter_identity() {
                 .get(&width.id)
                 .map(String::as_str),
             Some(expression)
+        );
+        assert_eq!(
+            configuration.parameter_values.get(&width.id),
+            Some(&cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(millimetres).unwrap()
+            ))
         );
         assert!(configuration.properties.is_empty());
     }

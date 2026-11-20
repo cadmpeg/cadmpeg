@@ -563,9 +563,8 @@ fn tessellation(
     let groups = mesh
         .patches
         .iter()
-        .map(|(patch, triangles)| TessellationTriangleGroup {
-            source_id: Some(format!("patch {patch}")),
-            triangles: triangles.clone(),
+        .map(|(patch, triangles)| {
+            TessellationTriangleGroup::new(Some(format!("patch {patch}")), triangles.clone())
         })
         .collect();
     Tessellation::from_parts(id, lanes, Vec::new())

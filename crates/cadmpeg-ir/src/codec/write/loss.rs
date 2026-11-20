@@ -19,6 +19,13 @@ pub(crate) enum ExportLossCode {
     ArenaOmitted(EntityKind),
     /// The write path omits source manufacturing definitions.
     ManufacturingOmitted,
+    /// A writer dropped native records of its own namespace (§3.4, W1, W3).
+    NativeRecordsOmitted,
+    /// The output holds no geometry (§3.5).
+    OutputEmpty,
+    /// A record of this kind is written with an Error the output's own
+    /// validation finds (§3.4, Refusals).
+    RecordInvalid(EntityKind),
 }
 
 impl ExportLossCode {
@@ -27,19 +34,29 @@ impl ExportLossCode {
         match self {
             Self::ArenaOmitted(_) => "arena.omitted",
             Self::ManufacturingOmitted => "manufacturing.omitted",
+            Self::NativeRecordsOmitted => "native.records-omitted",
+            Self::OutputEmpty => "output.empty",
+            Self::RecordInvalid(_) => "record.invalid",
         }
     }
 
     const fn severity(self) -> Severity {
         match self {
-            Self::ArenaOmitted(_) | Self::ManufacturingOmitted => Severity::Warning,
+            Self::ArenaOmitted(_)
+            | Self::ManufacturingOmitted
+            | Self::NativeRecordsOmitted
+            | Self::OutputEmpty => Severity::Warning,
+            Self::RecordInvalid(_) => Severity::Error,
         }
     }
 
     /// Shared category of the omitted arena's content.
     const fn shared_taxonomy(self) -> LossTaxonomy {
-        let Self::ArenaOmitted(kind) = self else {
-            return LossTaxonomy::ProcessRecordOmitted;
+        let kind = match self {
+            Self::ArenaOmitted(kind) | Self::RecordInvalid(kind) => kind,
+            Self::ManufacturingOmitted => return LossTaxonomy::ProcessRecordOmitted,
+            Self::NativeRecordsOmitted => return LossTaxonomy::PassthroughRecordOmitted,
+            Self::OutputEmpty => return LossTaxonomy::NoExportableSolids,
         };
         match kind {
             EntityKind::Body
@@ -134,4 +151,40 @@ impl ExportLossCode {
     pub(crate) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(self.kind(), message).with_severity(self.severity())
     }
+}
+
+/// `export:native.records-omitted`: the writer dropped these records of its
+/// own native namespace. The message gives the count and then every id,
+/// sorted (§3.2). `None` when `ids` is empty.
+#[must_use]
+pub fn native_records_omitted<I, S>(format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    let mut ids = ids.into_iter().map(Into::into).collect::<Vec<String>>();
+    if ids.is_empty() {
+        return None;
+    }
+    ids.sort_unstable();
+    ids.dedup();
+    Some(ExportLossCode::NativeRecordsOmitted.note(format!(
+        "the {format} write omits {} native record(s) {reason}: {}",
+        ids.len(),
+        ids.join(", ")
+    )))
+}
+
+/// `export:output.empty`: the written file holds no geometry (§3.5).
+#[must_use]
+pub fn output_empty(message: impl Into<String>) -> LossNote {
+    ExportLossCode::OutputEmpty.note(message)
+}
+
+/// `export:record.invalid`: the writer wrote these records of `kind` from the
+/// canonical side, and the output's own validation finds an Error in them
+/// (§3.4, Refusals). The message names each record.
+#[must_use]
+pub fn record_invalid(kind: EntityKind, message: impl Into<String>) -> LossNote {
+    ExportLossCode::RecordInvalid(kind).note(message)
 }

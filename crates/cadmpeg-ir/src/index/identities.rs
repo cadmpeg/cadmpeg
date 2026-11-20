@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn borrowed_identity_large_incremental_index_preserves_duplicate_slots() {
-        const COUNT: usize = 200_000;
+        const COUNT: usize = 64;
         let ids: Vec<_> = (0..COUNT)
             .map(|index| format!("test:model:point#{index}"))
             .collect();

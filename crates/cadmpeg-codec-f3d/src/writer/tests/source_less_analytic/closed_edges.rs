@@ -3,7 +3,6 @@
 
 use std::io::Cursor;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -50,7 +49,7 @@ fn generated_source_less_closed_circle_edge_without_range_spans_one_revolution()
 }
 
 #[test]
-fn generated_source_less_closed_edge_off_its_carrier_start_without_range_is_refused() {
+fn generated_source_less_closed_edge_off_its_carrier_start_without_range_drops_its_body() {
     let mut source_less = cadmpeg_test_support::solids::solid_cylinder();
     let bottom = source_less
         .geometry
@@ -67,12 +66,12 @@ fn generated_source_less_closed_edge_off_its_carrier_start_without_range_is_refu
         )
         .expect("circle"),
     ));
-    let mut encoded = Vec::new();
-    let result = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded));
-    assert!(
-        matches!(result, Err(CodecError::NotImplemented(_))),
-        "a closed edge whose vertex is not at its circle's parameter 0 is refused"
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterBodyOmitted
+            .kind()
+            .to_string(),
+        "requires a parameter range",
     );
 }

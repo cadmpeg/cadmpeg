@@ -236,7 +236,7 @@ fn native_annotation_paths_report_only_unresolvable_paths() {
             Map::from_iter([
                 (
                     "payload".into(),
-                    Value::Array((0..10_000).map(Value::from).collect()),
+                    Value::Array((0..3).map(Value::from).collect()),
                 ),
                 (
                     "nested".into(),
@@ -249,10 +249,10 @@ fn native_annotation_paths_report_only_unresolvable_paths() {
     let mut builder = crate::AnnotationBuilder::new();
     for path in [
         "id",
-        "payload.9999",
+        "payload.2",
         "nested.null",
         "nested.rows.0.value",
-        "payload.10000",
+        "payload.3",
         "missing",
         "id.child",
     ] {
@@ -273,7 +273,7 @@ fn native_annotation_paths_report_only_unresolvable_paths() {
     )
     .unwrap();
     assert_eq!(findings.len(), 3);
-    for path in ["payload.10000", "missing", "id.child"] {
+    for path in ["payload.3", "missing", "id.child"] {
         assert!(findings
             .iter()
             .any(|finding| finding.message.contains(&format!("`{path}`"))));

@@ -533,6 +533,62 @@ fn sketch_records_use_the_primary_index_live_copy() {
 }
 
 #[test]
+fn every_two_opaque_byte_planar_tail_charges_its_marker_and_construction_readings() {
+    use crate::loss::F3dLossCode;
+
+    let (bytes, meta, _, live_curve_at, _, _) = indexed_sketch_fixture();
+    let mut losses = Vec::new();
+    decode_sketch_curve_identities_from_stream(&bytes, &meta, "Design/BulkStream.dat", &mut losses)
+        .expect("indexed sketch curves");
+    assert!(losses.is_empty());
+
+    let tail_at = live_curve_at + 133 + 96;
+    for marker in [0, 1] {
+        let mut tail = Vec::new();
+        for reference in [10u32, 11] {
+            tail.push(1);
+            tail.extend_from_slice(&reference.to_le_bytes());
+            tail.extend_from_slice(&[0; 6]);
+        }
+        tail.extend_from_slice(&[0, 0, 0, 7, 8, marker]);
+        tail.extend_from_slice(&1u32.to_le_bytes());
+        tail.push(1);
+        let mut short = bytes.clone();
+        short.splice(tail_at..tail_at, tail.iter().copied());
+        let mut short_meta = meta.clone();
+        for record in &mut short_meta.records {
+            if record.bulk_offset > u64_from_index(tail_at) {
+                record.bulk_offset += u64_from_index(tail.len());
+            }
+        }
+        let mut losses = Vec::new();
+        let curves = decode_sketch_curve_identities_from_stream(
+            &short,
+            &short_meta,
+            "Design/BulkStream.dat",
+            &mut losses,
+        )
+        .expect("indexed sketch curves with a short tail");
+        assert_eq!(curves[0].tail_marker, Some(marker));
+        let codes = losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            codes,
+            [
+                F3dLossCode::SketchCurveTailMarkerAssumed.kind(),
+                F3dLossCode::SketchCurveTailConstructionAssumed.kind(),
+            ],
+            "marker {marker}"
+        );
+        assert!(losses.iter().all(|loss| loss
+            .message
+            .starts_with("1 planar sketch curve(s) in Design/BulkStream.dat")));
+    }
+}
+
+#[test]
 fn sketch_text_record_decodes_typed_content_and_metrics() {
     let bytes = sketch_text_record(
         &[
@@ -758,6 +814,34 @@ fn sketch_text_record_refuses_a_payload_that_does_not_end_on_its_owner() {
     let mut bytes = sketch_text_record(&[("textex_tag", 109)], [None, None], None);
     bytes.push(0);
     assert!(decode_sketch_text(&bytes).is_none());
+}
+
+#[test]
+fn textex_tag_sketch_text_record_admits_four_zero_bytes_before_its_owner() {
+    let plain = sketch_text_record(
+        &[("textex_tag", 109)],
+        [None, None],
+        Some((2.175, -0.5, 0.0)),
+    );
+    let owner_at = plain.len() - 11;
+    let mut padded = plain[..owner_at].to_vec();
+    padded.extend_from_slice(&[0; 4]);
+    padded.extend_from_slice(&plain[owner_at..]);
+    let text = decode_sketch_text(&padded).expect("padded sketch text record");
+    assert_eq!(text.owner_reference, 201);
+    assert_eq!(text.text, "path text");
+    assert_eq!(
+        text.placement().map(|placement| placement.anchor.get()),
+        Some(cadmpeg_ir::math::Point2::new(21.75, -5.0))
+    );
+
+    let mut nonzero = padded.clone();
+    nonzero[owner_at + 1] = 1;
+    assert!(decode_sketch_text(&nonzero).is_none());
+    let mut overlong = plain[..owner_at].to_vec();
+    overlong.extend_from_slice(&[0; 5]);
+    overlong.extend_from_slice(&plain[owner_at..]);
+    assert!(decode_sketch_text(&overlong).is_none());
 }
 
 #[test]

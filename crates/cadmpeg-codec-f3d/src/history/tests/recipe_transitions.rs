@@ -504,6 +504,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         cylinder_scope.payload_mut()
     {
         *slot = Some(DesignThreadConstruction {
+            angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
             form: DesignThreadForm::Standard,
             designation_offset: 0,
             designation: cadmpeg_core::text::NonBlankString::new("M4x0.7").unwrap(),

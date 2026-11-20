@@ -284,7 +284,13 @@ fn expanding_restates_the_decoder_instances() {
     let original = shared_bracket();
     let mut ir = original.clone();
     own_once(&mut ir, &BTreeMap::new());
-    let expanded = super::expand(&ir.model.product_definitions, &ir.model.occurrences).unwrap();
+    let expanded = super::expand(
+        &cadmpeg_core::decode::ResourceLimits::default(),
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+        &std::collections::BTreeMap::new(),
+    )
+    .unwrap();
     let instances = expanded
         .occurrences
         .iter()
@@ -311,9 +317,7 @@ fn expanding_restates_the_decoder_instances() {
         "f3d:model:occurrence#bolt"
     );
     assert_eq!(
-        super::parent_ids(&expanded.definitions, &expanded.occurrences)
-            [&occurrence_id("f3d:model:occurrence#b:bolt")]
-            .as_str(),
+        expanded.parents[&occurrence_id("f3d:model:occurrence#b:bolt")].as_str(),
         "f3d:model:occurrence#b"
     );
 }

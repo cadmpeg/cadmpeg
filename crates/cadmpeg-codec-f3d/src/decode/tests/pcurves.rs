@@ -605,7 +605,7 @@ fn generated_f3d_rewrites_procedural_curve_fit_tolerance() {
 }
 
 #[test]
-fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
+fn generated_source_less_reduces_unwritable_procedural_curves_to_their_cache() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 
     let decoded = F3dCodec
@@ -630,14 +630,14 @@ fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
             blend_surface: None,
         },
     );
-    let mut encoded = Vec::new();
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .expect_err("typed intersection must not degrade to a cache-only curve");
-    assert!(error
-        .to_string()
-        .contains("lacks its native blend construction"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "lacks its native blend construction",
+    );
 
     source_less.geometry.procedural_curves[0].replace_definition(
         ProceduralCurveDefinition::Unknown {
@@ -646,17 +646,18 @@ fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
             cache: None,
         },
     );
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("unknown construction must not degrade to a cache-only curve");
-    assert!(error
-        .to_string()
-        .contains("cannot be regenerated losslessly"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "cannot be regenerated losslessly",
+    );
 }
 
 #[test]
-fn generated_source_less_rejects_duplicate_procedural_curve_owners() {
+fn generated_source_less_writes_one_carrier_of_a_duplicate_procedural_curve() {
     let decoded = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_helix_curve_smbh())),
@@ -674,14 +675,14 @@ fn generated_source_less_rejects_duplicate_procedural_curve_owners() {
         .unwrap();
     let duplicate = source_less.geometry.procedural_curves[0].clone();
     source_less.geometry.procedural_curves.push(duplicate);
-    let mut encoded = Vec::new();
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut encoded))
-        .expect_err("duplicate procedural construction must be rejected");
-    assert!(error
-        .to_string()
-        .contains("multiple procedural constructions"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "procedural construction",
+    );
 }
 
 #[test]

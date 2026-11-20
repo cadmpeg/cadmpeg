@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-less attribute, link, and tag encoders.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::native::F3dNative;
 use crate::records::{
@@ -41,7 +41,7 @@ pub(super) struct AttributeIndex<'a> {
     coedge_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
     vertex_timestamps: HashMap<&'a str, IndexedTimestamp<'a>>,
     coedge_sketch_links: HashMap<&'a str, &'a SketchCurveLink>,
-    body_keys: HashMap<&'a str, &'a cadmpeg_asm::brep::records::BodyNativeKey>,
+    body_keys: HashMap<&'a str, i64>,
 }
 
 /// Record-table starts of the face and coedge sections, which only a solid
@@ -65,10 +65,7 @@ pub(super) struct AttributeOwnerStarts {
 impl<'a> AttributeIndex<'a> {
     pub(super) fn new(target: &'a CadIr, native: &'a F3dNative) -> Self {
         let mut body_links: HashMap<_, Vec<_>> = HashMap::new();
-        let mut body_keys = HashMap::new();
-        for key in &native.body_native_keys {
-            body_keys.entry(key.body.as_str()).or_insert(key);
-        }
+        let body_keys = emitted_body_keys(target, native);
         for link in &native.persistent_design_links {
             if let cadmpeg_ir::attributes::AttributeTarget::Body(id) = &link.target {
                 body_links.entry(id.as_str()).or_default().push(link);
@@ -256,20 +253,72 @@ impl<'a> AttributeIndex<'a> {
 pub(super) fn source_less_body_key(
     index: &AttributeIndex<'_>,
     body: &Body,
-    body_ordinal: usize,
 ) -> Result<i64, CodecError> {
-    if let Some(key) = index.body_keys.get(body.id.as_str()) {
-        return key.asm_body_key.map_or(Ok(-1), |key| {
-            i64::try_from(key)
-                .map_err(|_| CodecError::NotImplemented("F3D ASM body key exceeds i64::MAX".into()))
-        });
+    index
+        .body_keys
+        .get(body.id.as_str())
+        .copied()
+        .ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "body {} has no ASM body key in the written document",
+                body.id
+            ))
+        })
+}
+
+/// The distinct ASM body key each body is written with. A body keeps its
+/// retained key unless an earlier body holds it. Any other body takes its
+/// ordinal plus one where that is free, and otherwise the next key above every
+/// retained key and every ordinal.
+fn emitted_body_keys<'a>(target: &'a CadIr, native: &'a F3dNative) -> HashMap<&'a str, i64> {
+    let mut retained = HashMap::new();
+    for key in &native.body_native_keys {
+        retained
+            .entry(key.body.as_str())
+            .or_insert(key.asm_body_key);
     }
-    let key = u64::try_from(body_ordinal)
+    let bodies = &target.geometry.bodies;
+    let mut keys = HashMap::with_capacity(bodies.len());
+    let mut used = HashSet::new();
+    for body in bodies {
+        match retained.get(body.id.as_str()) {
+            Some(None) => {
+                keys.insert(body.id.as_str(), -1);
+            }
+            Some(Some(key)) => {
+                if let Ok(key) = i64::try_from(*key) {
+                    if used.insert(key) {
+                        keys.insert(body.id.as_str(), key);
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+    let highest = used.iter().copied().max().unwrap_or(0);
+    let mut next = i64::try_from(bodies.len())
         .ok()
-        .and_then(|ordinal| ordinal.checked_add(1))
-        .ok_or_else(|| CodecError::NotImplemented("F3D body ordinal exceeds u64".into()))?;
-    i64::try_from(key)
-        .map_err(|_| CodecError::NotImplemented("F3D ASM body key exceeds i64::MAX".into()))
+        .map(|count| count.max(highest));
+    for (ordinal, body) in bodies.iter().enumerate() {
+        if keys.contains_key(body.id.as_str()) {
+            continue;
+        }
+        let Some(key) = i64::try_from(ordinal)
+            .ok()
+            .and_then(|ordinal| ordinal.checked_add(1))
+            .filter(|key| !used.contains(key))
+            .or_else(|| {
+                let key = next?.checked_add(1)?;
+                next = Some(key);
+                Some(key)
+            })
+        else {
+            continue;
+        };
+        used.insert(key);
+        keys.insert(body.id.as_str(), key);
+    }
+    keys
 }
 
 #[derive(Clone, Copy)]

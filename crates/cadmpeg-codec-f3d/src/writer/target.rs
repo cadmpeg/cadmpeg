@@ -20,10 +20,9 @@ use crate::{ids, F3dCodec, PreservedWritePath};
 /// `Inherit` asks for preservation instead: a valid retained baseline
 /// replays or patches whatever dialect the source is, the F3Z
 /// multi-document row and the recovery row included, which the generator
-/// could never synthesize. Where the baseline is not usable, `Inherit`
-/// synthesizes the source's own dialect, and refuses when that dialect is
-/// not a target. There is no fall-through to the catalog default: a
-/// same-format conversion never silently changes what the file is.
+/// could never synthesize. Where the baseline is not usable, or the patch
+/// cannot carry an edit, the document is synthesized; an off-catalog source
+/// is then written as the catalog default with a displacement loss.
 ///
 /// The catalog default supplies the target only when there is nothing to
 /// inherit: the document has no source, or a source of another format.
@@ -34,30 +33,27 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    if target.entry().is_none() {
-        return match preserve(input)? {
-            Preservation::Written {
+    let off_catalog = target.entry().is_none();
+    if off_catalog || target.preserves_source() {
+        let cause = match preserve(input) {
+            Ok(Preservation::Written {
                 bytes,
                 write_path,
                 notes,
-            } => Ok(preserved_body(input.ir, write_path, bytes, notes)),
-            Preservation::SourceImageUnavailable => Err(target.unavailable(
-                "its retained source image is unavailable for preservation and the generator \
-                 cannot synthesize it",
-            )),
+            }) => return Ok(preserved_body(input.ir, write_path, bytes, notes)),
+            Ok(Preservation::SourceImageUnavailable) => SynthesisCause::SourceImageUnavailable,
+            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+            Err(error) => SynthesisCause::PatchDeclined(error.to_string()),
         };
-    }
-    if target.preserves_source() {
-        return match preserve(input)? {
-            Preservation::Written {
-                bytes,
-                write_path,
-                notes,
-            } => Ok(preserved_body(input.ir, write_path, bytes, notes)),
-            Preservation::SourceImageUnavailable => {
-                synthesized_body(input, SynthesisCause::SourceImageUnavailable)
-            }
-        };
+        let displaced = off_catalog.then(|| {
+            F3dLossCode::SourceDialectDisplaced.note(format!(
+                "source dialect {} is not a dialect the generator writes; the file is written as \
+                 the catalog default {}",
+                target.target_id(),
+                crate::dialect::TARGETS[0].id
+            ))
+        });
+        return synthesized_body(input, cause, displaced);
     }
     let cause = if let Some(message) = target.displacement_message() {
         SynthesisCause::Displaced(message)
@@ -71,7 +67,10 @@ pub(crate) fn plan(
     } else {
         SynthesisCause::Fresh
     };
-    synthesized_body(input, cause)
+    let requested = target
+        .request_displacement_message()
+        .map(|message| F3dLossCode::TargetRequestDisplaced.note(message));
+    synthesized_body(input, cause, requested)
 }
 
 enum Preservation {
@@ -80,7 +79,7 @@ enum Preservation {
         write_path: PreservedWritePath,
         notes: Vec<String>,
     },
-    /// The only reason preservation is ever declined.
+    /// No retained source image, or one without bytes.
     SourceImageUnavailable,
 }
 
@@ -92,9 +91,7 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
         return Ok(Preservation::SourceImageUnavailable);
     };
     let Some(data) = record.data() else {
-        return Err(CodecError::Malformed(
-            "retained F3D source image has no bytes".into(),
-        ));
+        return Ok(Preservation::SourceImageUnavailable);
     };
     let mut bytes = Vec::new();
     let mut notes = Vec::new();
@@ -130,6 +127,9 @@ enum SynthesisCause {
     Fresh,
     Displaced(String),
     SourceImageUnavailable,
+    /// The retained source could not carry the document; the reason names
+    /// the edit or the missing baseline.
+    PatchDeclined(String),
 }
 
 impl SynthesisCause {
@@ -149,6 +149,15 @@ impl SynthesisCause {
                         .note("preserved F3D source image is unavailable; regenerated from IR"),
                 ),
             ),
+            Self::PatchDeclined(reason) => (
+                Consumption::Degraded {
+                    reason: format!("patch declined: {reason}"),
+                },
+                Some(F3dLossCode::WriterPatchDeclined.note(format!(
+                    "the retained F3D source could not carry the document ({reason}); the file \
+                     was regenerated from the document"
+                ))),
+            ),
         }
     }
 }
@@ -156,11 +165,13 @@ impl SynthesisCause {
 fn synthesized_body(
     input: EncodeInput<'_>,
     cause: SynthesisCause,
+    displaced: Option<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<ExportBody, CodecError> {
     let mut bytes = Vec::new();
-    let coverage = super::generate::write_new(input.ir, &mut bytes)?;
+    let generated = super::generate::write_new(input.ir, &mut bytes)?;
     let (consumption, loss) = cause.into_fidelity();
-    let mut losses: Vec<_> = loss.into_iter().collect();
+    let mut losses: Vec<_> = loss.into_iter().chain(displaced).collect();
+    losses.extend(generated.losses);
     for appearance in &input.ir.model.appearances {
         let written: &[&str] = match appearance.schema.as_deref().unwrap_or("GenericSchema") {
             "GenericSchema" => &["reflectivity_at_0deg", "refraction_index"],
@@ -189,7 +200,7 @@ fn synthesized_body(
     Ok(body(
         input.ir,
         WritePath::Synthesized { consumption },
-        ArenaCoverage::Declared(coverage),
+        ArenaCoverage::Declared(generated.coverage),
         losses,
         bytes,
     ))

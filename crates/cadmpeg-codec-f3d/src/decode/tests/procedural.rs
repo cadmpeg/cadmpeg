@@ -177,18 +177,13 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     missing_tolerance.geometry.procedural_surfaces[0]
         .set_cache_fit_tolerance(None)
         .unwrap();
-    let error = F3dCodec
-        .plan(
-            EncodeInput::new(&missing_tolerance, None),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("compound loft without its required tolerance must be rejected");
-    assert!(
-        error
-            .to_string()
-            .contains("compound-loft surface requires a native cache-fit tolerance"),
-        "unexpected error: {error}"
+    crate::test_support::assert_written_with_loss(
+        &missing_tolerance,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "compound-loft surface requires a native cache-fit tolerance",
     );
     source_less
         .geometry
@@ -460,15 +455,14 @@ fn generated_scaled_compound_loft_decodes_full_direct_branch() {
     missing_tolerance.geometry.procedural_surfaces[0]
         .set_cache_fit_tolerance(None)
         .unwrap();
-    assert!(F3dCodec
-        .plan(
-            EncodeInput::new(&missing_tolerance, None),
-            TargetRequest::Inherit
-        )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("full scaled compound loft without tolerance must fail")
-        .to_string()
-        .contains("full shape requires a native cache-fit tolerance"));
+    crate::test_support::assert_written_with_loss(
+        &missing_tolerance,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "full shape requires a native cache-fit tolerance",
+    );
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -660,15 +654,14 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
     unexpected_tolerance.geometry.procedural_surfaces[0]
         .set_cache_fit_tolerance(Some(0.04))
         .unwrap();
-    assert!(F3dCodec
-        .plan(
-            EncodeInput::new(&unexpected_tolerance, None),
-            TargetRequest::Inherit
-        )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("none-shape scaled compound loft with tolerance must fail")
-        .to_string()
-        .contains("none shape cannot carry a cache-fit tolerance"));
+    crate::test_support::assert_written_with_loss(
+        &unexpected_tolerance,
+        None,
+        &crate::loss::F3dLossCode::WriterBodyOmitted
+            .kind()
+            .to_string(),
+        "none shape cannot carry a cache-fit tolerance",
+    );
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -1262,7 +1255,7 @@ fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
 }
 
 #[test]
-fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
+fn source_less_writer_reduces_invalid_and_unframed_law_arities_to_their_cache() {
     use cadmpeg_ir::geometry::{LawExpression, LawFormula, ProceduralSurfaceDefinition};
 
     let decoded = F3dCodec
@@ -1304,11 +1297,14 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
             .set_legacy_cache(restored_cache)
             .expect("the rebuilt construction states the same legacy cache slot");
     });
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(error.to_string().contains("requires 1 operands, got 0"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "requires 1 operands, got 0",
+    );
 
     source_less.geometry.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {
@@ -1334,11 +1330,14 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
             .set_legacy_cache(restored_cache)
             .expect("the rebuilt construction states the same legacy cache slot");
     });
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(error.to_string().contains("unresolved variable arity"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "unresolved variable arity",
+    );
 }
 
 #[test]

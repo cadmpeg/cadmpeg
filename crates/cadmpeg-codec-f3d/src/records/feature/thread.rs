@@ -290,6 +290,8 @@ pub(crate) struct DesignThreadConstruction {
     pub(crate) pitch: PositiveReal,
     /// Whether the body geometry contains the helical form.
     pub(crate) modeled: bool,
+    /// Thread profile angle between the flanks.
+    pub(crate) angle: DesignThreadAngle,
     /// Ordered counted face-selection groups referenced by the scope.
     pub(crate) face_group_record_indices: Vec<u32>,
     /// Class, sense, and length flag of an extended prefix.
@@ -337,14 +339,28 @@ pub(crate) struct DesignThreadNominalSize(String);
 impl TryFrom<String> for DesignThreadNominalSize {
     type Error = String;
     fn try_from(text: String) -> Result<Self, Self::Error> {
-        if !text
-            .parse::<f64>()
-            .is_ok_and(|value| value.is_finite() && value > 0.0)
-        {
-            return Err("nominal_size_text must encode a finite positive number".into());
+        if nominal_size_value(&text).is_none() {
+            return Err(
+                "nominal_size_text must encode a finite positive decimal or a fraction of positive integers"
+                    .into(),
+            );
         }
         Ok(Self(text))
     }
+}
+
+/// The value of a positive finite decimal, or of a fraction `N/D` of two
+/// positive integers.
+fn nominal_size_value(text: &str) -> Option<f64> {
+    let value = match text.split_once('/') {
+        None => text.parse::<f64>().ok()?,
+        Some((numerator, denominator)) => {
+            let numerator = numerator.parse::<u32>().ok().filter(|value| *value > 0)?;
+            let denominator = denominator.parse::<u32>().ok().filter(|value| *value > 0)?;
+            f64::from(numerator) / f64::from(denominator)
+        }
+    };
+    (value.is_finite() && value > 0.0).then_some(value)
 }
 
 impl DesignThreadNominalSize {
@@ -354,16 +370,50 @@ impl DesignThreadNominalSize {
         &self.0
     }
 
-    pub(crate) fn value(&self) -> Result<f64, std::num::ParseFloatError> {
-        self.0.parse()
+    pub(crate) fn value(&self) -> Option<f64> {
+        nominal_size_value(&self.0)
     }
+
+    /// Whether the size is a decimal: a fraction names a size in the units
+    /// of its profile.
+    pub(crate) fn is_decimal(&self) -> bool {
+        !self.0.contains('/')
+    }
+}
+
+/// Thread profile angle between the flanks, in degrees.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct DesignThreadAngle(f64);
+
+impl DesignThreadAngle {
+    /// The 60-degree profile angle.
+    pub(crate) const SIXTY: Self = Self(60.0);
+
+    /// Admit a finite angle strictly between zero and 180 degrees.
+    pub(crate) fn new(degrees: f64) -> Option<Self> {
+        (degrees.is_finite() && degrees > 0.0 && degrees < 180.0).then_some(Self(degrees))
+    }
+
+    /// The angle in degrees.
+    pub(crate) fn degrees(self) -> f64 {
+        self.0
+    }
+
+    pub(crate) fn is_sixty(self) -> bool {
+        self.0.to_bits() == Self::SIXTY.0.to_bits()
+    }
+}
+
+fn default_thread_angle() -> f64 {
+    DesignThreadAngle::SIXTY.degrees()
 }
 
 impl Serialize for DesignThreadConstruction {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let nominal_size = self.nominal_size.value().map_err(|error| {
-            serde::ser::Error::custom(format_args!("nominal_size_text: {error}"))
-        })?;
+        let nominal_size = self
+            .nominal_size
+            .value()
+            .ok_or_else(|| serde::ser::Error::custom("nominal_size_text is not a positive size"))?;
         let (form, trailing_reference) = match &self.form {
             DesignThreadForm::Standard => (DesignThreadFormWire::Standard, None),
             DesignThreadForm::Compact(reference) => {
@@ -386,7 +436,8 @@ impl Serialize for DesignThreadConstruction {
         let mut fields = serializer.serialize_struct(
             "DesignThreadConstructionWire",
             12 + if trailing_reference.is_some() { 2 } else { 0 }
-                + usize::from(self.extended.is_some()),
+                + usize::from(self.extended.is_some())
+                + usize::from(!self.angle.is_sixty()),
         )?;
         fields.serialize_field("form", &form)?;
         fields.serialize_field("designation_offset", &self.designation_offset)?;
@@ -399,6 +450,9 @@ impl Serialize for DesignThreadConstruction {
         fields.serialize_field("pitch", &self.pitch.get())?;
         fields.serialize_field("pitch_diameter", &self.diameters.pitch())?;
         fields.serialize_field("modeled", &self.modeled)?;
+        if !self.angle.is_sixty() {
+            fields.serialize_field("angle", &self.angle.degrees())?;
+        }
         if let Some(reference) = trailing_reference {
             fields.serialize_field("trailing_reference_record_index", &reference.value.get())?;
             fields.serialize_field("trailing_reference_offset", &reference.offset)?;
@@ -454,6 +508,9 @@ struct DesignThreadConstructionWire {
     pub(super) pitch_diameter: f64,
     /// Whether the body geometry contains the helical form.
     modeled: bool,
+    /// Thread profile angle between the flanks, in degrees.
+    #[serde(default = "default_thread_angle")]
+    angle: f64,
     /// Record named by the reference-bearing compact trailer.
     #[serde(
         default,
@@ -485,7 +542,7 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
         let nominal_size = DesignThreadNominalSize::try_from(value.nominal_size_text)?;
         if nominal_size
             .value()
-            .map_err(|error| format!("nominal_size_text: {error}"))?
+            .ok_or("nominal_size_text must encode a positive size")?
             .to_bits()
             != value.nominal_size.to_bits()
         {
@@ -539,6 +596,8 @@ impl TryFrom<DesignThreadConstructionWire> for DesignThreadConstruction {
                 .ok_or("major_diameter, minor_diameter, and pitch_diameter must be positive finite and strictly ordered")?,
             pitch: PositiveReal::new(value.pitch).ok_or("pitch must be positive finite")?,
             modeled: value.modeled,
+            angle: DesignThreadAngle::new(value.angle)
+                .ok_or("angle must be finite and strictly between 0 and 180 degrees")?,
             face_group_record_indices: value.face_group_record_indices,
             extended: value.extended,
         })

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed rows and cells of a configuration-table document, in authored row order.
 
+use cadmpeg_ir::scalar::FiniteReal;
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 
@@ -39,15 +40,19 @@ pub(crate) struct ConfigurationCell {
 pub(crate) enum ConfiguredValue {
     /// Value of a document property with an empty property set.
     Property { key: String, text: String },
-    /// Source expression of a document parameter record.
+    /// Source expression of a document parameter record, and its evaluated
+    /// value in database units.
     Parameter {
         record_index: u32,
         expression: String,
+        value: FiniteReal,
     },
-    /// Source expression of the parameter of a parameter owner record.
+    /// Source expression of the parameter of a parameter owner record, and
+    /// its evaluated value in database units.
     OwnedParameter {
         owner_record_index: u32,
         expression: String,
+        value: FiniteReal,
     },
     /// Whether the feature of a parameter scope record is computed.
     Feature { record_index: u32, computed: bool },
@@ -304,14 +309,22 @@ fn cell_value(target: &ColumnTarget, data: &Value) -> Option<ConfiguredValue> {
                 text: string(value, "value")?.to_owned(),
             })
         }
-        ColumnTarget::Parameter(record) => Some(ConfiguredValue::Parameter {
-            record_index: *record,
-            expression: expression(data)?,
-        }),
-        ColumnTarget::OwnedParameter(record) => Some(ConfiguredValue::OwnedParameter {
-            owner_record_index: *record,
-            expression: expression(data)?,
-        }),
+        ColumnTarget::Parameter(record) => {
+            let (expression, value) = expression(data)?;
+            Some(ConfiguredValue::Parameter {
+                record_index: *record,
+                expression,
+                value,
+            })
+        }
+        ColumnTarget::OwnedParameter(record) => {
+            let (expression, value) = expression(data)?;
+            Some(ConfiguredValue::OwnedParameter {
+                owner_record_index: *record,
+                expression,
+                value,
+            })
+        }
         ColumnTarget::Feature(record) => {
             let value = typed_component(data, "variant.bool-1.0.0")?;
             Some(ConfiguredValue::Feature {
@@ -322,12 +335,13 @@ fn cell_value(target: &ColumnTarget, data: &Value) -> Option<ConfiguredValue> {
     }
 }
 
-/// Source expression of an expression cell whose evaluated value is a number.
-fn expression(data: &Value) -> Option<String> {
+/// Source expression and evaluated value of an expression cell whose
+/// evaluated value is a number.
+fn expression(data: &Value) -> Option<(String, FiniteReal)> {
     let value = typed_component(data, "variant.expression-1.0.0")?;
     let evaluated = typed_component(value.get("value")?, "variant.float64-1.0.0")?;
-    typed(evaluated.get("value")?, "Float64")?.as_f64()?;
-    Some(string(value, "expression")?.to_owned())
+    let evaluated = FiniteReal::new(typed(evaluated.get("value")?, "Float64")?.as_f64()?)?;
+    Some((string(value, "expression")?.to_owned(), evaluated))
 }
 
 #[cfg(test)]

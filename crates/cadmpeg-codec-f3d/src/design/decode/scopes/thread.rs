@@ -84,6 +84,7 @@ pub(super) fn exact_thread_construction(
         &prefix_form,
         face_group_record_indices,
     )?;
+    construction.angle = bytes.get(start..).and_then(prologue_thread_angle)?;
     if matches!(
         construction.form,
         DesignThreadForm::CompactExtended(_)
@@ -178,8 +179,7 @@ pub(super) fn exact_thread_construction(
 ///
 /// The trailer's length and offset references each name one scope reference,
 /// the owner with local ordinal `1` and `0`. The other references are the
-/// ordered `(group, member)` pairs. A modeled prefix holds one entry for each
-/// pair.
+/// ordered `(group, member)` pairs.
 fn extended_standard_face_groups(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -219,6 +219,29 @@ fn extended_standard_face_groups(
     (entries == 0 || entries == groups.len()).then_some(groups)
 }
 
+pub(super) fn thread_modeled_entries_loss(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    construction: &DesignThreadConstruction,
+) -> Option<LossNote> {
+    if !construction.modeled || construction.extended.is_none() {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let end = usize::try_from(scope.paired_byte_offset()).ok()?;
+    let (ThreadPrefix::Extended(prefix), _) =
+        exact_thread_prefix(bytes.get(start..end.min(bytes.len()))?)?
+    else {
+        return None;
+    };
+    (!prefix.modeled).then(|| {
+        crate::loss::F3dLossCode::ThreadModeledEntriesAbsent.note(format!(
+            "Thread scope {} stores modeled flag 1 and no extended-prefix face entries; it is read as a modeled thread (DR-205).",
+            scope.id
+        ))
+    })
+}
+
 pub(super) fn thread_modeled_flag_loss(
     scope: &DesignParameterScope,
     construction: &DesignThreadConstruction,
@@ -248,7 +271,7 @@ pub(super) enum ThreadPrefix {
 pub(super) struct ExtendedThreadPrefix {
     external: bool,
     modeled: bool,
-    /// Count of the 16-byte entries: one for each modeled face.
+    /// Count of the 16-byte entries.
     entry_count: usize,
     class: String,
     designation_copy: String,
@@ -266,7 +289,7 @@ const THREAD_CLASS_UNITS: usize = 16;
 fn exact_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
     let direct_prologue = bytes.get(thread_standard::ZERO_RUN_10..thread_standard::FIXED_SCALAR)?
         == [0; 10]
-        && View::f64_le_at(bytes, thread_standard::FIXED_SCALAR)?.to_bits() == 60.0f64.to_bits();
+        && thread_angle_at(bytes, thread_standard::FIXED_SCALAR).is_some();
     let direct = if direct_prologue {
         thread_form(
             bytes,
@@ -288,7 +311,7 @@ fn exact_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
     let owner_marked = if bytes.get(thread_owner::ZERO_RUN_9..thread_owner::OWNER_MARKER)? == [0; 9]
         && View::u32_le_at(bytes, thread_owner::OWNER_MARKER)? == 1
         && bytes.get(thread_owner::SEPARATOR) == Some(&0)
-        && View::f64_le_at(bytes, thread_owner::FIXED_SCALAR)?.to_bits() == 60.0f64.to_bits()
+        && thread_angle_at(bytes, thread_owner::FIXED_SCALAR).is_some()
     {
         thread_form(bytes, thread_owner::FORM_MARKER, thread_owner::FORM_TOKEN)
             .map(|form| (form, thread_owner::LEN))
@@ -332,7 +355,7 @@ fn extended_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
             owner_extended::LEN,
         )
     } else if bytes.get(thread_extended::ZERO_RUN_10..thread_extended::FIXED_SCALAR)? == [0; 10]
-        && View::f64_le_at(bytes, thread_extended::FIXED_SCALAR)?.to_bits() == 60.0f64.to_bits()
+        && thread_angle_at(bytes, thread_extended::FIXED_SCALAR).is_some()
     {
         (
             thread_extended::EXTERNAL_FLAG,
@@ -372,12 +395,27 @@ fn extended_thread_prefix(bytes: &[u8]) -> Option<(ThreadPrefix, usize)> {
     ))
 }
 
+/// The thread profile angle stored at `at`.
+fn thread_angle_at(bytes: &[u8], at: usize) -> Option<thread::DesignThreadAngle> {
+    thread::DesignThreadAngle::new(View::f64_le_at(bytes, at)?)
+}
+
+/// The thread profile angle of the direct or owner-marked prologue.
+fn prologue_thread_angle(bytes: &[u8]) -> Option<thread::DesignThreadAngle> {
+    if owner_prologue(bytes) {
+        thread_angle_at(bytes, thread_owner::FIXED_SCALAR)
+    } else if bytes.get(thread_standard::ZERO_RUN_10..thread_standard::FIXED_SCALAR)? == [0; 10] {
+        thread_angle_at(bytes, thread_standard::FIXED_SCALAR)
+    } else {
+        None
+    }
+}
+
 fn owner_prologue(bytes: &[u8]) -> bool {
     bytes.get(thread_owner::ZERO_RUN_9..thread_owner::OWNER_MARKER) == Some(&[0; 9])
         && View::u32_le_at(bytes, thread_owner::OWNER_MARKER) == Some(1)
         && bytes.get(thread_owner::SEPARATOR) == Some(&0)
-        && View::f64_le_at(bytes, thread_owner::FIXED_SCALAR).map(f64::to_bits)
-            == Some(60.0f64.to_bits())
+        && thread_angle_at(bytes, thread_owner::FIXED_SCALAR).is_some()
 }
 
 fn thread_form(bytes: &[u8], marker_at: usize, token_at: usize) -> Option<ThreadPrefix> {
@@ -421,10 +459,10 @@ pub(super) fn parse_thread_payload(
             _ => return None,
         };
         let modeled = match extended {
-            Some(prefix) if stated_modeled && !prefix.modeled => return None,
-            Some(prefix) => prefix.modeled,
+            Some(prefix) => prefix.modeled || stated_modeled,
             None => stated_modeled,
         };
+        let entries_absent = extended.is_some_and(|prefix| stated_modeled && !prefix.modeled);
         let (trailer_kind, full_length) =
             match (expected_form, bytes.get(after_profile..after_profile + 5)?) {
                 (ThreadPrefix::Extended(_), [flag @ (0 | 1), 1 | 2, 0, 0, 0])
@@ -461,6 +499,9 @@ pub(super) fn parse_thread_payload(
                 }
                 _ => return None,
             };
+        if entries_absent && trailer_kind != ThreadTrailerKind::ExtendedStandard {
+            return None;
+        }
         let nominal_size = thread::DesignThreadNominalSize::try_from(nominal_size_text).ok()?;
         let major_diameter = View::f64_le_at(bytes, after_profile + thread_tail::MAJOR_DIAMETER)?;
         let minor_diameter = View::f64_le_at(bytes, after_profile + thread_tail::MINOR_DIAMETER)?;
@@ -571,6 +612,7 @@ pub(super) fn parse_thread_payload(
             return None;
         }
         Some(DesignThreadConstruction {
+            angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
             form,
             designation_offset: u64::try_from(designation_at).ok()?,
             designation: cadmpeg_core::text::NonBlankString::new(designation)?,

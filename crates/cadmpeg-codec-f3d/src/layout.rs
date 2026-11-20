@@ -10323,8 +10323,8 @@ pub(crate) mod reverse_normal_prefix {
     pub(crate) const GROUP_COUNT_VALUE: u32 = 0x0000_0001;
     /// Offset of `group_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const GROUP_REFERENCE: usize = 25;
-    /// Offset of `null_guid` (`bytes[76]`). Spec §3.1.
-    pub(crate) const NULL_GUID: usize = 36;
+    /// Offset of `link_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const LINK_GUID: usize = 36;
     /// Offset of `zero_tail` (`bytes[3]`). Spec §3.1.
     pub(crate) const ZERO_TAIL: usize = 112;
 }
@@ -10349,8 +10349,8 @@ pub(crate) mod shifted_reverse_normal_prefix {
     pub(crate) const GROUP_COUNT_VALUE: u32 = 0x0000_0001;
     /// Offset of `group_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const GROUP_REFERENCE: usize = 29;
-    /// Offset of `null_guid` (`bytes[76]`). Spec §3.1.
-    pub(crate) const NULL_GUID: usize = 40;
+    /// Offset of `link_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const LINK_GUID: usize = 40;
     /// Offset of `zero_tail` (`bytes[3]`). Spec §3.1.
     pub(crate) const ZERO_TAIL: usize = 116;
 }
