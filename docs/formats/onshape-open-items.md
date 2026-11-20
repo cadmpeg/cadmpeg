@@ -28,7 +28,7 @@ Note: Unresolved `UP_TO_NEXT` forms retain their feature as Native with `history
 
 Question: Which source query fields establish the shared material side of a mixed curve group?
 
-Known: Explicit wall flags and a stored line direction or closed carrier sense establish symmetric walls and one-curve sides.
+Known: Explicit wall flags and a closed carrier sense establish symmetric walls and one-curve sides, as does a stored line direction over an increasing parameter interval. A reversed interval is ONSHAPE-007.
 
 Need: The selection order, orientation and join rules for mixed carrier groups.
 

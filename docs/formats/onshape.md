@@ -104,8 +104,9 @@ Thin extrusions select curves through `wallShape` in the `MODEL` domain.
 Explicit `midplane`, `flipWall` and `oppositeDirection` fields establish wall
 placement. `midplane` selects a symmetric `thickness`. Otherwise,
 `thickness1` lies on the directed curve's right and `thickness2` on its left;
-`flipWall` exchanges the sides. Line directions and parameter intervals
-establish their directed paths. A closed circular or elliptical carrier's
+`flipWall` exchanges the sides. A line with an increasing parameter interval
+is directed along its stored direction. The direction of a line with
+`endParam < startParam` is open (ONSHAPE-007). A closed circular or elliptical carrier's
 `clockwise` field establishes its sense. The `MODEL` domain binds the
 feature to its Part Studio model.
 
