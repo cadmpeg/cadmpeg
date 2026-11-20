@@ -580,6 +580,18 @@
         "code": {
           "kind": "namespaced",
           "value": {
+            "code": "design.feature-unresolved",
+            "kind": "record_not_typed",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "0 sketch and 1 extrude features state their family without operands: sldprt:model:feature#247:0 (the extrude's profile is no whole sketch)",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
             "code": "history.rollback-unread",
             "kind": "feature_history_retained",
             "namespace": "sldprt"
