@@ -75,7 +75,7 @@ probes! {
         #[serde(rename = "renamed")]
         Moved { to: Point },
         #[serde(alias = "nested_alias")]
-        Nested { inner: Adjacent },
+        Nested { inner: Box<Adjacent> },
         Steps { steps: Vec<Internal> },
     }
 

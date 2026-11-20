@@ -242,7 +242,7 @@ fn split(tokens: &[TokenTree], angles: bool) -> Vec<&[TokenTree]> {
         if let TokenTree::Punct(punct) = token {
             match punct.as_char() {
                 '<' if angles => depth += 1,
-                '>' if angles && !arrow => depth = depth.checked_sub(1).unwrap_or_default(),
+                '>' if angles && !arrow => depth = depth.saturating_sub(1),
                 ',' if depth == 0 => {
                     parts.push(&tokens[start..index]);
                     start = index + 1;
@@ -268,7 +268,7 @@ fn closing_angle(tokens: &[TokenTree], open: usize) -> Result<usize, String> {
             match punct.as_char() {
                 '<' => depth += 1,
                 '>' if !arrow => {
-                    depth = depth.checked_sub(1).unwrap_or_default();
+                    depth = depth.saturating_sub(1);
                     if depth == 0 {
                         return Ok(index);
                     }
@@ -319,7 +319,7 @@ fn default_at(tokens: &[TokenTree]) -> Option<usize> {
         if let TokenTree::Punct(punct) = token {
             match punct.as_char() {
                 '<' => depth += 1,
-                '>' => depth = depth.checked_sub(1).unwrap_or_default(),
+                '>' => depth = depth.saturating_sub(1),
                 '=' if depth == 0 => return Some(index),
                 _ => {}
             }
@@ -541,21 +541,21 @@ fn expand(enumeration: &Enumeration) -> String {
     };
     let this = format!("{name}{arguments_all}");
 
-    let mut items = String::new();
-    items.push_str("#[derive(::serde::Deserialize)]\n#[serde(variant_identifier)]\n");
+    let mut items =
+        vec!["#[derive(::serde::Deserialize)]\n#[serde(variant_identifier)]\n".to_owned()];
     if let Some(rename_all) = rename_all {
-        items.push_str(&format!("#[serde({rename_all})]\n"));
+        items.push(format!("#[serde({rename_all})]\n"));
     }
-    items.push_str("enum __Tag {\n");
+    items.push("enum __Tag {\n".to_owned());
     for variant in variants {
         if !variant.names.is_empty() {
-            items.push_str(&format!("#[serde({})]\n", variant.names.join(", ")));
+            items.push(format!("#[serde({})]\n", variant.names.join(", ")));
         }
-        items.push_str(&format!("{},\n", variant.name));
+        items.push(format!("{},\n", variant.name));
     }
-    items.push_str("}\n");
+    items.push("}\n".to_owned());
 
-    let mut arms = String::new();
+    let mut arms: Vec<String> = Vec::new();
     for (index, variant) in variants.iter().enumerate() {
         let variant_name = &variant.name;
         let path = format!("{name}::{variant_name}");
@@ -570,24 +570,24 @@ fn expand(enumeration: &Enumeration) -> String {
             let struct_expecting = expecting
                 .clone()
                 .unwrap_or_else(|| format!("struct variant {name}::{variant_name}"));
-            items.push_str("#[derive(::serde::Deserialize)]\n");
-            items.push_str(&format!("#[serde(expecting = {struct_expecting:?})]\n"));
+            items.push("#[derive(::serde::Deserialize)]\n".to_owned());
+            items.push(format!("#[serde(expecting = {struct_expecting:?})]\n"));
             if *deny_unknown_fields {
-                items.push_str("#[serde(deny_unknown_fields)]\n");
+                items.push("#[serde(deny_unknown_fields)]\n".to_owned());
             }
             if !used.is_empty() {
-                items.push_str("#[serde(bound = \"\")]\n");
+                items.push("#[serde(bound = \"\")]\n".to_owned());
             }
-            items.push_str(&format!("struct {shadow}{} {{\n", declared(&used)));
+            items.push(format!("struct {shadow}{} {{\n", declared(&used)));
             for field in fields {
                 for attribute in &field.serde {
-                    items.push_str(attribute);
-                    items.push('\n');
+                    items.push(attribute.clone());
+                    items.push("\n".to_owned());
                 }
                 let ty: TokenStream = field.ty.iter().cloned().collect();
-                items.push_str(&format!("{}: {ty},\n", field.name));
+                items.push(format!("{}: {ty},\n", field.name));
             }
-            items.push_str("}\n");
+            items.push("}\n".to_owned());
             shadow_arguments = arguments(&used);
             let names: Vec<&str> = fields.iter().map(|field| field.name.as_str()).collect();
             destructure = format!(
@@ -619,7 +619,7 @@ fn expand(enumeration: &Enumeration) -> String {
                         "::cadmpeg_core::tagged::read::<{typed_shadow}>(__text).map({destructure})"
                     ),
                 };
-                arms.push_str(&format!("__Tag::{variant_name} => {arm},\n"));
+                arms.push(format!("__Tag::{variant_name} => {arm},\n"));
             }
             Some(content) => {
                 let (missing, present) = match &variant.shape {
@@ -650,7 +650,7 @@ fn expand(enumeration: &Enumeration) -> String {
                         )
                     }
                 };
-                arms.push_str(&format!(
+                arms.push(format!(
                     "(__Tag::{variant_name}, ::core::option::Option::None) => {missing},\n\
                      (__Tag::{variant_name}, ::core::option::Option::Some(__text)) => {present},\n"
                 ));
@@ -658,6 +658,8 @@ fn expand(enumeration: &Enumeration) -> String {
         }
     }
 
+    let items = items.concat();
+    let arms = arms.concat();
     let read_tag = "__name.read::<__Tag>()?";
     let body = match content {
         None => {

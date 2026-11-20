@@ -217,6 +217,8 @@ fn message(error: &serde_json::Error) -> String {
     }
 }
 
+const HEX: &[u8; 16] = b"0123456789abcdef";
+
 /// Writes `text` as a JSON string.
 fn quote(out: &mut String, text: &str) {
     out.push('"');
@@ -224,7 +226,13 @@ fn quote(out: &mut String, text: &str) {
         match character {
             '"' => out.push_str("\\\""),
             '\\' => out.push_str("\\\\"),
-            '\u{0}'..='\u{1f}' => out.push_str(&format!("\\u{:04x}", u32::from(character))),
+            '\u{0}'..='\u{1f}' => {
+                let mut bytes = [0; 4];
+                let code = character.encode_utf8(&mut bytes).as_bytes()[0];
+                out.push_str("\\u00");
+                out.push(char::from(HEX[usize::from(code >> 4)]));
+                out.push(char::from(HEX[usize::from(code & 0x0f)]));
+            }
             other => out.push(other),
         }
     }
