@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode parameter scopes and parse one scope payload.
 
-pub(super) mod family;
+pub(crate) mod family;
 
 use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
@@ -24,6 +24,7 @@ use super::component_constructions::exact_component_insert_construction;
 use super::component_constructions::exact_copy_paste_component_operation;
 use super::copy_paste_bodies::exact_copy_paste_bodies_operation;
 use super::derived_instance;
+use super::direct_face::exact_axis_owner_scale;
 use super::direct_face::exact_direct_face_operation;
 use super::direct_face::exact_modify_operation;
 use super::direct_face::exact_move_face_operation;
@@ -58,11 +59,13 @@ use super::surfaces::exact_surface_extend_operation;
 use super::surfaces::exact_surface_offset_operation;
 use super::surfaces::exact_surface_stitch_operation;
 use super::surfaces::exact_surface_untrim_operation;
+use super::surfaces::surface_extend_loss;
 use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
-use super::thread::thread_modeled_flag_loss;
-use super::work_geometry::exact_joint_origin_frame;
-use super::work_geometry::exact_work_plane_frame;
+use super::thread::{thread_modeled_entries_loss, thread_modeled_flag_loss};
+use super::work_geometry::{
+    direct_joint_origin_frame, exact_joint_origin_frame, exact_work_plane_frame,
+};
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
@@ -78,6 +81,7 @@ use crate::layout::canvas_scope_tail_98 as canvas_tail;
 use crate::layout::canvas_scope_typed_tail as typed_canvas_tail;
 use crate::layout::named_parameter_scope_tail as named_tail;
 use crate::layout::reciprocal_hole_tail as hole_tail;
+use crate::layout::thread_hole_companion_tail as thread_companion_tail;
 use crate::layout::typed_reference_parameter_scope_tail as typed_tail;
 use crate::records::feature::assembly;
 use crate::records::feature::coil;
@@ -87,7 +91,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Design records that parameter-scope decoding reads.
 #[derive(Debug, Clone, Copy, Default)]
@@ -147,23 +151,46 @@ pub(crate) fn decode_parameter_scopes(
             .map(|(code, row)| (*code, (row.type_guid.as_str(), row.version)))
             .collect::<HashMap<_, _>>();
         let body_owners = timeline_body_owners(bytes, &records, class_types.values().copied());
-        let metadata = if body_owners
+        let needs_browser_metadata = body_owners
             .values()
             .flatten()
-            .any(TimelineBodyOwner::keeps_sources)
-        {
+            .any(TimelineBodyOwner::keeps_sources);
+        let metadata = if needs_browser_metadata
+            || class_types.values().any(|row| {
+                row.type_guid.as_str().eq_ignore_ascii_case(
+                    crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID,
+                )
+            }) {
             crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)
                 .ok()
                 .flatten()
         } else {
             None
         };
-        let browser_nodes = metadata
+        let split_face_frames = metadata
+            .as_ref()
             .and_then(|metadata| {
-                crate::design::decode::presentation::browser_node_suffixes(bytes, &metadata).ok()
+                crate::design::decode::meta::unambiguous_design_primary_frames(bytes, metadata).ok()
             })
             .unwrap_or_default();
+        let paste_metadata = metadata.as_ref().filter(|_| needs_browser_metadata);
+        let paste_nodes = super::base_feature::PasteNodes {
+            sources: paste_metadata
+                .and_then(|metadata| {
+                    crate::design::decode::presentation::browser_node_suffixes(bytes, metadata).ok()
+                })
+                .unwrap_or_default(),
+            copies: paste_metadata
+                .and_then(|metadata| {
+                    crate::design::decode::presentation::presentation_scene_node_guids(
+                        bytes, metadata,
+                    )
+                    .ok()
+                })
+                .unwrap_or_default(),
+        };
         let stream_scope_start = out.len();
+        let mut direct_joint_origin_offsets = HashSet::new();
         let mut mesh_scope_ranges = HashMap::new();
         if class_types.values().any(|info| {
             !info.entities.is_empty()
@@ -235,12 +262,13 @@ pub(crate) fn decode_parameter_scopes(
             }
             if let scope::DesignScopePayload::SilhouetteSplit(_) = scope.payload() {
                 let operation = super::silhouette_split::decode(
+                    ctx,
                     bytes,
                     &records,
                     &scope,
                     &stream_types,
                     &mut losses,
-                );
+                )?;
                 if let scope::DesignScopePayloadMut::SilhouetteSplit(slot) = scope.payload_mut() {
                     *slot = operation;
                 }
@@ -266,7 +294,7 @@ pub(crate) fn decode_parameter_scopes(
                     super::position::decode(ctx, bytes, &records, &scope, &stream_types)?;
                 if scope.captured_positions.is_none() {
                     losses.push(crate::loss::F3dLossCode::PositionEnvelopeUnparsed.note(format!(
-                        "Position scope {} has no admitted version-six captured-position envelope; its native scope is retained.", scope.id
+                        "Position scope {} has no admitted captured-position envelope; the decoder retains its native scope.", scope.id
                     )));
                 }
             }
@@ -293,6 +321,7 @@ pub(crate) fn decode_parameter_scopes(
             if let Some(loss) = extrude_extent_native_loss(&scope) {
                 losses.push(loss);
             }
+            super::split::decode_split_tool_extension(bytes, &mut scope, &mut losses);
             bind_coil_extent_from_parameters(&mut scope, parameters, parameter_owners);
             bind_hem_operation_from_parameters(bytes, &mut scope, parameters, parameter_owners);
             if design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sketch) {
@@ -301,32 +330,16 @@ pub(crate) fn decode_parameter_scopes(
                 let frame = start
                     .zip(end)
                     .and_then(|(start, end)| bytes.get(start..end));
-                let mut unique_match = None;
-                let mut multiple_matches = false;
-                if let Some(frame) = frame {
-                    // One pass over the frame: the first offset of every
-                    // marked reference (a one byte, a u32 suffix, six zero
-                    // bytes), then each eligible entity looks its suffix up.
-                    let first_at = first_marked_reference_offsets(frame);
-                    for entity in entities {
-                        if native_stream(&entity.id) != Some(stream.as_str())
-                            || !entity.in_sketch_module()
-                            || entity.entity_id.suffix() > u64::from(u32::MAX)
-                        {
-                            continue;
-                        }
-                        let Ok(suffix) = u32::try_from(entity.entity_id.suffix()) else {
-                            continue;
-                        };
-                        if let Some(at) = first_at.get(&suffix) {
-                            if unique_match.replace((entity, at + 1)).is_some() {
-                                multiple_matches = true;
-                            }
-                        }
-                    }
-                }
-                if let Some((entity, relative_offset)) = unique_match.filter(|_| !multiple_matches)
-                {
+                if let Some((entity, relative_offset)) = frame.and_then(|frame| {
+                    sketch_scope_entity(
+                        bytes,
+                        frame,
+                        scope.record_index,
+                        &stream,
+                        entities,
+                        &records,
+                    )
+                }) {
                     let Some(entity_reference_offset) = scope
                         .byte_offset()
                         .checked_add(u64_from_index(relative_offset))
@@ -383,11 +396,21 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             if scope.kind() == scope::DesignFeatureKind::JointOrigin {
-                if let Some(frame) = exact_joint_origin_frame(bytes, &records, &scope) {
+                let framed =
+                    match direct_joint_origin_frame(bytes, &records, &scope, &stream_types) {
+                        Some((frame, carrier)) => {
+                            direct_joint_origin_offsets.insert(scope.byte_offset());
+                            Some((frame, Some(carrier)))
+                        }
+                        None => exact_joint_origin_frame(bytes, &records, &scope)
+                            .map(|frame| (frame, None)),
+                    };
+                if let Some((frame, carrier)) = framed {
                     if let scope::DesignScopePayloadMut::JointOrigin(slot) = scope.payload_mut() {
                         *slot = Some(scope::DesignJointOriginTransform {
                             joint_origin_transform: frame.transform,
                             joint_origin_transform_offset: frame.transform_offset,
+                            carrier,
                             reference: frame.reference.map(|(record_index, offset)| {
                                 scope::DesignJointOriginReference {
                                     joint_origin_reference: record_index,
@@ -407,6 +430,7 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction = exact_hole_construction(
+                    ctx,
                     bytes,
                     &records,
                     &scope,
@@ -425,7 +449,10 @@ pub(crate) fn decode_parameter_scopes(
                         .map(|row| row.version),
                 );
                 if let scope::DesignScopePayloadMut::Hole(slot) = scope.payload_mut() {
-                    slot.point = construction;
+                    slot.point = construction.map(|hole| {
+                        losses.extend(hole.input_loss);
+                        hole.construction
+                    });
                     slot.extent = extent;
                 }
             }
@@ -562,7 +589,17 @@ pub(crate) fn decode_parameter_scopes(
             }
             {
                 let construction =
-                    exact_scale_operation(bytes, &records, &scope, &stream_types, &mut losses)?;
+                    exact_scale_operation(bytes, &records, &scope, &stream_types, &mut losses)
+                        .or_else(|| {
+                            exact_axis_owner_scale(
+                                bytes,
+                                &records,
+                                &scope,
+                                &stream_types,
+                                parameters,
+                                parameter_owners,
+                            )
+                        });
                 if let scope::DesignScopePayloadMut::Scale(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -571,18 +608,7 @@ pub(crate) fn decode_parameter_scopes(
                 let construction =
                     exact_surface_extend_operation(bytes, &records, &scope, &mut losses);
                 if let Some(operation) = &construction {
-                    let distance = operation.distance.get();
-                    losses.push(
-                        if cadmpeg_ir::scalar::PositiveLength::new(distance * 10.0).is_some() {
-                            crate::loss::F3dLossCode::FeatureSurfaceExtendMethodUnresolved.note(
-                                format!("SurfaceExtend scope {} projects with an unresolved extension method (DR-311).", scope.id),
-                            )
-                        } else {
-                            crate::loss::F3dLossCode::FeatureSurfaceExtendDistanceNonpositive.note(
-                                format!("SurfaceExtend scope {} stores extension distance {distance} cm and stays native (DR-312).", scope.id),
-                            )
-                        },
-                    );
+                    losses.extend(surface_extend_loss(&scope.id, operation));
                 }
                 if let scope::DesignScopePayloadMut::SurfaceExtend(slot) = scope.payload_mut() {
                     *slot = construction;
@@ -676,13 +702,18 @@ pub(crate) fn decode_parameter_scopes(
                     losses.extend(three_flag_loft_settings_loss(bytes, &scope, value));
                     losses.extend(loft_lists_loss(&scope, value));
                 }
+                if let crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(
+                    value,
+                ) = &construction
+                {
+                    losses.extend(referenced_revolve_reference_loss(bytes, &scope, value));
+                }
                 match (scope.payload_mut(), construction) {
                     (
                         scope::DesignScopePayloadMut::Revolve(slot),
                         crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(value),
                     ) => {
                         *slot = Some(value);
-                        losses.extend(referenced_revolve_reference_loss(bytes, &scope));
                         if let Some(length) = marker_one_revolve_assumed_length(bytes, &scope) {
                             losses.push(crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.note(
                                 format!("Revolve scope {} reads its {length}-byte token-independent frame with the marker-one field offsets (DR-269).", scope.id),
@@ -711,12 +742,26 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
+                let construction = super::split_face::split_face_operation(
+                    ctx,
+                    bytes,
+                    &scope,
+                    &split_face_frames,
+                )?;
+                if let scope::DesignScopePayloadMut::SplitFace(slot) = scope.payload_mut() {
+                    *slot = construction;
+                }
+            }
+            {
                 let construction = exact_thread_construction(bytes, &scope, parameter_owners);
                 losses.extend(
                     construction
                         .as_ref()
                         .and_then(|construction| thread_modeled_flag_loss(&scope, construction)),
                 );
+                losses.extend(construction.as_ref().and_then(|construction| {
+                    thread_modeled_entries_loss(bytes, &scope, construction)
+                }));
                 if let scope::DesignScopePayloadMut::Thread(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -747,6 +792,7 @@ pub(crate) fn decode_parameter_scopes(
                     &records,
                     &scope,
                     parameter_owners,
+                    &stream_types,
                 )?;
                 if let scope::DesignScopePayloadMut::RPattern(slot)
                 | scope::DesignScopePayloadMut::RectangularPattern(slot) = scope.payload_mut()
@@ -788,8 +834,10 @@ pub(crate) fn decode_parameter_scopes(
                         recipes,
                         solved_frame,
                     ) {
-                        Ok(Some(carriers)) => carriers,
-                        Ok(None) => return None,
+                        Ok((carriers, input_loss)) => {
+                            losses.extend(input_loss);
+                            carriers?
+                        }
                         Err(error) => return Some(Err(error)),
                     };
                     Some(Ok(
@@ -864,9 +912,17 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let owned = body_owners.get(&scope.record_index).and_then(|owners| {
-                    timeline_owned_base_feature(bytes, &scope, owners, &browser_nodes, &mut losses)
-                });
+                let owned = match body_owners.get(&scope.record_index) {
+                    Some(owners) => timeline_owned_base_feature(
+                        ctx,
+                        stream_view,
+                        &scope,
+                        owners,
+                        &paste_nodes,
+                        &mut losses,
+                    )?,
+                    None => None,
+                };
                 let construction = match owned {
                     Some(owned) => Some(owned),
                     None => exact_base_feature_construction(bytes, &scope)?,
@@ -876,6 +932,12 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
 
+            if scope.kind() == scope::DesignFeatureKind::MotionLink {
+                let link = super::motion_link::read(stream_view, &records, &scope, &stream_types);
+                if let scope::DesignScopePayloadMut::MotionLink(slot) = scope.payload_mut() {
+                    *slot = link;
+                }
+            }
             out.push(scope);
         }
         super::edge_flange::bind(
@@ -899,7 +961,12 @@ pub(crate) fn decode_parameter_scopes(
             &stream_types,
             &mut out[stream_scope_start..],
         )?;
-        bind_joint_origin_frames_from_assemblies(bytes, &mut out[stream_scope_start..]);
+        bind_joint_origin_frames_from_assemblies(
+            bytes,
+            &mut out[stream_scope_start..],
+            &direct_joint_origin_offsets,
+            &mut losses,
+        );
         bind_axial_assembly_operand_targets(bytes, &records, &mut out[stream_scope_start..])?;
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -920,13 +987,68 @@ pub(crate) fn decode_parameter_scopes(
     })
 }
 
+fn sketch_scope_entity<'a>(
+    bytes: &[u8],
+    frame: &[u8],
+    scope_record_index: u32,
+    stream: &str,
+    entities: &'a [crate::records::entity_header::DesignEntityHeader],
+    records: &IndexedRecordOffsets,
+) -> Option<(&'a crate::records::entity_header::DesignEntityHeader, usize)> {
+    let first_at = first_marked_reference_offsets(frame);
+    let candidates = entities
+        .iter()
+        .filter_map(|entity| {
+            if native_stream(&entity.id) != Some(stream) || !entity.in_sketch_module() {
+                return None;
+            }
+            let suffix = u32::try_from(entity.entity_id.suffix()).ok()?;
+            Some((entity, *first_at.get(&suffix)?))
+        })
+        .collect::<Vec<_>>();
+    if let [(entity, at)] = candidates.as_slice() {
+        return Some((entity, at + 1));
+    }
+    let (entity, _) = candidates.first()?;
+    if let Some(placement) = crate::design::decode::sketch::parse_scope_sketch_placement(
+        bytes,
+        frame,
+        scope_record_index,
+        &entity.entity_id,
+        records,
+    ) {
+        let start = usize::try_from(placement.byte_offset()).ok()?;
+        let end = usize::try_from(placement.paired_byte_offset()).ok()?;
+        let placement_references = first_marked_reference_offsets(bytes.get(start..end)?);
+        let mut shared = candidates.iter().copied().filter(|(entity, _)| {
+            u32::try_from(entity.entity_id.suffix())
+                .ok()
+                .is_some_and(|suffix| placement_references.contains_key(&suffix))
+        });
+        if let (Some((entity, at)), None) = (shared.next(), shared.next()) {
+            return Some((entity, at + 1));
+        }
+    }
+    let mut plain = candidates.into_iter().filter_map(|(entity, _)| {
+        let at = memchr::memchr_iter(1, frame).find(|at| {
+            crate::bytes::local_reference_target(frame, *at, false).map(u64::from)
+                == Some(entity.entity_id.suffix())
+        })?;
+        Some((entity, at))
+    });
+    match (plain.next(), plain.next()) {
+        (Some((entity, at)), None) => Some((entity, at + 1)),
+        _ => None,
+    }
+}
+
 fn first_marked_reference_offsets(frame: &[u8]) -> HashMap<u32, usize> {
     let mut first_at = HashMap::new();
     for at in memchr::memchr_iter(1, frame) {
-        if at + 11 <= frame.len() && frame[at + 5..at + 11] == [0; 6] {
-            if let Some(suffix) = View::u32_le_at(frame, at + 1) {
-                first_at.entry(suffix).or_insert(at);
-            }
+        if let Some(suffix) = crate::bytes::local_reference_target(frame, at, false)
+            .or_else(|| crate::bytes::typed_local_reference_target(frame, at))
+        {
+            first_at.entry(suffix).or_insert(at);
         }
     }
     first_at
@@ -1341,6 +1463,12 @@ pub(crate) fn parameter_scope_previous_history_offset(
     rigid_group: bool,
     second_tail_reference: bool,
 ) -> Option<usize> {
+    if kind.as_ref() == "Thread"
+        && tail_length == thread_companion_tail::LEN
+        && !second_tail_reference
+    {
+        return Some(thread_companion_tail::PREVIOUS_HISTORY_STATE);
+    }
     parameter_scope_previous_history_offset_for_form(
         kind.as_ref(),
         tail_length,
@@ -1348,6 +1476,19 @@ pub(crate) fn parameter_scope_previous_history_offset(
         rigid_group,
         second_tail_reference,
     )
+}
+
+pub(crate) fn named_reciprocal_hole_previous_history_offset(
+    tail_length: usize,
+    label_units: usize,
+) -> Option<usize> {
+    let label_bytes = label_units.checked_mul(2)?;
+    let relative = match tail_length.checked_sub(label_bytes)? {
+        110 => 53,
+        120 => 63,
+        _ => return None,
+    };
+    label_bytes.checked_add(relative)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1687,6 +1828,12 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             let named_tail = if named_tail_possible {
                 named_parameter_scope_tail_is_valid(bytes, kind_end, paired_at, tail_length)
                     .unwrap_or_default()
+                    || (kind == "Hole"
+                        && named_reciprocal_hole_history(
+                            bytes.get(kind_end..paired_at)?,
+                            record_index,
+                        )
+                        .is_some())
                     || (extended_named
                         && named_parameter_scope_references(bytes, kind_end, paired_at)
                             .is_some_and(|references| {
@@ -1868,17 +2015,27 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         }
         let reference_table = reference_table?;
         let (reference_count_at, reference_members, reference_member_offsets) = &reference_table;
-        let previous_history_state_id_offset =
-            match parameter_scope_previous_history_offset_for_form(
-                kind.as_str(),
-                tail_length,
-                tail_form,
-                kind == scope::DesignFeatureKind::AsBuilt && reference_members.is_empty(),
-                bytes.get(kind_end.checked_add(FIXED_TAIL_SECOND_REFERENCE)?) == Some(&1),
-            ) {
-                Some(offset) => Some(kind_end.checked_add(offset)?),
-                None => None,
-            };
+        let tail = bytes.get(kind_end..paired_at)?;
+        let companion_history = match (&kind, tail_form) {
+            (scope::DesignFeatureKind::Hole, ScopeTailForm::Named) => {
+                named_reciprocal_hole_history(tail, record_index)
+            }
+            (scope::DesignFeatureKind::Thread, ScopeTailForm::Fixed) => {
+                super::thread::hole_companion_history(tail, record_index)
+            }
+            _ => None,
+        };
+        let previous_history_state_id_offset = companion_history
+            .or_else(|| {
+                parameter_scope_previous_history_offset_for_form(
+                    kind.as_str(),
+                    tail_length,
+                    tail_form,
+                    kind == scope::DesignFeatureKind::AsBuilt && reference_members.is_empty(),
+                    tail.get(FIXED_TAIL_SECOND_REFERENCE) == Some(&1),
+                )
+            })
+            .and_then(|offset| kind_end.checked_add(offset));
         let previous_history_state_id = previous_history_state_id_offset.and_then(|offset| {
             match View::u32_le_at(bytes, offset)? {
                 u32::MAX => None,
@@ -2161,6 +2318,33 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
 /// The preceding-history offset of a Hole tail that lists the Hole, and the
 /// Thread that owns it when one does, before its companion chain.
 fn reciprocal_hole_tail(tail: &[u8], hole: u32) -> Option<usize> {
+    if View::u32_le_at(tail, hole_tail::FEATURE_ORDINAL)? == 0
+        || tail.get(hole_tail::ZERO_PREFIX..hole_tail::MEMBER_COUNT)? != [0; 8]
+    {
+        return None;
+    }
+    reciprocal_hole_members(tail, hole, hole_tail::MEMBER_COUNT, 1)
+}
+
+fn named_reciprocal_hole_history(tail: &[u8], hole: u32) -> Option<usize> {
+    if View::u32_le_at(tail, hole_tail::FEATURE_ORDINAL)? == 0
+        || tail.get(named_tail::ZERO_WORD..named_tail::LABEL_LENGTH)? != [0; 4]
+    {
+        return None;
+    }
+    let (label, count_at) = lp_utf16_bounded(tail, named_tail::LABEL_LENGTH, 1..=256)?;
+    if label.chars().any(char::is_control) || View::u32_le_at(tail, count_at)? != 2 {
+        return None;
+    }
+    reciprocal_hole_members(tail, hole, count_at, 2)
+}
+
+fn reciprocal_hole_members(
+    tail: &[u8],
+    hole: u32,
+    count_at: usize,
+    suppression_padding: usize,
+) -> Option<usize> {
     /// Length of one marked record reference.
     const REFERENCE: usize = 11;
     /// The zero byte, suppression flag, and zero byte after the members.
@@ -2169,18 +2353,14 @@ fn reciprocal_hole_tail(tail: &[u8], hole: u32) -> Option<usize> {
     const HISTORY_RUN: usize = 20;
     let reference = |at| super::shared_frames::marked_record_reference(tail, at);
     let flag = |at| tail.get(at).is_some_and(|byte| *byte <= 1);
-    let thread = match View::u32_le_at(tail, hole_tail::MEMBER_COUNT)? {
+    let self_at = count_at.checked_add(hole_tail::SELF_REFERENCE - hole_tail::MEMBER_COUNT)?;
+    let thread = match View::u32_le_at(tail, count_at)? {
         1 => None,
-        2 => Some(
-            reference(hole_tail::SELF_REFERENCE + REFERENCE)
-                .filter(|thread| *thread > 3 && *thread != hole)?,
-        ),
+        2 => Some(reference(self_at + REFERENCE).filter(|thread| *thread > 3 && *thread != hole)?),
         _ => return None,
     };
-    let members_end = hole_tail::SELF_REFERENCE + REFERENCE * (1 + usize::from(thread.is_some()));
-    if View::u32_le_at(tail, hole_tail::FEATURE_ORDINAL)? == 0
-        || tail.get(hole_tail::ZERO_PREFIX..hole_tail::MEMBER_COUNT)? != [0; 8]
-        || reference(hole_tail::SELF_REFERENCE)? != hole
+    let members_end = self_at + REFERENCE * (1 + usize::from(thread.is_some()));
+    if reference(self_at)? != hole
         || tail.get(members_end) != Some(&0)
         || !flag(members_end + 1)
         || tail.get(members_end + 2) != Some(&0)
@@ -2203,13 +2383,16 @@ fn reciprocal_hole_tail(tail: &[u8], hole: u32) -> Option<usize> {
     let duration = View::f64_le_at(tail, history_at + 8)?;
     let second_at = history_at + HISTORY_RUN;
     let flag_at = second_at + REFERENCE;
-    let third_at = flag_at + 2;
+    let third_at = flag_at + 1 + suppression_padding;
     let closing_at = third_at + REFERENCE;
     (duration.is_finite()
         && duration >= 0.0
         && reference(second_at)? == first.checked_sub(1)?
         && flag(flag_at)
-        && tail.get(flag_at + 1) == Some(&0)
+        && tail
+            .get(flag_at + 1..third_at)?
+            .iter()
+            .all(|byte| *byte == 0)
         && reference(third_at)? == first.checked_sub(2)?
         && reference(closing_at)? == hole
         && tail.get(closing_at + REFERENCE) == Some(&0)

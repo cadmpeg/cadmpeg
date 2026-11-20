@@ -2,7 +2,7 @@
 //! External occurrences placed by their contained occurrences' component paths.
 
 use cadmpeg_ir::ids::OccurrenceId;
-use cadmpeg_ir::products::{Occurrence, OccurrenceParent, PrototypeReference};
+use cadmpeg_ir::products::{Occurrence, ProductDefinition, Storage};
 use cadmpeg_ir::transform::Transform;
 
 use crate::loss::F3dLossCode;
@@ -226,29 +226,50 @@ fn a_contained_component_path_carrier_names_its_external_placement_and_owners() 
     assert!(!crate::xref::contained_poses_match(&placement));
 }
 
-fn occurrence(id: &str, parent: Option<&str>, native_ref: Option<&str>, x: f64) -> Occurrence {
-    Occurrence {
-        id: OccurrenceId::mint(id).unwrap(),
-        prototype: PrototypeReference::Unresolved {},
-        parent: parent.map_or(OccurrenceParent::Root {}, |parent| {
-            OccurrenceParent::Occurrence {
-                occurrence: OccurrenceId::mint(parent).unwrap(),
-            }
-        }),
-        ordinal: 0,
-        transform: Transform::affine([
+/// The instance tree of a model: each occurrence and the occurrence it sits
+/// in, `None` at the top level.
+type Parents = Vec<(String, Option<String>)>;
+
+fn occurrence(id: &str, native_ref: Option<&str>, x: f64) -> Occurrence {
+    let mut occurrence = Occurrence::new(
+        OccurrenceId::mint(id).unwrap(),
+        cadmpeg_ir::ids::ProductDefinitionId::mint(format!("{id}/definition")).unwrap(),
+        Transform::affine([
             [1.0, 0.0, 0.0, x],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0],
-        ])
-        .unwrap(),
-        linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-        name: None,
-        visible: None,
-        link: None,
-        native_ref: native_ref.map(str::to_owned),
+        ]),
+    );
+    occurrence.native_ref = native_ref.map(str::to_owned);
+    occurrence
+}
+
+/// States `parents` as the decoder builds the expanded tree: each occurrence
+/// places a definition of its own, which lists the occurrences that sit in
+/// it.
+fn own(model: &mut cadmpeg_ir::document::Model, parents: &Parents) {
+    for occurrence in &model.occurrences {
+        model.product_definitions.push(ProductDefinition::new(
+            occurrence.prototype.clone(),
+            Storage::Embedded,
+        ));
     }
+    for (id, parent) in parents {
+        let parent = parent
+            .as_deref()
+            .map(|parent| OccurrenceId::mint(parent).unwrap());
+        crate::tree::place_under(
+            model,
+            parent.as_ref(),
+            OccurrenceId::mint(id.as_str()).unwrap(),
+        );
+    }
+}
+
+fn parented(rows: &[(&str, Option<&str>)]) -> Parents {
+    rows.iter()
+        .map(|(id, parent)| ((*id).to_owned(), parent.map(str::to_owned)))
+        .collect()
 }
 
 fn local_carrier(id: &str, record_index: u32) -> DesignComponentOccurrence {
@@ -294,7 +315,7 @@ fn place_reference_stored_at(
     stored_x: f64,
 ) -> (Transform, Vec<cadmpeg_ir::report::loss::LossKind>, usize) {
     let (ir, losses, count) = placed_reference(reference, stored_x);
-    (ir.model.occurrences[3].transform, losses, count)
+    (ir.model.occurrences[3].transform.unwrap(), losses, count)
 }
 
 fn placed_reference(
@@ -305,13 +326,13 @@ fn placed_reference(
     Vec<cadmpeg_ir::report::loss::LossKind>,
     usize,
 ) {
-    placed_reference_edit(reference, stored_x, |_| {})
+    placed_reference_edit(reference, stored_x, |_, _| {})
 }
 
 fn placed_reference_edit(
     reference: XrefReference,
     stored_x: f64,
-    prepare: impl FnOnce(&mut cadmpeg_ir::CadIr),
+    prepare: impl FnOnce(&mut cadmpeg_ir::CadIr, &mut Parents),
 ) -> (
     cadmpeg_ir::CadIr,
     Vec<cadmpeg_ir::report::loss::LossKind>,
@@ -323,45 +344,59 @@ fn placed_reference_edit(
         "f3d:xref/role/occurrence-0/Design/BulkStream.dat:design-component-occurrence#";
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.occurrences = vec![
-        occurrence("f3d:model:occurrence#root", None, None, 0.0),
-        occurrence(
-            "f3d:model:occurrence#outer",
-            Some("f3d:model:occurrence#root"),
-            Some(OUTER),
-            0.0,
-        ),
-        occurrence(
-            "f3d:model:occurrence#owner",
-            Some("f3d:model:occurrence#outer"),
-            Some(OWNER),
-            5.0,
-        ),
+        occurrence("f3d:model:occurrence#root", None, 0.0),
+        occurrence("f3d:model:occurrence#outer", Some(OUTER), 0.0),
+        occurrence("f3d:model:occurrence#owner", Some(OWNER), 5.0),
         occurrence(
             "f3d:model:occurrence#owner:xref-0-0",
-            Some("f3d:model:occurrence#owner"),
             Some("f3d:xref:reference#0-occurrence-0"),
             stored_x,
         ),
         occurrence(
             "f3d:xref/role/occurrence-0/model:occurrence#member-root",
-            Some("f3d:model:occurrence#owner:xref-0-0"),
             None,
             0.0,
         ),
         occurrence(
             "f3d:xref/role/occurrence-0/model:occurrence#part-496",
-            Some("f3d:xref/role/occurrence-0/model:occurrence#member-root"),
             Some(&format!("{PART}496")),
             30.0,
         ),
         occurrence(
             "f3d:xref/role/occurrence-0/model:occurrence#part-497",
-            Some("f3d:xref/role/occurrence-0/model:occurrence#member-root"),
             Some(&format!("{PART}497")),
             -30.0,
         ),
     ];
-    prepare(&mut ir);
+    let mut parents = parented(&[
+        ("f3d:model:occurrence#root", None),
+        (
+            "f3d:model:occurrence#outer",
+            Some("f3d:model:occurrence#root"),
+        ),
+        (
+            "f3d:model:occurrence#owner",
+            Some("f3d:model:occurrence#outer"),
+        ),
+        (
+            "f3d:model:occurrence#owner:xref-0-0",
+            Some("f3d:model:occurrence#owner"),
+        ),
+        (
+            "f3d:xref/role/occurrence-0/model:occurrence#member-root",
+            Some("f3d:model:occurrence#owner:xref-0-0"),
+        ),
+        (
+            "f3d:xref/role/occurrence-0/model:occurrence#part-496",
+            Some("f3d:xref/role/occurrence-0/model:occurrence#member-root"),
+        ),
+        (
+            "f3d:xref/role/occurrence-0/model:occurrence#part-497",
+            Some("f3d:xref/role/occurrence-0/model:occurrence#member-root"),
+        ),
+    ]);
+    prepare(&mut ir, &mut parents);
+    own(&mut ir.model, &parents);
     let first_native = ir.model.occurrences[5].native_ref.clone().unwrap();
     crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
         native.design_component_occurrences = vec![
@@ -378,7 +413,7 @@ fn placed_reference_edit(
     };
     let mut losses = Vec::new();
     let left_identity = super::super::place_contained_poses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut ir,
         &table,
         &mut losses,
@@ -831,9 +866,9 @@ fn independent_contained_world_poses_use_the_corrected_insertion_frame() {
         ),
         10.0,
     );
-    let insertion = ir.model.occurrences[3].transform;
-    let first = ir.model.occurrences[5].transform;
-    let second = ir.model.occurrences[6].transform;
+    let insertion = ir.model.occurrences[3].transform.unwrap();
+    let first = ir.model.occurrences[5].transform.unwrap();
+    let second = ir.model.occurrences[6].transform.unwrap();
     assert!((insertion.rows()[0][3] - 195.0).abs() < 1e-9);
     assert!((first.rows()[0][3] - 130.0).abs() < 1e-9);
     assert!((first.rows()[1][3]).abs() < 1e-9);
@@ -884,8 +919,8 @@ fn conflicting_contained_carriers_keep_the_child_and_place_the_insertion() {
         ),
         10.0,
     );
-    assert!((ir.model.occurrences[3].transform.rows()[0][3] - 195.0).abs() < 1e-9);
-    assert!((ir.model.occurrences[5].transform.rows()[0][3] - 30.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[3].transform.unwrap().rows()[0][3] - 195.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[5].transform.unwrap().rows()[0][3] - 30.0).abs() < 1e-9);
     assert_eq!(
         losses,
         [
@@ -903,16 +938,20 @@ fn repeated_contained_design_records_keep_an_ambiguous_target_native() {
             vec![typed_owned(11, &[9222], translation(20.0, 4.0, 0.0))],
         ),
         10.0,
-        |ir| {
+        |ir, parents| {
             let mut repeated = ir.model.occurrences[5].clone();
             repeated.id =
                 OccurrenceId::mint("f3d:xref/role/occurrence-0/model:occurrence#repeated-child")
                     .unwrap();
+            repeated.prototype =
+                cadmpeg_ir::ids::ProductDefinitionId::mint(format!("{}/definition", repeated.id))
+                    .unwrap();
+            parents.push((repeated.id.as_str().to_owned(), parents[5].1.clone()));
             ir.model.occurrences.push(repeated);
         },
     );
-    assert!((ir.model.occurrences[5].transform.rows()[0][3] - 30.0).abs() < 1e-9);
-    assert!((ir.model.occurrences[7].transform.rows()[0][3] - 30.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[5].transform.unwrap().rows()[0][3] - 30.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[7].transform.unwrap().rows()[0][3] - 30.0).abs() < 1e-9);
     assert_eq!(
         losses,
         [
@@ -930,14 +969,18 @@ fn repeated_insertions_require_a_unique_owner_qualified_component_path() {
             vec![typed_owned(11, &[9222], translation(20.0, 4.0, 0.0))],
         ),
         10.0,
-        |ir| {
+        |ir, parents| {
             let mut repeated = ir.model.occurrences[3].clone();
             repeated.id = OccurrenceId::mint("f3d:model:occurrence#repeated-insertion").unwrap();
+            repeated.prototype =
+                cadmpeg_ir::ids::ProductDefinitionId::mint(format!("{}/definition", repeated.id))
+                    .unwrap();
+            parents.push((repeated.id.as_str().to_owned(), parents[3].1.clone()));
             ir.model.occurrences.push(repeated);
         },
     );
-    assert!((ir.model.occurrences[3].transform.rows()[0][3] - 10.0).abs() < 1e-9);
-    assert!((ir.model.occurrences[7].transform.rows()[0][3] - 10.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[3].transform.unwrap().rows()[0][3] - 10.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[7].transform.unwrap().rows()[0][3] - 10.0).abs() < 1e-9);
     assert_eq!(
         losses,
         [
@@ -998,13 +1041,13 @@ fn contained_component_paths_follow_the_expanded_scope_of_a_shared_design() {
             vec![typed_owned(11, &[9222], translation(20.0, 4.0, 0.0))],
         ),
         10.0,
-        |ir| {
+        |ir, _| {
             ir.model.occurrences[5].native_ref = Some(
                 "f3d:xref/first/xref/shared/Design:design-component-occurrence#496".to_owned(),
             );
         },
     );
-    assert!((ir.model.occurrences[5].transform.rows()[0][3] - 130.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[5].transform.unwrap().rows()[0][3] - 130.0).abs() < 1e-9);
     assert_eq!(
         losses,
         [
@@ -1028,7 +1071,7 @@ fn contained_world_poses_use_the_inverse_of_the_rotated_insertion_frame() {
         ),
         10.0,
     );
-    let local = ir.model.occurrences[5].transform.rows();
+    let local = ir.model.occurrences[5].transform.unwrap().rows();
     assert!(local[0][3].abs() < 1e-9);
     assert!((local[1][3] + 130.0).abs() < 1e-9);
 }
@@ -1041,16 +1084,19 @@ fn contained_component_paths_refuse_two_member_scopes_below_one_insertion() {
             vec![typed_owned(11, &[9222], translation(20.0, 4.0, 0.0))],
         ),
         10.0,
-        |ir| {
+        |ir, parents| {
             ir.model.occurrences.push(occurrence(
                 "f3d:xref/other/model:occurrence#root",
-                Some("f3d:model:occurrence#owner:xref-0-0"),
                 None,
                 0.0,
             ));
+            parents.push((
+                "f3d:xref/other/model:occurrence#root".to_owned(),
+                Some("f3d:model:occurrence#owner:xref-0-0".to_owned()),
+            ));
         },
     );
-    assert!((ir.model.occurrences[5].transform.rows()[0][3] - 30.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[5].transform.unwrap().rows()[0][3] - 30.0).abs() < 1e-9);
     assert_eq!(
         losses,
         [
@@ -1090,9 +1136,9 @@ fn owned_nested_component_paths_keep_the_saved_state_native() {
         ),
         10.0,
     );
-    assert!((ir.model.occurrences[5].transform.rows()[0][3] - 130.0).abs() < 1e-9);
-    assert!((ir.model.occurrences[6].transform.rows()[0][3] + 30.0).abs() < 1e-9);
-    assert!((ir.model.occurrences[6].transform.rows()[1][3]).abs() < 1e-9);
+    assert!((ir.model.occurrences[5].transform.unwrap().rows()[0][3] - 130.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[6].transform.unwrap().rows()[0][3] + 30.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[6].transform.unwrap().rows()[1][3]).abs() < 1e-9);
     assert_eq!(
         losses,
         [
@@ -1124,29 +1170,36 @@ fn typed_contained_pose_without_an_own_carrier_composes_in_each_member_instance(
         ..Default::default()
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
+    let mut parents = Parents::new();
     for instance in 0..2 {
         let boundary = format!("f3d:model:occurrence#source-{instance}");
         let insertion = format!("f3d:xref/source-{instance}/model:occurrence#insertion");
         let root = format!("f3d:xref/source-{instance}/xref/part/model:occurrence#root");
         let leaf = format!("f3d:xref/source-{instance}/xref/part/model:occurrence#leaf");
         ir.model.occurrences.extend([
-            occurrence(&boundary, None, None, f64::from(instance) * 100.0),
-            occurrence(&insertion, Some(&boundary), Some(REFERENCE), 0.0),
-            occurrence(&root, Some(&insertion), None, 0.0),
-            occurrence(&leaf, Some(&root), Some(PART), 0.0),
+            occurrence(&boundary, None, f64::from(instance) * 100.0),
+            occurrence(&insertion, Some(REFERENCE), 0.0),
+            occurrence(&root, None, 0.0),
+            occurrence(&leaf, Some(PART), 0.0),
         ]);
+        parents.extend(parented(&[
+            (&boundary, None),
+            (&insertion, Some(&boundary)),
+            (&root, Some(&insertion)),
+            (&leaf, Some(&root)),
+        ]));
     }
+    own(&mut ir.model, &parents);
     ir.model.occurrences[4].transform = Transform::affine([
         [0.0, -1.0, 0.0, 100.0],
         [1.0, 0.0, 0.0, 0.0],
         [0.0, 0.0, 1.0, 0.0],
-    ])
-    .unwrap();
+    ]);
     crate::test_support::native_test::update_f3d_native(&mut ir, |native| {
         native.design_component_occurrences = vec![local_carrier(PART, 496)];
         native.xref_references = vec![reference];
     });
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut protected = std::collections::BTreeSet::new();
     let mut losses = Vec::new();
     for index in [0, 4] {
@@ -1165,15 +1218,16 @@ fn typed_contained_pose_without_an_own_carrier_composes_in_each_member_instance(
     for index in [0, 4] {
         assert_eq!(
             ir.model.occurrences[index + 1].transform,
-            Transform::identity()
+            Some(Transform::identity())
         );
-        let local = ir.model.occurrences[index + 3].transform.rows();
+        let local = ir.model.occurrences[index + 3].transform.unwrap().rows();
         for (row, expected) in local.iter().zip([30.0, 40.0, 50.0]) {
             assert!((row[3] - expected).abs() < 1e-9);
         }
         let world = ir.model.occurrences[index]
             .transform
-            .compose(ir.model.occurrences[index + 3].transform)
+            .unwrap()
+            .compose(ir.model.occurrences[index + 3].transform.unwrap())
             .unwrap();
         let expected = if index == 0 {
             [30.0, 40.0, 50.0]
@@ -1259,23 +1313,23 @@ fn component_path_chain_keeps_a_child_local_pose_when_its_source_frame_agrees() 
         frame_bytes: current_bytes.into(),
         transform: current.transform.map(|rows| rows.try_into().unwrap()),
     });
-    let (ir, losses, _) = placed_reference_edit(reference, 100.0, |ir| {
-        ir.model.occurrences[3].parent = ir.model.occurrences[0].parent.clone();
+    let (ir, losses, _) = placed_reference_edit(reference, 100.0, |ir, parents| {
+        parents[3].1 = parents[0].1.clone();
         ir.model.occurrences[3].transform = Transform::affine([
             [0.0, -1.0, 0.0, 100.0],
             [1.0, 0.0, 0.0, 200.0],
             [0.0, 0.0, 1.0, 0.0],
-        ])
-        .unwrap();
+        ]);
     });
     let world = ir.model.occurrences[3]
         .transform
-        .compose(ir.model.occurrences[5].transform)
+        .unwrap()
+        .compose(ir.model.occurrences[5].transform.unwrap())
         .unwrap();
     for (row, expected) in world.rows().iter().zip([100.0, 230.0, 0.0]) {
         assert!((row[3] - expected).abs() < 1e-9);
     }
-    assert!((ir.model.occurrences[5].transform.rows()[0][3] - 30.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[5].transform.unwrap().rows()[0][3] - 30.0).abs() < 1e-9);
     assert_eq!(losses, [F3dLossCode::XrefContainedPose.kind()]);
 }
 
@@ -1290,8 +1344,9 @@ fn component_path_chain_places_a_nested_target_in_a_mixed_reference() {
     );
     let world = ir.model.occurrences[2]
         .transform
-        .compose(ir.model.occurrences[3].transform)
-        .and_then(|world| world.compose(ir.model.occurrences[6].transform))
+        .unwrap()
+        .compose(ir.model.occurrences[3].transform.unwrap())
+        .and_then(|world| world.compose(ir.model.occurrences[6].transform.unwrap()))
         .unwrap();
     assert!((world.rows()[0][3] - 90.0).abs() < 1e-9);
     assert_eq!(
@@ -1313,6 +1368,6 @@ fn component_path_chain_requires_the_nested_target_in_a_mixed_reference() {
         ]),
         10.0,
     );
-    assert!((ir.model.occurrences[6].transform.rows()[0][3] + 30.0).abs() < 1e-9);
+    assert!((ir.model.occurrences[6].transform.unwrap().rows()[0][3] + 30.0).abs() < 1e-9);
     assert!(losses.contains(&F3dLossCode::XrefContainedPoseNative.kind()));
 }

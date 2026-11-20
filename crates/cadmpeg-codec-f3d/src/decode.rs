@@ -393,6 +393,7 @@ struct DesignProjectionGaps {
     profile_selections: usize,
     path_selections: usize,
     face_selections: usize,
+    unresolved_extrude_start_faces: usize,
     active_face_substitutions: usize,
     body_selections: usize,
     partially_resolved_face_members: usize,
@@ -400,6 +401,10 @@ struct DesignProjectionGaps {
     partially_resolved_edge_members: usize,
     unresolved_edge_selections: usize,
     unrepaired_lost_edge_references: usize,
+    unplaced_linked_scopes:
+        Vec<crate::design::feature_project::reverse_normal::UnplacedLinkedScope>,
+    record_ordered_linked_scopes:
+        Vec<crate::design::feature_project::reverse_normal::RecordOrderedLinkedScope>,
 }
 
 /// Returns whether a face selection supplies the operation's neutral faces.
@@ -1067,7 +1072,7 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                 || direction.is_none()
                 || *mode == cadmpeg_ir::features::surfaces::SilhouetteSplitMode::Unresolved
         }
-        FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, tool }) => {
+        FeatureDefinition::Operation(FeatureOperation::SplitBody { targets, tool, .. }) => {
             !body_selection_is_resolved(targets)
                 || match tool {
                     cadmpeg_ir::features::SplitBodyTool::Faces(faces) => {
@@ -1104,9 +1109,17 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                     cadmpeg_ir::features::SheetMetalHemForm::GapLength { .. }
                 )
         }
-        FeatureDefinition::Operation(FeatureOperation::SplitFace { targets, tool }) => {
+        FeatureDefinition::Operation(FeatureOperation::SplitFace {
+            targets,
+            tool,
+            method,
+        }) => {
             !face_selection_is_resolved(targets)
                 || match tool {
+                    cadmpeg_ir::features::SplitFaceTool::Faces(faces) => {
+                        !face_selection_is_resolved(faces)
+                    }
+                    cadmpeg_ir::features::SplitFaceTool::Native(_) => true,
                     cadmpeg_ir::features::SplitFaceTool::Plane { .. }
                     | cadmpeg_ir::features::SplitFaceTool::Planes { .. } => false,
                     cadmpeg_ir::features::SplitFaceTool::Path(path) => matches!(
@@ -1114,6 +1127,12 @@ fn feature_definition_is_incomplete(definition: &cadmpeg_ir::features::FeatureDe
                         cadmpeg_ir::features::PathRef::Native(_)
                             | cadmpeg_ir::features::PathRef::Unresolved(_)
                     ),
+                }
+                || match method {
+                    cadmpeg_ir::features::surfaces::SplitFaceMethod::Unresolved {} => true,
+                    cadmpeg_ir::features::surfaces::SplitFaceMethod::SurfaceIntersection { .. }
+                    | cadmpeg_ir::features::surfaces::SplitFaceMethod::ClosestPoint {} => false,
+                    cadmpeg_ir::features::surfaces::SplitFaceMethod::AlongVector { .. } => true,
                 }
         }
         FeatureDefinition::Operation(FeatureOperation::Loft {
@@ -1454,7 +1473,28 @@ fn design_projection_gaps(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => None,
     };
+    let unplaced_linked_scopes = authored_scopes
+        .as_ref()
+        .map(|ordinals| {
+            crate::design::feature_project::reverse_normal::unplaced_linked_scopes(
+                &native.design_parameter_scopes,
+                ordinals,
+            )
+        })
+        .unwrap_or_default();
+    let record_ordered_linked_scopes = authored_scopes
+        .as_ref()
+        .map(|ordinals| {
+            crate::design::feature_project::reverse_normal::record_ordered_linked_scopes(
+                &native.design_parameter_scopes,
+                &native.design_feature_timelines,
+                ordinals,
+            )
+        })
+        .unwrap_or_default();
     let mut gaps = DesignProjectionGaps {
+        unplaced_linked_scopes,
+        record_ordered_linked_scopes,
         assumed_reference_image_flags: native
             .design_canvas_images
             .iter()
@@ -1791,8 +1831,13 @@ fn design_projection_gaps(
                 ) {
                     gaps.profile_selections += 1;
                 }
-                if let ExtrudeStart::FromFace { face, .. } = start {
-                    face_selection(face);
+                match start {
+                    ExtrudeStart::FromFace {
+                        face: FaceSelection::Unresolved,
+                        ..
+                    } => gaps.unresolved_extrude_start_faces += 1,
+                    ExtrudeStart::FromFace { face, .. } => face_selection(face),
+                    _ => {}
                 }
                 let (first, second) = match extent {
                     ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } => {
@@ -2113,7 +2158,7 @@ fn report_parameter_trailer_flags(
             &mut report.losses,
             F3dLossCode::ParameterTrailerFlagUninterpreted,
             format_args!(
-                "{} decoded parameter(s) in {} set byte 3 of the compact expression trailer; the flag is not interpreted, and their driven and favorite flags are assumed false.",
+                "{} decoded parameter(s) in {} set an uninterpreted flag in the compact expression trailer.",
                 parameters.count, parameters.stream
             ),
         );
@@ -2337,6 +2382,19 @@ fn report_design_projection_gaps(
                 format!("Extrude {} assumes the second-side control preserves the face termination (DR-329).", feature.id),
             ));
         }
+        if let Some(word) = prologue.opaque_distance_word().filter(|_| {
+            matches!(
+                feature.evaluation.definition(),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Extrude { .. }
+                )
+            )
+        }) {
+            report.losses.push(F3dLossCode::FeatureExtrudeOpaqueDistanceWordAssumed.note(format!(
+                "Extrude {} reads the stored blind distance with an opaque word {:#010x} at offset {} (DR-819).",
+                feature.id, word.value, word.byte_offset
+            )));
+        }
         if prologue.start() == crate::records::feature::extrude::DesignExtrudeStart::FromFace
             && matches!(
                 feature.evaluation.definition(),
@@ -2390,11 +2448,9 @@ fn report_design_projection_gaps(
             == Some(crate::records::feature::extrude::DesignExtrudeExtent::SymmetricDistance)
             && prologue.distance_tail().is_none()
         {
-            let fixed_lane_only = scope
-                .fixed_extrude_parameters()
-                .is_some_and(|fixed| fixed.along_distance.is_some())
-                && !crate::ids::native_stream(&scope.id)
-                    .is_some_and(|stream| along_scopes.contains(&(stream, scope.record_index)));
+            let indexed_along = crate::ids::native_stream(&scope.id)
+                .is_some_and(|stream| along_scopes.contains(&(stream, scope.record_index)));
+            let each_side = scope.assumes_symmetric_distance_each_side(indexed_along);
             let reading = matches!(
                 feature.evaluation.definition(),
                 cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -2404,7 +2460,7 @@ fn report_design_projection_gaps(
                     },
                 )
             ) && prologue.side_extent_discriminators() != Some([1, 1]);
-            let reading = reading.then_some(if fixed_lane_only {
+            let reading = reading.then_some(if each_side {
                 "each side"
             } else {
                 "the whole travel"
@@ -2682,6 +2738,37 @@ fn report_design_projection_gaps(
             "{uninterpreted_scopes} native feature scope(s) retain their source envelope without interpreted specialized operation data."
         ),
     )?;
+    for unplaced in &gaps.unplaced_linked_scopes {
+        let (code, reason) = if unplaced.shared {
+            (
+                F3dLossCode::FeatureReverseNormalLinkShared,
+                "several timeline items carry that link",
+            )
+        } else {
+            (
+                F3dLossCode::FeatureReverseNormalLinkUnplaced,
+                "no timeline item carries that link",
+            )
+        };
+        push(
+            code,
+            1,
+            format_args!(
+                "Reverse Normal scope {} with link {} takes no timeline position: {reason}.",
+                unplaced.scope_id, unplaced.link
+            ),
+        )?;
+    }
+    for ordered in &gaps.record_ordered_linked_scopes {
+        push(
+            F3dLossCode::FeatureReverseNormalLinkOrderAssumed,
+            1,
+            format_args!(
+                "Reverse Normal scope {} with link {} takes its timeline position by record order among the linked scopes of its timeline item.",
+                ordered.scope_id, ordered.link
+            ),
+        )?;
+    }
     push(
         F3dLossCode::FeatureScopeUnprojected,
         gaps.unprojected_feature_scopes,
@@ -2856,6 +2943,14 @@ fn report_design_projection_gaps(
         format_args!(
             "{} feature face selection(s) retain native candidates because no unique topological face was resolved.",
             gaps.face_selections
+        ),
+    )?;
+    push(
+        F3dLossCode::FeatureExtrudeStartFaceUnresolved,
+        gaps.unresolved_extrude_start_faces,
+        format_args!(
+            "{} Extrude start face selection(s) have no decoded face reference (DR-322).",
+            gaps.unresolved_extrude_start_faces
         ),
     )?;
     push(
@@ -3696,9 +3791,6 @@ impl<'a> F3dDecodeSession<'a> {
             hidden_bodies: Some(&hidden_bodies),
             body_bindings: &prereqs.design_body_bindings,
             bodies: bodies.as_ref(),
-            root_ordinal_start: prereqs
-                .xref_table()
-                .map_or(0, crate::xref::local_root_ordinal_start),
             limits: self.ctx.policy().limits,
         };
         let local = crate::design::components::project_local_components_with_types(
@@ -3706,16 +3798,31 @@ impl<'a> F3dDecodeSession<'a> {
             &prereqs.design_types,
         )?;
         self.component_definitions_by_record = local.component_definitions_by_record.clone();
-        if let Some(table) = prereqs.xref_table() {
-            let external =
-                crate::xref::project_occurrences(table, &local_sources, &local.occurrences)?;
-            self.ir.model.occurrences.extend(external.occurrences);
-            self.report.losses.extend(external.losses);
-        }
-        self.ir.model.product_definitions.extend(local.definitions);
-        self.ir.model.occurrences.extend(local.occurrences);
+        let external = match prereqs.xref_table() {
+            Some(table) => Some(crate::xref::project_occurrences(
+                table,
+                &local_sources,
+                &local.occurrences,
+            )?),
+            None => None,
+        };
+        let external_losses = crate::tree::assemble(
+            &mut self.ir.model,
+            crate::tree::Projected {
+                definitions: local.definitions,
+                occurrences: local.occurrences,
+                placements: local.placements,
+            },
+            external,
+        );
+        self.report.losses.extend(external_losses);
+        let parents = crate::tree::parent_ids(
+            &self.ir.model.product_definitions,
+            &self.ir.model.occurrences,
+        );
         crate::design::decode::hidden_occurrences::apply_hidden_occurrences(
             &mut self.ir.model.occurrences,
+            &parents,
             &prereqs.design_component_occurrences,
             prereqs
                 .xref_table()
@@ -3737,8 +3844,15 @@ impl<'a> F3dDecodeSession<'a> {
                 .map_or(&[], |table| table.references.as_slice()),
             &self.ir.model.occurrences,
         );
-        let unresolved_component_inserts =
-            component_inserts.unresolved_occurrences(self.ir.model.occurrences.len())?;
+        let (unresolved_definitions, unresolved_component_inserts) =
+            component_inserts.unresolved_occurrences()?;
+        self.ir
+            .model
+            .product_definitions
+            .extend(unresolved_definitions);
+        for occurrence in &unresolved_component_inserts {
+            crate::tree::place_top_level(&mut self.ir.model, occurrence.id.clone());
+        }
         self.ir
             .model
             .occurrences
@@ -3754,6 +3868,7 @@ impl<'a> F3dDecodeSession<'a> {
                 prereqs
                     .xref_table()
                     .map_or(&[], |table| table.references.as_slice()),
+                &self.ir.model.product_definitions,
                 &self.ir.model.occurrences,
                 &prereqs.design_parameter_scopes,
             ),
@@ -3807,7 +3922,8 @@ impl<'a> F3dDecodeSession<'a> {
                     self.native.xref_designs = table.designs;
                     self.native.xref_references = table.references;
                 }
-                if let DesignState::Projected(design) = design {
+                if let DesignState::Projected(mut design) = design {
+                    let consumers = std::mem::take(&mut design.history_body_consumers);
                     design.store(&mut self.native);
                     crate::design::decode::sketch_owners::attach(
                         ctx,
@@ -3820,6 +3936,15 @@ impl<'a> F3dDecodeSession<'a> {
                         scan,
                         &self.native,
                         &mut self.ir,
+                        &mut self.report.losses,
+                    )?;
+                    crate::history::history_bodies::fill_consumed(
+                        ctx,
+                        scan,
+                        &mut self.ir.model,
+                        &self.native,
+                        Some(&index.primary_model_brep_name),
+                        &consumers,
                         &mut self.report.losses,
                     )?;
                     report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
@@ -3881,24 +4006,29 @@ impl<'a> F3dDecodeSession<'a> {
                     )?,
                     Ok(None) | Err(_) => false,
                 };
-                if mesh_projection.count > 0 {
-                    apply_mesh_body_classification(&mut self.report, scan, mesh_projection.count);
-                } else if !assembly {
-                    apply_bodyless_design_classification(
-                        &mut self.report,
-                        if inputs.model_body_maps_empty {
+                let brep_streams = container::design_breps(scan).count();
+                apply_carrier_classification(
+                    &mut self.report,
+                    &DesignCarriers {
+                        decoded_meshes: mesh_projection.count,
+                        unjoined_mesh_containers: mesh_projection.unjoined,
+                        paramesh_entries: container::paramesh_entries(scan).count(),
+                        brep_entries: container::brep_entries(scan).count(),
+                        brep_streams,
+                        selected_brep_streams: if inputs.model_body_maps_empty {
                             0
                         } else {
-                            container::design_breps(scan).count()
+                            brep_streams
                         },
-                        container::text_brep_names(scan).count(),
-                        self.native.design_body_bindings.len()
+                        text_brep_streams: container::text_brep_names(scan).count(),
+                        declared_bodies: self.native.design_body_bindings.len()
                             + self.native.design_body_members.len(),
-                        self.ir.model.sketch_entities.len()
+                        sketch_entities: self.ir.model.sketch_entities.len()
                             + self.ir.model.spatial_sketch_entities.len(),
-                        self.native.design_canvas_images.len(),
-                    );
-                }
+                        reference_images: self.native.design_canvas_images.len(),
+                    },
+                    assembly,
+                );
                 report_unresolved_dimension_companions(&mut self.report, unresolved_companions);
                 match xref {
                     Ok(Some(table)) => {
@@ -4033,9 +4163,24 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 crate::scene::collect(ctx, &scan, &mut decoded.ir, &mut decoded.body.losses)?;
             if has_scene {
                 let sources = crate::scene::sources(ctx, &scan, &decoded.ir)?;
-                crate::scene::bind(ctx, &mut decoded.ir, &sources, &mut decoded.body.losses)?;
+                crate::scene::bind(
+                    ctx,
+                    &mut decoded.ir,
+                    &sources,
+                    &std::collections::BTreeMap::new(),
+                    &mut decoded.body.losses,
+                )?;
             }
+            let owned =
+                crate::tree::own_once(ctx, &mut decoded.ir, &std::collections::BTreeMap::new())?;
+            decoded.body.losses.extend(owned);
             crate::design::owners::release_unbound(&mut decoded.ir.model);
+            decoded.ir.state_root_definition(
+                ctx,
+                crate::tree::file_root_id(),
+                cadmpeg_ir::products::ExternalDocument::default(),
+            )?;
+            crate::design_v11::project(ctx, &mut decoded.ir, &mut decoded.body.losses)?;
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
                 ctx,
@@ -4322,6 +4467,8 @@ fn decode_scanned_document<'a>(
 struct MeshProjection {
     /// Number of joined mesh-body containers.
     count: usize,
+    /// Number of decoded mesh geometry containers that no Design mesh body joins.
+    unjoined: usize,
     /// Tessellation identities grouped by their Design stream and feature scope record.
     tessellations_by_scope: std::collections::HashMap<(String, u32), Vec<String>>,
 }
@@ -4488,6 +4635,7 @@ fn project_mesh_bodies(
             );
             return Ok(MeshProjection {
                 count: 0,
+                unjoined: 0,
                 tessellations_by_scope: std::collections::HashMap::new(),
             });
         }
@@ -4501,6 +4649,11 @@ fn project_mesh_bodies(
     report
         .losses
         .extend(crate::design::decode::mesh::mesh_split_stream_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_component_flag_losses(
             &native.design_mesh_features,
         ));
     report
@@ -4586,12 +4739,23 @@ fn project_mesh_bodies(
         }
     }
     let mut bodies = Vec::new();
+    let unjoined = decoded
+        .outcomes
+        .iter()
+        .filter(|outcome| {
+            matches!(
+                outcome,
+                crate::design::decode::mesh::MeshContainerOutcome::Unjoined { .. }
+            )
+        })
+        .count();
     for outcome in decoded.outcomes {
         collect_mesh_outcome(&mut bodies, report, outcome)?;
     }
     let mut unresolved = std::collections::BTreeMap::new();
     let mut projection = MeshProjection {
         count: bodies.len(),
+        unjoined,
         tessellations_by_scope: std::collections::HashMap::new(),
     };
     for mut body in bodies {
@@ -4606,10 +4770,10 @@ fn project_mesh_bodies(
         )?;
         let mut triangle_groups = Vec::new();
         for group in std::mem::take(&mut body.triangle_groups) {
-            triangle_groups.push(cadmpeg_ir::tessellation::TessellationTriangleGroup {
-                source_id: Some(group.source_id),
-                triangles: group.triangles,
-            });
+            triangle_groups.push(cadmpeg_ir::tessellation::TessellationTriangleGroup::new(
+                Some(group.source_id),
+                group.triangles,
+            ));
         }
         let channels = mesh_attribute_channels(
             &body.attributes,
@@ -4973,12 +5137,64 @@ fn report_xref_placement_overrides(report: &mut DecodeBody, table: &crate::xref:
     }
 }
 
+/// Geometry carriers a design stores, counted before its transfer is classified.
+pub(crate) struct DesignCarriers {
+    pub(crate) decoded_meshes: usize,
+    pub(crate) unjoined_mesh_containers: usize,
+    pub(crate) paramesh_entries: usize,
+    /// Binary and text BREP entries, whether or not their payload opened.
+    pub(crate) brep_entries: usize,
+    pub(crate) brep_streams: usize,
+    /// BREP streams that the model-body maps select.
+    pub(crate) selected_brep_streams: usize,
+    pub(crate) text_brep_streams: usize,
+    pub(crate) declared_bodies: usize,
+    pub(crate) sketch_entities: usize,
+    pub(crate) reference_images: usize,
+}
+
+/// Classify the geometry transfer of a design from the carriers it stores.
+pub(crate) fn apply_carrier_classification(
+    report: &mut DecodeBody,
+    carriers: &DesignCarriers,
+    assembly: bool,
+) {
+    let untransferred_mesh_containers = carriers
+        .paramesh_entries
+        .checked_sub(carriers.unjoined_mesh_containers)
+        .filter(|containers| *containers > 0);
+    if carriers.decoded_meshes > 0 {
+        apply_mesh_body_classification(report, carriers.brep_streams, carriers.decoded_meshes);
+    } else if !assembly {
+        if let (Some(untransferred_mesh_containers), 0) =
+            (untransferred_mesh_containers, carriers.brep_entries)
+        {
+            push_loss_vec(
+                &mut report.losses,
+                F3dLossCode::MeshOnlyDesignUntransferred,
+                format_args!(
+                    "mesh-only design: the Design asset stores no BREP entry, and {untransferred_mesh_containers} of its mesh geometry container(s) transferred no mesh body"
+                ),
+            );
+        } else {
+            apply_bodyless_design_classification(
+                report,
+                carriers.selected_brep_streams,
+                carriers.text_brep_streams,
+                carriers.declared_bodies,
+                carriers.sketch_entities,
+                carriers.reference_images,
+            );
+        }
+    }
+}
+
 /// Classify a mesh-body document.
 ///
 /// Mesh bodies use tessellation as their geometry carrier. The report marks
 /// geometry as transferred and records vertex precision.
-fn apply_mesh_body_classification(report: &mut DecodeBody, scan: &ContainerScan, bodies: usize) {
-    if container::design_breps(scan).next().is_some() {
+fn apply_mesh_body_classification(report: &mut DecodeBody, brep_streams: usize, bodies: usize) {
+    if brep_streams > 0 {
         return;
     }
     report.losses.retain(|loss| {
@@ -5232,20 +5448,25 @@ fn file_definition(
     model: &cadmpeg_ir::document::Model,
 ) -> Option<cadmpeg_ir::ids::ProductDefinitionId> {
     use cadmpeg_ir::ids::ProductDefinitionId;
-    use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
+    use cadmpeg_ir::products::Storage;
     use std::collections::BTreeSet;
-    fn local(occurrence: &cadmpeg_ir::products::Occurrence) -> Option<&ProductDefinitionId> {
-        match &occurrence.prototype {
-            PrototypeReference::Local { definition } => Some(definition),
-            _ => None,
-        }
-    }
+    let held = model
+        .product_definitions
+        .iter()
+        .filter(|definition| !matches!(definition.storage, Storage::External(_)))
+        .map(|definition| &definition.id)
+        .collect::<BTreeSet<_>>();
+    let local = |occurrence: &'_ cadmpeg_ir::products::Occurrence| -> Option<&ProductDefinitionId> {
+        held.get(&occurrence.prototype).copied()
+    };
     let own = |definition: &&ProductDefinitionId| !definition.as_str().starts_with("f3d:xref/");
     let root_prototypes = |stored_frame: bool| {
         model
             .occurrences
             .iter()
-            .filter(|occurrence| matches!(occurrence.parent, OccurrenceParent::Root {}))
+            .filter(|occurrence| {
+                crate::tree::is_top_level(&model.product_definitions, &occurrence.id)
+            })
             .filter(move |occurrence| {
                 crate::design::components::is_stored_frame_occurrence(occurrence) == stored_frame
             })
@@ -5266,6 +5487,7 @@ fn file_definition(
         top = model
             .product_definitions
             .iter()
+            .filter(|definition| !definition.is_root())
             .map(|definition| &definition.id)
             .filter(|definition| !placed.contains(definition))
             .filter(own)

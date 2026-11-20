@@ -1,5 +1,4 @@
 use super::point_data::POINT_DATA_TYPE_GUID;
-use super::point_direction::POINT_DIRECTION_TYPE_GUID;
 use crate::bytes::reference_fields::{read_reference_fields, ReadField};
 use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::records::feature::scope::DesignParameterScope;
@@ -8,6 +7,7 @@ use crate::records::feature::work_axes::{
     AxisEndpointReading, AxisReference, AxisReferenceRun, DesignWorkAxisCandidate,
     DesignWorkAxisConstruction, DesignWorkAxisSource,
 };
+use crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID;
 use cadmpeg_core::decode::{u64_from_index, ArenaClass, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;

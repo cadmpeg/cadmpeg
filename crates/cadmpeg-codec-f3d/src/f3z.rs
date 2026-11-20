@@ -109,10 +109,17 @@ fn compose(
     if ctx.container_only() {
         members.clear();
         report.losses.append(&mut outer_losses);
-        return finalize_result(ctx, ir, source, report, fidelity);
+        return finalize_result(
+            ctx,
+            ir,
+            source,
+            report,
+            fidelity,
+            &merge::InstanceScopes::new(),
+        );
     }
 
-    let merged = merge::merge_archive(
+    let (merged, instance_scopes) = merge::merge_archive(
         ctx,
         session,
         members,
@@ -131,10 +138,15 @@ fn compose(
     report.notes.push(format!(
         "merged {merged} external occurrence(s) from the f3z archive"
     ));
-    merge::make_sibling_ordinals_unique(&mut ir.model.occurrences)?;
-    crate::scene::bind(ctx, &mut ir, &scene_sources, &mut report.losses)?;
+    crate::scene::bind(
+        ctx,
+        &mut ir,
+        &scene_sources,
+        &instance_scopes,
+        &mut report.losses,
+    )?;
     report.losses.append(&mut outer_losses);
-    finalize_result(ctx, ir, source, report, fidelity)
+    finalize_result(ctx, ir, source, report, fidelity, &instance_scopes)
 }
 
 /// Gives each given-up part in `stream` that keeps only a digest a copy of
@@ -188,10 +200,19 @@ fn finalize_result(
     ctx: &DecodeContext<'_>,
     mut ir: cadmpeg_ir::CadIr,
     mut source: cadmpeg_ir::SourceMeta,
-    body: DecodeBody,
+    mut body: DecodeBody,
     source_fidelity: cadmpeg_ir::SourceFidelity,
+    instance_scopes: &merge::InstanceScopes,
 ) -> Result<Decoded, CodecError> {
+    body.losses
+        .extend(crate::tree::own_once(ctx, &mut ir, instance_scopes)?);
     crate::design::owners::release_unbound(&mut ir.model);
+    ir.state_root_definition(
+        ctx,
+        crate::tree::file_root_id(),
+        cadmpeg_ir::products::ExternalDocument::default(),
+    )?;
+    crate::design_v11::project(ctx, &mut ir, &mut body.losses)?;
     ir.finalize();
     let hash = cadmpeg_ir::hash::document_local_sha256(
         ctx,

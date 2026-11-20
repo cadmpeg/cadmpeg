@@ -825,19 +825,8 @@
           "id": "usd:stage:occurrence#/Curves",
           "name": "Curves",
           "native_ref": "/Curves",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Curves",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Curves",
           "transform": [
             [
               1.0,
@@ -863,20 +852,8 @@
           "id": "usd:stage:occurrence#/Curves/Arc",
           "name": "Arc",
           "native_ref": "/Curves/Arc",
-          "ordinal": 5,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Curves"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Curves/Arc",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Curves/Arc",
           "transform": [
             [
               1.0,
@@ -902,20 +879,8 @@
           "id": "usd:stage:occurrence#/Curves/Bezier",
           "name": "Bezier",
           "native_ref": "/Curves/Bezier",
-          "ordinal": 2,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Curves"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Curves/Bezier",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Curves/Bezier",
           "transform": [
             [
               1.0,
@@ -941,20 +906,8 @@
           "id": "usd:stage:occurrence#/Curves/CatmullRom",
           "name": "CatmullRom",
           "native_ref": "/Curves/CatmullRom",
-          "ordinal": 4,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Curves"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Curves/CatmullRom",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Curves/CatmullRom",
           "transform": [
             [
               1.0,
@@ -980,20 +933,8 @@
           "id": "usd:stage:occurrence#/Curves/Loop",
           "name": "Loop",
           "native_ref": "/Curves/Loop",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Curves"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Curves/Loop",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Curves/Loop",
           "transform": [
             [
               1.0,
@@ -1019,20 +960,8 @@
           "id": "usd:stage:occurrence#/Curves/Polyline",
           "name": "Polyline",
           "native_ref": "/Curves/Polyline",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Curves"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Curves/Polyline",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Curves/Polyline",
           "transform": [
             [
               1.0,
@@ -1058,20 +987,8 @@
           "id": "usd:stage:occurrence#/Curves/Splines",
           "name": "Splines",
           "native_ref": "/Curves/Splines",
-          "ordinal": 3,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Curves"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Curves/Splines",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Curves/Splines",
           "transform": [
             [
               1.0,
@@ -1106,10 +1023,23 @@
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Curves",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Curves",
+          "occurrences": [
+            "usd:stage:occurrence#/Curves/Polyline",
+            "usd:stage:occurrence#/Curves/Loop",
+            "usd:stage:occurrence#/Curves/Bezier",
+            "usd:stage:occurrence#/Curves/Splines",
+            "usd:stage:occurrence#/Curves/CatmullRom",
+            "usd:stage:occurrence#/Curves/Arc"
+          ],
+          "representations": [],
           "sketches": [],
           "source_name": "Curves",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -1118,10 +1048,16 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Curves/Arc",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Curves/Arc",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Arc",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -1130,10 +1066,16 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Curves/Bezier",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Curves/Bezier",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Bezier",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -1142,10 +1084,16 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Curves/CatmullRom",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Curves/CatmullRom",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "CatmullRom",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -1154,10 +1102,16 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Curves/Loop",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Curves/Loop",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Loop",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -1166,10 +1120,16 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Curves/Polyline",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Curves/Polyline",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Polyline",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -1178,10 +1138,32 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Curves/Splines",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Curves/Splines",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Splines",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:root#stage",
+          "instance_bodies": [],
+          "occurrences": [
+            "usd:stage:occurrence#/Curves"
+          ],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
           "tessellations": []
         }
       ],

@@ -105,17 +105,43 @@ pub(super) fn bound_result_bodies(
     }
 }
 
-/// A Base Feature scope projected as a copying move, whose outputs are the
-/// copies its projection bound.
-pub(super) fn is_base_feature_copy(feature: &Feature, scopes: &[DesignParameterScope]) -> bool {
+/// A Base Feature scope projected as a copying move or as inserted copies,
+/// whose outputs are the copies its projection bound.
+pub(super) fn has_projection_bound_base_feature_outputs(
+    feature: &Feature,
+    scopes: &[DesignParameterScope],
+) -> bool {
     matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::MoveBody { .. })
-    ) && feature
+        FeatureDefinition::Operation(
+            FeatureOperation::MoveBody { .. } | FeatureOperation::InsertBodies { .. }
+        )
+    ) && is_base_feature_scope(feature, scopes)
+}
+
+fn is_base_feature_scope(feature: &Feature, scopes: &[DesignParameterScope]) -> bool {
+    feature
         .native_ref
         .as_deref()
         .and_then(|id| scopes.iter().find(|scope| scope.id == id))
         .is_some_and(|scope| scope.kind() == DesignFeatureKind::BaseFeature)
+}
+
+/// The bodies that a Base Feature scope's feature produces at its own
+/// state: its resolved stored bodies, or the copies that a paste into
+/// another component inserts.
+pub(super) fn base_feature_result_bodies<'a>(
+    feature: &'a Feature,
+    scopes: &[DesignParameterScope],
+) -> Option<&'a [BodyId]> {
+    if let Some(bodies) = bound_result_bodies(feature) {
+        return Some(bodies.as_slice());
+    }
+    (matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::InsertBodies { .. })
+    ) && is_base_feature_scope(feature, scopes))
+    .then(|| feature.evaluation.outputs().as_slice())
 }
 
 pub(super) fn bind_history_outputs(
@@ -215,6 +241,11 @@ pub(crate) fn losses(
                         )));
                         continue;
                     }
+                    Some(FeatureDefinition::Operation(FeatureOperation::InsertBodies {
+                        ..
+                    })) => {
+                        continue;
+                    }
                     Some(FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                         bodies,
                     })) => Some(bodies),
@@ -240,6 +271,18 @@ pub(crate) fn losses(
                 }
             }
             "Derived Base Feature" | "DerivedBaseFeature" => {
+                if scope
+                    .derived_base_source
+                    .as_ref()
+                    .is_some_and(|source| source.snapshot.is_some())
+                    && feature.is_some()
+                {
+                    losses.push(F3dLossCode::FeatureStoredBodiesRecipeAbsent.note(format!(
+                        "{} supplies the captured derived result body.",
+                        scope.id
+                    )));
+                    continue;
+                }
                 let stored = feature.and_then(|feature| match feature.evaluation.definition() {
                     FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                         bodies: BodySelection::Resolved { bodies, .. },

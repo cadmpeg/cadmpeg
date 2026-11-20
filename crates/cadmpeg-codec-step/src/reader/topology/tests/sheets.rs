@@ -281,6 +281,30 @@ fn decode_builds_a_face_based_surface_model() {
 }
 
 #[test]
+fn a_face_based_surface_model_accepts_an_open_shell_face_set() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+                "#31=FACE_BASED_SURFACE_MODEL('',(#30));",
+            );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode a face-based surface model over an open shell");
+
+    assert_eq!(
+        result.ir().geometry.faces.len(),
+        1,
+        "{:#?}",
+        result.report().losses
+    );
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn decode_builds_faceted_brep_polygon_loops() {
     use cadmpeg_ir::topology::BodyKind;
 
@@ -309,12 +333,21 @@ fn decode_builds_faceted_brep_polygon_loops() {
     assert_eq!(result.ir().geometry.bodies[0].kind, BodyKind::Solid);
     assert_eq!(result.ir().geometry.faces.len(), 1);
     assert_eq!(result.ir().geometry.coedges.len(), 3);
-    assert!(result
-        .ir()
-        .geometry
-        .edges
-        .iter()
-        .all(|edge| edge.curve().is_none()));
+    let model = &result.ir().geometry;
+    for edge in &model.edges {
+        let curve = edge
+            .curve()
+            .expect("a poly loop segment has a line carrier");
+        let curve = model
+            .curves
+            .iter()
+            .find(|candidate| &candidate.id == curve)
+            .expect("the carrier is in the model");
+        assert!(matches!(
+            curve.geometry.solved(),
+            Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Line(_))
+        ));
+    }
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -369,7 +402,17 @@ fn decode_builds_a_sheet_from_a_geometric_surface_set() {
     assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(result.ir().geometry.bodies[0].kind, BodyKind::Sheet);
     assert_eq!(result.ir().geometry.faces.len(), 1);
-    assert!(result.ir().geometry.faces[0].loops.is_empty());
+    assert!(matches!(
+        result.ir().geometry.faces[0].loops,
+        cadmpeg_ir::topology::FaceLoops::Classified { .. }
+    ));
+    assert_eq!(result.ir().geometry.coedges.len(), 1);
+    assert_eq!(
+        result.ir().geometry.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, std::f64::consts::TAU])
+    );
     assert_eq!(
         result.ir().geometry.faces[0].surface.as_str(),
         "step:data:surface#11"
@@ -377,6 +420,135 @@ fn decode_builds_a_sheet_from_a_geometric_surface_set() {
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn curve_bounded_surface_boundaries_take_the_winding_of_their_role() {
+    use cadmpeg_ir::topology::Sense;
+
+    let mut source = String::from_utf8(
+        include_bytes!("../../../../tests/fixtures/ap242_geometric_set.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#9=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#7);",
+        "#9=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.F.,#7);",
+    )
+    .replace(
+        "#10=(BOUNDARY_CURVE() ",
+        "#10=(BOUNDARY_CURVE() OUTER_BOUNDARY_CURVE() ",
+    )
+    .replace(
+        "#11=CURVE_BOUNDED_SURFACE('disc',#8,(#10),.F.);",
+        "#11=CURVE_BOUNDED_SURFACE('ring',#8,(#10,#16),.F.);",
+    );
+    let end = source.rfind("ENDSEC;").expect("STEP data section end");
+    source.insert_str(
+        end,
+        "#14=CIRCLE('',#6,2.);\n#15=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#14);\n#16=BOUNDARY_CURVE('hole',(#15),.F.);\n",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode a ring");
+    let model = &result.ir().geometry;
+    let face = &model.faces[0];
+    let cadmpeg_ir::topology::FaceLoops::Classified { outer, .. } = &face.loops else {
+        panic!("the outer boundary curve is the outer loop");
+    };
+    assert_eq!(face.loops.len(), 2);
+    for coedge in &model.coedges {
+        let expected = if &coedge.owner_loop == outer {
+            Sense::Forward
+        } else {
+            Sense::Reversed
+        };
+        assert_eq!(coedge.sense, expected, "{}", coedge.id);
+    }
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+/// The disc fixture as a ring: the radius 5 boundary `#10` and the radius 2
+/// boundary `#16`, listed hole first, on `support`, with no outer boundary
+/// curve and no implicit outer boundary.
+fn unflagged_ring(support: &str, extra: &str) -> cadmpeg_ir::codec::DecodeResult {
+    let mut source = String::from_utf8(
+        include_bytes!("../../../../tests/fixtures/ap242_geometric_set.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#11=CURVE_BOUNDED_SURFACE('disc',#8,(#10),.F.);",
+        &format!("#11=CURVE_BOUNDED_SURFACE('ring',{support},(#16,#10),.F.);"),
+    );
+    let end = source.rfind("ENDSEC;").expect("STEP data section end");
+    source.insert_str(
+        end,
+        &format!(
+            "#14=CIRCLE('',#6,2.);\n#15=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#14);\n#16=BOUNDARY_CURVE('hole',(#15),.F.);\n{extra}"
+        ),
+    );
+    StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode a ring")
+}
+
+#[test]
+fn an_unflagged_boundary_enclosing_the_largest_area_is_the_outer_loop() {
+    let result = unflagged_ring("#8", "");
+    let model = &result.ir().geometry;
+    let cadmpeg_ir::topology::FaceLoops::Classified { outer, .. } = &model.faces[0].loops else {
+        panic!("the largest boundary is the outer loop");
+    };
+    let outer_edge = model
+        .coedges
+        .iter()
+        .find(|coedge| &coedge.owner_loop == outer)
+        .map(|coedge| &coedge.edge)
+        .expect("outer coedge");
+    let curve = model
+        .edges
+        .iter()
+        .find(|edge| &edge.id == outer_edge)
+        .and_then(|edge| edge.curve())
+        .expect("outer edge curve");
+    assert_eq!(curve.as_str(), "step:data:curve#7");
+}
+
+#[test]
+fn unmeasured_unflagged_boundaries_stay_unclassified() {
+    let result = unflagged_ring(
+        "#21",
+        "#17=CARTESIAN_POINT('',(-10.,-10.,0.));\n#18=CARTESIAN_POINT('',(10.,-10.,0.));\n\
+         #19=CARTESIAN_POINT('',(-10.,10.,0.));\n#20=CARTESIAN_POINT('',(10.,10.,0.));\n\
+         #21=B_SPLINE_SURFACE_WITH_KNOTS('',1,1,((#17,#19),(#18,#20)),.UNSPECIFIED.,.F.,.F.,.F.,(2,2),(2,2),(0.,1.),(0.,1.),.UNSPECIFIED.);\n",
+    );
+    let face = &result.ir().geometry.faces[0];
+    assert!(matches!(
+        face.loops,
+        cadmpeg_ir::topology::FaceLoops::Unspecified { .. }
+    ));
+    assert_eq!(face.loops.len(), 2);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "decode.warning"
+            && loss.message.contains("left its 2 boundaries unclassified")
+    }));
+}
+
+#[test]
+fn a_sole_unflagged_boundary_is_the_outer_boundary() {
+    assert_eq!(
+        crate::reader::topology::largest_boundary([None].into_iter()),
+        Some(0)
+    );
+    assert_eq!(
+        crate::reader::topology::largest_boundary([Some(1.0), Some(-4.0)].into_iter()),
+        Some(1)
+    );
+    assert_eq!(
+        crate::reader::topology::largest_boundary([Some(4.0), None].into_iter()),
+        None
+    );
 }
 
 #[test]

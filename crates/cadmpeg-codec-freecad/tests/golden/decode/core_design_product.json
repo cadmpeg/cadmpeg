@@ -7622,20 +7622,8 @@
           "id": "fcstd:model:occurrence#Box:container",
           "name": "fcstd:native:object#Box",
           "native_ref": "fcstd:native:object#Box",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#Product:container"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#Box:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#Box:definition",
           "transform": [
             [
               1.0,
@@ -7661,20 +7649,8 @@
           "id": "fcstd:model:occurrence#Cut:container",
           "name": "fcstd:native:object#Cut",
           "native_ref": "fcstd:native:object#Cut",
-          "ordinal": 2,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#Product:container"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#Cut:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#Cut:definition",
           "transform": [
             [
               1.0,
@@ -7700,20 +7676,8 @@
           "id": "fcstd:model:occurrence#Cylinder:container",
           "name": "fcstd:native:object#Cylinder",
           "native_ref": "fcstd:native:object#Cylinder",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#Product:container"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#Cylinder:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#Cylinder:definition",
           "transform": [
             [
               1.0,
@@ -7739,20 +7703,8 @@
           "id": "fcstd:model:occurrence#DesignedFeature:container",
           "name": "fcstd:native:object#DesignedFeature",
           "native_ref": "fcstd:native:object#DesignedFeature",
-          "ordinal": 4,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#Product:container"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#DesignedFeature:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#DesignedFeature:definition",
           "transform": [
             [
               1.0,
@@ -7776,58 +7728,10 @@
         },
         {
           "id": "fcstd:model:occurrence#Occurrence:instance",
-          "link": {
-            "members": [
-              {
-                "claim": false,
-                "kind": "claim_child"
-              },
-              {
-                "kind": "copy_on_change",
-                "state": {
-                  "policy": {
-                    "kind": "disabled"
-                  },
-                  "touched": false
-                }
-              }
-            ]
-          },
-          "linked_prototype": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ],
           "name": "fcstd:native:object#Occurrence",
           "native_ref": "fcstd:native:object#Occurrence",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#DesignedFeature:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#DesignedFeature:definition",
           "transform": [
             [
               1.0,
@@ -7853,19 +7757,8 @@
           "id": "fcstd:model:occurrence#Product:container",
           "name": "fcstd:native:object#Product",
           "native_ref": "fcstd:native:object#Product",
-          "ordinal": 1,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#Product:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#Product:definition",
           "transform": [
             [
               1.0,
@@ -7891,20 +7784,8 @@
           "id": "fcstd:model:occurrence#Profile:container",
           "name": "fcstd:native:object#Profile",
           "native_ref": "fcstd:native:object#Profile",
-          "ordinal": 3,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "fcstd:model:occurrence#Product:container"
-          },
-          "prototype": {
-            "definition": "fcstd:model:product_definition#Profile:definition",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "fcstd:model:product_definition#Profile:definition",
           "transform": [
             [
               1.0,
@@ -8097,11 +7978,17 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#Box:definition",
+          "instance_bodies": [],
           "kind": "object",
           "label": "Box",
           "native_ref": "fcstd:native:object#Box",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Box",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -8112,11 +7999,17 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#Cut:definition",
+          "instance_bodies": [],
           "kind": "object",
           "label": "Cut",
           "native_ref": "fcstd:native:object#Cut",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Cut",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -8127,11 +8020,17 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#Cylinder:definition",
+          "instance_bodies": [],
           "kind": "object",
           "label": "Cylinder",
           "native_ref": "fcstd:native:object#Cylinder",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Cylinder",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -8142,11 +8041,17 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#DesignedFeature:definition",
+          "instance_bodies": [],
           "kind": "object",
           "label": "DesignedFeature",
           "native_ref": "fcstd:native:object#DesignedFeature",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "DesignedFeature",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -8155,11 +8060,23 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#Product:definition",
+          "instance_bodies": [],
           "kind": "part",
           "label": "CC0 Product",
           "native_ref": "fcstd:native:object#Product",
+          "occurrences": [
+            "fcstd:model:occurrence#Box:container",
+            "fcstd:model:occurrence#Cylinder:container",
+            "fcstd:model:occurrence#Cut:container",
+            "fcstd:model:occurrence#Profile:container",
+            "fcstd:model:occurrence#DesignedFeature:container"
+          ],
+          "representations": [],
           "sketches": [],
           "source_name": "Product",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -8170,11 +8087,34 @@
             "Label2": ""
           },
           "id": "fcstd:model:product_definition#Profile:definition",
+          "instance_bodies": [],
           "kind": "object",
           "label": "Profile",
           "native_ref": "fcstd:native:object#Profile",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Profile",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "fcstd:model:product_definition#document:root",
+          "instance_bodies": [],
+          "occurrences": [
+            "fcstd:model:occurrence#Occurrence:instance",
+            "fcstd:model:occurrence#Product:container"
+          ],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
           "tessellations": []
         }
       ],

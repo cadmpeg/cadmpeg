@@ -23,6 +23,7 @@ pub(crate) mod operands;
 pub(crate) mod projection;
 pub(crate) mod refusal;
 pub(crate) mod style;
+pub(crate) mod unfold;
 
 const ATTACHMENT_TYPE: [u8; 16] = [
     0x92, 0x59, 0x6b, 0xa9, 0xd3, 0x11, 0xef, 0xa8, 0x60, 0x00, 0xb3, 0xa9, 0x9d, 0xcc, 0xef, 0xb0,
@@ -849,7 +850,18 @@ pub(crate) fn native_kind_losses(
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     use crate::loss::InventorLossCode;
     let (attached_plates, bends, corner_rounds) = native_kind_counts(inventory, features);
-    let mut losses = Vec::new();
+    let mut losses: Vec<_> = edge_inventory_loss(inventory).into_iter().collect();
+    if !inventory.unread_style_versions.is_empty() {
+        losses.push(InventorLossCode::FeatureSheetMetalStyleVersionUnread.note(format!(
+            "Retained the sheet-metal style record(s) of segment major version(s) {} without their field layout; attached plates that need the style keep the style refusal.",
+            inventory
+                .unread_style_versions
+                .iter()
+                .map(u8::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
+    }
     if attached_plates != 0 {
         losses.push(InventorLossCode::FeatureSheetMetalAttachmentControlsNative.note(format!(
             "Retained {attached_plates} attached plate(s) as native history features: the operands, controls, style defaults, or attachment selections do not close the neutral construction."
@@ -875,6 +887,167 @@ pub(crate) fn native_kind_losses(
         }
     }
     losses
+}
+
+/// One note for each sheet-metal face plate without a bend that stays native,
+/// with the first refused check.
+pub(crate) fn face_losses(
+    refusals: &std::collections::BTreeMap<String, &'static str>,
+    features: &[cadmpeg_ir::features::Feature],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Native { .. })
+            )
+        })
+        .filter_map(|feature| {
+            let detail = refusals.get(feature.native_ref.as_deref()?)?;
+            Some(
+                crate::loss::InventorLossCode::FeatureSheetMetalFaceRefused.note(format!(
+                    "Retained {} as native: the first refused face-plate check is {detail}.",
+                    feature.id
+                )),
+            )
+        })
+        .collect()
+}
+
+/// The stage that keeps a native sheet-metal plate, bend, or corner native
+/// when no other sheet-metal note covers it. `refused` tells whether a
+/// source record has an attached-plate, face, or contour-flange refusal.
+pub(crate) fn unexplained_losses(
+    inventory: &super::FeatureInventory,
+    features: &[cadmpeg_ir::features::Feature],
+    refused: impl Fn(&str) -> bool,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let sources = cadmpeg_core::decode::unique_index(
+        inventory
+            .features
+            .iter()
+            .map(|source| (source.id(), source)),
+    );
+    let labels = cadmpeg_core::decode::unique_index(inventory.labels.iter().map(|label| {
+        (
+            (
+                label.identity.segment_token.as_str(),
+                label.header.owner.record_ordinal(),
+            ),
+            label,
+        )
+    }));
+    let flange_of = |source: &super::PmDcFeature| {
+        inventory.sheet_metal_flanges.iter().find(|flange| {
+            flange.identity.segment_token == source.identity.segment_token
+                && flange
+                    .children
+                    .references()
+                    .iter()
+                    .any(|child| child.record_ordinal() == Some(source.identity.record_ordinal))
+        })
+    };
+    let mut losses = Vec::new();
+    for feature in features {
+        if !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        ) {
+            continue;
+        }
+        let Some(source) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|id| sources.get(id))
+            .and_then(Option::as_ref)
+            .copied()
+        else {
+            continue;
+        };
+        let source_id = source.id();
+        if refused(&source_id) {
+            continue;
+        }
+        let label = labels
+            .get(&(
+                source.identity.segment_token.as_str(),
+                Some(source.identity.record_ordinal),
+            ))
+            .and_then(Option::as_ref);
+        let flange = flange_of(source);
+        let contour = flange.is_some_and(|flange| {
+            flange::FlangeKind::of(flange) == Some(flange::FlangeKind::Contour)
+        });
+        let detail = match label.map(|label| label.class_id()) {
+            None if flange.is_some() => "label",
+            None => continue,
+            Some(class) if class == CORNER_CLASS => continue,
+            Some(class) if class == super::PLATE_CLASS_ID || class == BEND_CLASS => {
+                if contour {
+                    let plate_refused = flange
+                        .and_then(|flange| flange.children.references().first().copied())
+                        .and_then(crate::pmdc::PmDcReference::record_ordinal)
+                        .and_then(|plate| {
+                            inventory.features.iter().find(|record| {
+                                record.identity.segment_token == source.identity.segment_token
+                                    && record.identity.record_ordinal == plate
+                            })
+                        })
+                        .is_some_and(|plate| refused(&plate.id()));
+                    if plate_refused {
+                        continue;
+                    }
+                    "contour"
+                } else if class == BEND_CLASS
+                    || super::PLATE_BEND_SLOTS.iter().any(|slot| {
+                        source
+                            .properties
+                            .references()
+                            .get(*slot)
+                            .is_some_and(|reference| reference.index() != 0)
+                    })
+                {
+                    // Counted by the attachment and bend control notes.
+                    continue;
+                } else {
+                    "face"
+                }
+            }
+            Some(_) => continue,
+        };
+        losses.push(
+            crate::loss::InventorLossCode::FeatureSheetMetalNativeUnexplained.note(format!(
+                "Retained {} as native with no other sheet-metal note; the projection stage is {detail}.",
+                feature.id
+            )),
+        );
+    }
+    losses
+}
+
+/// The edge-inventory note of a document with sheet-metal flanges or plates
+/// that select edges, when the joins have no archive records.
+fn edge_inventory_loss(
+    inventory: &super::FeatureInventory,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let reason = inventory.edge_inputs.unavailable?;
+    let selects = !inventory.sheet_metal_flanges.is_empty()
+        || inventory.features.iter().any(|source| {
+            source
+                .properties
+                .references()
+                .get(12)
+                .is_some_and(|reference| reference.index() != 0)
+        });
+    selects.then(|| {
+        crate::loss::InventorLossCode::FeatureEdgeInventoryUnavailable.note(format!(
+            "The edge-naming and stored-edge joins have no archive records: {}.",
+            reason.detail()
+        ))
+    })
 }
 
 pub(crate) fn native_kind_counts(

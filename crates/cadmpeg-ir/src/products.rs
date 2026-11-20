@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Neutral product structure and occurrence instancing.
+//! Product definitions, the occurrences they own, and the documents they
+//! come from (CADIR v11 §8.1).
 
 use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-pub(crate) mod assembly_graph;
 
 use cadmpeg_core::text::NonBlankString;
 
+use crate::design::refs::ConfigurationRef;
+use crate::design::selection::OccurrencePath;
+use crate::design::units::UnitSystem;
+use crate::document::SourceMeta;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use crate::sketches::SketchId;
@@ -21,69 +25,127 @@ crate::ids::id_type!(
     JointId, compose
 );
 
-/// Role of a component definition in the product tree.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, DeserializeName)]
+mod general_tolerance;
+pub use general_tolerance::{AngularGeneral, GeneralTolerance, LinearGeneral, LinearGeneralClass};
+mod representation;
+pub use representation::{
+    MemberAction, MemberRule, Representation, RepresentationContent, RepresentationDetail,
+    RepresentationMember,
+};
+
+/// The source's kind of a product definition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum ProductDefinitionKind {
-    /// Product part or assembly container.
+    /// A part document's definition, or a `FreeCAD` `App::Part`.
     Part,
-    /// Generic ordered object group.
+    /// An assembly document's definition.
+    Assembly,
+    /// A `FreeCAD` group.
     Group,
-    /// Container whose children are link instances.
+    /// A `FreeCAD` link group.
     LinkGroup,
-    /// Reusable leaf object without container semantics.
+    /// Any other `FreeCAD` object that an `App::Link` places.
     Object,
 }
 
-/// A reusable product definition or structural container.
+/// A reusable product definition: the bodies and occurrences it owns, and
+/// the document it was read from.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ProductDefinition {
     /// Globally unique definition identity.
     pub id: ProductDefinitionId,
-    /// Structural role.
-    pub kind: ProductDefinitionKind,
-    /// Stable source object name used by product/BOM tooling.
+    /// The source's kind of the definition; `None` where the source gives
+    /// its definitions no kind (a Fusion component).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_kind"
+    )]
+    pub kind: Option<ProductDefinitionKind>,
+    /// The source's stable object name.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_source_name"
     )]
     pub source_name: Option<String>,
-    /// User-visible component label, when distinct from the source name.
+    /// The user-visible label, where it differs from the source name.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_label"
     )]
     pub label: Option<String>,
-    /// User-maintained BOM description.
+    /// The description field the source itself defines.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_description"
     )]
     pub description: Option<String>,
-    /// User-maintained part or stock number.
+    /// The part-number field the source itself defines.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_part_number"
     )]
     pub part_number: Option<String>,
-    /// Additional persisted BOM identity fields by exact property name.
+    /// The other BOM identity fields the source itself defines, by exact
+    /// property name.
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub bom_properties: BTreeMap<NonBlankString, String>,
-    /// Shape bodies owned by this reusable definition.
+    /// The configuration of another definition this definition is a saved
+    /// copy of: a table-driven member's factory, family, or generic.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_generated_from"
+    )]
+    pub generated_from: Option<GeneratedFrom>,
+    /// Where the definition is stored.
+    pub storage: Storage,
+    /// The bodies of `CadIr.geometry` the definition owns.
     pub bodies: Vec<BodyId>,
-    /// Sketches owned by this reusable definition.
-    pub sketches: Vec<SketchId>,
-    /// Tessellations owned by this reusable definition that represent no
-    /// body: the meshes of a part that the source states as triangles.
+    /// The tessellations of `CadIr.model` the definition owns that represent
+    /// no body: the meshes of a part that the source states as triangles.
     pub tessellations: Vec<TessellationId>,
+    /// The occurrences the definition owns, in source order.
+    pub occurrences: Vec<OccurrenceId>,
+    /// Bodies an instance below the definition shows in place of its
+    /// prototype's bodies.
+    pub instance_bodies: Vec<InstanceBodies>,
+    /// Named contents an occurrence can show in place of the full content.
+    pub representations: Vec<Representation>,
+    /// The sketches of the model's sketch arena that the definition owns.
+    /// The list names records of that arena and goes with it.
+    pub sketches: Vec<SketchId>,
+    /// The unit system the definition's source document is authored and
+    /// displayed in.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_units"
+    )]
+    pub units: Option<UnitSystem>,
+    /// The rule for every dimension that states no tolerance of its own.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_general_tolerance"
+    )]
+    pub general_tolerance: Option<GeneralTolerance>,
+    /// `Some(false)` where the source deactivates the definition wherever it
+    /// is placed.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_active"
+    )]
+    pub active: Option<bool>,
     /// Format-native object supplying this definition.
     #[serde(
         default,
@@ -93,158 +155,250 @@ pub struct ProductDefinition {
     pub native_ref: Option<String>,
 }
 
-/// Local or unresolved external prototype of an occurrence.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+impl ProductDefinition {
+    /// A definition with the given storage and nothing else stated.
+    #[must_use]
+    pub fn new(id: ProductDefinitionId, storage: Storage) -> Self {
+        Self {
+            id,
+            kind: None,
+            source_name: None,
+            label: None,
+            description: None,
+            part_number: None,
+            bom_properties: BTreeMap::new(),
+            generated_from: None,
+            storage,
+            bodies: Vec::new(),
+            tessellations: Vec::new(),
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            sketches: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
+            native_ref: None,
+        }
+    }
+
+    /// The root definition of a decode: stored in the root file, with the
+    /// identities that file records about itself.
+    #[must_use]
+    pub fn root(id: ProductDefinitionId, document: ExternalDocument) -> Self {
+        Self::new(
+            id,
+            Storage::File {
+                document,
+                source: None,
+            },
+        )
+    }
+
+    /// Whether this is a root definition: stored in the root file.
+    #[must_use]
+    pub const fn is_root(&self) -> bool {
+        matches!(self.storage, Storage::File { source: None, .. })
+    }
+
+    /// Whether this is a root definition that states nothing beyond its kind
+    /// and the bodies and meshes its file holds at its top: the document
+    /// itself, which a writer of one document writes as that document and not
+    /// as a component or an assembly level.
+    #[must_use]
+    pub fn is_document_root(&self) -> bool {
+        matches!(&self.storage, Storage::File { document, source: None } if *document == ExternalDocument::default())
+            && self.source_name.is_none()
+            && self.label.is_none()
+            && self.description.is_none()
+            && self.part_number.is_none()
+            && self.bom_properties.is_empty()
+            && self.generated_from.is_none()
+            && self.occurrences.is_empty()
+            && self.instance_bodies.is_empty()
+            && self.representations.is_empty()
+            && self.sketches.is_empty()
+            && self.units.is_none()
+            && self.general_tolerance.is_none()
+            && self.active.is_none()
+            && self.native_ref.is_none()
+    }
+}
+
+/// The definitions that state product structure: every one but a document
+/// root ([`ProductDefinition::is_document_root`]).
+pub fn stated_definitions(
+    definitions: &[ProductDefinition],
+) -> impl Iterator<Item = &ProductDefinition> {
+    definitions
+        .iter()
+        .filter(|definition| !definition.is_document_root())
+}
+
+/// The configuration of another definition that a definition was generated
+/// from.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
-pub enum PrototypeReference {
-    /// Prototype resolves to a definition in this document.
-    Local {
-        /// Resolved component definition.
-        definition: ProductDefinitionId,
-    },
-    /// Prototype belongs to another document, loaded or not.
-    External {
-        /// Persisted external-document reference and unresolved state.
+pub struct GeneratedFrom {
+    /// The factory definition; `None` only where the member's own record
+    /// proves its membership and names no factory.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_definition"
+    )]
+    pub definition: Option<ProductDefinitionId>,
+    /// The factory's configuration the definition was generated from.
+    pub configuration: ConfigurationRef,
+}
+
+/// Where a product definition is stored.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Storage {
+    /// Stored in the file of the definition that places it.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Embedded,
+    /// Read from its own file of the decode set, or the root definition.
+    File {
+        /// The identities the file records about itself.
         document: ExternalDocument,
-        /// Persisted object identity within that document.
+        /// The file's own format, attributes, and dialect layers; `None` for
+        /// the root definition, whose source is `CadIr.source`.
         #[serde(
             default,
             skip_serializing_if = "Option::is_none",
-            deserialize_with = "deserialize_object"
+            deserialize_with = "deserialize_file_source"
         )]
-        object: Option<String>,
+        source: Option<SourceMeta>,
     },
-    /// The source intentionally carries no resolvable prototype.
-    Unresolved {},
+    /// A document that was not read.
+    External(ExternalDocument),
 }
 
-/// Typed identity or explicit absence of an external document.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Every identity a source records for a document link, and the object
+/// inside the document that the link names.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-pub enum ExternalDocument {
-    /// Non-empty file path stored by the source.
-    Path {
-        /// Persisted file path.
-        path: NonBlankString,
-    },
-    /// Non-empty document identity stored by the source.
-    DocumentId {
-        /// Persisted document identity.
-        document_id: NonBlankString,
-    },
-    /// Persisted reference was empty or structurally unusable.
-    Missing {},
+#[serde(deny_unknown_fields)]
+pub struct ExternalDocument {
+    /// The document's path.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path"
+    )]
+    pub path: Option<NonBlankString>,
+    /// The document's identity.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_document_id"
+    )]
+    pub document_id: Option<NonBlankString>,
+    /// The document's version.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_version"
+    )]
+    pub version: Option<NonBlankString>,
+    /// The document's stamp.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_stamp"
+    )]
+    pub stamp: Option<NonBlankString>,
+    /// The object inside the document that the link names.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_object"
+    )]
+    pub object: Option<NonBlankString>,
 }
 
 impl ExternalDocument {
-    /// Constructs a path reference, or [`Self::Missing`] when the path is empty.
+    /// A document named by its path; no identity where the path is blank.
     pub fn path(path: impl Into<String>) -> Self {
-        match NonBlankString::new(path) {
-            Some(path) => Self::Path { path },
-            None => Self::Missing {},
+        Self {
+            path: NonBlankString::new(path),
+            ..Self::default()
         }
     }
 
-    /// Constructs a document-id reference, or [`Self::Missing`] when the id is empty.
+    /// A document named by its identity; no identity where it is blank.
     pub fn document_id(document_id: impl Into<String>) -> Self {
-        match NonBlankString::new(document_id) {
-            Some(document_id) => Self::DocumentId { document_id },
-            None => Self::Missing {},
+        Self {
+            document_id: NonBlankString::new(document_id),
+            ..Self::default()
+        }
+    }
+
+    /// The same document with the object the link names inside it; no
+    /// object where it is blank.
+    #[must_use]
+    pub fn with_object(self, object: impl Into<String>) -> Self {
+        Self {
+            object: NonBlankString::new(object),
+            ..self
         }
     }
 }
 
-/// Copy-on-change ownership behavior of a link.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(
-    tag = "kind",
-    content = "value",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
-pub enum CopyOnChangePolicy {
-    /// Link follows its prototype without making an owned copy.
-    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
-    Disabled,
-    /// Copy is created when a marked prototype property changes.
-    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
-    Enabled,
-    /// Link currently owns a changed copy.
-    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
-    Owned,
-    /// Owned copy continues tracking its original source.
-    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
-    Tracking,
-    /// Future policy retained without reinterpretation.
-    Native(String),
-}
-
-/// Position of an occurrence in the canonical placed-instance tree.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum OccurrenceParent {
-    /// A root occurrence has no containing occurrence.
-    Root {},
-    /// A child is placed inside another occurrence.
-    Occurrence {
-        /// Containing occurrence identity.
-        occurrence: OccurrenceId,
-    },
-}
-
-/// One placed use, including an element of a link array.
+/// One placement of a prototype definition inside the definition that owns
+/// the occurrence.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Occurrence {
-    /// Globally unique instance identity.
+    /// Globally unique occurrence identity.
     pub id: OccurrenceId,
-    /// Reusable definition used by this instance.
-    pub prototype: PrototypeReference,
-    /// Position in the occurrence tree.
-    pub parent: OccurrenceParent,
-    /// Stable zero-based source order within the parent.
-    pub ordinal: u32,
-    /// Placement relative to the direct container.
-    pub transform: Transform,
-    /// Linked prototype placement contribution when link-transform policy applies.
+    /// The definition the occurrence places.
+    pub prototype: ProductDefinitionId,
+    /// The base placement in the owning definition's frame; `None` where the
+    /// source states no placement.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_linked_prototype"
+        deserialize_with = "deserialize_transform"
     )]
-    pub linked_prototype: Option<Transform>,
-    /// Per-axis instance scale.
-    #[serde(deserialize_with = "deserialize_occurrence_scale")]
-    pub scale: [FiniteReal; 3],
-    /// Source occurrence identifier or display name.
+    pub transform: Option<Transform>,
+    /// Whether the source holds the instance out of the product.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_name"
+        deserialize_with = "deserialize_suppressed"
     )]
-    pub name: Option<String>,
-    /// Per-element visibility override.
+    pub suppressed: Option<bool>,
+    /// The instance's display state.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_visible"
     )]
     pub visible: Option<bool>,
-    /// `FreeCAD` `App::Link`-specific occurrence state.
+    /// The representation of the prototype the occurrence shows.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_link"
+        deserialize_with = "deserialize_representation"
     )]
-    pub link: Option<LinkState>,
-    /// Format-native object supplying this instance.
+    pub representation: Option<NonBlankString>,
+    /// Changes to instances nested inside the prototype, for this occurrence
+    /// only, in every configuration.
+    pub overrides: Vec<NestedOverride>,
+    /// The source's occurrence name.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_name"
+    )]
+    pub name: Option<String>,
+    /// Format-native object supplying this occurrence.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -253,256 +407,140 @@ pub struct Occurrence {
     pub native_ref: Option<String>,
 }
 
-/// One member of an `App::Link` occurrence state.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
-#[serde(deny_unknown_fields)]
-pub enum LinkMember {
-    /// One persisted prototype subelement selection.
-    LinkedSubelement {
-        /// Subelement path inside the prototype.
-        subelement: String,
-    },
-    /// The explicit application object representing this array element.
-    ElementComponent {
-        /// Component definition.
-        component: ProductDefinitionId,
-    },
-    /// Whether this link claims its prototype in the source tree.
-    ClaimChild {
-        /// The claim the source recorded.
-        claim: bool,
-    },
-    /// Copy-on-change ownership state.
-    CopyOnChange {
-        /// The recorded ownership state.
-        state: CopyOnChange,
-    },
-}
-
-/// `FreeCAD` `App::Link`-specific occurrence state.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(with = "LinkStateWire"))]
-#[serde(try_from = "LinkStateWire", into = "LinkStateWire")]
-pub struct LinkState {
-    linked_subelements: Vec<String>,
-    element_component: Option<ProductDefinitionId>,
-    claim_child: Option<bool>,
-    copy_on_change: Option<CopyOnChange>,
-}
-
-/// `FreeCAD` `App::Link`-specific occurrence state.
-///
-/// The wire carries one member list, so "all four members are absent" has no
-/// spelling: the only emptiness admission is over that one list, and the three
-/// members a link states at most once are refused only when repeated.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[cfg_attr(feature = "schema", schemars(rename = "LinkState"))]
-#[serde(deny_unknown_fields)]
-struct LinkStateWire {
-    /// The link members the source recorded.
-    members: Vec<LinkMember>,
-}
-
-impl TryFrom<LinkStateWire> for LinkState {
-    type Error = &'static str;
-
-    fn try_from(wire: LinkStateWire) -> Result<Self, Self::Error> {
-        if wire.members.is_empty() {
-            return Err("link state states at least one member");
-        }
-        let mut state = Self {
-            linked_subelements: Vec::new(),
-            element_component: None,
-            claim_child: None,
-            copy_on_change: None,
-        };
-        for member in wire.members {
-            match member {
-                LinkMember::LinkedSubelement { subelement } => {
-                    state.linked_subelements.push(subelement);
-                }
-                LinkMember::ElementComponent { component } => {
-                    if state.element_component.replace(component).is_some() {
-                        return Err("link state states element_component once");
-                    }
-                }
-                LinkMember::ClaimChild { claim } => {
-                    if state.claim_child.replace(claim).is_some() {
-                        return Err("link state states claim_child once");
-                    }
-                }
-                LinkMember::CopyOnChange {
-                    state: copy_on_change,
-                } => {
-                    if state.copy_on_change.replace(copy_on_change).is_some() {
-                        return Err("link state states copy_on_change once");
-                    }
-                }
-            }
-        }
-        Ok(state)
-    }
-}
-
-impl LinkState {
-    /// Nonempty link state, or absence when all members are empty.
-    pub fn new(
-        linked_subelements: Vec<String>,
-        element_component: Option<ProductDefinitionId>,
-        claim_child: Option<bool>,
-        copy_on_change: Option<CopyOnChange>,
-    ) -> Option<Self> {
-        if linked_subelements.is_empty()
-            && element_component.is_none()
-            && claim_child.is_none()
-            && copy_on_change.is_none()
-        {
-            return None;
-        }
-        Some(Self {
-            linked_subelements,
-            element_component,
-            claim_child,
-            copy_on_change,
-        })
-    }
-
-    /// Persisted prototype subelement selection.
-    pub fn linked_subelements(&self) -> &[String] {
-        &self.linked_subelements
-    }
-
-    /// Explicit application object representing this array element.
-    pub fn element_component(&self) -> Option<&ProductDefinitionId> {
-        self.element_component.as_ref()
-    }
-
-    /// Whether this link claims its prototype in the source tree.
-    ///
-    /// `FreeCAD` states `LinkClaimChild` as an optional `App::PropertyBool`,
-    /// so an absent property and a stated `false` are separate source facts
-    /// and reach separate wire member lists.
-    pub const fn claim_child(&self) -> Option<bool> {
-        self.claim_child
-    }
-
-    /// Copy-on-change ownership state.
-    pub fn copy_on_change(&self) -> Option<&CopyOnChange> {
-        self.copy_on_change.as_ref()
-    }
-}
-
-/// Copy-on-change ownership state carried by an `App::Link` occurrence.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(deny_unknown_fields)]
-pub struct CopyOnChange {
-    /// Ownership policy.
-    pub policy: CopyOnChangePolicy,
-    /// Original component or external object tracked by copy-on-change.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_source"
-    )]
-    pub source: Option<PrototypeReference>,
-    /// Internal component or external object holding owned copies.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_group"
-    )]
-    pub group: Option<PrototypeReference>,
-    /// Whether the tracked source was persisted as changed.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_touched"
-    )]
-    pub touched: Option<bool>,
-}
-
-crate::units::named_field!(deserialize_occurrence_scale, [FiniteReal; 3], "scale");
-
 impl Occurrence {
-    /// Placement after applying the linked prototype contribution, when present.
-    pub fn effective_transform(&self) -> Result<Transform, crate::transform::TransformError> {
-        self.linked_prototype
-            .map_or(Ok(self.transform), |prototype| {
-                self.transform.compose(prototype)
-            })
+    /// An occurrence of `prototype` at `transform`, with nothing else stated.
+    #[must_use]
+    pub const fn new(
+        id: OccurrenceId,
+        prototype: ProductDefinitionId,
+        transform: Option<Transform>,
+    ) -> Self {
+        Self {
+            id,
+            prototype,
+            transform,
+            suppressed: None,
+            visible: None,
+            representation: None,
+            overrides: Vec::new(),
+            name: None,
+            native_ref: None,
+        }
     }
 }
 
-/// Failure to construct a canonical occurrence graph.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AssemblyGraphError {
-    /// Two occurrences carry the same identity.
-    DuplicateOccurrence(OccurrenceId),
-    /// An occurrence names a parent that is not present.
-    MissingParent {
-        /// Child occurrence.
-        occurrence: OccurrenceId,
-        /// Missing parent occurrence.
-        parent: OccurrenceId,
-    },
-    /// Parent links contain a cycle.
-    ParentCycle(OccurrenceId),
-    /// An occurrence placement cannot be composed into a finite transform.
-    Transform {
-        /// The occurrence whose placement failed.
-        occurrence: OccurrenceId,
-        /// The transform arithmetic failure.
-        source: crate::transform::TransformError,
-    },
-}
-
-impl std::fmt::Display for AssemblyGraphError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::DuplicateOccurrence(id) => write!(formatter, "duplicate occurrence {id}"),
-            Self::MissingParent { occurrence, parent } => {
-                write!(
-                    formatter,
-                    "occurrence {occurrence} has missing parent {parent}"
+impl crate::document::CadIr {
+    /// States the root definition (§8.1) and returns it: the first
+    /// definition stored in the root file, or else a new one with `id` and
+    /// the identities `document` the root file records about itself. The
+    /// root then owns every body that no definition owns or shows for an
+    /// instance, and every tessellation that represents no body and that no
+    /// definition owns: what the file holds at its top. A new root is charged
+    /// to `ctx` as one entity, so a decoder that admits its entity total calls
+    /// this after its last admission. A container decode holds no model
+    /// records, so it states none and returns `None`.
+    pub fn state_root_definition(
+        &mut self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        id: ProductDefinitionId,
+        document: ExternalDocument,
+    ) -> Result<Option<&mut ProductDefinition>, cadmpeg_core::CodecError> {
+        if ctx.container_only() {
+            return Ok(None);
+        }
+        let definitions = &self.model.product_definitions;
+        let held: std::collections::BTreeSet<&str> = definitions
+            .iter()
+            .flat_map(|definition| {
+                definition.bodies.iter().chain(
+                    definition
+                        .instance_bodies
+                        .iter()
+                        .flat_map(|instance| &instance.bodies),
                 )
+            })
+            .map(BodyId::as_str)
+            .collect();
+        let bodies: Vec<BodyId> = self
+            .geometry
+            .bodies
+            .iter()
+            .filter(|body| !held.contains(body.id.as_str()))
+            .map(|body| body.id.clone())
+            .collect();
+        let listed: std::collections::BTreeSet<&str> = definitions
+            .iter()
+            .flat_map(|definition| &definition.tessellations)
+            .map(TessellationId::as_str)
+            .collect();
+        let tessellations: Vec<TessellationId> = self
+            .model
+            .tessellations
+            .iter()
+            .filter(|tessellation| {
+                tessellation.body.is_none() && !listed.contains(tessellation.id.as_str())
+            })
+            .map(|tessellation| tessellation.id.clone())
+            .collect();
+        let index = match definitions.iter().position(ProductDefinition::is_root) {
+            Some(index) => index,
+            None => {
+                ctx.charge_entities(1, "root product definition")?;
+                self.model
+                    .product_definitions
+                    .push(ProductDefinition::root(id, document));
+                self.model.product_definitions.len() - 1
             }
-            Self::ParentCycle(id) => write!(formatter, "occurrence parent cycle at {id}"),
-            Self::Transform { occurrence, source } => {
-                write!(formatter, "occurrence {occurrence}: {source}")
-            }
-        }
+        };
+        let root = &mut self.model.product_definitions[index];
+        root.bodies.extend(bodies);
+        root.tessellations.extend(tessellations);
+        Ok(Some(root))
     }
 }
 
-impl std::error::Error for AssemblyGraphError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Transform { source, .. } => Some(source),
-            _ => None,
-        }
-    }
+/// The definition that lists `occurrence` among the occurrences it owns.
+pub fn owner<'ir>(
+    definitions: &'ir [ProductDefinition],
+    occurrence: &OccurrenceId,
+) -> Option<&'ir ProductDefinition> {
+    definitions
+        .iter()
+        .find(|definition| definition.occurrences.contains(occurrence))
 }
 
-/// Validated lookup view over a canonical occurrence tree.
-pub struct AssemblyGraph<'a> {
-    occurrences: assembly_graph::Facts<'a>,
+/// The one occurrence that places `definition`, or `None` where no
+/// occurrence or more than one places it.
+pub fn sole_placement<'ir>(
+    occurrences: &'ir [Occurrence],
+    definition: &ProductDefinitionId,
+) -> Option<&'ir Occurrence> {
+    let mut placements = occurrences
+        .iter()
+        .filter(|occurrence| &occurrence.prototype == definition);
+    let placement = placements.next()?;
+    placements.next().is_none().then_some(placement)
+}
+
+/// The bodies an instance at a path shows in place of its prototype's
+/// bodies, in the prototype's coordinates.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct InstanceBodies {
+    /// The instance, by its path from the owning definition.
+    pub occurrence: OccurrencePath,
+    /// The bodies of `CadIr.geometry` it shows.
+    pub bodies: Vec<BodyId>,
 }
 
 #[cfg(test)]
 mod tests {
     mod joints;
-    mod occurrences;
-    use super::{
-        AssemblyGraph, AssemblyGraphError, CopyOnChange, CopyOnChangePolicy, ExternalDocument,
-        JointLimits, JointOperand, LinkState, Occurrence, OccurrenceParent, PrototypeReference,
-    };
-    use crate::ids::{OccurrenceId, ProductDefinitionId};
-    use crate::transform::Transform;
+    mod root;
+    mod wire;
+    use super::{ExternalDocument, JointLimits, JointOperand};
+    use crate::ids::OccurrenceId;
 
     #[test]
     fn a_blank_selection_id_has_no_wire_spelling() {
@@ -529,68 +567,6 @@ mod tests {
             serde_json::from_value::<crate::features::FeatureResultTopology>(topology(" a "))
                 .is_ok()
         );
-    }
-
-    #[test]
-    fn an_external_document_states_its_resolution_and_carries_one_identity() {
-        let path = ExternalDocument::path("parts/widget.FCStd");
-        let path_wire = serde_json::to_value(&path).unwrap();
-        assert_eq!(
-            path_wire,
-            serde_json::json!({
-                "kind": "path", "path": "parts/widget.FCStd"
-            })
-        );
-        assert_eq!(
-            serde_json::from_value::<ExternalDocument>(path_wire.clone()).unwrap(),
-            path
-        );
-
-        let document_id = ExternalDocument::document_id("document-7");
-        let document_id_wire = serde_json::to_value(&document_id).unwrap();
-        assert_eq!(
-            document_id_wire,
-            serde_json::json!({"kind": "document_id", "document_id": "document-7"})
-        );
-        assert_eq!(
-            serde_json::from_value::<ExternalDocument>(document_id_wire).unwrap(),
-            document_id
-        );
-
-        let missing = ExternalDocument::Missing {};
-        assert_eq!(ExternalDocument::path(""), missing);
-        assert_eq!(ExternalDocument::document_id(""), missing);
-        let missing_wire = serde_json::to_value(&missing).unwrap();
-        assert_eq!(missing_wire, serde_json::json!({"kind": "missing"}));
-        assert_eq!(
-            serde_json::from_value::<ExternalDocument>(missing_wire).unwrap(),
-            missing
-        );
-
-        for (invalid, named) in [
-            (
-                serde_json::json!({"kind": "path", "path": ""}),
-                "must not be blank",
-            ),
-            (
-                serde_json::json!({"kind": "path", "path": "   "}),
-                "must not be blank",
-            ),
-            (
-                serde_json::json!({
-                    "kind": "path", "path": "parts/widget.FCStd",
-                    "document_id": "document-7"
-                }),
-                "document_id",
-            ),
-            (serde_json::json!({"kind": "missing", "path": ""}), "path"),
-            (serde_json::json!({"kind": "path"}), "path"),
-        ] {
-            let error = serde_json::from_value::<ExternalDocument>(invalid)
-                .unwrap_err()
-                .to_string();
-            assert!(error.contains(named), "{error}");
-        }
     }
 
     #[test]
@@ -623,12 +599,16 @@ mod tests {
         let external_wire = serde_json::to_value(&external).unwrap();
         assert_eq!(external_wire["container"]["kind"], "external");
         assert_eq!(
+            external_wire["container"]["external_document"],
+            serde_json::json!({"path": "parts/widget.FCStd"})
+        );
+        assert_eq!(
             serde_json::from_value::<JointOperand>(external_wire).unwrap(),
             external
         );
 
         let mut both = occurrence_wire;
-        both["container"]["external_document"] = serde_json::json!({"kind": "missing"});
+        both["container"]["external_document"] = serde_json::json!({});
         let error = serde_json::from_value::<JointOperand>(both)
             .unwrap_err()
             .to_string();
@@ -647,96 +627,6 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(error.contains("object"), "{error}");
-    }
-
-    fn translation(x: f64) -> Transform {
-        Transform::affine([
-            [1.0, 0.0, 0.0, x],
-            [0.0, 1.0, 0.0, 0.0],
-            [0.0, 0.0, 1.0, 0.0],
-        ])
-        .expect("translation is affine")
-    }
-
-    fn occurrence(id: &str, parent: OccurrenceParent, x: f64) -> Occurrence {
-        Occurrence {
-            id: OccurrenceId::mint(id).expect("valid identity"),
-            prototype: PrototypeReference::Unresolved {},
-            parent,
-            ordinal: 0,
-            transform: translation(x),
-            linked_prototype: None,
-            scale: [crate::scalar::FiniteReal::ONE; 3],
-            name: None,
-            visible: None,
-            link: None,
-            native_ref: None,
-        }
-    }
-
-    #[test]
-    fn resolves_parent_chains_and_conditional_prototype_placement() {
-        let root = occurrence("test:model:entity#root", OccurrenceParent::Root {}, 1.0);
-        let mut child = occurrence(
-            "test:model:entity#child",
-            OccurrenceParent::Occurrence {
-                occurrence: root.id.clone(),
-            },
-            2.0,
-        );
-        child.linked_prototype = Some(translation(10.0));
-        let occurrences = [child, root];
-        let mut graph = AssemblyGraph::new(&occurrences).expect("valid graph");
-        assert_eq!(
-            crate::index::public_result(super::assembly_graph::resolve_occurrence(
-                graph
-                    .occurrence(
-                        &OccurrenceId::mint("test:model:entity#child").expect("valid identity")
-                    )
-                    .unwrap(),
-                &mut graph.occurrences,
-                &crate::index::PublicStorage
-            ))
-            .expect("resolved child")
-            .rows()[0][3],
-            13.0
-        );
-    }
-
-    #[test]
-    fn an_absent_linked_prototype_key_is_the_only_spelling_of_absence() {
-        let plain = occurrence(
-            "test:model:occurrence#plain",
-            OccurrenceParent::Root {},
-            1.0,
-        );
-        let plain_wire = serde_json::to_value(&plain).expect("plain occurrence wire");
-        assert!(plain_wire.get("linked_prototype").is_none());
-        assert_eq!(
-            serde_json::from_value::<Occurrence>(plain_wire).unwrap(),
-            plain
-        );
-
-        let mut linked = plain;
-        linked.linked_prototype = Some(translation(10.0));
-        let linked_wire = serde_json::to_value(&linked).expect("linked occurrence wire");
-        assert_eq!(
-            linked_wire.get("linked_prototype"),
-            Some(&serde_json::to_value(translation(10.0)).unwrap())
-        );
-        assert_eq!(
-            serde_json::from_value::<Occurrence>(linked_wire).unwrap(),
-            linked
-        );
-
-        let mut identity = serde_json::to_value(&linked).unwrap();
-        identity["linked_prototype"] = serde_json::to_value(Transform::identity()).unwrap();
-        assert_eq!(
-            serde_json::from_value::<Occurrence>(identity)
-                .unwrap()
-                .linked_prototype,
-            Some(Transform::identity())
-        );
     }
 
     #[test]
@@ -808,164 +698,6 @@ mod tests {
             error.contains("joint limit range must be ordered"),
             "{error}"
         );
-    }
-
-    #[test]
-    fn empty_link_state_is_absent() {
-        assert!(LinkState::new(Vec::new(), None, None, None).is_none());
-        assert!(LinkState::new(Vec::new(), None, Some(false), None).is_some());
-        let plain = occurrence(
-            "test:model:occurrence#empty-link",
-            OccurrenceParent::Root {},
-            0.0,
-        );
-        let wire = serde_json::to_value(&plain).unwrap();
-        assert!(serde_json::from_value::<Occurrence>(wire)
-            .unwrap()
-            .link
-            .is_none());
-    }
-
-    #[test]
-    fn the_link_state_is_one_nested_object_with_its_own_copy_on_change() {
-        let mut linked = occurrence("test:model:occurrence#link", OccurrenceParent::Root {}, 1.0);
-        linked.link = LinkState::new(
-            vec!["Face1".into()],
-            Some(ProductDefinitionId::mint("test:model:product#element").expect("valid identity")),
-            Some(true),
-            Some(CopyOnChange {
-                policy: CopyOnChangePolicy::Owned,
-                source: Some(PrototypeReference::Local {
-                    definition: ProductDefinitionId::mint("test:model:product#source")
-                        .expect("valid identity"),
-                }),
-                group: Some(PrototypeReference::Local {
-                    definition: ProductDefinitionId::mint("test:model:product#group")
-                        .expect("valid identity"),
-                }),
-                touched: Some(true),
-            }),
-        );
-        let wire = serde_json::to_value(&linked).expect("App::Link occurrence wire");
-        assert_eq!(
-            wire["link"]["members"],
-            serde_json::json!([
-                {"kind": "linked_subelement", "subelement": "Face1"},
-                {"kind": "element_component", "component": "test:model:product#element"},
-                {"kind": "claim_child", "claim": true},
-                {"kind": "copy_on_change", "state": {
-                    "policy": {"kind": "owned"},
-                    "source": {"kind": "local", "definition": "test:model:product#source"},
-                    "group": {"kind": "local", "definition": "test:model:product#group"},
-                    "touched": true
-                }}
-            ])
-        );
-        assert_eq!(
-            serde_json::from_value::<Occurrence>(wire.clone()).unwrap(),
-            linked
-        );
-
-        let mut without_policy = wire.clone();
-        without_policy["link"]["members"][3]["state"]
-            .as_object_mut()
-            .expect("a copy-on-change object")
-            .remove("policy");
-        let error = serde_json::from_value::<Occurrence>(without_policy)
-            .unwrap_err()
-            .to_string();
-        assert!(error.contains("policy"), "{error}");
-
-        let mut bogus = wire;
-        bogus["link"]["members"][3]["state"]["zz_bogus"] = serde_json::json!(1);
-        let error = serde_json::from_value::<Occurrence>(bogus)
-            .unwrap_err()
-            .to_string();
-        assert!(error.contains("zz_bogus"), "{error}");
-
-        let mut empty = serde_json::to_value(occurrence(
-            "test:model:occurrence#empty-link",
-            OccurrenceParent::Root {},
-            1.0,
-        ))
-        .unwrap();
-        empty["link"] = serde_json::json!({"members": []});
-        assert!(serde_json::from_value::<Occurrence>(empty).is_err());
-    }
-
-    #[test]
-    fn rejects_duplicate_missing_and_cyclic_parent_links() {
-        let duplicate = occurrence("test:model:entity#same", OccurrenceParent::Root {}, 0.0);
-        assert!(matches!(
-            AssemblyGraph::new(&[duplicate.clone(), duplicate]),
-            Err(AssemblyGraphError::DuplicateOccurrence(_))
-        ));
-
-        let missing = occurrence(
-            "test:model:entity#child",
-            OccurrenceParent::Occurrence {
-                occurrence: OccurrenceId::mint("test:model:entity#missing")
-                    .expect("valid identity"),
-            },
-            0.0,
-        );
-        assert!(matches!(
-            AssemblyGraph::new(&[missing]),
-            Err(AssemblyGraphError::MissingParent { .. })
-        ));
-
-        let first = occurrence(
-            "test:model:entity#first",
-            OccurrenceParent::Occurrence {
-                occurrence: OccurrenceId::mint("test:model:entity#second").expect("valid identity"),
-            },
-            0.0,
-        );
-        let second = occurrence(
-            "test:model:entity#second",
-            OccurrenceParent::Occurrence {
-                occurrence: OccurrenceId::mint("test:model:entity#first").expect("valid identity"),
-            },
-            0.0,
-        );
-        assert!(matches!(
-            AssemblyGraph::new(&[first, second]),
-            Err(AssemblyGraphError::ParentCycle(_))
-        ));
-    }
-}
-
-impl<'a> AssemblyGraph<'a> {
-    /// Validates parent links and every composed occurrence transform.
-    pub fn new(occurrences: &'a [Occurrence]) -> Result<Self, AssemblyGraphError> {
-        crate::index::public_result(assembly_graph::build(
-            occurrences,
-            &crate::index::PublicStorage,
-        ))
-        .map(|occurrences| Self { occurrences })
-        .map_err(|error| match error {
-            assembly_graph::GraphError::Duplicate(id) => {
-                AssemblyGraphError::DuplicateOccurrence(id.clone())
-            }
-            assembly_graph::GraphError::Missing { occurrence, parent } => {
-                AssemblyGraphError::MissingParent {
-                    occurrence: occurrence.clone(),
-                    parent: parent.clone(),
-                }
-            }
-            assembly_graph::GraphError::Cycle(id) => AssemblyGraphError::ParentCycle(id.clone()),
-            assembly_graph::GraphError::Transform { occurrence, source } => {
-                AssemblyGraphError::Transform {
-                    occurrence: occurrence.clone(),
-                    source,
-                }
-            }
-        })
-    }
-
-    /// Returns an occurrence by identity.
-    pub fn occurrence(&self, id: &OccurrenceId) -> Option<&'a Occurrence> {
-        self.occurrences.occurrence(id)
     }
 }
 
@@ -1690,10 +1422,10 @@ pub enum DriveMode {
 /// `stiffness · (target_position − position) + damping · (target_velocity −
 /// velocity)`, limited to `max_force`.
 ///
-/// Rotations are radians and translations millimetres. Stiffness is newton
-/// millimetres per radian, or newtons per millimetre; damping is newton
-/// millimetre seconds per radian, or newton seconds per millimetre; the force
-/// limit is newton millimetres, or newtons.
+/// Rotations are radians and translations millimetres, and every coefficient
+/// is in kilograms, millimetres, seconds, and radians: stiffness is
+/// kg·mm²/(s²·rad), or kg/s²; damping kg·mm²/(s·rad), or kg/s; the force
+/// limit kg·mm²/s², or kg·mm/s².
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1860,19 +1592,28 @@ mod nonblank_literal_tests {
 }
 
 // Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_kind, ProductDefinitionKind, "kind");
 cadmpeg_core::named_optional_field!(deserialize_source_name, String, "source_name");
 cadmpeg_core::named_optional_field!(deserialize_label, String, "label");
 cadmpeg_core::named_optional_field!(deserialize_description, String, "description");
 cadmpeg_core::named_optional_field!(deserialize_part_number, String, "part_number");
+cadmpeg_core::named_optional_field!(deserialize_generated_from, GeneratedFrom, "generated_from");
+cadmpeg_core::named_optional_field!(deserialize_units, UnitSystem, "units");
+cadmpeg_core::named_optional_field!(
+    deserialize_general_tolerance,
+    GeneralTolerance,
+    "general_tolerance"
+);
+cadmpeg_core::named_optional_field!(deserialize_active, bool, "active");
 cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
-cadmpeg_core::named_optional_field!(deserialize_object, String, "object");
-cadmpeg_core::named_optional_field!(deserialize_linked_prototype, Transform, "linked_prototype");
+cadmpeg_core::named_optional_field!(deserialize_definition, ProductDefinitionId, "definition");
+cadmpeg_core::named_optional_field!(deserialize_file_source, SourceMeta, "source");
+cadmpeg_core::named_optional_field!(deserialize_path, NonBlankString, "path");
+cadmpeg_core::named_optional_field!(deserialize_document_id, NonBlankString, "document_id");
+cadmpeg_core::named_optional_field!(deserialize_version, NonBlankString, "version");
+cadmpeg_core::named_optional_field!(deserialize_stamp, NonBlankString, "stamp");
+cadmpeg_core::named_optional_field!(deserialize_object, NonBlankString, "object");
 cadmpeg_core::named_optional_field!(deserialize_name, String, "name");
-cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
-cadmpeg_core::named_optional_field!(deserialize_link, LinkState, "link");
-cadmpeg_core::named_optional_field!(deserialize_source, PrototypeReference, "source");
-cadmpeg_core::named_optional_field!(deserialize_group, PrototypeReference, "group");
-cadmpeg_core::named_optional_field!(deserialize_touched, bool, "touched");
 cadmpeg_core::named_optional_field!(deserialize_offset_frame, Transform, "offset_frame");
 cadmpeg_core::named_optional_field!(deserialize_offset_frames, [Transform; 2], "offset_frames");
 cadmpeg_core::named_optional_field!(deserialize_angle, FiniteReal, "angle");
@@ -1898,10 +1639,12 @@ cadmpeg_core::named_optional_field!(
     crate::features::ParameterId,
     "driving_parameter"
 );
+cadmpeg_core::named_optional_field!(deserialize_representation<T>, T, "representation");
+cadmpeg_core::named_optional_field!(deserialize_suppressed<T>, T, "suppressed");
+cadmpeg_core::named_optional_field!(deserialize_transform<T>, T, "transform");
+cadmpeg_core::named_optional_field!(deserialize_visible<T>, T, "visible");
 
 mod identity_rewrite;
 
 mod nested_override;
 pub use nested_override::NestedOverride;
-
-mod serialization;

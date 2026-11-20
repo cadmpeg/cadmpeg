@@ -3785,19 +3785,8 @@
           "id": "usd:stage:occurrence#/Occurrence",
           "name": "Occurrence",
           "native_ref": "/Occurrence",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Occurrence",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Occurrence",
           "transform": [
             [
               1.0,
@@ -3834,10 +3823,32 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Occurrence",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Occurrence",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Occurrence",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:root#stage",
+          "instance_bodies": [],
+          "occurrences": [
+            "usd:stage:occurrence#/Occurrence"
+          ],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
           "tessellations": []
         }
       ],

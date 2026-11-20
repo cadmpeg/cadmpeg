@@ -682,10 +682,10 @@ impl<'ir> FaceFrame<'_, 'ir> {
                 ),
             });
         };
-        let piece = Piece::inverted(
+        let pieces = Piece::inverted(
             eval,
             self.chart,
-            curve,
+            &curve,
             interval,
             CoedgeUse {
                 coedge,
@@ -695,7 +695,7 @@ impl<'ir> FaceFrame<'_, 'ir> {
         )
         .map_err(|failure| failure.at(entity))?;
         Ok(CoedgePieces::Pieces {
-            pieces: vec![piece],
+            pieces,
             directed: true,
             listed_backward: false,
         })

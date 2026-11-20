@@ -25,7 +25,7 @@ fn damage_local_frame(bytes: &mut [u8], name: &str) {
 #[test]
 fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
-    let preview = vec![0; 2_000_000];
+    let preview = b"unrelated preview".to_vec();
     for name in [
         "preview.bin",
         "FusionAssetName[Active]/Previews/preview.png",
@@ -52,7 +52,7 @@ fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() 
             .unwrap()
             .is_ok());
         assert!(<F3dCodec as CodecBackend>::validate_native(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             decoded.ir(),
             None,
         )
@@ -270,7 +270,9 @@ fn each_member_part_links_to_its_own_member_definition() {
         .iter()
         .map(|definition| definition.id.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(definitions.len(), 2, "{definitions:?}");
+    // §8.1: the root file's root definition and one File definition per
+    // member.
+    assert_eq!(definitions.len(), 3, "{definitions:?}");
     let stubs = decoded
         .ir()
         .native_unknowns("f3d")
@@ -319,7 +321,7 @@ fn each_member_part_links_to_its_own_member_definition() {
         .unrepresented()
         .contains(&cadmpeg_core::decode::ArenaClass::Model));
     assert!(<F3dCodec as CodecBackend>::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir(),
         None,
     )

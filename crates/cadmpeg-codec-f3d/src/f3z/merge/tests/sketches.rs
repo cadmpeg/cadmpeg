@@ -19,7 +19,7 @@ fn component(sketch: &Sketch) -> ProductDefinition {
     serde_json::from_value(serde_json::json!({
         "id": "test:model:product#component",
         "kind": "part",
-        "bom_properties": {},
+        "bom_properties": {}, "storage": {"kind": "embedded"}, "occurrences": [], "instance_bodies": [], "representations": [],
         "bodies": [],
         "sketches": [sketch.id],
         "tessellations": []
@@ -35,9 +35,9 @@ fn member_definition_owns_root_sketches_and_preserves_component_owners() {
     let mut ir = CadIr::empty();
     ir.model.sketches = vec![root.clone(), local];
     ir.model.product_definitions = vec![definition.clone()];
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
 
-    let owner = define_member(&ctx, &mut ir, "member").unwrap();
+    let owner = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
 
     assert_eq!(ir.model.product_definitions.len(), 2);
     assert_eq!(ir.model.product_definitions[0], definition);
@@ -51,12 +51,18 @@ fn member_definition_extends_existing_root_sketches_once() {
     let later = sketch("later");
     let mut ir = CadIr::empty();
     ir.model.sketches = vec![root.clone()];
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let owner = define_member(&ctx, &mut ir, "member").unwrap();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let owner = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
     ir.model.sketches.push(later.clone());
 
-    assert_eq!(define_member(&ctx, &mut ir, "member").unwrap(), owner);
-    assert_eq!(define_member(&ctx, &mut ir, "member").unwrap(), owner);
+    assert_eq!(
+        define_member(&ctx, &mut ir, "member", "member.f3d").unwrap(),
+        owner
+    );
+    assert_eq!(
+        define_member(&ctx, &mut ir, "member", "member.f3d").unwrap(),
+        owner
+    );
 
     assert_eq!(ir.model.product_definitions.len(), 1);
     let listed = &ir.model.product_definitions[0].sketches;

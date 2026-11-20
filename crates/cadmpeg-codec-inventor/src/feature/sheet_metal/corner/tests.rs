@@ -283,3 +283,40 @@ fn independent_result_collections_retain_operands_but_do_not_supply_the_shared_r
     assert!(decode(&source, &plate, &properties).is_some());
     assert!(!result_shared(&source, &plate));
 }
+
+#[test]
+fn an_unchanged_corner_bend_selects_one_generated_or_stored_edge() {
+    use cadmpeg_ir::{
+        features::{FeatureId, GeneratedEdgeRef, SelectionReference},
+        ids::{FeatureInputTopologyId, HistoricalEdgeId, IdentityKey},
+    };
+    let named = |name: &str| GeneratedEdgeRef {
+        feature: FeatureId::compose(
+            &cadmpeg_ir::identity_namespace!("test", "design", "feature"),
+            IdentityKey::try_new("base").expect("key"),
+        ),
+        local_id: SelectionReference::new(name.to_owned()).expect("name"),
+    };
+    let stored = |source: u32| {
+        HistoricalEdgeId::mint(format!("inventor:input-edge#fixture-{source}")).expect("edge")
+    };
+    let state = FeatureInputTopologyId::compose(
+        &cadmpeg_ir::identity_namespace!("test", "design", "feature-input"),
+        IdentityKey::try_new("bend").expect("key"),
+    );
+    let native = "inventor:pmdc:feature-property#fixture-10".to_owned();
+    assert!(single_edge(
+        &EdgeSelection::generated(vec![named("a")], native.clone()).expect("one")
+    ));
+    assert!(!single_edge(
+        &EdgeSelection::generated(vec![named("a"), named("b")], native.clone()).expect("two")
+    ));
+    assert!(single_edge(
+        &EdgeSelection::historical(state.clone(), vec![stored(61)], native.clone()).expect("one")
+    ));
+    assert!(!single_edge(
+        &EdgeSelection::historical(state, vec![stored(61), stored(62)], native.clone())
+            .expect("two")
+    ));
+    assert!(!single_edge(&EdgeSelection::Native(native)));
+}

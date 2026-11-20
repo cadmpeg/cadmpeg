@@ -54,6 +54,7 @@ fn typed_extrude_prologue_reads_operation_at_22_and_wide_extent_slots() {
     bytes.push(0);
     typed_reference(&mut bytes, 703);
     bytes.push(0);
+    let option_offset = bytes.len() + 9;
     bytes.extend_from_slice(&1u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 9]);
     bytes.extend_from_slice(&0u32.to_le_bytes());
@@ -80,6 +81,40 @@ fn typed_extrude_prologue_reads_operation_at_22_and_wide_extent_slots() {
     assert_eq!(operation_offset, 22);
     assert_eq!(extent, DesignExtrudeExtent::OneSidedDistance);
     assert!(reference.is_none());
+    assert_eq!(prologue.opaque_distance_word(), None);
+
+    let parse_prologue = |bytes: &[u8]| {
+        crate::design::decode::scopes::extrude::exact_typed_extrude_prologue(
+            bytes,
+            0,
+            bytes.len(),
+            &members,
+        )
+    };
+    let mut opaque = bytes.clone();
+    let word = 0x1234_abcd_u32;
+    opaque[option_offset..option_offset + 4].copy_from_slice(&word.to_le_bytes());
+    let prologue = parse_prologue(&opaque).expect("typed distance with an opaque word");
+    assert_eq!(
+        prologue.extent(),
+        Some(DesignExtrudeExtent::OneSidedDistance)
+    );
+    let evidence = prologue.opaque_distance_word().unwrap();
+    assert_eq!(evidence.value.get(), word);
+    assert_eq!(evidence.byte_offset, u64::try_from(option_offset).unwrap());
+    let mut wire = serde_json::to_value(prologue).unwrap();
+    assert_eq!(
+        serde_json::from_value::<DesignExtrudePrologue>(wire.clone()).unwrap(),
+        prologue
+    );
+    wire["opaque_distance_word"]["value"] = serde_json::json!(0);
+    assert!(serde_json::from_value::<DesignExtrudePrologue>(wire).is_err());
+
+    for (offset, value) in [(26, 2), (30, 1), (35, 0), (36, 1), (option_offset + 4, 1)] {
+        let mut different = opaque.clone();
+        different[offset] = value;
+        assert!(parse_prologue(&different).is_none());
+    }
 
     // A plain eleven-byte slot reference is not admitted in the typed form.
     let mut plain_slot = bytes.clone();
@@ -119,6 +154,10 @@ fn typed_extrude_prologue_reads_operation_at_22_and_wide_extent_slots() {
     assert_eq!(operation, DesignExtrudeOperation::Cut);
     assert_eq!(operation_offset, 26);
     assert_eq!(extent, DesignExtrudeExtent::OneSidedDistance);
+    let shifted_option_offset = option_offset + 4;
+    shifted[shifted_option_offset..shifted_option_offset + 4].copy_from_slice(&word.to_le_bytes());
+    assert!(parse_prologue(&shifted).is_none());
+    shifted[shifted_option_offset..shifted_option_offset + 4].fill(0);
     shifted[20] = 2;
     assert!(
         crate::design::decode::scopes::extrude::exact_typed_extrude_prologue(

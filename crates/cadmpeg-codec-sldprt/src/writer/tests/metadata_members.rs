@@ -147,7 +147,7 @@ fn a_real_feature_rename_survives_unchanged_metadata_in_the_same_member() {
         crate::writer::resolved_feature_payload(lane, &native.feature_histories, &renames).unwrap();
     assert_ne!(generated, original);
     let names = crate::resolved_features::names::object_names(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &generated,
         &lane.id,
     )

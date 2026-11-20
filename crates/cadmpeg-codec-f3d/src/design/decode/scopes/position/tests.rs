@@ -1,4 +1,6 @@
+use super::super::assembly_operand_paths::POSITION_PATH_WRAPPER_TYPE_GUID;
 use super::*;
+use crate::layout::{captured_position_v4_path_wrapper as wrapper, indexed_design_record_header};
 use crate::test_support::position::{append_locator, fixture, OCCURRENCE_KEY};
 
 fn read(
@@ -88,6 +90,117 @@ fn position_refuses_bad_framing_truncation_counts_and_nonfinite_coefficients() {
     let mut changed_types = types.clone();
     changed_types.insert(500, (TYPE_GUID, 7));
     assert!(read(&bytes, &scope, &changed_types).is_none());
+}
+
+#[test]
+fn version_four_position_preserves_its_single_matrix_row() {
+    let matrix = [
+        [1.0, 0.0, 0.0, 2.0],
+        [0.0, 1.0, 0.0, -3.0],
+        [0.0, 0.0, 1.0, 4.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ];
+    let (modern, modern_scope, mut types) = fixture(&[Some(matrix)]);
+    let rows_end = usize::try_from(modern_scope.reference_count_offset()).unwrap() - suffix::LEN;
+    let mut bytes = modern[..11].to_vec();
+    bytes.resize(95, 0);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend_from_slice(&modern[prefix::LEN..rows_end]);
+    bytes.extend_from_slice(&modern[rows_end + 4..]);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let mut scope = super::super::parameter_scope::parse_parameter_scope_with_type_guid(
+        &bytes,
+        &records,
+        500,
+        &"257".to_owned().try_into().unwrap(),
+        0,
+        Some(TYPE_GUID),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(scope.reference_count_offset(), 319);
+    assert!(read(&bytes, &scope, &types).is_none());
+    types.insert(500, (TYPE_GUID, 4));
+    let positions = read(&bytes, &scope, &types).unwrap();
+    let [position] = positions.rows.as_slice() else {
+        panic!("expected one captured row");
+    };
+    assert_eq!(position.target.value, 700);
+    assert_eq!(position.target.offset, 101);
+    let saved = position.matrix.as_ref().unwrap();
+    assert_eq!(saved.offset, 112);
+    assert_eq!(
+        saved.value,
+        std::array::from_fn(|index| FiniteReal::new(matrix[index / 4][index % 4]).unwrap())
+    );
+    for offset in [95, 100, 109, 111, 240, 316] {
+        let mut malformed = bytes.clone();
+        malformed[offset] ^= 1;
+        assert!(read(&malformed, &scope, &types).is_none(), "{offset}");
+    }
+    let locator_start = bytes.len();
+    append_locator(&mut bytes, &mut types, 500);
+    let locator_end =
+        locator_start + crate::layout::assembly_wide_operand_path_identity_locator::LEN;
+    let remainder = bytes.split_off(locator_end);
+    bytes.truncate(locator_start);
+    crate::test_support::indexed_header(&mut bytes, *b"259", 700);
+    bytes.extend_from_slice(&[0; 10]);
+    crate::test_support::push_marked_reference(&mut bytes, 900);
+    bytes.extend_from_slice(&[1, 0]);
+    crate::test_support::push_marked_reference(&mut bytes, 500);
+    crate::test_support::push_marked_reference(&mut bytes, 702);
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&remainder);
+    assert!(read(&bytes, &scope, &types).unwrap().paths.is_empty());
+    types.insert(
+        700,
+        (
+            super::super::assembly_operand_paths::WIDE_PATH_LOCATOR_TYPE_GUID,
+            3,
+        ),
+    );
+    let positions = read(&bytes, &scope, &types).unwrap();
+    assert_eq!(positions.rows[0].path_index, Some(0));
+    assert_eq!(
+        positions.paths[0].occurrence_guids()[0].value.as_str(),
+        OCCURRENCE_KEY
+    );
+    let wrapper_start = bytes.len() - indexed_design_record_header::LEN - wrapper::LEN;
+    bytes[wrapper_start + wrapper::MARKER] = wrapper::MARKER_VALUE;
+    let unregistered = read(&bytes, &scope, &types).unwrap();
+    assert_eq!(unregistered.rows[0].path_index, None);
+    assert_eq!(unregistered.rows[0].matrix, positions.rows[0].matrix);
+
+    types.insert(702, (POSITION_PATH_WRAPPER_TYPE_GUID, 2));
+    let other_version = read(&bytes, &scope, &types).unwrap();
+    assert_eq!(other_version, unregistered);
+
+    types.insert(702, (POSITION_PATH_WRAPPER_TYPE_GUID, 1));
+    let legacy = read(&bytes, &scope, &types).unwrap();
+    assert_eq!(legacy, positions);
+    scope.captured_positions = Some(legacy);
+    let decoded: DesignParameterScope =
+        serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
+    assert_eq!(decoded.captured_positions, scope.captured_positions);
+}
+
+#[test]
+fn version_six_position_keeps_matrix_when_wrapper_marker_is_zero() {
+    let (mut bytes, scope, mut types) =
+        fixture(&[Some(cadmpeg_ir::transform::Transform::identity().rows())]);
+    append_locator(&mut bytes, &mut types, 500);
+    types.insert(702, (POSITION_PATH_WRAPPER_TYPE_GUID, 1));
+    let ordinary = read(&bytes, &scope, &types).unwrap();
+    assert_eq!(ordinary.rows[0].path_index, Some(0));
+
+    let wrapper_start = bytes.len() - indexed_design_record_header::LEN - wrapper::LEN;
+    bytes[wrapper_start + wrapper::MARKER] = wrapper::MARKER_VALUE;
+    let alternate = read(&bytes, &scope, &types).unwrap();
+    assert_eq!(alternate.rows[0].path_index, None);
+    assert_eq!(alternate.rows[0].target, ordinary.rows[0].target);
+    assert_eq!(alternate.rows[0].matrix, ordinary.rows[0].matrix);
 }
 
 #[test]
@@ -206,7 +319,7 @@ fn position_shares_large_repeated_paths_on_wire_and_enforces_aggregate_budget() 
     let mut rewritten = wire.clone();
     let mut identities = IdentityMap::new(|id: &str| Ok(id.to_owned()));
     DesignParameterScope::rewrite_native_value(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut rewritten,
         &mut identities,
     )

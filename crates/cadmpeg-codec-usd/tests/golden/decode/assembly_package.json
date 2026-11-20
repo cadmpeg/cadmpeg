@@ -71,19 +71,8 @@
           "id": "usd:stage:occurrence#/Assembly",
           "name": "Assembly",
           "native_ref": "/Assembly",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Assembly",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Assembly",
           "transform": [
             [
               1.0,
@@ -109,20 +98,8 @@
           "id": "usd:stage:occurrence#/Assembly/BoltA",
           "name": "BoltA",
           "native_ref": "/Assembly/BoltA",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Assembly"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#prototype0",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#prototype0",
           "transform": [
             [
               1.0,
@@ -148,20 +125,8 @@
           "id": "usd:stage:occurrence#/Assembly/BoltA/Shank",
           "name": "Shank",
           "native_ref": "/Assembly/BoltA/Shank",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Assembly/BoltA"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#prototype0/Shank",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#prototype0/Shank",
           "transform": [
             [
               1.0,
@@ -187,20 +152,8 @@
           "id": "usd:stage:occurrence#/Assembly/BoltB",
           "name": "BoltB",
           "native_ref": "/Assembly/BoltB",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Assembly"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#prototype0",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#prototype0",
           "transform": [
             [
               2.220446049250313e-16,
@@ -223,62 +176,11 @@
           ]
         },
         {
-          "id": "usd:stage:occurrence#/Assembly/BoltB/Shank",
-          "name": "Shank",
-          "native_ref": "/Assembly/BoltB/Shank",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Assembly/BoltB"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#prototype0/Shank",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        },
-        {
           "id": "usd:stage:occurrence#/Assembly/Plate",
           "name": "Plate",
           "native_ref": "/Assembly/Plate",
-          "ordinal": 2,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Assembly"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Assembly/Plate",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Assembly/Plate",
           "transform": [
             [
               1.0,
@@ -304,20 +206,8 @@
           "id": "usd:stage:occurrence#/Assembly/Plate/Large",
           "name": "Large",
           "native_ref": "/Assembly/Plate/Large",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Assembly/Plate"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Assembly/Plate/Large",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Assembly/Plate/Large",
           "transform": [
             [
               1.0,
@@ -352,20 +242,38 @@
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Assembly",
+          "instance_bodies": [],
           "kind": "part",
           "native_ref": "/Assembly",
+          "occurrences": [
+            "usd:stage:occurrence#/Assembly/BoltA",
+            "usd:stage:occurrence#/Assembly/BoltB",
+            "usd:stage:occurrence#/Assembly/Plate"
+          ],
+          "representations": [],
           "sketches": [],
           "source_name": "Assembly",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Assembly/Plate",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Assembly/Plate",
+          "occurrences": [
+            "usd:stage:occurrence#/Assembly/Plate/Large"
+          ],
+          "representations": [],
           "sketches": [],
           "source_name": "Plate",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -374,20 +282,34 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Assembly/Plate/Large",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Assembly/Plate/Large",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Large",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#prototype0",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Assembly/BoltA",
+          "occurrences": [
+            "usd:stage:occurrence#/Assembly/BoltA/Shank"
+          ],
+          "representations": [],
           "sketches": [],
           "source_name": "Bolt",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -396,10 +318,32 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#prototype0/Shank",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Assembly/BoltA/Shank",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Shank",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:root#stage",
+          "instance_bodies": [],
+          "occurrences": [
+            "usd:stage:occurrence#/Assembly"
+          ],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
           "tessellations": []
         }
       ],

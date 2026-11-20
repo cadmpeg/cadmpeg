@@ -89,6 +89,12 @@ The `JsonSchema` derives sit behind a `schema` feature that is off by default, b
 cargo test -p cadmpeg-ir --features schema --lib
 ```
 
+Annex A of [`docs/cadir-v11.md`](docs/cadir-v11.md) states the schema of each type the specification names and does not state, generated from `cadir_json_schema()`. The schema gate checks it; a change to one of those types regenerates it:
+
+```sh
+python3 scripts/generate-annex-a.py --write
+```
+
 The excluded fuzz crate uses Rust nightly and `cargo-fuzz`. The scheduled [fuzz smoke workflow](.github/workflows/fuzz-smoke.yml) compiles every fuzz target without running it:
 
 ```sh

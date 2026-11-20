@@ -219,7 +219,26 @@ fn apply_map<K: Ord + Clone, V: Clone>(
     }
 }
 
+fn set_all<K: Ord + Clone, V: Clone>(map: &BTreeMap<K, V>) -> BTreeMap<K, Option<V>> {
+    map.iter()
+        .map(|(key, value)| (key.clone(), Some(value.clone())))
+        .collect()
+}
+
 impl State {
+    /// The state as a delta over `Empty`.
+    pub(super) fn delta(&self) -> StateDelta {
+        StateDelta {
+            records: self.records.clone(),
+            removed: Vec::new(),
+            names: set_all(&self.names),
+            owners: set_all(&self.owners),
+            members: set_all(&self.members),
+            instance_bodies: set_all(&self.instance_bodies),
+            poses: set_all(&self.poses),
+        }
+    }
+
     fn apply(&mut self, delta: &StateDelta) {
         let removed: BTreeSet<String> = delta
             .removed

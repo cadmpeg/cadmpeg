@@ -9,9 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::{BodyId, OccurrenceId, ProductDefinitionId};
-use cadmpeg_ir::products::{
-    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
-};
+use cadmpeg_ir::products::{Occurrence, ProductDefinition, Storage};
 use cadmpeg_ir::report::loss::LossNote;
 
 use crate::design::decode::components::{ComponentDefinition, StreamComponents};
@@ -51,8 +49,6 @@ pub(crate) struct LocalComponentSources<'a> {
     /// Solved model bodies, or `None` when bodies are projected after product structure.
     pub(crate) bodies: Option<&'a BTreeSet<BodyId>>,
     pub(crate) hidden_bodies: Option<&'a BTreeSet<BodyId>>,
-    /// First free ordinal among root occurrences already in the model.
-    pub(crate) root_ordinal_start: usize,
     pub(crate) limits: cadmpeg_core::decode::ResourceLimits,
 }
 
@@ -61,6 +57,9 @@ pub(crate) struct LocalComponentSources<'a> {
 pub(crate) struct LocalComponentProjection {
     pub(crate) definitions: Vec<ProductDefinition>,
     pub(crate) occurrences: Vec<Occurrence>,
+    /// Each occurrence and the occurrence it sits in, `None` at the top
+    /// level, in their order among their siblings.
+    pub(crate) placements: Vec<(OccurrenceId, Option<OccurrenceId>)>,
     pub(crate) losses: Vec<LossNote>,
     pub(crate) component_definitions_by_record: BTreeMap<(String, u64), ProductDefinitionId>,
 }
@@ -86,18 +85,22 @@ pub(crate) fn project_local_components_with_types(
     for scope in sources.scopes {
         let stream = crate::ids::native_stream(&scope.id).unwrap_or_default();
         let relation_only = scope.assembly_alignment().is_some_and(|alignment| {
-            alignment.frame_sense.is_some()
-                && super::decode::scopes::assembly_v3::relation_only(
-                    scope,
-                    alignment,
-                    types_by_stream.entry(stream).or_insert_with(|| {
-                        stream
-                            .strip_prefix("f3d:")
-                            .and_then(crate::ids::decode_identity_key_component)
-                            .map(|entry| super::decode::meta::stream_types_by_entity(types, &entry))
-                            .unwrap_or_default()
-                    }),
-                )
+            let compact_as_built = super::assembly::compact_placement_as_built_scope(scope);
+            if !compact_as_built && alignment.frame_sense.is_none() {
+                return false;
+            }
+            let stream_types = types_by_stream.entry(stream).or_insert_with(|| {
+                stream
+                    .strip_prefix("f3d:")
+                    .and_then(crate::ids::decode_identity_key_component)
+                    .map(|entry| super::decode::meta::stream_types_by_entity(types, &entry))
+                    .unwrap_or_default()
+            });
+            if compact_as_built {
+                super::assembly::compact_as_built_relation_only(scope, alignment, stream_types)
+            } else {
+                super::decode::scopes::assembly_v3::relation_only(scope, alignment, stream_types)
+            }
         });
         if let Some(qualifiers) = scope
             .assembly_alignment()
@@ -202,10 +205,7 @@ fn place_uninstanced_definitions(
     }
     let instanced = occurrences
         .values()
-        .filter_map(|(occurrence, _)| match &occurrence.prototype {
-            PrototypeReference::Local { definition } => Some(definition.as_str().to_owned()),
-            _ => None,
-        })
+        .map(|(occurrence, _)| occurrence.prototype.as_str().to_owned())
         .collect::<BTreeSet<_>>();
     let uninstanced = definitions
         .values()
@@ -220,21 +220,11 @@ fn place_uninstanced_definitions(
         occurrences.insert(
             id.as_str().to_owned(),
             (
-                Occurrence {
+                Occurrence::new(
                     id,
-                    prototype: PrototypeReference::Local {
-                        definition: definition.clone(),
-                    },
-                    parent: OccurrenceParent::Root {},
-                    ordinal: 0,
-                    transform: cadmpeg_ir::transform::Transform::identity(),
-                    linked_prototype: None,
-                    scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-                    name: None,
-                    visible: None,
-                    link: None,
-                    native_ref: None,
-                },
+                    definition.clone(),
+                    Some(cadmpeg_ir::transform::Transform::identity()),
+                ),
                 None,
             ),
         );
@@ -304,6 +294,8 @@ struct Projector<'a> {
     definitions: BTreeMap<String, ProductDefinition>,
     component_definitions_by_record: BTreeMap<(String, u64), ProductDefinitionId>,
     occurrences: BTreeMap<String, (Occurrence, Option<&'a DesignComponentOccurrence>)>,
+    /// The occurrence each nested occurrence sits in, by its key.
+    parents: BTreeMap<String, OccurrenceId>,
     unplaced: BTreeMap<Unplaced, usize>,
     rejected: BTreeSet<&'a str>,
     /// Root-contained carriers placed at their component-path pose.
@@ -541,6 +533,7 @@ impl<'a> Projector<'a> {
             definitions: BTreeMap::new(),
             component_definitions_by_record: BTreeMap::new(),
             occurrences: BTreeMap::new(),
+            parents: BTreeMap::new(),
             unplaced: BTreeMap::new(),
             rejected: BTreeSet::new(),
             current_poses: 0,
@@ -643,25 +636,9 @@ impl<'a> Projector<'a> {
             },
         };
         let key = occurrence_id.as_str().to_owned();
-        self.occurrences.insert(
-            key,
-            (
-                Occurrence {
-                    id: occurrence_id,
-                    prototype: PrototypeReference::Local { definition },
-                    parent: OccurrenceParent::Root {},
-                    ordinal: 0,
-                    transform,
-                    linked_prototype: None,
-                    scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-                    name: None,
-                    visible: None,
-                    link: None,
-                    native_ref: carrier.map(|carrier| carrier.id.clone()),
-                },
-                carrier,
-            ),
-        );
+        let mut occurrence = Occurrence::new(occurrence_id, definition, Some(transform));
+        occurrence.native_ref = carrier.map(|carrier| carrier.id.clone());
+        self.occurrences.insert(key, (occurrence, carrier));
         Ok(())
     }
 
@@ -839,14 +816,12 @@ impl<'a> Projector<'a> {
             };
             let root_occurrence = self.root_occurrence_id(stream, root);
             let mut contained = false;
-            for (occurrence, carrier) in self.occurrences.values_mut() {
+            for (key, (_, carrier)) in &self.occurrences {
                 if carrier.is_some_and(|carrier| {
                     crate::ids::native_stream(&carrier.id) == Some(stream.as_str())
                         && carrier.owner_entity == root.root_entity
                 }) {
-                    occurrence.parent = OccurrenceParent::Occurrence {
-                        occurrence: root_occurrence.clone(),
-                    };
+                    self.parents.insert(key.clone(), root_occurrence.clone());
                     contained = true;
                 }
             }
@@ -858,19 +833,11 @@ impl<'a> Projector<'a> {
             self.occurrences.insert(
                 key,
                 (
-                    Occurrence {
-                        id: root_occurrence,
-                        prototype: PrototypeReference::Local { definition },
-                        parent: OccurrenceParent::Root {},
-                        ordinal: 0,
-                        transform: cadmpeg_ir::transform::Transform::identity(),
-                        linked_prototype: None,
-                        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-                        name: None,
-                        visible: None,
-                        link: None,
-                        native_ref: None,
-                    },
+                    Occurrence::new(
+                        root_occurrence,
+                        definition,
+                        Some(cadmpeg_ir::transform::Transform::identity()),
+                    ),
                     None,
                 ),
             );
@@ -894,7 +861,10 @@ impl<'a> Projector<'a> {
                     &carrier.occurrence_guid,
                 );
                 if let Some((occurrence, _)) = self.occurrences.remove(id.as_str()) {
-                    operation_placements.insert(carrier.id.as_str(), occurrence.transform);
+                    operation_placements.insert(
+                        carrier.id.as_str(),
+                        occurrence.transform.unwrap_or_default(),
+                    );
                 }
             }
         }
@@ -1027,10 +997,7 @@ impl<'a> Projector<'a> {
                         continue;
                     }
                     let id = if nested {
-                        crate::ids::nested_component_occurrence_id(
-                            &parent,
-                            &carrier.occurrence_guid,
-                        )
+                        crate::ids::nested_occurrence_id(&parent, &native_id)
                     } else {
                         native_id.clone()
                     };
@@ -1053,27 +1020,12 @@ impl<'a> Projector<'a> {
                             carrier.component_record_index,
                             target,
                         );
-                        self.occurrences.insert(
-                            id.as_str().to_owned(),
-                            (
-                                Occurrence {
-                                    id: id.clone(),
-                                    prototype: PrototypeReference::Local { definition },
-                                    parent: OccurrenceParent::Occurrence {
-                                        occurrence: parent.clone(),
-                                    },
-                                    ordinal: 0,
-                                    transform,
-                                    linked_prototype: None,
-                                    scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-                                    name: None,
-                                    visible: None,
-                                    link: None,
-                                    native_ref: Some(carrier.id.clone()),
-                                },
-                                Some(carrier),
-                            ),
-                        );
+                        let mut occurrence =
+                            Occurrence::new(id.clone(), definition, Some(transform));
+                        occurrence.native_ref = Some(carrier.id.clone());
+                        self.parents.insert(id.as_str().to_owned(), parent.clone());
+                        self.occurrences
+                            .insert(id.as_str().to_owned(), (occurrence, Some(carrier)));
                     }
                     reached.insert(carrier.id.as_str());
                     stack.push((id, target.root_entity, depth + 1));
@@ -1117,10 +1069,10 @@ impl<'a> Projector<'a> {
         let mut current = key;
         for _ in 0..=self.occurrences.len() {
             let (occurrence, _) = self.occurrences.get(current)?;
-            chain.push(occurrence.transform);
-            match &occurrence.parent {
-                OccurrenceParent::Occurrence { occurrence } => current = occurrence.as_str(),
-                OccurrenceParent::Root {} => break,
+            chain.push(occurrence.transform.unwrap_or_default());
+            match self.parents.get(current) {
+                Some(parent) => current = parent.as_str(),
+                None => break,
             }
         }
         chain.into_iter().rev().try_fold(
@@ -1146,7 +1098,7 @@ impl<'a> Projector<'a> {
             }
         }
         let mut instances = Vec::new();
-        for (key, (occurrence, carrier)) in &self.occurrences {
+        for (key, (_, carrier)) in &self.occurrences {
             let Some(carrier) = carrier else {
                 continue;
             };
@@ -1154,18 +1106,18 @@ impl<'a> Projector<'a> {
                 continue;
             };
             let mut ancestors = Vec::new();
-            let mut parent = &occurrence.parent;
+            let mut parent = self.parents.get(key.as_str());
             for _ in 0..=self.occurrences.len() {
-                let OccurrenceParent::Occurrence { occurrence } = parent else {
+                let Some(above_key) = parent else {
                     break;
                 };
-                let Some((above, above_carrier)) = self.occurrences.get(occurrence.as_str()) else {
+                let Some((_, above_carrier)) = self.occurrences.get(above_key.as_str()) else {
                     break;
                 };
                 if let Some(above_carrier) = above_carrier {
                     ancestors.push(u64::from(above_carrier.record_index));
                 }
-                parent = &above.parent;
+                parent = self.parents.get(above_key.as_str());
             }
             instances.push(PathInstance {
                 key: key.clone(),
@@ -1344,12 +1296,12 @@ impl<'a> Projector<'a> {
         key: &str,
         rows: [[f64; 4]; 4],
     ) -> Result<Option<cadmpeg_ir::transform::Transform>, cadmpeg_core::CodecError> {
-        let Some((occurrence, _)) = self.occurrences.get(key) else {
+        if !self.occurrences.contains_key(key) {
             return Ok(None);
-        };
-        let parent_world = match &occurrence.parent {
-            OccurrenceParent::Root {} => Some(cadmpeg_ir::transform::Transform::identity()),
-            OccurrenceParent::Occurrence { occurrence } => self.world_of(occurrence.as_str()),
+        }
+        let parent_world = match self.parents.get(key) {
+            None => Some(cadmpeg_ir::transform::Transform::identity()),
+            Some(parent) => self.world_of(parent.as_str()),
         };
         let pose = neutral_transform(rows)?;
         Ok(parent_world
@@ -1362,7 +1314,10 @@ impl<'a> Projector<'a> {
         let Some((occurrence, carrier)) = self.occurrences.get_mut(key) else {
             return;
         };
-        let (stored, new) = (occurrence.transform.affine_rows(), local.affine_rows());
+        let (stored, new) = (
+            occurrence.transform.unwrap_or_default().affine_rows(),
+            local.affine_rows(),
+        );
         let shift = (0..3)
             .map(|row| (new[row][3] - stored[row][3]).powi(2))
             .sum::<f64>()
@@ -1379,7 +1334,7 @@ impl<'a> Projector<'a> {
             self.path_poses.applied_carriers.insert(carrier.id.clone());
         }
         self.path_poses.applied_instances.insert(key.to_owned());
-        occurrence.transform = local;
+        occurrence.transform = Some(local);
     }
 
     /// Assign the carriers of one target to distinct instances. The
@@ -1456,14 +1411,12 @@ impl<'a> Projector<'a> {
         loop {
             let descendants = self
                 .occurrences
-                .iter()
-                .filter_map(|(key, (occurrence, _))| match &occurrence.parent {
-                    OccurrenceParent::Occurrence { occurrence }
-                        if rejected.contains(occurrence.as_str()) =>
-                    {
-                        Some(key.clone())
-                    }
-                    _ => None,
+                .keys()
+                .filter_map(|key| {
+                    self.parents
+                        .get(key.as_str())
+                        .filter(|parent| rejected.contains(parent.as_str()))
+                        .map(|_| key.clone())
                 })
                 .collect::<Vec<_>>();
             let before = rejected.len();
@@ -1497,8 +1450,6 @@ impl<'a> Projector<'a> {
     }
 
     fn finish(mut self) -> Result<LocalComponentProjection, cadmpeg_core::CodecError> {
-        let overflow =
-            || cadmpeg_core::CodecError::malformed("Fusion Design occurrence ordinal exceeds u32");
         let mut component_definitions_by_record = self.component_definitions_by_record;
         let mut ambiguous_component_records = BTreeSet::new();
         for carrier in self.sources.occurrences {
@@ -1512,9 +1463,7 @@ impl<'a> Projector<'a> {
             let (Some((occurrence, _)), None) = (named.next(), named.next()) else {
                 continue;
             };
-            let PrototypeReference::Local { definition } = &occurrence.prototype else {
-                continue;
-            };
+            let definition = &occurrence.prototype;
             if !self.definitions.contains_key(definition.as_str()) {
                 continue;
             }
@@ -1543,10 +1492,7 @@ impl<'a> Projector<'a> {
         let instanced_definitions = self
             .occurrences
             .values()
-            .filter_map(|(occurrence, _)| match &occurrence.prototype {
-                PrototypeReference::Local { definition } => Some(definition.as_str()),
-                _ => None,
-            })
+            .map(|(occurrence, _)| occurrence.prototype.as_str())
             .collect::<BTreeSet<_>>();
         let mut stored_definitions = Vec::new();
         for definition in self.definitions.values_mut() {
@@ -1618,18 +1564,15 @@ impl<'a> Projector<'a> {
                     right.id.as_str(),
                 ))
         });
-        let mut next_ordinal = BTreeMap::<Option<OccurrenceId>, u32>::new();
-        let root_start = u32::try_from(self.sources.root_ordinal_start).map_err(|_| overflow())?;
-        for (occurrence, _) in &mut occurrences {
-            let parent = match &occurrence.parent {
-                OccurrenceParent::Root {} => None,
-                OccurrenceParent::Occurrence { occurrence } => Some(occurrence.clone()),
-            };
-            let start = if parent.is_none() { root_start } else { 0 };
-            let ordinal = next_ordinal.entry(parent).or_insert(start);
-            occurrence.ordinal = *ordinal;
-            *ordinal = ordinal.checked_add(1).ok_or_else(overflow)?;
-        }
+        let placements = occurrences
+            .iter()
+            .map(|(occurrence, _)| {
+                (
+                    occurrence.id.clone(),
+                    self.parents.get(occurrence.id.as_str()).cloned(),
+                )
+            })
+            .collect::<Vec<_>>();
         let mut occurrences = occurrences
             .into_iter()
             .map(|(occurrence, _)| occurrence)
@@ -1772,6 +1715,7 @@ impl<'a> Projector<'a> {
         Ok(LocalComponentProjection {
             definitions: self.definitions.into_values().collect(),
             occurrences,
+            placements,
             losses,
             component_definitions_by_record,
         })
@@ -1899,20 +1843,12 @@ impl<'a> Projector<'a> {
     }
 }
 
+/// A Fusion component, which holds bodies and occurrences alike and has no
+/// kind, stored in its design.
 fn component_definition(id: ProductDefinitionId, bodies: Vec<BodyId>) -> ProductDefinition {
-    ProductDefinition {
-        sketches: Vec::default(),
-        tessellations: Vec::new(),
-        id,
-        kind: ProductDefinitionKind::Part,
-        source_name: None,
-        label: None,
-        description: None,
-        part_number: None,
-        bom_properties: BTreeMap::new(),
-        bodies,
-        native_ref: None,
-    }
+    let mut definition = ProductDefinition::new(id, Storage::Embedded);
+    definition.bodies = bodies;
+    definition
 }
 
 pub(crate) fn project_derived_instance_features(
@@ -2365,7 +2301,7 @@ impl ComponentInserts {
                 inserts.assumed_containers += 1;
                 if matches!(
                     scope.canonical_name_frame_length(),
-                    Some(256 | 257 | 261 | 267 | 385 | 389 | 399)
+                    Some(256 | 257 | 261 | 267 | 271 | 275 | 385 | 389 | 399)
                 ) {
                     inserts.frame_assumptions.push(F3dLossCode::ComponentInsertLegacyFrameAssumed.note(format!(
                         "{} uses its legacy scope-local insertion frame as its unresolved occurrence frame, with the current pose assumed equal to the insertion frame (DR-792).", scope.id
@@ -2410,37 +2346,27 @@ impl ComponentInserts {
         self.occurrences.get(scope)
     }
 
-    /// Root occurrences of the inserts that no container reference places,
-    /// numbered from `ordinal_start`.
+    /// Top-level occurrences of the inserts that no container reference
+    /// places, each of a definition of an unnamed external document.
     pub(crate) fn unresolved_occurrences(
         &self,
-        ordinal_start: usize,
-    ) -> Result<Vec<Occurrence>, cadmpeg_core::CodecError> {
+    ) -> Result<(Vec<ProductDefinition>, Vec<Occurrence>), cadmpeg_core::CodecError> {
+        let mut definitions = Vec::new();
         let mut occurrences = Vec::new();
-        for (offset, insert) in self.unresolved.iter().enumerate() {
-            let ordinal = ordinal_start
-                .checked_add(offset)
-                .and_then(|ordinal| u32::try_from(ordinal).ok())
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed(
-                        "Fusion Design occurrence ordinal exceeds u32",
-                    )
-                })?;
-            occurrences.push(Occurrence {
-                id: insert.id.clone(),
-                prototype: PrototypeReference::Unresolved {},
-                parent: OccurrenceParent::Root {},
-                ordinal,
-                transform: insert.transform,
-                linked_prototype: None,
-                scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-                name: Some(insert.name.clone()),
-                visible: None,
-                link: None,
-                native_ref: Some(insert.scope.clone()),
-            });
+        for insert in &self.unresolved {
+            let definition = ProductDefinitionId::mint(format!("{}/unresolved", insert.id))
+                .map_err(|error| cadmpeg_core::CodecError::malformed(error.to_string()))?;
+            definitions.push(ProductDefinition::new(
+                definition.clone(),
+                Storage::External(cadmpeg_ir::products::ExternalDocument::default()),
+            ));
+            let mut occurrence =
+                Occurrence::new(insert.id.clone(), definition, Some(insert.transform));
+            occurrence.name = Some(insert.name.clone());
+            occurrence.native_ref = Some(insert.scope.clone());
+            occurrences.push(occurrence);
         }
-        Ok(occurrences)
+        Ok((definitions, occurrences))
     }
 
     pub(crate) fn losses(&self) -> Vec<LossNote> {
@@ -2555,9 +2481,7 @@ mod tests {
 
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::ids::BodyId;
-    use cadmpeg_ir::products::{
-        Occurrence, OccurrenceParent, ProductDefinition, PrototypeReference,
-    };
+    use cadmpeg_ir::products::{Occurrence, ProductDefinition};
 
     use crate::design::decode::components::{ComponentDefinition, StreamComponents};
     use crate::records::bodies::DesignBodyBinding;
@@ -2587,7 +2511,6 @@ mod tests {
             components: &components,
             body_bindings: &[],
             bodies: Some(&bodies),
-            root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
         .unwrap();
@@ -2713,7 +2636,6 @@ mod tests {
             components,
             body_bindings: &bindings,
             bodies: Some(&bodies),
-            root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
         .unwrap()
@@ -2783,7 +2705,6 @@ mod tests {
                 components: &components,
                 body_bindings: &[],
                 bodies: Some(&bodies),
-                root_ordinal_start: 1,
                 limits: cadmpeg_core::decode::ResourceLimits::default(),
             };
             let local = super::project_local_components(&sources).unwrap();
@@ -2799,32 +2720,49 @@ mod tests {
             assert!(local.losses.is_empty());
             assert!(projection.losses.is_empty());
             assert_eq!(projection.occurrences.len(), count);
-            let mut combined = local.occurrences.clone();
-            combined.extend(projection.occurrences.iter().cloned());
+            let mut expanded = cadmpeg_ir::document::Model::default();
+            crate::tree::assemble(
+                &mut expanded,
+                crate::tree::Projected {
+                    definitions: local.definitions.clone(),
+                    occurrences: local.occurrences.clone(),
+                    placements: local.placements.clone(),
+                },
+                Some(crate::xref::ExternalOccurrenceProjection {
+                    definitions: projection.definitions.clone(),
+                    occurrences: projection.occurrences.clone(),
+                    placements: projection.placements.clone(),
+                    losses: Vec::new(),
+                }),
+            );
             let bindings = super::paths::LocalOccurrencePaths::new(
                 &carriers[..count],
                 &table.references,
-                &combined,
+                &expanded.product_definitions,
+                &expanded.occurrences,
                 &[],
             );
             assert_eq!(
                 bindings.ambiguous(STREAM, &[external_key.to_owned()]),
                 count == 2
             );
-            let mut paths = BTreeSet::new();
+            let stated = crate::tree::stated(
+                crate::tree::Projected {
+                    definitions: expanded.product_definitions.clone(),
+                    occurrences: expanded.occurrences.clone(),
+                    placements: Vec::new(),
+                },
+                None,
+            );
+            // §8.1: the component owns the external occurrence once, however
+            // many occurrences place the component.
+            let external = crate::ids::neutral_xref_occurrence_id(0, 0);
+            let component = crate::ids::neutral_component_id(&guid(COMPONENT_CONTEXT));
+            assert_eq!(crate::tree::listed(&stated, &component), [&external]);
+            let poses = crate::tree::world_poses(&stated);
             for (index, carrier) in carriers[..count].iter().enumerate() {
                 let parent = crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid);
-                let child = projection
-                    .occurrences
-                    .iter()
-                    .find(|child| {
-                        child.parent
-                            == OccurrenceParent::Occurrence {
-                                occurrence: parent.clone(),
-                            }
-                    })
-                    .unwrap();
-                assert!(paths.insert(child.id.clone()));
+                let instance = crate::ids::nested_xref_occurrence_id(&parent, 0, 0);
                 assert_eq!(
                     bindings.resolve(
                         STREAM,
@@ -2833,19 +2771,9 @@ mod tests {
                             external_key.to_owned(),
                         ]
                     ),
-                    Some((child.id.clone(), 2))
+                    Some((instance.clone(), 2))
                 );
-                assert_eq!(
-                    child.id,
-                    crate::ids::nested_xref_occurrence_id(&parent, 0, 0)
-                );
-                assert_eq!(child.transform.rows()[0][3], 20.0);
-                let parent = local
-                    .occurrences
-                    .iter()
-                    .find(|occurrence| occurrence.id == parent)
-                    .unwrap();
-                let world = parent.transform.compose(child.transform).unwrap().rows();
+                let world = poses[&instance].rows();
                 assert_eq!(
                     [world[0][3], world[1][3]],
                     if index == 0 {
@@ -2855,6 +2783,12 @@ mod tests {
                     }
                 );
             }
+            let external = stated
+                .occurrences
+                .iter()
+                .find(|occurrence| occurrence.id == external)
+                .unwrap();
+            assert_eq!(external.transform.unwrap().rows()[0][3], 20.0);
             if count == 2 {
                 sources.limits.max_entities =
                     cadmpeg_core::decode::u64_from_index(local.occurrences.len()) + 1;
@@ -2878,7 +2812,6 @@ mod tests {
             components: &components,
             body_bindings: &[],
             bodies: Some(&bodies),
-            root_ordinal_start: 1,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         };
         for world_carrier in [false, true] {
@@ -2906,9 +2839,12 @@ mod tests {
                 }
                 let projection = crate::xref::project_occurrences(&table, &sources, &[]).unwrap();
                 assert_eq!(projection.occurrences.len(), 1);
-                assert_eq!(projection.occurrences[0].parent, OccurrenceParent::Root {});
                 assert_eq!(
-                    projection.occurrences[0].transform.rows()[0][3],
+                    projection.placements,
+                    [(projection.occurrences[0].id.clone(), None)]
+                );
+                assert_eq!(
+                    projection.occurrences[0].transform.unwrap().rows()[0][3],
                     if world_carrier { 40.0 } else { 20.0 }
                 );
                 assert_eq!(
@@ -2960,7 +2896,6 @@ mod tests {
             components: &components,
             body_bindings: &bindings,
             bodies: Some(&bodies),
-            root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
         .unwrap();
@@ -2971,7 +2906,7 @@ mod tests {
             .find(|occurrence| occurrence.native_ref.is_some())
             .unwrap();
         assert_eq!(
-            occurrence.transform.rows(),
+            occurrence.transform.unwrap().rows(),
             [
                 [0.0, -1.0, 0.0, 20.0],
                 [1.0, 0.0, 0.0, 30.0],
@@ -3024,7 +2959,6 @@ mod tests {
             components: &components,
             body_bindings: &bindings,
             bodies: Some(&bodies),
-            root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
         .unwrap();
@@ -3054,18 +2988,12 @@ mod tests {
         let stored_occurrences = projection
             .occurrences
             .iter()
-            .filter(|occurrence| {
-                occurrence.prototype
-                    == PrototypeReference::Local {
-                        definition: stored.id.clone(),
-                    }
-            })
+            .filter(|occurrence| occurrence.prototype == stored.id)
             .collect::<Vec<_>>();
         assert_eq!(stored_occurrences.len(), 1);
-        assert_eq!(stored_occurrences[0].parent, OccurrenceParent::Root {});
         assert_eq!(
             stored_occurrences[0].transform,
-            cadmpeg_ir::transform::Transform::identity()
+            Some(cadmpeg_ir::transform::Transform::identity())
         );
         assert!(projection
             .losses
@@ -3075,6 +3003,13 @@ mod tests {
             .losses
             .iter()
             .any(|loss| loss.code == crate::loss::F3dLossCode::ComponentBodyOwnerFallback.kind()));
+        let stored_occurrence = stored_occurrences[0].id.clone();
+        let stated = crate::tree::stated(projection.into(), None);
+        assert!(
+            crate::tree::owner_of(&stated, &stored_occurrence)
+                .is_some_and(cadmpeg_ir::products::ProductDefinition::is_root),
+            "the stored-frame occurrence sits in the root definition"
+        );
     }
 
     #[test]
@@ -3099,7 +3034,6 @@ mod tests {
             components: &components,
             body_bindings: &bindings,
             bodies: Some(&bodies),
-            root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
         .unwrap();
@@ -3143,7 +3077,6 @@ mod tests {
             components: &components,
             body_bindings: &bindings,
             bodies: None,
-            root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         };
         let projector = super::Projector::new(&sources);
@@ -3171,7 +3104,6 @@ mod tests {
             components: &components,
             body_bindings: &bindings,
             bodies: Some(&bodies),
-            root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         };
         let projector = super::Projector::new(&sources);
@@ -3237,46 +3169,38 @@ mod tests {
         );
         assert_eq!(definition(&root).source_name, None);
 
+        let stated = crate::tree::stated(projection.into(), None);
         let occurrence = |id: cadmpeg_ir::ids::OccurrenceId| {
-            projection
+            stated
                 .occurrences
                 .iter()
                 .find(|occurrence| occurrence.id == id)
                 .expect("occurrence")
                 .clone()
         };
-        let root_occurrence =
-            occurrence(crate::ids::neutral_root_occurrence_id(&guid(ROOT_CONTEXT)));
-        assert_eq!(projection.occurrences.len(), 3);
-        assert_eq!(root_occurrence.parent, OccurrenceParent::Root {});
-        assert_eq!(
-            root_occurrence.prototype,
-            PrototypeReference::Local { definition: root }
-        );
-        assert_eq!(
-            root_occurrence.transform,
-            cadmpeg_ir::transform::Transform::identity()
-        );
-        let in_root = OccurrenceParent::Occurrence {
-            occurrence: root_occurrence.id.clone(),
-        };
+        // §8.1: the root component is the root definition, and holds the
+        // occurrences it contains in their stored order.
+        assert_eq!(stated.occurrences.len(), 2);
+        let root_definition = stated
+            .product_definitions
+            .iter()
+            .find(|definition| definition.id == root)
+            .unwrap();
+        assert!(root_definition.is_root());
         let first = occurrence(crate::ids::neutral_component_occurrence_id(&guid(FIRST)));
         let second = occurrence(crate::ids::neutral_component_occurrence_id(&guid(SECOND)));
-        for (child, ordinal) in [(&first, 0), (&second, 1)] {
-            assert_eq!(child.parent, in_root);
-            assert_eq!(child.ordinal, ordinal);
-            assert_eq!(
-                child.prototype,
-                PrototypeReference::Local {
-                    definition: component.clone()
-                }
-            );
+        assert_eq!(
+            root_definition.occurrences,
+            [first.id.clone(), second.id.clone()]
+        );
+        for child in [&first, &second] {
+            assert_eq!(child.prototype, component);
         }
         assert_eq!(
             first.transform,
-            cadmpeg_ir::transform::Transform::identity()
+            Some(cadmpeg_ir::transform::Transform::identity())
         );
-        let rows = second.transform.rows();
+        let rows = second.transform.unwrap().rows();
         let expected = [
             [0.0, -1.0, 0.0, 4.2],
             [1.0, 0.0, 0.0, 9.8],
@@ -3344,27 +3268,20 @@ mod tests {
                 .unwrap();
             assert_eq!(definition.bodies, expected);
         }
-        let root = crate::ids::neutral_root_occurrence_id(&guid(ROOT_CONTEXT));
+        let root = crate::ids::neutral_component_id(&guid(ROOT_CONTEXT));
+        let stated = crate::tree::stated(projection.into(), None);
         for carrier in &carriers {
             let id = crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid);
-            let occurrence = projection
-                .occurrences
-                .iter()
-                .find(|occurrence| occurrence.id == id)
-                .unwrap();
             assert_eq!(
-                occurrence.parent,
-                OccurrenceParent::Occurrence {
-                    occurrence: root.clone()
-                }
+                crate::tree::owner_of(&stated, &id).map(|owner| &owner.id),
+                Some(&root)
             );
-            assert!(projection.occurrences.iter().all(|other| {
-                other.parent
-                    != OccurrenceParent::Occurrence {
-                        occurrence: id.clone(),
-                    }
-            }));
         }
+        assert!(crate::tree::listed(
+            &stated,
+            &crate::ids::neutral_component_id(&guid(EMPTY_CONTEXT))
+        )
+        .is_empty());
     }
 
     #[test]
@@ -3513,7 +3430,6 @@ mod tests {
             components: &components,
             body_bindings: &[],
             bodies: Some(&empty),
-            root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         })
         .unwrap();
@@ -3525,6 +3441,7 @@ mod tests {
                 .find(|occurrence| &occurrence.id == id)
                 .unwrap()
                 .transform
+                .unwrap()
                 .rows()
         };
         let rows = transform(&parent);
@@ -3538,8 +3455,10 @@ mod tests {
                 assert!((value - expected).abs() < 1e-12, "{rows:?}");
             }
         }
-        let child =
-            crate::ids::nested_component_occurrence_id(&parent, &carriers[1].occurrence_guid);
+        let child = crate::ids::nested_occurrence_id(
+            &parent,
+            &crate::ids::neutral_component_occurrence_id(&carriers[1].occurrence_guid),
+        );
         assert_eq!(
             transform(&child),
             cadmpeg_ir::transform::Transform::identity().rows()
@@ -3571,7 +3490,6 @@ mod tests {
                 components: &components,
                 body_bindings: &[],
                 bodies,
-                root_ordinal_start: 0,
                 limits: cadmpeg_core::decode::ResourceLimits::default(),
             })
             .unwrap();
@@ -3583,23 +3501,20 @@ mod tests {
                     .iter()
                     .all(|definition| definition.bodies.is_empty()));
                 assert_eq!(projection.occurrences.len(), 4);
-                let parent =
-                    crate::ids::neutral_component_occurrence_id(&carriers[0].occurrence_guid);
-                for child in &carriers[1..] {
-                    let id =
-                        crate::ids::nested_component_occurrence_id(&parent, &child.occurrence_guid);
-                    let occurrence = projection
-                        .occurrences
-                        .iter()
-                        .find(|occurrence| occurrence.id == id)
-                        .unwrap();
-                    assert_eq!(
-                        occurrence.parent,
-                        OccurrenceParent::Occurrence {
-                            occurrence: parent.clone()
-                        }
-                    );
-                }
+                let stated = crate::tree::stated(projection.into(), None);
+                let module =
+                    crate::ids::neutral_component_id(&guid("00000000-0000-4000-8000-000000000101"));
+                let children = carriers[1..]
+                    .iter()
+                    .map(|child| {
+                        crate::ids::neutral_component_occurrence_id(&child.occurrence_guid)
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    crate::tree::listed(&stated, &module),
+                    children.iter().collect::<Vec<_>>(),
+                    "the module owns its nested occurrences"
+                );
             } else {
                 assert!(projection.occurrences.is_empty());
                 assert_eq!(projection.definitions.len(), 3);
@@ -3632,24 +3547,7 @@ mod tests {
         assert!(projection.losses.is_empty(), "{:?}", projection.losses);
         assert_eq!(projection.definitions.len(), 3);
         assert_eq!(projection.occurrences.len(), 7);
-        let graph = cadmpeg_ir::products::AssemblyGraph::new(&projection.occurrences).unwrap();
-        let prototype = PrototypeReference::Local {
-            definition: crate::ids::neutral_component_id(&guid(COMPONENT_CONTEXT)),
-        };
-        let leaves = projection
-            .occurrences
-            .iter()
-            .filter(|occurrence| occurrence.prototype == prototype)
-            .collect::<Vec<_>>();
-        assert_eq!(leaves.len(), 4);
-        assert_eq!(
-            leaves
-                .iter()
-                .map(|leaf| &leaf.id)
-                .collect::<BTreeSet<_>>()
-                .len(),
-            4
-        );
+        let component = crate::ids::neutral_component_id(&guid(COMPONENT_CONTEXT));
         assert_eq!(
             projection
                 .definitions
@@ -3658,25 +3556,58 @@ mod tests {
                 .count(),
             1
         );
-        let paths =
-            super::paths::LocalOccurrencePaths::new(&carriers, &[], &projection.occurrences, &[]);
+        let mut expanded = cadmpeg_ir::document::Model::default();
+        crate::tree::assemble(
+            &mut expanded,
+            crate::tree::Projected {
+                definitions: projection.definitions.clone(),
+                occurrences: projection.occurrences.clone(),
+                placements: projection.placements.clone(),
+            },
+            None,
+        );
+        let paths = super::paths::LocalOccurrencePaths::new(
+            &carriers,
+            &[],
+            &expanded.product_definitions,
+            &expanded.occurrences,
+            &[],
+        );
         assert!(paths
             .resolve(STREAM, &[carriers[1].occurrence_guid.as_str().to_owned()])
             .is_none());
+        // §8.1: the module, placed twice, owns its two children once; the
+        // placed instance tree has four leaves.
+        let stated = crate::tree::stated(projection.into(), None);
+        let module =
+            crate::ids::neutral_component_id(&guid("00000000-0000-4000-8000-000000000101"));
+        let children = [&carriers[1], &carriers[2]]
+            .map(|child| crate::ids::neutral_component_occurrence_id(&child.occurrence_guid));
+        assert_eq!(
+            crate::tree::listed(&stated, &module),
+            children.iter().collect::<Vec<_>>()
+        );
+        assert_eq!(stated.occurrences.len(), 4);
+        assert!(stated
+            .occurrences
+            .iter()
+            .all(|occurrence| occurrence.overrides.is_empty()));
+        let poses = crate::tree::world_poses(&stated);
         for parent in [&carriers[0], &carriers[3]] {
             let parent_id = crate::ids::neutral_component_occurrence_id(&parent.occurrence_guid);
             for (child, y_min, face_x) in [(&carriers[1], 40.0, 10.0), (&carriers[2], 50.0, 0.0)] {
-                let id =
-                    crate::ids::nested_component_occurrence_id(&parent_id, &child.occurrence_guid);
-                let pose = cadmpeg_test_support::assembly::resolved_transform(&graph, &id).unwrap();
-                let leaf = graph.occurrence(&id).unwrap();
+                let own = crate::ids::neutral_component_occurrence_id(&child.occurrence_guid);
+                let id = crate::ids::nested_occurrence_id(&parent_id, &own);
+                let pose = poses[&id];
                 assert_eq!(
-                    leaf.parent,
-                    OccurrenceParent::Occurrence {
-                        occurrence: parent_id.clone()
-                    }
+                    stated
+                        .occurrences
+                        .iter()
+                        .find(|occurrence| occurrence.id == own)
+                        .unwrap()
+                        .prototype,
+                    component
                 );
-                assert_eq!(leaf.prototype, prototype);
                 assert_eq!(
                     paths.resolve(
                         STREAM,
@@ -3749,7 +3680,6 @@ mod tests {
             components: &components,
             body_bindings: &[],
             bodies: Some(&bodies),
-            root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits {
                 max_entities: 4,
                 ..Default::default()
@@ -3760,23 +3690,27 @@ mod tests {
             == crate::loss::F3dLossCode::FeatureDerivedInstanceScopePlacementAssumed.kind()));
         assert!(!projection.losses.iter().any(|loss| loss.code
             == crate::loss::F3dLossCode::FeatureDerivedInstanceDefinitionUnresolved.kind()));
-        let graph = cadmpeg_ir::products::AssemblyGraph::new(&projection.occurrences).unwrap();
-        assert!(graph
-            .occurrence(&crate::ids::neutral_component_occurrence_id(
-                &carriers[2].occurrence_guid
-            ))
-            .is_none());
+        let stated = crate::tree::stated(projection.into(), None);
         let parent = crate::ids::neutral_component_occurrence_id(&carriers[0].occurrence_guid);
-        let child =
-            crate::ids::nested_component_occurrence_id(&parent, &carriers[2].occurrence_guid);
-        let rows = cadmpeg_test_support::assembly::resolved_transform(&graph, &child)
-            .unwrap()
+        let own = crate::ids::neutral_component_occurrence_id(&carriers[2].occurrence_guid);
+        assert_eq!(
+            crate::tree::owner_of(&stated, &own).map(|owner| owner.id.clone()),
+            Some(crate::ids::neutral_component_id(&guid(
+                "00000000-0000-4000-8000-000000000101"
+            ))),
+            "the operation-placed occurrence stays in its containing component"
+        );
+        let rows = crate::tree::world_poses(&stated)
+            [&crate::ids::nested_occurrence_id(&parent, &own)]
             .rows();
         assert!((rows[0][3] - 30.0).abs() < TOLERANCE);
         assert!((rows[1][3] - 60.0).abs() < TOLERANCE);
-        assert!(
-            (graph.occurrence(&child).unwrap().transform.rows()[0][3] - 20.0).abs() < TOLERANCE
-        );
+        let local = stated
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.id == own)
+            .unwrap();
+        assert!((local.transform.unwrap().rows()[0][3] - 20.0).abs() < TOLERANCE);
     }
 
     #[test]
@@ -3796,17 +3730,27 @@ mod tests {
         let projection = project_carriers(&carriers, &components, &[]);
         assert!(projection.losses.is_empty());
         assert_eq!(projection.occurrences.len(), 4);
-        let graph = cadmpeg_ir::products::AssemblyGraph::new(&projection.occurrences).unwrap();
-        let paths =
-            super::paths::LocalOccurrencePaths::new(&carriers, &[], &projection.occurrences, &[]);
+        let stated = crate::tree::stated(projection.into(), None);
+        let paths = super::paths::LocalOccurrencePaths::new(
+            &carriers,
+            &[],
+            &stated.product_definitions,
+            &stated.occurrences,
+            &[],
+        );
         let key = vec![carriers[0].occurrence_guid.as_str().to_owned()];
         let first = paths.resolve(STREAM, &key).unwrap().0;
         let second = paths.resolve(OTHER_STREAM, &key).unwrap().0;
         assert_ne!(first, second);
-        assert_ne!(
-            graph.occurrence(&first).unwrap().parent,
-            graph.occurrence(&second).unwrap().parent
-        );
+        // Both streams' root components are the one definition of their
+        // shared naming space, below the document root; it owns both.
+        let root = crate::ids::neutral_component_id(&guid(ROOT_CONTEXT));
+        for occurrence in [&first, &second] {
+            assert_eq!(
+                crate::tree::owner_of(&stated, occurrence).map(|owner| &owner.id),
+                Some(&root)
+            );
+        }
     }
 
     #[test]
@@ -3838,12 +3782,11 @@ mod tests {
         let projection = project_carriers(&carriers, &components, &[]);
         assert!(projection.losses.is_empty());
         assert_eq!(projection.occurrences.len(), 65);
-        let graph = cadmpeg_ir::products::AssemblyGraph::new(&projection.occurrences).unwrap();
-        for occurrence in &projection.occurrences {
-            assert_eq!(
-                cadmpeg_test_support::assembly::resolved_transform(&graph, &occurrence.id).unwrap(),
-                cadmpeg_ir::transform::Transform::identity()
-            );
+        let stated = crate::tree::stated(projection.into(), None);
+        let poses = crate::tree::world_poses(&stated);
+        assert_eq!(poses.len(), 64);
+        for pose in poses.values() {
+            assert_eq!(*pose, cadmpeg_ir::transform::Transform::identity());
         }
     }
 
@@ -3867,7 +3810,6 @@ mod tests {
             components: &components,
             body_bindings: &[],
             bodies: Some(&bodies),
-            root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits {
                 max_entities: 3,
                 ..Default::default()
@@ -3880,7 +3822,11 @@ mod tests {
             projection.losses[0].code,
             crate::loss::F3dLossCode::LocalOccurrenceExpansionLimit.kind()
         );
-        cadmpeg_ir::products::AssemblyGraph::new(&projection.occurrences).unwrap();
+        let stated = crate::tree::stated(projection.into(), None);
+        assert!(stated
+            .occurrences
+            .iter()
+            .all(|occurrence| { crate::tree::owner_of(&stated, &occurrence.id).is_some() }));
     }
 
     #[test]
@@ -3957,10 +3903,9 @@ mod tests {
         assert_eq!(definitions.len(), 1);
         assert_eq!(occurrences.len(), 2);
         let definition = definitions[0].id.clone();
-        assert!(occurrences.iter().all(|occurrence| matches!(
-            &occurrence.prototype,
-            PrototypeReference::Local { definition: actual } if actual == &definition
-        )));
+        assert!(occurrences
+            .iter()
+            .all(|occurrence| occurrence.prototype == definition));
     }
 
     #[test]
@@ -4013,11 +3958,10 @@ mod tests {
                     .unwrap()
             )
         );
-        assert!(matches!(
-            &occurrences[0].prototype,
-            PrototypeReference::Local { definition }
-                if definition == &crate::ids::neutral_component_record_id(STREAM, 305)
-        ));
+        assert_eq!(
+            occurrences[0].prototype,
+            crate::ids::neutral_component_record_id(STREAM, 305)
+        );
 
         let mut feature = Feature {
             product_definition: None,
@@ -4072,7 +4016,8 @@ mod tests {
             &operation_occurrences,
         )
         .unwrap();
-        let paths = super::paths::LocalOccurrencePaths::new(&[], &[], &operation_occurrences, &[]);
+        let paths =
+            super::paths::LocalOccurrencePaths::new(&[], &[], &[], &operation_occurrences, &[]);
         assert!(
             super::paths::bind_feature_paths(std::slice::from_mut(&mut feature), &paths).is_empty()
         );
@@ -4227,7 +4172,6 @@ mod tests {
             components: &components,
             body_bindings: &[],
             bodies: Some(&bodies),
-            root_ordinal_start: 0,
             limits: cadmpeg_core::decode::ResourceLimits::default(),
         };
         let base = crate::xref::project_occurrences(&table, &sources, &[])
@@ -4246,7 +4190,6 @@ mod tests {
                 cadmpeg_ir::ids::OccurrenceId::mint(format!("f3d:model:occurrence#group-{count}"))
                     .unwrap();
             occurrence.id = crate::ids::nested_xref_occurrence_id(&parent, 0, 0);
-            occurrence.parent = OccurrenceParent::Occurrence { occurrence: parent };
             projected.push(occurrence);
             let mut inserts = super::ComponentInserts::decide(&scopes, &timelines, &references);
             inserts.bind_external_paths(&references, &projected);
@@ -4305,22 +4248,27 @@ mod tests {
 
         let inserts =
             super::ComponentInserts::decide(&scopes, &timelines, &[resolved_role_reference()]);
-        let occurrences = inserts.unresolved_occurrences(3).unwrap();
+        let (definitions, occurrences) = inserts.unresolved_occurrences().unwrap();
 
         assert_eq!(occurrences.len(), 1);
         assert_eq!(
             occurrences[0].id,
             crate::ids::neutral_component_insert_occurrence_id(&unresolved)
         );
-        assert_eq!(occurrences[0].ordinal, 3);
         assert_eq!(
             occurrences[0].native_ref.as_deref(),
             Some(unresolved.id.as_str())
         );
-        assert!(matches!(
-            occurrences[0].prototype,
-            PrototypeReference::Unresolved {}
-        ));
+        // §8.1: a link whose target the source left empty places an
+        // External definition with no identity.
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(occurrences[0].prototype, definitions[0].id);
+        assert_eq!(
+            definitions[0].storage,
+            cadmpeg_ir::products::Storage::External(
+                cadmpeg_ir::products::ExternalDocument::default()
+            )
+        );
         assert_eq!(inserts.occurrence(&unresolved.id), Some(&occurrences[0].id));
         assert_eq!(
             inserts.occurrence(&resolved.id),
@@ -4339,7 +4287,7 @@ mod tests {
         let inserts =
             super::ComponentInserts::decide(&[listed.clone(), operand.clone()], &timelines, &[]);
 
-        let occurrences = inserts.unresolved_occurrences(0).unwrap();
+        let (_, occurrences) = inserts.unresolved_occurrences().unwrap();
         assert_eq!(occurrences.len(), 1);
         assert_eq!(
             occurrences[0].native_ref.as_deref(),
@@ -4358,7 +4306,7 @@ mod tests {
 
         let inserts = super::ComponentInserts::decide(&scopes, &[], &[]);
 
-        assert!(inserts.unresolved_occurrences(0).unwrap().is_empty());
+        assert!(inserts.unresolved_occurrences().unwrap().1.is_empty());
         assert_eq!(inserts.occurrence(&scopes[0].id), None);
         assert_eq!(
             loss_codes(&inserts),
@@ -4375,14 +4323,14 @@ mod tests {
 
         let inserts = super::ComponentInserts::decide(&scopes, &timelines, &[]);
 
-        let occurrences = inserts.unresolved_occurrences(0).unwrap();
+        let (_, occurrences) = inserts.unresolved_occurrences().unwrap();
         assert_eq!(occurrences.len(), 1);
         assert_eq!(
             occurrences[0].native_ref.as_deref(),
             Some(placed.id.as_str())
         );
         assert_eq!(
-            occurrences[0].transform.rows()[0][3],
+            occurrences[0].transform.unwrap().rows()[0][3],
             10.0,
             "translation projects to millimetres"
         );
@@ -4402,7 +4350,7 @@ mod tests {
             &crate::design::test_support::synthetic_feature_timelines(scopes),
             &[],
         );
-        let occurrences = inserts.unresolved_occurrences(0).unwrap();
+        let (_, occurrences) = inserts.unresolved_occurrences().unwrap();
         let mut feature = Feature {
             product_definition: None,
             id: FeatureId::mint("f3d:model:feature#insert").expect("identity grammar"),

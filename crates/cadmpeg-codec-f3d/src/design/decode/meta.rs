@@ -630,6 +630,37 @@ pub(super) fn design_primary_frames<'a>(
     Ok(frames)
 }
 
+pub(super) fn unambiguous_design_primary_frames<'a>(
+    bytes: &[u8],
+    meta: &'a crate::metastream::MetaStream,
+) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
+    use crate::layout::indexed_design_record_header as header;
+
+    let mut frames = design_primary_frames(bytes, meta)?;
+    let mut registered = HashMap::<u64, usize>::new();
+    for entity_id in meta.types.iter().flat_map(|row| row.entities.values()) {
+        *registered.entry(*entity_id).or_default() += 1;
+    }
+    frames.retain(|frame| registered.get(&frame.entity_id) == Some(&1));
+    for frame in &frames {
+        if frame
+            .start
+            .checked_add(header::LEN)
+            .is_none_or(|end| end > frame.member_end)
+            || (frame.member_end < frame.end
+                && frame
+                    .member_end
+                    .checked_add(header::LEN)
+                    .is_none_or(|end| end > frame.end))
+        {
+            return Err(CodecError::malformed(
+                "F3D indexed header exceeds its registered member extent",
+            ));
+        }
+    }
+    Ok(frames)
+}
+
 /// One primary `BulkStream` frame selected through a registered Design type.
 #[derive(Clone, Copy)]
 pub(super) struct TypedPrimaryFrame<'a> {
@@ -910,7 +941,7 @@ pub(super) fn stream_types_by_class_tag<'a>(
 
 /// Compare an encoded native `MetaStream` scope with the `BulkStream`'s sibling
 /// name without materializing either name.
-fn meta_scope_matches_bulk(scope: &str, bulk_entry_name: &str) -> bool {
+pub(crate) fn meta_scope_matches_bulk(scope: &str, bulk_entry_name: &str) -> bool {
     let Some(prefix) = bulk_entry_name.strip_suffix("BulkStream.dat") else {
         return false;
     };

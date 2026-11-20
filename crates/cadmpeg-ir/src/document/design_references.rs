@@ -121,8 +121,7 @@ pub(super) fn first(model: &Model) -> Option<ArenaName> {
 fn pmi_definition_reads_design(definition: &PmiDefinition) -> bool {
     match definition {
         PmiDefinition::DatumTarget { basis, .. } => basis.iter().any(InstanceTarget::reads_design),
-        PmiDefinition::GeometricTolerance { constraints, .. } => constraints
-            .zones
+        PmiDefinition::GeometricTolerance { zones, .. } => zones
             .iter()
             .flat_map(|zone| &zone.projections)
             .flat_map(crate::pmi::zones::ToleranceProjection::targets)

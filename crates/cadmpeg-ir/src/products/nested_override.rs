@@ -48,7 +48,7 @@ pub struct NestedOverride {
     pub representation: Option<NonBlankString>,
 }
 
-cadmpeg_core::named_optional_field!(deserialize_representation<T>, T, "representation");
-cadmpeg_core::named_optional_field!(deserialize_suppressed<T>, T, "suppressed");
-cadmpeg_core::named_optional_field!(deserialize_transform<T>, T, "transform");
-cadmpeg_core::named_optional_field!(deserialize_visible<T>, T, "visible");
+cadmpeg_core::named_optional_field!(deserialize_transform, Transform, "transform");
+cadmpeg_core::named_optional_field!(deserialize_suppressed, bool, "suppressed");
+cadmpeg_core::named_optional_field!(deserialize_visible, bool, "visible");
+cadmpeg_core::named_optional_field!(deserialize_representation, NonBlankString, "representation");

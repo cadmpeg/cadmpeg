@@ -172,7 +172,7 @@ fn curve_geometry_for_sheet_pcurve(
             let distance = offset_pcurve.distance();
             let basis = offset_pcurve.basis();
             let Some((origin, direction)) = basis
-                .line_parameters(&cadmpeg_test_support::service_decode_context())
+                .line_parameters(&cadmpeg_core::decode::test_support::service_decode_context())
                 .expect("fixture line parameter walk is admitted")
             else {
                 return Ok(None);
@@ -702,41 +702,17 @@ pub(crate) fn writer_round_trips_rigid_body_placements() {
 #[test]
 pub(crate) fn writer_round_trips_product_body_ownership() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let product =
+    let mut product = cadmpeg_ir::products::ProductDefinition::root(
         cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:product-definition#product-0")
-            .expect("identity grammar");
-    ir.model
-        .product_definitions
-        .push(cadmpeg_ir::products::ProductDefinition {
-            sketches: Vec::default(),
-
-            tessellations: Vec::new(),
-            id: product.clone(),
-            kind: cadmpeg_ir::products::ProductDefinitionKind::Part,
-            source_name: Some("Cube part".into()),
-            label: Some("Cube part".into()),
-            description: None,
-            part_number: Some("PART-001".into()),
-            bom_properties: std::collections::BTreeMap::default(),
-            bodies: vec![ir.geometry.bodies[0].id.clone()],
-            native_ref: None,
-        });
-    ir.model.occurrences.push(cadmpeg_ir::products::Occurrence {
-        id: cadmpeg_ir::ids::OccurrenceId::mint("test:model:occurrence#root-0")
             .expect("identity grammar"),
-        prototype: cadmpeg_ir::products::PrototypeReference::Local {
-            definition: product,
-        },
-        parent: cadmpeg_ir::products::OccurrenceParent::Root {},
-        ordinal: 0,
-        transform: cadmpeg_ir::transform::Transform::identity(),
-        linked_prototype: None,
-        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-        name: Some("Cube root".into()),
-        visible: None,
-        link: None,
-        native_ref: None,
-    });
+        cadmpeg_ir::products::ExternalDocument::default(),
+    );
+    product.kind = Some(cadmpeg_ir::products::ProductDefinitionKind::Part);
+    product.source_name = Some("Cube part".into());
+    product.label = Some("Cube part".into());
+    product.part_number = Some("PART-001".into());
+    product.bodies = vec![ir.geometry.bodies[0].id.clone()];
+    ir.model.product_definitions.push(product);
     let options = StepWriteOptions {
         ..StepWriteOptions::default()
     };
@@ -754,7 +730,8 @@ pub(crate) fn writer_round_trips_product_body_ownership() {
         Some("PART-001")
     );
     assert_eq!(decoded.ir().model.product_definitions[0].bodies.len(), 1);
-    assert_eq!(decoded.ir().model.occurrences.len(), 1);
+    assert!(decoded.ir().model.product_definitions[0].is_root());
+    assert!(decoded.ir().model.occurrences.is_empty());
 }
 
 pub(super) fn wire_body_ir(alpha: f64) -> CadIr {

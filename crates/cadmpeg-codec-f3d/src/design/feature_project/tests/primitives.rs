@@ -17,12 +17,13 @@ fn cylinder(transform: Option<[[f64; 4]; 4]>) -> DesignParameterScope {
     );
     if let DesignScopePayloadMut::CylinderPrimitive(slot) = scope.payload_mut() {
         *slot = Some(DesignCylinderPrimitive {
-            height: cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap(),
+            height: cadmpeg_ir::scalar::NonZeroReal::new(2.0).unwrap(),
             height_record_index: 41,
             height_offset: 0,
             diameter: cadmpeg_ir::scalar::PositiveReal::new(1.0).unwrap(),
             diameter_record_index: 42,
             diameter_offset: 0,
+            construction: None,
             transform: transform.map(|rows| Located {
                 value: rows.try_into().unwrap(),
                 offset: 72,
@@ -62,6 +63,42 @@ fn shifted_cylinder_frame_places_the_primitive() {
             ..
         }))
     ));
+}
+
+#[test]
+fn negative_cylinder_height_projects_along_the_reverse_axis() {
+    use cadmpeg_ir::features::PrimitiveSolidKind;
+    let mut scope = cylinder(Some([
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0, 2.0],
+        [0.0, 0.0, 1.0, 3.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]));
+    let DesignScopePayloadMut::CylinderPrimitive(Some(primitive)) = scope.payload_mut() else {
+        panic!("expected cylinder");
+    };
+    primitive.height = cadmpeg_ir::scalar::NonZeroReal::new(-2.0).unwrap();
+    let Some(FeatureDefinition::Operation(FeatureOperation::Primitive {
+        solid,
+        placement: Some(placement),
+        ..
+    })) = project_solid_primitive(&scope, &[], &mut Vec::new())
+    else {
+        panic!("expected placed cylinder");
+    };
+    assert!(
+        matches!(solid.kind(), PrimitiveSolidKind::Cylinder { radius, height, .. }
+        if radius.get() == 5.0 && height.get() == 20.0)
+    );
+    assert_eq!(
+        placement.rows(),
+        [
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, -1.0, 0.0, 20.0],
+            [0.0, 0.0, -1.0, 30.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    );
 }
 
 #[test]

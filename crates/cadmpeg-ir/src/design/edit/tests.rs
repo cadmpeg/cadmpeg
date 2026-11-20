@@ -7,8 +7,8 @@ use std::fmt::Debug;
 use cadmpeg_core::text::NonBlankString;
 use serde_json::json;
 
-use super::eval::{check_types, Type};
-use super::wire::{exchange_constructions, retarget};
+use super::eval::{check_types, ExpressionSite, Type};
+use super::wire::{clear_transformations, exchange_constructions, positions, re_anchor, retarget};
 use super::{evaluate, EditError, EvalError, Literal, ParameterDrivers, Value};
 use crate::design::configuration::{
     Arrangement, ArrangementKind, ArrangementRef, DesignConfiguration, FeatureStateOverride,
@@ -25,7 +25,7 @@ use crate::design::expr::{
     Neutral, Node,
 };
 use crate::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
-use crate::design::names::NameEntry;
+use crate::design::names::{NameEntry, NameKind, TopoName};
 use crate::design::ops::datum::{Datum, DatumElement};
 use crate::design::options::{NativeOption, NativeOptions};
 use crate::design::parameter::{
@@ -34,7 +34,7 @@ use crate::design::parameter::{
 };
 use crate::design::refs::{ConfigurationRef, EntityRef, Evaluated, Member, Position};
 use crate::design::scope::{DesignScope, OccurrenceDesign};
-use crate::design::selection::{Anchor, Picks, Selection};
+use crate::design::selection::{Anchor, Members, PickTarget, Picked, Picks, Selection};
 use crate::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use crate::features::{ConfigurationId, FeatureId, FinitePoint3, ParameterId};
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
@@ -235,20 +235,17 @@ fn with_bodies(keys: &[u32]) -> StateContent {
 }
 
 fn product_definition(bodies: &[u32]) -> crate::products::ProductDefinition {
-    serde_json::from_value(json!({
-        "id": definition().as_str(),
-        "kind": "part",
-        "bom_properties": {},
-        "bodies": bodies.iter().map(|key| format!("test:edit:body#{key}")).collect::<Vec<_>>(),
-        "sketches": [],
-        "tessellations": [],
-    }))
-    .unwrap()
+    let mut definition =
+        crate::products::ProductDefinition::new(definition(), crate::products::Storage::Embedded);
+    definition.kind = Some(crate::products::ProductDefinitionKind::Part);
+    definition.bodies = bodies.iter().map(|key| id("body", *key)).collect();
+    definition
 }
 
-/// One scope whose timeline holds features 1 to 3: 1 a sketch-like stateless
-/// datum stand-in, 2 bound to parameter 2, 3 unresolved. Parameter 1 is a
-/// literal 10 mm and parameter 2 is twice parameter 1.
+/// One scope whose timeline holds features 1 to 3, rolled to its end: 1 a
+/// stateless sheet, 2 bound to parameter 2, 3 unresolved. Parameter 1 is a
+/// literal 10 mm and parameter 2 is twice parameter 1. Feature 2 has a state
+/// and a failed tool body, and feature 3 a failed tool body.
 fn timeline() -> CadIr {
     let mut document = CadIr::empty();
     let container: crate::design::ids::ContainerId = id("container", 1);
@@ -261,7 +258,7 @@ fn timeline() -> CadIr {
             first: 1,
             last: 2,
         }],
-        rollback: Rollback::Before(Member::Feature(feature(2))),
+        rollback: Rollback::End,
         placement: None,
     });
     document.design.scopes.push(DesignScope {
@@ -283,12 +280,21 @@ fn timeline() -> CadIr {
         bound(2, 2),
         unresolved(3),
     ];
+    document.design.spreadsheets = vec![crate::design::spreadsheet::Spreadsheet::new(
+        id("spreadsheet", 1),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        None,
+    )
+    .unwrap()];
     document.design.parameters = vec![
         length(1, neutral("10[mm]", &[], &[]), Some(10.0)),
         length(2, neutral("$0 * 2", &[reference(1)], &[]), Some(20.0)),
     ];
     document.design.evaluations = vec![
-        evaluation(1, Evaluated::State(after(1)), None, None),
+        evaluation(1, Evaluated::Tool(feature(3)), None, None),
         evaluation(2, Evaluated::State(after(2)), None, Some(with_bodies(&[2]))),
         evaluation(3, Evaluated::Tool(feature(2)), None, None),
     ];
@@ -298,6 +304,29 @@ fn timeline() -> CadIr {
         }
     }
     document
+}
+
+/// Gives the timeline's scope configuration 9, a base with no overrides,
+/// as its active configuration, and makes every evaluation one of it.
+fn with_base(document: &mut CadIr) {
+    document.design.configurations.push(DesignConfiguration {
+        id: configuration(9),
+        scope: definition(),
+        name: "Base".to_owned(),
+        parent: None,
+        comment: None,
+        overrides: Overrides::default(),
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: None,
+    });
+    document.design.scopes[0].active_configuration = Some(configuration(9));
+    for evaluation in &mut document.design.evaluations {
+        evaluation
+            .configuration
+            .get_or_insert_with(|| configuration(9));
+    }
+    document.design.finalize();
 }
 
 fn status(document: &CadIr, key: u32) -> EvaluationStatus {
@@ -382,7 +411,7 @@ fn a_deep_tree_evaluates_on_a_small_thread() {
     let handle = std::thread::Builder::new()
         .stack_size(256 * 1024)
         .spawn(move || {
-            let checked = check_types(&node, &|_| Ok(Type::Unknown));
+            let checked = check_types(&node, ExpressionSite::Parameter, &|_| Ok(Type::Unknown));
             let result = evaluate(&node, &mut |_| None);
             drop(node);
             (checked, result)
@@ -526,7 +555,7 @@ fn stateless_features_follow_their_configuration() {
 #[test]
 fn set_dimension_refuses_a_driven_parameter() {
     let mut document = timeline();
-    let refused = document.set_dimension(
+    let refused = document.edit().unwrap().set_dimension(
         &parameter_id(2),
         Literal::Number {
             value: real(5.0),
@@ -542,15 +571,172 @@ fn set_dimension_refuses_a_driven_parameter() {
     );
     document.design.parameters[1].definition = ParameterDefinition::Driven;
     assert!(matches!(
-        document.set_dimension(&parameter_id(2), Literal::Boolean(true)),
+        document
+            .edit()
+            .unwrap()
+            .set_dimension(&parameter_id(2), Literal::Boolean(true)),
         Err(EditError::DrivenParameter {
             drivers: ParameterDrivers::Geometry,
             ..
         })
     ));
     assert!(matches!(
-        document.set_dimension(&parameter_id(1), Literal::Boolean(true)),
+        document
+            .edit()
+            .unwrap()
+            .set_dimension(&parameter_id(1), Literal::Boolean(true)),
         Err(EditError::KindMismatch { .. })
+    ));
+}
+
+fn errors_only(findings: &[crate::report::check::Finding]) -> bool {
+    !findings.is_empty()
+        && findings
+            .iter()
+            .all(|finding| finding.severity == crate::report::Severity::Error)
+}
+
+#[test]
+fn an_editor_is_only_had_over_a_valid_document() {
+    let mut document = timeline();
+    let Container::Ordered { rollback, .. } = &mut document.design.containers[0] else {
+        panic!("ordered");
+    };
+    *rollback = Rollback::Before(Member::Feature(feature(2)));
+    match document.edit() {
+        Err(EditError::Invalid(findings)) => assert!(errors_only(&findings), "{findings:?}"),
+        other => panic!("a current state off the rollback is an Error: {other:?}"),
+    }
+}
+
+#[test]
+fn an_edit_whose_result_holds_an_error_is_refused() {
+    let mut document = timeline();
+    let before = document.clone();
+    let stateless = operation(2, FeatureOperation::Spreadsheet(id("spreadsheet", 2))).definition;
+    match document
+        .edit()
+        .unwrap()
+        .set_feature_definition(&feature(2), stateless)
+    {
+        Err(EditError::Invalid(findings)) => assert!(errors_only(&findings), "{findings:?}"),
+        other => panic!("a stateless feature with evaluations is an Error: {other:?}"),
+    }
+    assert_eq!(document, before, "a refused edit changes nothing");
+}
+
+/// Parameter 7, an integer whose expression is the literal 3.
+fn counted(document: &mut CadIr) {
+    document.design.parameters.push(parameter(
+        7,
+        ValueKind::Integer,
+        ParameterDefinition::Expression(neutral("3", &[], &[])),
+        Some(ParameterValue::Integer(3)),
+    ));
+}
+
+#[test]
+fn set_dimension_takes_a_whole_number_with_no_unit_for_an_integer() {
+    let mut document = timeline();
+    counted(&mut document);
+    let before = document.clone();
+    let number = |value: f64, unit: Unit| Literal::Number {
+        value: real(value),
+        unit,
+    };
+    for refused in [number(2.5, Unit(Vec::new())), number(2.0, mm())] {
+        let result = document
+            .edit()
+            .unwrap()
+            .set_dimension(&parameter_id(7), refused.clone());
+        assert!(
+            matches!(result, Err(EditError::KindMismatch { .. })),
+            "{refused:?}: {result:?}"
+        );
+        assert_eq!(document, before, "refusing {refused:?} changes nothing");
+    }
+    document
+        .edit()
+        .unwrap()
+        .set_dimension(&parameter_id(7), number(4.0, Unit(Vec::new())))
+        .unwrap();
+    assert_eq!(cache(&document, 7), Some(ParameterValue::Integer(4)));
+}
+
+#[test]
+fn an_integer_expression_whose_value_is_not_whole_has_no_cache() {
+    let mut document = timeline();
+    counted(&mut document);
+    document
+        .edit()
+        .unwrap()
+        .set_parameter_expression(&parameter_id(7), neutral("5 / 2", &[], &[]))
+        .unwrap();
+    assert_eq!(cache(&document, 7), None, "the rule is a Warning");
+}
+
+#[test]
+fn an_edit_clears_the_resolved_transformation_its_parameter_binds() {
+    let mut document = timeline();
+    let identity = serde_json::to_value(crate::transform::Transform::identity()).unwrap();
+    let moved = |parameter: u32| -> FeatureOperation {
+        serde_json::from_value(json!({
+            "kind": "transform_bodies",
+            "value": {
+                "bodies": {"at": {"kind": "input"}, "picks": {"kind": "unread"}},
+                "transformation": {
+                    "steps": [{"kind": "components", "value": {"delta": [
+                        {"kind": "parameter", "value": parameter_id(parameter).as_str()},
+                        {"kind": "literal", "value": 0.0},
+                        {"kind": "literal", "value": 0.0},
+                    ]}}],
+                    "resolved": identity,
+                },
+                "native_options": {},
+                "source_settings": {},
+            },
+        }))
+        .unwrap()
+    };
+    document.design.features[2] = operation(3, moved(1));
+    document
+        .edit()
+        .unwrap()
+        .set_dimension(
+            &parameter_id(1),
+            Literal::Number {
+                value: real(4.0),
+                unit: mm(),
+            },
+        )
+        .unwrap();
+    let FeatureOperation::TransformBodies(transform) =
+        &document.design.features[2].definition.operation
+    else {
+        panic!("a transform");
+    };
+    assert_eq!(transform.transformation.resolved, None);
+}
+
+#[test]
+fn a_resolver_reports_a_configuration_that_is_its_own_ancestor() {
+    let mut document = timeline();
+    for (key, parent) in [(1, 2), (2, 1)] {
+        document.design.configurations.push(DesignConfiguration {
+            id: configuration(key),
+            scope: definition(),
+            name: format!("C{key}"),
+            parent: Some(configuration(parent)),
+            comment: None,
+            overrides: Overrides::default(),
+            active_arrangements: BTreeSet::new(),
+            materials: Vec::new(),
+            native_ref: None,
+        });
+    }
+    assert!(matches!(
+        document.is_stateless(&feature(3), Some(&configuration(1))),
+        Err(EditError::ConfigurationCycle(_))
     ));
 }
 
@@ -572,7 +758,7 @@ fn set_dimension_marks_dependents_and_recomputes_caches() {
     ));
     document.design.parameters[1].tolerance = Some(Tolerance::Fit {
         fit: serde_json::from_value::<LimitsAndFits>(json!({
-            "form_variance": "h", "zone_variance": "h", "grade": "7", "source": "ISO 286"
+            "form_variance": "H", "zone": "shaft", "grade": "7", "source": {"kind": "iso286"}
         }))
         .unwrap(),
         mate: None,
@@ -610,8 +796,11 @@ fn set_dimension_marks_dependents_and_recomputes_caches() {
         materials: Vec::new(),
         native_ref: None,
     });
+    with_base(&mut document);
 
     document
+        .edit()
+        .unwrap()
         .set_dimension(
             &parameter_id(1),
             Literal::Number {
@@ -686,22 +875,30 @@ fn set_feature_definition_marks_the_states_after_the_feature() {
         evaluation.status = EvaluationStatus::Current;
         evaluation.content.get_or_insert_with(|| with_bodies(&[]));
     }
-    let replacement = unresolved(2).definition;
     document
-        .set_feature_definition(&feature(3), replacement)
-        .unwrap();
-    assert_eq!(status(&document, 2), EvaluationStatus::Current);
-    assert_eq!(status(&document, 3), EvaluationStatus::Current);
-    assert_eq!(
-        document.design.scopes[0].current[0].status,
-        EvaluationStatus::Stale
-    );
-    document
+        .edit()
+        .unwrap()
         .set_feature_definition(&feature(2), unresolved(2).definition)
         .unwrap();
     assert_eq!(status(&document, 1), EvaluationStatus::Current);
     assert_eq!(status(&document, 2), EvaluationStatus::Stale);
     assert_eq!(status(&document, 3), EvaluationStatus::Stale);
+    assert_eq!(
+        document.design.scopes[0].current[0].status,
+        EvaluationStatus::Stale
+    );
+    for evaluation in &mut document.design.evaluations {
+        evaluation.status = EvaluationStatus::Current;
+    }
+    let replacement = unresolved(2).definition;
+    document
+        .edit()
+        .unwrap()
+        .set_feature_definition(&feature(3), replacement)
+        .unwrap();
+    assert_eq!(status(&document, 1), EvaluationStatus::Stale);
+    assert_eq!(status(&document, 2), EvaluationStatus::Current);
+    assert_eq!(status(&document, 3), EvaluationStatus::Current);
     assert_eq!(
         cache(&document, 2),
         Some(ParameterValue::Number(real(20.0)))
@@ -758,12 +955,35 @@ fn an_occurrence_value_resolves_through_the_arrangement_in_force() {
         materials: Vec::new(),
         native_ref: None,
     });
+    with_base(&mut document);
     let doubled = BTreeMap::from([(
         parameter_id(2),
         length_override("$0 * 2", &[reference(1)], 1.0),
     )]);
     let occurrence = |key: u32| -> OccurrenceId { id("occurrence", key) };
-    document.design.scopes[0].occurrences = BTreeMap::from([
+    let assembly: ProductDefinitionId = id("product-definition", 2);
+    document.model.product_definitions = vec![product_definition(&[]), {
+        let mut placing = crate::products::ProductDefinition::new(
+            assembly.clone(),
+            crate::products::Storage::Embedded,
+        );
+        placing.kind = Some(crate::products::ProductDefinitionKind::Assembly);
+        placing.occurrences = vec![occurrence(1), occurrence(2)];
+        placing
+    }];
+    document.model.occurrences = [1, 2]
+        .into_iter()
+        .map(|key| crate::products::Occurrence::new(occurrence(key), definition(), None))
+        .collect();
+    document.design.scopes.push(DesignScope {
+        definition: assembly,
+        roots: Vec::new(),
+        active_configuration: None,
+        active_arrangements: BTreeSet::new(),
+        occurrences: BTreeMap::new(),
+        current: Vec::new(),
+    });
+    document.design.scopes[1].occurrences = BTreeMap::from([
         (
             occurrence(1),
             OccurrenceDesign {
@@ -787,11 +1007,13 @@ fn an_occurrence_value_resolves_through_the_arrangement_in_force() {
     ]);
 
     document
+        .edit()
+        .unwrap()
         .set_parameter_expression(&parameter_id(1), neutral("10[mm]", &[], &[]))
         .unwrap();
 
     let value = |key: u32| {
-        document.design.scopes[0].occurrences[&occurrence(key)].parameters[&parameter_id(2)]
+        document.design.scopes[1].occurrences[&occurrence(key)].parameters[&parameter_id(2)]
             .value
             .clone()
     };
@@ -826,7 +1048,10 @@ fn set_parameter_expression_refuses_an_ill_typed_tree() {
         ("\"a\"", &[]),
         ("$0", &[reference(9)][..]),
     ] {
-        let refused = document.set_parameter_expression(&parameter_id(1), neutral(text, refs, &[]));
+        let refused = document
+            .edit()
+            .unwrap()
+            .set_parameter_expression(&parameter_id(1), neutral(text, refs, &[]));
         assert!(refused.is_err(), "{text} is refused");
         assert_eq!(
             serde_json::to_value(&document.design).unwrap(),
@@ -840,6 +1065,8 @@ fn set_parameter_expression_refuses_an_ill_typed_tree() {
         "max(1[mm], 2[mm], 3[mm])",
     ] {
         document
+            .edit()
+            .unwrap()
             .set_parameter_expression(&parameter_id(1), neutral(text, &[], &[]))
             .unwrap();
     }
@@ -862,6 +1089,8 @@ fn set_parameter_expression_refuses_a_neutral_reference_to_a_native_kind() {
     let before = document.clone();
     for text in ["$0", "$0 + 1[mm]", "if(true, $0, 1[mm])"] {
         let refused = document
+            .edit()
+            .unwrap()
             .set_parameter_expression(&parameter_id(1), neutral(text, &[reference(5)], &[]));
         assert!(
             matches!(refused, Err(EditError::KindMismatch { .. })),
@@ -870,12 +1099,16 @@ fn set_parameter_expression_refuses_a_neutral_reference_to_a_native_kind() {
         assert_eq!(document, before, "refusing {text} changes nothing");
     }
     document
+        .edit()
+        .unwrap()
         .set_parameter_expression(
             &parameter_id(5),
             source(vec![ExpressionToken::Text("{3, 4}".into())]),
         )
         .unwrap();
     document
+        .edit()
+        .unwrap()
         .set_parameter_expression(
             &parameter_id(1),
             source(vec![
@@ -894,9 +1127,10 @@ fn inserting_a_member_marks_later_states_and_moves_folders() {
         evaluation.status = EvaluationStatus::Current;
         evaluation.content.get_or_insert_with(|| with_bodies(&[]));
     }
-    document.design.features.push(unresolved(4));
     document
-        .insert_member(&id("container", 1), 1, Member::Feature(feature(4)))
+        .edit()
+        .unwrap()
+        .insert_member(&id("container", 1), 1, owning(4, 40))
         .unwrap();
     let Container::Ordered {
         members, folders, ..
@@ -906,22 +1140,107 @@ fn inserting_a_member_marks_later_states_and_moves_folders() {
     };
     assert_eq!(members[1], Member::Feature(feature(4)));
     assert_eq!((folders[0].first, folders[0].last), (2, 3));
-    assert_eq!(status(&document, 1), EvaluationStatus::Current);
+    assert!(document.design_feature(&feature(4)).is_ok());
+    assert_eq!(
+        document.design_parameter(&parameter_id(40)).unwrap().owner,
+        Some(ParameterOwner::Feature(feature(4)))
+    );
+    assert_eq!(status(&document, 1), EvaluationStatus::Stale);
     assert_eq!(status(&document, 2), EvaluationStatus::Stale);
     assert_eq!(
-        document.insert_member(&id("container", 1), 0, Member::Feature(feature(4))),
-        Err(EditError::AlreadyPlaced(Member::Feature(feature(4))))
+        document
+            .edit()
+            .unwrap()
+            .insert_member(&id("container", 1), 0, owning(4, 41)),
+        Err(EditError::DuplicateId(feature(4).as_str().to_owned()))
     );
-    document.design.features.push(unresolved(5));
     assert!(matches!(
-        document.insert_member(&id("container", 1), 9, Member::Feature(feature(5))),
+        document
+            .edit()
+            .unwrap()
+            .insert_member(&id("container", 1), 9, owning(5, 50)),
         Err(EditError::IndexOutOfRange { index: 9, .. })
     ));
+}
+
+/// A design holding feature `key` and parameter `owned`, which it owns.
+fn owning(key: u32, owned: u32) -> crate::document::Design {
+    crate::document::Design {
+        features: vec![unresolved(key)],
+        parameters: vec![DesignParameter {
+            owner: Some(ParameterOwner::Feature(feature(key))),
+            ..length(owned, neutral("1[mm]", &[], &[]), Some(1.0))
+        }],
+        ..crate::document::Design::default()
+    }
+}
+
+#[test]
+fn insertion_takes_one_member_and_what_it_owns() {
+    let mut document = timeline();
+    let before = document.clone();
+    let mut two = owning(4, 40);
+    two.features.push(unresolved(5));
+    assert!(matches!(
+        document
+            .edit()
+            .unwrap()
+            .insert_member(&id("container", 1), 1, two),
+        Err(EditError::NotOneMember(_))
+    ));
+    let mut stray = owning(4, 40);
+    stray.parameters[0].owner = None;
+    assert!(matches!(
+        document
+            .edit()
+            .unwrap()
+            .insert_member(&id("container", 1), 1, stray),
+        Err(EditError::NotOneMember(_))
+    ));
+    let mut with_configurations = owning(4, 40);
+    with_configurations.configurations = configured().design.configurations;
+    assert!(matches!(
+        document
+            .edit()
+            .unwrap()
+            .insert_member(&id("container", 1), 1, with_configurations),
+        Err(EditError::NotOneMember(_))
+    ));
+    let mut nested = owning(4, 40);
+    nested.containers.push(Container::Ordered {
+        id: id("container", 2),
+        kind: OrderedKind::Body,
+        members: vec![Member::Feature(feature(4))],
+        folders: Vec::new(),
+        rollback: Rollback::End,
+        placement: None,
+    });
+    assert_eq!(document, before, "a refused insertion changes nothing");
+    document
+        .edit()
+        .unwrap()
+        .insert_member(&id("container", 1), 1, nested)
+        .unwrap();
+    let Container::Ordered { members, .. } = &document.design.containers[0] else {
+        panic!("ordered");
+    };
+    assert_eq!(members[1], Member::Container(id("container", 2)));
+}
+
+/// Rolls the timeline back before feature 2, with its current state after
+/// feature 1.
+fn rolled_back(document: &mut CadIr) {
+    let Container::Ordered { rollback, .. } = &mut document.design.containers[0] else {
+        panic!("ordered");
+    };
+    *rollback = Rollback::Before(Member::Feature(feature(2)));
+    document.design.scopes[0].current[0].at = after(1);
 }
 
 #[test]
 fn removing_a_member_rebases_and_retargets() {
     let mut document = timeline();
+    rolled_back(&mut document);
     let mut later = with_bodies(&[3]);
     later.base = StateBase::Evaluation(id("evaluation", 2));
     later.delta.removed = vec![crate::design::refs::RecordRef::Body(id("body", 2))];
@@ -933,11 +1252,57 @@ fn removing_a_member_rebases_and_retargets() {
         owner: Some(ParameterOwner::Feature(feature(3))),
         ..length(3, neutral("@0", &[], &[measure(after(2), 4.0)]), Some(4.0))
     });
+    document.design.parameters.push(DesignParameter {
+        owner: Some(ParameterOwner::Feature(feature(2))),
+        ..length(5, neutral("3[mm]", &[], &[]), Some(3.0))
+    });
+    document.design.configurations.push(DesignConfiguration {
+        id: configuration(1),
+        scope: definition(),
+        name: "Only".to_owned(),
+        parent: None,
+        comment: None,
+        overrides: Overrides {
+            parameters: BTreeMap::from([(parameter_id(5), length_override("4[mm]", &[], 4.0))]),
+            features: BTreeMap::from([(
+                feature(2),
+                FeatureStateOverride {
+                    suppressed: None,
+                    definition: Some(unresolved(2).definition),
+                },
+            )]),
+            ..Overrides::default()
+        },
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: None,
+    });
+    document.design.scopes[0].active_configuration = Some(configuration(1));
+    for evaluation in &mut document.design.evaluations {
+        evaluation.configuration = Some(configuration(1));
+    }
     let before = document.resolved(&id("evaluation", 4)).unwrap();
 
     document
+        .edit()
+        .unwrap()
         .remove_member(&Member::Feature(feature(2)))
         .unwrap();
+
+    assert_eq!(
+        document.design_feature(&feature(2)),
+        Err(EditError::UnknownFeature(feature(2)))
+    );
+    assert_eq!(
+        document.design_parameter(&parameter_id(5)),
+        Err(EditError::UnknownParameter(parameter_id(5))),
+        "a parameter the feature owns goes with it"
+    );
+    assert_eq!(
+        document.design.configurations[0].overrides,
+        Overrides::default(),
+        "so do the overrides keyed by a deleted record"
+    );
 
     let keys: Vec<_> = document
         .design
@@ -978,27 +1343,295 @@ fn removing_a_member_rebases_and_retargets() {
         "{anchor}"
     );
     assert_eq!(
-        document.remove_member(&Member::Feature(feature(2))),
+        document
+            .edit()
+            .unwrap()
+            .remove_member(&Member::Feature(feature(2))),
         Err(EditError::NotAMember(Member::Feature(feature(2))))
     );
 }
 
 #[test]
-fn removing_from_an_unordered_container_refuses_a_named_position() {
+fn removal_refuses_while_a_kept_record_names_a_deleted_one() {
     let mut document = timeline();
+    document.design.parameters.push(DesignParameter {
+        owner: Some(ParameterOwner::Feature(feature(2))),
+        ..length(5, neutral("3[mm]", &[], &[]), Some(3.0))
+    });
+    document.design.parameters.push(length(
+        6,
+        neutral("$0 * 2", &[reference(5)], &[]),
+        Some(6.0),
+    ));
+    let before = document.clone();
+    assert_eq!(
+        document
+            .edit()
+            .unwrap()
+            .remove_member(&Member::Feature(feature(2))),
+        Err(EditError::Referenced(vec![parameter_id(6)
+            .as_str()
+            .to_owned()]))
+    );
+    assert_eq!(document, before, "a refused removal changes nothing");
+}
+
+fn native_name(text: &str) -> NameEntry {
+    serde_json::from_value(
+        json!({"native": {"codec": "test", "value": {"kind": "text", "value": text}}}),
+    )
+    .unwrap()
+}
+
+fn generated_by(key: u32) -> TopoName {
+    TopoName::Generated {
+        kind: NameKind::Body,
+        feature: feature(key),
+        role: None,
+        generator: None,
+        index: None,
+    }
+}
+
+#[test]
+fn removal_strips_the_names_that_mention_a_deleted_feature() {
+    let mut document = configured();
+    let mut named = native_name("one");
+    named.name = Some(generated_by(2));
+    document.design.names =
+        BTreeMap::from([(EntityRef::Body(id("body", 1)), named.clone())]).into();
+    let mut two = native_name("two");
+    two.name = Some(generated_by(2));
+    let delta = &mut document.design.evaluations[0]
+        .content
+        .as_mut()
+        .unwrap()
+        .delta;
+    delta.records.bodies.push(body(7));
+    delta.names = BTreeMap::from([
+        (EntityRef::Body(id("body", 2)), Some(two)),
+        (
+            EntityRef::Body(id("body", 7)),
+            Some(NameEntry {
+                name: Some(generated_by(2)),
+                native: None,
+            }),
+        ),
+    ]);
+
+    document
+        .edit()
+        .unwrap()
+        .remove_member(&Member::Feature(feature(2)))
+        .unwrap();
+
+    assert_eq!(
+        document.design.names.entries()[&EntityRef::Body(id("body", 1))],
+        native_name("one"),
+        "the current geometry's entry keeps its native name"
+    );
+    let kept = &document.design.evaluations[0];
+    assert_eq!(kept.id, id("evaluation", 5));
+    assert_eq!(
+        kept.content.as_ref().unwrap().delta.names,
+        BTreeMap::from([
+            (EntityRef::Body(id("body", 2)), Some(native_name("two"))),
+            (EntityRef::Body(id("body", 7)), None),
+        ]),
+        "a kept state's entry loses the name, and one left with nothing goes"
+    );
+}
+
+#[test]
+fn removal_keeps_a_pick_whose_name_mentions_the_deleted_feature() {
+    let mut document = timeline();
+    let picked = Picked {
+        target: PickTarget::Entity(generated_by(2)),
+        context: None,
+        native: None,
+        domain: None,
+        witness: None,
+        resolved: None,
+    };
+    let lost = Measure {
+        kind: MeasureKind::Length,
+        of: MeasureTarget::Selection(Selection {
+            at: Anchor::Current,
+            picks: Picks::Named(Members::new(vec![picked]).unwrap()),
+            native: None,
+        }),
+        cached: None,
+    };
+    document
+        .design
+        .parameters
+        .push(length(8, neutral("@0", &[], &[lost]), None));
+    let kept = document.design.parameters[2].clone();
+
+    document
+        .edit()
+        .unwrap()
+        .remove_member(&Member::Feature(feature(2)))
+        .unwrap();
+
+    assert_eq!(
+        document.design_parameter(&parameter_id(8)).unwrap(),
+        &kept,
+        "the pick stays, and no longer resolves (D51)"
+    );
+}
+
+/// A scope with configurations 1 (active) and 2, whose root is an unordered
+/// group of features 1 to 3. Each has its own result, a current state after
+/// it holding body `k`; body 2 has a region and a native name.
+/// Configuration 2's evaluation after feature 1 is based on the current
+/// state after feature 2, and adds body 4.
+fn grouped() -> CadIr {
+    let mut document = configured();
+    document.design.evaluations.clear();
     document.design.containers[0] = Container::Unordered {
         id: id("container", 1),
         kind: UnorderedKind::Group,
         members: (1..=3).map(|key| Member::Feature(feature(key))).collect(),
     };
-    assert_eq!(
-        document.remove_member(&Member::Feature(feature(3))),
-        Err(EditError::NoPositionBefore(Member::Feature(feature(3))))
-    );
-    document.design.scopes[0].current.clear();
+    document.design.features = (1..=3).map(unresolved).collect();
+    document.design.spreadsheets.clear();
+    document.design.parameters.clear();
+    document.design.scopes[0].current = (1..=3)
+        .map(|key| CurrentState {
+            at: after(key),
+            bodies: vec![id("body", key)],
+            poses: BTreeMap::new(),
+            status: EvaluationStatus::Current,
+            native_ref: None,
+        })
+        .collect();
+    document.geometry = crate::document::Topology::default();
+    document.geometry.bodies = (1..=3).map(body).collect();
+    document.geometry.regions.push(Region {
+        id: id("region", 2),
+        body: id("body", 2),
+        shells: Vec::new(),
+        native_ref: None,
+    });
+    document.model.product_definitions = vec![product_definition(&[1, 2, 3])];
+    document.design.names =
+        BTreeMap::from([(EntityRef::Body(id("body", 2)), native_name("two"))]).into();
+    let mut based = with_bodies(&[4]);
+    based.base = StateBase::Current(after(2));
+    document.design.evaluations.push(evaluation(
+        5,
+        Evaluated::State(after(1)),
+        Some(configuration(2)),
+        Some(based),
+    ));
     document
-        .remove_member(&Member::Feature(feature(3)))
+}
+
+#[test]
+fn removing_an_unordered_member_removes_its_own_result() {
+    let mut document = grouped();
+    document.design.parameters.push(DesignParameter {
+        owner: Some(ParameterOwner::Feature(feature(3))),
+        ..length(3, neutral("@0", &[], &[measure(after(2), 4.0)]), Some(4.0))
+    });
+    let body_target = |key: u32| {
+        crate::references::InstanceTarget::new(crate::attributes::AttributeTarget::Body(id(
+            "body", key,
+        )))
+    };
+    document.model.attributes = vec![crate::attributes::SourceAttribute {
+        id: id("attribute", 2),
+        target: body_target(2),
+        name: "on two".to_owned(),
+        values: Vec::new(),
+    }];
+    document.model.presentation_layers = vec![crate::presentation::PresentationLayer {
+        id: id("layer", 1),
+        name: "Layer".to_owned(),
+        description: None,
+        visible: None,
+        items: [1, 2]
+            .into_iter()
+            .map(|key| {
+                crate::references::InstanceTarget::new(
+                    crate::presentation::PresentationItem::Body {
+                        body: id("body", key),
+                    },
+                )
+            })
+            .collect(),
+    }];
+    let resolved = document.resolved(&id("evaluation", 5)).unwrap();
+
+    document
+        .edit()
+        .unwrap()
+        .remove_member(&Member::Feature(feature(2)))
         .unwrap();
+
+    let scope = &document.design.scopes[0];
+    let positions: Vec<_> = scope
+        .current
+        .iter()
+        .map(|current| current.at.clone())
+        .collect();
+    assert_eq!(positions, vec![after(1), after(3)]);
+    let bodies: Vec<BodyId> = document
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect();
+    assert_eq!(bodies, vec![id("body", 1), id("body", 3)]);
+    assert!(document.geometry.regions.is_empty());
+    assert!(document.design.names.entries().is_empty());
+    assert_eq!(
+        document.model.product_definitions[0].bodies,
+        vec![id::<BodyId>("body", 1), id("body", 3)]
+    );
+    let rebased = &document.design.evaluations[0];
+    assert_eq!(rebased.content.as_ref().unwrap().base, StateBase::Empty);
+    assert_eq!(document.resolved(&id("evaluation", 5)).unwrap(), resolved);
+    let anchor = serde_json::to_value(&document.design.parameters[0].definition).unwrap();
+    let current = serde_json::to_value(Anchor::Current).unwrap();
+    assert!(
+        anchor.to_string().contains(&current.to_string()),
+        "{anchor}"
+    );
+    assert!(
+        document.model.attributes.is_empty(),
+        "an attribute on the deleted body goes"
+    );
+    assert_eq!(document.model.presentation_layers[0].items.len(), 1);
+    let Container::Unordered { members, .. } = &document.design.containers[0] else {
+        panic!("unordered");
+    };
+    assert!(!members.contains(&Member::Feature(feature(2))));
+}
+
+#[test]
+fn unordered_removal_refuses_a_record_that_also_targets_kept_geometry() {
+    let mut document = grouped();
+    document.model.declared_measures = vec![crate::declared_measures::DeclaredMeasure::new(
+        id("declared-measure", 1),
+        crate::declared_measures::DeclaredTarget::Bodies {
+            bodies: vec![id("body", 1), id("body", 2)],
+        },
+        crate::declared_measures::DeclaredQuantity::Volume { value: real(1.0) },
+    )];
+    let before = document.clone();
+    assert_eq!(
+        document
+            .edit()
+            .unwrap()
+            .remove_member(&Member::Feature(feature(2))),
+        Err(EditError::Referenced(vec![id::<String>(
+            "declared-measure",
+            1
+        )]))
+    );
+    assert_eq!(document, before);
 }
 
 /// A scope with configurations 1 (active) and 2. The current geometry holds
@@ -1034,7 +1667,7 @@ fn configured() -> CadIr {
     document
         .model
         .product_definitions
-        .push(product_definition(&[1, 9]));
+        .push(product_definition(&[1]));
     let name = |text: &str| -> NameEntry {
         serde_json::from_value(
             json!({"native": {"codec": "test", "value": {"kind": "text", "value": text}}}),
@@ -1069,6 +1702,8 @@ fn switching_the_active_configuration_exchanges_each_extent() {
     let mut document = configured();
     let chained = document.resolved(&id("evaluation", 6)).unwrap();
     document
+        .edit()
+        .unwrap()
         .set_active_configuration(&definition(), &configuration(2))
         .unwrap();
 
@@ -1094,7 +1729,7 @@ fn switching_the_active_configuration_exchanges_each_extent() {
         vec![EntityRef::Body(id("body", 2))]
     );
     let listed = &document.model.product_definitions[0].bodies;
-    assert_eq!(listed, &vec![id::<BodyId>("body", 9), id("body", 2)]);
+    assert_eq!(listed, &vec![id::<BodyId>("body", 2)]);
     assert!(document
         .design
         .evaluations
@@ -1130,6 +1765,8 @@ fn switching_the_active_configuration_exchanges_each_extent() {
     assert_eq!(document.resolved(&id("evaluation", 6)).unwrap(), chained);
 
     document
+        .edit()
+        .unwrap()
         .set_active_configuration(&definition(), &configuration(1))
         .unwrap();
     let bodies: Vec<BodyId> = document
@@ -1154,8 +1791,18 @@ fn switching_exchanges_every_current_state_of_the_scope() {
     document.model.product_definitions[0]
         .bodies
         .push(id("body", 3));
+    document.design.containers.push(Container::Ordered {
+        id: id("container", 2),
+        kind: OrderedKind::Body,
+        members: vec![Member::Feature(feature(4))],
+        folders: Vec::new(),
+        rollback: Rollback::End,
+        placement: None,
+    });
+    document.design.scopes[0].roots.push(id("container", 2));
+    document.design.features.push(unresolved(4));
     document.design.scopes[0].current.push(CurrentState {
-        at: after(1),
+        at: after(4),
         bodies: vec![id("body", 3)],
         poses: BTreeMap::new(),
         status: EvaluationStatus::Current,
@@ -1163,11 +1810,14 @@ fn switching_exchanges_every_current_state_of_the_scope() {
     });
     document.design.evaluations.push(evaluation(
         7,
-        Evaluated::State(after(1)),
+        Evaluated::State(after(4)),
         Some(configuration(2)),
         Some(with_bodies(&[4])),
     ));
+    document.finalize();
     document
+        .edit()
+        .unwrap()
         .set_active_configuration(&definition(), &configuration(2))
         .unwrap();
     let bodies: Vec<BodyId> = document
@@ -1188,7 +1838,7 @@ fn switching_exchanges_every_current_state_of_the_scope() {
         .map(|evaluation| evaluation.of.clone())
         .collect();
     assert_eq!(written.len(), 2);
-    assert!(written.contains(&Evaluated::State(after(1))));
+    assert!(written.contains(&Evaluated::State(after(4))));
     assert!(written.contains(&Evaluated::State(after(3))));
 }
 
@@ -1200,6 +1850,8 @@ fn switching_to_a_configuration_with_no_state_keeps_the_geometry() {
         .evaluations
         .retain(|evaluation| evaluation.id != id("evaluation", 5));
     document
+        .edit()
+        .unwrap()
         .set_active_configuration(&definition(), &configuration(2))
         .unwrap();
     assert_eq!(document.geometry.bodies.len(), 2);
@@ -1215,7 +1867,10 @@ fn switching_to_a_configuration_with_no_state_keeps_the_geometry() {
                 && evaluation.of == Evaluated::State(after(3))
         ));
     assert_eq!(
-        document.set_active_configuration(&definition(), &configuration(7)),
+        document
+            .edit()
+            .unwrap()
+            .set_active_configuration(&definition(), &configuration(7)),
         Err(EditError::UnknownConfiguration(configuration(7)))
     );
 }
@@ -1254,6 +1909,7 @@ fn point_datum(key: u32) -> Feature {
 fn switching_exchanges_the_constructions_of_feature_overrides() {
     let mut document = configured();
     document.design.features[0] = point_datum(1);
+    document.design.spreadsheets.clear();
     let state = FeatureStateOverride {
         suppressed: None,
         definition: Some(document.design.features[0].definition.clone()),
@@ -1265,6 +1921,8 @@ fn switching_exchanges_the_constructions_of_feature_overrides() {
     document.design.arrangements.push(arranged);
 
     document
+        .edit()
+        .unwrap()
         .set_active_configuration(&definition(), &configuration(2))
         .unwrap();
 
@@ -1302,13 +1960,25 @@ fn switching_exchanges_the_constructions_of_feature_overrides() {
 
 #[test]
 fn positions_and_constructions_rewrite_in_the_wire_form() {
-    let removed = Member::Feature(feature(2));
+    let from = positions(&[after(2)]).unwrap();
+    let to = serde_json::to_value(after(1)).unwrap();
     let mut value = json!({"at": {"kind": "pinned", "value": {"kind": "after", "value": {"kind": "feature", "value": feature(2).as_str()}}}, "picks": {"kind": "unread"}});
-    assert!(retarget(&mut value, &removed, &after(1)).unwrap());
+    let mut anchored = value.clone();
+    assert!(retarget(&mut value, &from, &to));
     assert_eq!(
         value["at"]["value"]["value"]["value"],
         json!(feature(1).as_str())
     );
+    assert!(re_anchor(&mut anchored, &from));
+    assert_eq!(anchored["at"], json!({"kind": "current"}));
+
+    let mut moved = json!({"steps": [{"kind": "translate", "value": {"kind": "parameter", "value": parameter_id(1).as_str()}}], "resolved": [1.0]});
+    let mut unbound = moved.clone();
+    unbound["steps"][0]["value"]["value"] = json!(parameter_id(2).as_str());
+    let bound = BTreeSet::from([parameter_id(1).as_str().to_owned()]);
+    assert!(clear_transformations(&mut moved, &bound));
+    assert!(moved.get("resolved").is_none());
+    assert!(!clear_transformations(&mut unbound, &bound));
 
     let mut construction = json!({
         "inputs": [{"kind": "x"}], "after": [],

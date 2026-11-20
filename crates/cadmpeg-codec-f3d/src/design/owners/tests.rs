@@ -44,7 +44,7 @@ fn model(native: &F3dNative) -> Model {
         model.product_definitions.push(
             serde_json::from_value(serde_json::json!({
                 "id": crate::ids::neutral_component_id(&space.context_uuid), "kind": "part",
-                "bom_properties": {}, "bodies": [], "sketches": [], "tessellations": []
+                "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [], "occurrences": [], "instance_bodies": [], "representations": [], "bodies": [], "sketches": []
             }))
             .unwrap(),
         );
@@ -126,7 +126,7 @@ fn product_history_owner_reports_missing_and_multiple_definitions() {
         .push(space(30, "33333333-3333-3333-3333-333333333333"));
     model.product_definitions.push(serde_json::from_value(serde_json::json!({
         "id": crate::ids::neutral_component_id(&native.design_component_naming_spaces[2].context_uuid), "kind": "part",
-                "bom_properties": {}, "bodies": [], "sketches": [], "tessellations": []
+                "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [], "occurrences": [], "instance_bodies": [], "representations": [], "bodies": [], "sketches": []
     })).unwrap());
     losses.clear();
     attach(&native, &mut model, &mut losses).unwrap();
@@ -570,4 +570,33 @@ fn unadmitted_output_membership_retains_every_output_and_releases_the_owner() {
         losses[0].code,
         F3dLossCode::ScopeOutputOwnerUnresolved.kind()
     );
+}
+
+#[test]
+fn a_captured_base_feature_keeps_its_component_when_its_consumer_moves() {
+    let native = native();
+    let mut model = model(&native);
+    let source = model.product_definitions[0].id.clone();
+    let target = model.product_definitions[1].id.clone();
+    model.features[0].product_definition = Some(source.clone());
+    model.features[1].product_definition = Some(target.clone());
+    let generator = model.features[0].id.clone();
+    model.features[1].dependencies.insert(generator);
+    let prefix = crate::ids::feature_input_prefix(&model.features[0].id, 92);
+    model.features[0]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Historical {
+                    state: crate::ids::history_input_state_id(&prefix),
+                    bodies: vec![crate::ids::history_input_body_id(&prefix, 1)]
+                        .try_into()
+                        .unwrap(),
+                    native: "f3d:test:scope#derived".to_owned().try_into().unwrap(),
+                },
+            },
+        ));
+    let consumer = model.features[1].id.clone();
+    follow_consumed_inputs(&mut model, vec![(consumer, target)], &BTreeMap::new()).unwrap();
+    assert_eq!(model.features[0].product_definition, Some(source));
 }

@@ -100,6 +100,7 @@ fn partial_tools_and_aliased_tools_keep_the_whole_tool_selection_native() {
 fn split_and_body_motion_resolve_and_validate_only_complete_distinct_selections() {
     let plane = FeatureId::mint("test:model:feature#plane").expect("synthetic plane");
     let split = FeatureDefinition::Operation(FeatureOperation::SplitBody {
+        extend_tool: None,
         targets: BodySelection::Native("target".into()),
         tool: SplitBodyTool::Plane { plane },
     });
@@ -111,6 +112,7 @@ fn split_and_body_motion_resolve_and_validate_only_complete_distinct_selections(
         copies: 0,
     });
     let surface_split = FeatureDefinition::Operation(FeatureOperation::SplitBody {
+        extend_tool: None,
         targets: BodySelection::Native("target".into()),
         tool: SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(
             "surface".into(),
@@ -1202,11 +1204,7 @@ fn local_plane_trim_target_counts_in_the_unjoined_body_loss() {
 }
 
 fn empty_producer_records() -> ProducerRecords<'static> {
-    ProducerRecords {
-        features: &[],
-        labels: &[],
-        properties: &[],
-    }
+    ProducerRecords::new(&[], &[], &[])
 }
 
 fn native_derived_producer() -> (cadmpeg_ir::features::Feature, FeatureInventory, String) {
@@ -1295,11 +1293,11 @@ fn check_derived_selection(trim: bool, ordinal: u64, suppressed: Option<bool>, j
         &ir.model.features,
         &ir.model.feature_result_topologies,
         &ir.model.features[1],
-        &ProducerRecords {
-            features: &inventory.features,
-            labels: &inventory.labels,
-            properties: &inventory.properties,
-        },
+        &ProducerRecords::new(
+            &inventory.features,
+            &inventory.labels,
+            &inventory.properties,
+        ),
     );
     if trim {
         assert!(split_matches(original, actual, &bodies, &earlier, true));
@@ -1344,6 +1342,7 @@ fn split_body_forms() -> Vec<FeatureDefinition> {
     .into_iter()
     .map(|tool| {
         FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: BodySelection::Native("target".into()),
             tool,
         })
@@ -1527,6 +1526,7 @@ fn split_body_projection_and_validator_share_producer_and_qualification_rules() 
         }
         let wrapper = properties[7].id();
         let original = FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: BodySelection::Native(wrapper.clone()),
             tool: SplitBodyTool::Plane {
                 plane: FeatureId::mint("test:model:feature#plane").expect("plane"),
@@ -1582,6 +1582,7 @@ fn native_derived_result_makes_split_body_target_local() {
     let mut consumer = plain_feature("consumer", 6, Some(false));
     consumer.native_ref = Some(source.id());
     let original = FeatureDefinition::Operation(FeatureOperation::SplitBody {
+        extend_tool: None,
         targets: BodySelection::Native(wrapper.clone()),
         tool: SplitBodyTool::Plane {
             plane: FeatureId::mint("test:model:feature#plane").expect("plane"),
@@ -1647,6 +1648,7 @@ fn check_native_base_split(
         },
     );
     let original = FeatureDefinition::Operation(FeatureOperation::SplitBody {
+        extend_tool: None,
         targets: BodySelection::Native(wrapper.clone()),
         tool: SplitBodyTool::Plane {
             plane: FeatureId::mint("test:model:feature#plane").expect("plane"),
@@ -1669,11 +1671,11 @@ fn check_native_base_split(
         &ir.model.features,
         &ir.model.feature_result_topologies,
         &ir.model.features[1],
-        &ProducerRecords {
-            features: &inventory.features,
-            labels: &inventory.labels,
-            properties: &inventory.properties,
-        },
+        &ProducerRecords::new(
+            &inventory.features,
+            &inventory.labels,
+            &inventory.properties,
+        ),
     );
     let eligible = ordinal < 6 && suppressed == Some(false);
     assert_eq!(

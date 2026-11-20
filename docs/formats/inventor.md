@@ -702,7 +702,7 @@ The fixed selector prefix after the content header contains `state:i32`, `enable
 
 The selector's edge-item reference selects its owning edge-item record in the same PmDc segment. An edge item with an empty index-reference list can be the target of this reference. The body, edge-item, and context references of the qualified direct form are qualified non-null references. Their target types are `474d8790d011f8d10008cabc0663dc09`, `82695c37d111516b0008a1ba32a3dc09`, and `4220e9ccd111c5710008a7ba32a3dc09`, respectively. An explicit edge item has a nonempty index-reference list, index-reference value −1, and final value 0. Each selected source index identifies a selector whose edge-item reference selects that item.
 
-In a schema-44 ASM carrier, an `ATTRIB_CUSTOM-attrib` record has five common attribute fields followed by a family string and family values. The common fields are an attribute reference, a signed integer, two attribute-chain references, and the owning entity reference. Family `INV_NMX_MATCHED_ATTRIB` stores the integers 1, 44, 1, `selector_source_index`, −1, `key`, and `qualifier`. Qualifier 0 identifies the selected edge; qualifier 1 can identify its vertices. Qualifier 1 on a face owner identifies the selected face. The pair (`selector_source_index`, `key`) joins the direct edge selector to its matching attribute. The owner reference identifies the edge record in the ASM entity-revision namespace. The attribute and edge can be in the construction-history archive rather than the active body. The first record of the archive snapshot is a `body`, `edge`, or `face` record wrapped by the name chain `End-of-ASM-History-Section`.
+In a schema-44 ASM carrier, an `ATTRIB_CUSTOM-attrib` record has five common attribute fields followed by a family string and family values. The common fields are an attribute reference, a signed integer, two attribute-chain references, and the owning entity reference. Family `INV_NMX_MATCHED_ATTRIB` stores the integers 1, 44, 1, `selector_source_index`, −1, `key`, and `qualifier`. Qualifier 0 identifies the selected edge; qualifier 1 can identify its vertices. Qualifier 1 on a face owner identifies the selected face. The pair (`selector_source_index`, `key`) joins the direct edge selector to its matching attribute. The owner reference identifies the edge record in the ASM entity-revision namespace. The attribute and edge can be in the construction-history archive rather than the active body. The first record of the archive snapshot is wrapped by the name chain `End-of-ASM-History-Section` ([asm.md §3.2](asm.md#32-delta_state-records)). The wrapped record can be any entity record, including a topology, geometry, or attribute record.
 
 In a schema-44 carrier, generated naming families `INV_NMX_GEN_TAG`, `INV_NMX_SWEEPGENERATED_TAG`, `INV_NMX_BLEND_TAG`, `INV_NMX_FLANGE_TAG`, and `INV_NMX_BEND_TAG` have the same five common attribute fields. Family `INV_NMX_FEATURE_TAG` has the same common fields. The family values of these families start with 1, 44, a positive source-name count, and that many ordered `(feature_source_index, name_value)` integer pairs. A count of 1 with name value −1 is the common form; the later pair integers and the family-specific tail follow the pairs. The source index names the generating feature, including a plate, bend, or corner. The owning entity reference names the attributed face, edge, or vertex. The remaining integers are part of the generated name. A generated source index identifies a naming contribution; it does not identify a browser history position or a body revision.
 
@@ -1185,7 +1185,7 @@ Feature-label classes `7f588068b74378a0559515946f7a1c12`, `852f6bb0d411db6f60004
 
 Each attachment selection wrapper selects an edge collection. Each edge item in that collection stores its ordered edge-selector source indexes. One wrapper can select several edges. The flange owns one bend feature independently of the number of selected edges. The corner control and selections are shared operands, not references to the parent flange. The corner result collection has a distinct identity or repeats the plate result collection. Distinct collections can contain the same surface-body member. The ordered flange children and label participants identify the owning plate, bend, and corner.
 
-The single-edge unchanged corner form has one selected attachment edge and the shared plate/bend/corner operands above. Its edge selector resolves to one persistent generated edge of the preceding sheet through the naming join in section 13. The six-property form repeats plate slot 6 as its result-body property. The seven-property form repeats plate slot 15 as its result collection. Its corner form is type 8 value 3, its option is true, and its raw word is 0. Its control and relief enumerations are one of:
+The single-edge unchanged corner form has one selected attachment edge and the shared plate/bend/corner operands above. Its edge selector selects one edge of the preceding sheet: one persistent generated edge through the naming join in section 13, or one stored edge revision through the matching attribute of the selector in section 13. The six-property form repeats plate slot 6 as its result-body property. The seven-property form repeats plate slot 15 as its result collection. Its corner form is type 8 value 3, its option is true, and its raw word is 0. Its control and relief enumerations are one of:
 
 | Control | Relief form | Secondary form |
 | --- | --- | --- |
@@ -1272,7 +1272,7 @@ option u32
 
 Types `7267cc3bd31104a96000b3a99dccefb0`, `720c3e2bd311976060007aa99dccefb0`, `e0a8d8afd3117d5a0008928f8b1f0f69`, and `07a66130d4118895600053aa9dccefb0` contain the versioned content header and stamps, followed by `type_value:i16` and `value:u16`, then end. Their type values are 9, 304 or 501, 8, and 4 respectively. An enumeration value is a scalar, not a record reference.
 
-The sheet-metal style record has type identifier `13234560d3117a0d6000ecb21d6eefb0`. For PmDc segment major versions 29 and 31, its operand prefix contains:
+The sheet-metal style record has type identifier `13234560d3117a0d6000ecb21d6eefb0`. For PmDc segment major versions 29, 30, and 31, its operand prefix contains:
 
 ```text
 prefix bytes[30]
@@ -1294,6 +1294,46 @@ transition_radius u32
 For PmDc segment major versions 20 and 23, the same operand sequence has `prefix bytes[26]` in place of `prefix bytes[30]`. For PmDc segment major version 19, the same operand sequence has `prefix bytes[26]` in place of `prefix bytes[30]` and `values u32[8]` in place of `values u32[3]`. The operand prefix ends after `transition_radius`; the record continues with a suffix.
 
 The length operands reference the parameters `Thickness`, `BendRadius`, `BendReliefWidth`, `BendReliefDepth`, `CornerReliefSize`, `SeamGap`, `MinimumRemnant`, and `TransitionRadius`. The relief-form references select type `720c3e2bd311976060007aa99dccefb0`. The transition-form reference selects type `07a66130d4118895600053aa9dccefb0`. The option references a Boolean. Enumeration identity includes both `type_value` and `value`; equal values in distinct types do not identify equal forms. A length formula that consists of a parameter-reference expression to the style operand uses that style parameter. A literal expression is an explicit length operand, including when its evaluated value equals the style parameter.
+
+A `PmApp` record with type identifier `3e0b6bdaf5417a648da91fbd093fe213` stores one unfold rule. For `PmApp` segment major versions above 23, its payload contains:
+
+```text
+header_value u32
+header_id u16
+state u8
+flags u16
+padding u16 = 0
+values u16[2]
+default_state u32
+value u32
+name_reference u32
+name utf16
+long_name utf16
+style_state u16
+key utf16
+form u32
+expression utf16
+display utf16
+```
+
+For `PmApp` segment major versions 17 through 23, the payload has the same fields without `padding`. Each `utf16` field is a u32 code-unit count followed by that many UTF-16LE code units. A suffix follows the fields. `expression` is the K-factor expression text. When the text is a decimal number of ASCII digits with at most one decimal point and at least one digit, optionally followed by the unitless suffix ` ul`, the K-factor is the value of that decimal number.
+
+A `PmApp` record with type identifier `20d0a6fdd2118f936000a1b70b02ecb0` stores one style category. Its payload contains:
+
+```text
+header_value u32
+header_id u16
+category_len u32
+category bytes[category_len]
+value u32
+reference u32
+form u32
+entry_count u32
+entry_values u32[2]
+entries (name utf16, rule u32)[entry_count]
+```
+
+`category` is ASCII. `entry_values` is present only when `entry_count` is above zero. Each entry `rule` is a one-based record index in the same `PmApp` segment, with the reference qualifier in bit 31. A suffix follows the fields. The category `SheetMetalUnfold` selects the active unfold rule. The active unfold rule exists when the document has exactly one `SheetMetalUnfold` category record, the record has exactly one entry, the entry `rule` selects an unfold-rule record, and the entry `name` equals the rule `name`.
 
 The plate scalar control contains `value:u32` after its versioned content header and stamps. The base bend scalar control contains `value:u32` after that header and stamps. The extended bend scalar control contains `value:u32` and `state:u8`. Each record ends after its last stated field.
 

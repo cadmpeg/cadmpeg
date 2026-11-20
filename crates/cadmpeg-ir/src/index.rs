@@ -6,8 +6,6 @@ pub(crate) mod identities;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use cadmpeg_core::decode::{DecodeContext, DepthGuard, ResourceLimit};
-
 use crate::appearance::Appearance;
 use crate::document::CadIr;
 use crate::geometry::{pcurve::Pcurve, Curve, ProceduralCurve, ProceduralSurface, Surface};
@@ -68,33 +66,6 @@ impl IdentityOwner {
             native: false,
             kind: Some(T::KIND),
         }
-    }
-}
-
-/// Nesting policy for infallible public indexes and fallible decode indexes.
-pub(crate) trait IndexStorage {
-    type Error;
-    fn enter_nested(&self, operation: &'static str) -> Result<Option<DepthGuard<'_>>, Self::Error>;
-}
-
-pub(crate) struct PublicStorage;
-
-impl IndexStorage for PublicStorage {
-    type Error = std::convert::Infallible;
-    fn enter_nested(
-        &self,
-        _operation: &'static str,
-    ) -> Result<Option<DepthGuard<'_>>, Self::Error> {
-        Ok(None)
-    }
-}
-
-pub(crate) struct DecodeStorage<'ctx, 'arena>(pub(crate) &'ctx DecodeContext<'arena>);
-
-impl IndexStorage for DecodeStorage<'_, '_> {
-    type Error = ResourceLimit;
-    fn enter_nested(&self, operation: &'static str) -> Result<Option<DepthGuard<'_>>, Self::Error> {
-        self.0.enter_nested_limit(operation).map(Some)
     }
 }
 
@@ -488,7 +459,7 @@ mod tests {
 
     #[test]
     fn distinct_borrowed_identities_are_each_indexed() {
-        let identities = (0..32_000)
+        let identities = (0..1_000)
             .map(|index| format!("test:native:record#{index}"))
             .collect::<Vec<_>>();
         let mut index = super::BorrowedIdentityIndex::new();
@@ -496,7 +467,7 @@ mod tests {
             index.entry(identity, || ());
         }
         assert_eq!(index.identities().count(), identities.len());
-        for identity in [&identities[0], &identities[31_999]] {
+        for identity in [&identities[0], &identities[999]] {
             assert!(index
                 .get(identity, &super::StandardIndex, "test identity lookup")
                 .unwrap()

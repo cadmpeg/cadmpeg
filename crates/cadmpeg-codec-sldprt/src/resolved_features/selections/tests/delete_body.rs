@@ -200,7 +200,7 @@ fn decode_and_validate_compact_delete_body_selection() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .unwrap_err();
@@ -215,7 +215,7 @@ fn decode_and_validate_compact_delete_body_selection() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .unwrap_err();
@@ -230,7 +230,7 @@ fn decode_and_validate_compact_delete_body_selection() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .unwrap_err();

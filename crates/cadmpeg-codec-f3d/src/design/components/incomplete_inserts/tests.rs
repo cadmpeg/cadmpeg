@@ -50,21 +50,20 @@ fn authored_partial_insert_retains_placement_and_an_unresolved_source() {
     let scopes = std::slice::from_ref(&scope);
     let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
     let decision = ComponentInserts::decide(scopes, &timelines, &[]);
-    let occurrences = decision.unresolved_occurrences(0).unwrap();
+    let (definitions, occurrences) = decision.unresolved_occurrences().unwrap();
     assert_eq!(occurrences.len(), 1);
     let occurrence = &occurrences[0];
     assert!(decision.occurrence(&scope.id).is_none());
-    assert!(matches!(
-        occurrence.prototype,
-        cadmpeg_ir::products::PrototypeReference::Unresolved {}
-    ));
-    assert!(matches!(
-        occurrence.parent,
-        cadmpeg_ir::products::OccurrenceParent::Root {}
-    ));
+    // §8.1: the unresolved source is an External definition with no identity.
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(occurrence.prototype, definitions[0].id);
+    assert_eq!(
+        definitions[0].storage,
+        cadmpeg_ir::products::Storage::External(cadmpeg_ir::products::ExternalDocument::default())
+    );
     assert_eq!(occurrence.native_ref.as_deref(), Some(scope.id.as_str()));
     assert_eq!(
-        occurrence.transform.rows(),
+        occurrence.transform.unwrap().rows(),
         [
             [0.0, -1.0, 0.0, 25.0],
             [1.0, 0.0, 0.0, -40.0],
@@ -160,7 +159,7 @@ fn repeated_native_tokens_keep_per_scope_occurrences_with_membership_assumptions
     let scopes = [first, second];
     let timelines = crate::design::test_support::synthetic_feature_timelines(&scopes);
     let decision = ComponentInserts::decide(&scopes, &timelines, &[]);
-    let occurrences = decision.unresolved_occurrences(0).unwrap();
+    let occurrences = decision.unresolved_occurrences().unwrap().1;
     assert_eq!(occurrences.len(), 2);
     assert_ne!(occurrences[0].id, occurrences[1].id);
     for (scope, occurrence) in scopes.iter().zip(occurrences) {
@@ -222,7 +221,7 @@ fn legacy_partial_insert_projection_names_its_membership_assumption() {
         let scopes = std::slice::from_ref(&scope);
         let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
         let inserts = ComponentInserts::decide(scopes, &timelines, &[]);
-        let occurrences = inserts.unresolved_occurrences(0).unwrap();
+        let (_, occurrences) = inserts.unresolved_occurrences().unwrap();
         assert_eq!(occurrences.len(), 1);
         let mut feature = feature(&scope);
         let losses =

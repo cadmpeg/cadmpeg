@@ -5,8 +5,9 @@ use std::io::Cursor;
 use std::path::Path;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::design::parameter::{Deviations, Tolerance as DimensionTolerance};
 use cadmpeg_ir::pmi::{
-    DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition, PmiQuantity,
+    GeometricToleranceKind, PmiDefinition, PmiDimensionKind as DimensionKind, PmiQuantity,
     PmiTarget,
 };
 
@@ -228,41 +229,34 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
         let matches = dimensions
             .iter()
             .filter(|dimension| {
-                if dimension.kind() != &kind
-                    || !dimension.nominal().is_some_and(|value| {
+                if dimension.dimension != kind
+                    || !dimension.literal_nominal().is_some_and(|value| {
                         (value.value.get() - nominal).abs() < MAGNITUDE_TOLERANCE
                     })
                 {
                     return false;
                 }
-                match (limits, dimension.tolerance()) {
-                    (
-                        true,
-                        Some(DimensionTolerance::Limits {
-                            lower: actual_lower,
-                            upper: actual_upper,
-                        }),
-                    )
-                    | (
-                        false,
-                        Some(DimensionTolerance::PlusMinus {
-                            lower: actual_lower,
-                            upper: actual_upper,
-                        }),
-                    ) => {
-                        (actual_lower.value.get() - lower).abs() < MAGNITUDE_TOLERANCE
-                            && (actual_upper.value.get() - upper).abs() < MAGNITUDE_TOLERANCE
-                    }
-                    _ => false,
-                }
+                let (lower, upper) = if limits {
+                    (lower - nominal, upper - nominal)
+                } else {
+                    (lower, upper)
+                };
+                matches!(
+                    dimension.tolerance.as_ref(),
+                    Some(DimensionTolerance::Deviations(Deviations {
+                        lower: actual_lower,
+                        upper: actual_upper,
+                    })) if (actual_lower.get() - lower).abs() < MAGNITUDE_TOLERANCE
+                        && (actual_upper.get() - upper).abs() < MAGNITUDE_TOLERANCE
+                )
             })
             .count();
         assert_eq!(matches, count, "{kind:?}, {nominal}, {lower}, {upper}");
     }
     for nominal in [85.0, 50.0] {
         assert!(dimensions.iter().any(|dimension| {
-            dimension.kind() == &DimensionKind::Location
-                && dimension.nominal().is_some_and(|value| {
+            dimension.dimension == DimensionKind::Location
+                && dimension.literal_nominal().is_some_and(|value| {
                     (value.value.get() - nominal).abs() < POSITION_NOMINAL_TOLERANCE
                 })
         }));
@@ -276,8 +270,12 @@ fn nist_ctc_01_transfers_geometric_tolerance_types_and_magnitudes() {
             continue;
         }
         targeted += 1;
-        let nominal = dimension.nominal().expect("targeted nominal").value.get();
-        match dimension.kind() {
+        let nominal = dimension
+            .literal_nominal()
+            .expect("targeted nominal")
+            .value
+            .get();
+        match &dimension.dimension {
             DimensionKind::Location => assert_slot_walls(&result, &item.targets),
             DimensionKind::Diameter => {
                 for target in &item.targets {

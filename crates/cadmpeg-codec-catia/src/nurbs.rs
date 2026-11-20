@@ -168,6 +168,20 @@ impl LaneRefusals {
         )));
     }
 
+    pub(crate) fn push_plane_pcurve_projected(&mut self, source: usize, gap: f64) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometryPlanePcurveProjected.note(format!(
+            "Projected the class-18 model curve at offset {source} onto its compatible plane. Positive rational weights bound the lift discrepancy by the largest control-point distance, {gap:.9} mm."
+        )));
+    }
+
+    pub(crate) fn push_parameter_map_pcurve_accuracy(&mut self, source: usize, tolerance: f64) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryParameterMapAccuracyInferred.note(format!(
+                "Interpreted class-25 fit tolerance {tolerance} as a model-space bound in mm for the stored plane pcurve at offset {source}; retained its class-20 geometry and the class-18 model curve."
+            )),
+        );
+    }
+
     pub(crate) fn push_conic_branch_bounds_inferred(&mut self, source: usize, gap: f64) {
         self.notes.push(
             crate::loss::CatiaLossCode::GeometryConicBranchBoundsInferred.note(format!(

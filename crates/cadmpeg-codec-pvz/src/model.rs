@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The neutral model of a decoded package: product definitions, the expanded
-//! occurrence tree, and the display geometry of each geometry member.
+//! The neutral model of a decoded package: product definitions with the
+//! occurrences each places, and the display geometry of each geometry member.
 //!
 //! PVS placements and OL coordinates are in metres (§8.21). The model stores
 //! millimetres, so every length is scaled by [`MILLIMETRES_PER_METRE`].
@@ -16,7 +16,7 @@ use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::products::{
-    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+    ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
 };
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -30,9 +30,6 @@ use crate::loss::PvzLossCode;
 use crate::ol::{MemberGeometry, Mesh};
 use crate::pvs::{DefinitionRole, Placement, Structure};
 
-/// Most occurrences one package expands to. Child occurrences that close a
-/// definition cycle count toward the limit.
-const MAX_OCCURRENCES: usize = 100_000;
 /// Relative tolerance on the perpendicularity and the common length of the
 /// three placement basis vectors (§3.10).
 const EPS_BASIS_SIMILARITY: f64 = 1e-5;
@@ -96,10 +93,10 @@ pub(crate) fn definitions(
 
             tessellations: Vec::new(),
             id: crate::ids::definition(index),
-            kind: match definition.role {
+            kind: Some(match definition.role {
                 DefinitionRole::Component => ProductDefinitionKind::Part,
                 DefinitionRole::IllustrationRoot => ProductDefinitionKind::Group,
-            },
+            }),
             source_name: (!definition.name.is_empty()).then(|| definition.name.to_string()),
             label: None,
             description: None,
@@ -107,6 +104,14 @@ pub(crate) fn definitions(
             bom_properties,
             bodies: Vec::new(),
             native_ref: Some(format!("definition {index}")),
+            generated_from: None,
+            storage: cadmpeg_ir::products::Storage::Embedded,
+            occurrences: Vec::new(),
+            instance_bodies: Vec::new(),
+            representations: Vec::new(),
+            units: None,
+            general_tolerance: None,
+            active: None,
         });
         ctx.admit_entities(
             u64_from_index(ir.entity_count()),
@@ -125,36 +130,24 @@ pub(crate) fn definitions(
     Ok(())
 }
 
-/// One expanded occurrence. `parent` is the index of the parent occurrence,
-/// and the index of an occurrence is the key of its identity.
-#[derive(Clone, Copy)]
-struct Expanded {
-    parent: Option<usize>,
-    definition: usize,
-    /// Definitions on the path from the root to this occurrence.
-    depth: usize,
+/// How far the walk from the roots has reached a definition.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Reached {
+    No,
+    /// On the path from a root to the definition being walked.
+    OnPath,
+    Done,
 }
 
-/// Whether `definition` lies on the path from the root to occurrence `at`.
-fn on_path(expanded: &[Expanded], at: usize, definition: usize) -> bool {
-    let mut cursor = Some(at);
-    while let Some(index) = cursor {
-        let Some(node) = expanded.get(index) else {
-            return false;
-        };
-        if node.definition == definition {
-            return true;
-        }
-        cursor = node.parent;
-    }
-    false
-}
-
-/// Expands the definition graph from its root into the occurrence tree
-/// (§3.11).
+/// Adds the occurrences each definition places, walking the definition graph
+/// from its roots (§3.11). A definition reached from a root lists its child
+/// occurrences once, in stored order; a child occurrence of a definition on
+/// the path to it closes a cycle and is left out. The walk stops after
+/// `max_occurrences` occurrences.
 pub(crate) fn occurrences(
     ctx: &DecodeContext<'_>,
     structure: &Structure,
+    max_occurrences: usize,
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
@@ -166,145 +159,155 @@ pub(crate) fn occurrences(
     let roots: Vec<usize> = (0..definitions.len())
         .filter(|index| !targeted.contains(index))
         .collect();
-    if roots.len() != 1 && !definitions.is_empty() {
-        losses.push(PvzLossCode::StructureRootAmbiguous.note(format!(
-            "the structure has {} root definitions, not one; each root is placed as its own \
-             root occurrence",
-            roots.len()
-        )));
-    }
     let max_depth = ctx.policy().limits.max_recursion_depth;
     let depth_limit = usize::try_from(max_depth).ok();
     let mut admitted = u64_from_index(ir.entity_count());
-    let mut expanded: Vec<Expanded> = Vec::new();
+    let mut emitted = 0_usize;
     let mut cycles = 0_usize;
     let mut stopped = false;
     let mut past_depth = 0_usize;
     let mut not_similar = 0_usize;
     let mut invalid = 0_usize;
-    for (ordinal, root) in roots.iter().copied().enumerate() {
-        if expanded.len() >= MAX_OCCURRENCES {
-            stopped = true;
+    let mut owned: Vec<Vec<cadmpeg_ir::ids::OccurrenceId>> = vec![Vec::new(); definitions.len()];
+    match roots.as_slice() {
+        [] => {}
+        [root] => set_root(ir, &crate::ids::definition(*root)),
+        _ => {
+            losses.push(PvzLossCode::StructureRootAmbiguous.note(format!(
+                "the structure has {} root definitions, not one; a document definition places \
+                 each root",
+                roots.len()
+            )));
+            let mut document =
+                ProductDefinition::root(crate::ids::document(), ExternalDocument::default());
+            for root in roots.iter().copied() {
+                if emitted >= max_occurrences {
+                    stopped = true;
+                    break;
+                }
+                let id = crate::ids::occurrence(emitted);
+                let mut occurrence = Occurrence::new(
+                    id.clone(),
+                    crate::ids::definition(root),
+                    Some(Transform::identity()),
+                );
+                occurrence.native_ref = Some(format!("definition {root}"));
+                ir.model.occurrences.push(occurrence);
+                document.occurrences.push(id);
+                emitted += 1;
+                ctx.admit_entities(
+                    u64_from_index(ir.entity_count()),
+                    &mut admitted,
+                    "pvz_occurrence",
+                )?;
+            }
+            ir.model.product_definitions.push(document);
+            ctx.admit_entities(
+                u64_from_index(ir.entity_count()),
+                &mut admitted,
+                "pvz_document",
+            )?;
+        }
+    }
+    let mut reached = vec![Reached::No; definitions.len()];
+    'roots: for root in roots.iter().copied() {
+        if stopped {
             break;
         }
-        ir.model.occurrences.push(Occurrence {
-            id: crate::ids::occurrence(expanded.len()),
-            prototype: PrototypeReference::Local {
-                definition: crate::ids::definition(root),
-            },
-            parent: OccurrenceParent::Root {},
-            ordinal: u32::try_from(ordinal)
-                .map_err(|_| CodecError::malformed("root occurrence ordinal exceeds u32"))?,
-            transform: Transform::identity(),
-            linked_prototype: None,
-            scale: [FiniteReal::ONE; 3],
-            name: None,
-            visible: None,
-            link: None,
-            native_ref: Some(format!("definition {root}")),
-        });
-        expanded.push(Expanded {
-            parent: None,
-            definition: root,
-            depth: 1,
-        });
-        ctx.admit_entities(
-            u64_from_index(ir.entity_count()),
-            &mut admitted,
-            "pvz_occurrence",
-        )?;
-    }
-    let mut pending: Vec<usize> = (0..expanded.len()).rev().collect();
-    'expand: while let Some(parent) = pending.pop() {
-        let Some(&Expanded {
-            definition: parent_definition,
-            depth,
-            ..
-        }) = expanded.get(parent)
-        else {
-            continue;
-        };
-        let Some(definition) = definitions.get(parent_definition) else {
-            continue;
-        };
-        if depth_limit.is_some_and(|limit| depth >= limit) {
-            past_depth += definition.occurrences.len();
-            continue;
-        }
-        let first_child = expanded.len();
-        for (ordinal, child) in definition.occurrences.iter().enumerate() {
-            if expanded.len() + cycles >= MAX_OCCURRENCES {
-                stopped = true;
-                break 'expand;
+        // Each frame is a definition, its depth, and its next child.
+        let mut stack = vec![(root, 1_usize, 0_usize)];
+        reached[root] = Reached::OnPath;
+        while let Some(frame) = stack.last_mut() {
+            let (parent_definition, depth, next) = *frame;
+            let Some(definition) = definitions.get(parent_definition) else {
+                stack.pop();
+                continue;
+            };
+            if next == 0 && depth_limit.is_some_and(|limit| depth >= limit) {
+                past_depth += definition.occurrences.len();
+                reached[parent_definition] = Reached::Done;
+                stack.pop();
+                continue;
             }
-            if on_path(&expanded, parent, child.definition) {
+            let Some(child) = definition.occurrences.get(next) else {
+                reached[parent_definition] = Reached::Done;
+                stack.pop();
+                continue;
+            };
+            frame.2 += 1;
+            if emitted >= max_occurrences {
+                stopped = true;
+                break 'roots;
+            }
+            if reached.get(child.definition) == Some(&Reached::OnPath) {
                 cycles += 1;
                 continue;
             }
-            let (transform, scale) = match placement(&child.placement) {
-                Placed::Similarity(transform, scale) => (transform, scale),
+            let transform = match placement(&child.placement) {
+                Placed::Similarity(transform, scale) => transform
+                    .compose(uniform_scale_transform(scale)?)
+                    .map_err(|error| CodecError::malformed(error.to_string()))?,
                 Placed::Affine(transform) => {
                     not_similar += 1;
-                    (transform, FiniteReal::ONE)
+                    transform
                 }
                 Placed::Invalid => {
                     invalid += 1;
-                    (Transform::identity(), FiniteReal::ONE)
+                    Transform::identity()
                 }
             };
             ctx.retain_bytes(
                 u64_from_index(child.feature_id.len()),
                 RETAIN_OCCURRENCE_NAME,
             )?;
-            ir.model.occurrences.push(Occurrence {
-                id: crate::ids::occurrence(expanded.len()),
-                prototype: PrototypeReference::Local {
-                    definition: crate::ids::definition(child.definition),
-                },
-                parent: OccurrenceParent::Occurrence {
-                    occurrence: crate::ids::occurrence(parent),
-                },
-                ordinal: u32::try_from(ordinal)
-                    .map_err(|_| CodecError::malformed("child occurrence ordinal exceeds u32"))?,
-                transform,
-                linked_prototype: None,
-                scale: [scale; 3],
-                name: (!child.feature_id.is_empty()).then(|| child.feature_id.to_string()),
-                visible: None,
-                link: None,
-                native_ref: Some(format!(
-                    "definition {parent_definition} occurrence {ordinal}"
-                )),
-            });
-            expanded.push(Expanded {
-                parent: Some(parent),
-                definition: child.definition,
-                depth: depth + 1,
-            });
+            let id = crate::ids::occurrence(emitted);
+            let mut occurrence = Occurrence::new(
+                id.clone(),
+                crate::ids::definition(child.definition),
+                Some(transform),
+            );
+            occurrence.name = (!child.feature_id.is_empty()).then(|| child.feature_id.to_string());
+            occurrence.native_ref =
+                Some(format!("definition {parent_definition} occurrence {next}"));
+            ir.model.occurrences.push(occurrence);
+            owned[parent_definition].push(id);
+            emitted += 1;
             ctx.admit_entities(
                 u64_from_index(ir.entity_count()),
                 &mut admitted,
                 "pvz_occurrence",
             )?;
+            if reached.get(child.definition) == Some(&Reached::No) {
+                reached[child.definition] = Reached::OnPath;
+                stack.push((child.definition, depth + 1, 0));
+            }
         }
-        pending.extend((first_child..expanded.len()).rev());
+    }
+    let mut owned: BTreeMap<_, _> = owned
+        .into_iter()
+        .enumerate()
+        .map(|(index, occurrences)| (crate::ids::definition(index), occurrences))
+        .collect();
+    for definition in &mut ir.model.product_definitions {
+        if let Some(occurrences) = owned.remove(&definition.id) {
+            definition.occurrences = occurrences;
+        }
     }
     if cycles > 0 {
         losses.push(PvzLossCode::StructureOccurrenceCycle.note(format!(
-            "{cycles} child occurrences close a definition cycle and were not expanded"
+            "{cycles} child occurrences close a definition cycle and were left out"
         )));
     }
     let mut truncation = Vec::new();
     if stopped {
         truncation.push(format!(
-            "expansion stopped at the limit of {MAX_OCCURRENCES} occurrences and \
-             cycle-closing child occurrences"
+            "decoding stopped at the limit of {max_occurrences} occurrences"
         ));
     }
     if past_depth > 0 {
         truncation.push(format!(
             "{past_depth} child occurrences lie past the recursion depth limit of \
-             {max_depth} definitions and were not expanded"
+             {max_depth} definitions and were left out"
         ));
     }
     if !truncation.is_empty() {
@@ -323,6 +326,28 @@ pub(crate) fn occurrences(
         )));
     }
     Ok(())
+}
+
+/// Marks the definition the file holds at its top as the root definition.
+fn set_root(ir: &mut CadIr, id: &cadmpeg_ir::ids::ProductDefinitionId) {
+    if let Some(definition) = ir
+        .model
+        .product_definitions
+        .iter_mut()
+        .find(|definition| definition.id == *id)
+    {
+        definition.storage = Storage::File {
+            document: ExternalDocument::default(),
+            source: None,
+        };
+    }
+}
+
+/// The uniform scale a similarity applies before its rigid transform.
+fn uniform_scale_transform(scale: FiniteReal) -> Result<Transform, CodecError> {
+    let s = scale.get();
+    Transform::affine([[s, 0.0, 0.0, 0.0], [0.0, s, 0.0, 0.0], [0.0, 0.0, s, 0.0]])
+        .ok_or_else(|| CodecError::malformed("occurrence scale must be finite"))
 }
 
 /// A placement in model terms.
@@ -538,9 +563,8 @@ fn tessellation(
     let groups = mesh
         .patches
         .iter()
-        .map(|(patch, triangles)| TessellationTriangleGroup {
-            source_id: Some(format!("patch {patch}")),
-            triangles: triangles.clone(),
+        .map(|(patch, triangles)| {
+            TessellationTriangleGroup::new(Some(format!("patch {patch}")), triangles.clone())
         })
         .collect();
     Tessellation::from_parts(id, lanes, Vec::new())

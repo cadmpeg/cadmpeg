@@ -29,6 +29,7 @@ mod metadata;
 mod parameters;
 mod recovery;
 pub(crate) mod schema_identifier;
+mod short_names;
 
 use self::parameters::{ParameterValues, RecordParameters};
 
@@ -1470,6 +1471,7 @@ impl Parser<'_, '_, '_> {
     fn partial(&mut self, simple: bool) -> Result<PartialRecord, ParseError> {
         let offset = self.current_offset();
         let name = self.take_name()?;
+        let name = short_names::entity_name(&name).map_or(name, str::to_owned);
         let presentation = metadata::presentation_record(&name);
         if presentation {
             self.lexer.set_literal_admission(LiteralAdmission::Metadata);

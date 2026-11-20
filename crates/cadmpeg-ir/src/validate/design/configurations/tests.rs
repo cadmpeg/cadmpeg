@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use crate::design::configuration::{
     ArrangementKind, DefinitionOverride, FeatureStateOverride, ParameterOverride, PartNumber,
@@ -9,9 +9,10 @@ use crate::design::dimension::Dimension;
 use crate::design::parameter::{Deviations, Tolerance};
 use crate::design::units::{Quantity, ValueKind};
 use crate::document::CadIr;
+use crate::ids::ProductDefinitionId;
 use crate::pmi::LimitsAndFits;
 use crate::products::{
-    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+    ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
 };
 use crate::scalar::FiniteReal;
 use crate::transform::Transform;
@@ -19,6 +20,7 @@ use crate::validate::design::fixture::{
     arrangement, assert_finding, assert_no_design_finding, design_findings, document, feature, id,
     parameter,
 };
+use crate::validate::design::records::DesignRecords;
 
 #[test]
 fn a_scope_names_an_active_configuration_of_its_own() {
@@ -157,9 +159,9 @@ fn parameter_tolerances_need_a_quantity() {
     angle.tolerance = Some(Tolerance::Fit {
         fit: LimitsAndFits {
             form_variance: "H".to_owned(),
-            zone_variance: "hole".to_owned(),
+            zone: crate::pmi::FitZone::Hole,
             grade: "7".to_owned(),
-            source: "ISO 286".to_owned(),
+            source: Some(crate::pmi::FitStandard::Iso286),
         },
         mate: None,
         deviations: None,
@@ -176,40 +178,45 @@ fn parameter_tolerances_need_a_quantity() {
     assert_finding(&ir, "is not below its upper deviation");
 }
 
-fn occurrence(key: &str, prototype: &str, parent: OccurrenceParent) -> Occurrence {
-    Occurrence {
-        id: id("occurrence", key),
-        prototype: PrototypeReference::Local {
-            definition: id("definition", prototype),
-        },
-        parent,
-        ordinal: 0,
-        transform: Transform::identity(),
-        linked_prototype: None,
-        scale: [FiniteReal::ONE; 3],
-        name: None,
-        visible: None,
-        link: None,
-        native_ref: None,
-    }
+fn definition_mut<'a>(ir: &'a mut CadIr, key: &str) -> &'a mut ProductDefinition {
+    let definition: ProductDefinitionId = id("definition", key);
+    ir.model
+        .product_definitions
+        .iter_mut()
+        .find(|record| record.id == definition)
+        .unwrap()
+}
+
+/// `ir` with a product definition `key` that has no bodies and no scope.
+fn add_definition(ir: &mut CadIr, key: &str) {
+    ir.model.product_definitions.push(ProductDefinition {
+        kind: Some(ProductDefinitionKind::Part),
+        ..ProductDefinition::new(id("definition", key), Storage::Embedded)
+    });
+}
+
+/// `ir` with occurrence `key` of `prototype` at `transform`, owned by
+/// definition `owner`.
+fn place_at(ir: &mut CadIr, owner: &str, key: &str, prototype: &str, transform: Option<Transform>) {
+    let occurrence = Occurrence::new(
+        id("occurrence", key),
+        id("definition", prototype),
+        transform,
+    );
+    definition_mut(ir, owner)
+        .occurrences
+        .push(occurrence.id.clone());
+    ir.model.occurrences.push(occurrence);
+}
+
+fn place(ir: &mut CadIr, owner: &str, key: &str, prototype: &str) {
+    place_at(ir, owner, key, prototype, None);
 }
 
 /// `ir` with a product definition `key` that has no bodies and no scope,
 /// which configuration `base` overrides.
 fn override_definition(ir: &mut CadIr, key: &str) {
-    ir.model.product_definitions.push(ProductDefinition {
-        id: id("definition", key),
-        kind: ProductDefinitionKind::Part,
-        source_name: None,
-        label: None,
-        description: None,
-        part_number: None,
-        bom_properties: BTreeMap::new(),
-        bodies: Vec::new(),
-        sketches: Vec::new(),
-        tessellations: Vec::new(),
-        native_ref: None,
-    });
+    add_definition(ir, key);
     ir.design.configurations[0].overrides.definitions.insert(
         id("definition", key),
         DefinitionOverride {
@@ -217,12 +224,6 @@ fn override_definition(ir: &mut CadIr, key: &str) {
             ..DefinitionOverride::default()
         },
     );
-}
-
-fn child_of(parent: &str) -> OccurrenceParent {
-    OccurrenceParent::Occurrence {
-        occurrence: id("occurrence", parent),
-    }
 }
 
 /// The baseline as a Fusion design: its scope `part` holds `extrude` of
@@ -242,33 +243,67 @@ fn a_definition_override_names_a_definition_the_scope_spans() {
     assert_finding(&ir, "which is no definition the scope spans");
 
     let mut ir = fusion();
-    ir.model.occurrences = vec![
-        occurrence("root", "part", OccurrenceParent::Root {}),
-        occurrence("bracket", "bracket", child_of("root")),
-    ];
+    add_definition(&mut ir, "assembly");
+    place(&mut ir, "assembly", "root", "part");
+    place(&mut ir, "part", "bracket", "bracket");
     assert_no_design_finding(&ir);
     override_definition(&mut ir, "nested");
-    ir.model
-        .occurrences
-        .push(occurrence("nested", "nested", child_of("bracket")));
+    place(&mut ir, "bracket", "nested", "nested");
     assert_no_design_finding(&ir);
     override_definition(&mut ir, "foreign");
-    ir.model
-        .occurrences
-        .push(occurrence("foreign", "foreign", OccurrenceParent::Root {}));
+    place(&mut ir, "assembly", "foreign", "foreign");
     assert_finding(&ir, "override names test:design:definition#foreign");
 
     let mut ir = fusion();
-    ir.model.occurrences = vec![occurrence("bracket", "bracket", OccurrenceParent::Root {})];
+    place(&mut ir, "part", "bracket", "bracket");
     assert_no_design_finding(&ir);
+    definition_mut(&mut ir, "bracket").storage =
+        Storage::External(ExternalDocument::path("bracket.f3d"));
+    assert_finding(&ir, "override names test:design:definition#bracket");
 
     let mut ir = document();
     override_definition(&mut ir, "other");
-    ir.model.occurrences = vec![
-        occurrence("root", "part", OccurrenceParent::Root {}),
-        occurrence("other", "other", child_of("root")),
-    ];
+    add_definition(&mut ir, "assembly");
+    place(&mut ir, "assembly", "root", "part");
+    place(&mut ir, "part", "other", "other");
     assert_finding(&ir, "which is no definition the scope spans");
-    ir.model.occurrences = vec![occurrence("other", "other", OccurrenceParent::Root {})];
+    let mut ir = document();
+    override_definition(&mut ir, "other");
+    place(&mut ir, "part", "other", "other");
     assert_finding(&ir, "which is no definition the scope spans");
+}
+
+#[test]
+fn a_fusion_root_component_spans_the_components_its_root_occurrences_place() {
+    let mut ir = fusion();
+    let root = definition_mut(&mut ir, "part");
+    root.kind = None;
+    root.storage = Storage::File {
+        document: ExternalDocument::document_id("design"),
+        source: None,
+    };
+    definition_mut(&mut ir, "bracket").kind = None;
+    override_definition(&mut ir, "pin");
+    definition_mut(&mut ir, "pin").kind = None;
+    let frame = |x: f64| {
+        Transform::affine([
+            [1.0, 0.0, 0.0, x],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+    };
+    place_at(&mut ir, "part", "bracket:1", "bracket", frame(10.0));
+    place_at(&mut ir, "part", "bracket:2", "bracket", frame(20.0));
+    place_at(&mut ir, "bracket", "pin:1", "pin", frame(1.0));
+    assert!(definition_mut(&mut ir, "part").is_root());
+    assert_no_design_finding(&ir);
+    let records = DesignRecords::new(&ir);
+    assert_eq!(
+        records.spanned_definitions("test:design:definition#part"),
+        BTreeSet::from([
+            "test:design:definition#bracket",
+            "test:design:definition#part",
+            "test:design:definition#pin",
+        ])
+    );
 }

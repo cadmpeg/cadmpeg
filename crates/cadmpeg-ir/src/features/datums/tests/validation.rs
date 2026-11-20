@@ -151,21 +151,12 @@ fn datum_axis_bound_dimensions_resolve_within_the_consuming_definition() {
             .into_iter()
             .filter(|key| feature_scope == Some(*key) || parameter_scope == Some(*key))
         {
-            ir.model
-                .product_definitions
-                .push(crate::products::ProductDefinition {
-                    id: id(key),
-                    kind: crate::products::ProductDefinitionKind::Part,
-                    source_name: None,
-                    label: None,
-                    description: None,
-                    part_number: None,
-                    bom_properties: std::collections::BTreeMap::new(),
-                    bodies: Vec::new(),
-                    sketches: Vec::default(),
-                    tessellations: Vec::new(),
-                    native_ref: None,
-                });
+            let mut definition = crate::products::ProductDefinition::new(
+                id(key),
+                crate::products::Storage::Embedded,
+            );
+            definition.kind = Some(crate::products::ProductDefinitionKind::Part);
+            ir.model.product_definitions.push(definition);
         }
         ir.model.parameters.push(crate::features::DesignParameter {
             product_definition: parameter_scope.map(id),
@@ -351,7 +342,7 @@ fn datum_axis_option_keys_have_one_classification_and_distinct_literals_survive(
         "test:placed:parameter#one".to_owned(),
     )]);
     let replacements = TextReplacements::build(replacements.iter()).unwrap();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut map = IdentityMap::new(|id: &str| Ok(id.replace("test:model:", "test:placed:")))
         .with_text_replacements(&replacements);
     let axis = axis.rewrite_identities(&ctx, &mut map).unwrap();

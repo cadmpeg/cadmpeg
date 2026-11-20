@@ -1452,6 +1452,19 @@ Parsed by:
 | 8 | 2 | `value_type` | `u16` | big | spec | Each counted record starts |
 | 10 | 4 | `value_bytes` | `u32` | big | spec | Each counted record starts |
 
+## `consolidated_vertex_wide_roster`
+
+Spec §6.4 · layout: byte offsets · size: 5 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/stations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | \| `+0` \| `u8` \| wide roster-reference marker `0e` \| · value `14` |
+| 1 | 3 | `ordinal` | `u24` | little | spec | \| `+1` \| `u24le` \| forward allocation ordinal \| |
+| 4 | 1 | `terminal` | `u8` | little | spec | \| `+4` \| `u8` \| roster-reference terminal `00` \| · value `0` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

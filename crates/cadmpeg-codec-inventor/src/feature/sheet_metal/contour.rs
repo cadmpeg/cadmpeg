@@ -892,6 +892,11 @@ fn project<'a>(
 pub(in crate::feature) struct Refusals(BTreeMap<String, ContourRefusal>);
 
 impl Refusals {
+    /// Whether the plate record `source` has a refusal.
+    pub(in crate::feature) fn contains(&self, source: &str) -> bool {
+        self.0.contains_key(source)
+    }
+
     /// Record the refusal of the contour plate `source`.
     pub(in crate::feature) fn insert(&mut self, source: String, refusal: ContourRefusal) {
         self.0.entry(source).or_insert(refusal);

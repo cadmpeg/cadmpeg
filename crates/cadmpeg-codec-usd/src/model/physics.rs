@@ -27,9 +27,6 @@ use crate::schema::physx::Holder;
 use crate::schema::xform::{compose, quaternion, Affine};
 use crate::stage::Prim;
 
-/// Millimetres per metre.
-const MILLIMETRES_PER_METRE: f64 = 1000.0;
-
 /// A joint prim collected for the pass after the traversal.
 pub(super) struct PendingJoint {
     pub(super) path: String,
@@ -63,10 +60,6 @@ fn frame_axis(letter: char) -> FrameAxis {
 }
 
 impl super::Builder<'_, '_, '_, '_> {
-    fn meters_per_unit(&self) -> f64 {
-        self.scale / MILLIMETRES_PER_METRE
-    }
-
     /// The joint frame of one side, in millimetres, turned to `alignment`.
     fn joint_frame(&self, data: &JointData, side: usize, alignment: &Affine) -> Option<Transform> {
         let mut rotation = quaternion(data.rotations[side])?;
@@ -155,7 +148,7 @@ impl super::Builder<'_, '_, '_, '_> {
         if schemas.contains("PhysicsMassAPI") {
             let data = crate::schema::physics::mass(prim, &mut self.issues);
             let kilograms = self.kilograms_per_unit;
-            let density = |value: f64| value * kilograms / self.meters_per_unit().powi(3);
+            let density = |value: f64| value * kilograms / self.scale.powi(3);
             let inertia = data.diagonal_inertia.and_then(|moments| {
                 let factor = kilograms * self.scale * self.scale;
                 let moments = [0, 1, 2]
@@ -239,12 +232,12 @@ impl super::Builder<'_, '_, '_, '_> {
         };
         let data = crate::schema::physics::collision(prim, &mut self.issues);
         let shape = match data.approximation.as_deref() {
-            None | Some("none") => ColliderShape::Exact {},
-            Some("convexHull") => ColliderShape::ConvexHull {},
-            Some("convexDecomposition") => ColliderShape::ConvexDecomposition {},
-            Some("boundingCube") => ColliderShape::BoundingBox {},
-            Some("boundingSphere") => ColliderShape::BoundingSphere {},
-            Some("meshSimplification") => ColliderShape::Simplified {},
+            None | Some("none") => ColliderShape::Exact,
+            Some("convexHull") => ColliderShape::ConvexHull,
+            Some("convexDecomposition") => ColliderShape::ConvexDecomposition,
+            Some("boundingCube") => ColliderShape::BoundingBox,
+            Some("boundingSphere") => ColliderShape::BoundingSphere,
+            Some("meshSimplification") => ColliderShape::Simplified,
             Some(other) => ColliderShape::Native {
                 name: other.to_owned(),
             },
@@ -337,7 +330,7 @@ impl super::Builder<'_, '_, '_, '_> {
             let data = crate::schema::physics::material(material, &mut self.issues);
             let density = data
                 .density
-                .map(|value| value * self.kilograms_per_unit / self.meters_per_unit().powi(3));
+                .map(|value| value * self.kilograms_per_unit / self.scale.powi(3));
             self.ir.model.physical_materials.push(PhysicalMaterial {
                 id: id.clone(),
                 name: Some(material.name.clone()),
@@ -380,22 +373,19 @@ impl super::Builder<'_, '_, '_, '_> {
             }
             _ => return None,
         };
-        let mpu = self.meters_per_unit();
+        let millimetres = self.scale;
         let kilograms = self.kilograms_per_unit;
         let degrees = 180.0 / std::f64::consts::PI;
         // Angular drives state torques per degree; linear drives forces per
-        // scene length.
+        // scene length. Coefficients are in kilograms, millimetres, seconds,
+        // and radians.
         let (position, response, limit) = match axis {
             DriveAxis::Rotation { .. } => (
                 1.0 / degrees,
-                kilograms * mpu * mpu * MILLIMETRES_PER_METRE * degrees,
-                kilograms * mpu * mpu * MILLIMETRES_PER_METRE,
+                kilograms * millimetres * millimetres * degrees,
+                kilograms * millimetres * millimetres,
             ),
-            DriveAxis::Translation { .. } => (
-                self.scale,
-                kilograms / MILLIMETRES_PER_METRE,
-                kilograms * mpu,
-            ),
+            DriveAxis::Translation { .. } => (self.scale, kilograms, kilograms * millimetres),
         };
         Some(JointDrive {
             axis,

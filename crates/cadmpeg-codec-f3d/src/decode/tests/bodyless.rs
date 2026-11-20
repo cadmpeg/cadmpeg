@@ -128,6 +128,7 @@ fn empty_model_body_ownership_is_final_without_sketch_wire_ownership() {
             has_appearance: false,
             mesh_projection: super::super::MeshProjection {
                 count: 0,
+                unjoined: 0,
                 tessellations_by_scope: std::collections::HashMap::new(),
             },
         });
@@ -170,6 +171,7 @@ fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
         annotation_records: Vec::new(),
         mesh_projection: super::super::MeshProjection {
             count: 0,
+            unjoined: 0,
             tessellations_by_scope: std::collections::HashMap::new(),
         },
     });
@@ -186,7 +188,7 @@ fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
     assert!(loss.message.starts_with("2 saved free-edge bodies"));
     let definition: cadmpeg_ir::products::ProductDefinition =
         serde_json::from_value(serde_json::json!({
-            "id": "f3d:design:product-definition#1", "kind": "part", "bodies": [], "bom_properties": {}, "sketches": [], "tessellations": []
+            "id": "f3d:design:product-definition#1", "kind": "part", "bodies": [], "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [], "occurrences": [], "instance_bodies": [], "representations": [], "sketches": []
         }))
         .unwrap();
     ir.model.product_definitions.push(definition);
@@ -201,4 +203,197 @@ fn component_body_coverage_uses_saved_edge_origin_and_keeps_ordinary_bodies() {
         .map(|body| body.id.clone())
         .collect();
     assert!(super::super::saved_free_edge_bodies_loss(&ir).is_none());
+}
+
+/// Carriers of a Design asset with one `.paramesh` entry and nothing else.
+fn mesh_only_carriers() -> crate::decode::DesignCarriers {
+    crate::decode::DesignCarriers {
+        decoded_meshes: 0,
+        unjoined_mesh_containers: 0,
+        paramesh_entries: 1,
+        brep_entries: 0,
+        brep_streams: 0,
+        selected_brep_streams: 0,
+        text_brep_streams: 0,
+        declared_bodies: 0,
+        sketch_entities: 0,
+        reference_images: 0,
+    }
+}
+
+fn has_code(report: &cadmpeg_ir::codec::DecodeBody, code: F3dLossCode) -> bool {
+    report.losses.iter().any(|loss| loss.code == code.kind())
+}
+
+fn mesh_only_loss_names(report: &cadmpeg_ir::codec::DecodeBody, containers: &str) -> bool {
+    report.losses.iter().any(|loss| {
+        loss.code == F3dLossCode::MeshOnlyDesignUntransferred.kind()
+            && loss.severity == Severity::Error
+            && loss.message.contains(containers)
+    })
+}
+
+fn classify(
+    carriers: &crate::decode::DesignCarriers,
+    assembly: bool,
+) -> cadmpeg_ir::codec::DecodeBody {
+    let mut report = brep_less_geometry_report();
+    crate::decode::apply_carrier_classification(&mut report, carriers, assembly);
+    report
+}
+
+/// A mesh-only design whose mesh does not decode keeps its geometry losses and
+/// names its mesh containers, whatever sketches it also carries.
+#[test]
+fn an_undecoded_mesh_only_design_with_a_sketch_names_its_mesh_containers() {
+    let mut report = brep_less_geometry_report();
+    report
+        .losses
+        .push(F3dLossCode::MeshContainerUndecoded.note("charged by the mesh decode"));
+    let carriers = crate::decode::DesignCarriers {
+        sketch_entities: 25,
+        ..mesh_only_carriers()
+    };
+    crate::decode::apply_carrier_classification(&mut report, &carriers, false);
+    assert!(!report.transfer.geometry_transferred());
+    assert!(!has_code(&report, F3dLossCode::BodylessDesignCarrier));
+    assert!(has_code(&report, F3dLossCode::MeshContainerUndecoded));
+    assert!(has_code(&report, F3dLossCode::GeometryNotTransferred));
+    assert!(mesh_only_loss_names(
+        &report,
+        "1 of its mesh geometry container(s)"
+    ));
+    assert_eq!(report.losses.len(), 5);
+}
+
+#[test]
+fn an_undecoded_mesh_only_design_reports_every_mesh_container() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            paramesh_entries: 2,
+            ..mesh_only_carriers()
+        },
+        false,
+    );
+    assert!(!report.transfer.geometry_transferred());
+    assert_eq!(report.losses.len(), 4);
+    assert!(mesh_only_loss_names(
+        &report,
+        "2 of its mesh geometry container(s)"
+    ));
+}
+
+/// A decoded container that no Design mesh body joins holds no current mesh
+/// body, so it does not count toward a mesh-only design.
+#[test]
+fn unjoined_mesh_containers_keep_the_sketch_only_classification() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            unjoined_mesh_containers: 1,
+            sketch_entities: 25,
+            ..mesh_only_carriers()
+        },
+        false,
+    );
+    assert!(report.transfer.geometry_transferred());
+    assert!(has_code(&report, F3dLossCode::BodylessDesignCarrier));
+    assert!(!has_code(&report, F3dLossCode::MeshOnlyDesignUntransferred));
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            paramesh_entries: 2,
+            unjoined_mesh_containers: 1,
+            ..mesh_only_carriers()
+        },
+        false,
+    );
+    assert!(mesh_only_loss_names(
+        &report,
+        "1 of its mesh geometry container(s)"
+    ));
+}
+
+#[test]
+fn a_design_without_mesh_containers_keeps_its_sketch_only_classification() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            paramesh_entries: 0,
+            sketch_entities: 25,
+            ..mesh_only_carriers()
+        },
+        false,
+    );
+    assert!(report.transfer.geometry_transferred());
+    assert!(has_code(&report, F3dLossCode::BodylessDesignCarrier));
+    assert!(!has_code(&report, F3dLossCode::MeshOnlyDesignUntransferred));
+}
+
+#[test]
+fn a_mesh_container_beside_a_brep_stream_keeps_the_brep_classification() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            brep_entries: 1,
+            brep_streams: 1,
+            selected_brep_streams: 1,
+            sketch_entities: 25,
+            ..mesh_only_carriers()
+        },
+        false,
+    );
+    assert!(!report.transfer.geometry_transferred());
+    assert_eq!(report.losses.len(), 3);
+}
+
+#[test]
+fn a_mesh_container_beside_a_text_brep_stream_keeps_the_brep_classification() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            brep_entries: 1,
+            text_brep_streams: 1,
+            sketch_entities: 25,
+            ..mesh_only_carriers()
+        },
+        false,
+    );
+    assert!(!report.transfer.geometry_transferred());
+    assert_eq!(report.losses.len(), 3);
+}
+
+/// A BREP entry whose payload did not open is still a stored BREP entry.
+#[test]
+fn a_mesh_container_beside_an_unopened_brep_entry_keeps_the_bodyless_classification() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            brep_entries: 1,
+            sketch_entities: 25,
+            ..mesh_only_carriers()
+        },
+        false,
+    );
+    assert!(has_code(&report, F3dLossCode::BodylessDesignCarrier));
+    assert!(!has_code(&report, F3dLossCode::MeshOnlyDesignUntransferred));
+}
+
+/// An assembly's geometry is its external references; its classification
+/// owns the report.
+#[test]
+fn an_assembly_with_a_mesh_container_keeps_its_report() {
+    let report = classify(&mesh_only_carriers(), true);
+    assert_eq!(report.losses.len(), 3);
+    assert!(!has_code(&report, F3dLossCode::MeshOnlyDesignUntransferred));
+}
+
+/// A mesh-only design whose mesh decodes transfers its geometry as
+/// tessellation.
+#[test]
+fn a_decoded_mesh_only_design_transfers_its_geometry() {
+    let report = classify(
+        &crate::decode::DesignCarriers {
+            decoded_meshes: 1,
+            ..mesh_only_carriers()
+        },
+        false,
+    );
+    assert!(report.transfer.geometry_transferred());
+    assert_eq!(report.losses.len(), 1);
+    assert!(has_code(&report, F3dLossCode::MeshVertexPrecisionReduced));
 }

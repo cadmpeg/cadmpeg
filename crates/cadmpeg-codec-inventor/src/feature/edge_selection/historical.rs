@@ -499,6 +499,17 @@ fn selections(feature: &Feature) -> Vec<&EdgeSelection> {
     }
 }
 
+fn loss_selections(feature: &Feature) -> impl Iterator<Item = &EdgeSelection> {
+    let attachment = match feature.evaluation.definition() {
+        FeatureDefinition::Operation(
+            FeatureOperation::SheetMetalAttachedPlate { attachment, .. }
+            | FeatureOperation::SheetMetalBend { attachment, .. },
+        ) => Some(attachment),
+        _ => None,
+    };
+    selections(feature).into_iter().chain(attachment)
+}
+
 pub(crate) fn valid<'a>(
     feature: &Feature,
     source: &crate::feature::PmDcFeature,
@@ -567,7 +578,7 @@ pub(crate) fn valid<'a>(
     })
 }
 
-/// One note counting the edge-treatment features that use a selected input
+/// One note counting the features that use a selected input
 /// edge with several matched owners of identical geometry.
 pub(super) fn ambiguous_owner_losses(
     inventory: &crate::feature::FeatureInventory,
@@ -583,7 +594,7 @@ pub(super) fn ambiguous_owner_losses(
     let count = features
         .iter()
         .filter(|feature| {
-            selections(feature).iter().any(|selection| {
+            loss_selections(feature).any(|selection| {
                 matches!(selection, EdgeSelection::Historical { edges, .. }
                     if edges.iter().any(|edge| ambiguous.contains(edge)))
             })
@@ -592,7 +603,7 @@ pub(super) fn ambiguous_owner_losses(
     if count == 0 {
         Vec::new()
     } else {
-        vec![crate::loss::InventorLossCode::FeatureEdgeOwnerIdenticalGeometry.note(format!("{count} edge-treatment feature(s) select an input edge with several matched owner edges that agree at the start, end, interval midpoint, and midpoint tangent; agreement at these samples is taken as the same edge, the stored body state of the edge is not proven, and the owner with the lowest record index is used."))]
+        vec![crate::loss::InventorLossCode::FeatureEdgeOwnerIdenticalGeometry.note(format!("{count} feature(s) select an input edge with several matched owner edges that agree at the start, end, interval midpoint, and midpoint tangent; agreement at these samples is taken as the same edge, the stored body state of the edge is not proven, and the owner with the lowest record index is used."))]
     }
 }
 
@@ -600,7 +611,7 @@ pub(super) fn ambiguous_owner_losses(
 /// generators.
 const PLAIN_SELECTOR_GENERATORS: usize = 2;
 
-/// One note counting the edge-treatment features that select an edge through a
+/// One note counting the features that select an edge through a
 /// selector with more than two generators.
 pub(super) fn generator_losses(
     inventory: &crate::feature::FeatureInventory,
@@ -616,7 +627,7 @@ pub(super) fn generator_losses(
     let count = features
         .iter()
         .filter(|feature| {
-            selections(feature).iter().any(|selection| {
+            loss_selections(feature).any(|selection| {
                 matches!(selection, EdgeSelection::Historical { edges, .. }
                     if edges.iter().any(|edge| long.contains(edge)))
             })
@@ -625,7 +636,7 @@ pub(super) fn generator_losses(
     if count == 0 {
         Vec::new()
     } else {
-        vec![crate::loss::InventorLossCode::FeatureEdgeSelectorGeneratorsAssumed.note(format!("{count} edge-treatment feature(s) select an input edge through a selector with three or four generators; the selection assumes that the extra generators do not change the matched edge."))]
+        vec![crate::loss::InventorLossCode::FeatureEdgeSelectorGeneratorsAssumed.note(format!("{count} feature(s) select an input edge through a selector with three or four generators; the selection assumes that the extra generators do not change the matched edge."))]
     }
 }
 

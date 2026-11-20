@@ -264,19 +264,8 @@
           "id": "usd:stage:occurrence#/Arm",
           "name": "Arm",
           "native_ref": "/Arm",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm",
           "transform": [
             [
               1.0,
@@ -302,20 +291,8 @@
           "id": "usd:stage:occurrence#/Arm/Base",
           "name": "Base",
           "native_ref": "/Arm/Base",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm/Base",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm/Base",
           "transform": [
             [
               1.0,
@@ -341,20 +318,8 @@
           "id": "usd:stage:occurrence#/Arm/Base/Geom",
           "name": "Geom",
           "native_ref": "/Arm/Base/Geom",
-          "ordinal": 0,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm/Base"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm/Base/Geom",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm/Base/Geom",
           "transform": [
             [
               1.0,
@@ -380,20 +345,8 @@
           "id": "usd:stage:occurrence#/Arm/Finger",
           "name": "Finger",
           "native_ref": "/Arm/Finger",
-          "ordinal": 2,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm/Finger",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm/Finger",
           "transform": [
             [
               1.0,
@@ -419,20 +372,8 @@
           "id": "usd:stage:occurrence#/Arm/Link",
           "name": "Link",
           "native_ref": "/Arm/Link",
-          "ordinal": 1,
-          "parent": {
-            "kind": "occurrence",
-            "occurrence": "usd:stage:occurrence#/Arm"
-          },
-          "prototype": {
-            "definition": "usd:stage:definition#/Arm/Link",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
+          "overrides": [],
+          "prototype": "usd:stage:definition#/Arm/Link",
           "transform": [
             [
               1.0,
@@ -487,20 +428,38 @@
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Arm",
+          "occurrences": [
+            "usd:stage:occurrence#/Arm/Base",
+            "usd:stage:occurrence#/Arm/Link",
+            "usd:stage:occurrence#/Arm/Finger"
+          ],
+          "representations": [],
           "sketches": [],
           "source_name": "Arm",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Base",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Arm/Base",
+          "occurrences": [
+            "usd:stage:occurrence#/Arm/Base/Geom"
+          ],
+          "representations": [],
           "sketches": [],
           "source_name": "Base",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
@@ -509,30 +468,64 @@
           ],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Base/Geom",
+          "instance_bodies": [],
           "kind": "object",
           "native_ref": "/Arm/Base/Geom",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Geom",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Finger",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Arm/Finger",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Finger",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         },
         {
           "bodies": [],
           "bom_properties": {},
           "id": "usd:stage:definition#/Arm/Link",
+          "instance_bodies": [],
           "kind": "group",
           "native_ref": "/Arm/Link",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Link",
+          "storage": {
+            "kind": "embedded"
+          },
+          "tessellations": []
+        },
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "usd:stage:root#stage",
+          "instance_bodies": [],
+          "occurrences": [
+            "usd:stage:occurrence#/Arm"
+          ],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
           "tessellations": []
         }
       ],
@@ -620,7 +613,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 0,
-                "mass": 0
+                "mass": 0,
+                "time": 0
               },
               "kind": "real",
               "value": 0.10000000149011612
@@ -629,7 +623,8 @@
               "dimension": {
                 "angle": 1,
                 "length": 0,
-                "mass": 0
+                "mass": 0,
+                "time": -1
               },
               "kind": "real",
               "value": 6.283185307179586
@@ -642,7 +637,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 2,
-                "mass": 0
+                "mass": 0,
+                "time": -2
               },
               "kind": "real",
               "value": 50.0
@@ -665,7 +661,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 1,
-                "mass": 0
+                "mass": 0,
+                "time": 0
               },
               "kind": "real",
               "value": 2.0000000298023224
@@ -710,7 +707,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 0,
-                "mass": 1
+                "mass": 1,
+                "time": 0
               },
               "kind": "real",
               "value": 0.5
@@ -719,7 +717,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 1,
-                "mass": 0
+                "mass": 0,
+                "time": -1
               },
               "kind": "real",
               "value": 100.0
@@ -742,7 +741,8 @@
               "dimension": {
                 "angle": -1,
                 "length": 1,
-                "mass": 0
+                "mass": 0,
+                "time": 0
               },
               "kind": "real",
               "value": 11.459155646484371
@@ -751,7 +751,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 1,
-                "mass": 0
+                "mass": 0,
+                "time": 0
               },
               "kind": "real",
               "value": 10.0
@@ -807,7 +808,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 1,
-                "mass": 0
+                "mass": 0,
+                "time": -1
               },
               "kind": "real",
               "value": 200.0
@@ -838,7 +840,8 @@
               "dimension": {
                 "angle": 1,
                 "length": 0,
-                "mass": 0
+                "mass": 0,
+                "time": 0
               },
               "kind": "real",
               "value": 0.5235987755982988
@@ -861,7 +864,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 2,
-                "mass": 1
+                "mass": 1,
+                "time": 0
               },
               "kind": "real",
               "value": 0.9999999776482582
@@ -870,7 +874,8 @@
               "dimension": {
                 "angle": 0,
                 "length": 0,
-                "mass": 0
+                "mass": 0,
+                "time": 0
               },
               "kind": "real",
               "value": 0.05000000074505806
@@ -879,7 +884,8 @@
               "dimension": {
                 "angle": 1,
                 "length": 0,
-                "mass": 0
+                "mass": 0,
+                "time": -1
               },
               "kind": "real",
               "value": 3.141592653589793
@@ -902,7 +908,8 @@
               "dimension": {
                 "angle": -1,
                 "length": 2,
-                "mass": 1
+                "mass": 1,
+                "time": -1
               },
               "kind": "real",
               "value": 11459.155902616465
@@ -911,7 +918,8 @@
               "dimension": {
                 "angle": -1,
                 "length": 2,
-                "mass": 1
+                "mass": 1,
+                "time": -2
               },
               "kind": "real",
               "value": 572957.7951308233

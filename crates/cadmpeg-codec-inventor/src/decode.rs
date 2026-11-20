@@ -16,7 +16,7 @@ use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, Model, SourceMeta, Topology};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{ProductDefinitionId, UnknownId};
-use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
+use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::decode::TransferLedger;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::{AnnotationBuilder, SourceFidelity, UnknownRecord};
@@ -444,6 +444,21 @@ fn decode_container<'a>(
             groundings: &assembly_groundings,
         },
     )?;
+    if let Some(root) = ir
+        .model
+        .product_definitions
+        .iter_mut()
+        .find(|definition| definition.is_root())
+    {
+        root.occurrences = assembly_projection
+            .occurrences
+            .iter()
+            .map(|occurrence| occurrence.id.clone())
+            .collect();
+    }
+    ir.model
+        .product_definitions
+        .extend(assembly_projection.definitions);
     ir.model.occurrences = assembly_projection.occurrences;
     ir.model.assembly_joints = assembly_projection.joints;
     let namespace = ir.native.namespace_mut("inventor");
@@ -540,6 +555,20 @@ fn decode_container<'a>(
             ctx,
             "pm_dc_thread_definitions",
             &feature_inventory.thread_definitions,
+        )?;
+    }
+    if !feature_inventory.sheet_metal_unfold_rules.is_empty() {
+        namespace.set_arena(
+            ctx,
+            "pm_app_sheet_metal_unfold_rules",
+            &feature_inventory.sheet_metal_unfold_rules,
+        )?;
+    }
+    if !feature_inventory.sheet_metal_unfold_selections.is_empty() {
+        namespace.set_arena(
+            ctx,
+            "pm_app_sheet_metal_unfold_selections",
+            &feature_inventory.sheet_metal_unfold_selections,
         )?;
     }
     if !feature_inventory.sheet_metal_styles.is_empty() {
@@ -955,6 +984,9 @@ fn decode_container<'a>(
             &ir.model.features,
         ));
         losses.extend(composite_losses);
+        losses.extend(crate::feature::unrecognized_class_losses(
+            &ir.model.features,
+        ));
         losses.extend(crate::feature::sheet_metal::native_kind_losses(
             &feature_inventory,
             &ir.model.features,
@@ -1519,6 +1551,28 @@ fn decode_container<'a>(
         ir.geometry = Topology::default();
         ir.model = Model::default();
     }
+    if let Some(root) =
+        ir.state_root_definition(ctx, root_product_id(), ExternalDocument::default())?
+    {
+        if root.kind.is_none() {
+            root.kind = match document_kind {
+                DocumentKind::Part => Some(ProductDefinitionKind::Part),
+                DocumentKind::Assembly => Some(ProductDefinitionKind::Assembly),
+                _ => None,
+            };
+        }
+    }
+    if document_kind == DocumentKind::Part && ctx.depth() >= DecodeDepth::Design {
+        crate::design_v11::project(
+            ctx,
+            &mut ir,
+            &feature_inventory,
+            &sketch_inventory,
+            &design_inventory.parameters,
+            &design_inventory.units,
+            &mut losses,
+        )?;
+    }
     let body = DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::at(delivered, geometry_transferred),
         coverage,
@@ -1655,6 +1709,14 @@ fn project_design(
     })
 }
 
+/// The root definition: the part or assembly the document holds at its top.
+fn root_product_id() -> ProductDefinitionId {
+    ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("inventor", "document", "product"),
+        cadmpeg_ir::identity_key!("root"),
+    )
+}
+
 fn project_root_product(
     ctx: &DecodeContext<'_>,
     document_kind: &DocumentKind,
@@ -1671,30 +1733,21 @@ fn project_root_product(
     let label = metadata.title.as_deref().map(str::to_owned);
     let description = metadata.description.as_deref().map(str::to_owned);
     let part_number = metadata.part_number.as_deref().map(str::to_owned);
-    Ok(ProductDefinition {
-        sketches: Vec::default(),
-
-        tessellations: Vec::new(),
-        id: ProductDefinitionId::compose(
-            &cadmpeg_ir::identity_namespace!("inventor", "document", "product"),
-            cadmpeg_ir::identity_key!("root"),
-        ),
-        kind: if *document_kind == DocumentKind::Assembly {
-            ProductDefinitionKind::LinkGroup
-        } else {
-            ProductDefinitionKind::Part
-        },
-        source_name,
-        label,
-        description,
-        part_number,
-        bom_properties: cadmpeg_core::text::named_entries(
-            "inventor:document:product#root",
-            metadata.bom_properties.clone(),
-        )?,
-        bodies: Vec::new(),
-        native_ref: None,
-    })
+    let mut definition = ProductDefinition::root(root_product_id(), ExternalDocument::default());
+    definition.kind = Some(if *document_kind == DocumentKind::Assembly {
+        ProductDefinitionKind::Assembly
+    } else {
+        ProductDefinitionKind::Part
+    });
+    definition.source_name = source_name;
+    definition.label = label;
+    definition.description = description;
+    definition.part_number = part_number;
+    definition.bom_properties = cadmpeg_core::text::named_entries(
+        "inventor:document:product#root",
+        metadata.bom_properties.clone(),
+    )?;
+    Ok(definition)
 }
 
 fn admit_kernel_annotation(

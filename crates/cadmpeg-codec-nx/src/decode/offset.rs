@@ -2754,7 +2754,7 @@ mod tests {
                 &index,
                 &absent,
                 0,
-                &cadmpeg_test_support::service_decode_context()
+                &cadmpeg_core::decode::test_support::service_decode_context()
             )
             .unwrap(),
             [CoarseSampleCount::unknown(); 2]
@@ -2764,7 +2764,7 @@ mod tests {
                 &index,
                 &absent,
                 32,
-                &cadmpeg_test_support::service_decode_context()
+                &cadmpeg_core::decode::test_support::service_decode_context()
             )
             .unwrap(),
             [CoarseSampleCount::unknown(); 2]

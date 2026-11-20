@@ -350,14 +350,14 @@ fn prototype_round_radius(
     let Some((radius1, radius2)) = exactly_one(
         unique_surface_prototype_associations(scan)?
             .into_iter()
-            .filter(|(record, row, _)| {
+            .filter(|(record, row, _, _)| {
                 matches!(
                     record.record().family,
                     crate::surface::SurfacePrototypeFamily::Torus(_)
                 ) && row.feature_id == feature_id
                     && rows.iter().any(|candidate| candidate.offset == row.offset)
             })
-            .filter_map(|(record, _, _)| {
+            .filter_map(|(record, _, _, _)| {
                 Some((
                     prototype_scalar(record.record(), "radius1")?,
                     prototype_scalar(record.record(), "radius2")?,

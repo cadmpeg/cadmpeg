@@ -7,7 +7,8 @@ use cadmpeg_ir::features::{
     FeatureOperation, LinearTermination, ParameterValue, PlanarProfileRef, ProfileRef,
 };
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
-use cadmpeg_ir::products::{OccurrenceParent, ProductDefinitionKind};
+use cadmpeg_ir::ids::OccurrenceId;
+use cadmpeg_ir::products::{ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchGeometryDefinition};
 use cadmpeg_ir::{Codec, DecodeOptions};
 
@@ -17,6 +18,14 @@ const LENGTH_TOLERANCE: f64 = 1.0e-12;
 const VOLUME_TOLERANCE: f64 = 1.0e-6;
 const AREA_TOLERANCE: f64 = 1.0e-6;
 const BOUNDS_TOLERANCE: f64 = 1.0e-6;
+
+fn owner<'ir>(
+    model: &'ir cadmpeg_ir::document::Model,
+    occurrence: &OccurrenceId,
+) -> &'ir ProductDefinition {
+    cadmpeg_ir::products::owner(&model.product_definitions, occurrence)
+        .expect("every occurrence has an owning definition")
+}
 
 #[test]
 fn authored_design_history_keeps_sketches_constraints_and_operations() {
@@ -442,46 +451,35 @@ fn authored_core_product_keeps_primitive_dimensions_and_results() {
         .iter()
         .find(|definition| definition.source_name.as_deref() == Some("Product"))
         .unwrap();
-    assert!(matches!(&product.kind, ProductDefinitionKind::Part));
+    assert_eq!(product.kind, Some(ProductDefinitionKind::Part));
     assert_eq!(product.label.as_deref(), Some("CC0 Product"));
     let product_occurrence = model
         .occurrences
         .iter()
         .find(|occurrence| occurrence.id.as_str() == "fcstd:model:occurrence#Product:container")
         .unwrap();
-    assert!(matches!(
-        &product_occurrence.parent,
-        OccurrenceParent::Root {}
-    ));
-    assert!(matches!(
-        &product_occurrence.prototype,
-        cadmpeg_ir::products::PrototypeReference::Local { definition }
-            if definition == &product.id
-    ));
-    for (ordinal, name) in ["Box", "Cylinder", "Cut", "Profile", "DesignedFeature"]
-        .into_iter()
-        .enumerate()
-    {
-        let child = model
+    assert!(owner(model, &product_occurrence.id).is_root());
+    assert_eq!(product_occurrence.prototype, product.id);
+    // The part owns its members' occurrences, in member order.
+    let members = ["Box", "Cylinder", "Cut", "Profile", "DesignedFeature"].map(|name| {
+        model
             .occurrences
             .iter()
             .find(|occurrence| {
                 occurrence.native_ref.as_deref()
                     == Some(crate::native::native_id("object", name).as_str())
             })
-            .unwrap();
-        assert!(matches!(
-            &child.parent,
-            OccurrenceParent::Occurrence { occurrence } if occurrence == &product_occurrence.id
-        ));
-        assert_eq!(child.ordinal, u32::try_from(ordinal).unwrap());
-    }
+            .unwrap()
+            .id
+            .clone()
+    });
+    assert_eq!(product.occurrences, members);
     let cylinder_occurrence = model
         .occurrences
         .iter()
         .find(|occurrence| occurrence.id.as_str().ends_with("#Cylinder:container"))
         .unwrap();
-    let frame = cylinder_occurrence.effective_transform().unwrap().rows();
+    let frame = cylinder_occurrence.transform.unwrap().rows();
     for (actual, expected) in [frame[0][3], frame[1][3], frame[2][3]]
         .into_iter()
         .zip([15.0, 10.0, 0.0])
@@ -498,24 +496,17 @@ fn authored_core_product_keeps_primitive_dimensions_and_results() {
                 .is_some_and(|id| id.ends_with("#Occurrence"))
         })
         .unwrap();
-    assert!(matches!(&occurrence.parent, OccurrenceParent::Root {}));
-    let cadmpeg_ir::products::PrototypeReference::Local { definition } = &occurrence.prototype
-    else {
-        panic!("local occurrence prototype");
-    };
+    assert!(owner(model, &occurrence.id).is_root());
     let prototype = model
         .product_definitions
         .iter()
-        .find(|prototype| &prototype.id == definition)
+        .find(|prototype| prototype.id == occurrence.prototype)
         .unwrap();
     assert_eq!(prototype.source_name.as_deref(), Some("DesignedFeature"));
-    for (actual, expected) in [
-        occurrence.transform.rows()[0][3],
-        occurrence.transform.rows()[1][3],
-        occurrence.transform.rows()[2][3],
-    ]
-    .into_iter()
-    .zip([40.0, 0.0, 0.0])
+    let rows = occurrence.transform.unwrap().rows();
+    for (actual, expected) in [rows[0][3], rows[1][3], rows[2][3]]
+        .into_iter()
+        .zip([40.0, 0.0, 0.0])
     {
         assert!((actual - expected).abs() < LENGTH_TOLERANCE);
     }

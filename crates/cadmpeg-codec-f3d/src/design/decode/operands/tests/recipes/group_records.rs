@@ -90,6 +90,7 @@ fn a_scope_group_record_is_not_a_face_operand() {
                     &[],
                 )
                 .unwrap()
+                .0
                 .iter()
                 .map(crate::records::topology::face::DesignFaceOperand::record_index)
                 .collect::<Vec<_>>()
@@ -181,7 +182,8 @@ fn terminal_profile_member_cannot_borrow_the_next_group_recipe() {
                 &[recipe],
                 &[],
             )
-            .unwrap();
+            .unwrap()
+            .0;
             assert_eq!(
                 operands
                     .iter()
@@ -200,13 +202,13 @@ fn terminal_face_member_cannot_borrow_the_next_group_recipe_in_any_family() {
 
     let mut bytes = Vec::new();
     for index in [100, 100, 101, 102, 103] {
-        indexed_header(&mut bytes, *b"306", index);
+        indexed_header(&mut bytes, *b"256", index);
     }
     let next_group_at = bytes.len();
-    indexed_header(&mut bytes, *b"332", 190);
+    indexed_header(&mut bytes, *b"257", 190);
     let face_at = bytes.len();
     for index in [200, 200, 201, 202, 203] {
-        indexed_header(&mut bytes, *b"306", index);
+        indexed_header(&mut bytes, *b"256", index);
     }
     bytes.extend_from_slice(&24u32.to_le_bytes());
     let recipe_at = bytes.len();
@@ -214,13 +216,14 @@ fn terminal_face_member_cannot_borrow_the_next_group_recipe_in_any_family() {
     for value in [0i32, -1] {
         bytes.extend_from_slice(&value.to_le_bytes());
     }
-    indexed_header(&mut bytes, *b"306", 204);
+    let terminal_at = bytes.len();
+    indexed_header(&mut bytes, *b"256", 204);
     let headers: Vec<_> = [(100, 0), (190, next_group_at), (200, face_at)]
         .into_iter()
         .map(|(record_index, offset)| DesignRecordHeader {
             id: format!("{STREAM}:design-record-header#{offset}"),
             record_index,
-            class_tag: "306".to_owned().try_into().unwrap(),
+            class_tag: "256".to_owned().try_into().unwrap(),
             byte_offset: u64::try_from(offset).unwrap(),
         })
         .collect();
@@ -232,7 +235,30 @@ fn terminal_face_member_cannot_borrow_the_next_group_recipe_in_any_family() {
         recipe_index: 0,
         record_index: None,
     };
-    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &[]);
+    let meta = crate::test_support::split_face::metadata(
+        &[
+            (
+                "00000000-0000-0000-0000-000000000001",
+                1,
+                &[100, 101, 102, 103, 200, 201, 202, 203, 204],
+            ),
+            ("00000000-0000-0000-0000-000000000002", 1, &[190]),
+        ],
+        &[
+            (100, 0),
+            (101, 22),
+            (102, 33),
+            (103, 44),
+            (190, 55),
+            (200, 66),
+            (201, 88),
+            (202, 99),
+            (203, 110),
+            (204, u64::try_from(terminal_at).unwrap()),
+        ],
+        &[(100, 11), (200, 77)],
+    );
+    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &meta);
     for (kind, first_role, second_role) in [
         (
             DesignFeatureKind::SplitFace,
@@ -286,7 +312,8 @@ fn terminal_face_member_cannot_borrow_the_next_group_recipe_in_any_family() {
                     std::slice::from_ref(&recipe),
                     &[],
                 )
-                .unwrap();
+                .unwrap()
+                .0;
                 assert_eq!(
                     operands
                         .iter()
@@ -374,6 +401,7 @@ fn sweep_profile_member_is_a_face_operand_only_as_a_topology_recipe() {
                     types,
                 )
                 .unwrap()
+                .0
                 .iter()
                 .map(crate::records::topology::face::DesignFaceOperand::record_index)
                 .collect::<Vec<_>>()
@@ -455,6 +483,7 @@ fn a_pattern_face_seed_group_member_is_a_face_operand() {
                     &[],
                 )
                 .unwrap()
+                .0
                 .iter()
                 .map(crate::records::topology::face::DesignFaceOperand::record_index)
                 .collect::<Vec<_>>()
@@ -548,7 +577,8 @@ fn surface_face_groups_retain_owned_face_recipe_members() {
                     std::slice::from_ref(&recipe),
                     &[],
                 )
-                .unwrap();
+                .unwrap()
+                .0;
                 assert_eq!(operands.len(), 1);
                 assert_eq!(operands[0].record_index(), 100);
                 assert_eq!(operands[0].scope_record_index, 50);
@@ -566,7 +596,8 @@ fn surface_face_groups_retain_owned_face_recipe_members() {
                     std::slice::from_ref(&recipe),
                     &[],
                 )
-                .unwrap();
+                .unwrap()
+                .0;
                 assert!(unrelated.is_empty());
             });
         });

@@ -76,8 +76,7 @@ use replace_face::ReplaceFaceOperands;
 
 #[doc = "Surface operation settings and constructors."]
 pub mod surfaces;
-use surfaces::SilhouetteSplitMode;
-use surfaces::UntrimLoops;
+use surfaces::{SilhouetteSplitMode, SplitFaceMethod, UntrimLoops};
 
 macro_rules! checked_feature_geometry {
     ($(#[$meta:meta])* $name:ident, $raw:ident, $value:ident, $valid:expr, $error:literal $(, $getter:ident)*) => {
@@ -3881,6 +3880,13 @@ pub enum FeatureOperation {
         targets: BodySelection,
         /// Geometry that partitions the target bodies.
         tool: SplitBodyTool,
+        /// Whether the operation extends the splitting geometry through the targets.
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_split_body_extend_tool"
+        )]
+        extend_tool: Option<bool>,
     },
     /// Partitions selected faces along selected sketch curves while retaining
     /// every resulting face region.
@@ -3889,6 +3895,8 @@ pub enum FeatureOperation {
         targets: FaceSelection,
         /// Geometry or datum plane that partitions the target faces.
         tool: SplitFaceTool,
+        #[doc = "Method used to apply the splitting tool to the target faces."]
+        method: SplitFaceMethod,
     },
     /// Partitions a body's faces or volume along its silhouette in a given direction.
     SilhouetteSplit {
@@ -9370,7 +9378,7 @@ impl<'de> Deserialize<'de> for GeometryImportPath {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum SplitBodyTool {
-    /// Surface faces extended as necessary to partition the targets.
+    /// Surface faces used to partition the targets.
     Faces(FaceSelection),
     /// Datum-plane feature extended through the target bodies.
     Plane {
@@ -9385,6 +9393,10 @@ pub enum SplitBodyTool {
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum SplitFaceTool {
+    #[doc = "Selected surface faces used as the splitting tool."]
+    Faces(FaceSelection),
+    #[doc = "Native splitting geometry whose neutral kind is unresolved."]
+    Native(String),
     /// Sketch or model-space path projected onto the target faces.
     Path(PathRef),
     /// Datum-plane feature extended through the target faces.
@@ -9528,6 +9540,7 @@ cadmpeg_core::named_optional_field!(
 );
 cadmpeg_core::named_optional_field!(deserialize_thread_pitch, PositiveLength, "pitch");
 cadmpeg_core::named_optional_field!(deserialize_thread_modeled, bool, "modeled");
+cadmpeg_core::named_optional_field!(deserialize_split_body_extend_tool, bool, "extend_tool");
 cadmpeg_core::named_optional_field!(deserialize_opacity, Fraction, "opacity");
 cadmpeg_core::named_optional_field!(deserialize_reference, DatumPlaneReference, "reference");
 cadmpeg_core::named_optional_field!(

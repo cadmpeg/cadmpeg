@@ -9,6 +9,7 @@ use cadmpeg_ir::annotations::AnnotationStorage;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::nurbs::{NurbsCurve, SurfaceParameterAxis};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+use cadmpeg_ir::geometry::FitTolerance;
 use cadmpeg_ir::geometry::{
     CurveGeometry, IntcurveSupportContext, ProceduralCurveDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, SurfaceGeometry,
@@ -44,6 +45,8 @@ struct Plan {
     curve_cache: NurbsCurve,
     curve_range: ParameterInterval,
     plane_pcurve: Option<(usize, PcurveGeometry, ParameterInterval, usize)>,
+    plane_fit_tolerance: Option<FitTolerance>,
+    plane_projection_gap: Option<f64>,
     vertex_misses: [(usize, f64); 2],
 }
 
@@ -94,7 +97,8 @@ fn endpoint_address(
         }
         AllocationReferenceEncoding::OwnedChild
         | AllocationReferenceEncoding::TaggedU8
-        | AllocationReferenceEncoding::TaggedU16 => {
+        | AllocationReferenceEncoding::TaggedU16
+        | AllocationReferenceEncoding::TaggedU24 => {
             base.checked_add(u64::from(value))?.checked_add(1)?
         }
         AllocationReferenceEncoding::Selector2 => return None,
@@ -121,7 +125,8 @@ fn curve_record<'a>(
         AllocationReferenceEncoding::OwnedChild => journal.resolve_owned_child(origin, value),
         AllocationReferenceEncoding::Selector2
         | AllocationReferenceEncoding::TaggedU8
-        | AllocationReferenceEncoding::TaggedU16 => None,
+        | AllocationReferenceEncoding::TaggedU16
+        | AllocationReferenceEncoding::TaggedU24 => None,
     }?;
     (record.family() == ConsolidatedFamily::B && record.class() == 0x25).then_some(record)
 }
@@ -619,6 +624,8 @@ pub(in crate::families) fn attach(
             let mut curve_cache = cache;
             let mut curve_range = interval;
             let mut plane_pcurve = None;
+            let mut plane_fit_tolerance = None;
+            let mut plane_projection_gap = None;
             for ((other, other_range), other_occurrence) in [reps.target, reps.source]
                 .into_iter()
                 .zip(ranges)
@@ -807,6 +814,30 @@ pub(in crate::families) fn attach(
                 let Ok(source_range) = ParameterInterval::new(canonical) else {
                     continue;
                 };
+                if compatible {
+                    if ir.geometry.coedges[plane_coedges[0]].pcurves.is_empty() {
+                        plane_pcurve = pcurve
+                            .map(|pcurve| {
+                                (plane_coedges[0], pcurve, source_range, other.byte_offset())
+                            })
+                            .or_else(|| {
+                                let (projected, bound) = super::weighted_plane::project_curve(
+                                    &curve_cache,
+                                    face_plane,
+                                    refusal,
+                                )?;
+                                plane_projection_gap = Some(bound.get());
+                                plane_fit_tolerance = Some(bound);
+                                Some((plane_coedges[0], projected, curve_range, line.byte_offset()))
+                            });
+                        if let (None, class25::Class25Accuracy::Fitted { fit_tolerance, .. }) =
+                            (plane_projection_gap, &map.accuracy)
+                        {
+                            plane_fit_tolerance = FitTolerance::try_new(fit_tolerance.get()).ok();
+                        }
+                    }
+                    break;
+                }
                 curve_cache = lifted;
                 curve_range = source_range;
                 if ir.geometry.coedges[plane_coedges[0]].pcurves.is_empty() {
@@ -864,6 +895,8 @@ pub(in crate::families) fn attach(
                 curve_cache,
                 curve_range,
                 plane_pcurve,
+                plane_fit_tolerance,
+                plane_projection_gap,
                 vertex_misses,
             });
         }
@@ -920,14 +953,36 @@ pub(in crate::families) fn attach(
                 "consolidated_b18",
                 "weighted_surface_curve",
                 Some(true),
+                None,
+                None,
             )
         });
-        let plane_pcurves = plan
-            .plane_pcurve
-            .into_iter()
-            .map(|pcurve| (pcurve, "consolidated_b20", "weighted_plane_curve", None));
-        for ((coedge_index, geometry, range, source_pos), family, role, isoparametric) in
-            face_pcurves.chain(plane_pcurves)
+        let plane_pcurves = plan.plane_pcurve.into_iter().map(|pcurve| {
+            (
+                pcurve,
+                if plan.plane_projection_gap.is_some() {
+                    "consolidated_b18"
+                } else {
+                    "consolidated_b20"
+                },
+                if plan.plane_projection_gap.is_some() {
+                    "projected_plane_curve"
+                } else {
+                    "weighted_plane_curve"
+                },
+                None,
+                plan.plane_fit_tolerance,
+                plan.plane_projection_gap,
+            )
+        });
+        for (
+            (coedge_index, geometry, range, source_pos),
+            family,
+            role,
+            isoparametric,
+            fit_tolerance,
+            projection_gap,
+        ) in face_pcurves.chain(plane_pcurves)
         {
             let id = crate::resource::compose_index_id(
                 &cadmpeg_ir::identity_namespace!("catia", "consolidated", "weighted-pcurve"),
@@ -942,6 +997,11 @@ pub(in crate::families) fn attach(
                 role,
                 cadmpeg_ir::Exactness::Derived,
             )?;
+            if let Some(gap) = projection_gap {
+                refusal.push_plane_pcurve_projected(source_pos, gap);
+            } else if let Some(tolerance) = fit_tolerance {
+                refusal.push_parameter_map_pcurve_accuracy(source_pos, tolerance.get());
+            }
             admission.charge()?;
             ir.geometry.pcurves.push(Pcurve {
                 id: id.clone(),
@@ -949,7 +1009,7 @@ pub(in crate::families) fn attach(
                 metadata: PcurveMetadata::general(
                     None,
                     cadmpeg_ir::units::FiniteVector::new(range.endpoints()),
-                    None,
+                    fit_tolerance,
                 ),
                 native_ref: None,
             });

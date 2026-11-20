@@ -65,6 +65,7 @@ use crate::records::{
         historical_context::AsmFaceBoundary,
     },
 };
+use std::collections::HashMap;
 
 /// Everything phase 2 reads.
 pub(super) struct DesignInputs<'a> {
@@ -127,6 +128,7 @@ pub(crate) struct DesignIntentFailure {
 /// Native Design records that phase 2 produces.
 #[derive(Debug, Default)]
 pub(super) struct DesignNative {
+    pub(super) history_body_consumers: crate::history::history_bodies::ConsumerContext,
     asm_histories: Vec<AsmHistory>,
     asm_face_boundaries: Vec<AsmFaceBoundary>,
     persistent_references: Vec<PersistentReference>,
@@ -186,6 +188,7 @@ impl DesignNative {
     /// Record headers join the phase-1 headers.
     pub(super) fn store(self, native: &mut F3dNative) {
         let Self {
+            history_body_consumers: _,
             asm_histories,
             asm_face_boundaries,
             persistent_references,
@@ -449,8 +452,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         scan,
         &prereqs.design_record_headers,
     )?;
-    let (untyped_tracking_paths, profile_losses) =
-        extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
+    let RelatedDesignOutcome {
+        untyped_tracking_paths,
+        losses: profile_losses,
+        owner_sources,
+    } = extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
     losses.extend(profile_losses);
     losses.extend(
         crate::design::decode::operands::body_recipe_serialization_form_losses(
@@ -635,6 +641,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &design.design_construction_operand_groups,
         ),
     );
+    let mut derived_snapshots = crate::history::history_bodies::derived_base_snapshots(
+        ctx,
+        scan,
+        &mut design.design_parameter_scopes,
+        &design.asm_histories,
+        &prereqs.design_body_bindings,
+        &mut losses,
+    )?;
     let projected = crate::design::feature_project::project_parameter_design_with_edge_identities(
         ctx,
         &crate::design::feature_project::ProjectInputs {
@@ -669,6 +683,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         crate::design::decode::operands::construction_closing_flag_losses(
             &design.design_construction_operand_groups,
         ),
+    );
+    losses.extend(
+        crate::design::decode::operands::sketchless_profile_selection_losses(
+            scan,
+            &design.design_parameter_scopes,
+            &design.design_construction_operand_groups,
+            &design.design_record_headers,
+        )?,
     );
     losses.extend(projected.unruled_flange_thickness_loss());
     losses.extend(projected.projection_losses);
@@ -774,12 +796,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.asm_histories,
         &mut losses,
     );
-    let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(
-        scan,
-        &design.design_construction_operand_groups,
-        &design.design_construction_operand_identities,
-        &prereqs.design_body_bindings,
-    )?;
     let _lineage_scopes = crate::history::compact_lineage::bind(
         crate::history::compact_lineage::Inputs {
             scopes: &design.design_parameter_scopes,
@@ -829,7 +845,33 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         geometry.primary_brep,
     )?;
     losses.extend(bound_outputs.losses);
-    model.history_bodies = crate::history::history_bodies::fill(
+    let feature_ids = model
+        .features
+        .iter()
+        .map(|feature| &feature.id)
+        .collect::<std::collections::HashSet<_>>();
+    derived_snapshots.retain(|snapshot| {
+        snapshot
+            .produced_by
+            .as_ref()
+            .is_some_and(|id| feature_ids.contains(id))
+    });
+    let snapshot_ids = derived_snapshots
+        .iter()
+        .map(|snapshot| &snapshot.id)
+        .collect::<std::collections::HashSet<_>>();
+    for scope in &mut design.design_parameter_scopes {
+        if let Some(source) = &mut scope.derived_base_source {
+            if source
+                .snapshot
+                .as_ref()
+                .is_some_and(|snapshot| !snapshot_ids.contains(&snapshot.history_body))
+            {
+                source.snapshot = None;
+            }
+        }
+    }
+    let (history_bodies, remaining_work) = crate::history::history_bodies::fill(
         ctx,
         scan,
         crate::history::history_bodies::Inputs {
@@ -839,8 +881,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             bindings: &scope_histories,
             primary_brep: geometry.primary_brep,
         },
+        derived_snapshots,
         &mut losses,
     )?;
+    model.history_bodies = history_bodies;
+    design.history_body_consumers.remaining_work = remaining_work;
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
     losses.extend(crate::design::feature_project::sweep_fallback::project(
         &mut model.features,
@@ -899,6 +944,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         .extend(crate::history::bind_generated_body_selections(
             &mut model.features,
             &body_selection_inputs,
+            &scope_histories,
+            geometry.primary_brep,
+            &mut losses,
         ));
     losses.extend(crate::history::bind_feature_face_selections(
         &mut model.features,
@@ -973,7 +1021,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.sketch_curve_identities,
         &design.sketch_surfaces,
         &design.sketch_relations,
-        geometry.tolerances.linear.get(),
+        crate::design::feature_project::SpatialProfileSearch {
+            linear_tolerance: geometry.tolerances.linear.get(),
+            work: crate::design::feature_project::SPATIAL_PROFILE_SEARCH_WORK,
+        },
     )?;
     model.spatial_sketches = spatial.sketches;
     model.spatial_sketch_entities = spatial.entities;
@@ -1331,6 +1382,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         prereqs
             .xref_table()
             .map_or(&[], |table| table.references.as_slice()),
+        products.definitions,
         products.occurrences,
         &design.design_parameter_scopes,
     );
@@ -1435,6 +1487,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     design
         .design_record_headers
         .retain(|header| !phase_one_headers.contains(header.id.as_str()));
+    design.history_body_consumers.bindings = scope_histories;
     Ok(DesignOutputs {
         native: design,
         model,
@@ -1450,21 +1503,20 @@ pub(super) fn scope_related_indices(
 ) -> Vec<(String, u32)> {
     collect_related_indices(scopes.iter().flat_map(|scope| {
         let stream = crate::ids::native_stream(&scope.id).unwrap_or(crate::ids::DEFAULT_STREAM);
-        let thread_trailer =
-            scope
-                .thread_construction()
-                .and_then(|construction| match &construction.form {
-                    crate::records::feature::thread::DesignThreadForm::Compact(Some(reference))
-                    | crate::records::feature::thread::DesignThreadForm::CompactExtended(reference) => {
-                        Some(reference.value.get())
-                    }
-                    _ => None,
-                });
+        let thread_trailer = scope
+            .thread_construction()
+            .and_then(|construction| construction.form.hole_reference())
+            .map(|reference| reference.value.get());
         scope
             .reference_members()
             .values()
             .copied()
             .chain(thread_trailer)
+            .chain(
+                scope.joint_origin_frame().filter(|frame| frame.carrier.is_some())
+                    .and_then(|_| scope.joint_origin_reference()),
+            )
+            .chain(scope.split_face_operation().filter(|operation| operation.carrier_frame.is_some()).and_then(|operation| operation.direction_reference.local_record_index()))
             .chain(scope.move_operation().map(|operation| operation.transform_record_index))
             .chain(scope.move_operation().and_then(|operation| operation.face_group.as_ref().map(|group| group.value)))
             .chain(
@@ -1513,6 +1565,18 @@ pub(super) fn owner_related_indices(
     }))
 }
 
+/// Counts, losses and owner sources that `extend_related_design_records`
+/// returns beside the records it adds.
+struct RelatedDesignOutcome {
+    /// Construction tracking path references that stay source-only.
+    untyped_tracking_paths: usize,
+    /// Profile and edge-selection loss notes.
+    losses: Vec<LossNote>,
+    /// Source namespaces that compact construction owners select, by operand
+    /// group id.
+    owner_sources: HashMap<String, Vec<String>>,
+}
+
 fn extend_related_design_records(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -1520,7 +1584,7 @@ fn extend_related_design_records(
     timelines: &[DesignFeatureTimeline],
     geometry: &DesignGeometry<'_>,
     design: &mut DesignNative,
-) -> Result<(usize, Vec<LossNote>), CodecError> {
+) -> Result<RelatedDesignOutcome, CodecError> {
     let indices = collect_related_indices(design.sketch_relations.iter().flat_map(|relation| {
         let scope = crate::ids::native_stream(&relation.id).unwrap_or(crate::ids::DEFAULT_STREAM);
         relation
@@ -1924,7 +1988,12 @@ fn extend_related_design_records(
         geometry.persistent_subentity_tags,
         &design.design_parameter_scopes,
     );
-    crate::history::bind_body_recipe_operand_history_candidates(
+    profile_losses.extend(crate::history::linked_states::inferred_history_losses(
+        &design.design_body_recipe_operands,
+        &design.design_parameter_scopes,
+        &design.asm_histories,
+    ));
+    crate::history::body_recipe_operands::bind_body_recipe_operand_history_candidates(
         &mut design.design_body_recipe_operands,
         &prereqs.construction_recipes,
         &design.design_parameter_scopes,
@@ -2040,15 +2109,18 @@ fn extend_related_design_records(
         timelines,
         &design.asm_histories,
     )?;
-    design.design_face_operands = crate::design::decode::operands::decode_face_operands(
-        ctx,
-        scan,
-        &design.design_parameter_scopes,
-        &design.design_construction_operand_groups,
-        &design.design_record_headers,
-        &prereqs.construction_recipes,
-        &prereqs.design_types,
-    )?;
+    let (face_operands, face_operand_losses) =
+        crate::design::decode::operands::decode_face_operands(
+            ctx,
+            scan,
+            &design.design_parameter_scopes,
+            &design.design_construction_operand_groups,
+            &design.design_record_headers,
+            &prereqs.construction_recipes,
+            &prereqs.design_types,
+        )?;
+    design.design_face_operands = face_operands;
+    profile_losses.extend(face_operand_losses);
     crate::design::decode::operands::bind_face_operand_candidates(
         &mut design.design_face_operands,
         &prereqs.construction_recipes,
@@ -2122,5 +2194,9 @@ fn extend_related_design_records(
         &design.design_edge_operands,
     );
     profile_losses.extend(edge_selection_notes);
-    Ok((untyped_tracking_paths, profile_losses))
+    Ok(RelatedDesignOutcome {
+        untyped_tracking_paths,
+        losses: profile_losses,
+        owner_sources,
+    })
 }

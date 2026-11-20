@@ -9,11 +9,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
-    ExternalDocument, Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind,
-    PrototypeReference,
+    ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
 };
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::transform::Transform;
 
 use crate::decode::ids::IdScope;
@@ -93,13 +91,8 @@ fn unique_external_filename<'a>(
     matching
 }
 
-fn external_prototype(filename: Option<&str>) -> PrototypeReference {
-    PrototypeReference::External {
-        document: filename.map_or(ExternalDocument::Missing {}, |filename| {
-            ExternalDocument::path(filename.to_owned())
-        }),
-        object: None,
-    }
+fn external_document(filename: Option<&str>) -> ExternalDocument {
+    filename.map_or_else(ExternalDocument::default, ExternalDocument::path)
 }
 
 fn placement_transform(placement: &AssemblyPlacement) -> Result<Transform, CodecError> {
@@ -224,48 +217,21 @@ pub(super) fn attach(
 
     let scope = IdScope::native(cadmpeg_ir::identity_component!("assembly"));
     let root_definition = product_definition_id(&scope, "root")?;
-    let root_occurrence = occurrence_id(&scope, "root")?;
     ctx.charge_entities(
         u64_from_index(
             resolved
-                .checked_add(2)
+                .checked_add(1)
                 .ok_or_else(|| CodecError::malformed("NX assembly occurrence count overflows"))?,
         ),
         "NX assembly occurrence graph",
     )?;
-    ir.model.product_definitions.push(ProductDefinition {
-        id: root_definition.clone(),
-        kind: ProductDefinitionKind::Group,
-        source_name: None,
-        label: None,
-        description: None,
-        part_number: None,
-        bom_properties: BTreeMap::new(),
-        bodies: Vec::new(),
-        sketches: Vec::new(),
-        tessellations: Vec::new(),
-        native_ref: None,
-    });
-    ir.model.occurrences.push(Occurrence {
-        id: root_occurrence.clone(),
-        prototype: PrototypeReference::Local {
-            definition: root_definition,
-        },
-        parent: OccurrenceParent::Root {},
-        ordinal: 0,
-        transform: Transform::identity(),
-        linked_prototype: None,
-        scale: [FiniteReal::ONE; 3],
-        name: None,
-        visible: None,
-        link: None,
-        native_ref: None,
-    });
+    let mut root = ProductDefinition::root(root_definition, ExternalDocument::default());
+    root.kind = Some(ProductDefinitionKind::Assembly);
 
     let external_references: &[ExternalReference] = &model.om.external_references;
     let mut filenames = BTreeMap::<usize, Option<&str>>::new();
+    let mut prototypes = BTreeMap::<usize, ProductDefinition>::new();
     let (mut joined_filenames, mut missing_documents) = (0_usize, 0_usize);
-    let mut ordinal = 0_u32;
     for (placement, prototype_index) in placements.iter().zip(&prototype_by_placement) {
         let Some(prototype_index) = *prototype_index else {
             continue;
@@ -293,23 +259,33 @@ pub(super) fn attach(
         if let Some(name) = &name {
             ctx.retain_bytes(u64_from_index(name.len()), "NX occurrence prototype name")?;
         }
-        ir.model.occurrences.push(Occurrence {
-            id: occurrence_id(&scope, &format!("placement-{}", placement.source_offset))?,
-            prototype: external_prototype(filename),
-            parent: OccurrenceParent::Occurrence {
-                occurrence: root_occurrence.clone(),
-            },
-            ordinal,
-            transform: placement_transform(placement)?,
-            linked_prototype: None,
-            scale: [FiniteReal::ONE; 3],
-            name,
-            visible: None,
-            link: None,
-            native_ref: Some(placement.id.clone()),
-        });
-        ordinal += 1;
+        let definition = match prototypes.entry(prototype_index) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.get().id.clone(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_entities(1, "NX assembly component definitions")?;
+                let mut external = ProductDefinition::new(
+                    product_definition_id(&scope, &format!("prototype-{prototype_index}"))?,
+                    Storage::External(external_document(filename)),
+                );
+                external.source_name.clone_from(&name);
+                entry.insert(external).id.clone()
+            }
+        };
+        let id = occurrence_id(&scope, &format!("placement-{}", placement.source_offset))?;
+        let mut occurrence = Occurrence::new(
+            id.clone(),
+            definition,
+            Some(placement_transform(placement)?),
+        );
+        occurrence.name = name;
+        occurrence.native_ref = Some(placement.id.clone());
+        ir.model.occurrences.push(occurrence);
+        root.occurrences.push(id);
     }
+    ir.model.product_definitions.push(root);
+    ir.model
+        .product_definitions
+        .extend(prototypes.into_values());
     ir.model
         .product_definitions
         .sort_by(|left, right| left.id.cmp(&right.id));
@@ -347,11 +323,11 @@ pub(super) fn attach(
 #[cfg(test)]
 mod tests {
     use super::{
-        external_prototype, part_length_unit, unique_external_filename, unique_prototype,
+        external_document, part_length_unit, unique_external_filename, unique_prototype,
         PartLengthUnit,
     };
     use crate::native::om::ExpressionUnit;
-    use cadmpeg_ir::products::{ExternalDocument, PrototypeReference};
+    use cadmpeg_ir::products::ExternalDocument;
 
     #[test]
     fn repeated_uses_of_one_prototype_resolve_without_an_ordinal_join() {
@@ -397,12 +373,6 @@ mod tests {
 
     #[test]
     fn missing_external_document_has_no_object_identity() {
-        assert_eq!(
-            external_prototype(None),
-            PrototypeReference::External {
-                document: ExternalDocument::Missing {},
-                object: None,
-            }
-        );
+        assert_eq!(external_document(None), ExternalDocument::default());
     }
 }

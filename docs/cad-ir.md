@@ -218,6 +218,8 @@ Datum planes retain their operation family when placement is unresolved and carr
 
 A `replace_face` construction keeps target faces and replacement support faces in distinct operands. Its optional Boolean `tangent_chain` controls inclusion of faces tangent to the targets. Absence leaves that control unresolved; a present value is `true` or `false`.
 
+A `split_body` operation carries an optional `extend_tool` Boolean. A present value selects whether to extend the splitting geometry through the target bodies. An absent value leaves extension unknown.
+
 A `thicken` construction independently retains its selected faces, positive total thickness, travel side, tangent-chain setting and solid result. Missing result or tangent-chain fields leave those settings unresolved. `SolidFeatureResult` describes new-body construction or a Boolean operation with its target-body selection and is shared by coils and thickens. A symmetric Thicken splits its total thickness evenly across both sides.
 
 Linear pattern counts define grid positions, including the seed at `(0, 0)`. An absent second direction has one position. `omitted_instances` is an optional array of zero-based `[first, second]` grid coordinates. Each coordinate is in bounds and distinct, and `(0, 0)` is excluded. An absent or empty array omits no position. The retained instance count is the product of the direction counts minus the number of omitted coordinates. Length conversion preserves these coordinates. A direction with `symmetric` set to `true` places its instances on both sides of the seed. Its coordinate `0` is the seed, an odd coordinate `k` is `(k + 1) / 2` spacings along the direction, and an even coordinate `k` above zero is `k / 2` spacings against it. An even count therefore places `count / 2` instances along the direction and `count / 2 - 1` against it. An absent `symmetric` is `false`: coordinate `k` is `k` spacings along the direction.
@@ -305,7 +307,7 @@ A declared measure names a quantity and its target bodies or product definition.
 
 ## Point clouds
 
-A point cloud holds measured or sampled points in the frame of its optional product definition. `positions` holds at least one point, in document length units. `normals` and `colors` are empty or hold one value for each point. Each channel has a name that is unique in its point cloud and one finite value for each point, in point order; channels hold per-point scalars such as intensity, confidence, or a classification code. `sensor` is the pose of the capturing sensor in the frame of the points.
+A point cloud holds measured or sampled points. `definition` names the product definition that holds it, in whose frame the points lie; that definition exists and its storage is not `external`. `positions` holds at least one point, in document length units. `normals` and `colors` are empty or hold one value for each point. Each channel has a name that is unique in its point cloud and one finite value for each point, in point order; channels hold per-point scalars such as intensity, confidence, or a classification code. `sensor` is the pose of the capturing sensor in the frame of the points.
 
 ## History bodies
 
@@ -383,7 +385,11 @@ supports only one normal domain.
 
 `triangle_groups` is empty or is an ordered partition of all triangle ordinals.
 Each group is nonempty, its ordinals are strictly increasing, and a nonempty
-`source_id` is unique within the tessellation. `texture_assignments` associates
+`source_id` is unique within the tessellation. A group's optional `face` names
+the B-rep face whose triangles the group holds. The face is a face of the
+tessellation's `body`, which is then present, and a member of `faces` when
+`faces` is not empty. Each face names at most one group of a tessellation.
+`texture_assignments` associates
 one source texture resource and asset with each nonempty, strictly increasing
 triangle subset. Nonempty texture-resource identities are unique. Anonymous
 assignments use an asset at most once. Distinct source resources can use the

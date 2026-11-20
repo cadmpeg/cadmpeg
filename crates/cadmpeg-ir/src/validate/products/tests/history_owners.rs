@@ -20,7 +20,7 @@ fn model() -> CadIr {
     });
     ir.model.product_definitions.push(
         serde_json::from_value(serde_json::json!({
-            "id": "test:model:product#owner", "kind": "part", "bodies": ["test:model:body#result"], "bom_properties": {}, "sketches": [], "tessellations": []
+            "id": "test:model:product#owner", "kind": "part", "bodies": ["test:model:body#result"], "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [], "occurrences": [], "instance_bodies": [], "representations": [], "sketches": []
         }))
         .unwrap(),
     );
@@ -52,7 +52,7 @@ fn model() -> CadIr {
 fn findings(ir: &CadIr) -> Vec<Finding> {
     let mut findings = Vec::new();
     super::super::check_products(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         ir,
         &mut findings,
     )

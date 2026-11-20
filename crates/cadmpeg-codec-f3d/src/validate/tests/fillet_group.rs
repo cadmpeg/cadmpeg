@@ -107,10 +107,11 @@ pub(super) fn radius_native(valid: bool) -> crate::native::F3dNative {
 }
 
 #[test]
-fn fillet_radius_valid_assignment_has_no_finding() {
+fn lowercase_fillet_radius_valid_assignment_has_no_finding() {
     crate::test_support::with_decode_context(|service_ctx| {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        let native = radius_native(true);
+        let mut native = radius_native(false);
+        add_radius_parameter(&mut native, 201, "radius", 2.0, Some("mm"));
         let ctx = super::super::Ctx::new(&ir, &native, service_ctx);
         let mut findings = Vec::new();
         super::super::validate_fillet_radius_groups(&ctx, &mut findings);

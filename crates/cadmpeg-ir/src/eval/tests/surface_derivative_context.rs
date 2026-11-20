@@ -5,7 +5,7 @@ use crate::math::Point3;
 
 #[test]
 fn quadratic_surface_local_partials_match_the_closed_form() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let surface = NurbsSurface::from_lanes(
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),
         NurbsSurfaceAxis::new(2, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], false),

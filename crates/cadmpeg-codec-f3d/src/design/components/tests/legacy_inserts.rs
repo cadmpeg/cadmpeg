@@ -35,10 +35,10 @@ fn legacy_frame_assumption_is_reported_without_feature_projection() {
     let scopes = std::slice::from_ref(&scope);
     let timelines = synthetic_feature_timelines(scopes);
     let inserts = ComponentInserts::decide(scopes, &timelines, &[]);
-    let occurrences = inserts.unresolved_occurrences(0).unwrap();
+    let (_, occurrences) = inserts.unresolved_occurrences().unwrap();
     assert_eq!(occurrences.len(), 1);
     assert_eq!(
-        occurrences[0].transform.rows(),
+        occurrences[0].transform.unwrap().rows(),
         [
             [0.6, -0.8, 0.0, 10.0],
             [0.8, 0.6, 0.0, 20.0],
@@ -71,14 +71,14 @@ fn legacy_frame_assumption_requires_a_projected_occurrence() {
     );
     let timelines = synthetic_feature_timelines(std::slice::from_ref(&listed));
     let inserts = ComponentInserts::decide(&[omitted.clone(), listed], &timelines, &[]);
-    assert!(inserts.unresolved_occurrences(0).unwrap().is_empty());
+    assert!(inserts.unresolved_occurrences().unwrap().1.is_empty());
     assert!(inserts.losses().is_empty());
     if let DesignScopePayloadMut::ComponentInsert(payload) = omitted.payload_mut() {
         payload.unresolved_placement = Some(serde_json::from_slice(br#"{"occurrence_identity":19,"matrix":{"offset":46,"value":[[1,0,0,1e308],[0,1,0,0],[0,0,1,0],[0,0,0,1]]}}"#).unwrap());
     }
     let timelines = synthetic_feature_timelines(std::slice::from_ref(&omitted));
     let inserts = ComponentInserts::decide(&[omitted], &timelines, &[]);
-    assert!(inserts.unresolved_occurrences(0).unwrap().is_empty());
+    assert!(inserts.unresolved_occurrences().unwrap().1.is_empty());
     assert_eq!(
         inserts
             .losses()

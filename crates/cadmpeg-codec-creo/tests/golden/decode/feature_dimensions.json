@@ -3,18 +3,264 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "creo:model:timeline#root",
+            "kind": "timeline",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "creo:model:sketch_feature#917"
+              },
+              {
+                "kind": "feature",
+                "value": "creo:model:feature#40"
+              },
+              {
+                "kind": "feature",
+                "value": "creo:depdb:curve_expression_feature#7-269"
+              }
+            ],
+            "rollback": {
+              "kind": "end"
+            }
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "native",
+              "value": {
+                "kind": "creo:CurveFromEquation",
+                "native_options": {},
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "creo:depdb:curve_expression_feature#7-269",
+          "name": "Curve Equation 7",
+          "native_ref": "creo:depdb:curve_expression#active-7-269"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "extrude"
+              }
+            }
+          },
+          "id": "creo:model:feature#40",
+          "name": "Extrude id 40",
+          "native_ref": "creo:featdefs:feature_definition#917"
+        },
+        {
+          "definition": {
+            "operation": {
+              "kind": "sketch",
+              "value": "creo:model:sketch#917"
+            }
+          },
+          "id": "creo:model:sketch_feature#917",
+          "native_ref": "creo:featdefs:sketch#917"
+        }
+      ],
       "names": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "source",
+              "value": {
+                "dialect": {
+                  "kind": "creo"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "d42+1[deg]"
+                  }
+                ]
+              }
+            }
+          },
+          "id": "creo:depdb:curve_expression_parameter#7-269-0",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 1,
+              "length": 0,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "result",
+          "native_options": {},
+          "native_ref": "creo:depdb:curve_expression#active-7-269",
+          "owner": {
+            "kind": "feature",
+            "value": "creo:depdb:curve_expression_feature#7-269"
+          },
+          "scope": "creo:model:product_definition#root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 1.0174532925199433
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "source",
+              "value": {
+                "dialect": {
+                  "kind": "creo"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "1"
+                  }
+                ]
+              }
+            }
+          },
+          "id": "creo:featdefs:parameter#917:42:1",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 1,
+              "length": 0,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "d917_42_1",
+          "native_options": {},
+          "native_ref": "creo:featdefs:sketch#917",
+          "owner": {
+            "kind": "feature",
+            "value": "creo:model:sketch_feature#917"
+          },
+          "scope": "creo:model:product_definition#root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 1.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "source",
+              "value": {
+                "dialect": {
+                  "kind": "creo"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "1"
+                  }
+                ]
+              }
+            }
+          },
+          "id": "creo:featdefs:parameter#917:42:2",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 1,
+              "length": 0,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "d917_42_2",
+          "native_options": {},
+          "native_ref": "creo:featdefs:sketch#917",
+          "owner": {
+            "kind": "feature",
+            "value": "creo:model:sketch_feature#917"
+          },
+          "scope": "creo:model:product_definition#root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 1.0
+          }
+        }
+      ],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "creo:depdb:curve_expression_feature#7-269"
+                }
+              },
+              "bodies": [],
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "creo:model:product_definition#root",
+          "occurrences": {},
+          "roots": [
+            "creo:model:timeline#root"
+          ]
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
-      "sketches": [],
+      "sketches": [
+        {
+          "id": "creo:model:sketch#917",
+          "native_options": {},
+          "native_ref": "creo:featdefs:sketch#917",
+          "owner": "creo:model:sketch_feature#917",
+          "plane": {
+            "after": [],
+            "inputs": [
+              {
+                "reference": {
+                  "kind": "picks",
+                  "value": {
+                    "at": {
+                      "kind": "input"
+                    },
+                    "picks": {
+                      "kind": "unread"
+                    }
+                  }
+                }
+              }
+            ],
+            "kind": "placed",
+            "resolved_in": {}
+          },
+          "solve": {
+            "status": "current"
+          },
+          "source_settings": {}
+        }
+      ],
       "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
@@ -232,7 +478,23 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "creo:model:product_definition#root",
+          "instance_bodies": [],
+          "kind": "part",
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],

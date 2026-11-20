@@ -294,3 +294,46 @@ fn a_combine_whose_tools_name_no_history_only_pair_is_left_alone() {
         BodySelection::NativeSet(_)
     ));
 }
+
+#[test]
+fn a_captured_base_feature_generates_the_second_combine_tool() {
+    let scopes = vec![
+        scope(DesignFeatureKind::Extrude, 100),
+        scope(DesignFeatureKind::native("Derived Base Feature"), 200),
+        combine_scope(&[(150, 100), (250, 200)]),
+    ];
+    let mut features = vec![
+        feature("extrude", 1, &scope_id(100)),
+        feature("derived", 2, &scope_id(200)),
+        feature("combine", 3, &scope_id(400)),
+    ];
+    let prefix = crate::ids::feature_input_prefix(&features[1].id, 92);
+    features[1]
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(
+            FeatureOperation::BaseFeature {
+                bodies: BodySelection::Historical {
+                    state: crate::ids::history_input_state_id(&prefix),
+                    bodies: vec![crate::ids::history_input_body_id(&prefix, 7)]
+                        .try_into()
+                        .unwrap(),
+                    native: scope_id(200).try_into().unwrap(),
+                },
+            },
+        ));
+    let losses = bind(&mut features, &scopes, &[pair(150, true), pair(250, true)]);
+    assert!(losses.is_empty(), "{losses:?}");
+    let BodySelection::Generated { bodies: tools, .. } = tools_of(&features[2]) else {
+        panic!("generated tools")
+    };
+    assert_eq!(tools.len(), 2);
+    assert_eq!(&tools[1].feature, &features[1].id);
+    assert_eq!(
+        features[2]
+            .source_properties
+            .iter()
+            .find(|(key, _)| key.as_str() == "combine:tool:1:generator")
+            .map(|(_, value)| value.as_str()),
+        Some(features[1].id.as_str())
+    );
+}
