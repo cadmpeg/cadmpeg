@@ -161,6 +161,7 @@ pub struct ArchiveSnapshot<'a> {
 /// Dependency index over the admitted central directory.
 struct ZipIndex<'bytes> {
     archive: zip::ZipArchive<index::NamespaceReader<'bytes>>,
+    admitted: DirectoryPreflight,
 }
 
 enum Admission<T> {
@@ -191,7 +192,7 @@ impl<'bytes> ZipIndex<'bytes> {
                     )))
                 }
             };
-        Ok(Admission::Indexed(Self { archive }))
+        Ok(Admission::Indexed(Self { archive, admitted }))
     }
 }
 
@@ -215,63 +216,42 @@ impl<'a> ArchiveSnapshot<'a> {
         root: View<'a>,
         repeats: bool,
     ) -> Result<Self, CodecError> {
-        let index = if repeats {
-            None
-        } else {
-            match ZipIndex::admit(ctx, root.window())? {
-                Admission::Indexed(index) => Some(index),
-                Admission::Unreadable(error) => return local::recover(root, error),
-            }
+        let index = match ZipIndex::admit(ctx, root.window())? {
+            Admission::Indexed(index) => index,
+            Admission::Unreadable(error) => return local::recover(root, error),
         };
-        let (archive_central_start, archive_offset) = if let Some(index) = &index {
+        let (archive_central_start, archive_offset) = if repeats {
+            (
+                index.admitted.central_start,
+                index.admitted.archive_offset.ok_or_else(|| {
+                    CodecError::malformed("ZIP directory offset exceeds its position")
+                })?,
+            )
+        } else {
             (
                 index.archive.central_directory_start(),
                 index.archive.offset(),
             )
-        } else {
-            let admitted = preflight_central_directory(ctx, root.window())?;
-            (
-                admitted.central_start,
-                admitted.archive_offset.ok_or_else(|| {
-                    CodecError::malformed("ZIP directory offset exceeds its position")
-                })?,
-            )
         };
-        let central_entry_count =
-            count_central_names(root.window(), archive_central_start, repeats)?;
-        if index
-            .as_ref()
-            .is_some_and(|index| central_entry_count != index.archive.len())
-        {
-            return Err(CodecError::Malformed(
-                "ZIP central directory contains duplicate entry names".into(),
-            ));
-        }
+        let central_entry_count = if repeats {
+            index.admitted.entry_count
+        } else {
+            let count = count_central_names(root.window(), archive_central_start)?;
+            if count != index.archive.len() {
+                return Err(CodecError::Malformed(
+                    "ZIP central directory contains duplicate entry names".into(),
+                ));
+            }
+            count
+        };
         let mut names = BTreeSet::new();
         let mut entries = Vec::new();
         let mut central = archive_central_start;
         for ordinal in 0..central_entry_count {
             let name = if repeats {
-                use crate::layout::central_header;
-                let start = usize::try_from(central)
-                    .map_err(|_| CodecError::malformed("ZIP name offset exceeds memory"))?;
-                let length = usize::from(
-                    View::u16_le_at(root.window(), start + central_header::NAME_LENGTH)
-                        .ok_or_else(|| CodecError::malformed("truncated ZIP name length"))?,
-                );
-                let name = root
-                    .child(
-                        start + central_header::LEN,
-                        start + central_header::LEN + length,
-                    )
-                    .ok_or_else(|| CodecError::malformed("truncated ZIP name"))?;
-                let flags = View::u16_le_at(root.window(), start + central_header::FLAGS)
-                    .ok_or_else(|| CodecError::malformed("truncated ZIP name flags"))?;
-                local::decode_name(name.window(), flags & 0x800 != 0).into()
+                index::declaration_name(root.window(), central, index.admitted.entries_end)?.into()
             } else {
                 index
-                    .as_ref()
-                    .ok_or_else(|| CodecError::malformed("ZIP namespace index is absent"))?
                     .archive
                     .name_for_index(ordinal)
                     .ok_or_else(|| CodecError::malformed("ZIP indexed name is absent"))?
@@ -588,6 +568,8 @@ struct DirectoryPreflight {
     end_record: usize,
     central_start: u64,
     archive_offset: Option<u64>,
+    entry_count: usize,
+    entries_end: u64,
 }
 
 fn preflight_central_directory(
@@ -780,6 +762,7 @@ fn central_directory_inventory(
             ));
         }
     }
+    let entries_end = offset;
     let declared_end = entries_start
         .checked_add(directory_size)
         .ok_or_else(|| CodecError::malformed("ZIP declared directory end overflows"))?;
@@ -807,14 +790,13 @@ fn central_directory_inventory(
         end_record: end,
         central_start: entries_start,
         archive_offset: entries_start.checked_sub(directory_start_hint),
+        entry_count: usize::try_from(count)
+            .map_err(|_| CodecError::malformed("ZIP entry count exceeds memory"))?,
+        entries_end,
     })
 }
 
-fn count_central_names(
-    bytes: &[u8],
-    central_start: u64,
-    repeats: bool,
-) -> Result<usize, CodecError> {
+fn count_central_names(bytes: &[u8], central_start: u64) -> Result<usize, CodecError> {
     let mut offset = central_start;
     let mut names = BTreeSet::new();
     let mut entry_count = 0;
@@ -842,7 +824,7 @@ fn count_central_names(
         let name = bytes
             .get(name_start..name_end)
             .ok_or_else(|| CodecError::Malformed("truncated ZIP central name".into()))?;
-        if !names.insert(name) && !repeats {
+        if !names.insert(name) {
             return Err(CodecError::Malformed(
                 "duplicate ZIP central entry name".into(),
             ));
