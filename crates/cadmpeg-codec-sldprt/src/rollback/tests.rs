@@ -2,13 +2,14 @@
 //! Synthetic tests of the current mark, the mark records and their join.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_core::CodecError;
+use std::collections::BTreeSet;
+
 use cadmpeg_parasolid::records::DeltasRecords;
 use cadmpeg_parasolid::test_support::test_pmarks;
 
 use super::{
-    join, mark_chain, mark_class_index, mark_records, token_naming_marks, MarkChain, MarkRecord,
-    Reading, Unread,
+    join, mark_chain, mark_class_index, mark_records, token_naming_marks, MarkChain, MarkClass,
+    MarkRecord, Reading, Unread,
 };
 use crate::carchive::reader::MarkOwner;
 use crate::layout::pmark_record_head as head;
@@ -158,61 +159,75 @@ fn owners(names: &[Option<&str>]) -> Vec<MarkOwner> {
         .collect()
 }
 
-fn unwalked() -> Result<Vec<MarkOwner>, CodecError> {
-    panic!("the End reading needs no walk")
+fn names(list: &[&str]) -> BTreeSet<String> {
+    list.iter().map(|name| (*name).to_owned()).collect()
 }
 
 #[test]
 fn the_current_mark_at_the_last_record_is_the_end() {
-    let reading = join(&chain(&[11, 8, 5, 1]), &records(&[5, 8, 11]), unwalked).unwrap();
-    assert_eq!(reading, Reading::End);
+    let marks = chain(&[11, 8, 5, 1]);
+    let held = owners(&[Some("Boss-Extrude1"), None, Some("Fillet1")]);
+    assert_eq!(
+        join(&marks, &records(&[5, 8, 11]), &held),
+        Reading::End {
+            last: "Fillet1".to_owned(),
+            recorded: names(&["Boss-Extrude1", "Fillet1"]),
+        }
+    );
+    assert_eq!(
+        join(&marks, &records(&[5, 8, 11]), &held[..2]),
+        Reading::Unread(Unread::HolderUnresolved { current: 11 }),
+        "the End reading names the feature that holds the last record"
+    );
 }
 
 #[test]
 fn the_current_mark_at_an_earlier_record_rolls_back_after_its_feature() {
-    let names = [
+    let holders = [
         Some("Boss-Extrude1"),
         Some("Cut-Extrude1"),
         Some("Fillet1"),
         Some("Chamfer1"),
     ];
-    let reading = join(&chain(&[8, 5, 1]), &records(&[5, 8, 14, 17]), || {
-        Ok(owners(&names))
-    })
-    .unwrap();
+    let reading = join(
+        &chain(&[8, 5, 1]),
+        &records(&[5, 8, 14, 17]),
+        &owners(&holders),
+    );
     assert_eq!(
         reading,
         Reading::RolledBack {
             after: "Cut-Extrude1".to_owned(),
             later: vec!["Fillet1".to_owned(), "Chamfer1".to_owned()],
+            recorded: names(&["Boss-Extrude1", "Cut-Extrude1", "Fillet1", "Chamfer1"]),
         }
     );
 }
 
 #[test]
 fn marks_that_fix_no_position_name_their_reason() {
-    let walk = || Ok(owners(&[Some("A"), None, Some("C")]));
+    let walk = owners(&[Some("A"), None, Some("C")]);
     assert_eq!(
-        join(&chain(&[14, 11, 8, 1]), &records(&[8, 11]), walk).unwrap(),
+        join(&chain(&[14, 11, 8, 1]), &records(&[8, 11]), &walk),
         Reading::Unread(Unread::AfterLastFeature {
             current: 14,
             last: 11
         })
     );
     assert_eq!(
-        join(&chain(&[14, 1]), &records(&[8, 11]), walk).unwrap(),
+        join(&chain(&[14, 1]), &records(&[8, 11]), &walk),
         Reading::Unread(Unread::NoFeatureMark { current: 14 })
     );
     assert_eq!(
-        join(&chain(&[11, 8, 1]), &records(&[11, 8]), walk).unwrap(),
+        join(&chain(&[11, 8, 1]), &records(&[11, 8]), &walk),
         Reading::Unread(Unread::LaterMarkOnMainLine { current: 11 })
     );
     assert_eq!(
-        join(&chain(&[8, 1]), &records(&[8, 21, 24]), walk).unwrap(),
+        join(&chain(&[8, 1]), &records(&[8, 21, 24]), &walk),
         Reading::Unread(Unread::HolderUnresolved { current: 8 })
     );
     assert_eq!(
-        join(&chain(&[8, 1]), &[], walk).unwrap(),
+        join(&chain(&[8, 1]), &[], &walk),
         Reading::Unread(Unread::NoMarkRecord)
     );
 }
@@ -277,6 +292,22 @@ fn a_reconciled_map_without_the_mark_class_bounds_the_token_scan_by_its_count() 
     );
     assert_eq!(
         mark_class_index(Some(&map), Some(0x40), &stream, &marks),
-        Ok(0x2b)
+        Ok(MarkClass::Scanned(0x2b))
+    );
+    assert_eq!(
+        mark_class_index(None, Some(0x40), &stream, &marks),
+        Ok(MarkClass::Scanned(0x2b))
+    );
+}
+
+#[test]
+fn a_map_that_names_the_mark_class_gives_its_index() {
+    let marks = chain(&[11, 8, 5, 1]);
+    let stream = resolved(&[tagged(0x2b, 5), tagged(0x2b, 8), tagged(0x2b, 11)]);
+    let map = std::collections::BTreeMap::from([(0x30, "moPMarkRecord_c".to_owned())]);
+    assert_eq!(
+        mark_class_index(Some(&map), Some(0x40), &stream, &marks),
+        Ok(MarkClass::Mapped(0x30)),
+        "the map's index stands over the token the scan would take"
     );
 }

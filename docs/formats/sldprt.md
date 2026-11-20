@@ -2407,9 +2407,11 @@ The first twelve bytes of a `moPMarkRecord_c` body (§2.3) are its head: the mar
 
 The records follow the order of their features. A record's feature is the innermost named object (`moNodeName_c` header) that holds it. The rollback position of the feature tree joins the current mark of the active configuration to these records:
 
-- The current mark is the mark of the last record: the tree is built through its end.
-- The current mark is the mark of record k and every later record's mark lies off the main line: the features of the later records are not built. Where each of them is suppressed, the tree is built through its end; otherwise the rollback bar stands after the feature of record k.
+- The current mark is the mark of the last record: the bar stands after the feature of that record.
+- The current mark is the mark of record k and every later record's mark lies off the main line: the features of the later records are not built. The bar stands after the feature of record k and before the first of them that is not suppressed; where each of them is suppressed, the tree is built through its end.
 - Otherwise the marks do not fix the position: the current mark follows the last record's mark on the main line (a later feature holds no tagged record), or it is the mark of no record.
+
+A feature that holds no record sets no mark. Where such a feature lies after the feature at the current mark and before the first unbuilt feature that is not suppressed (or the end of the tree), the marks do not place the bar before or after it.
 
 ## 4. Typed topology records
 

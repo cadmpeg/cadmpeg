@@ -3,10 +3,11 @@
 //! §3.4): the current mark of the active configuration's partition against
 //! the mark each feature's `moPMarkRecord_c` names.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_parasolid::deltas::pmark_state::PmarkState;
 use cadmpeg_parasolid::records::deltas::{EventContent, Metadata};
 use cadmpeg_parasolid::records::DeltasRecords;
@@ -14,6 +15,7 @@ use cadmpeg_parasolid::records::DeltasRecords;
 use crate::carchive::reader::MarkOwner;
 use crate::container::{contains_ascii_case_insensitive, ContainerScan};
 use crate::layout::pmark_record_head as head;
+use crate::loss::SldprtLossCode;
 
 #[cfg(test)]
 mod tests;
@@ -30,15 +32,28 @@ const LONG_TAG: u16 = 0x7fff;
 /// The `CArchive` word that opens a class declaration.
 const DECLARATION_TAG: u16 = 0xffff;
 
+/// The archive walk's `moPMarkRecord_c` holders of each configuration, keyed
+/// by its lower-case `Contents/Config-<N>` name.
+pub(crate) type MarkOwners = HashMap<String, Vec<MarkOwner>>;
+
 /// What the stored marks state of the rollback position.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Reading {
-    /// The current mark is the mark of the last feature record: the tree is
-    /// built through its end.
-    End,
+    /// The current mark is the mark of the last feature record, which the
+    /// feature named `last` holds. `recorded` names every feature that holds
+    /// a record.
+    End {
+        last: String,
+        recorded: BTreeSet<String>,
+    },
     /// The current mark is the mark of the feature named `after`; `later`
     /// names the features of the records after it, in stream order.
-    RolledBack { after: String, later: Vec<String> },
+    /// `recorded` names every feature that holds a record.
+    RolledBack {
+        after: String,
+        later: Vec<String>,
+        recorded: BTreeSet<String>,
+    },
     /// The stored marks do not fix the position.
     Unread(Unread),
 }
@@ -74,6 +89,10 @@ pub(crate) enum Unread {
     FeatureUnresolved { name: String },
     /// A later record's feature precedes the rolled-back feature in the timeline.
     FeatureOutOfOrder { name: String },
+    /// A feature between the feature at the current mark and the first
+    /// unbuilt feature holds no record, so its mark does not place the bar
+    /// before or after it.
+    UnrecordedFeature { name: String },
 }
 
 impl std::fmt::Display for Unread {
@@ -117,6 +136,10 @@ impl std::fmt::Display for Unread {
                 f,
                 "feature {name} precedes the rolled-back feature in the timeline"
             ),
+            Self::UnrecordedFeature { name } => write!(
+                f,
+                "feature {name} after the feature at the current mark holds no mark record"
+            ),
         }
     }
 }
@@ -129,6 +152,15 @@ struct MarkRecord {
     mark: u32,
 }
 
+/// Where the class index of `moPMarkRecord_c` comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MarkClass {
+    /// The configuration's class map names the class at this index.
+    Mapped(u32),
+    /// The class token whose records name the most main-line marks.
+    Scanned(u32),
+}
+
 /// The current mark and the main line back from it, current first.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct MarkChain {
@@ -137,9 +169,12 @@ struct MarkChain {
 }
 
 /// Read the rollback position of the active configuration's feature tree.
+/// A class index taken from the token scan adds its note to `losses`.
 pub(crate) fn read(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
+    owners: &MarkOwners,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Reading, CodecError> {
     let Some(site) = crate::container::select_active_parasolid_site(scan) else {
         return Ok(Reading::Unread(Unread::NoPartitionSite));
@@ -184,21 +219,23 @@ pub(crate) fn read(
         None => None,
     };
     let index = match mark_class_index(map.as_ref(), count, resolved, &chain) {
-        Ok(index) => index,
+        Ok(MarkClass::Mapped(index)) => index,
+        Ok(MarkClass::Scanned(index)) => {
+            losses.push(
+                SldprtLossCode::HistoryRollbackMarkClassInferred.note(format!(
+                    "The {MARK_CLASS} class of {configuration} is the class token whose records \
+                 name the most main-line marks; the configuration's class map does not state it."
+                )),
+            );
+            index
+        }
         Err(unread) => return Ok(Reading::Unread(unread)),
     };
-    join(&chain, &mark_records(resolved, index), || {
-        let Some(version) =
-            crate::carchive::walk_version(crate::container::declared_sw_version(scan), config)
-        else {
-            return Ok(Vec::new());
-        };
-        Ok(
-            crate::carchive::walk_configuration(ctx, config, resolved, Some(version))?
-                .map(|walk| walk.marks)
-                .unwrap_or_default(),
-        )
-    })
+    let owners = owners
+        .get(&configuration.to_ascii_lowercase())
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    Ok(join(&chain, &mark_records(resolved, index), owners))
 }
 
 /// The `Contents/Config-<N>` stream name of a `Contents/Config-<N>-Partition`
@@ -242,32 +279,38 @@ fn mark_chain(records: &DeltasRecords<'_>) -> Option<MarkChain> {
     })
 }
 
-/// The class index of `moPMarkRecord_c` where the class map does not name it:
-/// among the indices below the stream's map `count`, where one bounds them,
-/// and whose record heads mostly name main-line marks after the initial one,
-/// the one whose record heads name the most distinct such marks. `None` where
-/// no index or several do.
 /// The class index of `moPMarkRecord_c` in a configuration's feature stream:
-/// the class map's entry where the map reconciles, else the token whose
-/// records name the most marks among indices below the stream's map count.
-/// A reconciled map bounds the token scan as an unreconciled one does: a
-/// token at or past the count names no class of the configuration.
+/// the class map's entry where the map reconciles and names the class, else
+/// the token scan's index. A reconciled map bounds the token scan as an
+/// unreconciled one does: a token at or past the count names no class of the
+/// configuration.
 fn mark_class_index(
     map: Option<&BTreeMap<u32, String>>,
     count: Option<u32>,
     resolved: &[u8],
     chain: &MarkChain,
-) -> Result<u32, Unread> {
-    match map {
-        Some(map) => map
-            .iter()
+) -> Result<MarkClass, Unread> {
+    let mapped = map.and_then(|map| {
+        map.iter()
             .find_map(|(index, name)| (name == MARK_CLASS).then_some(*index))
-            .or_else(|| token_naming_marks(resolved, count, chain))
-            .ok_or(Unread::NoMarkClass),
-        None => token_naming_marks(resolved, count, chain).ok_or(Unread::ClassMapUnreconciled),
+    });
+    if let Some(index) = mapped {
+        return Ok(MarkClass::Mapped(index));
     }
+    token_naming_marks(resolved, count, chain)
+        .map(MarkClass::Scanned)
+        .ok_or(if map.is_some() {
+            Unread::NoMarkClass
+        } else {
+            Unread::ClassMapUnreconciled
+        })
 }
 
+/// The class index of `moPMarkRecord_c` where the class map does not name it:
+/// among the indices below the stream's map `count`, where one bounds them,
+/// and whose record heads mostly name main-line marks after the initial one,
+/// the one whose record heads name the most distinct such marks. `None` where
+/// no index or several do.
 fn token_naming_marks(stream: &[u8], count: Option<u32>, chain: &MarkChain) -> Option<u32> {
     let marks = match chain.main.split_last() {
         Some((_, later)) if !later.is_empty() => later,
@@ -352,46 +395,49 @@ fn mark_records(stream: &[u8], index: u32) -> Vec<MarkRecord> {
         .collect()
 }
 
-/// Join the current mark to the feature records. `owners` gives the walk's
-/// holders of the records; it runs only off the `End` reading.
-fn join(
-    chain: &MarkChain,
-    records: &[MarkRecord],
-    owners: impl FnOnce() -> Result<Vec<MarkOwner>, CodecError>,
-) -> Result<Reading, CodecError> {
+/// Join the current mark to the feature records, whose holders the archive
+/// walk gives in `owners`.
+fn join(chain: &MarkChain, records: &[MarkRecord], owners: &[MarkOwner]) -> Reading {
     let current = chain.current;
     let Some(last) = records.last() else {
-        return Ok(Reading::Unread(Unread::NoMarkRecord));
+        return Reading::Unread(Unread::NoMarkRecord);
     };
-    if last.mark == current {
-        return Ok(Reading::End);
-    }
-    let Some(index) = records.iter().rposition(|record| record.mark == current) else {
-        return Ok(Reading::Unread(if chain.main.contains(&last.mark) {
-            Unread::AfterLastFeature {
-                current,
-                last: last.mark,
-            }
-        } else {
-            Unread::NoFeatureMark { current }
-        }));
-    };
-    let later = &records[index + 1..];
-    if later.iter().any(|record| chain.main.contains(&record.mark)) {
-        return Ok(Reading::Unread(Unread::LaterMarkOnMainLine { current }));
-    }
-    let owners = owners()?;
     let holder = |record: &MarkRecord| {
         owners
             .iter()
             .find(|owner| owner.at == record.at)
             .and_then(|owner| owner.owner.clone())
     };
+    let recorded = records.iter().filter_map(holder).collect::<BTreeSet<_>>();
+    if last.mark == current {
+        return match holder(last) {
+            Some(last) => Reading::End { last, recorded },
+            None => Reading::Unread(Unread::HolderUnresolved { current }),
+        };
+    }
+    let Some(index) = records.iter().rposition(|record| record.mark == current) else {
+        return Reading::Unread(if chain.main.contains(&last.mark) {
+            Unread::AfterLastFeature {
+                current,
+                last: last.mark,
+            }
+        } else {
+            Unread::NoFeatureMark { current }
+        });
+    };
+    let later = &records[index + 1..];
+    if later.iter().any(|record| chain.main.contains(&record.mark)) {
+        return Reading::Unread(Unread::LaterMarkOnMainLine { current });
+    }
     let (Some(after), Some(later)) = (
         holder(&records[index]),
         later.iter().map(holder).collect::<Option<Vec<_>>>(),
     ) else {
-        return Ok(Reading::Unread(Unread::HolderUnresolved { current }));
+        return Reading::Unread(Unread::HolderUnresolved { current });
     };
-    Ok(Reading::RolledBack { after, later })
+    Reading::RolledBack {
+        after,
+        later,
+        recorded,
+    }
 }

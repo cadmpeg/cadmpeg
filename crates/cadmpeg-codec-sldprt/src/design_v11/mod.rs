@@ -87,16 +87,19 @@ pub(crate) fn project(
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
     let id = container_id(cadmpeg_ir::identity_key!("timeline"));
     let members = timeline.members();
-    let built = match stated(&timeline.features, rollback) {
-        Ok(built) => built,
-        Err(unread) => {
-            losses.push(SldprtLossCode::HistoryRollbackUnread.note(format!(
-                "The rollback position of the feature tree is not read ({unread}); the timeline \
-                 is stated built through its last member."
-            )));
-            members.len()
-        }
-    };
+    let (built, unread) =
+        stated(&timeline.features, rollback).unwrap_or_else(|unread| (members.len(), Some(unread)));
+    if let Some(unread) = unread {
+        let through = if built == members.len() {
+            "its last member".to_owned()
+        } else {
+            format!("its first {built} members")
+        };
+        losses.push(SldprtLossCode::HistoryRollbackUnread.note(format!(
+            "The rollback position of the feature tree is not read ({unread}); the timeline is \
+             stated built through {through}."
+        )));
+    }
     let (rollback, at) = built_through(&id, &members, built);
     let current = (!bodies.is_empty())
         .then(|| current_state(at, bodies.clone()))
@@ -156,12 +159,19 @@ pub(crate) fn project(
 }
 
 /// The number of leading timeline features the stored marks state built:
-/// all of them at `End`, or through the rolled-back feature.
-fn stated(features: &[Feature], reading: Reading) -> Result<usize, Unread> {
-    let (after, later) = match reading {
-        Reading::End => return Ok(features.len()),
+/// through the feature at the current mark where a later feature is unbuilt
+/// and unsuppressed, else all of them. A feature between the feature at the
+/// current mark and the first such feature that holds no mark record leaves
+/// the position unread: the count stands, with that reason.
+fn stated(features: &[Feature], reading: Reading) -> Result<(usize, Option<Unread>), Unread> {
+    let (holder, later, recorded) = match reading {
+        Reading::End { last, recorded } => (last, Vec::new(), recorded),
+        Reading::RolledBack {
+            after,
+            later,
+            recorded,
+        } => (after, later, recorded),
         Reading::Unread(unread) => return Err(unread),
-        Reading::RolledBack { after, later } => (after, later),
     };
     let index = |name: String| {
         let found = {
@@ -176,21 +186,40 @@ fn stated(features: &[Feature], reading: Reading) -> Result<usize, Unread> {
         };
         found.ok_or(Unread::FeatureUnresolved { name })
     };
-    let rolled_back = index(after)?;
-    let mut built = features.len();
+    let at = index(holder)?;
+    let mut bar = features.len();
     for name in later {
         let position = index(name.clone())?;
-        if position <= rolled_back {
+        if position <= at {
             return Err(Unread::FeatureOutOfOrder { name });
         }
         if !matches!(
             features[position].suppressed,
             Some(Dimension::Literal(true))
         ) {
-            built = rolled_back + 1;
+            bar = bar.min(position);
         }
     }
-    Ok(built)
+    let built = if bar < features.len() {
+        at + 1
+    } else {
+        features.len()
+    };
+    let unrecorded = features[at + 1..bar]
+        .iter()
+        .find(|feature| {
+            feature
+                .name
+                .as_ref()
+                .is_none_or(|name| !recorded.contains(name))
+        })
+        .map(|feature| Unread::UnrecordedFeature {
+            name: feature
+                .name
+                .clone()
+                .unwrap_or_else(|| feature.id.to_string()),
+        });
+    Ok((built, unrecorded))
 }
 
 /// The rollback of a timeline `id` whose first `built` members are built, and
