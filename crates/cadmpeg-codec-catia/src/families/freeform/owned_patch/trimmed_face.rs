@@ -924,6 +924,17 @@ where
                     primary_stations[endpoint] =
                         Some((t - source_range[0]) / (source_range[1] - source_range[0]));
                     Some(t)
+                })
+                .or_else(|| {
+                    stations::wide_parameter(
+                        self.bytes,
+                        self.records,
+                        index,
+                        p,
+                        domain,
+                        &self.resolve,
+                        refusal,
+                    )
                 })?;
             if matches!(pcurve, PcurveGeometry::Line(_)) {
                 Some((t - source_range[0]) / (source_range[1] - source_range[0]))
@@ -2774,6 +2785,7 @@ mod tests {
 
     mod carriers;
     mod recovery;
+    mod roster_priority;
 
     #[test]
     fn trim_retains_existing_affine_station_before_companion_fallback() {
