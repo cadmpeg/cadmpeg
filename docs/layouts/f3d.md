@@ -13977,6 +13977,43 @@ Records 192 and 219; `n` u64 values follow.
 | 44 | 1 | `separator` | `u8` | little | spec | `base_feature_body_map_companion_prefix` · value `0` |
 | 45 | 4 | `value_count` | `u32` | little | spec | `base_feature_body_map_companion_prefix` |
 
+## `base_feature_body_map`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 149 B
+
+Record 197 for one result body (`N = 1`); the basename holds a 36-character UUID.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_body_map` |
+| 11 | 10 | `zero` | `bytes[10]` | little | spec | `base_feature_body_map` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `body_count` | `u32` | little | spec | `base_feature_body_map` · value `1` |
+| 25 | 8 | `body_position` | `u64` | little | spec | `base_feature_body_map` · value `0` |
+| 33 | 8 | `body_reference_index` | `u64` | little | spec | `base_feature_body_map` · value `187` |
+| 41 | 11 | `body_owner` | `bytes[11]` | little | spec | `base_feature_body_map` |
+| 52 | 1 | `separator` | `u8` | little | spec | `base_feature_body_map` · value `0` |
+| 53 | 4 | `basename_length` | `u32` | little | spec | `base_feature_body_map` · value `46` |
+| 57 | 92 | `basename` | `bytes[92]` | little | spec | `base_feature_body_map` |
+
+## `base_feature_snapshot_body_map`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 158 B
+
+Record 195 for one result body (`N = 1`); the basename holds a 36-character UUID.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_snapshot_body_map` |
+| 11 | 10 | `zero` | `bytes[10]` | little | spec | `base_feature_snapshot_body_map` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 11 | `companion` | `bytes[11]` | little | spec | `base_feature_snapshot_body_map` |
+| 32 | 4 | `body_count` | `u32` | little | spec | `base_feature_snapshot_body_map` · value `1` |
+| 36 | 8 | `body_position` | `u64` | little | spec | `base_feature_snapshot_body_map` · value `0` |
+| 44 | 8 | `body_reference_index` | `u64` | little | spec | `base_feature_snapshot_body_map` |
+| 52 | 11 | `body_owner` | `bytes[11]` | little | spec | `base_feature_snapshot_body_map` |
+| 63 | 1 | `separator` | `u8` | little | spec | `base_feature_snapshot_body_map` · value `0` |
+| 64 | 4 | `basename_length` | `u32` | little | spec | `base_feature_snapshot_body_map` · value `45` |
+| 68 | 90 | `basename` | `bytes[90]` | little | spec | `base_feature_snapshot_body_map` |
+
 ## `base_feature_scene_node`
 
 Spec §Records of a Base Feature design · layout: byte offsets · size: 133 B
