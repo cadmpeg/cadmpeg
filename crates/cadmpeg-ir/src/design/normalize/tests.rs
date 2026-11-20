@@ -7,7 +7,7 @@ use std::fmt::Debug;
 use crate::codec::{
     Codec, CodecBackend, Confidence, DecodeBody, DecodeOptions, DecodeResult, Decoded, FormatId,
 };
-use crate::design::configuration::{DesignConfiguration, Overrides};
+use crate::design::configuration::{DesignConfiguration, OccurrenceOverride, Overrides};
 use crate::design::names::{CodecId, NativeName, NativeNameValue};
 use crate::design::refs::{ConfigurationRef, EntityRef};
 use crate::design::scope::OccurrenceDesign;
@@ -1102,6 +1102,40 @@ fn a_target_through_an_occurrence_of_another_scope_keeps_its_state() {
         .targets
         .iter()
         .all(|target| target.state == kept));
+}
+
+#[test]
+fn a_target_through_an_occurrence_whose_prototype_is_replaced_reads_the_replacement() {
+    let mut ir = placed();
+    let root: ProductDefinitionId = id("definition", "root");
+    let mut swap = DesignConfiguration {
+        id: id("configuration", "swap"),
+        scope: root.clone(),
+        name: "swap".to_owned(),
+        parent: None,
+        comment: None,
+        overrides: Overrides::default(),
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: None,
+    };
+    swap.overrides.occurrences.insert(
+        id("occurrence", "other"),
+        OccurrenceOverride {
+            prototype: Some(id("definition", "part")),
+            ..OccurrenceOverride::default()
+        },
+    );
+    ir.design.configurations.push(swap);
+    ir.design
+        .scopes
+        .iter_mut()
+        .find(|scope| scope.definition == root)
+        .unwrap()
+        .active_configuration = Some(id("configuration", "swap"));
+    ir.model.pmi[0].targets = vec![in_base(steps(&[("other", None)]))];
+    normalize(&mut ir).unwrap();
+    assert_eq!(ir.model.pmi[0].targets[0].state, None);
 }
 
 /// A point at `ParameterRatio` 1 of nothing, inside `depth - 1` points

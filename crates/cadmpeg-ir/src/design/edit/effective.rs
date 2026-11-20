@@ -6,6 +6,8 @@
 //! Each occurrence of a path resolves, outermost first, through the
 //! configuration that applies to it: the one its parent occurrence selects
 //! for the prototype that owns it, else its scope's active configuration.
+//! Its prototype is the one that configuration puts in place, else its base
+//! prototype, and the occurrences below it resolve in that prototype.
 //! Its suppression, visibility, and placement are its base values resolved
 //! through that configuration, then through the arrangements in force in it,
 //! then through the nested overrides of the occurrences above it, applied
@@ -57,12 +59,14 @@ impl Resolved {
 }
 
 /// One step of a path being resolved: its occurrence, the scope that states
-/// its design, and the configuration of that scope that applies to it.
+/// its design, the configuration of that scope that applies to it, and the
+/// prototype in force in that configuration.
 struct Level<'a> {
     occurrence: &'a OccurrenceId,
     record: &'a Occurrence,
     scope: Option<&'a DesignScope>,
     configuration: Option<ConfigurationId>,
+    prototype: &'a ProductDefinitionId,
 }
 
 /// The records an occurrence path resolves through: the design, and the
@@ -404,9 +408,8 @@ impl PathResolver<'_> {
     /// last occurrence selects for it, else the scope of that occurrence,
     /// which spans the prototype, in that occurrence's configuration (§5.1,
     /// part 9). `None` where the path is empty, a step is `Native` or names
-    /// an occurrence the document does not hold, an override in force
-    /// replaces the prototype of one of its occurrences, or no scope states
-    /// that design.
+    /// an occurrence the document does not hold, or no scope states that
+    /// design.
     ///
     /// # Errors
     ///
@@ -418,51 +421,15 @@ impl PathResolver<'_> {
         let Some(levels) = self.levels(path)? else {
             return Ok(None);
         };
-        for at in 0..levels.len() {
-            if self.replaced(&levels, at)? {
-                return Ok(None);
-            }
-        }
         let Some(last) = levels.last() else {
             return Ok(None);
         };
-        let Some(scope) = self
-            .design
-            .design_scope(&last.record.prototype)
-            .or(last.scope)
-        else {
+        let Some(scope) = self.design.design_scope(last.prototype).or(last.scope) else {
             return Ok(None);
         };
         let stated = path.0.last().and_then(|step| step.configuration.as_ref());
         let configuration = self.configuration_below(Some(last), Some(scope), stated)?;
         Ok(Some((scope.definition.clone(), configuration)))
-    }
-
-    /// Whether an override in force for the occurrence at `at` of a path
-    /// whose levels are `levels` replaces its prototype.
-    fn replaced(&self, levels: &[Level<'_>], at: usize) -> Result<bool, EditError> {
-        let level = &levels[at];
-        let replaces = |overrides: &Overrides| {
-            overrides
-                .occurrences
-                .get(level.occurrence)
-                .is_some_and(|entry| entry.prototype.is_some())
-        };
-        if self
-            .arranged_for(levels, at)?
-            .into_iter()
-            .any(|arrangement| replaces(&arrangement.overrides))
-        {
-            return Ok(true);
-        }
-        Ok(match &level.configuration {
-            Some(configuration) => self
-                .design
-                .configuration_chain(configuration)?
-                .into_iter()
-                .any(|state| replaces(&state.overrides)),
-            None => false,
-        })
     }
 
     /// The levels of a path, outermost first; `None` where a step is
@@ -486,14 +453,43 @@ impl PathResolver<'_> {
                 .checked_sub(1)
                 .and_then(|above| path.0[above].configuration.as_ref());
             let configuration = self.configuration_below(parent, scope, stated)?;
+            let prototype = self.prototype_in_force(occurrence, record, configuration.as_ref())?;
             levels.push(Level {
                 occurrence,
                 record,
                 scope,
                 configuration,
+                prototype,
             });
         }
         Ok(Some(levels))
+    }
+
+    /// The prototype of an occurrence in `configuration`, the configuration
+    /// of its scope that applies to it: the `prototype` of its override in
+    /// that configuration, else in its parent's, else its base prototype
+    /// (§5.11). An arrangement's override states no prototype (part 10).
+    fn prototype_in_force<'a>(
+        &'a self,
+        occurrence: &OccurrenceId,
+        record: &'a Occurrence,
+        configuration: Option<&ConfigurationId>,
+    ) -> Result<&'a ProductDefinitionId, EditError> {
+        let Some(configuration) = configuration else {
+            return Ok(&record.prototype);
+        };
+        Ok(self
+            .design
+            .configuration_chain(configuration)?
+            .into_iter()
+            .find_map(|state| {
+                state
+                    .overrides
+                    .occurrences
+                    .get(occurrence)
+                    .and_then(|entry| entry.prototype.as_ref())
+            })
+            .unwrap_or(&record.prototype))
     }
 
     /// The configuration of `scope` that applies below `parent`, the
@@ -511,7 +507,7 @@ impl PathResolver<'_> {
         let Some(parent) = parent else {
             return Ok(scope.and_then(|scope| scope.active_configuration.clone()));
         };
-        let Some(scope) = scope.filter(|scope| scope.definition == parent.record.prototype) else {
+        let Some(scope) = scope.filter(|scope| &scope.definition == parent.prototype) else {
             return Ok(parent.configuration.clone());
         };
         let selected = self.selected_configuration(parent, stated)?;
@@ -614,7 +610,7 @@ impl PathResolver<'_> {
         let mut in_force: Vec<&Arrangement> = Vec::new();
         if let (Some(parent), Some(scope)) = (at.checked_sub(1).map(|up| &levels[up]), level.scope)
         {
-            if scope.definition == parent.record.prototype {
+            if &scope.definition == parent.prototype {
                 let named = parent
                     .scope
                     .and_then(|holder| holder.occurrences.get(parent.occurrence))
