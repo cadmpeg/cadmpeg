@@ -43,9 +43,16 @@ impl Annotations {
         ir.model.pmi.push(PmiAnnotation {
             id: super::pmi_id(id),
             name: draft.name.filter(|value| !value.is_empty()),
-            targets: draft.targets,
+            targets: draft
+                .targets
+                .into_iter()
+                .map(cadmpeg_ir::references::InstanceTarget::new)
+                .collect(),
             visible: draft.visible,
             definition: draft.definition,
+            native_ref: None,
+            native_options: cadmpeg_ir::design::options::NativeOptions::new(),
+            source_settings: cadmpeg_ir::design::options::NativeOptions::new(),
         });
         self.indices.insert(id, index);
         index

@@ -65,21 +65,22 @@ fn parameter_inference_ir(with_edge: bool) -> CadIr {
 
     let mut ir = CadIr::empty();
     for (number, x) in [(1, 0.0), (2, 1.0)] {
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::from(crate::ids::data(crate::ids::kind!("point"), number)),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0))
                 .expect("finite point"),
             None,
         ));
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: VertexId::from(crate::ids::data(crate::ids::kind!("vertex"), number)),
             point: PointId::from(crate::ids::data(crate::ids::kind!("point"), number)),
             tolerance: None,
+            native_ref: None,
         });
     }
     if with_edge {
         let curve = CurveId::from(crate::ids::data(crate::ids::kind!("curve"), 3));
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -87,13 +88,17 @@ fn parameter_inference_ir(with_edge: bool) -> CadIr {
                     .expect("finite line"),
             )),
             source_object: None,
+            native_ref: None,
         });
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: EdgeId::from(crate::ids::data(crate::ids::kind!("edge"), 4)),
             carrier: EdgeCarrier::unbounded(Some(curve)),
-            start: VertexId::from(crate::ids::data(crate::ids::kind!("vertex"), 1)),
-            end: VertexId::from(crate::ids::data(crate::ids::kind!("vertex"), 2)),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::from(crate::ids::data(crate::ids::kind!("vertex"), 1)),
+                VertexId::from(crate::ids::data(crate::ids::kind!("vertex"), 2)),
+            )),
             tolerance: None,
+            native_ref: None,
         });
     }
     ir
@@ -105,8 +110,8 @@ fn parameter_inference_without_edges_keeps_the_model() {
     crate::test_support::with_service_context(b"", |_, ctx| {
         super::super::infer_edge_parameter_ranges(&mut ir, ctx, &mut Vec::new())
             .expect("no edge interval needs inference");
-        assert_eq!(ir.model.points.len(), 2);
-        assert_eq!(ir.model.vertices.len(), 2);
+        assert_eq!(ir.geometry.points.len(), 2);
+        assert_eq!(ir.geometry.vertices.len(), 2);
     });
 }
 
@@ -118,7 +123,9 @@ fn streamed_parameter_inference_finds_the_stored_line_endpoints() {
             .expect("line interval");
     });
     assert_eq!(
-        ir.model.edges[0].param_range().expect("inferred interval"),
+        ir.geometry.edges[0]
+            .param_range()
+            .expect("inferred interval"),
         [0.0, 1.0]
     );
 }
@@ -331,7 +338,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     .expect("end point");
     let start_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), false, 0.0);
     let start = nurbs_curve_parameter_near_point(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &nurbs,
         start_point.get(),
         EPS_ENDPOINT_WITNESS,
@@ -341,7 +348,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     .expect("start witness")
     .get();
     let start_seed_end = nurbs_curve_parameter_near_point(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &nurbs,
         end_point.get(),
         EPS_ENDPOINT_WITNESS,
@@ -353,7 +360,7 @@ fn nonperiodic_nurbs_endpoint_seed_selects_the_terminal_branch() {
     assert!((start_seed_end - 1.0).abs() > 0.1);
     let end_seed = curve_endpoint_seed(geometry.solved().expect("solved carrier"), true, start);
     let end = nurbs_curve_parameter_near_point(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &nurbs,
         end_point.get(),
         EPS_ENDPOINT_WITNESS,
@@ -486,7 +493,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
 
     let mut ir = CadIr::empty();
     let directrix = CurveId::mint("test:model:curve#line").expect("identity grammar");
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -497,22 +504,25 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     let sweep = SurfaceId::mint("test:model:surface#sweep").expect("identity grammar");
     let revolution = SurfaceId::mint("test:model:surface#revolution").expect("identity grammar");
-    ir.model.surfaces.extend([
+    ir.geometry.surfaces.extend([
         Surface {
             id: sweep.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         },
         Surface {
             id: revolution.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         },
     ]);
-    let _attached = ir.model.add_procedural_surface(
+    let _attached = ir.geometry.add_procedural_surface(
         &sweep,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
@@ -527,7 +537,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
             None,
         ),
     );
-    let _attached = ir.model.add_procedural_surface(
+    let _attached = ir.geometry.add_procedural_surface(
         &revolution,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#revolution-construction")
@@ -550,7 +560,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         surface_parameter_scales_for_step(
             &ir,
             &sweep,
-            &ir.model.surfaces[0].geometry,
+            &ir.geometry.surfaces[0].geometry,
             length_scale,
             angle_scale,
             &BTreeMap::new(),
@@ -563,7 +573,7 @@ fn procedural_surface_units_follow_the_evaluated_parameter_order() {
         surface_parameter_scales_for_step(
             &ir,
             &revolution,
-            &ir.model.surfaces[1].geometry,
+            &ir.geometry.surfaces[1].geometry,
             length_scale,
             angle_scale,
             &BTreeMap::new(),
@@ -656,14 +666,15 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
 
     let mut ir = CadIr::empty();
     let child = CurveId::mint("test:model:curve#unknown-child").expect("identity grammar");
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: child.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
     let directrix = CurveId::mint("test:model:curve#composite").expect("identity grammar");
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
@@ -678,14 +689,16 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
             self_intersect: None,
         }),
         source_object: None,
+        native_ref: None,
     });
     let surface = SurfaceId::mint("test:model:surface#sweep").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
-    let _attached = ir.model.add_procedural_surface(
+    let _attached = ir.geometry.add_procedural_surface(
         &surface,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#sweep-construction")
@@ -705,7 +718,7 @@ fn unresolved_procedural_directrix_has_no_assumed_parameter_units() {
         surface_parameter_scales_for_step(
             &ir,
             &surface,
-            &ir.model.surfaces[0].geometry,
+            &ir.geometry.surfaces[0].geometry,
             0.001,
             std::f64::consts::PI / 180.0,
             &BTreeMap::new(),
@@ -727,7 +740,7 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
     let surface_id = SurfaceId::mint("test:model:surface#surface").expect("identity grammar");
     let directrix = CurveId::mint("test:model:curve#directrix").expect("identity grammar");
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -738,13 +751,15 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
-    let _attached = ir.model.add_procedural_surface(
+    let _attached = ir.geometry.add_procedural_surface(
         &surface_id,
         ProceduralSurface::new(
             ProceduralSurfaceId::mint("test:model:procedural-surface#construction")
@@ -765,7 +780,7 @@ fn axis_revolution_surface_parameter_units_use_plane_angle_for_u() {
         surface_parameter_scales_for_step(
             &ir,
             &surface_id,
-            &ir.model.surfaces[0].geometry,
+            &ir.geometry.surfaces[0].geometry,
             10.0,
             std::f64::consts::PI / 180.0,
             &BTreeMap::new(),
@@ -1242,7 +1257,7 @@ fn off_carrier_edge_ir(axial: f64) -> CadIr {
     let mut ir = CadIr::empty();
     ir.tolerances.linear =
         cadmpeg_ir::scalar::PositiveLength::new(1.0e-5).expect("positive tolerance");
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: CurveId::mint("step:test:curve#c0").expect("identity grammar"),
         geometry: CurveGeometry::Solved(solved_circle(
@@ -1252,32 +1267,37 @@ fn off_carrier_edge_ir(axial: f64) -> CadIr {
             1.5,
         )),
         source_object: None,
+        native_ref: None,
     });
     for (id, position) in [
         ("p0", Point3::new(1.5, 0.0, 0.0)),
         ("p1", Point3::new(0.0, 1.5, axial)),
     ] {
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint(format!("step:test:point#{id}")).expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(position).expect("finite point"),
             None,
         ));
     }
     for (v, p) in [("v0", "p0"), ("v1", "p1")] {
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: VertexId::mint(format!("step:test:vertex#{v}")).expect("identity grammar"),
             point: PointId::mint(format!("step:test:point#{p}")).expect("identity grammar"),
             tolerance: None,
+            native_ref: None,
         });
     }
-    ir.model.edges.push(Edge {
+    ir.geometry.edges.push(Edge {
         id: EdgeId::mint("step:test:edge#e0").expect("identity grammar"),
         carrier: EdgeCarrier::unbounded(Some(
             CurveId::mint("step:test:curve#c0").expect("identity grammar"),
         )),
-        start: VertexId::mint("step:test:vertex#v0").expect("identity grammar"),
-        end: VertexId::mint("step:test:vertex#v1").expect("identity grammar"),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            VertexId::mint("step:test:vertex#v0").expect("identity grammar"),
+            VertexId::mint("step:test:vertex#v1").expect("identity grammar"),
+        )),
         tolerance: None,
+        native_ref: None,
     });
     ir
 }
@@ -1293,7 +1313,7 @@ fn infer_edge_parameter_ranges_admits_an_off_carrier_vertex_and_reports_it() {
         infer_edge_parameter_ranges(&mut ir, ctx, &mut losses).expect("inference");
     });
 
-    let range = ir.model.edges[0]
+    let range = ir.geometry.edges[0]
         .param_range()
         .expect("the arc's parameter range is derived from the carrier's closed form");
     assert!(
@@ -1328,7 +1348,7 @@ fn infer_edge_parameter_ranges_gives_an_off_carrier_edge_its_admission_bound() {
         infer_edge_parameter_ranges(&mut ir, ctx, &mut losses).expect("inference");
     });
 
-    let carried = ir.model.edges[0]
+    let carried = ir.geometry.edges[0]
         .tolerance
         .expect("an off-carrier edge carries a tolerance")
         .get();
@@ -1349,12 +1369,12 @@ fn infer_edge_parameter_ranges_gives_an_off_carrier_edge_its_admission_bound() {
 fn infer_edge_parameter_ranges_keeps_a_wider_stated_tolerance() {
     let mut ir = off_carrier_edge_ir(2.5e-3);
     let stated = cadmpeg_ir::scalar::PositiveReal::new(1.0e-2).expect("positive");
-    ir.model.edges[0].tolerance = Some(stated);
+    ir.geometry.edges[0].tolerance = Some(stated);
     let mut losses = Vec::new();
     crate::test_support::with_service_context(b"", |_, ctx| {
         infer_edge_parameter_ranges(&mut ir, ctx, &mut losses).expect("inference");
     });
-    assert_eq!(ir.model.edges[0].tolerance, Some(stated));
+    assert_eq!(ir.geometry.edges[0].tolerance, Some(stated));
 }
 
 /// An offset the document's own accuracy already covers is not a finding.
@@ -1365,9 +1385,9 @@ fn infer_edge_parameter_ranges_reports_nothing_for_ordinary_precision() {
     crate::test_support::with_service_context(b"", |_, ctx| {
         infer_edge_parameter_ranges(&mut ir, ctx, &mut losses).expect("inference");
     });
-    assert!(ir.model.edges[0].param_range().is_some());
+    assert!(ir.geometry.edges[0].param_range().is_some());
     assert_eq!(
-        ir.model.edges[0].tolerance, None,
+        ir.geometry.edges[0].tolerance, None,
         "an edge within the document accuracy is held to it"
     );
     assert!(

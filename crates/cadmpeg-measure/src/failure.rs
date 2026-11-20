@@ -192,6 +192,9 @@ mod tests {
             }
         }
         let limit = cadmpeg_core::decode::ResourceLimit {
+            scope: cadmpeg_core::decode::LimitScope::for_dimension(
+                cadmpeg_core::decode::ResourceDimension::RecursionDepth,
+            ),
             dimension: cadmpeg_core::decode::ResourceDimension::RecursionDepth,
             reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
             limit: 1,

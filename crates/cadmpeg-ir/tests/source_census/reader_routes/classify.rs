@@ -201,22 +201,6 @@ fn receiver_description(receiver: &Receiver) -> String {
     }
 }
 
-pub(super) fn same_crate(left: &str, right: &str) -> bool {
-    match (
-        left.split('/')
-            .nth(1)
-            .filter(|_| left.starts_with("crates/")),
-        right
-            .split('/')
-            .nth(1)
-            .filter(|_| right.starts_with("crates/")),
-    ) {
-        (Some(left), Some(right)) => left == right,
-        (None, None) => left == right,
-        _ => false,
-    }
-}
-
 fn route_identity(route: &HandImplSource) -> (String, Vec<String>, String) {
     (route.path.clone(), route.scope.clone(), route.name.clone())
 }
@@ -358,16 +342,20 @@ fn receiver_from_shape(shape: &TypeShape) -> Option<Receiver> {
     }
 }
 
+/// A helper route a macro body states by its crate-relative path, which
+/// names the helper only in the crate that declares it.
 fn macro_helper_route_at(
     nodes: &[Node],
     position: usize,
     bindings: &BTreeSet<String>,
+    source: &str,
 ) -> Option<InputRoute> {
     let path = path_tail(nodes, position + 1)?;
     let function = path.last()?.as_str();
     let known = match path.as_slice() {
         [prefix, module, name]
             if matches!(prefix.as_str(), "$crate" | "crate")
+                && source.starts_with("crates/cadmpeg-ir/src/")
                 && module == "units"
                 && name == "deserialize_named" =>
         {
@@ -375,6 +363,7 @@ fn macro_helper_route_at(
         }
         [prefix, module, name]
             if matches!(prefix.as_str(), "$crate" | "crate")
+                && source.starts_with("crates/cadmpeg-core/src/")
                 && module == "distinct_keys"
                 && matches!(name.as_str(), "json_object" | "btree_map") =>
         {
@@ -433,7 +422,7 @@ fn collect(
             });
         }
 
-        if let Some(input_route) = macro_helper_route_at(nodes, position, bindings) {
+        if let Some(input_route) = macro_helper_route_at(nodes, position, bindings, &route.path) {
             if !is_atom(nodes, position + 2, "?") {
                 return Err(format!(
                     "{} {} has a macro helper route whose error is not propagated: {}",

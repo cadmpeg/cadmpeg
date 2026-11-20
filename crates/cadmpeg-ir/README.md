@@ -35,7 +35,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{validate_neutral, CadIr};
 
 let mut ir = CadIr::empty(Units::default());
-// Populate ir.model arenas and use typed IDs to connect entities.
+// Populate ir.geometry and ir.model arenas and use typed IDs to connect entities.
 let arena = cadmpeg_core::decode::DecodeArena::new();
 let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
     &[], &arena, &cadmpeg_core::decode::DecodePolicy::default(),
@@ -48,8 +48,8 @@ assert_eq!(ir.ir_version, cadmpeg_ir::IR_VERSION);
 ```
 
 `CadIr::to_canonical_json` clones and finalizes the document before it emits
-pretty JSON. `CadIr::from_json` accepts exactly `ir_version: "10"`.
-The `model.subds` arena is required, including when empty. `diff` compares
+pretty JSON. `CadIr::from_json` accepts exactly `ir_version: "11"`.
+The `geometry.subds` arena is required, including when empty. `diff` compares
 units, tolerances, annotations, and entity arenas by stable identity.
 
 Format crates implement the object-safe `Codec` trait. A consumer can select a

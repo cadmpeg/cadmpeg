@@ -55,3 +55,28 @@ fn offset_24_prologue_decodes_operation_and_distance() {
         }
     ));
 }
+
+#[test]
+fn offset_23_prologue_decodes_operation_and_distance() {
+    let mut bytes = vec![0; 120];
+    bytes[23..27].copy_from_slice(&2u32.to_le_bytes());
+    bytes[27..31].copy_from_slice(&1u32.to_le_bytes());
+    bytes[31..35].copy_from_slice(&2u32.to_le_bytes());
+    bytes[36] = 1;
+    bytes[41..49].copy_from_slice(&1f64.to_le_bytes());
+    bytes[72..76].copy_from_slice(&1u32.to_le_bytes());
+    let parse =
+        |bytes: &[u8]| super::super::exact_current_extrude_prologue(bytes, 0, 100, &[], false);
+    let parsed = parse(&bytes).unwrap();
+    assert!(matches!(
+        parsed,
+        DesignExtrudePrologue::ReferenceAware {
+            operation: crate::records::feature::extrude::DesignExtrudeOperation::Cut,
+            operation_offset: 23,
+            extent: DesignExtrudeExtent::OneSidedDistance,
+            ..
+        }
+    ));
+    bytes[22] = 1;
+    assert!(parse(&bytes).is_none());
+}

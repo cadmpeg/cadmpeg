@@ -8,8 +8,8 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compression": "deflate",
       "expanded": 5436,
+      "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
       "stored": 1241
@@ -21,8 +21,8 @@
         "data_offset": "1326",
         "header_offset": "1283"
       },
-      "compression": "deflate",
       "expanded": 8938,
+      "kind": "deflate",
       "name": "Box.Shape.brp",
       "role": "brep",
       "stored": 761
@@ -34,8 +34,8 @@
         "data_offset": "2132",
         "header_offset": "2087"
       },
-      "compression": "deflate",
       "expanded": 4739,
+      "kind": "deflate",
       "name": "GuiDocument.xml",
       "role": "gui-document",
       "stored": 989
@@ -47,8 +47,8 @@
         "data_offset": "3165",
         "header_offset": "3121"
       },
-      "compression": "deflate",
       "expanded": 8,
+      "kind": "deflate",
       "name": "LineColorArray",
       "role": "auxiliary",
       "stored": 8
@@ -60,8 +60,8 @@
         "data_offset": "3218",
         "header_offset": "3173"
       },
-      "compression": "deflate",
       "expanded": 8,
+      "kind": "deflate",
       "name": "PointColorArray",
       "role": "auxiliary",
       "stored": 8
@@ -73,19 +73,20 @@
         "data_offset": "3271",
         "header_offset": "3226"
       },
-      "compression": "deflate",
       "expanded": 76,
+      "kind": "deflate",
       "name": "ShapeAppearance",
       "role": "auxiliary",
       "stored": 66
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_version": "1",
           "program_version": "1.0R39109 (Git)",
@@ -93,8 +94,10 @@
         },
         "dialect": "fcstd:schema-4"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",

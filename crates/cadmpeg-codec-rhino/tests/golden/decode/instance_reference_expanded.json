@@ -1,44 +1,95 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
-      "bodies": [],
-      "coedges": [],
+    "design": {
+      "arrangements": [],
       "configurations": [],
-      "curves": [],
-      "drawings": [],
-      "edges": [],
-      "faces": [],
+      "containers": [],
+      "evaluations": [],
       "features": [],
-      "loops": [],
-      "occurrences": [],
+      "names": [],
       "parameters": [],
-      "pcurves": [],
-      "pmi": [],
-      "points": [],
-      "presentation_documents": [],
-      "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
-      "product_definitions": [],
-      "regions": [],
-      "semantic_annotations": [],
-      "shells": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "rhino:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -147,12 +198,31 @@
         "texture_mappings": [],
         "unknowns": [
           {
-            "id": "rhino:object:record#000000"
+            "id": "rhino:object:record#000000",
+            "links": []
           }
         ],
         "views": [],
         "windows_bitmaps": []
       }
+    },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
     },
     "source": {
       "attributes": {
@@ -167,17 +237,19 @@
         "unit_value": "2"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "archive_version": "60"
             },
             "dialect": "rhino:archive-60"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -185,41 +257,51 @@
       "linear": 0.01
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "archive_version": "60"
           },
           "dialect": "rhino:archive-60"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "object.record-census",
-          "kind": "object_records_untransferred",
-          "namespace": "rhino",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "object.record-census",
+            "kind": "object_records_untransferred",
+            "namespace": "rhino"
+          }
         },
         "message": "decoded 1/1 Rhino object records",
         "severity": "info"
       },
       {
         "code": {
-          "code": "container.integrity-failure",
-          "kind": "integrity_failure",
-          "namespace": "rhino",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.integrity-failure",
+            "kind": "integrity_failure",
+            "namespace": "rhino",
+            "strict_floor": "warning"
+          }
         },
         "message": "instance-definition record at offset 159: instance definition CRC mismatch at offset 227",
         "provenance": {
@@ -231,32 +313,38 @@
       },
       {
         "code": {
-          "code": "container.integrity-failure",
-          "kind": "integrity_failure",
-          "namespace": "rhino",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.integrity-failure",
+            "kind": "integrity_failure",
+            "namespace": "rhino",
+            "strict_floor": "warning"
+          }
         },
         "message": "CRC mismatch at offset 159 for typecode 0x20008076: expected 0x0, got 0xf46c4ebe",
         "severity": "error"
       },
       {
         "code": {
-          "code": "container.integrity-failure",
-          "kind": "integrity_failure",
-          "namespace": "rhino",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.integrity-failure",
+            "kind": "integrity_failure",
+            "namespace": "rhino",
+            "strict_floor": "warning"
+          }
         },
         "message": "CRC mismatch at offset 582 for typecode 0x20008070: expected 0x0, got 0x9d88d481",
         "severity": "error"
       },
       {
         "code": {
-          "code": "container.scan-diagnostic",
-          "kind": "decode_diagnostic",
-          "namespace": "rhino",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.scan-diagnostic",
+            "kind": "decode_diagnostic",
+            "namespace": "rhino"
+          }
         },
         "message": "object at 582 has nil object UUID",
         "severity": "warning"
@@ -267,20 +355,30 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {},
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "f05831fec54335d263f36e65aacd47d4e19505c22f4772e143cb54affe43ad46",
+    "file_digests": {},
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
           "data": "cIAAICUBAAAAAAAAcQAAggAQAAAAAAAA+n8CAP0AAAAAAAAA+/8CABQAAAAAAAAAOLbP+dS5QEOH48VueGXZasKcfdT8/wIAxQAAAAAAAAAQYWFhYWFhYWFhYWFhYWFhYQAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAACRAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAADwPwAAAAAAAPA/jFeqRf9/AoAAAAAAAAAAAH8AAIIAAAAAAAAAAIHUiJ0=",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 582,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

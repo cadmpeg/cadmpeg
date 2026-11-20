@@ -511,13 +511,30 @@ pub(crate) fn decode_tabulated_cylinder_first_coordinate(
     decode_in_surface_row_lane(data, offset, cache)
 }
 
+/// The first two IEEE bytes a positive DICT prefix selects.
+pub(crate) fn positive_dict_head(prefix: u8) -> Option<u16> {
+    let p = u16::from(prefix);
+    match prefix {
+        0x4b => Some(0x3fb0),
+        0x4c => Some(0x3fb1),
+        0x4d => Some(0x3fb5),
+        0x4e..=0x53 => Some(0x3f72 + p),
+        0x54..=0x57 => Some(0x3f73 + p),
+        0x58..=0x59 => Some(0x3f74 + p),
+        0x5a..=0xa3 => Some(0x3f75 + p),
+        _ => None,
+    }
+}
+
 /// The first two IEEE bytes a signed DICT prefix selects.
 pub(crate) fn dict_head(prefix: u8) -> Option<u16> {
+    if let Some(head) = positive_dict_head(prefix) {
+        return Some(head);
+    }
     let base: u16 = match prefix {
-        0x4b..=0xa3 => 0x3f75,
         0xa5..=0xa6 => 0xbf2b,
-        0xa7..=0xb1 => 0xbf2c,
-        0xb2..=0xcf => 0xbf2d,
+        0xa7..=0xb2 => 0xbf2c,
+        0xb3..=0xcf => 0xbf2d,
         0xd0..=0xdc => 0xbf2e,
         0xdd => 0xbf2f,
         0xde..=0xdf => 0xbf32,
@@ -539,12 +556,8 @@ pub(crate) fn decode_round_edge_coordinate(
     offset: usize,
     cache: &ScalarCache,
 ) -> Option<(f64, usize)> {
-    let prefix = *data.get(offset)?;
-    if (0x4b..=0xa3).contains(&prefix) {
-        // wrapping-exception: DICT prefix remapping reconstructs the low IEEE byte modulo 256
-        let byte_1 = prefix.wrapping_add(0x75);
-        let byte_0: u8 = if byte_1 >= 0x80 { 0x3f } else { 0x40 };
-        return ieee7_dict(data, offset, u16::from(byte_0) << 8 | u16::from(byte_1));
+    if let Some(head) = positive_dict_head(*data.get(offset)?) {
+        return ieee7_dict(data, offset, head);
     }
     decode_tabulated_cylinder_first_coordinate(data, offset, cache)
 }
@@ -633,10 +646,10 @@ fn decode_second_coordinate_lane(
     if matches!(head, 0xa4..=0xa6) {
         return ieee7_dict(data, offset, 0xbf2b + u16::from(head));
     }
-    if matches!(head, 0xa7..=0xb1) {
+    if matches!(head, 0xa7..=0xb2) {
         return ieee7_dict(data, offset, 0xbf2c + u16::from(head));
     }
-    if matches!(head, 0xb2..=0xcf) {
+    if matches!(head, 0xb3..=0xcf) {
         return ieee7_dict(data, offset, 0xbf2d + u16::from(head));
     }
     if matches!(head, 0xd0..=0xdc) {
@@ -2966,7 +2979,7 @@ pub(crate) fn ieee7_with_prefix(
     Some((f64::from_be_bytes(raw), offset + 7))
 }
 
-fn ieee7_dict(data: &[u8], offset: usize, high: u16) -> Option<(f64, usize)> {
+pub(crate) fn ieee7_dict(data: &[u8], offset: usize, high: u16) -> Option<(f64, usize)> {
     let [first, second] = high.to_be_bytes();
     ieee7_with_prefix(data, offset, first, second)
 }

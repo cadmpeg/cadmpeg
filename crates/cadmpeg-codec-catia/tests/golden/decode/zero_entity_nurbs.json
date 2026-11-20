@@ -1,345 +1,400 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
-      "bodies": [],
-      "coedges": [],
+    "design": {
+      "arrangements": [],
       "configurations": [],
-      "curves": [],
-      "drawings": [],
-      "edges": [],
-      "faces": [],
+      "containers": [],
+      "evaluations": [],
       "features": [],
-      "loops": [],
-      "occurrences": [],
+      "names": [],
       "parameters": [],
-      "pcurves": [],
-      "pmi": [],
-      "points": [],
-      "presentation_documents": [],
-      "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
-      "product_definitions": [],
-      "regions": [],
-      "semantic_annotations": [],
-      "shells": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
-      "spreadsheets": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
       "subds": [],
       "surfaces": [
         {
           "geometry": {
-            "kind": "nurbs",
-            "poles": {
-              "form": "polynomial",
-              "rows": [
-                [
-                  {
-                    "x": 0.0,
-                    "y": 0.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 1.0,
-                    "y": 0.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 2.0,
-                    "y": 0.0,
-                    "z": 2.0
-                  },
-                  {
-                    "x": 3.0,
-                    "y": 0.0,
-                    "z": 3.0
-                  },
-                  {
-                    "x": 4.0,
-                    "y": 0.0,
-                    "z": 4.0
-                  },
-                  {
-                    "x": 5.0,
-                    "y": 0.0,
-                    "z": 5.0
-                  },
-                  {
-                    "x": 6.0,
-                    "y": 0.0,
-                    "z": 6.0
-                  }
-                ],
-                [
-                  {
-                    "x": 7.0,
-                    "y": 1.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 8.0,
-                    "y": 1.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 9.0,
-                    "y": 1.0,
-                    "z": 2.0
-                  },
-                  {
-                    "x": 10.0,
-                    "y": 1.0,
-                    "z": 3.0
-                  },
-                  {
-                    "x": 11.0,
-                    "y": 1.0,
-                    "z": 4.0
-                  },
-                  {
-                    "x": 12.0,
-                    "y": 1.0,
-                    "z": 5.0
-                  },
-                  {
-                    "x": 13.0,
-                    "y": 1.0,
-                    "z": 6.0
-                  }
-                ],
-                [
-                  {
-                    "x": 14.0,
-                    "y": 2.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 15.0,
-                    "y": 2.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 16.0,
-                    "y": 2.0,
-                    "z": 2.0
-                  },
-                  {
-                    "x": 17.0,
-                    "y": 2.0,
-                    "z": 3.0
-                  },
-                  {
-                    "x": 18.0,
-                    "y": 2.0,
-                    "z": 4.0
-                  },
-                  {
-                    "x": 19.0,
-                    "y": 2.0,
-                    "z": 5.0
-                  },
-                  {
-                    "x": 20.0,
-                    "y": 2.0,
-                    "z": 6.0
-                  }
-                ],
-                [
-                  {
-                    "x": 21.0,
-                    "y": 3.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 22.0,
-                    "y": 3.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 23.0,
-                    "y": 3.0,
-                    "z": 2.0
-                  },
-                  {
-                    "x": 24.0,
-                    "y": 3.0,
-                    "z": 3.0
-                  },
-                  {
-                    "x": 25.0,
-                    "y": 3.0,
-                    "z": 4.0
-                  },
-                  {
-                    "x": 26.0,
-                    "y": 3.0,
-                    "z": 5.0
-                  },
-                  {
-                    "x": 27.0,
-                    "y": 3.0,
-                    "z": 6.0
-                  }
-                ],
-                [
-                  {
-                    "x": 28.0,
-                    "y": 4.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 29.0,
-                    "y": 4.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 30.0,
-                    "y": 4.0,
-                    "z": 2.0
-                  },
-                  {
-                    "x": 31.0,
-                    "y": 4.0,
-                    "z": 3.0
-                  },
-                  {
-                    "x": 32.0,
-                    "y": 4.0,
-                    "z": 4.0
-                  },
-                  {
-                    "x": 33.0,
-                    "y": 4.0,
-                    "z": 5.0
-                  },
-                  {
-                    "x": 34.0,
-                    "y": 4.0,
-                    "z": 6.0
-                  }
-                ],
-                [
-                  {
-                    "x": 35.0,
-                    "y": 5.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 36.0,
-                    "y": 5.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 37.0,
-                    "y": 5.0,
-                    "z": 2.0
-                  },
-                  {
-                    "x": 38.0,
-                    "y": 5.0,
-                    "z": 3.0
-                  },
-                  {
-                    "x": 39.0,
-                    "y": 5.0,
-                    "z": 4.0
-                  },
-                  {
-                    "x": 40.0,
-                    "y": 5.0,
-                    "z": 5.0
-                  },
-                  {
-                    "x": 41.0,
-                    "y": 5.0,
-                    "z": 6.0
-                  }
-                ],
-                [
-                  {
-                    "x": 42.0,
-                    "y": 6.0,
-                    "z": 0.0
-                  },
-                  {
-                    "x": 43.0,
-                    "y": 6.0,
-                    "z": 1.0
-                  },
-                  {
-                    "x": 44.0,
-                    "y": 6.0,
-                    "z": 2.0
-                  },
-                  {
-                    "x": 45.0,
-                    "y": 6.0,
-                    "z": 3.0
-                  },
-                  {
-                    "x": 46.0,
-                    "y": 6.0,
-                    "z": 4.0
-                  },
-                  {
-                    "x": 47.0,
-                    "y": 6.0,
-                    "z": 5.0
-                  },
-                  {
-                    "x": 48.0,
-                    "y": 6.0,
-                    "z": 6.0
-                  }
+            "kind": "solved",
+            "value": {
+              "kind": "nurbs",
+              "normal_reversed": false,
+              "poles": {
+                "kind": "polynomial",
+                "rows": [
+                  [
+                    {
+                      "x": 0.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 1.0,
+                      "y": 0.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 2.0,
+                      "y": 0.0,
+                      "z": 2.0
+                    },
+                    {
+                      "x": 3.0,
+                      "y": 0.0,
+                      "z": 3.0
+                    },
+                    {
+                      "x": 4.0,
+                      "y": 0.0,
+                      "z": 4.0
+                    },
+                    {
+                      "x": 5.0,
+                      "y": 0.0,
+                      "z": 5.0
+                    },
+                    {
+                      "x": 6.0,
+                      "y": 0.0,
+                      "z": 6.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 7.0,
+                      "y": 1.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 8.0,
+                      "y": 1.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 9.0,
+                      "y": 1.0,
+                      "z": 2.0
+                    },
+                    {
+                      "x": 10.0,
+                      "y": 1.0,
+                      "z": 3.0
+                    },
+                    {
+                      "x": 11.0,
+                      "y": 1.0,
+                      "z": 4.0
+                    },
+                    {
+                      "x": 12.0,
+                      "y": 1.0,
+                      "z": 5.0
+                    },
+                    {
+                      "x": 13.0,
+                      "y": 1.0,
+                      "z": 6.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 14.0,
+                      "y": 2.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 15.0,
+                      "y": 2.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 16.0,
+                      "y": 2.0,
+                      "z": 2.0
+                    },
+                    {
+                      "x": 17.0,
+                      "y": 2.0,
+                      "z": 3.0
+                    },
+                    {
+                      "x": 18.0,
+                      "y": 2.0,
+                      "z": 4.0
+                    },
+                    {
+                      "x": 19.0,
+                      "y": 2.0,
+                      "z": 5.0
+                    },
+                    {
+                      "x": 20.0,
+                      "y": 2.0,
+                      "z": 6.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 21.0,
+                      "y": 3.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 22.0,
+                      "y": 3.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 23.0,
+                      "y": 3.0,
+                      "z": 2.0
+                    },
+                    {
+                      "x": 24.0,
+                      "y": 3.0,
+                      "z": 3.0
+                    },
+                    {
+                      "x": 25.0,
+                      "y": 3.0,
+                      "z": 4.0
+                    },
+                    {
+                      "x": 26.0,
+                      "y": 3.0,
+                      "z": 5.0
+                    },
+                    {
+                      "x": 27.0,
+                      "y": 3.0,
+                      "z": 6.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 28.0,
+                      "y": 4.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 29.0,
+                      "y": 4.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 30.0,
+                      "y": 4.0,
+                      "z": 2.0
+                    },
+                    {
+                      "x": 31.0,
+                      "y": 4.0,
+                      "z": 3.0
+                    },
+                    {
+                      "x": 32.0,
+                      "y": 4.0,
+                      "z": 4.0
+                    },
+                    {
+                      "x": 33.0,
+                      "y": 4.0,
+                      "z": 5.0
+                    },
+                    {
+                      "x": 34.0,
+                      "y": 4.0,
+                      "z": 6.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 35.0,
+                      "y": 5.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 36.0,
+                      "y": 5.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 37.0,
+                      "y": 5.0,
+                      "z": 2.0
+                    },
+                    {
+                      "x": 38.0,
+                      "y": 5.0,
+                      "z": 3.0
+                    },
+                    {
+                      "x": 39.0,
+                      "y": 5.0,
+                      "z": 4.0
+                    },
+                    {
+                      "x": 40.0,
+                      "y": 5.0,
+                      "z": 5.0
+                    },
+                    {
+                      "x": 41.0,
+                      "y": 5.0,
+                      "z": 6.0
+                    }
+                  ],
+                  [
+                    {
+                      "x": 42.0,
+                      "y": 6.0,
+                      "z": 0.0
+                    },
+                    {
+                      "x": 43.0,
+                      "y": 6.0,
+                      "z": 1.0
+                    },
+                    {
+                      "x": 44.0,
+                      "y": 6.0,
+                      "z": 2.0
+                    },
+                    {
+                      "x": 45.0,
+                      "y": 6.0,
+                      "z": 3.0
+                    },
+                    {
+                      "x": 46.0,
+                      "y": 6.0,
+                      "z": 4.0
+                    },
+                    {
+                      "x": 47.0,
+                      "y": 6.0,
+                      "z": 5.0
+                    },
+                    {
+                      "x": 48.0,
+                      "y": 6.0,
+                      "z": 6.0
+                    }
+                  ]
                 ]
-              ]
-            },
-            "u_degree": 3,
-            "u_knots": [
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              0.25,
-              0.5,
-              0.75,
-              1.0,
-              1.0,
-              1.0,
-              1.0
-            ],
-            "u_periodic": false,
-            "v_degree": 3,
-            "v_knots": [
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              0.25,
-              0.5,
-              0.75,
-              1.0,
-              1.0,
-              1.0,
-              1.0
-            ],
-            "v_periodic": false
+              },
+              "u_degree": 3,
+              "u_knots": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.25,
+                0.5,
+                0.75,
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "u_periodic": false,
+              "v_degree": 3,
+              "v_knots": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.25,
+                0.5,
+                0.75,
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "v_periodic": false
+            }
           },
           "id": "catia:zero-entity:surf#0"
         }
       ],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "catia:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -416,23 +471,38 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
-      "attributes": {
-        "external_reference_count": "0",
-        "file_size": "1359",
-        "finjpl_segment_count": "0",
-        "outer_dir_offset": "0",
-        "preview_count": "0"
-      },
+      "attributes": {},
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
+            "declared": {},
             "dialect": "catia:zero-entity"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -440,7 +510,10 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
@@ -780,23 +853,28 @@
       "unresolved_unreferenced_relation_expression_count": 0
     },
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
+          "declared": {},
           "dialect": "catia:zero-entity"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "topology.zero-entity-not-transferred",
-          "kind": "topology_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "topology.zero-entity-not-transferred",
+            "kind": "topology_not_transferred",
+            "namespace": "catia",
+            "strict_floor": "warning"
+          }
         },
         "message": "Zero-entity loop members bind their face-local support occurrences, but the complete allocation graph or its required geometry is unavailable and body/shell ownership remains unresolved; no neutral topology was transferred.",
         "severity": "blocking"
@@ -810,7 +888,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -821,7 +902,7 @@
           "fields": {
             "links": "derived"
           },
-          "scope": "entity"
+          "kind": "entity"
         }
       },
       "provenance": {
@@ -837,15 +918,19 @@
         }
       }
     },
+    "decode_digest": "fb372ff67654b39bfa604bba00740e8f48013782abfe24d738acb962a9942f20",
+    "file_digests": {},
     "retained_records": {
       "catia:payload:unknown#zero-entity": {
         "bytes": {
           "data": "VjVfQ0ZWMgAAAAAAAAAAAKkDNMgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADQPwAAAAAAAOA/AAAAAAAA6D8AAAAAAADwPxAEAAAAEAEAAAAQAQAAABABAAAAEAQAAAAQAQAAABABAAAABAAAAAAAAAAAAAAAAAAA0D8AAAAAAADgPwAAAAAAAOg/AAAAAAAA8D8QBAAAABABAAAAEAEAAAAQAQAAABAEAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAPA/AAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAACEAAAAAAAAAAAAAAAAAAAAhAAAAAAAAAEEAAAAAAAAAAAAAAAAAAABBAAAAAAAAAFEAAAAAAAAAAAAAAAAAAABRAAAAAAAAAGEAAAAAAAAAAAAAAAAAAABhAAAAAAAAAHEAAAAAAAADwPwAAAAAAAAAAAAAAAAAAIEAAAAAAAADwPwAAAAAAAPA/AAAAAAAAIkAAAAAAAADwPwAAAAAAAABAAAAAAAAAJEAAAAAAAADwPwAAAAAAAAhAAAAAAAAAJkAAAAAAAADwPwAAAAAAABBAAAAAAAAAKEAAAAAAAADwPwAAAAAAABRAAAAAAAAAKkAAAAAAAADwPwAAAAAAABhAAAAAAAAALEAAAAAAAAAAQAAAAAAAAAAAAAAAAAAALkAAAAAAAAAAQAAAAAAAAPA/AAAAAAAAMEAAAAAAAAAAQAAAAAAAAABAAAAAAAAAMUAAAAAAAAAAQAAAAAAAAAhAAAAAAAAAMkAAAAAAAAAAQAAAAAAAABBAAAAAAAAAM0AAAAAAAAAAQAAAAAAAABRAAAAAAAAANEAAAAAAAAAAQAAAAAAAABhAAAAAAAAANUAAAAAAAAAIQAAAAAAAAAAAAAAAAAAANkAAAAAAAAAIQAAAAAAAAPA/AAAAAAAAN0AAAAAAAAAIQAAAAAAAAABAAAAAAAAAOEAAAAAAAAAIQAAAAAAAAAhAAAAAAAAAOUAAAAAAAAAIQAAAAAAAABBAAAAAAAAAOkAAAAAAAAAIQAAAAAAAABRAAAAAAAAAO0AAAAAAAAAIQAAAAAAAABhAAAAAAAAAPEAAAAAAAAAQQAAAAAAAAAAAAAAAAAAAPUAAAAAAAAAQQAAAAAAAAPA/AAAAAAAAPkAAAAAAAAAQQAAAAAAAAABAAAAAAAAAP0AAAAAAAAAQQAAAAAAAAAhAAAAAAAAAQEAAAAAAAAAQQAAAAAAAABBAAAAAAACAQEAAAAAAAAAQQAAAAAAAABRAAAAAAAAAQUAAAAAAAAAQQAAAAAAAABhAAAAAAACAQUAAAAAAAAAUQAAAAAAAAAAAAAAAAAAAQkAAAAAAAAAUQAAAAAAAAPA/AAAAAACAQkAAAAAAAAAUQAAAAAAAAABAAAAAAAAAQ0AAAAAAAAAUQAAAAAAAAAhAAAAAAACAQ0AAAAAAAAAUQAAAAAAAABBAAAAAAAAAREAAAAAAAAAUQAAAAAAAABRAAAAAAACAREAAAAAAAAAUQAAAAAAAABhAAAAAAAAARUAAAAAAAAAYQAAAAAAAAAAAAAAAAACARUAAAAAAAAAYQAAAAAAAAPA/AAAAAAAARkAAAAAAAAAYQAAAAAAAAABAAAAAAACARkAAAAAAAAAYQAAAAAAAAAhAAAAAAAAAR0AAAAAAAAAYQAAAAAAAABBAAAAAAACAR0AAAAAAAAAYQAAAAAAAABRAAAAAAAAASEAAAAAAAAAYQAAAAAAAABhA",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
-        "stream": "catia:CATPart"
+        "stream": "catia:CATPart",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

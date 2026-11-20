@@ -41,7 +41,7 @@ use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, ProceduralCurve, ProceduralSurface, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::Identity;
-use cadmpeg_ir::ids::{CurveId, SurfaceId};
+use cadmpeg_ir::ids::{CurveId, FaceId, RegionId, SurfaceId};
 use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
 use serde::{Deserialize, Serialize};
@@ -133,6 +133,20 @@ pub struct AsmBrep {
     /// Source locations for emitted B-rep and synthetic child records.
     #[serde(skip)]
     pub annotation_records: Vec<AnnotationRecord>,
+    /// Source order of the region and face chains, which the neutral
+    /// arenas derive from parent pointers instead of storing.
+    #[serde(skip)]
+    pub chain_order: ChainOrder,
+}
+
+/// The children of each body and shell record in their source chain order,
+/// keyed by the owner's record index within one ASM stream.
+#[derive(Default)]
+pub struct ChainOrder {
+    /// The regions of each body record.
+    pub body_regions: HashMap<i64, Vec<RegionId>>,
+    /// The faces of each shell record, including those of its subshells.
+    pub shell_faces: HashMap<i64, Vec<FaceId>>,
 }
 
 /// Flat wire shape of [`AsmBrep`].
@@ -208,13 +222,16 @@ impl<'de> Deserialize<'de> for AsmBrep {
             unknowns: wire.unknowns,
             stats: wire.stats,
             annotation_records: Vec::new(),
+            chain_order: ChainOrder::default(),
         })
     }
 }
 
 impl AsmBrep {
-    /// Append a disjoint, already-qualified ASM graph.
+    /// Append a disjoint, already-qualified ASM graph. The record indices of
+    /// two streams collide, so the result keeps no chain order.
     pub fn append(&mut self, mut other: Self) {
+        self.chain_order = ChainOrder::default();
         macro_rules! append_vecs {
             ($($field:ident),+ $(,)?) => {
                 $((self.$field).append(&mut other.$field);)+
@@ -519,8 +536,9 @@ pub enum DecodePurpose {
 ///
 /// `stream` names the source ZIP entry for provenance. Ids are minted as
 /// `<format>:brep:entity#<record-index>`, unique across the `RecordTable`.
-/// [`DecodePurpose::History`] skips free-form carrier shapes because
-/// historical binding consumes stable record identities, not control data.
+/// [`DecodePurpose::History`] retains bounded edge curve caches and exact
+/// cacheless helix constructions for historical measurements. Free-form surface
+/// shapes remain unmaterialized.
 pub fn decode_with_purpose(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],
@@ -569,7 +587,7 @@ pub fn decode_with_header(
     )
 }
 
-/// Decode a History subset with the complete state's subtype numbering.
+/// Decode a History subset with the source stream's subtype numbering.
 /// The supplied table must carry the stream's save format version.
 pub fn decode_history_with_subtypes(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -590,7 +608,8 @@ pub fn decode_history_with_subtypes(
     )
 }
 
-fn decode_with_table(
+/// Keep stream subtype ordinals when decoding a materialized record table.
+pub fn decode_with_table(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     records: &[Record],
     bytes: &[u8],
@@ -721,8 +740,10 @@ fn decode_with_table(
         attach_point_edge_carriers(&mut out, records, format);
         let collapsed = collapsed_edges(records, &by_index, &reach.edges, format)?;
         classify_body_kinds(&mut out, &collapsed);
-        clamp_edge_ranges_to_carrier_domains(&mut out)?;
+    } else {
+        attach_point_edge_carriers(&mut out, records, format);
     }
+    clamp_edge_ranges_to_carrier_domains(&mut out)?;
 
     Ok(out)
 }

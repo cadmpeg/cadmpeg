@@ -196,10 +196,10 @@ impl EntityCounts {
     fn from_ir(ir: &CadIr) -> Self {
         Self {
             assets: ir.model.assets.len(),
-            bodies: ir.model.bodies.len(),
-            faces: ir.model.faces.len(),
-            edges: ir.model.edges.len(),
-            vertices: ir.model.vertices.len(),
+            bodies: ir.geometry.bodies.len(),
+            faces: ir.geometry.faces.len(),
+            edges: ir.geometry.edges.len(),
+            vertices: ir.geometry.vertices.len(),
             features: ir.model.features.len(),
             feature_result_topologies: ir.model.feature_result_topologies.len(),
             sketches: ir.model.sketches.len(),
@@ -561,16 +561,16 @@ fn decode_fixture(path: &Path) -> Result<DecodedFixtureEvidence, Box<dyn std::er
         loss_codes,
         loss_details,
         validation_errors,
-        all_bodies_colored: !decoded.ir().model.bodies.is_empty()
-            && decoded.ir().model.bodies.iter().all(|body| {
+        all_bodies_colored: !decoded.ir().geometry.bodies.is_empty()
+            && decoded.ir().geometry.bodies.iter().all(|body| {
                 has_effective_color(
                     decoded.ir(),
                     body.color,
                     &AppearanceTarget::Body(body.id.clone()),
                 )
             }),
-        all_faces_colored: !decoded.ir().model.faces.is_empty()
-            && decoded.ir().model.faces.iter().all(|face| {
+        all_faces_colored: !decoded.ir().geometry.faces.is_empty()
+            && decoded.ir().geometry.faces.iter().all(|face| {
                 has_effective_color(
                     decoded.ir(),
                     face.color,
@@ -600,7 +600,7 @@ fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &Appeara
         .model
         .appearance_bindings
         .iter()
-        .filter(|binding| &binding.target == target);
+        .filter(|binding| &binding.target.entity == target);
     let bindings = bindings.collect::<Vec<_>>();
     if bindings.len() > 1 {
         return false;
@@ -625,10 +625,10 @@ fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &Appeara
     if direct_color.is_none() && bindings.is_empty() {
         if let AppearanceTarget::Face(face_id) = target {
             let Some(body) = unique_face_body(ir, face_id) else {
-                let body_appearance_exists = ir.model.bodies.iter().any(|body| {
+                let body_appearance_exists = ir.geometry.bodies.iter().any(|body| {
                     body.color.is_some()
                         || ir.model.appearance_bindings.iter().any(|binding| {
-                            binding.target == AppearanceTarget::Body(body.id.clone())
+                            binding.target.entity == AppearanceTarget::Body(body.id.clone())
                         })
                 });
                 return !body_appearance_exists;
@@ -639,7 +639,7 @@ fn has_effective_color(ir: &CadIr, direct_color: Option<Color>, target: &Appeara
                     .model
                     .appearance_bindings
                     .iter()
-                    .any(|binding| binding.target == body_target);
+                    .any(|binding| binding.target.entity == body_target);
             if body_appearance_exists {
                 return has_effective_color(ir, body.color, &body_target);
             }
@@ -661,16 +661,20 @@ fn unique_face_body<'a>(
     face_id: &cadmpeg_ir::ids::FaceId,
 ) -> Option<&'a cadmpeg_ir::topology::Body> {
     let body_ids = ir
-        .model
+        .geometry
         .regions
         .iter()
         .filter_map(|region| {
             let owns_face = region.shells.iter().any(|shell_id| {
-                ir.model
+                ir.geometry
                     .shells
                     .iter()
                     .find(|shell| shell.id == *shell_id)
-                    .is_some_and(|shell| shell.faces().iter().any(|face| face == face_id))
+                    .is_some_and(|shell| {
+                        ir.geometry
+                            .shell_faces(&shell.id)
+                            .any(|face| &face.id == face_id)
+                    })
             });
             owns_face.then_some(region.body.clone())
         })
@@ -680,7 +684,7 @@ fn unique_face_body<'a>(
     if body_ids.next().is_some() {
         return None;
     }
-    ir.model.bodies.iter().find(|body| body.id == body_id)
+    ir.geometry.bodies.iter().find(|body| body.id == body_id)
 }
 
 /// Evaluate the admitted exact body-identity effects of neutral NX history.
@@ -1033,14 +1037,14 @@ mod tests {
 
         let mut ir = CadIr::empty();
         let body = BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar");
-        ir.model.bodies.push(Body {
+        ir.geometry.bodies.push(Body {
             id: body.clone(),
             kind: BodyKind::Solid,
-            regions: Vec::new(),
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         ir.model.features.push(Feature {
             product_definition: None,
@@ -1228,15 +1232,15 @@ mod tests {
         let body = cadmpeg_ir::topology::Body {
             id: BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
             kind: cadmpeg_ir::topology::BodyKind::Solid,
-            regions: Vec::new(),
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         };
         let appearance_id = AppearanceId::mint("test:model:entity#appearance".to_string())
             .expect("identity grammar");
-        ir.model.bodies.push(body.clone());
+        ir.geometry.bodies.push(body.clone());
         ir.model.appearances.push(Appearance {
             id: appearance_id.clone(),
             name: None,
@@ -1254,7 +1258,7 @@ mod tests {
             id: "test:model:binding#binding"
                 .try_into()
                 .expect("valid identity"),
-            target: AppearanceTarget::Body(body.id.clone()),
+            target: AppearanceTarget::Body(body.id.clone()).into(),
             appearance: appearance_id,
             source_entity_id: None,
             object_type: None,
@@ -1268,25 +1272,25 @@ mod tests {
             &AppearanceTarget::Body(body.id),
         ));
 
-        ir.model.bodies[0].color = Some(Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color"));
+        ir.geometry.bodies[0].color = Some(Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color"));
         assert!(has_effective_color(
             &ir,
-            ir.model.bodies[0].color,
-            &AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
+            ir.geometry.bodies[0].color,
+            &AppearanceTarget::Body(ir.geometry.bodies[0].id.clone()),
         ));
         ir.model.appearances[0].base_color = None;
         assert!(!has_effective_color(
             &ir,
-            ir.model.bodies[0].color,
-            &AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
+            ir.geometry.bodies[0].color,
+            &AppearanceTarget::Body(ir.geometry.bodies[0].id.clone()),
         ));
         ir.model.appearances[0].base_color =
             Some(Color::new(0.1, 0.2, 0.3, 1.0).expect("valid color"));
-        ir.model.bodies[0].color = Some(Color::new(0.9, 0.2, 0.3, 1.0).expect("valid color"));
+        ir.geometry.bodies[0].color = Some(Color::new(0.9, 0.2, 0.3, 1.0).expect("valid color"));
         assert!(!has_effective_color(
             &ir,
-            ir.model.bodies[0].color,
-            &AppearanceTarget::Body(ir.model.bodies[0].id.clone()),
+            ir.geometry.bodies[0].color,
+            &AppearanceTarget::Body(ir.geometry.bodies[0].id.clone()),
         ));
     }
 
@@ -1299,15 +1303,15 @@ mod tests {
         let body = cadmpeg_ir::topology::Body {
             id: BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar"),
             kind: cadmpeg_ir::topology::BodyKind::Solid,
-            regions: Vec::new(),
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         };
         let appearance_id = AppearanceId::mint("test:model:entity#appearance".to_string())
             .expect("identity grammar");
-        ir.model.bodies.push(body.clone());
+        ir.geometry.bodies.push(body.clone());
         ir.model.appearances.push(Appearance {
             id: appearance_id.clone(),
             name: None,
@@ -1326,7 +1330,7 @@ mod tests {
             id: "test:model:binding#binding-1"
                 .try_into()
                 .expect("valid identity"),
-            target: target.clone(),
+            target: target.clone().into(),
             appearance: appearance_id.clone(),
             source_entity_id: None,
             object_type: None,
@@ -1341,7 +1345,7 @@ mod tests {
             id: "test:model:binding#binding-2"
                 .try_into()
                 .expect("valid identity"),
-            target: target.clone(),
+            target: target.clone().into(),
             appearance: appearance_id,
             source_entity_id: None,
             object_type: None,
@@ -1365,9 +1369,9 @@ mod tests {
     fn effective_face_color_inherits_unique_body_color() {
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
         let body_color = Color::new(0.2, 0.3, 0.4, 1.0).expect("valid color");
-        ir.model.bodies[0].color = Some(body_color);
+        ir.geometry.bodies[0].color = Some(body_color);
 
-        assert!(ir.model.faces.iter().all(|face| {
+        assert!(ir.geometry.faces.iter().all(|face| {
             has_effective_color(&ir, face.color, &AppearanceTarget::Face(face.id.clone()))
         }));
     }

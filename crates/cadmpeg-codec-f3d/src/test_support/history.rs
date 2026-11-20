@@ -167,6 +167,7 @@ pub(crate) fn recipe_operand_reference(
         selector: 1,
         selector_offset: 0,
         token: token.into(),
+        token_integer: 0,
         token_offset: 10,
         design_reference,
         design_reference_offset: 0,

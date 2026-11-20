@@ -3,7 +3,7 @@
 
 use crate::design::dimensions::{planar_point, sketch_normal_sign};
 use crate::design::face_resolve::{placement_origin_scale, sketch_curve_is_spatial};
-use crate::design::feature_project::{closed_spatial_sketch_profiles, SPATIAL_PROFILE_SEARCH_WORK};
+use crate::design::feature_project::{closed_spatial_sketch_profiles, SpatialProfileSearch};
 use crate::design::geometry::closed_sketch_profiles;
 use crate::ids::native_stream;
 use crate::records::{
@@ -96,32 +96,8 @@ pub(crate) fn scan_construction_curve_identities(
         if !is_analytic_shape {
             continue;
         }
-        let Some(tail_start) = g_off.checked_add(96) else {
-            continue;
-        };
-        let Some(tail_end) = tail_start.checked_add(80).map(|e| e.min(bytes.len())) else {
-            continue;
-        };
-        let Some(tail) = bytes.get(tail_start..tail_end) else {
-            continue;
-        };
-        let mut n_refs = 0usize;
-        let mut cur = 0usize;
-        while cur + 11 <= tail.len() && tail[cur] == 1 && tail[cur + 5..cur + 11] == [0; 6] {
-            n_refs += 1;
-            cur += 11;
-        }
-        if !(1..=3).contains(&n_refs) {
-            continue;
-        }
-        let pad = if n_refs == 1 { 5 } else { 3 };
-        let flag_off = cur + pad + 4;
-        if tail
-            .get(cur..cur + pad)
-            .is_some_and(|s| s.iter().all(|&b| b == 0))
-            && flag_off + 5 <= tail.len()
-            && View::u32_le_at(tail, flag_off) == Some(1)
-            && tail[flag_off + 4] == 1
+        if crate::design::decode::sketch::planar_curve_tail(bytes, g_off)
+            .is_some_and(|tail| tail.construction)
         {
             construction_ids.insert(curve.id.clone());
         }
@@ -375,7 +351,10 @@ pub(crate) fn project_sketch_design(
         ) else {
             continue;
         };
-        let name = placement.entity_id.as_str().to_owned();
+        let name = placement
+            .display_name
+            .clone()
+            .unwrap_or_else(|| placement.entity_id.as_str().to_owned());
         let native_ref = placement.id.clone();
         sketches.push(Sketch {
             id: crate::ids::neutral_sketch_id(placement),
@@ -394,6 +373,10 @@ pub(crate) fn project_sketch_design(
 
     let shared_identities = shared_curve_identities(curves);
     let mut entities = Vec::new();
+    // A point id repeats only the `pt_tag` of an earlier point of the same
+    // owner when the point is the center of a fillet arc; the later point
+    // takes the record-index key.
+    let mut seen_point_tags = HashSet::new();
     for point in points {
         let Some(owner) = point.owner_reference else {
             continue;
@@ -401,6 +384,9 @@ pub(crate) fn project_sketch_design(
         let Some(scope) = native_stream(&point.id) else {
             continue;
         };
+        let repeated_tag = point
+            .persistent_id()
+            .is_some_and(|tag| !seen_point_tags.insert((scope, owner, tag)));
         if spatial_owners.contains(&(scope, owner)) {
             continue;
         }
@@ -416,7 +402,7 @@ pub(crate) fn project_sketch_design(
         let native_ref = point.id.clone();
         entities.push(
             SketchEntity::new(
-                point.persistent_id().map_or_else(
+                point.persistent_id().filter(|_| !repeated_tag).map_or_else(
                     || crate::ids::neutral_sketch_record_id(&sketch, point.record_index),
                     |persistent_id| crate::ids::neutral_sketch_point_id(&sketch, persistent_id),
                 ),
@@ -443,11 +429,8 @@ pub(crate) fn project_sketch_design(
             continue;
         };
         let geometry = match source {
-            SketchCurveGeometry::Line {
-                start, end, normal, ..
-            } if planar_point(start.as_raw())
-                && planar_point(end.as_raw())
-                && normal.as_raw().z != 0.0 =>
+            SketchCurveGeometry::Line { start, end, .. }
+                if planar_point(start.as_raw()) && planar_point(end.as_raw()) =>
             {
                 let start = start.as_raw();
                 let end = end.as_raw();
@@ -662,7 +645,7 @@ pub(crate) fn project_spatial_sketch_design(
     curves: &[SketchCurveIdentity],
     surfaces: &[SketchSurface],
     relations: &[SketchRelation],
-    linear_tolerance: f64,
+    search: SpatialProfileSearch,
 ) -> Result<SpatialSketchDesign, cadmpeg_core::CodecError> {
     use cadmpeg_ir::scalar::Length;
     use cadmpeg_ir::sketches::{
@@ -1041,16 +1024,19 @@ pub(crate) fn project_spatial_sketch_design(
         let Some(sketch_entities) = entities_by_sketch.get(&id) else {
             continue;
         };
-        let budget = cadmpeg_core::decode::WorkBudget::new(SPATIAL_PROFILE_SEARCH_WORK);
+        let budget = cadmpeg_core::decode::WorkBudget::new(search.work);
         let profiles = if let Some(profiles) =
-            closed_spatial_sketch_profiles(ctx, sketch_entities, linear_tolerance, &budget)?
+            closed_spatial_sketch_profiles(ctx, sketch_entities, search.linear_tolerance, &budget)?
         {
             profiles
         } else {
             capped_profile_searches += 1;
             Vec::new()
         };
-        let name = placement.entity_id.as_str().to_owned();
+        let name = placement
+            .display_name
+            .clone()
+            .unwrap_or_else(|| placement.entity_id.as_str().to_owned());
         let native_ref = placement.id.clone();
         sketches.push(SpatialSketch {
             profiles,
@@ -1067,8 +1053,9 @@ pub(crate) fn project_spatial_sketch_design(
     sketches.sort_by(|a, b| a.id.cmp(&b.id));
     let mut losses = Vec::new();
     if capped_profile_searches != 0 {
+        let work = search.work;
         losses.push(crate::loss::F3dLossCode::SketchProfileSearchCapped.note(format!(
-            "{capped_profile_searches} spatial sketch(es) have no closed profiles because their profile search exceeded the local work cap SPATIAL_PROFILE_SEARCH_WORK ({SPATIAL_PROFILE_SEARCH_WORK})."
+            "{capped_profile_searches} spatial sketch(es) have no closed profiles because their profile search exceeded the local work cap SPATIAL_PROFILE_SEARCH_WORK ({work})."
         )));
     }
     Ok(SpatialSketchDesign {

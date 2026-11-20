@@ -17,7 +17,7 @@ fn component_link_root_counts_are_findings_after_a_complete_decode() {
         let decoded = F3dCodec
             .decode(&mut Cursor::new(&source), &DecodeOptions::default())
             .unwrap();
-        assert!(!decoded.ir().model.bodies.is_empty());
+        assert!(!decoded.ir().geometry.bodies.is_empty());
         let native = f3d_native(decoded.ir());
         assert_eq!(native.act_component_links.len(), links.len());
         for (link, &(tracked, _)) in native.act_component_links.iter().zip(&links) {

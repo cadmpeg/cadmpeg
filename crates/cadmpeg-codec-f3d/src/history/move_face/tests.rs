@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{agreed_selection, moved_face_selection, recipe_face_selection};
+use super::{
+    agreed_selection, moved_face_selection, moved_faces, recipe_face_selection,
+    shared_surface_selection,
+};
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCylinder, AsmHistoricalPlane, AsmHistoricalTopology,
 };
@@ -357,6 +360,83 @@ fn a_rotation_states_no_selection() {
     assert_eq!(select(&[1], &rotation, &[10, 20], &top_moves_up()), None);
 }
 
+fn complete_motion(rows: [[f64; 4]; 3]) -> FaceMotion {
+    FaceMotion::Transform {
+        transform: cadmpeg_ir::transform::Transform::affine(rows).unwrap(),
+    }
+}
+
+#[test]
+fn complete_motion_keeps_translation_selections_with_tiny_linear_components() {
+    let motion = complete_motion([
+        [1., 1.0e-14, 0., 3.],
+        [-1.0e-14, 1., 0., 0.],
+        [0., 0., 1., 0.],
+    ]);
+    let output = with_plane_10(Point3::new(4., 2., 0.), NORMAL_Z);
+    assert_eq!(select(&[1], &motion, &[10, 20], &output), Some(vec![10]));
+}
+
+#[test]
+fn complete_screw_motion_selects_transformed_plane_and_cylinder_rows() {
+    let motion = complete_motion([[0., -1., 0., 2.], [1., 0., 0., -3.], [0., 0., 1., 0.25]]);
+    let mut output = with_plane_10(Point3::new(0., -2., 0.25), NORMAL_Z);
+    output.surface_cylinders[0] = cylinder_at(310, Point3::new(-2., 1., 0.25), NORMAL_Z, 2.);
+    assert_eq!(
+        select(&[1, 2], &motion, &[10, 20, 30], &output),
+        Some(vec![10, 30])
+    );
+    for (origin, axis, radius) in [
+        (Point3::new(-1., 1., 0.25), NORMAL_Z, 2.),
+        (Point3::new(-2., 1., 0.25), Vector3::new(1., 0., 0.), 2.),
+        (Point3::new(-2., 1., 0.25), NORMAL_Z, 3.),
+    ] {
+        output.surface_cylinders[0] = cylinder_at(310, origin, axis, radius);
+        assert_eq!(select(&[1], &motion, &[30], &output), None);
+    }
+}
+
+#[test]
+fn complete_rotation_maps_plane_normals_and_cylinder_axes() {
+    let motion = complete_motion([[1., 0., 0., 0.], [0., 0., -1., 0.], [0., 1., 0., 0.]]);
+    let direction = Vector3::new(0., -1., 0.);
+    let mut output = with_plane_10(Point3::new(1., 0., 2.), direction);
+    output.surface_cylinders[0] = cylinder_at(310, Point3::new(4., 0., 4.), direction, 2.);
+    assert_eq!(
+        select(&[1, 2], &motion, &[10, 30], &output),
+        Some(vec![10, 30])
+    );
+    output.surface_planes[0].normal = NORMAL_Z;
+    assert_eq!(select(&[1], &motion, &[10], &output), None);
+}
+
+#[test]
+fn a_fixed_or_unrepresentable_transformed_row_supplies_no_selection() {
+    let mut fixed = input();
+    fixed.surface_planes[0].origin = Point3::new(0., 0., 0.);
+    let updated = [10].into_iter().collect();
+    for rows in [
+        [[1., 0., 0., 0.], [0., 1., 0., 0.], [0., 0., 1., 0.]],
+        [[0., -1., 0., 0.], [1., 0., 0., 0.], [0., 0., 1., 0.]],
+        [
+            [1., 1.0e-14, 0., 0.],
+            [-1.0e-14, 1., 0., 0.],
+            [0., 0., 1., 0.],
+        ],
+    ] {
+        assert_eq!(
+            moved_face_selection(&[1], &complete_motion(rows), &updated, &fixed, &fixed),
+            None
+        );
+    }
+    let overflow = complete_motion([
+        [f64::MAX, 0., 0., f64::MAX],
+        [0., 1., 0., 0.],
+        [0., 0., 1., 0.],
+    ]);
+    assert_eq!(select(&[1], &overflow, &[10], &input()), None);
+}
+
 #[test]
 fn a_plane_row_that_moves_against_its_normal_follows_an_offset() {
     let output = with_plane_10(Point3::new(1.0, 2.0, -2.0), NORMAL_Z);
@@ -432,4 +512,97 @@ fn the_transitions_and_the_member_recipes_agree_or_state_no_selection() {
     assert_eq!(agreed_selection(Some(vec![10]), None), Some(vec![10]));
     assert_eq!(agreed_selection(None, Some(vec![20])), Some(vec![20]));
     assert_eq!(agreed_selection(None, None), None);
+}
+
+/// Faces 40 and 41 on one cylinder and face 42 on a second cylinder of the
+/// same axis and radius; the output offsets every one of them.
+fn split_cylinder() -> (AsmHistoricalTopology, AsmHistoricalTopology) {
+    let input = AsmHistoricalTopology {
+        faces: vec![40, 41, 42],
+        face_surfaces: vec![binding(40, 400), binding(41, 400), binding(42, 401)],
+        surface_cylinders: vec![
+            cylinder_at(400, CYLINDER_ORIGIN, NORMAL_Z, 2.0),
+            cylinder_at(401, CYLINDER_ORIGIN, NORMAL_Z, 2.0),
+        ],
+        ..AsmHistoricalTopology::default()
+    };
+    let output = AsmHistoricalTopology {
+        faces: vec![40, 41, 42],
+        face_surfaces: vec![binding(40, 410), binding(41, 411), binding(42, 412)],
+        surface_cylinders: vec![
+            cylinder_at(410, CYLINDER_ORIGIN, NORMAL_Z, 1.5),
+            cylinder_at(411, CYLINDER_ORIGIN, NORMAL_Z, 1.5),
+            cylinder_at(412, CYLINDER_ORIGIN, NORMAL_Z, 1.5),
+        ],
+        ..AsmHistoricalTopology::default()
+    };
+    (input, output)
+}
+
+fn naming(record_index: u32, faces: &[i64]) -> DesignFaceOperand {
+    let mut operand = member(record_index, "bounded_face", &[]);
+    operand.recipe_references = vec![crate::records::dimensions::DesignRecipeReference {
+        selector: 1,
+        selector_offset: 0,
+        token: "5".into(),
+        token_integer: 0,
+        token_offset: 0,
+        design_reference: 7,
+        design_reference_offset: 0,
+        candidate_faces: faces
+            .iter()
+            .map(|face| crate::ids::brep_face_id(*face))
+            .collect(),
+        candidate_edges: Vec::new(),
+        alternate_selector_faces: Vec::new(),
+        alternate_selector_edges: Vec::new(),
+        operand_offset: None,
+    }];
+    operand
+}
+
+fn select_shared(members: &[u32], updated: &[i64], named: &[i64]) -> Option<Vec<i64>> {
+    let (input, output) = split_cylinder();
+    let updated: BTreeSet<i64> = updated.iter().copied().collect();
+    let moved = moved_faces(&offset(0.5), &updated, &input, &output)?;
+    let operand = naming(1, named);
+    shared_surface_selection(members, &moved, &[&operand], &input)
+}
+
+#[test]
+fn every_moved_face_of_one_named_surface_is_the_selection_of_one_member() {
+    assert_eq!(
+        select_shared(&[1], &[40, 41], &[40, 41]),
+        Some(vec![40, 41])
+    );
+    assert_eq!(
+        select_shared(&[1, 1], &[40, 41], &[41, 40]),
+        Some(vec![40, 41])
+    );
+}
+
+#[test]
+fn a_shared_surface_needs_a_reference_that_names_exactly_the_moved_faces() {
+    assert_eq!(select_shared(&[1], &[40, 41], &[40]), None);
+    assert_eq!(select_shared(&[1], &[40, 41], &[40, 41, 42]), None);
+    assert_eq!(select_shared(&[1], &[40], &[40]), None);
+}
+
+#[test]
+fn moved_faces_of_two_surfaces_or_two_members_state_no_shared_selection() {
+    assert_eq!(select_shared(&[1], &[40, 41, 42], &[40, 41, 42]), None);
+    assert_eq!(select_shared(&[1, 2], &[40, 41], &[40, 41]), None);
+}
+
+#[test]
+fn a_member_recipe_selection_takes_precedence_over_the_shared_surface_reading() {
+    let shared = || Some(vec![40, 41]);
+    assert_eq!(
+        super::group_selection(None, Some(vec![40]), shared),
+        Some(vec![40])
+    );
+    assert_eq!(
+        super::group_selection(None, None, shared),
+        Some(vec![40, 41])
+    );
 }

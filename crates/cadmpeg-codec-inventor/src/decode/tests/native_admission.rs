@@ -580,7 +580,7 @@ fn native_rse_projection_refuses_entity_limit_at_record_creation() {
                 && limit.operation == "admit Inventor native structural records"
     ));
     assert!(rse_native_projection::project(&setup_ctx, &container).is_ok());
-    assert!(decode_container(&setup_ctx, &container).is_ok());
+    assert!(decode_container(&setup_ctx, root, &container).is_ok());
 }
 
 #[test]
@@ -715,7 +715,7 @@ fn nonfinite_assembly_placement_transform_is_rejected_at_parse() {
     ];
     table.records[0].payload = View::over_retained(&payload);
     let decoded =
-        decode_container(&ctx, &container).expect("invalid placement must not fail decode");
+        decode_container(&ctx, root, &container).expect("invalid placement must not fail decode");
     let namespace = decoded
         .ir
         .native
@@ -901,8 +901,8 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
     };
     edit(&mut document);
     container.ufrx = UfrxState::Parsed(Box::new(document));
-    let decoded =
-        decode_container(&ctx, &container).expect("rejected native record must not fail decode");
+    let decoded = decode_container(&ctx, root, &container)
+        .expect("rejected native record must not fail decode");
     assert!(decoded
         .body
         .losses

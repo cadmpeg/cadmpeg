@@ -90,7 +90,6 @@ fn display_jt_shape_element_entity_refuses_before_identity_and_record_allocation
     let data_len = cadmpeg_core::decode::u64_from_index(data.len());
     let container = Container {
         data: data.into(),
-        physical_size: data_len,
         layout: crate::container::test_modern_layout(6),
         entries: vec![DirEntry {
             name: "/Root/UG_PART/DisplayJT".to_owned(),

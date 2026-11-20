@@ -767,3 +767,137 @@ fn decode_projects_non_rational_and_rational_nurbs_sketch_geometry() {
         .iter()
         .any(|curve| curve.pole_rows().weights() == Some(vec![1.0, 0.5, 1.0])));
 }
+
+/// A sketch feature bound to `sketch`, and an extrusion whose profile names it.
+fn bound_sketch_and_consumer(
+    sketch: &cadmpeg_ir::sketches::SketchId,
+) -> Vec<cadmpeg_ir::features::Feature> {
+    use std::collections::BTreeMap;
+
+    use cadmpeg_ir::features::{
+        BooleanOp, ExtrudeExtent, ExtrudeSide, FeatureDefinition, FeatureId, FeatureOperation,
+        LinearTermination, PlanarProfileRef, ProfileRef,
+    };
+
+    let neutral = |id: &str, native_ref: &str, definition| cadmpeg_ir::features::Feature {
+        product_definition: None,
+        id: FeatureId::mint(id).expect("identity grammar"),
+        ordinal: 0,
+        name: None,
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(definition),
+        native_ref: Some(native_ref.into()),
+    };
+    vec![
+        neutral(
+            "synthetic:test:id#sketch-feature",
+            "native-sketch",
+            FeatureDefinition::Operation(FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(sketch.clone())),
+            }),
+        ),
+        neutral(
+            "synthetic:test:id#consumer",
+            "native-consumer",
+            FeatureDefinition::Operation(FeatureOperation::Extrude {
+                profile: ProfileRef::Planar(PlanarProfileRef::Feature(
+                    FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar"),
+                )),
+                direction: cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+                start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane {},
+                extent: ExtrudeExtent::OneSided {
+                    side: ExtrudeSide {
+                        termination: LinearTermination::Unresolved {},
+                        draft: None,
+                    },
+                },
+                op: BooleanOp::Join,
+                solid: None,
+                face_maker: None,
+                inner_wire_taper: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
+            }),
+        ),
+    ]
+}
+
+fn sketch_with_profiles(
+    id: &cadmpeg_ir::sketches::SketchId,
+    profiles: Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>>,
+) -> cadmpeg_ir::sketches::Sketch {
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    cadmpeg_ir::sketches::Sketch {
+        id: id.clone(),
+        name: Some("Profile".into()),
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(profiles).unwrap(),
+        native_ref: None,
+    }
+}
+
+#[test]
+fn feature_profile_takes_the_profiled_sketch_of_its_bound_sketch_feature() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureId, FeatureOperation};
+    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::sketches::{SketchEntityId, SketchEntityUse, SketchId};
+
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let sketch = sketch_with_profiles(
+        &sketch_id,
+        vec![vec![SketchEntityUse {
+            entity: SketchEntityId::mint("synthetic:test:id#sketch:circle").unwrap(),
+            reversed: false,
+        }]],
+    );
+    let mut features = bound_sketch_and_consumer(&sketch_id);
+
+    crate::history::bind::bind_bound_sketch_profiles(&mut features, &[sketch]);
+
+    assert!(matches!(
+        features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Sketch(id)),
+            ..
+        }) if id == &sketch_id
+    ));
+    assert_eq!(
+        features[1].dependencies.as_slice(),
+        vec![FeatureId::mint("synthetic:test:id#sketch-feature").expect("identity grammar")]
+    );
+}
+
+#[test]
+fn feature_profile_keeps_the_feature_when_the_bound_sketch_has_no_profile() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::sketches::SketchId;
+
+    let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
+    let open = sketch_with_profiles(&sketch_id, Vec::new());
+    let mut features = bound_sketch_and_consumer(&sketch_id);
+
+    crate::history::bind::bind_bound_sketch_profiles(&mut features, &[open]);
+
+    assert!(matches!(
+        features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Feature(_)),
+            ..
+        })
+    ));
+    assert!(features[1].dependencies.as_slice().is_empty());
+}

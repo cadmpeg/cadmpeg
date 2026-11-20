@@ -13,6 +13,7 @@ use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::layout::assembly_axial_construction_carrier as axial_carrier;
 use crate::layout::assembly_axial_role_prefix as axial_role;
 use crate::layout::assembly_axial_selector_prefix as axial_selector;
+use crate::loss::F3dLossCode;
 use crate::records::feature::assembly;
 use crate::records::feature::assembly::DesignAssemblyAxialOperandTarget;
 use crate::records::feature::assembly::DesignAssemblyAxialSelectorIdentity;
@@ -22,11 +23,17 @@ use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use std::collections::HashMap;
+use cadmpeg_ir::report::loss::LossNote;
+use std::collections::{HashMap, HashSet};
+
+#[cfg(test)]
+mod tests;
 
 pub(super) fn bind_joint_origin_frames_from_assemblies(
     bytes: &[u8],
     scopes: &mut [DesignParameterScope],
+    direct_joint_origin_offsets: &HashSet<u64>,
+    losses: &mut Vec<LossNote>,
 ) {
     let mut candidates = Vec::new();
     let mut envelopes = Vec::new();
@@ -79,6 +86,7 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
             let construction = Some(scope::DesignJointOriginTransform {
                 joint_origin_transform: *transform,
                 joint_origin_transform_offset: *transform_offset,
+                carrier: None,
                 reference: reference.map(|(record_index, offset)| {
                     scope::DesignJointOriginReference {
                         joint_origin_reference: record_index,
@@ -99,10 +107,17 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
         let Some(transform) = scope.joint_origin_transform() else {
             continue;
         };
-        resolved_origins.insert(scope.record_index, transform);
+        let has_direct_frame = direct_joint_origin_offsets.contains(&scope.byte_offset());
+        resolved_origins.insert(scope.record_index, (transform, has_direct_frame));
     }
     for (assembly_record_index, joint_origin_record_index, transform) in envelopes {
-        if resolved_origins.get(&joint_origin_record_index) != Some(&transform) {
+        let Some(&(origin_transform, has_direct_frame)) =
+            resolved_origins.get(&joint_origin_record_index)
+        else {
+            continue;
+        };
+        let divergent = origin_transform != transform;
+        if divergent && !has_direct_frame {
             continue;
         }
         let mut assemblies = scopes.iter_mut().filter(|scope| {
@@ -119,6 +134,12 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
             alignment.form = Some(assembly::DesignAssemblyAlignmentForm::DatumEnvelope {
                 joint_origin_scope_record_index: joint_origin_record_index,
             });
+            if divergent {
+                losses.push(F3dLossCode::AssemblyJointOriginEnvelopeMatrixDiscarded.note(format!(
+                    "Assemble datum envelope {} stores a different matrix from JointOrigin record {joint_origin_record_index}. The carrier supplies the solved frame and the envelope matrix is omitted.",
+                    assembly.id,
+                )));
+            }
         }
     }
 }

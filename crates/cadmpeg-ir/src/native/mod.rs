@@ -18,7 +18,7 @@ mod compare;
 mod copy;
 /// Native enum classification for privacy projection.
 pub mod privacy;
-mod replay;
+pub(crate) mod replay;
 pub(crate) mod view;
 
 #[cfg(test)]
@@ -506,7 +506,6 @@ impl NativeRecord {
 #[derive(Serialize)]
 struct DigestUnknown<'a> {
     id: &'a str,
-    #[serde(skip_serializing_if = "<[Value]>::is_empty")]
     links: &'a [Value],
 }
 

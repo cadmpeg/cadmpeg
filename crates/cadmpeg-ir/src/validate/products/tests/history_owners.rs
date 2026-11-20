@@ -9,18 +9,18 @@ use crate::report::check::Finding;
 
 fn model() -> CadIr {
     let mut ir = CadIr::empty();
-    ir.model.bodies.push(crate::topology::Body {
+    ir.geometry.bodies.push(crate::topology::Body {
         id: "test:model:body#result".try_into().unwrap(),
         kind: crate::topology::BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     ir.model.product_definitions.push(
         serde_json::from_value(serde_json::json!({
-            "id": "test:model:product#owner", "kind": "part", "bodies": ["test:model:body#result"]
+            "id": "test:model:product#owner", "kind": "part", "bodies": ["test:model:body#result"], "bom_properties": {}, "storage": {"kind": "embedded"}, "tessellations": [], "occurrences": [], "instance_bodies": [], "representations": [], "sketches": []
         }))
         .unwrap(),
     );
@@ -30,7 +30,8 @@ fn model() -> CadIr {
             parameters: std::collections::BTreeMap::default(),
         },
     ));
-    evaluation.set_outputs(DistinctMembers::try_from(vec![ir.model.bodies[0].id.clone()]).unwrap());
+    evaluation
+        .set_outputs(DistinctMembers::try_from(vec![ir.geometry.bodies[0].id.clone()]).unwrap());
     ir.model.features.push(Feature {
         id: "test:model:feature#operation".try_into().unwrap(),
         product_definition: Some(ir.model.product_definitions[0].id.clone()),
@@ -51,7 +52,7 @@ fn model() -> CadIr {
 fn findings(ir: &CadIr) -> Vec<Finding> {
     let mut findings = Vec::new();
     super::super::check_products(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         ir,
         &mut findings,
     )

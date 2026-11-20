@@ -10,11 +10,8 @@ impl Serialize for SubdSymmetry {
         struct Wire<'a> {
             kind: &'a SubdSymmetryKind,
             plane: &'a SubdPlaneFrame,
-            #[serde(skip_serializing_if = "Vec::is_empty")]
             face_pairs: &'a Vec<[u32; 2]>,
-            #[serde(skip_serializing_if = "Vec::is_empty")]
             edge_pairs: &'a Vec<[u32; 2]>,
-            #[serde(skip_serializing_if = "Vec::is_empty")]
             vertex_pairs: &'a Vec<[u32; 2]>,
         }
         Wire {

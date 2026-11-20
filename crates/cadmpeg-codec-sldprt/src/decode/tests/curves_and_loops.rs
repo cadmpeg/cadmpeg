@@ -57,8 +57,8 @@ fn edge_uses_decoded_line_curve() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().model.curves.len(), 1);
-    match &result.ir().model.curves[0].geometry {
+    assert_eq!(result.ir().geometry.curves.len(), 1);
+    match &result.ir().geometry.curves[0].geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let direction = *line_curve.direction().as_raw();
             assert_eq!(direction.x, 1.0);
@@ -68,17 +68,17 @@ fn edge_uses_decoded_line_curve() {
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .edges
             .iter()
             .filter(|e| e.curve().is_some())
             .count(),
         1
     );
-    assert_eq!(result.ir().model.pcurves.len(), 1);
+    assert_eq!(result.ir().geometry.pcurves.len(), 1);
     assert!(result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .any(|coedge| !coedge.pcurves.is_empty()));
@@ -107,7 +107,7 @@ fn edge_uses_decode_nurbs_curve() {
 
     let nurbs = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find_map(|curve| match &curve.geometry {
@@ -141,7 +141,7 @@ fn edge_uses_decode_typed_reference_nurbs_curve() {
 
     let nurbs = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find_map(|curve| match &curve.geometry {
@@ -186,11 +186,11 @@ fn reused_carrier_attribute_resolves_by_geometry_kind() {
         .unwrap();
 
     assert!(matches!(
-        result.ir().model.curves[0].geometry,
+        result.ir().geometry.curves[0].geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
     ));
     assert!(matches!(
-        result.ir().model.surfaces[0].geometry,
+        result.ir().geometry.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
     ));
 }
@@ -207,10 +207,10 @@ fn false_later_loop_candidate_does_not_replace_owned_loop() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.loops.len(), 1);
-    assert_eq!(result.ir().model.coedges.len(), 3);
+    assert_eq!(result.ir().geometry.loops.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 3);
     assert_eq!(
-        result.ir().model.loops[0].id.as_str(),
+        result.ir().geometry.loops[0].id.as_str(),
         "sldprt:brep:loop#20"
     );
 }
@@ -233,10 +233,10 @@ fn tolerant_edge_without_its_fin_curve_is_a_tolerant_edge_loss() {
         )
         .unwrap();
 
-    let model = &result.ir().model;
-    assert_eq!(model.faces.len(), 1);
-    assert_eq!(model.edges.len(), 3);
-    assert!(model.edges.iter().all(|edge| edge.curve().is_none()));
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.faces.len(), 1);
+    assert_eq!(geometry.edges.len(), 3);
+    assert!(geometry.edges.iter().all(|edge| edge.curve().is_none()));
     let tolerant: Vec<_> = result
         .report()
         .losses
@@ -278,12 +278,12 @@ fn decode_removes_edges_and_vertices_from_a_rejected_loop() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.loops.len(), 1);
-    assert_eq!(result.ir().model.coedges.len(), 3);
-    assert_eq!(result.ir().model.edges.len(), 3);
-    assert_eq!(result.ir().model.vertices.len(), 3);
-    assert_eq!(result.ir().model.points.len(), 3);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.loops.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 3);
+    assert_eq!(result.ir().geometry.edges.len(), 3);
+    assert_eq!(result.ir().geometry.vertices.len(), 3);
+    assert_eq!(result.ir().geometry.points.len(), 3);
     assert!(
         cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
             .expect("validate the neutral model")
@@ -340,8 +340,8 @@ fn dummy_partner_recovers_sheet_boundary_edge() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.edges.len(), 3);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.edges.len(), 3);
     assert!(result
         .report()
         .losses
@@ -367,7 +367,7 @@ fn dummy_partner_mismatch_withholds_the_edge() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), 0);
+    assert_eq!(result.ir().geometry.faces.len(), 0);
     assert_eq!(
         result
             .report()
@@ -392,7 +392,7 @@ fn dummy_partner_null_nose_withholds_the_edge() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), 0);
+    assert_eq!(result.ir().geometry.faces.len(), 0);
     assert_eq!(
         result
             .report()
@@ -415,7 +415,7 @@ fn nonreciprocal_backward_link_withholds_the_ring() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), 0);
+    assert_eq!(result.ir().geometry.faces.len(), 0);
     assert_eq!(
         result
             .report()
@@ -448,7 +448,7 @@ fn vertexless_ring_edge_without_reciprocal_partner_is_withheld() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), 0);
+    assert_eq!(result.ir().geometry.faces.len(), 0);
     assert_eq!(
         result
             .report()
@@ -475,7 +475,7 @@ fn a_face_without_a_decoded_loop_is_reported_as_withheld() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), 0);
+    assert_eq!(result.ir().geometry.faces.len(), 0);
     assert_eq!(
         result
             .report()
@@ -520,20 +520,20 @@ fn a_face_that_stores_no_loop_covers_its_sphere() {
 
     for (bridge_marker, sense) in [(0x2d, Sense::Forward), (0x2b, Sense::Reversed)] {
         let result = decode(sphere(0x2d), 1, bridge_marker);
-        let faces = &result.ir().model.faces;
+        let faces = &result.ir().geometry.faces;
         assert_eq!(faces.len(), 1);
         assert!(faces[0].loops.is_empty());
         assert_eq!(faces[0].sense, sense);
         assert!(!withheld(&result));
     }
     let stored_loop = decode(sphere(0x2b), 20, 0x2b);
-    assert!(stored_loop.ir().model.faces.is_empty());
+    assert!(stored_loop.ir().geometry.faces.is_empty());
     assert!(withheld(&stored_loop));
     let plane = decode(
         plane_carrier(100, [0.0; 3], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
         1,
         0x2b,
     );
-    assert!(plane.ir().model.faces.is_empty());
+    assert!(plane.ir().geometry.faces.is_empty());
     assert!(withheld(&plane));
 }

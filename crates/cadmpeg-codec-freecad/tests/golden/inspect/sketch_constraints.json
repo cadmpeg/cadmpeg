@@ -8,8 +8,8 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compression": "deflate",
       "expanded": 100460,
+      "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
       "stored": 5225
@@ -21,8 +21,8 @@
         "data_offset": "5333",
         "header_offset": "5267"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "GeometricRelations.InternalShape.brp",
       "role": "brep",
       "stored": 2
@@ -34,8 +34,8 @@
         "data_offset": "5393",
         "header_offset": "5335"
       },
-      "compression": "deflate",
       "expanded": 6716,
+      "kind": "deflate",
       "name": "GeometricRelations.Shape.brp",
       "role": "brep",
       "stored": 913
@@ -47,8 +47,8 @@
         "data_offset": "6368",
         "header_offset": "6306"
       },
-      "compression": "deflate",
       "expanded": 559,
+      "kind": "deflate",
       "name": "GeometricRelations.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 204
@@ -60,8 +60,8 @@
         "data_offset": "6640",
         "header_offset": "6572"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "DimensionalRelations.InternalShape.brp",
       "role": "brep",
       "stored": 2
@@ -73,8 +73,8 @@
         "data_offset": "6702",
         "header_offset": "6642"
       },
-      "compression": "deflate",
       "expanded": 4227,
+      "kind": "deflate",
       "name": "DimensionalRelations.Shape.brp",
       "role": "brep",
       "stored": 725
@@ -86,8 +86,8 @@
         "data_offset": "7491",
         "header_offset": "7427"
       },
-      "compression": "deflate",
       "expanded": 387,
+      "kind": "deflate",
       "name": "DimensionalRelations.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 168
@@ -99,8 +99,8 @@
         "data_offset": "7723",
         "header_offset": "7659"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "SymmetryRelation.InternalShape.brp",
       "role": "brep",
       "stored": 2
@@ -112,8 +112,8 @@
         "data_offset": "7781",
         "header_offset": "7725"
       },
-      "compression": "deflate",
       "expanded": 1671,
+      "kind": "deflate",
       "name": "SymmetryRelation.Shape.brp",
       "role": "brep",
       "stored": 340
@@ -125,8 +125,8 @@
         "data_offset": "8181",
         "header_offset": "8121"
       },
-      "compression": "deflate",
       "expanded": 247,
+      "kind": "deflate",
       "name": "SymmetryRelation.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 137
@@ -138,8 +138,8 @@
         "data_offset": "8382",
         "header_offset": "8318"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "InactiveRelation.InternalShape.brp",
       "role": "brep",
       "stored": 2
@@ -151,8 +151,8 @@
         "data_offset": "8440",
         "header_offset": "8384"
       },
-      "compression": "deflate",
       "expanded": 797,
+      "kind": "deflate",
       "name": "InactiveRelation.Shape.brp",
       "role": "brep",
       "stored": 215
@@ -164,8 +164,8 @@
         "data_offset": "8715",
         "header_offset": "8655"
       },
-      "compression": "deflate",
       "expanded": 191,
+      "kind": "deflate",
       "name": "InactiveRelation.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 121
@@ -177,8 +177,8 @@
         "data_offset": "8910",
         "header_offset": "8836"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "InternalAlignmentRelations.InternalShape.brp",
       "role": "brep",
       "stored": 2
@@ -190,8 +190,8 @@
         "data_offset": "8978",
         "header_offset": "8912"
       },
-      "compression": "deflate",
       "expanded": 868,
+      "kind": "deflate",
       "name": "InternalAlignmentRelations.Shape.brp",
       "role": "brep",
       "stored": 238
@@ -203,8 +203,8 @@
         "data_offset": "9286",
         "header_offset": "9216"
       },
-      "compression": "deflate",
       "expanded": 181,
+      "kind": "deflate",
       "name": "InternalAlignmentRelations.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 114
@@ -216,8 +216,8 @@
         "data_offset": "9463",
         "header_offset": "9400"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "OpticalRelation.InternalShape.brp",
       "role": "brep",
       "stored": 2
@@ -229,8 +229,8 @@
         "data_offset": "9520",
         "header_offset": "9465"
       },
-      "compression": "deflate",
       "expanded": 1680,
+      "kind": "deflate",
       "name": "OpticalRelation.Shape.brp",
       "role": "brep",
       "stored": 506
@@ -242,8 +242,8 @@
         "data_offset": "10085",
         "header_offset": "10026"
       },
-      "compression": "deflate",
       "expanded": 247,
+      "kind": "deflate",
       "name": "OpticalRelation.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 137
@@ -255,8 +255,8 @@
         "data_offset": "10290",
         "header_offset": "10222"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "SplineWeightRelation.InternalShape.brp",
       "role": "brep",
       "stored": 2
@@ -268,8 +268,8 @@
         "data_offset": "10352",
         "header_offset": "10292"
       },
-      "compression": "deflate",
       "expanded": 1057,
+      "kind": "deflate",
       "name": "SplineWeightRelation.Shape.brp",
       "role": "brep",
       "stored": 259
@@ -281,19 +281,20 @@
         "data_offset": "10675",
         "header_offset": "10611"
       },
-      "compression": "deflate",
       "expanded": 191,
+      "kind": "deflate",
       "name": "SplineWeightRelation.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 122
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_version": "1",
           "program_version": "1.1R20260414 (Git shallow)",
@@ -301,8 +302,10 @@
         },
         "dialect": "fcstd:schema-4"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",

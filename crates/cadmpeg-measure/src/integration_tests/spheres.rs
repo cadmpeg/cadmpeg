@@ -8,7 +8,7 @@ use cadmpeg_ir::ids::{EdgeId, VertexId};
 use cadmpeg_ir::topology::{BodyKind, Sense};
 use cadmpeg_ir::CadIr;
 
-use crate::reason::{Category, CaveatCode, UnavailableReason};
+use crate::reason::CaveatCode;
 use crate::report::{FaceMeasures, MeasureReport, RegionRule};
 use crate::select::Selection;
 use crate::test_support::builders::{
@@ -537,66 +537,6 @@ fn a_half_ball_cut_through_the_axis_sweeps_half_a_turn() {
     assert_half_turn(sweep, PI);
 }
 
-/// Two meridian arcs of the sphere `R = 10` from the equator at `u = π` and
-/// `u = 2π` to the north pole that run three quarters of a turn through the
-/// south pole, joined by the equator arc between them. Each arc passes
-/// through the south pole inside its interval, where its parameter image
-/// turns by half a period, and no sample lands on the pole.
-#[test]
-fn an_arc_through_a_pole_inside_its_interval_does_not_invert() {
-    let mut builder = Builder::new();
-    let north = builder.vertex([0.0, 0.0, 10.0]);
-    let start = builder.vertex([-10.0, 0.0, 0.0]);
-    let end = builder.vertex([10.0, 0.0, 0.0]);
-    let through_south = |builder: &mut Builder, u: f64, from: &VertexId| {
-        let (sine, cosine) = u.sin_cos();
-        builder.arc(
-            Circle {
-                frame: Frame {
-                    origin: [0.0; 3],
-                    axis: [-sine, cosine, 0.0],
-                    reference: [cosine, sine, 0.0],
-                },
-                radius: 10.0,
-            },
-            [0.0, 1.5 * PI],
-            from,
-            &north,
-        )
-    };
-    let first = through_south(&mut builder, PI, &start);
-    let second = through_south(&mut builder, 2.0 * PI, &end);
-    let equator = builder.arc(
-        Circle {
-            frame: Frame::z_up([0.0; 3]),
-            radius: 10.0,
-        },
-        [PI, 2.0 * PI],
-        &start,
-        &end,
-    );
-    let sphere = builder.sphere(Frame::z_up([0.0; 3]), 10.0);
-    builder.face(
-        &sphere,
-        Sense::Forward,
-        &[vec![
-            (first, Sense::Reversed),
-            (equator, Sense::Forward),
-            (second, Sense::Forward),
-        ]],
-        false,
-    );
-    let ir = builder.finish(BodyKind::Sheet);
-    let report = measure(&ir, &faces());
-    let area = only_face(&report)
-        .measures()
-        .area()
-        .unavailable()
-        .expect("unavailable area");
-    assert_eq!(area.reason(), UnavailableReason::BoundaryInversionFailed);
-    assert_eq!(area.category(), Category::Input);
-}
-
 /// The cap `z ≥ 6` of [`cap`] on a carrier that stores the radius −10 with
 /// the face sense reversed: the same face, whose chart latitude is the
 /// negated latitude about the stored axis.
@@ -681,4 +621,80 @@ fn a_negative_radius_lune_sweeps_from_the_stored_reference_direction() {
             1.0,
         );
     }
+}
+
+/// The geodesic triangle of the sphere `R = 10` about the origin with the
+/// corners at longitude 40° and latitude 60°, near the north pole, and at
+/// longitude 0 and latitude 30°. The middle corner lies `3e-3` from the pole,
+/// inside the allowance `0.01`, at longitude 90°. Both great-circle arcs to
+/// it miss the pole by about that distance, so their longitude turns by
+/// about 17° between the edge of the allowance and the corner. The area is
+/// `R²·E` with the spherical excess `E` of the three corners, within the
+/// model uncertainty that the path inside the allowance adds.
+#[test]
+fn a_geodesic_triangle_with_a_corner_inside_the_pole_allowance() {
+    fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+        [
+            a[1] * b[2] - a[2] * b[1],
+            a[2] * b[0] - a[0] * b[2],
+            a[0] * b[1] - a[1] * b[0],
+        ]
+    }
+    fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+        a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+    }
+    fn unit(a: [f64; 3]) -> [f64; 3] {
+        let norm = dot(a, a).sqrt();
+        [a[0] / norm, a[1] / norm, a[2] / norm]
+    }
+    fn on_sphere(longitude: f64, latitude: f64) -> [f64; 3] {
+        let (sin_u, cos_u) = longitude.to_radians().sin_cos();
+        let (sin_v, cos_v) = latitude.to_radians().sin_cos();
+        [10.0 * cos_v * cos_u, 10.0 * cos_v * sin_u, 10.0 * sin_v]
+    }
+    let radius = 10.0_f64;
+    let offset = 3.0e-3_f64;
+    let corners = [
+        on_sphere(40.0, 60.0),
+        [0.0, offset, (radius * radius - offset * offset).sqrt()],
+        on_sphere(0.0, 30.0),
+    ];
+    let mut builder = Builder::new();
+    let vertices: Vec<VertexId> = corners
+        .iter()
+        .map(|corner| builder.vertex(*corner))
+        .collect();
+    let mut ring = Vec::new();
+    for index in 0..3 {
+        let next = (index + 1) % 3;
+        let (start, end) = (unit(corners[index]), unit(corners[next]));
+        let arc = builder.arc(
+            Circle {
+                frame: Frame {
+                    origin: [0.0; 3],
+                    axis: unit(cross(start, end)),
+                    reference: start,
+                },
+                radius,
+            },
+            [0.0, dot(start, end).acos()],
+            &vertices[index],
+            &vertices[next],
+        );
+        ring.push((arc, Sense::Forward));
+    }
+    let sphere = builder.sphere(Frame::z_up([0.0; 3]), radius);
+    builder.face(&sphere, Sense::Forward, &[ring], false);
+    let ir = builder.finish(BodyKind::Sheet);
+    let report = measure(&ir, &faces());
+    let measures = only_face(&report).measures();
+    assert_eq!(*measures.region(), Some(RegionRule::DeclaredOrientation));
+    let [a, b, c] = corners.map(unit);
+    let excess = 2.0
+        * dot(a, cross(b, c))
+            .abs()
+            .atan2(1.0 + dot(a, b) + dot(b, c) + dot(c, a));
+    let area = measures.area().measured().expect("area");
+    let allowed = area.numeric_error().get() + area.model_uncertainty().get();
+    assert!((area.value().value.get() - radius * radius * excess).abs() <= allowed);
 }

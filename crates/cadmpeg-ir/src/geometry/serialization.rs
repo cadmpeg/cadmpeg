@@ -38,7 +38,6 @@ impl Serialize for TSplineSurfaceConstruction {
             trailing_value: i64,
             discontinuities: &'a [Vec<FiniteReal>; 6],
             discontinuity_flag: bool,
-            #[serde(skip_serializing_if = "CacheContract::is_bare_legacy")]
             cache: &'a CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
         }
         Wire {

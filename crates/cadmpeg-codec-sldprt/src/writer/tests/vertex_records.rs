@@ -10,7 +10,7 @@ use cadmpeg_ir::scalar::PositiveReal;
 fn emitted_vertex_records_keep_body_ownership_and_optional_tolerance() {
     for tolerance in [None, Some(PositiveReal::new(0.125).unwrap())] {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        for vertex in &mut ir.model.vertices {
+        for vertex in &mut ir.geometry.vertices {
             vertex.tolerance = tolerance;
         }
         let body = crate::writer::brep_body(&ir, 0.001, false).unwrap();
@@ -18,15 +18,15 @@ fn emitted_vertex_records_keep_body_ownership_and_optional_tolerance() {
         let decoded = crate::SldprtCodec
             .decode(&mut Cursor::new(native), &DecodeOptions::default())
             .unwrap();
-        let model = &decoded.ir().model;
-        assert_eq!(model.bodies.len(), 1, "{:?}", decoded.report().losses);
-        assert_eq!(model.faces.len(), 6);
-        assert_eq!(model.edges.len(), 12);
-        assert_eq!(model.vertices.len(), 8);
+        let geometry = &decoded.ir().geometry;
+        assert_eq!(geometry.bodies.len(), 1, "{:?}", decoded.report().losses);
+        assert_eq!(geometry.faces.len(), 6);
+        assert_eq!(geometry.edges.len(), 12);
+        assert_eq!(geometry.vertices.len(), 8);
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
             .unwrap()
             .is_ok());
-        for vertex in &model.vertices {
+        for vertex in &geometry.vertices {
             match (vertex.tolerance, tolerance) {
                 (None, None) => {}
                 (Some(actual), Some(expected)) => {

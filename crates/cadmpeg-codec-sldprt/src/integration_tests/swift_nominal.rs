@@ -2,7 +2,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
-use cadmpeg_ir::pmi::{DimensionKind, PmiDefinition, PmiTarget};
+use cadmpeg_ir::pmi::{PmiDefinition, PmiDimensionKind as DimensionKind, PmiTarget};
 
 use crate::test_support::swift::empty_hole_pattern_nominal_fixture;
 use crate::SldprtCodec;
@@ -65,11 +65,14 @@ fn empty_hole_pattern_diameter_does_not_infer_nominal_from_suffix() {
     let PmiDefinition::Dimension(dimension) = &annotation.definition else {
         panic!("diameter dimension");
     };
-    assert_eq!(dimension.kind(), &DimensionKind::Diameter);
-    assert!(dimension.nominal().is_none(), "source supplies no nominal");
+    assert_eq!(dimension.dimension, DimensionKind::Diameter);
+    assert!(
+        dimension.literal_nominal().is_none(),
+        "source supplies no nominal"
+    );
     assert!(matches!(
         annotation.targets.as_slice(),
-        [PmiTarget::ShapeAspect { source_id }] if source_id.as_str() == "FP"
+        [cadmpeg_ir::references::InstanceTarget { entity: PmiTarget::ShapeAspect { source_id }, .. }] if source_id.as_str() == "FP"
     ));
     assert_eq!(
         decoded

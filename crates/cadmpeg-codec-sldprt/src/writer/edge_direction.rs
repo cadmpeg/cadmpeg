@@ -31,7 +31,7 @@ impl ReversedCompactEdges {
 /// carries the marker that runs against edges.
 pub(super) fn reversed_compact_edges(ir: &CadIr) -> Result<ReversedCompactEdges, CodecError> {
     let compact_curves = ir
-        .model
+        .geometry
         .curves
         .iter()
         .filter(|curve| {
@@ -43,12 +43,12 @@ pub(super) fn reversed_compact_edges(ir: &CadIr) -> Result<ReversedCompactEdges,
         .map(|curve| &curve.id)
         .collect::<HashSet<_>>();
     let mut forward_coedges = HashMap::<&EdgeId, bool>::new();
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         *forward_coedges.entry(&coedge.edge).or_default() |= coedge.sense == Sense::Forward;
     }
     let mut curve_directions = HashMap::<&CurveId, bool>::new();
     let mut edges = HashSet::new();
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         let Some(curve) = edge.curve().filter(|curve| compact_curves.contains(curve)) else {
             continue;
         };

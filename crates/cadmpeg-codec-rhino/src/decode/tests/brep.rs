@@ -22,16 +22,17 @@ fn plane_pcurve_scaling_keeps_the_plane_surface() {
         .try_into()
         .expect("valid identity");
     let mut staged = BrepDraft::default();
-    staged.draft.model_mut().surfaces.push(Surface {
+    staged.draft.geometry_mut().surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             plane,
         )),
         source_object: None,
+        native_ref: None,
     });
     let scale = crate::test_support::millimeter_scale(25.4);
     super::super::scale_plane_pcurves(&mut staged, scale).expect("scale plane pcurves");
-    assert_eq!(staged.draft.model().surfaces[0].id, surface_id);
+    assert_eq!(staged.draft.geometry().surfaces[0].id, surface_id);
 }
 
 #[test]
@@ -51,31 +52,33 @@ fn fallback_discards_topology_and_unknown_record_self_link() {
         ],
         ..BrepDraft::default()
     };
-    staged.draft.model_mut().curves.push(Curve {
+    staged.draft.geometry_mut().curves.push(Curve {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
         source_object: None,
+        native_ref: None,
     });
-    staged.draft.model_mut().surfaces.push(Surface {
+    staged.draft.geometry_mut().surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
             record: None,
         }),
         source_object: None,
+        native_ref: None,
     });
-    staged.draft.model_mut().bodies.push(Body {
+    staged.draft.geometry_mut().bodies.push(Body {
         id: "rhino:object:body#x".try_into().expect("valid identity"),
         kind: BodyKind::Sheet,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     staged = staged.free_carrier_fallback("C2 failure");
     assert_eq!(staged.kind, BrepTransferKind::FreeCarrierFallback);
-    assert!(staged.draft.model().bodies.is_empty());
+    assert!(staged.draft.geometry().bodies.is_empty());
     assert_eq!(
         staged.links,
         vec![curve_id.to_string(), surface_id.to_string()]
@@ -113,7 +116,7 @@ fn failed_brep_retains_its_mathematics_as_support_geometry() {
         })
     })
     .expect("stage source Brep");
-    assert!(staged.draft.model().surfaces.iter().all(|surface| {
+    assert!(staged.draft.geometry().surfaces.iter().all(|surface| {
         surface
             .source_object
             .as_ref()
@@ -121,9 +124,9 @@ fn failed_brep_retains_its_mathematics_as_support_geometry() {
             .geometry_role
             == Some(cadmpeg_ir::SourceGeometryRole::Support)
     }));
-    let geometry = staged.draft.model().surfaces[0].geometry.clone();
+    let geometry = staged.draft.geometry().surfaces[0].geometry.clone();
     let staged = staged.free_carrier_fallback("unreadable trim");
-    let retained = &staged.draft.model().surfaces[0];
+    let retained = &staged.draft.geometry().surfaces[0];
     assert_eq!(retained.geometry, geometry);
     let source = retained.source_object.as_ref().expect("source metadata");
     assert_eq!(
@@ -144,7 +147,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
     let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "rhino",
             &[NativeUnknownRecord {
                 id: unknown.clone(),
@@ -157,11 +160,12 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
         links: vec![unknown.to_string(), curve_id.to_string()],
         ..BrepDraft::default()
     };
-    staged.draft.model_mut().curves.push(Curve {
+    staged.draft.geometry_mut().curves.push(Curve {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
         source_object: None,
+        native_ref: None,
     });
     let links = staged.links.clone();
     staged
@@ -169,7 +173,7 @@ fn fallback_candidate_links_free_carrier_before_full_ir_validation() {
         .commit(
             &mut candidate,
             &mut cadmpeg_ir::Annotations::default(),
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
         )
         .unwrap()
         .expect("commit fallback carrier");
@@ -199,23 +203,24 @@ fn colliding_staged_ids_are_rejected_without_mutating_the_candidate() {
         id: curve_id,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(line_nurbs(0.0, 1.0, false))),
         source_object: None,
+        native_ref: None,
     };
     let mut live = CadIr::empty();
-    live.model.curves.push(curve.clone());
+    live.geometry.curves.push(curve.clone());
     let mut candidate = live.clone();
     let mut staged = BrepDraft::default();
-    staged.draft.model_mut().curves.push(curve);
+    staged.draft.geometry_mut().curves.push(curve);
     assert!(staged
         .draft
         .commit(
             &mut candidate,
             &mut cadmpeg_ir::Annotations::default(),
-            &cadmpeg_test_support::service_decode_context()
+            &cadmpeg_core::decode::test_support::service_decode_context()
         )
         .unwrap()
         .is_err());
     assert_eq!(candidate, live);
-    assert_eq!(live.model.curves.len(), 1);
+    assert_eq!(live.geometry.curves.len(), 1);
 }
 
 #[test]
@@ -252,54 +257,54 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
     })
     .expect("stage plane Brep");
     assert_eq!(staged.kind, BrepTransferKind::FullTopology);
-    let model = staged.draft.model();
+    let geometry = staged.draft.geometry();
     assert_eq!(
         (
-            model.bodies.len(),
-            model.regions.len(),
-            model.shells.len(),
-            model.faces.len(),
-            model.loops.len(),
-            model.coedges.len(),
-            model.edges.len(),
-            model.vertices.len(),
-            model.pcurves.len(),
-            model.curves.len(),
-            model.surfaces.len(),
+            geometry.bodies.len(),
+            geometry.regions.len(),
+            geometry.shells.len(),
+            geometry.faces.len(),
+            geometry.loops.len(),
+            geometry.coedges.len(),
+            geometry.edges.len(),
+            geometry.vertices.len(),
+            geometry.pcurves.len(),
+            geometry.curves.len(),
+            geometry.surfaces.len(),
         ),
         (1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 1)
     );
-    assert_eq!(model.points[1].position().get().x, 25.4);
+    assert_eq!(geometry.points[1].position().get().x, 25.4);
     assert_eq!(
-        model.vertices[0]
+        geometry.vertices[0]
             .tolerance
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.254)
     );
     assert_eq!(
-        model.edges[0]
+        geometry.edges[0]
             .tolerance
             .map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(0.254)
     );
     assert_eq!(
-        model.pcurves[0]
+        geometry.pcurves[0]
             .fit_tolerance()
             .map(cadmpeg_ir::geometry::FitTolerance::get),
         Some(0.02)
     );
-    let PcurveGeometry::Nurbs { nurbs } = &model.pcurves[0].geometry else {
+    let PcurveGeometry::Nurbs { nurbs } = &geometry.pcurves[0].geometry else {
         panic!("line C2 must be a NURBS pcurve");
     };
     // Plane parameters are lengths: the native `u = 1.0` trim endpoint
     // scales with the document (inches -> millimeters).
     assert_eq!(nurbs.control_points()[1].u, 25.4);
-    assert_eq!(model.coedges[0].radial_next, model.coedges[0].id);
+    assert_eq!(geometry.coedges[0].radial_next, geometry.coedges[0].id);
     let links = staged.links.clone();
     let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "rhino",
             &[NativeUnknownRecord {
                 id: unknown.clone(),
@@ -312,7 +317,7 @@ fn source_shaped_plane_brep_stages_complete_scaled_valid_ir() {
         .commit(
             &mut candidate,
             &mut cadmpeg_ir::Annotations::default(),
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
         )
         .unwrap()
         .expect("commit staged plane B-rep");
@@ -366,7 +371,10 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     .expect("stage Brep with an isolated vertex");
     assert_eq!(staged.kind, BrepTransferKind::FullTopology);
     assert_eq!(
-        staged.draft.model().shells[0].free_vertices(),
+        staged.draft.geometry().shells[0]
+            .free_vertices()
+            .cloned()
+            .collect::<Vec<_>>(),
         vec!["rhino:object:vertex#free-vertex.slot-3"
             .try_into()
             .expect("valid identity")]
@@ -375,7 +383,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
     let mut candidate = CadIr::empty();
     candidate
         .set_native_unknowns(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "rhino",
             &[NativeUnknownRecord {
                 id: unknown,
@@ -388,7 +396,7 @@ fn isolated_brep_vertices_are_owned_by_the_only_shell() {
         .commit(
             &mut candidate,
             &mut cadmpeg_ir::Annotations::default(),
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
         )
         .unwrap()
         .expect("commit Brep with an isolated vertex");
@@ -433,7 +441,7 @@ fn failed_trim_pcurve_does_not_discard_brep_topology() {
     })
     .expect("stage Brep without one pcurve");
     assert_eq!(staged.kind, BrepTransferKind::FullTopology);
-    assert_eq!(staged.draft.model().pcurves.len(), 2);
+    assert_eq!(staged.draft.geometry().pcurves.len(), 2);
     assert!(staged
         .warnings
         .iter()
@@ -662,7 +670,7 @@ fn fallback_keeps_thousands_of_free_carriers() {
     for index in 0..4096 {
         let id: cadmpeg_ir::ids::CurveId =
             format!("rhino:object:curve#{index:08}").try_into().unwrap();
-        staged.draft.model_mut().curves.push(Curve {
+        staged.draft.geometry_mut().curves.push(Curve {
             id: id.clone(),
             parameter_range: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -673,12 +681,13 @@ fn fallback_keeps_thousands_of_free_carriers() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
         staged.links.push(id.to_string());
         staged.draft.exactness(&id, cadmpeg_ir::Exactness::Derived);
     }
     let staged = staged.free_carrier_fallback("synthetic topology rejection");
-    assert_eq!(staged.draft.model().curves.len(), 4096);
+    assert_eq!(staged.draft.geometry().curves.len(), 4096);
     assert_eq!(staged.links.len(), 4096);
     ctx.finish_session().unwrap();
 }

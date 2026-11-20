@@ -1,19 +1,65 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bind bounded-face nodes to complete historical face boundaries.
 
+use super::cache::SnapshotCache;
 use crate::history_records::AsmHistoricalTopology;
+use crate::records::feature::scope::DesignFeatureKind;
 use crate::records::topology::face::{
     prefix_operand_ordinals, DesignFaceOperand, DesignFaceRecipeStructure,
 };
-use std::collections::{BTreeSet, HashMap, HashSet};
+use cadmpeg_core::decode::{BudgetExhausted, WorkBudget};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+
+const MAX_FACE_RECIPE_MATCH_WORK: usize = 1 << 22;
+const FAN_MATCH_PASSES: usize = 6;
+
+pub(super) fn bind_operation_operand<'a>(
+    operand: &mut DesignFaceOperand,
+    kind: &DesignFeatureKind,
+    topology: &'a AsmHistoricalTopology,
+    indices: &mut SnapshotCache<'a, AsmHistoricalTopology, FaceRecipeIndex>,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace
+        || !matches!(
+            kind,
+            DesignFeatureKind::MoveFace | DesignFeatureKind::OffsetFaces | DesignFeatureKind::Shell
+        )
+    {
+        return None;
+    }
+    let index = indices.get(topology, FaceRecipeIndex::new);
+    let face = if matches!(kind, DesignFeatureKind::Shell) {
+        match index.resolve_loop_program(operand, &WorkBudget::new(MAX_FACE_RECIPE_MATCH_WORK)) {
+            Ok(face) => face,
+            Err(BudgetExhausted) => {
+                operand.resolved_face_slots.clear();
+                return Some(crate::loss::F3dLossCode::FaceRecipeMatchWorkExceeded.note(format!(
+                    "Operand {} exhausted MAX_FACE_RECIPE_MATCH_WORK ({MAX_FACE_RECIPE_MATCH_WORK}) while assigning counted face nodes to boundary edges; its source recipe is retained.",
+                    operand.id
+                )));
+            }
+        }
+    } else {
+        index.resolve(operand)
+    };
+    operand.resolved_face_slots = face.into_iter().collect();
+    None
+}
 
 struct Corner {
     face: i64,
     edges: [i64; 2],
 }
 
+struct BoundaryRecipe<'a> {
+    lanes: Vec<BTreeSet<i64>>,
+    nodes: Vec<&'a DesignFaceRecipeStructure>,
+    candidates: BTreeSet<i64>,
+}
+
 pub(super) struct FaceRecipeIndex {
     boundaries: HashMap<i64, Vec<i64>>,
+    loops: HashMap<i64, Vec<std::ops::Range<usize>>>,
     edge_faces: HashMap<i64, Vec<i64>>,
     endpoints: HashMap<i64, Option<[i64; 2]>>,
     corners: HashMap<i64, Vec<Corner>>,
@@ -23,6 +69,7 @@ impl FaceRecipeIndex {
     pub(super) fn new(topology: &AsmHistoricalTopology) -> Self {
         let endpoints = super::topology_cache::endpoint_index(topology);
         let mut boundaries = HashMap::new();
+        let mut face_loops = HashMap::new();
         let mut edge_faces = HashMap::<_, Vec<_>>::new();
         let mut corners = HashMap::<_, Vec<_>>::new();
         let mut coedge_rows = HashMap::new();
@@ -37,6 +84,7 @@ impl FaceRecipeIndex {
                 continue;
             };
             let mut boundary = Vec::new();
+            let mut loop_boundaries = Vec::new();
             let mut face_corners = Vec::new();
             let complete = loops.iter().all(|&loop_| {
                 let Some(coedges) = super::relation_members(&topology.loop_coedges, loop_) else {
@@ -84,7 +132,9 @@ impl FaceRecipeIndex {
                         ));
                     }
                 }
+                let start = boundary.len();
                 boundary.extend(edges);
+                loop_boundaries.push(start..boundary.len());
                 true
             });
             if complete && !boundary.is_empty() {
@@ -95,10 +145,12 @@ impl FaceRecipeIndex {
                     corners.entry(vertex).or_default().push(corner);
                 }
                 boundaries.insert(face, boundary);
+                face_loops.insert(face, loop_boundaries);
             }
         }
         Self {
             boundaries,
+            loops: face_loops,
             edge_faces,
             endpoints,
             corners,
@@ -180,6 +232,14 @@ impl FaceRecipeIndex {
     }
 
     pub(super) fn resolve(&self, operand: &DesignFaceOperand) -> Option<i64> {
+        self.resolve_boundary(operand, false)
+    }
+
+    pub(super) fn resolve_loop(&self, operand: &DesignFaceOperand) -> Option<i64> {
+        self.resolve_boundary(operand, true)
+    }
+
+    fn prepare<'a>(&self, operand: &'a DesignFaceOperand) -> Option<BoundaryRecipe<'a>> {
         use crate::design::decode::operands::{face_recipe_program_kind, FaceRecipeProgramKind};
         if operand.recipe_kind != crate::records::recipes::ConstructionRecipeKind::BoundedFace {
             return None;
@@ -230,34 +290,172 @@ impl FaceRecipeIndex {
                 None => incident,
             });
         }
+        Some(BoundaryRecipe {
+            lanes,
+            nodes,
+            candidates: candidates?,
+        })
+    }
+
+    fn resolve_boundary(&self, operand: &DesignFaceOperand, single_loop: bool) -> Option<i64> {
+        let BoundaryRecipe {
+            lanes,
+            nodes,
+            candidates,
+        } = self.prepare(operand)?;
         let mut resolved = None;
-        for face in candidates? {
+        for face in candidates {
             let boundary = self.boundaries.get(&face)?;
-            if boundary.len() != nodes.len()
-                || boundary.iter().collect::<HashSet<_>>().len() != boundary.len()
-            {
-                continue;
-            }
-            let mut covered = HashSet::new();
-            let complete = nodes.iter().all(|node| {
-                let mut matches = boundary
-                    .iter()
-                    .copied()
-                    .filter(|edge| self.node_matches(node, *edge, &lanes));
-                let Some(edge) = matches.next() else {
-                    return false;
-                };
-                matches.next().is_none() && covered.insert(edge)
-            });
-            if complete && covered.len() == boundary.len() {
-                if resolved.is_some() {
-                    return None;
+            let whole = 0..boundary.len();
+            let ranges = if single_loop {
+                self.loops.get(&face)?.as_slice()
+            } else {
+                std::slice::from_ref(&whole)
+            };
+            for range in ranges {
+                let boundary = &boundary[range.clone()];
+                if boundary.len() != nodes.len()
+                    || boundary.iter().collect::<HashSet<_>>().len() != boundary.len()
+                {
+                    continue;
                 }
-                resolved = Some(face);
+                let mut covered = HashSet::new();
+                let complete = nodes.iter().all(|node| {
+                    let mut matches = boundary
+                        .iter()
+                        .copied()
+                        .filter(|edge| self.node_matches(node, *edge, &lanes));
+                    let Some(edge) = matches.next() else {
+                        return false;
+                    };
+                    matches.next().is_none() && covered.insert(edge)
+                });
+                if complete && covered.len() == boundary.len() {
+                    if resolved.is_some_and(|previous| previous != face) {
+                        return None;
+                    }
+                    resolved = Some(face);
+                }
             }
         }
         resolved
     }
+
+    fn resolve_loop_program(
+        &self,
+        operand: &DesignFaceOperand,
+        work: &WorkBudget,
+    ) -> Result<Option<i64>, BudgetExhausted> {
+        let Some(recipe) = self.prepare(operand) else {
+            return Ok(None);
+        };
+        let mut resolved = None;
+        for face in recipe.candidates {
+            let (Some(boundary), Some(ranges)) =
+                (self.boundaries.get(&face), self.loops.get(&face))
+            else {
+                continue;
+            };
+            for range in ranges {
+                let boundary = &boundary[range.clone()];
+                if boundary.len() != recipe.nodes.len()
+                    || boundary.iter().collect::<HashSet<_>>().len() != boundary.len()
+                {
+                    continue;
+                }
+                if self.program_matches(&recipe.nodes, boundary, &recipe.lanes, work)? {
+                    if resolved.is_some_and(|previous| previous != face) {
+                        return Ok(None);
+                    }
+                    resolved = Some(face);
+                }
+            }
+        }
+        Ok(resolved)
+    }
+
+    fn program_matches(
+        &self,
+        nodes: &[&DesignFaceRecipeStructure],
+        boundary: &[i64],
+        lanes: &[BTreeSet<i64>],
+        work: &WorkBudget,
+    ) -> Result<bool, BudgetExhausted> {
+        let mut choices = Vec::new();
+        for node in nodes {
+            let mut edges = Vec::new();
+            for &edge in boundary {
+                let cost = self.match_work(edge).ok_or(BudgetExhausted)?;
+                if !work.charge_by(cost) {
+                    return Err(BudgetExhausted);
+                }
+                if self.node_matches(node, edge, lanes) {
+                    edges.push(edge);
+                }
+            }
+            if edges.is_empty() {
+                return Ok(false);
+            }
+            choices.push(edges);
+        }
+        complete_assignment(&choices, work)
+    }
+
+    fn match_work(&self, edge: i64) -> Option<usize> {
+        let Some(Some(vertices)) = self.endpoints.get(&edge) else {
+            return Some(1);
+        };
+        vertices.iter().try_fold(1usize, |total, vertex| {
+            let corners = self.corners.get(vertex).map_or(0, Vec::len);
+            total.checked_add(
+                corners
+                    .checked_mul(corners)?
+                    .checked_mul(FAN_MATCH_PASSES)?,
+            )
+        })
+    }
+}
+
+fn complete_assignment(choices: &[Vec<i64>], work: &WorkBudget) -> Result<bool, BudgetExhausted> {
+    let mut edge_nodes = HashMap::new();
+    let mut node_edges = HashMap::new();
+    for root in 0..choices.len() {
+        let mut pending = VecDeque::from([root]);
+        let mut parents = HashMap::new();
+        let mut free = None;
+        'search: while let Some(node) = pending.pop_front() {
+            for &edge in &choices[node] {
+                if !work.charge() {
+                    return Err(BudgetExhausted);
+                }
+                if let std::collections::hash_map::Entry::Vacant(entry) = parents.entry(edge) {
+                    entry.insert(node);
+                } else {
+                    continue;
+                }
+                if let Some(&owner) = edge_nodes.get(&edge) {
+                    pending.push_back(owner);
+                } else {
+                    free = Some(edge);
+                    break 'search;
+                }
+            }
+        }
+        let Some(mut edge) = free else {
+            return Ok(false);
+        };
+        loop {
+            let Some(node) = parents.remove(&edge) else {
+                return Ok(false);
+            };
+            edge_nodes.insert(edge, node);
+            let Some(previous) = node_edges.insert(node, edge) else {
+                break;
+            };
+            edge = previous;
+        }
+    }
+    Ok(true)
 }
 
 fn fan_matches(ordinals: &[i32], fan: &[i64], lanes: &[BTreeSet<i64>]) -> bool {

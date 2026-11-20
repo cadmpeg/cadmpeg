@@ -86,11 +86,18 @@ fn decode_surfaces_preview_and_solidworks_xml_metadata() {
         .as_ref()
         .expect("source metadata")
         .attributes;
-    assert_eq!(attributes["png_preview_count"], "1");
     assert_eq!(attributes["png_preview_0_width"], "640");
     assert_eq!(attributes["png_preview_0_height"], "480");
     assert_eq!(attributes["png_preview_0_color_type"], "6");
-    assert_eq!(attributes["bmp_thumbnail_count"], "1");
+    for key in [
+        "png_preview_count",
+        "bmp_thumbnail_count",
+        "bmp_thumbnail_0_image_size",
+        "block_count",
+        "compound_stream_count",
+    ] {
+        assert!(!attributes.keys().any(|name| name.as_str() == key), "{key}");
+    }
     assert_eq!(attributes["bmp_thumbnail_0_width"], "320");
     assert_eq!(attributes["bmp_thumbnail_0_height"], "-200");
     assert_eq!(attributes["bmp_thumbnail_0_compression"], "1");
@@ -181,7 +188,7 @@ fn decode_explicit_empty_partition_and_deltas_as_an_empty_model() {
         .unwrap();
 
     assert!(decoded.report().geometry_transferred());
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
     assert!(!decoded.report().losses.iter().any(|loss| {
         loss.message.contains("geometry was not transferred")
             || loss.message.contains("topology graph")
@@ -283,10 +290,10 @@ fn retained_source_image_round_trips_byte_exactly() {
             .unwrap(),
     );
     assert!(!result.source_fidelity().annotations.provenance.is_empty());
-    for coedge in &result.ir().model.coedges {
+    for coedge in &result.ir().geometry.coedges {
         assert!(result
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .any(|candidate| candidate.id == coedge.radial_next));

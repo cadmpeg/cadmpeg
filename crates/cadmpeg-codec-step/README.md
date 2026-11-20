@@ -31,7 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for loss in &result.report().losses {
         eprintln!("{:?}: {}", loss.severity, loss.message);
     }
-    println!("{} bodies", result.ir().model.bodies.len());
+    println!("{} bodies", result.ir().geometry.bodies.len());
     Ok(())
 }
 ```
@@ -55,6 +55,12 @@ them. Supported surface carriers are planes, cylinders, cones, spheres, tori,
 and rational or non-rational NURBS surfaces. Supported curve carriers are lines,
 circles, ellipses, parabolas, hyperbolas, and rational or non-rational NURBS
 curves. The writer preserves shared carriers by reusing STEP instances.
+
+For non-periodic NURBS curves and pcurves, an internal knot of multiplicity
+`degree + 1` becomes a shared-pole join of multiplicity `degree` when both
+endpoint poles encode the same point and their rational weights are equal and
+positive. Polynomial joins use the same point condition. This preserves the
+curve and its parameterization exactly.
 
 Bodies absent from every product definition's body list are written once in
 model coordinates in a representation linked to the root product. Claimed
@@ -94,6 +100,14 @@ Coordinates are written without rescaling and the representation context
 declares millimetres. Supply geometry in millimetres before export. The context
 uses the IR linear tolerance as its uncertainty value; plane and solid angles
 use radians and steradians.
+
+An open edge whose endpoint separation is at most the context uncertainty is
+written as two edges at its parameter midpoint. Both edges share one new
+vertex. The original endpoint vertices and curve carrier remain in use.
+Reversed coedges traverse the two segments in reverse order. This rule applies
+to each supported curve kind. An edge with equal start and end vertex
+identities keeps one edge. Export fails if a required midpoint cannot be
+resolved.
 
 [`StepWriteOptions`] controls `FILE_NAME` metadata; the target [`StepSchema`] is
 selected by `Encoder::plan`, not stored in the options. An empty timestamp produces `1970-01-01T00:00:00`, which keeps

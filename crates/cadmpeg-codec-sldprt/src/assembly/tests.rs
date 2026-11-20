@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::products::{ExternalDocument, OccurrenceParent, PrototypeReference};
+use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind, Storage};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::StreamName;
 
@@ -54,7 +54,7 @@ fn tree() -> String {
 }
 
 fn ctx() -> cadmpeg_core::decode::DecodeContext<'static> {
-    cadmpeg_test_support::service_decode_context()
+    cadmpeg_core::decode::test_support::service_decode_context()
 }
 
 fn named_block(section: &str, payload: Vec<u8>) -> Block {
@@ -106,6 +106,36 @@ fn occurrence<'p>(
         .unwrap_or_else(|| panic!("occurrence {id}"))
 }
 
+fn definition<'p>(projection: &'p super::AssemblyProjection, id: &str) -> &'p ProductDefinition {
+    projection
+        .definitions()
+        .iter()
+        .find(|definition| definition.id.as_str() == id)
+        .unwrap_or_else(|| panic!("definition {id}"))
+}
+
+/// The definition the occurrence `id` places.
+fn prototype<'p>(projection: &'p super::AssemblyProjection, id: &str) -> &'p ProductDefinition {
+    definition(projection, occurrence(projection, id).prototype.as_str())
+}
+
+/// The identities of the occurrences the definition `id` owns, in order.
+fn owned<'p>(projection: &'p super::AssemblyProjection, id: &str) -> Vec<&'p str> {
+    definition(projection, id)
+        .occurrences
+        .iter()
+        .map(cadmpeg_ir::ids::OccurrenceId::as_str)
+        .collect()
+}
+
+fn is_local(definition: &ProductDefinition) -> bool {
+    !matches!(definition.storage, Storage::External(_))
+}
+
+fn unresolved() -> Storage {
+    Storage::External(ExternalDocument::default())
+}
+
 fn codes(projection: &super::AssemblyProjection) -> Vec<String> {
     projection
         .losses()
@@ -115,7 +145,7 @@ fn codes(projection: &super::AssemblyProjection) -> Vec<String> {
 }
 
 #[test]
-fn a_sub_assembly_placed_twice_expands_under_each_instance() {
+fn a_sub_assembly_placed_twice_states_its_children_once() {
     let projection = project(&ctx(), &tree()).expect("project");
     let ids: Vec<&str> = projection
         .occurrences()
@@ -125,36 +155,33 @@ fn a_sub_assembly_placed_twice_expands_under_each_instance() {
     assert_eq!(
         ids,
         [
-            "sldprt:assembly:occurrence#root",
             "sldprt:assembly:occurrence#4",
-            "sldprt:assembly:occurrence#4-14",
+            "sldprt:assembly:occurrence#14",
             "sldprt:assembly:occurrence#7",
-            "sldprt:assembly:occurrence#7-14",
             "sldprt:assembly:occurrence#11",
         ]
     );
-    let definitions: Vec<&str> = projection
-        .definitions()
-        .iter()
-        .map(|definition| definition.id.as_str())
-        .collect();
+    let definitions = projection.definitions();
+    assert_eq!(definitions[0].id.as_str(), "sldprt:assembly:model#2");
+    assert!(definitions[0].is_root());
+    assert_eq!(definitions[1].id.as_str(), "sldprt:assembly:model#5");
+    assert_eq!(definitions[1].source_name.as_deref(), Some("Sub"));
+    // The pin's document and the virtual part are not read.
+    assert_eq!(definitions.len(), 4);
+    assert!(definitions[2..].iter().all(|row| !is_local(row)));
     assert_eq!(
-        definitions,
-        ["sldprt:assembly:model#2", "sldprt:assembly:model#5"]
+        owned(&projection, "sldprt:assembly:model#2"),
+        [
+            "sldprt:assembly:occurrence#4",
+            "sldprt:assembly:occurrence#7",
+            "sldprt:assembly:occurrence#11",
+        ]
     );
     assert_eq!(
-        projection.definitions()[1].source_name.as_deref(),
-        Some("Sub")
+        owned(&projection, "sldprt:assembly:model#5"),
+        ["sldprt:assembly:occurrence#14"]
     );
-    let nested = occurrence(&projection, "sldprt:assembly:occurrence#7-14");
-    assert_eq!(
-        nested.parent,
-        OccurrenceParent::Occurrence {
-            occurrence: occurrence(&projection, "sldprt:assembly:occurrence#7")
-                .id
-                .clone()
-        }
-    );
+    let nested = occurrence(&projection, "sldprt:assembly:occurrence#14");
     assert_eq!(nested.name.as_deref(), Some("Pin-1"));
 }
 
@@ -170,9 +197,9 @@ fn a_placement_is_the_transposed_rotation_and_a_translation_in_millimetres() {
         ]
     );
     let projection = project(&ctx(), &tree()).expect("project");
-    let nested = occurrence(&projection, "sldprt:assembly:occurrence#7-14");
+    let nested = occurrence(&projection, "sldprt:assembly:occurrence#14");
     assert_eq!(
-        nested.transform.affine_rows(),
+        nested.transform.unwrap().affine_rows(),
         [
             [1.0, 0.0, 0.0, 3.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -195,11 +222,8 @@ fn a_placement_with_a_projective_column_or_a_bad_count_is_refused() {
 fn a_leaf_part_is_an_external_document_in_its_configuration() {
     let projection = project(&ctx(), &tree()).expect("project");
     assert_eq!(
-        occurrence(&projection, "sldprt:assembly:occurrence#4-14").prototype,
-        PrototypeReference::External {
-            document: ExternalDocument::path(r"C:\work\Pin.SLDPRT"),
-            object: Some("Long".into()),
-        }
+        prototype(&projection, "sldprt:assembly:occurrence#14").storage,
+        Storage::External(ExternalDocument::path(r"C:\work\Pin.SLDPRT").with_object("Long"))
     );
 }
 
@@ -215,7 +239,10 @@ fn suppressed_virtual_hidden_and_inactive_states_are_reported() {
         .iter()
         .all(|occurrence| occurrence.native_ref.as_deref() != Some("sldprt:tree:swReference#16")));
     let virtual_part = occurrence(&projection, "sldprt:assembly:occurrence#11");
-    assert_eq!(virtual_part.prototype, PrototypeReference::Unresolved {});
+    assert_eq!(
+        prototype(&projection, "sldprt:assembly:occurrence#11").storage,
+        unresolved()
+    );
     assert_eq!(virtual_part.visible, Some(false));
     let mut expected = vec![
         SldprtLossCode::AssemblyConfigurationsNotTransferred,
@@ -276,7 +303,9 @@ fn decoded_without_a_model() -> cadmpeg_ir::codec::Decoded {
     cadmpeg_ir::codec::Decoded {
         ir: cadmpeg_ir::document::CadIr::empty(),
         body,
-        source_fidelity: cadmpeg_ir::SourceFidelity::default(),
+        source_fidelity: cadmpeg_ir::SourceFidelity::new(
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(b""),
+        ),
     }
 }
 
@@ -297,7 +326,7 @@ fn an_assembly_without_its_own_parasolid_model_retires_the_part_model_losses() {
         .expect("project")
         .apply(&mut decoded);
     assert_eq!(remaining_part_losses(&decoded), 0);
-    assert_eq!(decoded.ir.model.occurrences.len(), 6);
+    assert_eq!(decoded.ir.model.occurrences.len(), 4);
 }
 
 #[test]
@@ -310,7 +339,7 @@ fn an_assembly_with_its_own_parasolid_stream_keeps_the_part_model_losses() {
 }
 
 fn body(id: &str) -> cadmpeg_ir::topology::Body {
-    serde_json::from_value(serde_json::json!({ "id": id, "regions": [] })).expect("a body")
+    serde_json::from_value(serde_json::json!({ "id": id, "kind": "solid" })).expect("a body")
 }
 
 #[test]
@@ -322,10 +351,10 @@ fn a_virtual_component_held_in_the_document_owns_the_bodies_of_its_section() {
         .into_projection();
     let definition = cadmpeg_ir::ids::ProductDefinitionId::mint("sldprt:assembly:model#13")
         .expect("the virtual component definition identity");
-    assert!(matches!(
-        &occurrence(&projection, "sldprt:assembly:occurrence#11").prototype,
-        PrototypeReference::Local { definition: local } if local == &definition
-    ));
+    assert_eq!(
+        occurrence(&projection, "sldprt:assembly:occurrence#11").prototype,
+        definition
+    );
     assert!(!codes(&projection).contains(
         &SldprtLossCode::AssemblyVirtualComponentsNotTransferred
             .kind()
@@ -333,7 +362,7 @@ fn a_virtual_component_held_in_the_document_owns_the_bodies_of_its_section() {
             .to_string()
     ));
     let mut decoded = decoded_without_a_model();
-    decoded.ir.model.bodies = vec![
+    decoded.ir.geometry.bodies = vec![
         body("sldprt:brep:body#3"),
         body("sldprt:brep:body#3@block@7"),
         body("sldprt:brep:body#3@block@70"),
@@ -360,10 +389,10 @@ fn virtual_component_sections_that_share_a_name_leave_it_unresolved() {
     let projection = super::native_project(&ctx(), &tree(), &sections)
         .expect("native project")
         .into_projection();
-    assert!(matches!(
-        occurrence(&projection, "sldprt:assembly:occurrence#11").prototype,
-        PrototypeReference::Unresolved {}
-    ));
+    assert_eq!(
+        prototype(&projection, "sldprt:assembly:occurrence#11").storage,
+        unresolved()
+    );
     assert!(codes(&projection).contains(
         &SldprtLossCode::AssemblyVirtualComponentsNotTransferred
             .kind()
@@ -438,6 +467,7 @@ fn placed_virtual_documents_decode_into_the_definitions_that_own_them() {
         )
         .expect("decode");
     let model = &decoded.ir().model;
+    let geometry = &decoded.ir().geometry;
     let owned = |model_id: &str| {
         model
             .product_definitions
@@ -452,23 +482,24 @@ fn placed_virtual_documents_decode_into_the_definitions_that_own_them() {
     assert_eq!(box_bodies.len(), 1);
     assert_eq!(lid_bodies.len(), 1);
     assert_ne!(box_bodies, lid_bodies);
-    assert_eq!(model.bodies.len(), 2);
+    assert_eq!(geometry.bodies.len(), 2);
     let prototype = |id: &str| {
-        model
+        let occurrence = model
             .occurrences
             .iter()
             .find(|occurrence| occurrence.id.as_str() == id)
-            .map(|occurrence| occurrence.prototype.clone())
-            .expect("occurrence")
+            .expect("occurrence");
+        model
+            .product_definitions
+            .iter()
+            .find(|definition| definition.id == occurrence.prototype)
+            .expect("prototype definition")
     };
-    assert!(matches!(
-        prototype("sldprt:assembly:occurrence#7"),
-        PrototypeReference::Local { .. }
-    ));
-    assert!(matches!(
-        prototype("sldprt:assembly:occurrence#4-19"),
-        PrototypeReference::Unresolved {}
-    ));
+    assert!(is_local(prototype("sldprt:assembly:occurrence#7")));
+    assert_eq!(
+        prototype("sldprt:assembly:occurrence#19").storage,
+        unresolved()
+    );
     assert!(decoded.report().losses.iter().any(|loss| loss.code
         == SldprtLossCode::AssemblyVirtualComponentsNotTransferred.kind()
         && loss.message.contains("`Bad^Top`")));
@@ -516,11 +547,9 @@ fn the_component_tree_records_native_structure_and_projects_it() {
             .map(|placement| placement.id().as_str())
             .collect::<Vec<_>>(),
         [
-            "sldprt:assembly:occurrence#root",
             "sldprt:assembly:occurrence#4",
-            "sldprt:assembly:occurrence#4-14",
+            "sldprt:assembly:occurrence#14",
             "sldprt:assembly:occurrence#7",
-            "sldprt:assembly:occurrence#7-14",
             "sldprt:assembly:occurrence#11",
         ]
     );
@@ -530,94 +559,68 @@ fn the_component_tree_records_native_structure_and_projects_it() {
             .map(super::native::NativePlacement::native_ref)
             .collect::<Vec<_>>(),
         [
-            "sldprt:tree:swModel#2",
             "sldprt:tree:swReference#4",
             "sldprt:tree:swReference#14",
             "sldprt:tree:swReference#7",
-            "sldprt:tree:swReference#14",
             "sldprt:tree:swReference#11",
         ]
     );
     assert!(matches!(
         placements[0].prototype(),
-        super::native::NativePrototype::Local(definition) if definition == &root_definition
-    ));
-    assert_eq!(placements[0].parent(), &OccurrenceParent::Root {});
-    assert_eq!(placements[0].ordinal(), 0);
-    assert_eq!(placements[0].transform(), Transform::identity());
-    assert_eq!(placements[0].name(), Some("Top"));
-    assert_eq!(placements[0].visible(), None);
-    assert!(matches!(
-        placements[1].prototype(),
         super::native::NativePrototype::Local(definition) if definition == &sub_definition
     ));
+    assert_eq!(placements[0].owner(), &root_definition);
     assert_eq!(
-        placements[1].parent(),
-        &OccurrenceParent::Occurrence {
-            occurrence: placements[0].id().clone(),
-        }
-    );
-    assert_eq!(
-        placements[1].transform(),
+        placements[0].transform(),
         affine([
             [1.0, 0.0, 0.0, 10.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0]
         ])
     );
-    assert_eq!(placements[1].name(), Some("Sub-1"));
-    match placements[2].prototype() {
+    assert_eq!(placements[0].name(), Some("Sub-1"));
+    match placements[1].prototype() {
         super::native::NativePrototype::External { document, object } => {
             assert_eq!(document, r"C:\work\Pin.SLDPRT");
             assert_eq!(object.as_deref(), Some("Long"));
         }
         other => panic!("the pin is an external placement, got {other:?}"),
     }
+    assert_eq!(placements[1].owner(), &sub_definition);
+    assert_eq!(placements[1].ordinal(), 0);
     assert_eq!(
-        placements[2].parent(),
-        &OccurrenceParent::Occurrence {
-            occurrence: placements[1].id().clone(),
-        }
-    );
-    assert_eq!(placements[2].ordinal(), 0);
-    assert_eq!(
-        placements[2].transform(),
+        placements[1].transform(),
         affine([
             [1.0, 0.0, 0.0, 3.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0]
         ])
     );
-    assert_eq!(placements[2].name(), Some("Pin-1"));
+    assert_eq!(placements[1].name(), Some("Pin-1"));
+    assert_eq!(placements[2].owner(), &root_definition);
     assert_eq!(
-        placements[3].transform(),
+        placements[2].transform(),
         affine([
             [0.0, -1.0, 0.0, 0.0],
             [1.0, 0.0, 0.0, 20.0],
             [0.0, 0.0, 1.0, 0.0]
         ])
     );
-    assert_eq!(placements[3].name(), Some("Sub-2"));
-    assert_eq!(
-        placements[4].parent(),
-        &OccurrenceParent::Occurrence {
-            occurrence: placements[3].id().clone(),
-        }
-    );
-    assert_eq!(placements[4].name(), Some("Pin-1"));
+    assert_eq!(placements[2].name(), Some("Sub-2"));
     assert!(matches!(
-        placements[5].prototype(),
+        placements[3].prototype(),
         super::native::NativePrototype::Unresolved
     ));
-    assert_eq!(placements[5].ordinal(), 3);
-    assert_eq!(placements[5].transform(), Transform::identity());
-    assert_eq!(placements[5].name(), Some("Box-1"));
-    assert_eq!(placements[5].visible(), Some(false));
+    assert_eq!(placements[3].owner(), &root_definition);
+    assert_eq!(placements[3].ordinal(), 3);
+    assert_eq!(placements[3].transform(), Transform::identity());
+    assert_eq!(placements[3].name(), Some("Box-1"));
+    assert_eq!(placements[3].visible(), Some(false));
 
     let expected_losses = [
         "The component trees of 1 other configuration(s) are not transferred: \
          `Default-_flexible1`.",
-        "2 component occurrence(s) reference 1 external document(s). The referenced documents \
+        "1 component occurrence(s) reference 1 external document(s). The referenced documents \
          are not opened.",
         "1 occurrence(s) of virtual components have an unresolved prototype: `Box-1`.",
         "1 suppressed component instance(s) are omitted with the instances below them: `Pin-2`.",
@@ -646,12 +649,11 @@ fn the_component_tree_records_native_structure_and_projects_it() {
 
     let projected = native.into_projection();
     let definitions = projected.definitions();
-    assert_eq!(definitions.len(), 2);
+    // The model, the sub-assembly, the pin's document and the virtual part.
+    assert_eq!(definitions.len(), 4);
     assert_eq!(definitions[0].id, root_definition.clone());
-    assert!(matches!(
-        definitions[0].kind,
-        cadmpeg_ir::products::ProductDefinitionKind::Part
-    ));
+    assert!(definitions[0].is_root());
+    assert_eq!(definitions[0].kind, Some(ProductDefinitionKind::Assembly));
     assert_eq!(definitions[0].source_name.as_deref(), Some("Top"));
     assert_eq!(
         definitions[0].native_ref.as_deref(),
@@ -672,106 +674,74 @@ fn the_component_tree_records_native_structure_and_projects_it() {
             .map(|occurrence| occurrence.id.as_str())
             .collect::<Vec<_>>(),
         [
-            "sldprt:assembly:occurrence#root",
             "sldprt:assembly:occurrence#4",
-            "sldprt:assembly:occurrence#4-14",
+            "sldprt:assembly:occurrence#14",
             "sldprt:assembly:occurrence#7",
-            "sldprt:assembly:occurrence#7-14",
             "sldprt:assembly:occurrence#11",
         ]
     );
     assert_eq!(
-        occurrences[0].prototype,
-        PrototypeReference::Local {
-            definition: root_definition,
-        }
-    );
-    assert_eq!(occurrences[0].parent, OccurrenceParent::Root {});
-    assert_eq!(occurrences[0].ordinal, 0);
-    assert_eq!(occurrences[0].transform, Transform::identity());
-    assert_eq!(occurrences[0].name.as_deref(), Some("Top"));
-    assert_eq!(occurrences[0].visible, None);
-    assert_eq!(
-        occurrences[0].native_ref.as_deref(),
-        Some("sldprt:tree:swModel#2")
+        owned(&projected, root_definition.as_str()),
+        [
+            "sldprt:assembly:occurrence#4",
+            "sldprt:assembly:occurrence#7",
+            "sldprt:assembly:occurrence#11",
+        ]
     );
     assert_eq!(
-        occurrences[1].prototype,
-        PrototypeReference::Local {
-            definition: sub_definition,
-        }
+        owned(&projected, sub_definition.as_str()),
+        ["sldprt:assembly:occurrence#14"]
     );
+    assert_eq!(occurrences[0].prototype, sub_definition);
     assert_eq!(
-        occurrences[1].parent,
-        OccurrenceParent::Occurrence {
-            occurrence: occurrences[0].id.clone(),
-        }
-    );
-    assert_eq!(
-        occurrences[1].transform,
-        affine([
+        occurrences[0].transform,
+        Some(affine([
             [1.0, 0.0, 0.0, 10.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0]
-        ])
+        ]))
     );
-    assert_eq!(occurrences[1].name.as_deref(), Some("Sub-1"));
+    assert_eq!(occurrences[0].name.as_deref(), Some("Sub-1"));
     assert_eq!(
-        occurrences[1].native_ref.as_deref(),
+        occurrences[0].native_ref.as_deref(),
         Some("sldprt:tree:swReference#4")
     );
     assert_eq!(
-        occurrences[2].prototype,
-        PrototypeReference::External {
-            document: ExternalDocument::path(r"C:\work\Pin.SLDPRT"),
-            object: Some("Long".into()),
-        }
+        prototype(&projected, occurrences[1].id.as_str()).storage,
+        Storage::External(ExternalDocument::path(r"C:\work\Pin.SLDPRT").with_object("Long"))
     );
     assert_eq!(
-        occurrences[2].parent,
-        OccurrenceParent::Occurrence {
-            occurrence: occurrences[1].id.clone(),
-        }
-    );
-    assert_eq!(occurrences[2].ordinal, 0);
-    assert_eq!(
-        occurrences[2].transform,
-        affine([
+        occurrences[1].transform,
+        Some(affine([
             [1.0, 0.0, 0.0, 3.0],
             [0.0, 1.0, 0.0, 0.0],
             [0.0, 0.0, 1.0, 0.0]
-        ])
+        ]))
     );
-    assert_eq!(occurrences[2].name.as_deref(), Some("Pin-1"));
-    assert_eq!(occurrences[2].visible, Some(true));
+    assert_eq!(occurrences[1].name.as_deref(), Some("Pin-1"));
+    assert_eq!(occurrences[1].visible, Some(true));
     assert_eq!(
-        occurrences[2].native_ref.as_deref(),
+        occurrences[1].native_ref.as_deref(),
         Some("sldprt:tree:swReference#14")
     );
-    assert_eq!(occurrences[3].ordinal, 1);
     assert_eq!(
-        occurrences[3].transform,
-        affine([
+        occurrences[2].transform,
+        Some(affine([
             [0.0, -1.0, 0.0, 0.0],
             [1.0, 0.0, 0.0, 20.0],
             [0.0, 0.0, 1.0, 0.0]
-        ])
+        ]))
     );
-    assert_eq!(occurrences[3].name.as_deref(), Some("Sub-2"));
+    assert_eq!(occurrences[2].name.as_deref(), Some("Sub-2"));
     assert_eq!(
-        occurrences[4].parent,
-        OccurrenceParent::Occurrence {
-            occurrence: occurrences[3].id.clone(),
-        }
+        prototype(&projected, occurrences[3].id.as_str()).storage,
+        unresolved()
     );
-    assert_eq!(occurrences[4].name.as_deref(), Some("Pin-1"));
-    assert_eq!(occurrences[5].prototype, PrototypeReference::Unresolved {});
-    assert_eq!(occurrences[5].ordinal, 3);
-    assert_eq!(occurrences[5].name.as_deref(), Some("Box-1"));
-    assert_eq!(occurrences[5].visible, Some(false));
-    assert_eq!(occurrences[5].transform, Transform::identity());
+    assert_eq!(occurrences[3].name.as_deref(), Some("Box-1"));
+    assert_eq!(occurrences[3].visible, Some(false));
+    assert_eq!(occurrences[3].transform, Some(Transform::identity()));
     assert_eq!(
-        occurrences[5].native_ref.as_deref(),
+        occurrences[3].native_ref.as_deref(),
         Some("sldprt:tree:swReference#11")
     );
     assert_eq!(
@@ -847,7 +817,7 @@ fn embedded_documents_and_mate_lists_are_reported_as_not_transferred() {
     let projection = super::read(&ctx(), &scan)
         .expect("read")
         .expect("an assembly document");
-    assert_eq!(projection.occurrences().len(), 6);
+    assert_eq!(projection.occurrences().len(), 4);
     let codes = codes(&projection);
     for code in [
         SldprtLossCode::AssemblyEmbeddedDocumentsNotTransferred,
@@ -898,7 +868,7 @@ fn an_invalid_or_repeated_reference_is_omitted_and_reported() {
     ]
     .concat();
     let projection = project(&ctx(), &tree_with(&references, "")).expect("project");
-    assert_eq!(projection.occurrences().len(), 2);
+    assert_eq!(projection.occurrences().len(), 1);
     let unresolved = projection
         .losses()
         .iter()
@@ -915,7 +885,7 @@ fn a_reference_cycle_is_omitted_and_reported() {
     );
     let projection =
         project(&ctx(), &tree_with(&reference("4", "5", IDENTITY), &models)).expect("project");
-    assert_eq!(projection.occurrences().len(), 2);
+    assert_eq!(projection.occurrences().len(), 1);
     assert!(codes(&projection).contains(
         &SldprtLossCode::AssemblyPlacementUnresolved
             .kind()
@@ -926,7 +896,7 @@ fn a_reference_cycle_is_omitted_and_reported() {
 
 #[test]
 fn a_deep_sub_assembly_chain_is_refused_by_the_nesting_limit() {
-    let depth = 10_000;
+    let depth = cadmpeg_core::decode::ResourceLimits::service().max_recursion_depth + 1;
     let mut models = String::new();
     for level in 0..depth {
         let next = reference(&format!("r{level}"), &format!("m{}", level + 1), IDENTITY);
@@ -946,10 +916,10 @@ fn an_assembly_document_type_without_instances_is_a_local_definition() {
     let models = r#"<swModel id="5" swFileRef="6"/>"#;
     let projection =
         project(&ctx(), &tree_with(&reference("4", "5", IDENTITY), models)).expect("project");
-    assert!(matches!(
-        occurrence(&projection, "sldprt:assembly:occurrence#4").prototype,
-        PrototypeReference::Local { .. }
-    ));
+    assert!(is_local(prototype(
+        &projection,
+        "sldprt:assembly:occurrence#4"
+    )));
 }
 
 #[test]
@@ -1031,7 +1001,7 @@ fn wrapped_section_names_are_the_tree_a_mate_list_and_an_embedded_document() {
     let projection = super::read(&ctx(), &scan)
         .expect("read")
         .expect("an assembly document");
-    assert_eq!(projection.occurrences().len(), 6);
+    assert_eq!(projection.occurrences().len(), 4);
     let codes = codes(&projection);
     for code in [
         SldprtLossCode::AssemblyEmbeddedDocumentsNotTransferred,
@@ -1082,10 +1052,10 @@ fn a_model_without_a_document_type_that_places_instances_is_a_sub_assembly() {
     );
     let projection =
         project(&ctx(), &tree_with(&reference("4", "5", IDENTITY), &models)).expect("project");
-    assert!(matches!(
-        occurrence(&projection, "sldprt:assembly:occurrence#4").prototype,
-        PrototypeReference::Local { .. }
-    ));
+    assert!(is_local(prototype(
+        &projection,
+        "sldprt:assembly:occurrence#4"
+    )));
 }
 
 #[test]

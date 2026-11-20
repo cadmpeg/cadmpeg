@@ -17,9 +17,11 @@ pub(crate) mod face_resolve;
 pub(crate) mod feature_project;
 pub(crate) mod geometry;
 pub(crate) mod owners;
+pub(crate) mod position;
 pub(crate) mod presentation;
 pub(crate) mod profile_select;
 mod relation_kinds;
+pub(crate) mod sketch_names;
 pub(crate) mod sketch_project;
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -58,11 +60,18 @@ pub(crate) enum DesignFeatureFamily {
     SurfaceTrim,
     BoundaryFill,
     Hole,
+    Emboss,
     Split,
+    SilhouetteSplit,
     Scale,
     Thread,
+    SheetMetalBaseFace,
     SheetMetalEdgeFlange,
     SheetMetalHem,
+    SheetMetalBend,
+    SheetMetalContourFlange,
+    SheetMetalUnfold,
+    SheetMetalRefold,
 }
 
 /// Return the canonical operation family for a selected feature kind.
@@ -98,21 +107,29 @@ pub(crate) fn design_feature_family(
         Kind::SurfaceTrim => Some(DesignFeatureFamily::SurfaceTrim),
         Kind::BoundaryFill => Some(DesignFeatureFamily::BoundaryFill),
         Kind::Hole => Some(DesignFeatureFamily::Hole),
+        Kind::Emboss => Some(DesignFeatureFamily::Emboss),
         Kind::Split => Some(DesignFeatureFamily::Split),
+        Kind::SilhouetteSplit => Some(DesignFeatureFamily::SilhouetteSplit),
         Kind::Scale => Some(DesignFeatureFamily::Scale),
         Kind::Thread => Some(DesignFeatureFamily::Thread),
+        Kind::Face => Some(DesignFeatureFamily::SheetMetalBaseFace),
         Kind::EdgeFlange => Some(DesignFeatureFamily::SheetMetalEdgeFlange),
         Kind::Hem => Some(DesignFeatureFamily::SheetMetalHem),
+        Kind::Bend => Some(DesignFeatureFamily::SheetMetalBend),
+        Kind::ContourFlange => Some(DesignFeatureFamily::SheetMetalContourFlange),
+        Kind::Unfold => Some(DesignFeatureFamily::SheetMetalUnfold),
+        Kind::Refold => Some(DesignFeatureFamily::SheetMetalRefold),
         Kind::SpherePrimitive
         | Kind::TorusPrimitive
         | Kind::BoxPrimitive
         | Kind::CylinderPrimitive
-        | Kind::Emboss
         | Kind::Align
         | Kind::Native(_)
         | Kind::Canvas
         | Kind::Decal
         | Kind::BaseMeshFeature
+        | Kind::GenerateFaceGroups
+        | Kind::CombineFaceGroups
         | Kind::WorkPlane
         | Kind::WorkAxis
         | Kind::WorkPoint
@@ -125,15 +142,18 @@ pub(crate) fn design_feature_family(
         | Kind::ComponentInsert
         | Kind::CopyPaste
         | Kind::JointOrigin
+        | Kind::MotionLink
         | Kind::BaseFlange
         | Kind::SplitFace
         | Kind::PathPattern
         | Kind::MoveFace
+        | Kind::Modify
         | Kind::DeleteFace
         | Kind::SurfaceDeleteFace
+        | Kind::SurfaceUntrim
+        | Kind::UnStitch
         | Kind::RemoveBody
-        | Kind::ReverseNormal
-        | Kind::Face => None,
+        | Kind::ReverseNormal => None,
     }
 }
 

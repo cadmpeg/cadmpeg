@@ -204,26 +204,34 @@ pub(in crate::families) fn a8_nested_b5_run_start(
 fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option<usize> {
     use crate::layout::surface_terminal_span_tail as layout;
 
-    let tail_len = end.checked_sub(at)?;
+    let tail = data.get(at..end)?;
+    let mut cursor = layout::CONTROLS;
+    let controls = [
+        compact_int(tail, &mut cursor)?,
+        compact_int(tail, &mut cursor)?,
+        compact_int(tail, &mut cursor)?,
+        compact_int(tail, &mut cursor)?,
+    ];
+    let extra = cursor.checked_sub(layout::PARAMETERS)?;
+    if !owned && extra != 0 {
+        return None;
+    }
+    let tail_len = tail.len().checked_sub(extra)?;
     let continuation_bytes = match tail_len {
         133 => 56,
         layout::LEN | 142 => layout::SUFFIX - layout::CONTINUATION,
         _ => return None,
     };
-    let tail = data.get(at..end)?;
-    if tail[layout::CONTROLS] != 0x05
-        || !(tail[layout::CONTROLS + 2] == 0x05
-            || owned && tail_len == 142 && tail[layout::CONTROLS + 2] == 0x01)
-        || tail[layout::CONTROLS + 1] % 4 != 1
-        || tail[layout::CONTROLS + 3] % 4 != 1
+    if controls[0] != 1
+        || !(controls[2] == 1 || owned && tail_len == 142 && controls[2] == 0)
         || !matches!(
-            tail[layout::FLAGS..layout::CONTINUATION],
+            tail[layout::FLAGS + extra..layout::CONTINUATION + extra],
             [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]
         )
     {
         return None;
     }
-    let parameters = read_f64_array::<8>(tail, layout::PARAMETERS)?.map(FiniteReal::get);
+    let parameters = read_f64_array::<8>(tail, cursor)?.map(FiniteReal::get);
     if parameters[0] >= parameters[1]
         || (if owned && tail_len == 142 {
             parameters[2] == parameters[3]
@@ -235,7 +243,7 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option
     {
         return None;
     }
-    let continuation_start = layout::CONTINUATION;
+    let continuation_start = layout::CONTINUATION + extra;
     let continuation_end = continuation_start + continuation_bytes;
     let continuation = tail.get(continuation_start..continuation_end)?;
     for index in 0..continuation_bytes / 8 {
@@ -245,7 +253,10 @@ fn parse_surface_tail(data: &[u8], at: usize, end: usize, owned: bool) -> Option
         }
     }
     let suffix = &tail[continuation_end..];
-    let valid_suffix = match (tail_len, &tail[layout::FLAGS..layout::CONTINUATION]) {
+    let valid_suffix = match (
+        tail_len,
+        &tail[layout::FLAGS + extra..layout::CONTINUATION + extra],
+    ) {
         (133, [0x01, 0x01, 0x01]) => suffix == [0x01, 0x00, 0x01, 0x00, 0x07, 0x07],
         (141, [0x01, 0x01, 0x01] | [0x05, 0x05, 0x01]) => {
             matches!(
@@ -1784,13 +1795,13 @@ fn a5_surface(
         control_points.push(point);
         at += 24;
     }
-    let weights = match mode {
-        0x01 => None,
+    let (weights, inferred_weights) = match mode {
+        0x01 => (None, false),
         0x05 => {
             let Some(weights) = a5_weights(data, &mut at, u_count, v_count, end) else {
                 return Ok(None);
             };
-            Some(weights)
+            (Some(weights.values), weights.inferred)
         }
         _ => return Ok(None),
     };
@@ -1801,7 +1812,7 @@ fn a5_surface(
     let weights = weights
         .map(|values| grid_rows(values, v_count))
         .transpose()?;
-    Ok(crate::nurbs::note_refusal(
+    let geometry = crate::nurbs::note_refusal(
         NurbsSurface::from_checked_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
@@ -1810,8 +1821,11 @@ fn a5_surface(
         ),
         refusal,
         format_args!("a5 NURBS surface record at byte {pos}"),
-    )
-    .map(|geometry| FreeformSurface {
+    );
+    if geometry.is_some() && inferred_weights {
+        refusal.push_surface_weights_inferred(pos);
+    }
+    Ok(geometry.map(|geometry| FreeformSurface {
         pos,
         identity: None,
         geometry,
@@ -2165,6 +2179,7 @@ fn a5_distinct_values(bytes: &[u8], at: &mut usize, count: usize, end: usize) ->
 
 fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
     let (endpoint, interior) = match degree {
+        degree if degree > 0 && distinct.len() == 2 => (degree.checked_add(1)?, 1u32),
         1 | 3 if distinct.len() >= 2 => (degree + 1, 1u32),
         5 if distinct.len() >= 2 => (6u32, 3u32),
         _ => return None,
@@ -2185,76 +2200,103 @@ fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
     Some((knots, count))
 }
 
+struct WeightProgram {
+    values: Vec<NonZeroReal>,
+    inferred: bool,
+}
+
 fn a5_weights(
     bytes: &[u8],
     at: &mut usize,
     rows: usize,
     cols: usize,
     end: usize,
-) -> Option<Vec<NonZeroReal>> {
+) -> Option<WeightProgram> {
+    use crate::layout::{
+        surface_weight_repeat_row_prefix as repeat_row, surface_weight_row_prefix as row_prefix,
+        surface_weight_symmetric_03_prefix as symmetric_03,
+        surface_weight_symmetric_07_prefix as symmetric_07,
+    };
+
     let count = rows.checked_mul(cols)?;
-    if bytes.get(*at) == Some(&0x00) {
-        *at += 1;
-        if count
-            .checked_mul(8)
-            .and_then(|width| at.checked_add(width))
-            .is_none_or(|last| last > end)
-        {
+    let mut view = View::over_retained(bytes.get(*at..end)?);
+    let mut peek = view;
+    let first = peek.u8()?;
+    let mut weights = Vec::new();
+    let mut inferred = false;
+    if first == 0x00 {
+        view.u8()?;
+        if count.checked_mul(8)? > view.remaining() {
             return None;
         }
-        let mut weights = Vec::new();
-
         for _ in 0..count {
-            let weight = f64_le(bytes, *at).and_then(|value| NonZeroReal::new(value.get()))?;
-            weights.push(weight);
-            *at += 8;
+            weights.push(NonZeroReal::new(view.f64_le()?)?);
         }
-        return Some(weights);
-    }
-    if bytes.get(*at) != Some(&0x01) {
-        return None;
-    }
-    let seed_count = cols.div_ceil(2);
-    let mut weights = Vec::new();
-
-    for _ in 0..rows {
-        if bytes.get(*at) == Some(&0x02) {
-            *at += 1;
-            let previous_start = weights.len().checked_sub(cols)?;
-
-            for index in 0..cols {
-                let value = weights[previous_start + index];
+    } else {
+        for _ in 0..rows {
+            let mut prefix = View::over_retained(view.unread());
+            prefix.seek(row_prefix::COMMAND)?;
+            let command = prefix.u8()?;
+            let row_start = weights.len();
+            if command == 0x02 {
+                view.u8()?;
+                let previous_start = row_start.checked_sub(cols)?;
+                for column in 0..cols {
+                    weights.push(weights[previous_start + column]);
+                }
+                continue;
+            }
+            if !matches!(
+                command,
+                symmetric_03::COMMAND_VALUE | repeat_row::COMMAND_VALUE
+            ) {
+                return None;
+            }
+            prefix.seek(row_prefix::MIRROR)?;
+            let mirror = prefix.u16_le()?;
+            let repeat = if command == repeat_row::COMMAND_VALUE {
+                prefix.seek(repeat_row::LEADING_REPEATS)?;
+                let repeat = usize::from(prefix.u16_le()?);
+                view.take(repeat_row::LEN)?;
+                repeat
+            } else {
+                view.take(row_prefix::LEN)?;
+                0
+            };
+            if repeat >= cols {
+                return None;
+            }
+            let symmetric = command == symmetric_03::COMMAND_VALUE
+                && matches!(
+                    mirror,
+                    symmetric_03::CONTROL_VALUE | symmetric_07::CONTROL_VALUE
+                );
+            inferred |= !symmetric;
+            for column in 0..cols {
+                let reflected = cols - 1 - column;
+                let mirrored = reflected < column
+                    && (symmetric
+                        || mirror
+                            .checked_shr(u32::try_from(reflected).ok()?)
+                            .unwrap_or(0)
+                            & 1
+                            != 0);
+                let value = if column > 0 && column <= repeat {
+                    weights[row_start]
+                } else if mirrored {
+                    weights[row_start + reflected]
+                } else {
+                    NonZeroReal::new(view.f64_le()?)?
+                };
                 weights.push(value);
             }
-            continue;
-        }
-        if !matches!(bytes.get(*at..*at + 3), Some([0x01, 0x03 | 0x07, 0x00])) {
-            return None;
-        }
-        *at += 3;
-        if seed_count
-            .checked_mul(8)
-            .and_then(|width| at.checked_add(width))
-            .is_none_or(|last| last > end)
-        {
-            return None;
-        }
-        let row_start = weights.len();
-
-        for _ in 0..seed_count {
-            let weight = f64_le(bytes, *at).and_then(|value| NonZeroReal::new(value.get()))?;
-            weights.push(weight);
-            *at += 8;
-        }
-
-        for offset in (0..cols / 2).rev() {
-            weights.push(weights[row_start + offset]);
-        }
-        if weights.len() != row_start + cols {
-            return None;
         }
     }
-    Some(weights)
+    *at = end.checked_sub(view.remaining())?;
+    Some(WeightProgram {
+        values: weights,
+        inferred,
+    })
 }
 
 #[cfg(test)]

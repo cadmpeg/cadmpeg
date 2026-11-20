@@ -46,11 +46,6 @@ fn write_seekable(
     let namespace = resolution.namespace();
     let document = resolution.document();
     let schema_version = resolution.schema_version();
-    let unreadable =
-        namespace.arena_as::<crate::container::UnreadableEntry>("unreadable_entries")?;
-    if !unreadable.is_empty() {
-        return Err(CodecError::NotImplemented("FCStd repacking cannot preserve unreadable ZIP payloads; retained stored bytes are source-only".into()));
-    }
     let mut entries = namespace.arena_as::<EntryRecord>("entries")?;
     let physical_ledger = namespace.arena_as::<ArchiveSpan>("physical_ledger")?;
     let mut objects = namespace.arena_as::<ObjectRecord>("objects")?;
@@ -63,6 +58,12 @@ fn write_seekable(
         .ok_or_else(|| {
             CodecError::Malformed("FCStd native graph has no Document.xml entry".into())
         })?;
+    if physical_ledger.iter().any(|span| {
+        matches!(&span.role, ArchiveSpanRole::CompressedPayload(name)
+            if !entries.iter().any(|entry| entry.name() == name))
+    }) {
+        return Err(CodecError::NotImplemented("FCStd repacking cannot preserve unreadable ZIP payloads; retained stored bytes are source-only".into()));
+    }
     let (property_xml, changed_inputs) = patch_document(source_document.data(), &properties)?;
     for object in &mut objects {
         if changed_inputs.contains(object.id()) {
@@ -100,6 +101,7 @@ fn write_seekable(
         );
     }
     crate::persistence::resolve_side_entries(
+        &ctx,
         &mut written_graph.properties,
         &entry_views,
         &mut written_graph.losses,

@@ -58,7 +58,7 @@ fn profile_roster_construction_axis_test(
     sketch: &Sketch,
     surfaces: &[Surface],
 ) -> Option<cadmpeg_ir::features::RevolutionAxis> {
-    profile_roster_construction_axis(lane, profile_native, sketch, surfaces)
+    profile_roster_construction_axis(lane, profile_native, sketch, surfaces, &[])
 }
 
 fn temporary_axis_reference(
@@ -961,6 +961,7 @@ fn generated_revolution_axis_requires_multiple_coaxial_surfaces() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let first = cylinder("first", Point3::new(0.0, 0.0, 0.0));
     let second = cylinder("second", Point3::new(10.0, 0.0, 0.0));

@@ -1,39 +1,134 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
-      "bodies": [],
-      "coedges": [],
+    "design": {
+      "arrangements": [],
       "configurations": [],
-      "curves": [],
-      "drawings": [],
-      "edges": [],
-      "faces": [],
+      "containers": [
+        {
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "sldprt:model:container#timeline",
+            "kind": "timeline",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "sldprt:model:feature#247:0"
+              }
+            ],
+            "rollback": {
+              "kind": "end"
+            }
+          }
+        }
+      ],
+      "evaluations": [],
       "features": [
         {
           "definition": {
-            "definition": "sketch",
-            "sketch": {
-              "space": "planar"
+            "operation": {
+              "kind": "unresolved",
+              "value": {
+                "family": "sketch"
+              }
             }
           },
           "id": "sldprt:model:feature#247:0",
           "name": "Sketch1",
           "native_ref": "sldprt:history:feature#247:0",
+          "suppressed": {
+            "kind": "literal",
+            "value": false
+          }
+        }
+      ],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [],
+          "definition": "sldprt:model:product-definition#root",
+          "occurrences": {},
+          "roots": [
+            "sldprt:model:container#timeline"
+          ]
+        }
+      ],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "sketch",
+              "value": {
+                "sketch": {
+                  "kind": "planar"
+                }
+              }
+            }
+          },
+          "dependencies": [],
+          "id": "sldprt:model:feature#247:0",
+          "name": "Sketch1",
+          "native_ref": "sldprt:history:feature#247:0",
           "ordinal": 0,
+          "outputs": [],
+          "source_content": [],
+          "source_properties": {},
           "source_tag": "Sketch",
           "suppressed": false
         }
       ],
-      "loops": [],
+      "history_bodies": [],
+      "mass_properties": [],
       "occurrences": [],
       "parameters": [
         {
+          "dependencies": [],
           "expression": "25mm",
           "id": "sldprt:model:parameter#247:0:0",
           "name": "D1",
@@ -50,33 +145,47 @@
               "kind": "linear"
             }
           },
+          "properties": {},
           "value": {
             "kind": "length",
             "value": 25.0
           }
         }
       ],
-      "pcurves": [],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
-      "points": [],
+      "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
-      "product_definitions": [],
-      "regions": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "sldprt:model:product-definition#root",
+          "instance_bodies": [],
+          "kind": "part",
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -144,15 +253,33 @@
         "sketch_input_entities": [],
         "unknowns": [
           {
-            "id": "sldprt:file:block#8"
+            "id": "sldprt:file:block#8",
+            "links": []
           }
         ]
       }
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "active_parasolid_block": "Contents/Config-0-Partition",
-        "block_count": "3",
         "brep_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "outer_version": "0x00000004",
@@ -170,11 +297,12 @@
         "sldprt_neutral_sketch_local_sha256": "<elided: digest over tolerantly compared geometry>"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [
             {
-              "admission": "admitted",
+              "admission": {
+                "kind": "admitted"
+              },
               "declared": {
                 "carrier": "block@8:Contents/Config-0-Partition+0",
                 "schema": "SCH_SW_33103_11000"
@@ -183,10 +311,14 @@
             }
           ],
           "primary": {
-            "admission": "residual",
+            "admission": {
+              "kind": "residual"
+            },
+            "declared": {},
             "dialect": "sldprt:unknown"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -194,16 +326,21 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [
           {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "carrier": "block@8:Contents/Config-0-Partition+0",
               "schema": "SCH_SW_33103_11000"
@@ -212,83 +349,125 @@
           }
         ],
         "primary": {
-          "admission": "residual",
+          "admission": {
+            "kind": "residual"
+          },
+          "declared": {},
           "dialect": "sldprt:unknown"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "geometry.parasolid-not-transferred",
-          "kind": "geometry_not_transferred",
-          "namespace": "sldprt",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.parasolid-not-transferred",
+            "kind": "geometry_not_transferred",
+            "namespace": "sldprt",
+            "strict_floor": "warning"
+          }
         },
         "message": "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved into a topology graph. 3 payload source(s) were enumerated, 1 carrying Parasolid streams.",
         "severity": "blocking"
       },
       {
         "code": {
-          "code": "topology.graph-not-transferred",
-          "kind": "topology_not_transferred",
-          "namespace": "sldprt",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "topology.graph-not-transferred",
+            "kind": "topology_not_transferred",
+            "namespace": "sldprt",
+            "strict_floor": "warning"
+          }
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
         "severity": "blocking"
       },
       {
         "code": {
-          "code": "material.metadata-not-transferred",
-          "kind": "material_not_transferred",
-          "namespace": "sldprt",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "material.metadata-not-transferred",
+            "kind": "material_not_transferred",
+            "namespace": "sldprt"
+          }
         },
         "message": "Body-bound appearances and tessellation were not transferred because no body graph exists.",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "source.dialect-unverified",
-          "kind": "source_dialect_unverified",
-          "namespace": "sldprt",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "source.dialect-unverified",
+            "kind": "source_dialect_unverified",
+            "namespace": "sldprt",
+            "strict_floor": "warning"
+          }
         },
         "message": "the document carries no swSolidWorks swVersion declaration, so no declared identity was verified. The document is read on the `sldprt:unknown` residual path without substituting a declared dialect grammar: the feature-operation form-code padding filter is not applied, and an operation code binds only where the four- and eight-byte candidates agree. Agreement is consistency, not a declaration.",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "topology.vertex-record-unresolved",
-          "kind": "topology_not_transferred",
-          "namespace": "sldprt",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "topology.vertex-record-unresolved",
+            "kind": "topology_not_transferred",
+            "namespace": "sldprt",
+            "strict_floor": "warning"
+          }
         },
         "message": "3 referenced VERTEX record(s) lack a uniquely framed record with a verified owner class and IR-supported tolerance.",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "topology.face-withheld",
-          "kind": "topology_not_transferred",
-          "namespace": "sldprt",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "topology.face-withheld",
+            "kind": "topology_not_transferred",
+            "namespace": "sldprt",
+            "strict_floor": "warning"
+          }
         },
         "message": "1 face(s) were withheld with their surface because no loop of the face decodes.",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "feature.typed-operand-incomplete",
-          "kind": "feature_history_retained",
-          "namespace": "sldprt",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "design.feature-unresolved",
+            "kind": "record_not_typed",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "1 sketch and 0 extrude features state their family without operands: sldprt:model:feature#247:0 (the sketch feature names no planar sketch)",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "history.rollback-unread",
+            "kind": "feature_history_retained",
+            "namespace": "sldprt"
+          }
+        },
+        "message": "The rollback position of the feature tree is not read (the partition section holds no deltas transmit); the timeline is stated built through its last member.",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "kind": "namespaced",
+          "value": {
+            "code": "feature.typed-operand-incomplete",
+            "kind": "feature_history_retained",
+            "namespace": "sldprt"
+          }
         },
         "message": "1 typed feature(s) retain native or unresolved required operation operands.",
         "severity": "warning"
@@ -301,7 +480,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -309,7 +491,8 @@
       "exactness": {
         "sldprt:file:block#8": {
           "entity": "unknown",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         }
       },
       "provenance": {
@@ -340,23 +523,32 @@
         }
       }
     },
+    "decode_digest": "241f5cb389c38cf3bd80786b48d8f29c2678a5c8c18a1a56bb5bf13d0114a13d",
+    "file_digests": {},
     "retained_records": {
       "sldprt:file:block#8": {
         "bytes": {
           "data": "UFMAAAAOcGFydGl0aW9uIGJvZHkAABJTQ0hfU1dfMzMxMDNfMTEwMDAAMgBkAAAAAAAAAAAAAAAAAAArAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/wAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA4ACgAAAAAAAMK8ko+ZbgAAAAAAAAAUAAAAZCsAAAAAAAAAAAAAAA8AFAAAAAAAAAAeAAoAAAARAB4AAAAUAAAAHwAyAAAAKAAAAAArABEAHwAAABQAAAAgADMAAAApAAAAACsAEQAgAAAAFAAAAB4ANAAAACoAAAAAKwAQACgAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACkAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAAQACoAAAAAAADCvJKPmW4AAAAAAAAAAAAAAAAAAAASADIAAAAAAAAAAAAAAAAAPMK8ko+ZbgAAABIAMwAAAAAAAAAAAAAAAAA9wrySj5luAAAAEgA0AAAAAAAAAAAAAAAAAD7CvJKPmW4AAAAdADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHQA9AAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAB0APgAAAAAAAAAAAAAAAAAAAAAAAAAAP/AAAAAAAAAAAAAAAAAAAA==",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 8,
-        "stream": "Contents/Config-0-Partition"
+        "stream": "Contents/Config-0-Partition",
+        "untyped": [
+          "model"
+        ]
       },
       "sldprt:file:source-image#0": {
         "bytes": {
           "data": "AQAAAAAAAAQUAAYACAAgAAAAALDRBLoAAAAgAgAAGwAAADT25kdW5kc38jT25maWdtID0gUWJ0eWR5b25gsIZmBg4CtILCrJLMnMz1NIyk+pZGAQCnb2iA8Ojzc2NjQwjjc0NDAwYDBiSGFAAdoMRAL7D6g0BuBj4IIwDu2Z1D8zDyoqwsDAkIJsCT9YCATkwBoEGeSgyuQZjBgYGDQgrhJkkIcKKzAYMzAwaMKEFaDCcgwmDAwMWhBhAYg2NLthQACiG6cs2BAcskJgRyGADVyVENhdCGCLJANyGgLYwWVkGWxwhB4qkGWwRebiDHNZBjtswujqARQABgAIAEIAAAB8ppc9OQAAAEMAAAARAAAANPbmR1bmRzfytFaXd/YnRjez8U6tLM8vSim2swnOTi1JzlDwS8xNtVWCcAyVFEIqC1JtlQKK8tMyc1LdUhNLSotSlfTtbPThGgEUAAYACABJAAAAaJgzMtgAAAAtAQAAGgAAADT25kdW5kc38gXUlDVW1hbmR5Y2RBZHFkQknc5NSsNAGMbxihfxApGkWj9WFcmmICimF3g781RfOvMmzkyCOUHXLnVfk4aCVxC79FIyPYL/5Q8eeGp5MRww+m9pNj47n1xcJlfXtEiUxjKJlESLFGXdk0g5byscdYr0HK9hyLObYoWgnrNes50FWP+23ihD3g852wI2p0CDZlvUizj9vGMBuY79LXlW+x37mfgKKnApP1/sH7GEgyjci2n3u4bMg4Niz6UcbxoyNX6n74c+Os02vtiOJ6dpmp5Ye5C2wqjnvAiO5WkrFLhBwrp38HAN9Pcf",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
-        "stream": "source"
+        "stream": "source",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

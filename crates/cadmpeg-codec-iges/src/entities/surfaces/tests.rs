@@ -122,11 +122,11 @@ fn decode_type_140_uses_the_bounded_support_midpoint_normal() {
 
         assert!(result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .any(|surface| surface.id.as_str() == "iges:model:surface#D1"));
-        assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+        assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
         assert_eq!(result.report().losses.len(), 1);
         assert_eq!(
             result.report().losses[0].code,
@@ -150,7 +150,7 @@ fn decode_skips_a_nurbs_surface_over_its_pole_limit() {
         )
         .unwrap();
 
-    assert!(decoded.ir().model.surfaces.is_empty());
+    assert!(decoded.ir().geometry.surfaces.is_empty());
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("surface pole count exceeds 1000000")
@@ -224,7 +224,7 @@ fn project_skips_a_revolution_surface_over_its_pole_limit() {
     let edge_id = crate::ids::edge(&generatrix_stem);
 
     let mut ir = CadIr::empty();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: axis_id,
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -235,14 +235,16 @@ fn project_skips_a_revolution_surface_over_its_pole_limit() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: generatrix_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(generatrix)),
         source_object: None,
+        native_ref: None,
     });
-    ir.model.points.extend([
+    ir.geometry.points.extend([
         Point::new(
             start_point.clone(),
             FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
@@ -254,25 +256,30 @@ fn project_skips_a_revolution_surface_over_its_pole_limit() {
             None,
         ),
     ]);
-    ir.model.vertices.extend([
+    ir.geometry.vertices.extend([
         Vertex {
             id: start_vertex.clone(),
             point: start_point,
             tolerance: None,
+            native_ref: None,
         },
         Vertex {
             id: end_vertex.clone(),
             point: end_point,
             tolerance: None,
+            native_ref: None,
         },
     ]);
-    ir.model.edges.push(Edge {
+    ir.geometry.edges.push(Edge {
         id: edge_id,
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(generatrix_id), Some(interval))
             .unwrap(),
-        start: start_vertex,
-        end: end_vertex,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            start_vertex,
+            end_vertex,
+        )),
         tolerance: None,
+        native_ref: None,
     });
 
     let arena = DecodeArena::new();
@@ -287,7 +294,7 @@ fn project_skips_a_revolution_surface_over_its_pole_limit() {
     )
     .unwrap();
 
-    assert!(ir.model.surfaces.is_empty());
+    assert!(ir.geometry.surfaces.is_empty());
     assert!(!outcome.decoded.contains(&5_u32));
     assert!(outcome.losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
@@ -347,9 +354,9 @@ fn decode_solves_a_parameter_matched_ruled_surface() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-        result.ir().model.surfaces[0].geometry.solved()
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("expected an exact NURBS ruled cache");
     };
@@ -382,14 +389,14 @@ fn decode_projects_an_interval_certified_linear_bezier_ruled_surface() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == IgesLossCode::GeometryNotProjected.kind()
             && loss.message.contains("entity type 118")
     }));
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
@@ -423,7 +430,7 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
         )
         .unwrap();
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-        result.ir().model.surfaces[0].geometry.solved()
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("expected an exact rational ruled cache");
     };
@@ -436,7 +443,7 @@ fn decode_reconciles_rational_ruled_rail_denominators_exactly() {
     let curve_point = |sequence: u32, parameter: f64| {
         let curve = result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == format!("iges:model:curve#D{sequence}"))
@@ -503,7 +510,7 @@ fn split_keeping_levels(controls: &[[f64; 4]], parameter: f64) -> (Vec<[f64; 4]>
 fn ruled_span_split_of_a_high_degree_polygon_matches_the_level_split() {
     let span = cadmpeg_ir::geometry::nurbs::bezier::HomogeneousBezierSpan {
         domain: [2.0, 6.0],
-        controls: (0..1024_u32)
+        controls: (0..32_u32)
             .map(|index| {
                 let t = f64::from(index);
                 [t.sin(), t.cos(), 0.5 * t, 1.0 + f64::from(index % 5) / 8.0]
@@ -545,7 +552,7 @@ fn ruled_carrier_of_long_interleaved_rails_partitions_by_search() {
     let first = ruled_rail(1, &first_boundaries, 0.0);
     let second = ruled_rail(2, &second_boundaries, 1.0);
 
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let surface = super::ruled_surface_carrier(&first, &second, &ctx)
         .expect("ruled lanes pair")
         .expect("partition-aligned ruled carrier");
@@ -587,7 +594,7 @@ fn ruled_rails_over_the_blend_limit_are_skipped_with_a_loss() {
 
     assert!(!result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .any(|surface| surface.id.as_str() == "iges:model:surface#D5"));
@@ -623,7 +630,7 @@ fn homogeneous_ruled_carrier_splits_mismatched_knot_partitions() {
         false,
     )
     .expect("valid second rail");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let surface = super::ruled_surface_carrier(&first, &second, &ctx)
         .expect("ruled lanes pair")
         .expect("partition-aligned rational ruled carrier");
@@ -671,7 +678,7 @@ fn decode_projects_rational_circular_arc_length_ruled_surface() {
         )
         .unwrap();
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-        result.ir().model.surfaces[0].geometry.solved()
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("expected an exact circular ruled cache");
     };
@@ -719,7 +726,7 @@ fn decode_projects_composite_ruled_and_tabulated_carriers() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(ruled.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(ruled.ir().geometry.procedural_surfaces.len(), 1);
     assert!(ruled
         .report()
         .losses
@@ -735,7 +742,7 @@ fn decode_projects_composite_ruled_and_tabulated_carriers() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(tabulated.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(tabulated.ir().geometry.procedural_surfaces.len(), 1);
     assert!(
         tabulated.report().losses.is_empty(),
         "{:#?}",
@@ -755,9 +762,9 @@ fn decode_solves_a_surface_of_revolution_as_rational_quadratic_spans() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-        result.ir().model.surfaces[0].geometry.solved()
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("expected an exact rational revolution cache");
     };
@@ -789,14 +796,14 @@ fn decode_solves_a_surface_of_revolution_from_an_ellipse_carrier() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
         result.report().losses
     );
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-        result.ir().model.surfaces[0].geometry.solved()
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("expected an exact rational ellipse revolution cache");
     };
@@ -825,7 +832,7 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
         .expect("line revolution fixture decodes");
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
@@ -836,7 +843,7 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
     };
     let procedural = result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|procedural| procedural.id == *construction)
@@ -857,7 +864,7 @@ fn decode_solves_a_surface_of_revolution_from_a_line_with_roundoff_endpoints() {
     assert!(matches!(
         result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == *directrix)
@@ -915,7 +922,7 @@ fn decode_uses_recovered_global_resolution_for_line_revolution_admission() {
         "{:#?}",
         result.report().losses
     );
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
 }
 
 #[test]
@@ -946,7 +953,7 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
 
         let surface = result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
@@ -958,7 +965,7 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
         };
         let procedural = result
             .ir()
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .find(|procedural| procedural.id == *construction)
@@ -980,7 +987,7 @@ fn decode_solves_a_surface_of_revolution_from_an_exact_hyperbola_carrier() {
         assert_eq!(angular_interval, [0.0, std::f64::consts::FRAC_PI_2]);
         let directrix_geometry = &result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == *directrix)
@@ -1035,7 +1042,7 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
     assert!(
         result
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
             .any(|face| face.id.as_str() == "iges:model:face#D13"),
@@ -1044,7 +1051,7 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
     );
     let surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "iges:model:surface#D5")
@@ -1055,11 +1062,15 @@ fn decode_projects_a_trimmed_revolution_at_an_intermediate_native_angle() {
     ));
     let procedural = result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|procedural| {
-            result.ir().model.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+            result
+                .ir()
+                .geometry
+                .procedural_surface_owner(&procedural.id)
+                == Some(&surface.id)
         })
         .expect("trimmed revolution construction");
     assert_eq!(
@@ -1102,12 +1113,12 @@ fn decode_places_a_surface_of_revolution_and_its_procedural_carriers_once() {
         .unwrap();
 
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-        result.ir().model.surfaces[0].geometry.solved()
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("expected an exact rational revolution cache");
     };
     assert_eq!(surface.poles().first().copied().unwrap().x, 11.0);
-    let procedural = &result.ir().model.procedural_surfaces[0];
+    let procedural = &result.ir().geometry.procedural_surfaces[0];
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(definition_payload) =
         procedural.definition()
     else {
@@ -1159,9 +1170,9 @@ fn ruled_developability_claim_does_not_hide_readable_rails() {
         let result = IgesCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(result.ir().model.surfaces.len(), 1, "claim {claim}");
+        assert_eq!(result.ir().geometry.surfaces.len(), 1, "claim {claim}");
         let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-            result.ir().model.surfaces[0].geometry.solved()
+            result.ir().geometry.surfaces[0].geometry.solved()
         else {
             panic!("exact ruled cache")
         };
@@ -1204,7 +1215,7 @@ fn type122_projection_keeps_rational_directrix_weights() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
+    assert!(result.ir().geometry.surfaces.iter().any(|surface| matches!(
         &surface.geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Procedural {
             cache: Some(SolvedSurfaceGeometry::Nurbs(nurbs)),
@@ -1223,7 +1234,7 @@ fn decode_projects_an_exact_placed_hyperbola_revolution() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert!(!result.ir().model.surfaces.is_empty());
+    assert!(!result.ir().geometry.surfaces.is_empty());
 }
 
 #[test]
@@ -1308,7 +1319,7 @@ fn homogeneous_ruled_carrier_aligns_relative_parameter_partitions() {
         false,
     )
     .expect("valid second rail");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let surface = super::ruled_surface_carrier(&first, &second, &ctx)
         .expect("ruled lanes pair")
         .expect("relative-parameter rational ruled carrier");

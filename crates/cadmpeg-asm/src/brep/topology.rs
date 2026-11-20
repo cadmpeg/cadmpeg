@@ -453,12 +453,7 @@ pub(super) fn walk_reachable_topology(
                                     }
                                     Some(cv) => {
                                         if let Some(crec) = by_index.get(&cv) {
-                                            if purpose == DecodePurpose::History {
-                                                curve_geo.insert(cv, CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }));
-                                                kept_curves.insert(cv);
-                                            // A procedural curve carries an inline
-                                            // 3D B-spline cache in most subtypes.
-                                            } else if let Some(decoded) =
+                                            if let Some(decoded) =
                                                 nurbs::proc_curve::procedural_curve_resolving_refs(
                                                     ctx,
                                                     &crec.tokens,
@@ -507,6 +502,9 @@ pub(super) fn walk_reachable_topology(
                                                         cache: None,
                                                     });
                                                 procedural_curve_defs.insert(cv, super::ProceduralCurveSource::Cacheless(Box::new(definition)));
+                                                kept_curves.insert(cv);
+                                            } else if purpose == DecodePurpose::History {
+                                                curve_geo.insert(cv, CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }));
                                                 kept_curves.insert(cv);
                                             } else {
                                                 undecoded_carriers.insert(cv);
@@ -739,21 +737,11 @@ fn keep_wire_edge(
     let Some(curve_index) = edge.ref_at(8) else {
         return Ok(());
     };
-    if curve_geo.contains_key(&curve_index) {
-        kept_curves.insert(curve_index);
-    } else {
+    if let std::collections::hash_map::Entry::Vacant(entry) = curve_geo.entry(curve_index) {
         let Some(curve_record) = by_index.get(&curve_index) else {
             count_kind(&mut out.stats.procedural_curve_kinds, "dangling-reference");
             return Ok(());
         };
-        if purpose == DecodePurpose::History {
-            curve_geo.insert(
-                curve_index,
-                CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
-            );
-            kept_curves.insert(curve_index);
-            return Ok(());
-        }
         if let Some(decoded) = nurbs::proc_curve::procedural_curve_resolving_refs(
             ctx,
             &curve_record.tokens,
@@ -767,10 +755,7 @@ fn keep_wire_edge(
             if reversed {
                 curve.reverse_parameterization();
             }
-            curve_geo.insert(
-                curve_index,
-                CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
-            );
+            entry.insert(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)));
             procedural_curve_defs.insert(
                 curve_index,
                 super::ProceduralCurveSource::Cached {
@@ -797,28 +782,27 @@ fn keep_wire_edge(
                 Some(definition)
             })
         {
-            curve_geo.insert(
-                curve_index,
-                CurveGeometry::Procedural {
-                    construction: brep_id!(
-                        format,
-                        ProceduralCurveId,
-                        "procedural_curve",
-                        curve_index
-                    ),
-                    cache: None,
-                },
-            );
+            entry.insert(CurveGeometry::Procedural {
+                construction: brep_id!(format, ProceduralCurveId, "procedural_curve", curve_index),
+                cache: None,
+            });
             procedural_curve_defs.insert(
                 curve_index,
                 super::ProceduralCurveSource::Cacheless(Box::new(definition)),
             );
+            kept_curves.insert(curve_index);
+        } else if purpose == DecodePurpose::History {
+            entry.insert(CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
+                record: None,
+            }));
             kept_curves.insert(curve_index);
         } else {
             undecoded_carriers.insert(curve_index);
 
             count_kind(&mut out.stats.procedural_curve_kinds, curve_record.head());
         }
+    } else {
+        kept_curves.insert(curve_index);
     }
     Ok(())
 }

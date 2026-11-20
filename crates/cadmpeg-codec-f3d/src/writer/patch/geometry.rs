@@ -404,11 +404,12 @@ fn patch_asm_geometry(
         if let Some((color, carrier)) = color_records.get(&record.index) {
             match carrier {
                 DirectColorCarrier::NormalizedRgb { fields } => {
-                    for (index, value) in fields.iter().copied().zip([
-                        f64::from(color.r()),
-                        f64::from(color.g()),
-                        f64::from(color.b()),
-                    ]) {
+                    for (index, value) in
+                        fields
+                            .iter()
+                            .copied()
+                            .zip([color.r(), color.g(), color.b()])
+                    {
                         let offset =
                             asm_edits.required_payload_field(bytes, record, index, 0x06)?;
                         AsmEditSet::patch_f64_payload(bytes, offset + 1, value)?;
@@ -855,7 +856,7 @@ fn patch_asm_geometry(
 
 fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecError> {
     let channels = [color.r(), color.g(), color.b()];
-    let encoded = channels.map(|channel| truncate_f64_to_u8(f64::from((channel * 255.0).round())));
+    let encoded = channels.map(|channel| truncate_f64_to_u8((channel * 255.0).round()));
     let [Some(red), Some(green), Some(blue)] = encoded else {
         return Err(CodecError::NotImplemented(format!(
             "{} record {} requires exactly representable 8-bit RGB channels",
@@ -864,7 +865,7 @@ fn exact_8_bit_rgb(color: Color, record: &sab::Record) -> Result<[u8; 3], CodecE
         )));
     };
     let encoded = [red, green, blue];
-    let decoded = encoded.map(|channel| f32::from(channel) / 255.0);
+    let decoded = encoded.map(|channel| f64::from(channel) / 255.0);
     if decoded != channels {
         return Err(CodecError::NotImplemented(format!(
             "{} record {} requires exactly representable 8-bit RGB channels",

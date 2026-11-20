@@ -36,12 +36,12 @@ fn source_less_round_trip(ir: &CadIr) -> cadmpeg_ir::codec::DecodeResult {
 fn a_solid_with_a_four_use_edge_round_trips_as_a_solid() {
     let round_trip = source_less_round_trip(&edge_touching_cubes().unwrap());
 
-    let model = &round_trip.ir().model;
-    assert_eq!(model.bodies.len(), 1);
-    assert_eq!(model.bodies[0].kind, BodyKind::Solid);
-    assert_eq!(model.faces.len(), 12);
-    assert_eq!(model.edges.len(), 23);
-    assert!(model.edges.iter().any(|edge| model
+    let geometry = &round_trip.ir().geometry;
+    assert_eq!(geometry.bodies.len(), 1);
+    assert_eq!(geometry.bodies[0].kind, BodyKind::Solid);
+    assert_eq!(geometry.faces.len(), 12);
+    assert_eq!(geometry.edges.len(), 23);
+    assert!(geometry.edges.iter().any(|edge| geometry
         .coedges
         .iter()
         .filter(|c| c.edge == edge.id)
@@ -70,28 +70,29 @@ fn a_solid_with_a_collapsed_edge_loop_round_trips_as_a_solid() {
     let edge = EdgeId::mint("test:model:edge#apex").unwrap();
     let coedge = CoedgeId::mint("test:model:coedge#apex").unwrap();
     let apex_loop = LoopId::mint("test:model:loop#apex").unwrap();
-    let top = &mut ir.model.faces[1];
+    let top = &mut ir.geometry.faces[1];
     let outer = top.loops.iter().next().unwrap().clone();
     top.loops = FaceLoops::unspecified(vec![outer, apex_loop.clone()]);
     let top = top.id.clone();
-    ir.model.points.push(Point::new(
+    ir.geometry.points.push(Point::new(
         point.clone(),
         FinitePoint3::new(Point3::new(5.0, 5.0, 10.0)).unwrap(),
         None,
     ));
-    ir.model.vertices.push(Vertex {
+    ir.geometry.vertices.push(Vertex {
         id: vertex.clone(),
         point,
         tolerance: None,
+        native_ref: None,
     });
-    ir.model.edges.push(Edge {
+    ir.geometry.edges.push(Edge {
         id: edge.clone(),
         carrier: EdgeCarrier::Free,
-        start: vertex.clone(),
-        end: vertex,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(vertex.clone(), vertex)),
         tolerance: None,
+        native_ref: None,
     });
-    ir.model.coedges.push(Coedge {
+    ir.geometry.coedges.push(Coedge {
         id: coedge.clone(),
         owner_loop: apex_loop.clone(),
         edge,
@@ -99,28 +100,30 @@ fn a_solid_with_a_collapsed_edge_loop_round_trips_as_a_solid() {
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
+        native_ref: None,
     });
-    ir.model.loops.push(Loop {
+    ir.geometry.loops.push(Loop {
         id: apex_loop,
         face: top,
         boundary: LoopBoundary::Ring(LoopRing::new(vec![coedge], Vec::new()).unwrap()),
+        native_ref: None,
     });
     ir.finalize();
 
     let round_trip = source_less_round_trip(&ir);
 
-    let model = &round_trip.ir().model;
-    assert_eq!(model.bodies.len(), 1);
-    assert_eq!(model.bodies[0].kind, BodyKind::Solid);
-    assert_eq!(model.faces.len(), 6);
-    assert_eq!(model.edges.len(), 13);
-    let collapsed = model
+    let geometry = &round_trip.ir().geometry;
+    assert_eq!(geometry.bodies.len(), 1);
+    assert_eq!(geometry.bodies[0].kind, BodyKind::Solid);
+    assert_eq!(geometry.faces.len(), 6);
+    assert_eq!(geometry.edges.len(), 13);
+    let collapsed = geometry
         .edges
         .iter()
-        .find(|edge| edge.start == edge.end)
+        .find(|edge| edge.ends.as_ref().unwrap().start == edge.ends.as_ref().unwrap().end)
         .unwrap();
     let carrier = collapsed.curve().unwrap();
-    assert!(model.curves.iter().any(|curve| curve.id == *carrier
+    assert!(geometry.curves.iter().any(|curve| curve.id == *carrier
         && matches!(
             curve.geometry,
             CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(_))

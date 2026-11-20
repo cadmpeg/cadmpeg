@@ -8,8 +8,8 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compression": "deflate",
       "expanded": 26701,
+      "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
       "stored": 2593
@@ -21,8 +21,8 @@
         "data_offset": "2679",
         "header_offset": "2635"
       },
-      "compression": "deflate",
       "expanded": 6046,
+      "kind": "deflate",
       "name": "Body.Shape.brp",
       "role": "brep",
       "stored": 648
@@ -34,8 +34,8 @@
         "data_offset": "3375",
         "header_offset": "3327"
       },
-      "compression": "deflate",
       "expanded": 268,
+      "kind": "deflate",
       "name": "Body.Shape.Map.txt",
       "role": "auxiliary",
       "stored": 138
@@ -47,8 +47,8 @@
         "data_offset": "3570",
         "header_offset": "3513"
       },
-      "compression": "deflate",
       "expanded": 8717,
+      "kind": "deflate",
       "name": "AdditiveBox.AddSubShape.brp",
       "role": "brep",
       "stored": 716
@@ -60,8 +60,8 @@
         "data_offset": "4337",
         "header_offset": "4286"
       },
-      "compression": "deflate",
       "expanded": 8939,
+      "kind": "deflate",
       "name": "AdditiveBox.Shape.brp",
       "role": "brep",
       "stored": 733
@@ -73,19 +73,20 @@
         "data_offset": "5131",
         "header_offset": "5070"
       },
-      "compression": "deflate",
       "expanded": 0,
+      "kind": "deflate",
       "name": "AdditiveBox.SuppressedShape.brp",
       "role": "brep",
       "stored": 2
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_version": "1",
           "program_version": "1.1R20260928 (Git shallow)",
@@ -93,8 +94,10 @@
         },
         "dialect": "fcstd:schema-4"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",
