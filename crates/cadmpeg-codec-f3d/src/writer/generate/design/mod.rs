@@ -4,9 +4,10 @@
 //! feature of the current bodies.
 //!
 //! It runs where no native Design record is written and the document holds a
-//! design scope for its root definition. A failure here is a
-//! [`super::reduce::Stage::NeutralDesign`] failure, whose only fallback is to
-//! write no design: it never drops a body.
+//! design scope for its root definition. It charges a loss for every design
+//! scope, container, feature and parameter it does not write. A failure here
+//! is a [`super::reduce::Stage::NeutralDesign`] failure, whose only fallback
+//! is to write no design: it never drops a body.
 
 mod base_feature;
 mod expression;
@@ -22,7 +23,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::CodecError;
 
 use cadmpeg_ir::codec::write::evaluation_missing;
-use cadmpeg_ir::design::container::Container;
+use cadmpeg_ir::design::container::{Container, Rollback};
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::parameter::ParameterOwner;
 use cadmpeg_ir::design::refs::Member;
@@ -32,6 +33,8 @@ use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::presentation::GeneratedDesignRegistry;
+use super::reduce::named_loss;
+use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
 use base_feature::BaseFeaturePlan;
 use frames::DesignRecords;
@@ -86,13 +89,14 @@ pub(super) fn plan(target: &CadIr) -> Option<NeutralDesign<'_>> {
                 ),
                 None => feature.to_string(),
             });
-    let losses = evaluation_missing(
+    let mut losses = evaluation_missing(
         "F3D",
         "stores the current bodies as one Base Feature and no timeline item for these features of the design",
         unwritten,
     )
     .into_iter()
-    .collect();
+    .collect::<Vec<_>>();
+    losses.extend(unwritten_records(target, scope));
     Some(NeutralDesign {
         parameters,
         base_feature: base_feature::plan(target),
@@ -186,6 +190,137 @@ pub(super) fn scope_records(target: &CadIr) -> (Vec<String>, Vec<String>) {
         .map(|parameter| parameter.id.to_string())
         .collect();
     (features, parameters)
+}
+
+/// The losses of the design records outside the root scope's written form:
+/// the other scopes with their features and parameters, every container but
+/// the one the written timeline stands for, and that container's folders,
+/// rollback and placement.
+fn unwritten_records(target: &CadIr, root: &DesignScope) -> Vec<LossNote> {
+    let others = move || {
+        target
+            .design
+            .scopes
+            .iter()
+            .filter(move |scope| !std::ptr::eq(*scope, root))
+    };
+    let charged = scope_features(target, root)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let mut placed = BTreeMap::new();
+    for scope in others() {
+        for feature in scope_features(target, scope) {
+            placed.entry(feature).or_insert(&scope.definition);
+        }
+    }
+    let mut losses = Vec::new();
+    losses.extend(named_loss(
+        F3dLossCode::WriterDesignRecordOmitted,
+        "design scope",
+        &format!(
+            "the F3D writer writes the design of the root definition {} alone",
+            root.definition
+        ),
+        others().map(|scope| scope.definition.to_string()),
+    ));
+    losses.extend(evaluation_missing(
+        "F3D",
+        &format!(
+            "writes the design of the root definition {} alone, and no timeline item for these features",
+            root.definition
+        ),
+        target
+            .design
+            .features
+            .iter()
+            .map(|feature| &feature.id)
+            .filter(|feature| !charged.contains(feature))
+            .map(|feature| match placed.get(feature) {
+                Some(definition) => format!("{feature} (design scope of {definition})"),
+                None => format!("{feature} (in no design scope)"),
+            }),
+    ));
+    losses.extend(named_loss(
+        F3dLossCode::WriterParameterOmitted,
+        "parameter",
+        &format!(
+            "the F3D writer writes the parameters of the root definition {} alone",
+            root.definition
+        ),
+        target
+            .design
+            .parameters
+            .iter()
+            .filter(|parameter| parameter.scope != root.definition)
+            .map(|parameter| format!("{} (definition {})", parameter.id, parameter.scope)),
+    ));
+    let timeline = written_timeline(target, root);
+    losses.extend(named_loss(
+        F3dLossCode::WriterDesignRecordOmitted,
+        "design container",
+        "the F3D timeline holds one Base Feature and no other container",
+        target
+            .design
+            .containers
+            .iter()
+            .filter(|container| {
+                !timeline.is_some_and(|timeline| std::ptr::eq(*container, timeline))
+            })
+            .map(|container| container.id().to_string()),
+    ));
+    if let Some(Container::Ordered {
+        id,
+        folders,
+        rollback,
+        placement,
+        ..
+    }) = timeline
+    {
+        let mut values = folders
+            .iter()
+            .map(|folder| match &folder.name {
+                Some(name) => format!(
+                    "{id} folder `{name}` (members {}..={})",
+                    folder.first, folder.last
+                ),
+                None => format!("{id} folder (members {}..={})", folder.first, folder.last),
+            })
+            .collect::<Vec<_>>();
+        if let Rollback::Before(member) = rollback {
+            values.push(format!("{id} rollback (before {})", member_id(member)));
+        }
+        if placement.is_some() {
+            values.push(format!("{id} placement"));
+        }
+        losses.extend(named_loss(
+            F3dLossCode::WriterDesignRecordOmitted,
+            "timeline value",
+            "the F3D timeline holds one Base Feature, so no folder, rollback or placement of the source timeline has its members",
+            values,
+        ));
+    }
+    losses
+}
+
+/// The container the written Fusion timeline stands for: the root scope's
+/// one root, where it is ordered.
+fn written_timeline<'a>(target: &'a CadIr, root: &DesignScope) -> Option<&'a Container> {
+    let [id] = root.roots.as_slice() else {
+        return None;
+    };
+    target
+        .design
+        .containers
+        .iter()
+        .find(|container| container.id() == id)
+        .filter(|container| matches!(container, Container::Ordered { .. }))
+}
+
+fn member_id(member: &Member) -> &str {
+    match member {
+        Member::Feature(feature) => feature.as_str(),
+        Member::Container(container) => container.as_str(),
+    }
 }
 
 /// Every feature of the scope's containers, in container order.

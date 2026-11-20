@@ -1210,6 +1210,9 @@ pub(crate) enum F3dLossCode {
     /// An integer parameter was written as a Fusion user parameter, which
     /// holds a real.
     WriterIntegerAsReal,
+    /// A design scope, container, or value of the written timeline was not
+    /// written.
+    WriterDesignRecordOmitted,
     /// An appearance's Protein asset was written under a GUID the writer
     /// allocated, in place of a missing or shared source GUID.
     WriterAppearanceGuidAllocated,
@@ -2002,6 +2005,7 @@ impl F3dLossCode {
         Self::WorkPlaneDisplayNameAmbiguous,
         Self::WorkPlaneDisplayNameUndecoded,
         Self::WriterIntegerAsReal,
+        Self::WriterDesignRecordOmitted,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -3106,6 +3110,7 @@ impl F3dLossCode {
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
             Self::WriterPatchDeclined => "writer.patch-declined",
             Self::WriterIntegerAsReal => "writer.integer-as-real",
+            Self::WriterDesignRecordOmitted => "writer.design-record-omitted",
             Self::WriterAppearanceGuidAllocated => "writer.appearance-guid-allocated",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
@@ -3210,6 +3215,7 @@ impl F3dLossCode {
             Self::WriterAppearanceOmitted => Severity::Warning,
             Self::WriterPatchDeclined => Severity::Warning,
             Self::WriterIntegerAsReal => Severity::Info,
+            Self::WriterDesignRecordOmitted => Severity::Warning,
             Self::WriterAppearanceGuidAllocated => Severity::Warning,
             Self::ScopeOwnerUnresolved
             | Self::ScopeOutputOwnerUnresolved
@@ -3975,6 +3981,7 @@ impl F3dLossCode {
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
             Self::WriterIntegerAsReal => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterDesignRecordOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterAppearanceGuidAllocated => LossTaxonomy::MetadataNotTransferred,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
@@ -5456,6 +5463,7 @@ mod tests {
                 "work-plane.display-name-ambiguous",
                 "work-plane.display-name-undecoded",
                 "writer.integer-as-real",
+                "writer.design-record-omitted",
             ]
         );
     }
