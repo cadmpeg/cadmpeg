@@ -4277,3 +4277,35 @@ type = "u16"
 source = "spec"
 anchor = "Command `01` with row control `0003` or `0007`"
 value = 7
+
+[[record]]
+name = "consolidated_vertex_wide_roster"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/stations.rs"
+kind = "byte"
+section = "6.4"
+anchor = "Its wide forward-reference\nproduction is five bytes:"
+size = 5
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "| `+0` | `u8` | wide roster-reference marker `0e` |"
+value = 14
+
+[[record.field]]
+name = "ordinal"
+offset = 1
+type = "u24"
+endianness = "little"
+source = "spec"
+anchor = "| `+1` | `u24le` | forward allocation ordinal |"
+
+[[record.field]]
+name = "terminal"
+offset = 4
+type = "u8"
+source = "spec"
+anchor = "| `+4` | `u8` | roster-reference terminal `00` |"
+value = 0

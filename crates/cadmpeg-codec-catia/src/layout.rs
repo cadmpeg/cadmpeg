@@ -925,3 +925,21 @@ pub(crate) mod surface_weight_symmetric_07_prefix {
     /// Stated value of `control` (`u16`). Spec §6.1.
     pub(crate) const CONTROL_VALUE: u16 = 0x0007;
 }
+
+/// Byte offsets for the `consolidated_vertex_wide_roster` record.
+///
+/// Spec §6.4. Record length 5 B.
+pub(crate) mod consolidated_vertex_wide_roster {
+    /// Record length in bytes. Spec §6.4.
+    pub(crate) const LEN: usize = 5;
+    /// Offset of `marker` (`u8`). Spec §6.4.
+    pub(crate) const MARKER: usize = 0;
+    /// Stated value of `marker` (`u8`). Spec §6.4.
+    pub(crate) const MARKER_VALUE: u8 = 14;
+    /// Offset of `ordinal` (`u24`, little-endian). Spec §6.4.
+    pub(crate) const ORDINAL: usize = 1;
+    /// Offset of `terminal` (`u8`). Spec §6.4.
+    pub(crate) const TERMINAL: usize = 4;
+    /// Stated value of `terminal` (`u8`). Spec §6.4.
+    pub(crate) const TERMINAL_VALUE: u8 = 0;
+}
