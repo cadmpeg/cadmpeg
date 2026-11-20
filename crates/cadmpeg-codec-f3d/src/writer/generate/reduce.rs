@@ -40,7 +40,9 @@ use serde_json::Value;
 
 use crate::loss::F3dLossCode;
 
-use super::native_geometry::{native_procedural_curve, native_procedural_surface};
+use super::native_geometry::{
+    native_procedural_curve, native_procedural_surface, ProceduralOwners,
+};
 
 /// Native arenas the B-rep stream is written from. Every other arena belongs
 /// to the Design, ACT and configuration streams.
@@ -1431,16 +1433,22 @@ fn omit_vertex_free_edge(geometry: &mut cadmpeg_ir::document::Topology, edge: &E
 /// for the bodies that also hold a writable face.
 fn unwritable_faces(ir: &CadIr) -> BTreeMap<String, Vec<(String, String)>> {
     let geometry = &ir.geometry;
+    let owners = ProceduralOwners::new(ir);
     let surfaces = geometry
         .surfaces
         .iter()
-        .filter(|surface| matches!(super::smbh::surface_has_no_form(ir, surface), Ok(true)))
+        .filter(|surface| {
+            matches!(
+                super::smbh::surface_has_no_form(ir, &owners, surface),
+                Ok(true)
+            )
+        })
         .map(|surface| surface.id.as_str())
         .collect::<HashSet<_>>();
     let curves = geometry
         .curves
         .iter()
-        .filter(|curve| matches!(super::smbh::curve_has_no_form(ir, curve), Ok(true)))
+        .filter(|curve| matches!(super::smbh::curve_has_no_form(&owners, curve), Ok(true)))
         .map(|curve| curve.id.as_str())
         .collect::<HashSet<_>>();
     if surfaces.is_empty() && curves.is_empty() {
@@ -1718,6 +1726,7 @@ struct ProceduralReduction {
 /// carrier holds a solved form to write instead, or no carrier uses it.
 fn procedural_reductions(ir: &CadIr) -> Vec<ProceduralReduction> {
     let geometry = &ir.geometry;
+    let owners = ProceduralOwners::new(ir);
     let mut reductions = Vec::new();
     let mut scratch = Vec::new();
     let mut surface_carriers = HashMap::<&str, Vec<&cadmpeg_ir::geometry::Surface>>::new();
@@ -1757,7 +1766,7 @@ fn procedural_reductions(ir: &CadIr) -> Vec<ProceduralReduction> {
         scratch.clear();
         let reason = match surface.geometry.solved_cache() {
             Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-                native_procedural_surface(&mut scratch, ir, surface, nurbs)
+                native_procedural_surface(&mut scratch, ir, &owners, surface, nurbs)
                     .err()
                     .map(|error| error.to_string())
             }
@@ -1815,7 +1824,7 @@ fn procedural_reductions(ir: &CadIr) -> Vec<ProceduralReduction> {
         scratch.clear();
         let reason = match curve.geometry.solved_cache() {
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                native_procedural_curve(&mut scratch, ir, &curve.id, nurbs)
+                native_procedural_curve(&mut scratch, ir, &owners, &curve.id, nurbs)
                     .err()
                     .map(|error| error.to_string())
             }
