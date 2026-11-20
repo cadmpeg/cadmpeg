@@ -8835,7 +8835,7 @@ fn ruled_surface_line_pcurve(
     }))
 }
 
-/// One closed circle of a complete cylindrical face and its stored vertex.
+/// One closed circle of a complete cylindrical face and its vertex.
 struct SeamEnd {
     edge: EdgeId,
     vertex: VertexId,
@@ -8855,20 +8855,23 @@ struct SeamCandidate {
 }
 
 /// The seam's two endpoints, and for each end whether its vertex keeps its
-/// stored position.
+/// position.
 ///
-/// A circle vertex that another edge also ends at stays where it is stored.
-/// When such a vertex lies off its reference point, the seam is the ruling
-/// through it; `None` when another such vertex lies off that ruling.
+/// A circle vertex is fixed when the file stores its point or another edge
+/// also ends at it, and a fixed vertex keeps its position. When a fixed vertex
+/// lies off its reference point, the seam is the ruling through it; `None`
+/// when another fixed vertex lies off that ruling.
 fn seam_endpoints(
     candidate: &SeamCandidate,
     vertex_edges: &HashMap<VertexId, Vec<EdgeId>>,
     vertex_position: impl Fn(&VertexId) -> Option<Point3>,
+    stored: impl Fn(&VertexId) -> bool,
 ) -> Option<([Point3; 2], [bool; 2])> {
-    let shared = candidate.ends.each_ref().map(|end| {
-        vertex_edges
-            .get(&end.vertex)
-            .is_some_and(|edges| edges.iter().any(|edge| *edge != end.edge))
+    let fixed = candidate.ends.each_ref().map(|end| {
+        stored(&end.vertex)
+            || vertex_edges
+                .get(&end.vertex)
+                .is_some_and(|edges| edges.iter().any(|edge| *edge != end.edge))
     });
     let positions = candidate
         .ends
@@ -8877,16 +8880,16 @@ fn seam_endpoints(
     let anchor = candidate
         .ends
         .iter()
-        .zip(positions.iter().zip(shared))
-        .find_map(|(end, (position, shared))| {
-            let position = (*position).filter(|_| shared)?;
+        .zip(positions.iter().zip(fixed))
+        .find_map(|(end, (position, fixed))| {
+            let position = (*position).filter(|_| fixed)?;
             (position.distance(end.reference_point) > LINEAR_RESOLUTION_MM)
                 .then_some((end, position))
         });
     let Some((anchor_end, anchor)) = anchor else {
         return Some((
             candidate.ends.each_ref().map(|end| end.reference_point),
-            [false; 2],
+            fixed,
         ));
     };
     let offset = anchor.vector_from(anchor_end.center);
@@ -8898,13 +8901,27 @@ fn seam_endpoints(
     let off_ruling =
         positions
             .iter()
-            .zip(seam.iter().zip(shared))
-            .any(|(position, (point, shared))| {
-                shared
+            .zip(seam.iter().zip(fixed))
+            .any(|(position, (point, fixed))| {
+                fixed
                     && position
                         .is_some_and(|position| position.distance(*point) > LINEAR_RESOLUTION_MM)
             });
-    (!off_ruling).then_some((seam, shared))
+    (!off_ruling).then_some((seam, fixed))
+}
+
+/// Whether the annotations state a point's position as read from the file.
+fn position_is_stored(annotations: &Annotations, point: &PointId) -> bool {
+    annotations
+        .exactness()
+        .get(point.as_str())
+        .is_none_or(|note| {
+            note.fields()
+                .get("position")
+                .copied()
+                .unwrap_or_else(|| note.entity())
+                == Exactness::ByteExact
+        })
 }
 
 fn synthesize_cylinder_seams(
@@ -9039,7 +9056,13 @@ fn synthesize_cylinder_seams(
                 .get(vertex_id)
                 .map(|&index| out.points[index].position().get())
         };
-        let Some((seam, kept)) = seam_endpoints(&candidate, &vertex_edges, vertex_position) else {
+        let stored = |vertex_id: &VertexId| {
+            vertex_points.get(vertex_id).is_some_and(|&index| {
+                position_is_stored(annotations.annotations(), &out.points[index].id)
+            })
+        };
+        let Some((seam, kept)) = seam_endpoints(&candidate, &vertex_edges, vertex_position, stored)
+        else {
             continue;
         };
         let SeamCandidate {

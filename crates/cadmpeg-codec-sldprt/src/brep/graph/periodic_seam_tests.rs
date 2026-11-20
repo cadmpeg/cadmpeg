@@ -186,7 +186,10 @@ fn two_circle_cylinder(vertices: [Point3; 2], shared: [bool; 2]) -> Brep {
     brep
 }
 
-fn synthesize_seams(brep: &mut Brep) {
+/// Run the cylinder seam pass. Where `derived[k]` holds, circle `k`'s point is
+/// annotated `derived`, as the decoder annotates a vertexless ring edge's
+/// closure point; the other points are stored.
+fn synthesize_seams(brep: &mut Brep, derived: [bool; 2]) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -195,6 +198,14 @@ fn synthesize_seams(brep: &mut Brep) {
     )
     .expect("test context");
     let mut annotations = AnnotationBuilder::new();
+    for (index, derived) in derived.into_iter().enumerate() {
+        if derived {
+            annotations.exactness(
+                format!("test:seam:point#circle-{index}"),
+                Exactness::Derived,
+            );
+        }
+    }
     let source_stream =
         cadmpeg_ir::annotations::StreamHandle::new(cadmpeg_ir::stream_name!("test"));
     synthesize_cylinder_seams(&ctx, brep, &mut annotations, &source_stream)
@@ -228,7 +239,7 @@ fn seam_runs_through_a_circle_vertex_another_edge_ends_at() {
     let tangent = Point3::new(5.0, 0.0, 0.0);
     let mut brep = two_circle_cylinder([tangent, Point3::new(0.0, 5.0, 10.0)], [true, false]);
 
-    synthesize_seams(&mut brep);
+    synthesize_seams(&mut brep, [false, true]);
 
     assert_eq!(circle_vertex_position(&brep, 0), tangent);
     assert!(circle_vertex_position(&brep, 1).distance(Point3::new(5.0, 0.0, 10.0)) <= 1.0e-12);
@@ -253,13 +264,13 @@ fn seam_runs_through_a_circle_vertex_another_edge_ends_at() {
 }
 
 #[test]
-fn seam_moves_unshared_circle_vertices_to_the_reference_ruling() {
+fn seam_moves_derived_circle_vertices_to_the_reference_ruling() {
     let mut brep = two_circle_cylinder(
         [Point3::new(5.0, 0.0, 0.0), Point3::new(0.0, 5.0, 10.0)],
         [false, false],
     );
 
-    synthesize_seams(&mut brep);
+    synthesize_seams(&mut brep, [true, true]);
 
     assert_eq!(
         circle_vertex_position(&brep, 0),
@@ -278,10 +289,62 @@ fn shared_circle_vertices_on_different_rulings_get_no_seam() {
     let vertices = [Point3::new(5.0, 0.0, 0.0), Point3::new(0.0, 5.0, 10.0)];
     let mut brep = two_circle_cylinder(vertices, [true, true]);
 
-    synthesize_seams(&mut brep);
+    synthesize_seams(&mut brep, [false, false]);
 
     assert_eq!(circle_vertex_position(&brep, 0), vertices[0]);
     assert_eq!(circle_vertex_position(&brep, 1), vertices[1]);
     assert!(seam_edge(&brep).is_none());
     assert_eq!(brep.faces[0].loops.len(), 2);
+}
+
+#[test]
+fn seam_runs_through_a_stored_circle_vertex_no_other_edge_ends_at() {
+    let stored = Point3::new(5.0, 0.0, 0.0);
+    let mut brep = two_circle_cylinder([stored, Point3::new(0.0, 5.0, 10.0)], [false, false]);
+
+    synthesize_seams(&mut brep, [false, true]);
+
+    assert_eq!(circle_vertex_position(&brep, 0), stored);
+    assert!(circle_vertex_position(&brep, 1).distance(Point3::new(5.0, 0.0, 10.0)) <= 1.0e-12);
+    let seam = seam_edge(&brep).expect("a seam edge");
+    let curve = brep
+        .curves
+        .iter()
+        .find(|curve| Some(&curve.id) == seam.curve())
+        .expect("seam curve");
+    let Some(SolvedCurveGeometry::Line(line)) = curve.geometry.solved() else {
+        panic!("the seam is a line");
+    };
+    assert!(line.origin().get().distance(stored) <= 1.0e-12);
+    assert!((line.direction().as_raw().z - 1.0).abs() <= 1.0e-12);
+    assert_eq!(brep.faces[0].loops.len(), 1);
+}
+
+#[test]
+fn stored_circle_vertices_on_different_rulings_get_no_seam() {
+    let vertices = [Point3::new(5.0, 0.0, 0.0), Point3::new(0.0, 5.0, 10.0)];
+    let mut brep = two_circle_cylinder(vertices, [false, false]);
+
+    synthesize_seams(&mut brep, [false, false]);
+
+    assert_eq!(circle_vertex_position(&brep, 0), vertices[0]);
+    assert_eq!(circle_vertex_position(&brep, 1), vertices[1]);
+    assert!(seam_edge(&brep).is_none());
+    assert_eq!(brep.faces[0].loops.len(), 2);
+}
+
+#[test]
+fn a_stored_circle_vertex_within_resolution_of_the_reference_point_keeps_its_position() {
+    let stored = Point3::new(-5.0, 1.0e-6, 0.0);
+    let mut brep = two_circle_cylinder([stored, Point3::new(0.0, 5.0, 10.0)], [false, false]);
+
+    synthesize_seams(&mut brep, [false, true]);
+
+    assert_eq!(circle_vertex_position(&brep, 0), stored);
+    assert_eq!(
+        circle_vertex_position(&brep, 1),
+        Point3::new(-5.0, 0.0, 10.0)
+    );
+    assert!(seam_edge(&brep).is_some());
+    assert_eq!(brep.faces[0].loops.len(), 1);
 }
