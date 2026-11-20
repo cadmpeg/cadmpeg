@@ -2992,8 +2992,8 @@ existing partition node.
 A cylindrical face spanning a complete angular period stores two loops. Each
 loop contains one coedge whose edge is closed and whose carrier is a circle
 coaxial with the cylinder. The stored topology omits the longitudinal seam.
-A circle vertex is fixed when the partition stores its point or another edge
-also ends at it. A hole circle that touches a straight edge of its face shares the
+A circle vertex is fixed when the file stores its point or another edge also
+ends at it. A hole circle that touches a straight edge of its face shares the
 touching vertex with that edge. A fixed vertex keeps its position. The seam's
 endpoints are the two circle points `center - ref_direction * radius`, where
 `ref_direction` is the cylinder carrier's reference direction. When a fixed
