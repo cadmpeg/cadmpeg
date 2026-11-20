@@ -678,6 +678,7 @@ pub(crate) enum F3dLossCode {
     FeatureProfileLoopFlagsAssumed,
     FeatureProfileCoincidentDirectionAssumed,
     FeatureProfileCoincidentBoundaryAssumed,
+    FeatureProfilePartialEntryAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
     /// A stored Cut transition certifies regions with stale curve identities.
@@ -1573,6 +1574,7 @@ impl F3dLossCode {
         Self::FeatureProfileCrossingLoopAssumed,
         Self::FeatureProfileCoincidentDirectionAssumed,
         Self::FeatureProfileCoincidentBoundaryAssumed,
+        Self::FeatureProfilePartialEntryAssumed,
         Self::FeatureProfileLoopFlagsAssumed,
         Self::FeatureProfileCutRegionsAssumed,
         Self::FeatureProfileRegionIdentitiesStale,
@@ -2496,6 +2498,7 @@ impl F3dLossCode {
             Self::FeatureProfileCoincidentBoundaryAssumed => {
                 "feature.profile-coincident-boundary-assumed"
             }
+            Self::FeatureProfilePartialEntryAssumed => "feature.profile-partial-entry-assumed",
             Self::FeatureProfileRegionIdentitiesStale => "feature.profile-region-identities-stale",
             Self::FeatureProfileCutRegionsAssumed => "feature.profile-cut-regions-assumed",
             Self::FeatureProfileIslandAbsenceAssumed => "feature.profile-island-absence-assumed",
@@ -3381,6 +3384,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
             | Self::FeatureProfileCoincidentBoundaryAssumed
+            | Self::FeatureProfilePartialEntryAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileCutRegionsAssumed
@@ -4047,6 +4051,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCoincidentDirectionAssumed
             | Self::FeatureProfileCoincidentBoundaryAssumed
+            | Self::FeatureProfilePartialEntryAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
             | Self::FeatureProfileCutRegionsAssumed
@@ -4837,6 +4842,7 @@ mod tests {
                 "feature.profile-crossing-loop-assumed",
                 "feature.profile-coincident-direction-assumed",
                 "feature.profile-coincident-boundary-assumed",
+                "feature.profile-partial-entry-assumed",
                 "feature.profile-loop-flags-assumed",
                 "feature.profile-cut-regions-assumed",
                 "feature.profile-region-identities-stale",
