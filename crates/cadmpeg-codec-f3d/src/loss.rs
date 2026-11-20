@@ -738,7 +738,7 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCoincidentDirectionAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
-    /// A stored Cut transition certifies regions with stale curve identities.
+    /// A stored transition certifies regions with stale curve identities.
     FeatureProfileRegionIdentitiesStale,
     /// Extrude profile selections assumed that a curve outside the
     /// arrangement makes no island in a selected face.

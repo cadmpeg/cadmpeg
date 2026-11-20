@@ -164,3 +164,5 @@ fn a_stored_curve_that_bounds_no_certified_region_selects_nothing() {
     let entities = divided_rectangle();
     assert!(select(&entities, &[0, 1, 2, 3, 5]).is_none());
 }
+
+mod stale;
