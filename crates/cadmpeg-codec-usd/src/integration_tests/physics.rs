@@ -478,3 +478,74 @@ fn a_cylindrical_joint_limits_its_free_axes() {
     assert!(close(value("limit:transZ:physics:low"), 0.0), "{text}");
     assert!(close(value("limit:transZ:physics:high"), 0.02), "{text}");
 }
+
+/// The `BrepArray` box with a mass of 2 kg centred at (5, 10, 15) mm, set on
+/// its one body.
+fn box_with_mass() -> cadmpeg_ir::CadIr {
+    let text = std::fs::read_to_string(format!(
+        "{}/tests/golden/fixtures/brep_array_box.usda",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .expect("fixture");
+    let mut ir = decode(&text).ir().clone();
+    let body = ir.geometry.bodies[0].id.clone();
+    ir.model
+        .mass_properties
+        .push(cadmpeg_ir::physics::MassProperties {
+            id: cadmpeg_ir::ids::MassPropertiesId::try_from("test:usd:mass#box".to_owned())
+                .expect("an id"),
+            target: PhysicsTarget::Body { body }.into(),
+            mass: cadmpeg_ir::scalar::PositiveReal::new(2.0),
+            density: None,
+            center_of_mass: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                5.0, 10.0, 15.0,
+            )),
+            inertia: None,
+            material: None,
+            native_ref: None,
+        });
+    ir
+}
+
+/// A body written as a group of prims (its B-rep and its mesh) carries its
+/// mass on the group prim, in kilograms and metres.
+#[test]
+fn a_group_body_carries_its_mass() {
+    let (text, report) = encode(&box_with_mass());
+    let group = text
+        .split("def Xform")
+        .find(|prim| prim.contains("def BrepArray"))
+        .expect("the body's group prim");
+    let head = group.split('{').next().unwrap_or_default();
+    assert!(head.contains("PhysicsMassAPI"), "{text}");
+    assert!(group.contains("float physics:mass = 2\n"), "{text}");
+    assert!(
+        group.contains("point3f physics:centerOfMass = (0.005, 0.01, 0.015)"),
+        "{text}"
+    );
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::UsdLossCode::ExportPhysicsNotWritten.kind()));
+}
+
+/// A body with a transform of its own is a group prim whose space is not the
+/// body's: its mass is not written, and a loss names the body.
+#[test]
+fn a_transformed_group_body_reports_its_mass() {
+    let mut ir = box_with_mass();
+    ir.geometry.bodies[0].transform = Some(
+        cadmpeg_ir::transform::Transform::affine([
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .expect("a transform"),
+    );
+    let (text, report) = encode(&ir);
+    assert!(!text.contains("physics:mass"), "{text}");
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::UsdLossCode::ExportPhysicsNotWritten.kind()));
+}

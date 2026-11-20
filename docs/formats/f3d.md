@@ -682,7 +682,7 @@ A paired-library envelope is face-scoped only when two lower-case canonical GUID
 
 A Design component naming-space type has add-in name `Component` and base-type GUID `21F379C8-CAFD-4985-B461-767673A4C502`. Each entity registered to this type is the target of one context binding, except that a component definition stored as revisions binds one in each: records with different offsets that repeat one record index and each carry the component's name. The direct form is byte `01`, the u64 component entity id, two or three zero bytes, and a 36-code-unit LP-UTF16 UUID. Its marker is not the second byte of an `01 01 + u64 component entity id` reference. The typed form is a local reference to the component entity with an inline type GUID equal to that entity's naming-space type registration, followed by zero or one zero byte and the 36-code-unit LP-UTF16 UUID; with the reference's two-byte local tail, these are the direct form's two or three zero bytes. The linked form is byte `01`, the u64 component entity id, two zero bytes, byte `01`, the u64 id of a link entity, two zero bytes, and the 36-code-unit LP-UTF16 UUID. The link entity is registered to type GUID `8ACBA2E5-5A4C-4438-8351-276DE96E6982` with add-in name `Fusion`, or the stream registers it to no type and indexes no record for it. Component roots partition each Design stream into ascending entity-id clusters: a cluster starts at its root entity id and ends before the next root entity id. A body-map entity belongs to the cluster containing its Design entity suffix, and its BREP basename adds that BREP to the component's history set. A component can own zero, one, or several BREP histories. In a component definition record, the binding's UUID is followed by the component's name: an LP-UTF16 string and two zero bytes that end the indexed record. Bindings outside a definition record store no name. Each bound UUID selects that complete component-local Design and history naming space. Persistent identities resolve their local entity ids only in the component selected by their context UUID.
 
-A design entity header opens with an indexed record header. The fixed form stores the u64 entity suffix, five zero bytes, an optional slot (`0x00`, or `0x01` and four zero bytes), and the LP-UTF16 entity ID whose numeric suffix equals the entity suffix. The `EntityGenesis` form stores a zero run, `0x01 + u32 key_count`, `key_count` property entries, and the LP-UTF16 entity ID; its record index is the entity suffix. A property entry is an LP-ASCII key, an LP-ASCII type name, and a value. The type name `IntrinsicMetaTypeuint64` selects a u64 value. The type name `IntrinsicMetaTypeHString` selects a zero u32, an empty string. Exactly one entry has the key `EntityGenesis` and a u64 value, the origin bitfield. A sketch container entity header can store the `HString` entries `AutoConstrainCompleteJobRequestId`, `AutoConstrainCompleteRequestId`, `AutoConstrainMLJobId`, and `AutoConstraintUniqueSketchId` before the `EntityGenesis` entry, with `key_count` 5. An `EntityGenesis`-form sketch entity header is followed by a paired record carrying the same record index. That record's u32 member count at record offset 52 is followed by `count` entries of `0x01 + u32 record_index + six zero bytes`. The first entry references the sketch's base-point record, and the other entries name the sketch's owned records. A point or curve record without relation membership joins its owning sketch through the base-point reference or the member run.
+A design entity header opens with an indexed record header. The fixed form stores the u64 entity suffix, five zero bytes, an optional slot (`0x00`, or `0x01` and four zero bytes), and the LP-UTF16 entity ID whose numeric suffix equals the entity suffix. The `EntityGenesis` form stores a zero run, `0x01 + u32 key_count`, `key_count` property entries, and the LP-UTF16 entity ID; its record index is the entity suffix. A property entry is an LP-ASCII key, an LP-ASCII type name, and a value. The type name `IntrinsicMetaTypeuint64` selects a u64 value. The type name `IntrinsicMetaTypeHString` selects a zero u32, an empty string. Exactly one entry has the key `EntityGenesis` and a u64 value, the origin bitfield. A sketch container entity header can store the `HString` entries `AutoConstrainCompleteJobRequestId`, `AutoConstrainCompleteRequestId`, `AutoConstrainMLJobId`, and `AutoConstraintUniqueSketchId` before the `EntityGenesis` entry, with `key_count` 5. An `EntityGenesis`-form sketch entity header is followed by a paired record carrying the same record index. That record is the sketch's Geometry member ("Records of a Sketch item"): its display name, a zero byte, and the u32 member count are followed by `count` entries of `0x01 + u32 record_index + six zero bytes`. The first entry references the sketch's base-point record, and the other entries name the sketch's owned records. A point or curve record without relation membership joins its owning sketch through the base-point reference or the member run.
 
 In the legacy sketch form, an `MSketch` metadata object names candidate indexed-record identities. A sketch container is the candidate whose primary indexed record is immediately followed by a second indexed record with the same record index. The paired record stores eight zero bytes after its header and a marked u32 head-placement reference. A member-owning tail continues with six zero bytes, a u32 sketch ordinal, seven state bytes, and a u32 member count at record offset 41. The count is followed by exactly that many `0x01 + u32 record_index + six zero bytes` entries naming every record owned by the sketch. A localized tail omits the counted member run; its existence is closed by the referenced head-placement frame and its geometry ownership is supplied by relation owner references. The compact head-placement record is 34 bytes long. It stores ten zero bytes, `01 00`, a marked u32 reference, and six zero bytes after its indexed header and denotes the identity transform. The container record index is the sketch identity and owner reference.
 
@@ -3220,13 +3220,175 @@ The two identities of a placement name the same entity, a record of the construc
 
 #### Records of a Base Feature design
 
-This subsection gives the records that a Design stream holds when its MetaStream header stores serializer magic `1234` and its timeline lists one `Base Feature` item that stores `N > 0` result bodies. A reference to a record of the same segment is in the eleven-byte plain form. The cross-segment references are the exceptions, and the records that hold them say so: the one in the `549FBB80-B890-473E-A5C0-415D3D9BF4E6` record is 15 bytes wide (marker, u64, segment flag, segment index), and the component aggregate holds one more. Record indices are local to one Design `BulkStream`. The feature item tail, the paired scope record, the tracked-results table, the item-tail companion, the timeline context, the persistent-id table, and the origin of the previous subsection apply. The type table registers the types below in addition to the types of the previous subsection that these records name.
+This subsection gives the records that a Design stream holds when its MetaStream header stores serializer magic `1234` and its timeline lists one `Base Feature` item that stores `N > 0` result bodies. A reference to a record of the same segment is in the eleven-byte plain form. The cross-segment references are the exceptions, and the records that hold them say so: the one in the `549FBB80-B890-473E-A5C0-415D3D9BF4E6` record is 15 bytes wide (marker, u64, segment flag, segment index), and the component aggregate, the component naming space, and the root instance hold one each. "**ACT segment of a Base Feature design.**" gives their targets. Record indices are local to one Design `BulkStream`. The feature item tail, the paired scope record, the tracked-results table, the item-tail companion, the timeline context, the persistent-id table, and the origin of the previous subsection apply. The type table registers the types below in addition to the types of the previous subsection that these records name.
 
 | Type GUID | Base-type GUID | Version | Add-in | Role |
 |---|---|---|---|---|
 | `D7015B81-AB4D-4C89-BED7-AA4411E1964A` | `2FCB0587-233E-449B-9724-9AAE5AA23647` | 4 | `Fusion` | `Base Feature` parameter scope |
 | `493A89BA-E146-498D-9033-2783FE727AF4` | `D0D7E795-ECF7-48A8-A7A3-F983C5A29F8B` | 3 | `Fusion` | Base Feature result owner |
 | `5988EB6C-011B-4012-B500-089A713F57BF` | `5C069ACB-169F-4555-9792-815B4671DDA0` | 2 | `Fusion` | Base Feature body tracking entry |
+
+**Record roster.** The Design stream of a `Base Feature` design with one solid result body holds the records below, in ascending record index. Each type GUID of this subsection is spelled in the letter case that the type table stores. Each further solid body adds ten records: its two body-reference records, two Scene nodes (type `702b9cd2-537c-429e-8cc4-22beeeb98c37`), their two records of type `a9dcf6c1-617c-4f65-8302-c6f3a9ebbc4c` and two auxiliary records (type `2343b7ab-a2e0-4c66-8b74-99a05e4c670b`), one body tracking entry, and one browser-node member. A sheet result body adds one record of the alternate `Body` owner type `3A8E00DC-E342-4C03-8521-846BD9F7513E`, type version `3`, which its design body-reference record names in place of the design `Body` owner.
+
+| Index | Type GUID | Version | Length | Role |
+|---|---|---|---|---|
+| 0 | `23FD63FB-4EBE-4c85-A42B-5D9809AA3499` | 17 | 494 | `AssetSettings` |
+| 1 | `2C54F6D6-5C2B-4C4A-89A2-2AB486EF152D` | 0 | variable | Protein asset manager |
+| 2 | `3B9288E7-E1DE-414D-90BD-1C0CDAC77EB1` | 0 | 22 | the header and eleven zero bytes |
+| 3 | `E03784ED-5E19-4E14-B9F2-3B07017018CD` | 23 | variable | component aggregate |
+| 4 | `BC84911E-A581-4E51-ABE4-B0F681CFED06` | 1 | 77 | |
+| 5 | `F9CB8717-EB86-47F2-AAA7-39E142C57A09` | 1 | 36 | |
+| 6 | `904F885E-D859-4755-A7EF-6EBED8732FAD` | 1 | 52 | component naming space |
+| 7 | `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA` | 4 | 103 or 107 | design `Body` owner |
+| 10 | `5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF` | 4 | 115 | sketch collection |
+| 11 | `A8635B5F-1E2C-45FD-8BA9-0173B0FEB75E` | 3 | 70 | |
+| 12 | `FCB17D75-8538-4E8E-BDBE-CB4FE2120DB7` | 1 | 42 | |
+| 13 | `596C8B98-D176-4E40-B294-6404BAD566BC` | 3 | 46 | |
+| 14 | `AC202226-A700-462A-BC41-13631C9E95D5` | 0 | 41 | |
+| 15 | `0DBF95ED-82D2-4CC4-936D-642370679CBB` | 0 | 45 | |
+| 16 | `77EF6384-409E-498D-8167-BCA537533B35` | 0 | 41 | |
+| 17 | `B0556F58-EE09-46A7-B18F-E296F48E5B13` | 4 | 61 + 11n | parameter collection |
+| 18 | `E276745D-D84E-40D5-88BC-8C94DD4ACCDF` | 1 | 44 | parameter-collection companion |
+| 19 | `372234A0-2A6C-4122-8047-E74DBA04F326` | 0 | 42 | |
+| 20 | `30DCFC57-8E13-405B-9295-5CF74AC1FB39` | 0 | 41 | |
+| 21 | `47C245A2-2DBE-4B1F-9C56-762F373BB0C8` | 0 | 41 | |
+| 22 | `0C5DAB90-715E-49EA-A56E-E30F2328F43E` | 0 | 41 | |
+| 23 | `F670456D-872C-4818-95E9-DE115B264ACA` | 0 | 59 | |
+| 24 | `2972A3B8-3627-49BC-8C3D-18707605EC44` | 1 | 115 | origin container |
+| 25 | `0E18EEF2-0D6F-480C-997E-5EBC7369AE5F` | 0 | 165 | origin point |
+| 26–28 | `19031004-3AB6-4D13-ABBF-C51EE214688D` | 0 | 205 | origin axes `X`, `Y`, `Z` |
+| 29–31 | `8D424E29-DE23-4B1F-A3AD-84C52A497D1A` | 1 | 252 | origin planes `XY`, `XZ`, `YZ` |
+| 32 | `64435F6E-077A-4f6b-A7B6-537BF84BA414` | 0 | 55 | |
+| 33 | `BF7A6B8B-6E56-4C84-8882-1E8A1C1FE487` | 0 | 55 | |
+| 34 | `8EF00D65-F18D-4179-A644-FE0CA39943D6` | 5 | 80 | |
+| 36 | `878C70A7-15B8-4B0B-B1B7-C2A7A23CC45C` | 3 | 60 | |
+| 37 | `AD3F9695-7FDF-4708-AE05-B21309CDE969` | 1 | 42 | |
+| 38 | `3978701C-58EC-401A-8D24-A6FF4103DC24` | 0 | 62 | |
+| 39 | `91461D14-4F77-44B2-9E79-8B052566D9CE` | 0 | 60 | |
+| 40 | `1E650EA7-07C5-4111-B639-7DEE3A659799` | 0 | 61 | |
+| 41 | `7E84430B-74C7-4B67-92D0-4131A0B79109` | 0 | 72 | |
+| 42 | `074F9459-89C2-4B7D-8AB4-DCE67AE944FE` | 1 | 67 | |
+| 43 | `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` | 2 | 252 or 384 | `rootInstance` |
+| 44 | `D50DCC35-42CC-4E7D-9B81-4EB8252712D0` | 0 | 85 | |
+| 45 | `0FAF9824-8ECA-45ED-B199-589022ED5F6D` | 9 | 114 | |
+| 46 | `A1675506-5D2D-47a5-8AD2-8FD5CE946DA0` | 0 | 103 | |
+| 47–160 | `21086CE0-C398-4b1b-9CD6-86F092429833`, `B61F1D39-4984-47b0-9248-3A1113E86FC1`, `C6EE7300-667E-4ea5-9F61-71F98412DE8B` | 2, 0, 0 | 95 to 356 | six unit-system groups. Each group is one unit-system record of type `21086CE0-C398-4b1b-9CD6-86F092429833`, two records of type `B61F1D39-4984-47b0-9248-3A1113E86FC1`, and unit-type records of type `C6EE7300-667E-4ea5-9F61-71F98412DE8B`: 17, 17, 17, 14, 14, and 17 in the six groups in record order |
+| 161 | `778FECF0-46E7-4EB8-A8D0-52C950CCEAAE` | 0 | 48 | |
+| 162 | `B4CDE096-07DE-4272-BA4A-B257EFE0B470` | 0 | 51 | |
+| 163 | `88A5C187-5E68-4318-8A33-3AAA72F9DDB1` | 0 | 70 | |
+| 164–171 | `736DEAAF-2425-405E-B871-003AAB726295`, `1787C882-91E2-4363-9C18-80C98EBE4C77` | 5, 0 | 153; 54 to 58 | four alternating pairs |
+| 172 | `d9554b4f-2333-42c2-9495-2148d96f7437` | 11 | 261 | lighting environment |
+| 173–176 | `830A2A2B-0AA9-4D6A-ACA1-F7A2B2A06573` | 0 | 25 | archive-entry names |
+| 177 | `C170F594-38B1-4C2A-B649-7FE0164C44E3` | 0 | 99 | `WorkingModelPlaceholderRoot` |
+| 178 | `60F93DE2-6329-4598-A6AF-096AC63E627C` | 0 | 57 | |
+| 184 | `AE9F7FB5-2798-4BE4-8905-F8FB42A07193` | 0 | 38 | |
+| 185 | `49B2AA69-7655-4C36-A14E-9582CCF1283C` | 0 | 202 | configuration-table serializer trigger |
+| 186 | `3185B924-6C84-4804-BE77-9105B09209DA` | 0 | 207 | configuration-rule serializer trigger |
+| 187 | `D3937028-C20C-4E65-B010-94AD418A5C20` | 19 | 869 + 2a | design body-reference record |
+| 188 | `702b9cd2-537c-429e-8cc4-22beeeb98c37` | 1 | 133 | Scene node of the design body-reference record |
+| 189 | `a9dcf6c1-617c-4f65-8302-c6f3a9ebbc4c` | 0 | 95 | |
+| 190 | `2343b7ab-a2e0-4c66-8b74-99a05e4c670b` | 1 | 144 | Scene auxiliary record |
+| 191 | `A2EDAFD4-B122-49CC-AF09-96BE5C57A89D` | 0 | 72 | |
+| 192 | `E55D0457-898F-4A8E-B1A5-C85BDBA8794F` | 0 | variable | snapshot body-map companion |
+| 193 | `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA` | 4 | 93 | parameter `Body` owner |
+| 194 | `FA21074E-32D2-4DC9-9E77-8F53D7E7D96B` | 0 | 60 | |
+| 195 | `40DCC3F41D-E94F-B3B1-3E95-9B6ABE572C` | 1 | 158 | snapshot body map |
+| 196 | `E55D0457-898F-4A8E-B1A5-C85BDBA8794F` | 0 | 39 | snapshot body-map companion |
+| 197 | `74CA4562-59F8-4C97-8AD1-F8297C21F9AA` | 0 | 149 | body map |
+| 198 | `C3423E04-7E85-4B44-8E31-A5FA9C100052` | 2 | 203 | timeline context |
+| 199 | `3A6D1E62-99F8-4E32-BAAA-DBA0A2CFB27C` | 0 | 88 | owner collection |
+| 200 | `B65B5682-9355-44C7-8AFC-823058C4A36B` | 0 | 70 | |
+| 201 | `B13113CC-031E-4F93-8240-C4C10728869F` | 0 | 161 | dependency table |
+| 202 | `12D00AC0-B828-48C8-9740-80C4D992DB65` | 0 | 40 | |
+| 203 | `5D89B935-3F04-4CAB-81F5-E7B309E7E13F` | 1 | 80 | persistent-id table |
+| 204 | `016D8C93-144B-4352-9299-98FA738BD4FF` | 2 | 36 | |
+| 205 | `5D15E992-1E93-4D79-A553-10D2624148AE` | 1 | 79 | component record |
+| 206 | `6CCF41D5-40BE-48ED-A834-18F3EAED6C57` | 1 | 58 | record-timestamp table of the component record |
+| 207 | `2F4C1849-1A5A-4F6C-A086-8DD445CBF94B` | 3 | 47 | feature timeline |
+| 208 | `549FBB80-B890-473E-A5C0-415D3D9BF4E6` | 4 | 72 | |
+| 209 | `D7015B81-AB4D-4C89-BED7-AA4411E1964A` | 4 | 353 | `Base Feature` scope |
+| 210 | `6CCF41D5-40BE-48ED-A834-18F3EAED6C57` | 1 | 96 | record-timestamp table of the scope |
+| 211 | `5FBE538E-139B-46D4-BCAF-CC796D1E1F78` | 0 | 33 | item-tail companion |
+| 212 | `B7F34D7B-DAC4-41A5-B67D-D672537C3BFA` | 2 | 72 | tracked-results table |
+| 213 | `493A89BA-E146-498D-9033-2783FE727AF4` | 3 | 120 | result owner |
+| 214 | `6CCF41D5-40BE-48ED-A834-18F3EAED6C57` | 1 | 58 | parameter companion of the result owner |
+| 215 | `D3937028-C20C-4E65-B010-94AD418A5C20` | 19 | 869 + 2a | parameter body-reference record |
+| 219 | `E55D0457-898F-4A8E-B1A5-C85BDBA8794F` | 0 | variable | snapshot body-map companion |
+| 220 | `702b9cd2-537c-429e-8cc4-22beeeb98c37` | 1 | 133 | Scene node of the parameter body-reference record |
+| 221 | `a9dcf6c1-617c-4f65-8302-c6f3a9ebbc4c` | 0 | 95 | |
+| 222 | `2343b7ab-a2e0-4c66-8b74-99a05e4c670b` | 1 | 144 | Scene auxiliary record |
+| 223 | `5988EB6C-011B-4012-B500-089A713F57BF` | 2 | 197 | body tracking entry |
+| 224 | `D26351F0-5940-4D23-AA20-2C35475A6D9E` | 2 | 151 | browser-node member |
+
+The design `Body` owner is 107 bytes when it stores an empty attribute list, `u8 1` and u32 count `0`, in place of the zero byte that follows the nine zero bytes after its indexed header. The root instance is 252 bytes with an empty attribute list, and 384 bytes when its attribute list holds the three attributes `GatedByParent` (`IntrinsicMetaTypebool`), `ResolutionTime` (`IntrinsicMetaTypeHString`), and `SelfGated` (`IntrinsicMetaTypebool`). In a body-reference record with no appearance entry, `a` is the code-unit count of the appearance name ("**Body-reference records.**").
+
+The archive of such a design also holds an ACT segment (segment ID `1`) and a Browser segment (segment ID `2`) next to the Design segment (segment ID `0`), a `.smb` stream beside the `.smbh` history stream, and the members `DesignConfigurationTable.BlobParts`, `OGS.BlobFolder`, and `ProteinAssets.BlobParts`. The three segments store the MetaStream generation words `1234, 8, 36, 708837440` and the zero asset GUID.
+
+**Type table.** The type table registers each type of the record roster with a nonempty entity-ID run; the type tables of this subsection and of the previous subsection, and the mesh-body paragraph of §3.1, give the base type, version, and add-in of each. It also lists these rows with an empty entity-ID run, with these spellings. A design with a sheet result body also lists `A193F53F-86D7-4F45-A01C-51F5ECEEFC0E` (base `834C9DEF-4C39-4587-A08D-A5BD1267B7B4`, version `0`, `CommonData`).
+
+| Type GUID | Base-type GUID | Version | Add-in |
+|---|---|---|---|
+| `03bc52c5-f13f-4f61-9e9f-e5c1e876c3ef` | `eb7847af-e60d-4ab0-a736-4ac00c1f1d21` | 0 | `Scene` |
+| `130A0711-4E92-4FCD-AADE-B9C82238BB27` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 0 |  |
+| `1666C0B1-46B3-45b7-8AA1-C618F7CFA703` |  | 1 |  |
+| `199B8352-4C51-4cb3-9756-26722AE44E76` | `CB844AB6-240D-4fc9-9C9F-3679DC896D6F` | 0 | `CommonData` |
+| `1E5F6CE7-7544-4DE1-8C7B-6BACF6DC8E40` | `8E9D588C-28EF-43C4-B9A6-AA5430A68D4B` | 5 | `Geometry` |
+| `21F379C8-CAFD-4985-B461-767673A4C502` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 1 | `CommonData` |
+| `2EDC2536-D95B-4469-8ACA-DC07124D9C43` | `666BFBBC-2150-4C5F-AAF7-09AB3C3D9E47` | 2 | `Fusion` |
+| `2FCB0587-233E-449B-9724-9AAE5AA23647` | `2EDC2536-D95B-4469-8ACA-DC07124D9C43` | 0 | `Fusion` |
+| `3928dd64-b6a2-41e1-b4c7-e2bfdaa4e53d` | `eb7847af-e60d-4ab0-a736-4ac00c1f1d21` | 0 | `Scene` |
+| `3C822807-C6B1-4ffc-9AE4-769A487EC7B3` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 0 |  |
+| `42054630-20A0-40E1-B969-CFE9E742F5C9` | `EAF14CD0-75FD-4770-9C01-ABF1A66C2BCA` | 16 | `Component` |
+| `45BC3A57-B585-4245-A04C-130090F875CA` |  | 0 |  |
+| `4C835764-5BAB-4421-B5D2-06015BEF6EB2` |  | 4 |  |
+| `5852F708-9AA6-47F7-BD5A-2A5A6B56B327` |  | 0 |  |
+| `5A484388-9F39-4745-80CE-FACDA0029438` |  | 0 |  |
+| `5C069ACB-169F-4555-9792-815B4671DDA0` | `CB844AB6-240D-4fc9-9C9F-3679DC896D6F` | 1 | `EntityTracking` |
+| `5EAF2F0F-4AEE-4f20-B569-119A7BD1F36D` | `E47053DB-8AF6-4521-81D6-523964C0C97A` | 1 | `CommonData` |
+| `6370B480-4C9F-4AF3-A8DD-D364B7AF7275` | `A0A15D26-1F3B-4120-A3F1-9CDDA189AB74` | 0 | `Fusion` |
+| `63D6AD42-466A-40B7-9CCD-EB21BC500EF6` | `CB844AB6-240D-4fc9-9C9F-3679DC896D6F` | 0 | `CommonData` |
+| `666BFBBC-2150-4C5F-AAF7-09AB3C3D9E47` | `A2052F46-21B4-4AAA-9AF1-C371F0AB6CAB` | 0 | `Fusion` |
+| `74d7fef9-44e9-494d-a25d-81ec33d2841e` | `3928dd64-b6a2-41e1-b4c7-e2bfdaa4e53d` | 0 | `Scene` |
+| `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | `CB844AB6-240D-4fc9-9C9F-3679DC896D6F` | 2 | `DataModel` |
+| `8E9D588C-28EF-43C4-B9A6-AA5430A68D4B` | `F405DA34-6952-47F3-9C43-ABE392459FFF` | 2 | `Geometry` |
+| `8EB02C29-F2C0-477A-8FAF-1B764DCFA9E8` |  | 0 |  |
+| `98542EB9-A4F2-4137-A808-DBB5B3CD6159` |  | 0 |  |
+| `98F3955C-FE39-404A-8724-36D0C15A456C` |  | 0 |  |
+| `A0A15D26-1F3B-4120-A3F1-9CDDA189AB74` | `CB844AB6-240D-4fc9-9C9F-3679DC896D6F` | 2 | `Fusion` |
+| `A2052F46-21B4-4AAA-9AF1-C371F0AB6CAB` | `E8BDB9D4-2E39-405C-B05E-E2206AD3F125` | 4 | `Fusion` |
+| `A62C82F6-7CF7-4FF3-9C12-D87FF3965C9C` |  | 3 |  |
+| `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | 0 | `CommonData` |
+| `B2D184F7-6B45-4327-9A4D-163646EE3377` |  | 0 |  |
+| `B5B50E5B-EDC8-4309-82A3-C53B3E82033D` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 0 | `CommonData` |
+| `B728301A-AB43-43A5-A612-8A1F6D5014E4` |  | 0 |  |
+| `C9898782-7161-4519-8F36-6F7C317AEA29` |  | 0 |  |
+| `CB844AB6-240D-4fc9-9C9F-3679DC896D6F` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 1 | `DataModel` |
+| `CC33853A-069B-4292-BC1B-059FE3A08E09` | `130A0711-4E92-4FCD-AADE-B9C82238BB27` | 0 | `Scene` |
+| `CDACB430-543C-40b2-A275-2070D34FCD66` | `4C835764-5BAB-4421-B5D2-06015BEF6EB2` | 1 |  |
+| `D0D7E795-ECF7-48A8-A7A3-F983C5A29F8B` | `A0A15D26-1F3B-4120-A3F1-9CDDA189AB74` | 0 | `Fusion` |
+| `d0edef7c-5879-45a4-9651-900659cc4fdd` | `03bc52c5-f13f-4f61-9e9f-e5c1e876c3ef` | 0 | `Scene` |
+| `D4CBC599-0FFB-4d32-BF14-A7F0AFA25013` | `63D6AD42-466A-40B7-9CCD-EB21BC500EF6` | 10 | `CommonData` |
+| `E47053DB-8AF6-4521-81D6-523964C0C97A` | `CB844AB6-240D-4fc9-9C9F-3679DC896D6F` | 0 | `DataModel` |
+| `E8BDB9D4-2E39-405C-B05E-E2206AD3F125` | `6370B480-4C9F-4AF3-A8DD-D364B7AF7275` | 3 | `Fusion` |
+| `E8DCB040-6A0E-4AD1-BCF3-1E1AEDD35EE4` | `130A0711-4E92-4FCD-AADE-B9C82238BB27` | 1 | `Body` |
+| `E9F2168E-EB4D-4547-9B47-449B294FA81C` |  | 0 |  |
+| `EA46307F-1FD6-4B11-9C97-353B74F5E413` |  | 1 |  |
+| `EAF14CD0-75FD-4770-9C01-ABF1A66C2BCA` | `63D6AD42-466A-40B7-9CCD-EB21BC500EF6` | 8 | `CommonData` |
+| `eb7847af-e60d-4ab0-a736-4ac00c1f1d21` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 0 | `Scene` |
+| `F405DA34-6952-47F3-9C43-ABE392459FFF` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 2 | `Geometry` |
+| `FCFA11CB-9D87-41D6-9FD8-92E23427386D` |  | 1 |  |
+
+**Paired headers.** A paired indexed header carries the class tag of an ancestor type of the record's type, which the type table lists with an empty entity-ID run. Records of the other types of the roster store no paired header.
+
+| Paired-header type | Records whose paired header carries it |
+|---|---|
+| `CB844AB6-240D-4fc9-9C9F-3679DC896D6F` | `D7015B81-AB4D-4C89-BED7-AA4411E1964A`, `493A89BA-E146-498D-9033-2783FE727AF4`, `5D15E992-1E93-4D79-A553-10D2624148AE`, `B7F34D7B-DAC4-41A5-B67D-D672537C3BFA`, `C3423E04-7E85-4B44-8E31-A5FA9C100052`, `D26351F0-5940-4D23-AA20-2C35475A6D9E`, `B4CDE096-07DE-4272-BA4A-B257EFE0B470` |
+| `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | `3A6D1E62-99F8-4E32-BAAA-DBA0A2CFB27C`, `0FAF9824-8ECA-45ED-B199-589022ED5F6D`, `1E650EA7-07C5-4111-B639-7DEE3A659799`, `64435F6E-077A-4f6b-A7B6-537BF84BA414`, `878C70A7-15B8-4B0B-B1B7-C2A7A23CC45C`, `8EF00D65-F18D-4179-A644-FE0CA39943D6`, `BF7A6B8B-6E56-4C84-8882-1E8A1C1FE487`, `C170F594-38B1-4C2A-B649-7FE0164C44E3`, `F670456D-872C-4818-95E9-DE115B264ACA` |
+| `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | `3978701C-58EC-401A-8D24-A6FF4103DC24`, `60F93DE2-6329-4598-A6AF-096AC63E627C`, `7E84430B-74C7-4B67-92D0-4131A0B79109`, `FA21074E-32D2-4DC9-9E77-8F53D7E7D96B` |
+| `5C069ACB-169F-4555-9792-815B4671DDA0` | `5988EB6C-011B-4012-B500-089A713F57BF` |
+| `42054630-20A0-40E1-B969-CFE9E742F5C9` | `E03784ED-5E19-4E14-B9F2-3B07017018CD` |
+| `63D6AD42-466A-40B7-9CCD-EB21BC500EF6` | `074F9459-89C2-4B7D-8AB4-DCE67AE944FE` |
+| `B5B50E5B-EDC8-4309-82A3-C53B3E82033D` | `91461D14-4F77-44B2-9E79-8B052566D9CE` |
 
 **Scope frame.** The `Base Feature` scope record stores its `N` result bodies in three parallel runs. Body `i`, for `0 ≤ i < N`, has a design body-reference record, a parameter body-reference record, and a browser-node member at position `i` of their runs. Each run element of the first two runs is a reference followed by a u32 member.
 
@@ -3261,6 +3423,18 @@ The design body-reference record index of body `i` is its body entity suffix: th
 
 A `Base Feature` scope that stores no result body uses the shifted wide zero-body form. It stores current and preceding history-state identity `2`, and its tracked-results table has `n = 0` and next key `1`.
 
+**Feature timeline.** The feature timeline record (type `2F4C1849-1A5A-4F6C-A086-8DD445CBF94B`, type version `3`) of a `Base Feature` design is 47 bytes: the indexed header, ten zero bytes, the timeline context, u32 item count `1`, and the `Base Feature` scope. Its offsets are `base_feature_feature_timeline` in [the layout tables](../layouts/f3d.md#base_feature_feature_timeline).
+
+**Record timestamps and evaluation values.** Each entry of a record-timestamp table stores its timestamp as a u64 count of microseconds since 1970-01-01T00:00:00 UTC. A `Base Feature` design has three such tables:
+
+| Table | Prefix | Entries | Owner entry |
+|---|---|---|---|
+| of the component record | `00 00` | none | the component record, `t_c` |
+| of the `Base Feature` scope | `01 01` | the component record, `t_c`; the scope, `t_s` | the scope, `t_s` |
+| the parameter companion of the result owner | `00 00` | none | the result owner, `t_r` |
+
+The timestamps satisfy `t_c ≤ t_s ≤ t_r`. Eight zero bytes follow each owner entry. In a Design stream whose MetaStream generation words are `1234, 8, 36`, every timeline item stores epoch `252` in both epoch fields of its item tail. The `Base Feature` item stores a positive evaluation duration.
+
 **Body-reference records.** The two body-reference records of a body are body-presentation owners of type version `19`. Each record names the other one:
 
 | Offset | Type | Field |
@@ -3275,6 +3449,54 @@ A `Base Feature` scope that stores no result body uses the shifted wide zero-bod
 | — | LP-UTF16 | `0_` followed by the decimal record index of this record |
 
 The design body-reference record stores the body's node GUID, and the parameter body-reference record stores the body's parameter GUID, each as an LP-UTF16 GUID of 36 code units. In the 891-byte form of either record, that GUID is the second LP-UTF16 GUID and starts at offset 349.
+
+The form with no appearance entry continues after the LP-UTF16 name `0_<index>` with a cached mass-property block and two presentation envelopes. Lengths are in centimetres, and areas, volumes, and moments are in the matching powers of the centimetre. `base_feature_body_reference` in [the layout tables](../layouts/f3d.md#base_feature_body_reference) gives the offsets of the record with a three-digit index and the appearance `PrismOpaque`.
+
+| Type | Field |
+|---|---|
+| u32 | body kind: `2` for a solid body, `4` for a sheet body |
+| f64 | area |
+| f64 | relative accuracy of the area |
+| 3 × f64 | centroid |
+| f64 | relative accuracy of the volume and the centroid |
+| 3 × f64 | `Ixx`, `Iyy`, `Izz`: second moments of the volume about the coordinate axes, `∫(y² + z²) dV` and its cyclic forms |
+| 3 × f64 | the inertia-tensor entries `xy`, `xz`, `yz`: `-∫xy dV`, `-∫xz dV`, `-∫yz dV` |
+| LP-UTF16 | mass-block GUID of 36 code units |
+| f64 | volume |
+| f64 | relative accuracy of the volume, equal to the relative accuracy of the volume and the centroid |
+| u32 | body ordinal, from `1` |
+| u8 | `1` |
+| u32 | appearance-entry count `k`: `0` |
+| u32 | `0x00236810` |
+| u8 | `1` |
+| u8 | `1` in the design body-reference record, `0` in the parameter body-reference record |
+| 4 × f64 | `-1.0` |
+| f32 | `1.0` |
+| 10 × u8 | zero |
+| LP-UTF16 | node GUID in the design body-reference record, parameter GUID in the parameter body-reference record |
+| reference | the Protein asset manager |
+| LP-UTF16 | physical-material instance GUID, 36 code units |
+| LP-UTF16 | physical-material library `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C` |
+| u32 | `0` |
+| LP-UTF16 | physical material `PrismMaterial-022` |
+| reference | the `Body` owner: the design `Body` owner in the design body-reference record, the parameter `Body` owner in the parameter body-reference record |
+| u8 | `0`, a null reference |
+| reference | the record's Scene node (type `702b9cd2-537c-429e-8cc4-22beeeb98c37`) |
+| u32 | `0` |
+| 4 × f32 | appearance colour: `0.9647059`, `0.9647059`, `0.9529412`, `1.0` |
+| reference | the Protein asset manager |
+| u8 | appearance flag `1`: the appearance is an appearance asset |
+| LP-UTF16 | appearance instance GUID, 36 code units |
+| LP-UTF16 | appearance library `BA5EE55E-9982-449B-9D66-9F036540E140` |
+| u32 | `0` |
+| LP-UTF16 | appearance `PrismOpaque` |
+| u32 | `0` |
+| f32 | `1.0` |
+| u8 | `1` |
+| u32 | `0` |
+| reference | the `Body` owner of the first presentation envelope |
+
+The mass properties use unit density. In the parameter body-reference record every value is `0` and every accuracy is `-1.0`. A design body-reference record stores either the computed values with nonnegative accuracies, or `0` in every value and every accuracy. In the design body-reference record, the mass-block GUID is the `Geometry` GUID of the ACT aspect entry whose key is `0_<index>` of that record. The mass-block GUID of the parameter body-reference record occurs in no other record. A record whose appearance is the appearance of its physical material stores appearance flag `0`, the physical-material library and the appearance name `PrismMaterial-022_physmat_aspects:Prism-374` in the second envelope, and the colour `(0, 0, 0, 1.0)`. With `a` the code-unit count of the appearance name, the record is `869 + 2a` bytes: 891 bytes for `PrismOpaque` and 955 bytes for the physical-material appearance. A record with `k > 0` stores `k` appearance entries after the count, and every later field moves by their length.
 
 **Result owner.** The record of type `493A89BA-E146-498D-9033-2783FE727AF4`, type version `3`, is 120 bytes:
 
@@ -3323,7 +3545,7 @@ The design body-reference record stores the body's node GUID, and the parameter 
 
 | Record | Layout |
 |---|---|
-| `549FBB80-B890-473E-A5C0-415D3D9BF4E6`, version 4, 72 bytes | header; 22 zero bytes; u32 `3` at 33; zero byte at 37; a cross-segment reference at 38; the component aggregate at 53; u32 `0xffffffff` at 64; u32 `0` at 68 |
+| `549FBB80-B890-473E-A5C0-415D3D9BF4E6`, version 4, 72 bytes | header; 22 zero bytes; u32 `3` at 33; zero byte at 37; a cross-segment reference to the ACT component record at 38; the component aggregate at 53; u32 `0xffffffff` at 64; u32 `0` at 68 |
 | `12D00AC0-B828-48C8-9740-80C4D992DB65`, version 0, 40 bytes | header; 18 zero bytes; the timeline context at 29 |
 | `016D8C93-144B-4352-9299-98FA738BD4FF`, version 2, 36 bytes | header; 14 zero bytes; the timeline context at 25 |
 | `B65B5682-9355-44C7-8AFC-823058C4A36B`, version 0, 70 bytes | header; 10 zero bytes; the timeline context at 21; `u8 1` at 32; u32 member count `3` at 33; the members at 37 |
@@ -3360,13 +3582,161 @@ The input map lists the records that each record reads. The dependent map lists 
 | 60 | 8 × u8 | zero |
 | 68 | reference | the owner collection |
 
-The parameter collection of type `B0556F58-EE09-46A7-B18F-E296F48E5B13`, type version `4`, of a design with no parameters is 61 bytes: the indexed header, 23 zero bytes, a reference at offset 34 to its record of type `E276745D-D84E-40D5-88BC-8C94DD4ACCDF`, five zero bytes, and the component aggregate at offset 50. That record, type version `1`, is 44 bytes: the indexed header, eight zero bytes, `u8 1` at offset 19, u32 `1` at offset 20, the parameter collection at offset 24, and nine zero bytes.
+The parameter collection of type `B0556F58-EE09-46A7-B18F-E296F48E5B13`, type version `4`, of a design with `n` parameters is `61 + 11n` bytes when the 19 bytes after its indexed header are zero:
 
-The component aggregate of type `E03784ED-5E19-4E14-B9F2-3B07017018CD`, type version `23`, references these records in this order before its paired header: types `8EF00D65-F18D-4179-A644-FE0CA39943D6`, `878C70A7-15B8-4B0B-B1B7-C2A7A23CC45C`, `1E650EA7-07C5-4111-B639-7DEE3A659799`, `F670456D-872C-4818-95E9-DE115B264ACA`, `B4CDE096-07DE-4272-BA4A-B257EFE0B470`, the origin container, `64435F6E-077A-4F6B-A7B6-537BF84BA414`, `BF7A6B8B-6E56-4C84-8882-1E8A1C1FE487`, `AD3F9695-7FDF-4708-AE05-B21309CDE969`, `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA`, `91461D14-4F77-44B2-9E79-8B052566D9CE`, then the LP-UTF16 name `arrangementsContainer`, then `60F93DE2-6329-4598-A6AF-096AC63E627C`, the timeline context, `7E84430B-74C7-4B67-92D0-4131A0B79109`, `FA21074E-32D2-4DC9-9E77-8F53D7E7D96B`, and `3978701C-58EC-401A-8D24-A6FF4103DC24`. After its paired header it references `0C5DAB90-715E-49EA-A56E-E30F2328F43E`, `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, `AC202226-A700-462A-BC41-13631C9E95D5`, `596C8B98-D176-4E40-B294-6404BAD566BC`, `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA`, `0DBF95ED-82D2-4CC4-936D-642370679CBB`, `FCB17D75-8538-4E8E-BDBE-CB4FE2120DB7`, `77EF6384-409E-498D-8167-BCA537533B35`, the parameter collection, `30DCFC57-8E13-405B-9295-5CF74AC1FB39`, `5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF`, `372234A0-2A6C-4122-8047-E74DBA04F326`, `A8635B5F-1E2C-45FD-8BA9-0173B0FEB75E`, the Protein asset manager, `F9CB8717-EB86-47F2-AAA7-39E142C57A09`, a cross-segment reference, `904F885E-D859-4755-A7EF-6EBED8732FAD`, and `CE2913AA-CFE0-4F04-9102-24424ED3BCFA`.
+| Type | Field |
+|---|---|
+| header | indexed header |
+| 19 × u8 | zero |
+| u32 | count `c`, at least `n` |
+| reference | its record of type `E276745D-D84E-40D5-88BC-8C94DD4ACCDF` |
+| u8 | `0` |
+| u32 | parameter count `n` |
+| `n` references | the parameters |
+| reference | the component aggregate |
+
+The record of type `E276745D-D84E-40D5-88BC-8C94DD4ACCDF`, type version `1`, is 44 bytes: the indexed header, eight zero bytes, `u8 1`, u32 `1`, the parameter collection, and nine zero bytes. `base_feature_parameter_collection` in [the layout tables](../layouts/f3d.md#base_feature_parameter_collection) gives the offsets of the collection for `n = 0`, and each parameter reference adds eleven bytes before the component-aggregate reference. `base_feature_parameter_collection_companion` gives the offsets of the record of type `E276745D-D84E-40D5-88BC-8C94DD4ACCDF`.
+
+**Component aggregate.** The component aggregate of type `E03784ED-5E19-4E14-B9F2-3B07017018CD`, type version `23`, stores these fields when its property-group count `G` is `0`. `L` is the code-unit count of the component name. `base_feature_component_aggregate_prefix` in [the layout tables](../layouts/f3d.md#base_feature_component_aggregate_prefix) gives the offsets up to the code-unit count of the component name, and `base_feature_component_aggregate_tail` the offsets after its code units.
+
+| Type | Field |
+|---|---|
+| header | indexed header |
+| 8 × u8 | zero |
+| u8 | `0` |
+| u32 | `1` |
+| u8 | `0` |
+| u8 | `1` |
+| f32 | `1.0` |
+| 5 × reference | records of types `8EF00D65-F18D-4179-A644-FE0CA39943D6`, `878C70A7-15B8-4B0B-B1B7-C2A7A23CC45C`, `1E650EA7-07C5-4111-B639-7DEE3A659799`, `F670456D-872C-4818-95E9-DE115B264ACA`, `B4CDE096-07DE-4272-BA4A-B257EFE0B470` |
+| reference | the origin container |
+| 2 × reference | records of types `64435F6E-077A-4f6b-A7B6-537BF84BA414`, `BF7A6B8B-6E56-4C84-8882-1E8A1C1FE487` |
+| u32 | property-group count `G` |
+| u64 | next value of the persistent-identity counter: greater than every identity of the persistent-id table, `300` when the table holds none, and `301` in a `Base Feature` design |
+| reference | record of type `AD3F9695-7FDF-4708-AE05-B21309CDE969` |
+| reference | the parameter `Body` owner (type `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA`) |
+| reference | record of type `91461D14-4F77-44B2-9E79-8B052566D9CE` |
+| u32 | `1` |
+| LP-UTF16 | `arrangementsContainer` |
+| 3 × reference | the record of type `60F93DE2-6329-4598-A6AF-096AC63E627C`, the timeline context, the record of type `7E84430B-74C7-4B67-92D0-4131A0B79109` |
+| u8 | `0`, a null reference |
+| reference | record of type `FA21074E-32D2-4DC9-9E77-8F53D7E7D96B` |
+| u8 | `0`, a null reference |
+| reference | record of type `3978701C-58EC-401A-8D24-A6FF4103DC24` |
+| 6 × u8 | zero |
+| header | paired indexed header |
+| 8 × u8 | zero |
+| 2 × reference | records of types `0C5DAB90-715E-49EA-A56E-E30F2328F43E`, `47C245A2-2DBE-4B1F-9C56-762F373BB0C8` |
+| 4 × f64 | `-1.0` |
+| 2 × reference | records of types `AC202226-A700-462A-BC41-13631C9E95D5`, `596C8B98-D176-4E40-B294-6404BAD566BC` |
+| reference | the design `Body` owner (type `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA`) |
+| 3 × reference | records of types `0DBF95ED-82D2-4CC4-936D-642370679CBB`, `FCB17D75-8538-4E8E-BDBE-CB4FE2120DB7`, `77EF6384-409E-498D-8167-BCA537533B35` |
+| reference | the parameter collection |
+| u8 | `0`, a null reference |
+| 4 × reference | the record of type `30DCFC57-8E13-405B-9295-5CF74AC1FB39`, the sketch collection, the records of types `372234A0-2A6C-4122-8047-E74DBA04F326` and `A8635B5F-1E2C-45FD-8BA9-0173B0FEB75E` |
+| u32 | `0` |
+| u8 | `0` |
+| 4 × f32 | component colour: red, green, blue, and alpha `1.0` |
+| reference | the Protein asset manager |
+| LP-UTF16 | physical-material instance GUID, 36 code units |
+| LP-UTF16 | physical-material library `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C` |
+| u32 | `0` |
+| LP-UTF16 | physical material `PrismMaterial-022` |
+| u8 | `1` |
+| reference | record of type `F9CB8717-EB86-47F2-AAA7-39E142C57A09` |
+| LP-UTF16 | GUID of 36 lowercase code units |
+| cross-segment reference | the ACT component record |
+| reference | the component naming space (type `904F885E-D859-4755-A7EF-6EBED8732FAD`) |
+| u8 | `0` |
+| LP-UTF16 | GUID of 36 lowercase code units |
+| LP-UTF16 | component name, `L` code units |
+| u8 | `0` |
+| reference | the root instance (type `CE2913AA-CFE0-4F04-9102-24424ED3BCFA`) |
+
+The record is `904 + 2L` bytes. The two lowercase GUIDs occur in no other record or archive member. The physical-material instance GUID is also the material GUID of each body-reference record. The component name is the name of the ACT component record. The colour components are multiples of `0.01`. Each property group is inserted between the property-group count and the counter value, and moves every later field by its length. A group is u32 `0`, u32 pair count `m`, and `m` pairs of an LP-UTF16 property name and an LP-UTF16 value. The property names are `Description` and `Part Number`.
+
+**Origin records.** The origin point, the three origin axes, and the three origin planes share a head and a tail around their geometry. Every coordinate is a centimetre value. `base_feature_origin_point`, `base_feature_origin_axis`, and `base_feature_origin_plane` in [the layout tables](../layouts/f3d.md#base_feature_origin_point) give the offsets.
+
+| Type | Field |
+|---|---|
+| header | indexed header |
+| 9 × u8 | zero |
+| u8 | `1` |
+| u32 | `1`, the property count |
+| LP-ASCII | `EntityGenesis` |
+| LP-ASCII | `IntrinsicMetaTypeuint64` |
+| u64 | `0` |
+| — | the geometry of the record |
+| 5 × u8 | zero |
+| u32 | `0xffffffff` |
+| u8 | `1` |
+| LP-UTF16 | name |
+| 3 × u8 | `00 00 01` |
+| 8 × u8 | zero |
+| reference | the `AssetSettings` record (type `23FD63FB-4EBE-4c85-A42B-5D9809AA3499`) |
+| 2 × u8 | zero |
+| f32 | `1.0` |
+| f32 | `1.0` for the point and the planes, `1.3` for the axes |
+| 5 × u8 | zero |
+| reference | the origin container |
+
+| Record | Geometry | Names |
+|---|---|---|
+| origin point, type `0E18EEF2-0D6F-480C-997E-5EBC7369AE5F`, version `0`, 165 bytes | f64 point `(0, 0, 0)` | `O` |
+| origin axis, type `19031004-3AB6-4D13-ABBF-C51EE214688D`, version `0`, 205 bytes | f64 origin `(0, 0, 0)`, f64 unit direction, f64 `0.175`, f64 `2.25` | `X`, `Y`, `Z`, with the directions `(1, 0, 0)`, `(0, 1, 0)`, `(0, 0, 1)` |
+| origin plane, type `8D424E29-DE23-4B1F-A3AD-84C52A497D1A`, version `1`, 252 bytes | u32 `0`, f64 `0.25`, f64 `0.25`, u8 `0`, f64 origin `(0, 0, 0)`, f64 unit u direction, f64 unit v direction, f64 `2.0`, f64 `2.0` | `XY`, `XZ`, `YZ` |
+
+The plane normal is the cross product of the u and v directions. The plane `XY` stores u `(1, 0, -0)` and v `(-0, 1, 0)`, the plane `XZ` stores u `(0, 0, 1)` and v `(1, 0, 0)`, and the plane `YZ` stores u `(-0, 1, 0)` and v `(0, -0, 1)`. A component number written `-0` is the f64 negative zero.
+
+**ACT segment of a Base Feature design.** The ACT segment (`FusionACTSegmentType`, segment ID `1`, segment type code `5`) holds the component and instance records that the Design stream names across segments. Its type table registers these types:
+
+| Type GUID | Base-type GUID | Version | Add-in | Role |
+|---|---|---|---|---|
+| `8EF12734-4D22-4F6A-8A80-1462E6B40A13` | `98542EB9-A4F2-4137-A808-DBB5B3CD6159` | 1 | `ACT` | ACT table |
+| `596618BE-CD74-4BC9-A627-2DA799696C2D` | `5EAF2F0F-4AEE-4f20-B569-119A7BD1F36D` | 0 | `CommonData` | components root |
+| `D956D02C-2806-4E57-8B2E-EFA323A5C2B8` | `63D6AD42-466A-40B7-9CCD-EB21BC500EF6` | 0 | `CommonData` | component record |
+| `ABC8C0E3-50FB-4E8C-AFF3-116759A36073` | `19E286C3-1C58-4F13-8050-3F00EC2F1562` | 0 | `ACT` | aspect entry |
+| `F01D16CF-95D5-4239-A488-00448AC88023` | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | 0 | `CommonData` | naming-space link |
+| `F3E2665C-F3E1-4BA7-8676-8B90579B56D3` | `5EAF2F0F-4AEE-4f20-B569-119A7BD1F36D` | 1 | `CommonData` | instances root |
+| `96E1B59A-1989-4493-AA92-67E6072135F6` | `63D6AD42-466A-40B7-9CCD-EB21BC500EF6` | 0 | `CommonData` | instance root |
+
+The table also lists, with empty entity-ID runs, `98542EB9-A4F2-4137-A808-DBB5B3CD6159` (no base, version `0`, no add-in), `5EAF2F0F-4AEE-4f20-B569-119A7BD1F36D` (base `E47053DB-8AF6-4521-81D6-523964C0C97A`, `1`, `CommonData`), `E47053DB-8AF6-4521-81D6-523964C0C97A` (base `CB844AB6-240D-4fc9-9C9F-3679DC896D6F`, `0`, `DataModel`), `CB844AB6-240D-4fc9-9C9F-3679DC896D6F` (base `98542EB9-A4F2-4137-A808-DBB5B3CD6159`, `1`, `DataModel`), `63D6AD42-466A-40B7-9CCD-EB21BC500EF6` (base `CB844AB6-240D-4fc9-9C9F-3679DC896D6F`, `0`, `CommonData`), `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` (base `834C9DEF-4C39-4587-A08D-A5BD1267B7B4`, `0`, `CommonData`), `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` (base `CB844AB6-240D-4fc9-9C9F-3679DC896D6F`, `2`, `DataModel`), `19E286C3-1C58-4F13-8050-3F00EC2F1562` (base `4624CDED-E181-493B-BC82-3372738D683C`, `0`, `ACT`), `4624CDED-E181-493B-BC82-3372738D683C` (base `98542EB9-A4F2-4137-A808-DBB5B3CD6159`, `1`, `ACT`), `3AFBE085-BFA1-4DA6-BE71-45A6C61ECB99` (no base, `1`, no add-in), and `70BD8285-AEDC-4E05-9632-B8B57FEA1E42` (no base, `0`, no add-in).
+
+An ACT key `<s>_<r>` names record `r` of the segment with ID `s` of the same asset. The name `0_<index>` of a body-reference record is its ACT key. The records, for a design with one result body, are:
+
+| Index | Record | Layout |
+|---|---|---|
+| 0 | ACT table, 741 bytes and its entries | header; 4 zero bytes; LP-ASCII `ACTTable`; 2 zero bytes; u32 entry count `E`; `E` entries of a reference to an aspect entry and its LP-UTF16 key, in ascending byte order of the key; LP-UTF16 the Design per-asset manifest's second asset GUID; LP-UTF16 GUID equal to one of the six aspect GUIDs that follow; u32 `0`; u32 `6`; six pairs of LP-ASCII aspect name and LP-UTF16 GUID |
+| 1 | components root, 75 bytes | header; 4 zero bytes; LP-ASCII `ACTComponentsRoot`; 2 zero bytes; LP-ASCII `ACTComponentsRoot`; u32 `1`; the component record; `00` |
+| 2 | component record, `73 + 2L` bytes | header; 10 zero bytes; the naming-space link; LP-UTF16 key `1_2`; a cross-segment reference to the Design component aggregate; LP-UTF16 component name of `L` code units; `00`; the instance root |
+| 3 | aspect entry of the component record | the six-aspect form, key `1_2` |
+| 4 | naming-space link, 56 bytes | header; 10 zero bytes; a cross-segment reference to the Design component naming space (type `904F885E-D859-4755-A7EF-6EBED8732FAD`); 9 zero bytes; the component record |
+| 5 | instances root, 96 bytes | header; 4 zero bytes; LP-ASCII `ACTInstancesRoot`; bytes `00 00 01` and 7 zero bytes; the instance root; u32 `1`; LP-ASCII `ACTInstancesRoot`; u32 `1`; the instance root; `00` |
+| 6 | instance root, 200 bytes | header; 4 zero bytes; LP-ASCII `ACTInstanceRoot`; 3 zero bytes; u32 `6`; the six aspect names as LP-ASCII; `00`; the instance root itself; `00`; the component record; LP-UTF16 key `1_6`; `00`; a cross-segment reference to the Design root instance (type `CE2913AA-CFE0-4F04-9102-24424ED3BCFA`); u32 `0`; the component record; 2 zero bytes |
+| 7 | aspect entry of the instance root | the six-aspect form, key `1_6` |
+| 8, 10 | aspect entries of the design and the parameter body-reference records | the four-aspect form, keys `0_<index>` |
+
+`base_feature_act_table_prefix`, `base_feature_act_components_root`, `base_feature_act_component_record_prefix`, `base_feature_act_component_record_tail`, `base_feature_act_naming_space_link`, `base_feature_act_instances_root`, `base_feature_act_instance_root`, and `base_feature_act_aspect_entry_prefix` in [the layout tables](../layouts/f3d.md#base_feature_act_table_prefix) give the offsets of these records.
+
+An aspect entry of type `ABC8C0E3-50FB-4E8C-AFF3-116759A36073` is the header, ten zero bytes, a u32 aspect count `A`, `A` pairs of LP-ASCII aspect name and LP-UTF16 GUID of 36 code units, and its LP-UTF16 key. The six-aspect form (583 bytes) lists `Appearance`, `Geometry`, `PhysicalMaterial`, `Properties`, `StructureChange`, and `Transform`; the four-aspect form (403 bytes for a five-unit key) lists the first four. The ACT table lists the same six aspect names. In the entry with key `1_6`, the aspects other than `Properties` store one GUID. In the entry with key `1_2`, the `PhysicalMaterial` and `Transform` aspects store one GUID. Each further result body adds one four-aspect entry for each of its body-reference records. Every other aspect GUID occurs once in the archive.
+
+Each record below holds one cross-segment reference. The cross-segment references between the Design segment and the ACT segment are:
+
+| From | To |
+|---|---|
+| Design record of type `549FBB80-B890-473E-A5C0-415D3D9BF4E6` | ACT component record |
+| Design component aggregate | ACT component record |
+| Design component naming space | ACT naming-space link |
+| Design root instance | ACT instance root |
+| ACT component record | Design component aggregate |
+| ACT naming-space link | Design component naming space |
+| ACT instance root | Design root instance |
+
+A cross-segment reference is 15 bytes: `01`, the u64 target record index, `00`, `01`, and the u32 target segment ID.
 
 **Names in the B-rep of a Base Feature.** Let `I` be the persistent identity of the `Base Feature` scope. Each result body carries a generic-tag attribute of envelope version `3` with one body group: entity kind `3`, decimal Design id `I`, the body ordinal from `1`, and `0`, `0`. Each face of a result body carries a generic-tag attribute of envelope version `3` with one face group: a selector equal to the number of decimal digits of the token, the decimal token, token integer `0`, one Design reference `-I`, and terminator `0`. In each body, the face tokens increase by one along the body's lump, shell, and face chains. The first face of the first body has token `0`. The faces of a body with `F` faces that is the only result body therefore have the tokens `0` to `F - 1`.
 
-**History of a Base Feature.** When the `Base Feature` is the only item that commits a state, the `.smbh` history is two `delta_state` records. The root state has identity `2`, previous reference `0`, next reference `-1`, node index `1`, and no bulletin board. The head state has identity `3`, previous reference `-1`, next reference `1`, and node index `0`. It has one bulletin board with owner reference `0` and number `2`. Every change of that board is an insertion, and the insertions name every entity slot of the solved model except slot `0` once each.
+**History of a Base Feature.** When the `Base Feature` is the only item that commits a state, the `.smbh` history is two `delta_state` records. The root state has identity `2`, previous reference `0`, next reference `-1`, node index `1`, and no bulletin board. The head state has identity `3`, previous reference `-1`, next reference `1`, and node index `0`. It has one bulletin board with owner reference `0` and number `2`. Every change of that board is an insertion, and the insertions name every entity slot of the solved model except slot `0` once each. The `history_stream` preamble stores `stream_size` `3`, its duplicate `3`, `0`, `history_entry_count` `1` or `3`, and the references `-1`, `0`, `1`, `-1`.
 
 #### Records of a Sketch item
 
