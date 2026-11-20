@@ -1080,9 +1080,9 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** What selects the second form of the body's appearance and its twin in the Protein package of a Base Feature design?
 
-**Known.** `protein.md` §9 "The Protein package of a Fusion Base Feature design" gives the common form: the twin has base asset identifier `PrismOpaque` and the definition `Opaque(R,G,B)`, and the appearance has the colour `(246, 246, 243)`. In the second form, the twin is a copy of the appearance aspect: base asset identifier `PrismMaterial-022_physmat_aspects:Prism-374`, `AssetLibID` `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C`, the aspect's values, and a definition record equal to the aspect's definition. The appearance then has `generic_diffuse` equal to the aspect's `opaque_albedo`, `generic_glossiness` `0.7015873193740845`, and `generic_reflectivity_at_0deg` `0.0529`. The other values and records equal the common form. The packages of the second form share the physical-material identifier and the appearance identifier.
+**Known.** `protein.md` §9 "The Protein package of a Fusion Base Feature design" gives the common form: the twin has base asset identifier `PrismOpaque` and the definition `Opaque(R,G,B)`, and the appearance has the colour `(246, 246, 243)`. In the second form, the twin is a copy of the appearance aspect: base asset identifier `PrismMaterial-022_physmat_aspects:Prism-374`, `AssetLibID` `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C`, the aspect's values, and a definition record equal to the aspect's definition. The appearance then has `generic_diffuse` equal to the aspect's `opaque_albedo`, `generic_glossiness` `0.7015873193740845`, and `generic_reflectivity_at_0deg` `0.0529`. The other values of the body's appearance and twin, and the records of the physical material and its aspects, equal the common form. The packages of the second form share the physical-material identifier and the body-appearance identifier. `protein.md` §9 "An appearance and its twin carry one colour" gives the appearance pairs that a per-face assignment adds to a package of the second form: each pair has the common form with the colour of its face.
 
-**Need.** The source property, for example a material or appearance setting of the design or of its template, that selects one form.
+**Need.** The source property, for example a material or appearance setting of the design or of its template, that selects one form. A package of the common form with a per-face assignment, to show whether the form of an added pair follows the form of the body's appearance.
 
 ### DR-907. Join from an instance record to its definition record
 
@@ -1093,6 +1093,22 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** `protein.md` §5 "The Boolean flag does not select the metadata layout" joins a definition to an instance through equal asset and base asset identifiers. That join finds no definition for these two instances, and the table of contents finds one.
 
 **Need.** A decision whether the decoder joins through the table of contents when the package has one.
+
+### DR-908. Members of other Fusion Protein packages
+
+**Question.** Which rule gives the members of the Protein package of a Fusion design whose package differs from the package of a Base Feature design?
+
+**Known.** `protein.md` §8 "The `.protein` member of a Fusion Base Feature design" gives the members of the package of a Base Feature design, in ZIP order. Other Fusion packages hold other member lists. Their `Schemas` folder adds schema documents, for example `PrismMetalSchema`, `PrismTransparentSchema`, `PrismLayeredSchema`, `StructuralMetalSchema`, `StructuralGenericSchema`, `ThermalCommonSchema`, `ThermalSolidSchema`, `BumpMapSchema`, `TextureMap2dSchema`, and `UnifiedBitmapSchema`, and can omit schema documents of the nine in §8. Some packages name the stream version member `AssetData/StreamVersionTable.inf`. Some packages add a `Resources` folder with `cnx.xml` and `core.xml`, and in it one folder per name of the form `{GUID}_Post2015`, with the suffix once or more, that holds `cnx.xml`, `core.xml`, and a `thumbnail` folder.
+
+**Need.** The rule that selects the schema documents, the name of the stream version member, and the `Resources` members of a package, and the ZIP entry fields, text, and order of those members, so that a writer can emit the package of a design with other materials or appearances.
+
+### DR-909. Separator of the `PrismMaterial-022` preview path
+
+**Question.** What selects the path separator in the preview path of the `PrismMaterial-022` definition record?
+
+**Known.** `protein.md` §9 "Each instance has one definition record" gives the preview path `Mats\PrismOpaque\Presets\t_Prism-374.png`, with backslashes. Some packages of the common form store `Mats/PrismOpaque/Presets/t_Prism-374.png`, with forward slashes, and equal the table in every other field of that definition record. The packages of the second form (DR-906) store the backslash path.
+
+**Need.** The producer state, for example the Fusion version or the material library that saved the design, that selects the separator.
 
 ## 4. T-splines
 

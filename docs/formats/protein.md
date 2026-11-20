@@ -12,7 +12,7 @@ A Protein package is a ZIP archive of XML schemas and paged instance-property st
 
 The package is a ZIP archive. A schema entry is a file whose path begins with `Schemas/` or contains `/Schemas/` and ends with `Schema.xml`. Every schema declares its identifier in the root `UID` element. Duplicate ZIP entry names and duplicate schema identifiers are malformed.
 
-Schema XML, ZIP entry order, and schema inheritance are a text grammar over named members. They have no fixed byte offsets. §8 gives the members of a Fusion package.
+Schema XML, ZIP entry order, and schema inheritance are a text grammar over named members. They have no fixed byte offsets. §8 gives the members of the package of a Fusion Base Feature design.
 
 ## 2. Instance stream header
 
@@ -46,16 +46,15 @@ A valid logical record begins with four length-prefixed UTF-8 strings: schema id
 
 ## 5. Definition-iterator logical record
 
-A `DefinitionIteratorProperties.bin` logical record has this sequence:
+A `DefinitionIteratorProperties.bin` logical record is the concatenation of the page contributions of §3, and its first byte is the first byte of the body of its first page. It has this sequence:
 
-1. record marker `80 00 01 00`;
-2. length-prefixed UTF-8 schema identifier, followed by a Boolean flag;
-3. length-prefixed UTF-8 asset identifier;
-4. length-prefixed UTF-8 base asset identifier;
-5. little-endian u32 format version;
-6. version-specific metadata strings;
-7. little-endian u32 tag count and that many length-prefixed UTF-8 tags;
-8. little-endian u32 preview-path count and that many length-prefixed UTF-8 paths.
+1. length-prefixed UTF-8 schema identifier, followed by a Boolean flag;
+2. length-prefixed UTF-8 asset identifier;
+3. length-prefixed UTF-8 base asset identifier;
+4. little-endian u32 format version;
+5. version-specific metadata strings;
+6. little-endian u32 tag count and that many length-prefixed UTF-8 tags;
+7. little-endian u32 preview-path count and that many length-prefixed UTF-8 paths.
 
 The Boolean flag does not select the metadata layout. Format version `0` stores description only. Version `1` stores group and description. Version `2` stores category, group, and description. Version `3` stores category, group, subgroup, and description. The record has no further typed members after the last preview path. If page framing contributes bytes through the end of a start or continuation page, the remaining bytes are zero padding. The asset identifier joins the definition to the base asset identifier of an instance record. The joined definition supplies the instance schema identifier and its category when present.
 
@@ -79,9 +78,9 @@ Entries have variable length and no fixed byte offsets.
 
 `AssetData/StreamVersionTable` is ASCII text. It holds one line per item, in this order: `AssetTableOfContents:3.1`, `DefinitionIteratorProperties:3.2`, `InstanceProperties:3.2`, and `AssetLibVersion:1.0`. Each line except the last ends with `,` and LF. The last line ends with LF.
 
-## 8. Fusion package members
+## 8. Members of a Fusion Base Feature package
 
-A `.protein` member of a Fusion `.f3d` document is a package ZIP with one asset folder. The folder name `{F}` is an uppercase GUID of 36 characters. The package holds 23 members, in this ZIP order:
+The `.protein` member of a Fusion Base Feature design (§9) is a package ZIP with one asset folder. The folder name `{F}` is an uppercase GUID of 36 characters. The package holds 23 members, in this ZIP order:
 
 | Member | Content |
 |---|---|
@@ -137,7 +136,7 @@ A schema document declares one schema (§1). The nine schemas form these inherit
 | `StructuralAdvancedSchema` | `StructuralCommonSchema` | `Structural` | `7` |
 | `StructuralPlasticSchema` | `StructuralAdvancedSchema` | `Structural` | `7` |
 
-Open item DR-905 in [`f3d-open-items.md`](f3d-open-items.md) holds the text of the schema documents.
+Open item DR-905 in [`f3d-open-items.md`](f3d-open-items.md) holds the text of the schema documents. Open item DR-908 holds the member lists of other Fusion packages.
 
 ## 9. Package of a Fusion Base Feature design
 
@@ -155,7 +154,7 @@ The instance identifier of each instance except the twin is an uppercase GUID of
 
 The Design stream joins to the package through instance identifiers, written there as UTF-16 text. The Protein asset manager (Design record 1, [`f3d.md`](f3d.md) §3.1) stores the physical-material identifier and the identifier of each appearance, and names the package by its member basename `ProteinAsset.<uuid>.protein`, with `<uuid>` a lowercase GUID. The component aggregate stores the physical-material identifier. Each body-reference record stores the physical-material identifier, the identifier of the body's appearance, and the identifier of the appearance of each face that it assigns. The aspects and the twins occur only in the package. The basename GUID, the folder GUID `{F}`, and the package identifier `{P}` are three distinct GUIDs.
 
-An appearance and its twin carry one colour `(r, g, b, 1)`: `generic_diffuse` of the appearance and `opaque_albedo` of the twin. Each channel is a value `n / 255` rounded to binary32 and widened to binary64. The definition of the twin has the asset identifier `Opaque(R,G,B)`, the decimal 8-bit channel values. The appearance of the body has the colour `(246, 246, 243)`. An appearance that a per-face assignment adds has the colour of that face; its other values equal those of the body's appearance.
+An appearance and its twin carry one colour `(r, g, b, 1)`: `generic_diffuse` of the appearance and `opaque_albedo` of the twin. Each channel is a value `n / 255` rounded to binary32 and widened to binary64. The definition of the twin has the asset identifier `Opaque(R,G,B)`, the decimal 8-bit channel values. The appearance of the body has the colour `(246, 246, 243)`. In a package whose body appearance has the second form of open item DR-906, an appearance that a per-face assignment adds, and its twin, have the colour of that face. Their other values are the values in the tables of the body's appearance and twin below.
 
 Each instance has one definition record, with these values. Format version `2` stores category, group, and description; version `1` stores group and description (§5).
 
@@ -359,4 +358,4 @@ Appearance twin of the body (value block 288 bytes):
 | `swatch` | `PrismCommonSchema` | String | `Swatch-Torus` |
 | `version` | `CommonSchema` | Integer | 4 |
 
-A design with several bodies and one appearance has the same package; only the reference counts of the Protein asset manager change. The values that differ between packages are the GUIDs (basename, folder, package identifier, instance identifiers, and the base asset identifier of each `Opaque(R,G,B)` definition), the package time, and the colours of the per-face appearances. The table-of-contents order follows from the instance identifiers, and the page indices follow from that order and the record lengths. Open item DR-906 in [`f3d-open-items.md`](f3d-open-items.md) holds a second form of the body's appearance.
+A design with several bodies and one appearance has the same package; only the reference counts of the Protein asset manager change. The values that differ between packages are the GUIDs (basename, folder, package identifier, instance identifiers, and the base asset identifier of each `Opaque(R,G,B)` definition), the package time, and the colours of the per-face appearances. The table-of-contents order follows from the instance identifiers, and the page indices follow from that order and the record lengths. Open item DR-906 in [`f3d-open-items.md`](f3d-open-items.md) holds a second form of the body's appearance, and open item DR-909 a second spelling of the `PrismMaterial-022` preview path.
