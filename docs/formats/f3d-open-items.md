@@ -802,7 +802,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What selects the 37-byte or the 33-byte form of a side-face entry and the token-string form of a body entry (type `335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A`), what does the reference that other body entries (type `ABA79BE7-D8D2-4C17-B59B-C2035E111F77`) store in place of the null reference name, and what do the two operands after the sense word of a curve-record entry (type `2DEE34BE-FA70-4D54-979C-164D86FDA786`) encode?
 
-**Known.** `f3d.md` §3.1 "**Tracked entries of an `Extrude`.**" gives the three records and the key of a side-face entry. Streams with serializer magic `1234` store both side-face forms. A body entry can also store each side token as its own LP-ASCII string, with no offset list, and other body-entry prefixes occur. One curve record of a side-face entry stores one counted curve list in place of two. The GUID of a body entry is the browser-node GUID of the result body.
+**Known.** `f3d.md` §3.1 "**Tracked entries of an `Extrude`.**" gives the three records and the key of a side-face entry. Streams with serializer magic `1234` store both side-face forms. A body entry can also store each side token as its own LP-ASCII string, with no offset list, and other body-entry prefixes occur. One curve record of a side-face entry stores one counted curve list in place of two. The GUID of a body entry is the browser-node GUID of the result body. A design whose timeline lists `Sketch` items and one `Extrude` uses the 37-byte form, and `f3d.md` §3.1 "**Tracked results of a circle profile.**" gives the curve record of a circle profile. Both forms occur in one design, and neither the sense word of the curve entry nor the scope byte at offset 27 selects the form.
 
 **Need.** A writer must choose the side-face form and fill the body entry's reference and the curve entries' operands.
 
@@ -810,9 +810,9 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What do the `Dc<Family>MetaType` counters and the u64 context value of the timeline context record count?
 
-**Known.** `f3d.md` §3.1 "**Timeline context.**" gives the record layout. A design with one `Sketch` and one `Extrude` stores the counters `1` and `1` and the context value `2`. In a stream with serializer magic `1234`, each counter is at least the largest family ordinal of the timeline items of its family, and it can exceed it. Counters can name families that have no item in the timeline. The context value can equal the number of timeline items, be `0`, or exceed both the number of items and the sum of the counters. A design whose timeline holds one `Base Feature` item stores the counter `DcBaseFeatureMetaType = 1` and the context value `0`.
+**Known.** `f3d.md` §3.1 "**Timeline context.**" gives the record layout. A design with one `Sketch` and one `Extrude` stores the counters `1` and `1` and the context value `2`. In a stream with serializer magic `1234`, each counter is at least the largest family ordinal of the timeline items of its family, and it can exceed it. Counters can name families that have no item in the timeline. The context value can equal the number of timeline items, be `0`, or exceed both the number of items and the sum of the counters. A design whose timeline holds one `Base Feature` item stores the counter `DcBaseFeatureMetaType = 1` and the context value `0`. A design whose timeline lists `Sketch`, `Extrude`, and `Sketch` stores the context value `2` or `3`; `Sketch`, `Extrude`, `Sketch`, `Sketch` stores `4`; and `Sketch`, `Extrude`, `Sketch`, `Extrude` stores `4`. In each, `DcSketchMetaType` and `DcExtrudeFeatureMetaType` are the numbers of items of their families.
 
-**Need.** A writer must write correct values for designs with other item sets. The counters against the ordinals of deleted items, and the context value against the rolled-back position and the deleted items, would settle it.
+**Need.** A writer must write correct values for designs with other item sets. The counters against the ordinals of deleted items, and the context value against the rolled-back position and the deleted items, would settle it. A design whose timeline lists two or more `Sketch` items before its first `Extrude` would give the value for that case.
 
 ### DR-883. Extrude side-face walk outside one-sided loops of lines
 
@@ -834,7 +834,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What does the u32 at offset 29 of the item-tail companion (type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`) encode?
 
-**Known.** `f3d.md` §3.1 "**Item-tail companion.**" gives the record. The word is `0`, `2`, or `3`. A `Sketch` or `Extrude` item with `s0` and `s1` equal to `0` can store `0` or `2`. A `Base Feature` item stores `0`.
+**Known.** `f3d.md` §3.1 "**Item-tail companion.**" gives the record. The word is `0`, `2`, or `3`. A `Sketch` or `Extrude` item with `s0` and `s1` equal to `0` can store `0` or `2`. A `Base Feature` item stores `0`. The start record, profile group, and profile selection of a sketch-driven `Extrude` each reference their own companion, which stores `0`. In streams with serializer magic `1234`, the word `2` occurs on one `Sketch` and one `Extrude` item.
 
 **Need.** A writer must choose the word for each item it writes.
 
@@ -847,6 +847,14 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 **Need.** A writer of several result bodies must number the faces of each body. The edge and vertex tags of the earlier bodies against the start of the next run would settle it.
 
 ## 2. External references
+
+### DR-890. Words of a sketch-driven Extrude without an established rule
+
+**Question.** What do the byte at offset 27 of the `Extrude` scope, the u32 at offset 22 of the parameter record (type `7A6A3D31-BE74-4E19-9115-20642944C2E4`), and the body key at offset 25 of the body map (type `74CA4562-59F8-4C97-8AD1-F8297C21F9AA`) of a sketch-driven `Extrude` encode?
+
+**Known.** `f3d.md` §3.1 "**Sketch-driven Extrude scope frame.**", "**Extrude parameter owners.**", and "**Result body.**" give the three records. The scope byte is `0` or `1`, and both values occur in one design. It does not follow the sign of the `AlongDistance` value. The parameter word is `6`, `4`, or `0`. The body key is `0` or `6`.
+
+**Need.** A writer must fill the three fields. A design that stores both values of the scope byte, compared item by item against its edit history, would settle the first.
 
 ### DR-111. Component-path poses of nested occurrences
 

@@ -3218,6 +3218,236 @@ The two identities of a placement name the same entity, a record of the construc
 
 **Side-face walk.** In a stream with serializer magic `1234`, a one-sided `Extrude` (travel direction `1`) whose operation is join, new body, or cut and whose reversed-direction byte is `0` names its side faces by a walk of its profile loop when the profile identity record holds one region group of one region with one loop, and every entry of that loop names a sketch line and stores incidence words `1` and `1`. The `k`-th line of the walk generates side token `k + 2`. The loop's ring runs each entry's line from its end point to its start point when the entry's traversal flag is `1`, and from its start point to its end point when the flag is `0`. Each line of the ring ends where the next line starts. In the Sketch's own coordinates, the ring runs counterclockwise about the Sketch z axis. Let `C` be the loop line whose sketch-curve record has the largest record index, and `P` the start point of `C`. Token `3` is the line whose run in the ring starts at `P`: `C` itself when the traversal flag of `C` is `0`, and the line after `C` in the ring when the flag is `1`. When the `AlongDistance` value is positive, tokens `4`, `5`, and onward follow the ring from token `3`. When the value is negative, they run against the ring from token `3`.
 
+#### Records of a sketch-driven Extrude
+
+This subsection gives the records of an `Extrude` item that creates a new solid body from one Sketch profile, travels one side by a distance, and starts at the profile plane, in a Design stream whose MetaStream header stores serializer magic `1234`. The type rows are in the type table of the previous subsection. Every reference of these records is in the eleven-byte plain form. `L` is the code-unit count of the item's custom label.
+
+**Sketch-driven Extrude scope frame.** The `Extrude` scope record of type `DD405BC2-D673-44F0-8833-5CB2A1C186C7`, type version `8`, has this layout. The offsets before the feature item tail are fixed.
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 9 × u8 | zero |
+| 20 | u8 | `1` |
+| 21 | 6 × u8 | zero |
+| 27 | u8 | `0` or `1` |
+| 28 | u32 | result operation `4` (new body) |
+| 32 | u32 | travel direction `1` (one side) |
+| 36 | u32 | face-extend option `2` |
+| 40 | u8 | direction reversal `0` |
+| 41 | u8 | geometry kind `1` (solid) |
+| 42 | u8 | start support `0` (profile plane) |
+| 43 | 3 × u8 | zero |
+| 46 | 3 × f64 | unit profile normal: the z axis of the Sketch |
+| 70 | 2 × u8 | nullable slots 0 and 1: `0`, absent |
+| 72 | reference | nullable slot 2: the `AlongDistance` owner |
+| 83 | reference | nullable slot 3: the start record |
+| 94 | u8 | nullable slot 4: `0`, absent |
+| 95 | reference | nullable slot 5: the `TaperAngle` owner |
+| 106 | u8 | nullable slot 6: `0`, absent |
+| 107 | u32 | first-side extent `1` (distance) |
+| 111 | 5 × u8 | zero |
+| 116 | u32 | target option `0` |
+| 120 | u32 | second-side extent `0` |
+| 124 | 23 × u8 | zero |
+| 147 | u32 | profile-group count `1` |
+| 151 | reference | the profile group |
+| 162 | u32 | `0` |
+| 166 | u32 | result-body node count `1` |
+| 170 | reference | the browser-node member of the result body (type `D26351F0-5940-4D23-AA20-2C35475A6D9E`) |
+| 181 | u32 | `0` |
+| 185 | u32 | body-operand group count `0` |
+| 189 | LP-UTF16 | GUID of 36 code units, `00000000-0000-0000-0000-000000000000` |
+| 265 | 3 × u8 | zero |
+| 268 | u32 | scope-reference count `5` |
+| 272 | 5 × reference | the profile group, the profile selection, the `AlongDistance` owner, the `TaperAngle` owner, and the start record, in this order |
+| 327 | u32 | current history-state identity |
+| 331 | LP-UTF16 | family name `Extrude` |
+| 349 | 78 + 2L bytes | feature item tail |
+| 427 + 2L | header | paired indexed header, followed by the 30-byte paired scope record |
+
+The item tail stores family ordinal `1` for the first `Extrude` of the design, state bytes `00 00 00`, the preceding history-state identity `2`, two equal evaluation epochs, a finite nonnegative evaluation duration, `s0 = 0`, and `s1 = 0`. The item-tail companion stores item word `0`. The start record, the profile group, and the profile selection store the evaluation epochs of the item tail. The current history-state identity is the identity of the head `delta_state` of the `.smbh` history, which is greater than `2`.
+
+**Start record.** Nullable slot 3 and the last scope reference name the start record of type `0897AF07-EF1B-42E5-BDD9-1C746A085CBC`, type version `0`, add-in `Fusion`. It is 130 bytes:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | reference | the `Extrude` scope |
+| 32 | u32 | `1` |
+| 36 | reference | its persistent selection identity (type `C46D3EEB-40E1-43FA-83DC-9CB204335417`) |
+| 47 | u32 | evaluation epoch |
+| 51 | f64 | evaluation duration |
+| 59 | u32 | second evaluation epoch |
+| 63 | reference | its item-tail companion (type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`), item word `0` |
+| 74 | 3 × u8 | `01 00 00` |
+| 77 | reference | its record-timestamp table (type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`) |
+| 88 | u8 | `0` |
+| 89 | reference | the `Extrude` scope |
+| 100 | header | paired indexed header |
+| 111 | 8 × u8 | zero |
+| 119 | reference | the owner collection |
+
+**Profile group.** The profile group is a construction-operand group of type `2CA5A1CD-C99B-4C9B-91AF-57989148E841`, type version `1`. It is 154 bytes:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | u32 | member count `1` |
+| 25 | reference | the profile selection |
+| 36 | 2 × u8 | zero |
+| 38 | u32 | `1` |
+| 42 | reference | a 24-byte record of type `2DF7DA30-A4E4-4260-AFD1-D9C7154CB44B`: the indexed header, ten zero bytes, and `01 01 00` |
+| 53 | u64 | operand role `0x0000004100000000` (profile) |
+| 61 | 10 × u8 | zero |
+| 71 | u32 | evaluation epoch |
+| 75 | f64 | evaluation duration |
+| 83 | u32 | second evaluation epoch |
+| 87 | reference | its item-tail companion, item word `0` |
+| 98 | 3 × u8 | `01 00 00` |
+| 101 | reference | its record-timestamp table |
+| 112 | u8 | `0` |
+| 113 | reference | the `Extrude` scope |
+| 124 | header | paired indexed header |
+| 135 | 8 × u8 | zero |
+| 143 | reference | the owner collection |
+
+**Profile selection.** The profile selection `N` is a record of type `4BD53E5A-0B3E-45E5-AE8B-02044306485A`, type version `0`. Records `N + 1`, `N + 2`, and `N + 3` follow it. Let `P = 116 + 2c`, where `c` is the code-unit count of the owner text.
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | reference | the identity record `N + 3` |
+| 32 | u32 | `1` |
+| 36 | LP-UTF16 | asset GUID of 36 code units: the first asset GUID of the Design asset's per-asset manifest |
+| 112 | LP-UTF16 | owner text: the decimal record index of the Sketch's entity container (type `44A64366-4BD3-4B24-881A-F94C206E8F2D`) |
+| P | u32 | `1` |
+| P + 4 | u32 | `0` |
+| P + 8 | u32 | `1` |
+| P + 12 | reference | its persistent selection identity (type `C46D3EEB-40E1-43FA-83DC-9CB204335417`) |
+| P + 23 | u64 | operand role `0x0000004100000000` (profile) |
+| P + 31 | 10 × u8 | zero |
+| P + 41 | u32 | evaluation epoch |
+| P + 45 | f64 | evaluation duration |
+| P + 53 | u32 | second evaluation epoch |
+| P + 57 | reference | its item-tail companion `N + 2`, item word `0` |
+| P + 68 | 3 × u8 | `01 00 00` |
+| P + 71 | reference | its record-timestamp table `N + 1` |
+| P + 82 | u8 | `0` |
+| P + 83 | reference | the `Extrude` scope |
+| P + 94 | header | paired indexed header, followed by eight zero bytes and the owner collection |
+
+Record `N + 1` is the 77-byte record-timestamp table of the selection. It lists the `Sketch` scope and names the selection as its owner.
+
+Record `N + 3` is the identity record of type `0D57BD2F-D09B-43FC-AD57-1E89A118C453`, type version `1`, add-in `Fusion`. For a profile of one region with one loop of `k` entries it has `68 + 40k` bytes:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | reference | the profile selection `N` |
+| 32 | u32 | region-group count `1` |
+| 36 | u32 | loop count `1` |
+| 40 | u32 | entry count `k` |
+| 44 + 40i | 40 bytes | entry `i`: u32 kind `3`, u64 sketch-curve primary identity, u64 secondary identity `0`, u32 traversal flag, u32 `1`, u32 `1`, eight zero bytes |
+| 44 + 40k | u8 | exterior flag `1` |
+| 45 + 40k | u32 | further-region count `0` |
+| 49 + 40k | header | paired indexed header |
+| 60 + 40k | 8 × u8 | zero |
+
+A loop of sketch lines stores one entry for each line in ring order. The traversal flag is `0` when the ring runs the line from its start point to its end point and `1` otherwise. A profile bounded by one sketch circle stores one entry with traversal flag `0`.
+
+**Persistent selection identities.** The start record and the profile selection each name a 190-byte record of type `C46D3EEB-40E1-43FA-83DC-9CB204335417`, type version `1`, add-in `EntityTracking`:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 10 × u8 | zero |
+| 21 | u64 | local identity |
+| 29 | LP-UTF16 | asset GUID: the GUID that the profile selection stores at offset 36 |
+| 105 | LP-UTF16 | context GUID: the third LP-UTF16 GUID of the component aggregate (type `E03784ED-5E19-4E14-B9F2-3B07017018CD`) |
+| 181 | u32 | `2` |
+| 185 | 5 × u8 | zero |
+
+The local identities of the two records are consecutive integers.
+
+**Extrude parameter owners.** The `AlongDistance` owner and the `TaperAngle` owner are 134-byte parameter owners of type `D91D429C-1BB5-4640-B49F-69AF14F463E9`:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 8 × u8 | zero |
+| 19 | 2 × u8 | `01 01` |
+| 21 | 3 × u8 | zero |
+| 24 | reference | the `Extrude` scope |
+| 35 | u32 | owner-local ordinal: `0` for `AlongDistance`, `1` for `TaperAngle` |
+| 39 | u8 | `0` |
+| 40 | f64 | the parameter value: the distance in centimetres, or the taper angle in radians |
+| 48 | reference | the parameter (type `7A6A3D31-BE74-4E19-9115-20642944C2E4`) |
+| 59 | u64 | parameter number `n` |
+| 67 | reference | the `Extrude` scope |
+| 78 | 3 × u8 | `01`, variant `0`, flag `0` |
+| 81 | reference | the 58-byte parameter companion, whose owner entry names the owner |
+| 92 | u8 | `0` |
+| 93 | reference | the `Extrude` scope |
+| 104 | header | paired indexed header |
+| 115 | 8 × u8 | zero |
+| 123 | reference | the owner collection |
+
+The parameter record stores ten zero bytes after its indexed header, u32 `6` at offset 22, five zero bytes, the parameter number `n` at offset 31, a reference to its owner at offset 35, and from offset 46 the LP-UTF16 expression, ten zero bytes, the LP-UTF16 source kind, u32 `0`, the LP-UTF16 display unit, the LP-UTF16 name `d<n>`, the f64 value, a zero byte, and a reference to the parameter collection. The f64 value equals the owner's value at offset 40. The parameter numbers of a Design stream are unique. One counter numbers the sketch dimension parameters and the `Extrude` parameters, and the `TaperAngle` parameter has the number after the `AlongDistance` parameter.
+
+**Record-timestamp tables.** Each table uses the prefix `01 01` and the layout of the scope's record-timestamp table:
+
+| Owner | Entries |
+|---|---|
+| the `Extrude` scope | the record of type `5D15E992-1E93-4D79-A553-10D2624148AE`, the `Extrude` scope, the start record |
+| the start record | the profile group, the `AlongDistance` owner, the `TaperAngle` owner |
+| the profile group | the profile selection |
+| the profile selection | the `Sketch` scope |
+
+**Result body.** The browser-node member that the scope names at offset 170 is the 151-byte form of the previous subsection. It references the body-presentation owner of the result body at offset 99 and the `Extrude` scope at offset 110, and stores hidden flag `0`. The body-presentation owner (type `D3937028-C20C-4E65-B010-94AD418A5C20`, type version `19`) is the only presentation record of the body. It stores the LP-UTF16 name `0_` followed by its own decimal record index at offset 21 and the body's node GUID, and it references the `Body` owner. The `Body` owner of type `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA` is 103 bytes:
+
+| Offset | Type | Field |
+|---|---|---|
+| 0 | header | indexed header |
+| 11 | 11 × u8 | zero |
+| 22 | u32 | `1` |
+| 26 | u32 | `1` |
+| 30 | reference | the body-presentation owner |
+| 41 | u8 | `1` |
+| 42 | reference | the snapshot body-map companion (type `E55D0457-898F-4A8E-B1A5-C85BDBA8794F`) |
+| 53 | reference | the body map (type `74CA4562-59F8-4C97-8AD1-F8297C21F9AA`) |
+| 64 | u8 | `1` |
+| 65 | reference | a 42-byte record of type `372234A0-2A6C-4122-8047-E74DBA04F326`: the indexed header, twenty zero bytes, and the component aggregate |
+| 76 | u8 | `0` |
+| 77 | u32 | `1` |
+| 81 | reference | the body-presentation owner |
+| 92 | reference | the component aggregate |
+
+The body map stores ten zero bytes after its indexed header, the pair count `1` at offset 21, the pair at offset 25 as a u64 body key and the u64 record index of the body-presentation owner, the `Body` owner at offset 41, a zero byte, and at offset 53 the LP-UTF16 archive-member name of the B-rep stream that holds the body.
+
+**Owner collection and dependency table of a `Sketch` and an `Extrude`.** In a design whose timeline lists one `Sketch` and then the `Extrude`, the owner collection lists ten members in this order: the record of type `5D15E992-1E93-4D79-A553-10D2624148AE`, the `Sketch` scope, the placement path, the sketch placement, the profile group, the profile selection, the `AlongDistance` owner, the `TaperAngle` owner, the start record, and the `Extrude` scope. The record of type `B65B5682-9355-44C7-8AFC-823058C4A36B` lists the same records in this order: the record of type `5D15E992-1E93-4D79-A553-10D2624148AE`, the placement path, the sketch placement, the `Sketch` scope, the profile selection, the profile group, the `AlongDistance` owner, the `TaperAngle` owner, the start record, and the `Extrude` scope. The dependency table (type `B13113CC-031E-4F93-8240-C4C10728869F`) stores these input-map entries in this order:
+
+| Record | Records it reads, with flags |
+|---|---|
+| the `Sketch` scope | the `5D15E992` record (`0x1000`), the sketch placement (`1`) |
+| the sketch placement | the placement path (`1`) |
+| the `Extrude` scope | the `5D15E992` record (`0x1000`), the start record (`1`) |
+| the profile group | the profile selection (`1`) |
+| the profile selection | the `Sketch` scope (`4`) |
+| the start record | the profile group (`1`), the `AlongDistance` owner (`1`), the `TaperAngle` owner (`1`) |
+
+The dependent map stores the same edges by the record read, in this order of read records: the `5D15E992` record, the `Sketch` scope, the placement path, the sketch placement, the profile group, the start record, the profile selection, the `AlongDistance` owner, and the `TaperAngle` owner. Flag `4` marks the edge from a profile selection to its `Sketch` scope.
+
+**Tracked results of a circle profile.** When the profile is one sketch circle, the table has one side-face entry with key `3`. Its curve record holds one entry of kind `3` with sense `1` and operands `1` and `1`, and two empty curve-identity lists. The body entry of a sketch-driven `Extrude` stores a null reference.
+
+**Sketch links on the start cap.** In a design whose timeline lists `Sketch` items and one `Extrude`, the coedge of each side face on the edge that the side face shares with the start cap carries a `sketch_attrib_def` attribute that names the sketch curve of the side face. The start cap's coedge on the same edge carries an attribute with the same values. The other coedges of the side faces and the coedges of the end cap carry no `sketch_attrib_def` attribute.
+
+**Timeline context and persistent identities of later sketches.** A design whose timeline lists one `Sketch`, the `Extrude`, and further `Sketch` items stores `DcSketchMetaType` equal to the number of `Sketch` items. The timeline context references one browser-node member, the result body's. Each later `Sketch` scope owns the next persistent identity after `302`.
+
 #### Records of a Base Feature design
 
 This subsection gives the records that a Design stream holds when its MetaStream header stores serializer magic `1234` and its timeline lists one `Base Feature` item that stores `N > 0` result bodies. A reference to a record of the same segment is in the eleven-byte plain form. The cross-segment references are the exceptions, and the records that hold them say so: the one in the `549FBB80-B890-473E-A5C0-415D3D9BF4E6` record is 15 bytes wide (marker, u64, segment flag, segment index), and the component aggregate holds one more. Record indices are local to one Design `BulkStream`. The feature item tail, the paired scope record, the tracked-results table, the item-tail companion, the timeline context, the persistent-id table, and the origin of the previous subsection apply. The type table registers the types below in addition to the types of the previous subsection that these records name.
