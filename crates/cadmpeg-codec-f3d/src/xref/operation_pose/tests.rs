@@ -162,7 +162,15 @@ fn operation_pose_updates_every_instance_of_one_definition() {
     let mut losses = Vec::new();
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
-        project(&ctx, &mut ir, &poses, &BTreeSet::new(), &mut losses).unwrap(),
+        project(
+            &ctx,
+            &mut ir,
+            &poses,
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+            &mut losses
+        )
+        .unwrap(),
         2
     );
     for occurrence in &ir.model.occurrences {
@@ -190,7 +198,15 @@ fn operation_pose_conflict_keeps_every_instance_native() {
     let mut losses = Vec::new();
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
-        project(&ctx, &mut ir, &poses, &protected, &mut losses).unwrap(),
+        project(
+            &ctx,
+            &mut ir,
+            &poses,
+            &BTreeMap::new(),
+            &protected,
+            &mut losses
+        )
+        .unwrap(),
         0
     );
     assert_eq!(ir.model.occurrences, before);
@@ -199,7 +215,15 @@ fn operation_pose_conflict_keeps_every_instance_native() {
         .any(|loss| loss.code == F3dLossCode::OperationPoseDisagrees.kind()));
     ir.model.occurrences.clear();
     losses.clear();
-    project(&ctx, &mut ir, &poses, &BTreeSet::new(), &mut losses).unwrap();
+    project(
+        &ctx,
+        &mut ir,
+        &poses,
+        &BTreeMap::new(),
+        &BTreeSet::new(),
+        &mut losses,
+    )
+    .unwrap();
     assert!(losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::OperationPoseNative.kind()));
@@ -222,6 +246,7 @@ fn operation_pose_cannot_move_a_carrier_selected_descendant() {
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut ir,
         &poses,
+        &BTreeMap::new(),
         &protected,
         &mut losses,
     )
@@ -283,6 +308,7 @@ fn operation_pose_uses_one_matrix_even_inside_the_agreement_tolerance() {
             &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &poses,
+            &BTreeMap::new(),
             &BTreeSet::new(),
             &mut losses
         )
@@ -366,7 +392,15 @@ fn operation_pose_requires_the_selected_source_root_frame() {
 fn operation_pose_does_not_claim_a_solved_world_pose() {
     let (mut ir, poses) = model();
     let ctx = cadmpeg_core::decode::test_support::service_decode_context();
-    project(&ctx, &mut ir, &poses, &BTreeSet::new(), &mut Vec::new()).unwrap();
+    project(
+        &ctx,
+        &mut ir,
+        &poses,
+        &BTreeMap::new(),
+        &BTreeSet::new(),
+        &mut Vec::new(),
+    )
+    .unwrap();
     let mut refs = ir
         .native
         .namespace("f3d")
@@ -400,6 +434,7 @@ fn operation_pose_keeps_an_agreeing_carrier_constraint_and_its_native_evidence()
         &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut ir,
         &poses,
+        &BTreeMap::new(),
         &protected,
         &mut losses,
     )
@@ -442,7 +477,15 @@ fn operation_pose_conflict_preserves_an_independent_sibling_pose() {
     });
     let protected = BTreeSet::from([ir.model.occurrences[0].id.clone()]);
     let mut losses = Vec::new();
-    project(&ctx, &mut ir, &poses, &protected, &mut losses).unwrap();
+    project(
+        &ctx,
+        &mut ir,
+        &poses,
+        &BTreeMap::new(),
+        &protected,
+        &mut losses,
+    )
+    .unwrap();
     assert_eq!(
         ir.model.occurrences[0].transform,
         Some(Transform::identity())

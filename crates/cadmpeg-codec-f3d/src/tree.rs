@@ -153,6 +153,7 @@ pub(crate) fn parent<'m>(
     definitions: &[ProductDefinition],
     occurrences: &'m [Occurrence],
     occurrence: &OccurrenceId,
+    instance_scopes: &BTreeMap<OccurrenceId, String>,
 ) -> Option<&'m Occurrence> {
     let owner = cadmpeg_ir::products::owner(definitions, occurrence)?;
     if owner.is_root() {
@@ -160,26 +161,32 @@ pub(crate) fn parent<'m>(
     }
     let mut placements = occurrences
         .iter()
-        .filter(|candidate| candidate.prototype == owner.id);
+        .enumerate()
+        .filter(|(_, candidate)| candidate.prototype == owner.id)
+        .map(|(index, _)| index);
     let first = placements.next()?;
     let Some(second) = placements.next() else {
-        return Some(first);
+        return Some(&occurrences[first]);
     };
-    std::iter::once(first)
+    let placements = std::iter::once(first)
         .chain(std::iter::once(second))
         .chain(placements)
-        .find(|candidate| extends(occurrence, &candidate.id))
+        .collect::<Vec<_>>();
+    let child = occurrences.iter().find(|child| &child.id == occurrence)?;
+    assignment(child, &placements, occurrences, instance_scopes)
+        .map(|placement| &occurrences[placement])
 }
 
 /// The occurrence each nested occurrence sits in.
 pub(crate) fn parent_ids(
     definitions: &[ProductDefinition],
     occurrences: &[Occurrence],
+    instance_scopes: &BTreeMap<OccurrenceId, String>,
 ) -> std::collections::BTreeMap<OccurrenceId, OccurrenceId> {
     occurrences
         .iter()
         .filter_map(|occurrence| {
-            parent(definitions, occurrences, &occurrence.id)
+            parent(definitions, occurrences, &occurrence.id, instance_scopes)
                 .map(|parent| (occurrence.id.clone(), parent.id.clone()))
         })
         .collect()

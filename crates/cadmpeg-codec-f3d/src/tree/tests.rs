@@ -460,3 +460,68 @@ fn a_child_only_one_placement_holds_is_owned_once_with_a_loss() {
         ["f3d:model:occurrence#bolt", "f3d:model:occurrence#nut"]
     );
 }
+
+#[test]
+fn a_shared_member_keeps_each_child_in_its_insertion_frame() {
+    const STACK: &str = "f3d:model:component#stack";
+    let mut ir = CadIr::empty();
+    let scopes = BTreeMap::from([
+        (
+            occurrence_id("f3d:model:occurrence#a"),
+            "f3d:xref/a".to_owned(),
+        ),
+        (
+            occurrence_id("f3d:model:occurrence#b"),
+            "f3d:xref/b".to_owned(),
+        ),
+    ]);
+    ir.model.product_definitions = vec![
+        root(&["f3d:model:occurrence#a", "f3d:model:occurrence#b"]),
+        component(
+            STACK,
+            &[
+                "f3d:xref/a/model:occurrence#child",
+                "f3d:xref/b/model:occurrence#child",
+            ],
+        ),
+        component(BOLT, &[]),
+    ];
+    ir.model.occurrences = vec![
+        occurrence("f3d:model:occurrence#a", STACK, 10.0),
+        occurrence("f3d:model:occurrence#b", STACK, 20.0),
+        occurrence("f3d:xref/a/model:occurrence#child", BOLT, 5.0),
+        occurrence("f3d:xref/b/model:occurrence#child", BOLT, 7.0),
+    ];
+    let parents = super::parent_ids(
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+        &scopes,
+    );
+    for (parent, child, complete) in [
+        (
+            "f3d:model:occurrence#a",
+            "f3d:xref/a/model:occurrence#child",
+            15.0,
+        ),
+        (
+            "f3d:model:occurrence#b",
+            "f3d:xref/b/model:occurrence#child",
+            27.0,
+        ),
+    ] {
+        let child = occurrence_id(child);
+        assert_eq!(parents.get(&child), Some(&occurrence_id(parent)));
+        let world = placed(&ir, parent)
+            .transform
+            .unwrap()
+            .compose(placed(&ir, child.as_str()).transform.unwrap())
+            .unwrap();
+        assert_eq!(world, translated(complete));
+    }
+    own_once(&mut ir, &scopes);
+    let poses = super::world_poses(&ir.model);
+    for (parent, complete) in [("a", 15.0), ("b", 27.0)] {
+        let child = occurrence_id(&format!("f3d:model:occurrence#{parent}:child"));
+        assert_eq!(poses[&child], translated(complete));
+    }
+}

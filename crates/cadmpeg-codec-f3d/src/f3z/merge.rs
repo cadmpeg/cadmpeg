@@ -231,12 +231,13 @@ impl MergeSession<'_, '_> {
             &mut parent_report.losses,
             &mut self.operation_protected,
             ContainedPass::Ordered,
-            None,
+            (None, self.instance_scopes),
         )?;
         crate::xref::operation_pose::project(
             self.ctx,
             parent_ir,
             &self.operation_poses,
+            self.instance_scopes,
             &self.operation_protected,
             &mut parent_report.losses,
         )?;
@@ -248,7 +249,7 @@ impl MergeSession<'_, '_> {
                 &mut parent_report.losses,
                 &mut self.operation_protected,
                 ContainedPass::Ordered,
-                Some(boundary),
+                (Some(boundary), self.instance_scopes),
             )?;
         }
         left_identity += place_contained_poses_with_protected(
@@ -258,12 +259,13 @@ impl MergeSession<'_, '_> {
             &mut parent_report.losses,
             &mut self.operation_protected,
             ContainedPass::Ordered,
-            None,
+            (None, self.instance_scopes),
         )?;
         crate::xref::operation_pose::project(
             self.ctx,
             parent_ir,
             &self.operation_poses,
+            self.instance_scopes,
             &self.operation_protected,
             &mut parent_report.losses,
         )?;
@@ -274,7 +276,7 @@ impl MergeSession<'_, '_> {
             &mut parent_report.losses,
             &mut std::collections::BTreeSet::new(),
             ContainedPass::Nested,
-            None,
+            (None, self.instance_scopes),
         )?;
         crate::design::assembly::release_joint_placed(&mut parent_report.losses, left_identity);
         // A document that a member definition now stands for at every
@@ -601,7 +603,11 @@ fn omit_unbound_member_joints(
     if unplaced_members.is_empty() {
         return;
     }
-    let parents = crate::tree::parent_ids(&model.product_definitions, &model.occurrences);
+    let parents = crate::tree::parent_ids(
+        &model.product_definitions,
+        &model.occurrences,
+        &InstanceScopes::new(),
+    );
     let mut ancestors = unplaced_members.clone();
     for member in unplaced_members {
         let mut current = member;
@@ -901,7 +907,7 @@ fn joint_children<'o>(
     >,
     base: Option<JointChildren<'o>>,
 ) -> JointChildren<'o> {
-    let parents = crate::tree::parent_ids(definitions, occurrences);
+    let parents = crate::tree::parent_ids(definitions, occurrences, &InstanceScopes::new());
     let mut children = base.unwrap_or_default();
     for occurrence in occurrences {
         let Some(key) = occurrence.native_ref.as_deref().and_then(|id| keys.get(id)) else {
@@ -1236,7 +1242,7 @@ fn place_contained_poses(
         losses,
         &mut std::collections::BTreeSet::new(),
         ContainedPass::Ordered,
-        None,
+        (None, &InstanceScopes::new()),
     )?;
     let nested = place_contained_poses_with_protected(
         ctx,
@@ -1245,7 +1251,7 @@ fn place_contained_poses(
         losses,
         &mut std::collections::BTreeSet::new(),
         ContainedPass::Nested,
-        None,
+        (None, &InstanceScopes::new()),
     )?;
     Ok(ordered + nested)
 }
@@ -1359,7 +1365,7 @@ fn place_contained_poses_with_protected(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     protected: &mut std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
     pass: ContainedPass,
-    boundary: Option<&cadmpeg_ir::ids::OccurrenceId>,
+    scope: (Option<&cadmpeg_ir::ids::OccurrenceId>, &InstanceScopes),
 ) -> Result<usize, CodecError> {
     use crate::records::feature::assembly_features::DesignComponentOccurrence;
     use cadmpeg_ir::transform::Transform;
@@ -1395,7 +1401,12 @@ fn place_contained_poses_with_protected(
         .enumerate()
         .map(|(position, occurrence)| (occurrence.id.clone(), position))
         .collect::<BTreeMap<_, _>>();
-    let parents = crate::tree::parent_ids(&ir.model.product_definitions, &ir.model.occurrences);
+    let (boundary, instance_scopes) = scope;
+    let parents = crate::tree::parent_ids(
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+        instance_scopes,
+    );
     let parent_positions = ir
         .model
         .occurrences

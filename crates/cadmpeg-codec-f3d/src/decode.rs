@@ -3819,6 +3819,7 @@ impl<'a> F3dDecodeSession<'a> {
         let parents = crate::tree::parent_ids(
             &self.ir.model.product_definitions,
             &self.ir.model.occurrences,
+            &std::collections::BTreeMap::new(),
         );
         crate::design::decode::hidden_occurrences::apply_hidden_occurrences(
             &mut self.ir.model.occurrences,
@@ -4156,6 +4157,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 ctx,
                 &mut decoded.ir,
                 &poses,
+                &std::collections::BTreeMap::new(),
                 &std::collections::BTreeSet::new(),
                 &mut decoded.body.losses,
             )?;
