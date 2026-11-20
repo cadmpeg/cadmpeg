@@ -385,6 +385,11 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
                 "sketch points (flags and state by role)".to_owned(),
                 "sketch curves (curve flag A, EntityGenesis)".to_owned(),
                 "placement tracking flags (01 01 00)".to_owned(),
+                format!(
+                    "Sketch scope tails, placements and placement paths (evaluation epoch {}, where f3d.md §3.1 states 252, and duration {}, as the Base Feature item tail)",
+                    super::base_feature::EPOCH,
+                    super::base_feature::DURATION
+                ),
             ],
         ));
     }

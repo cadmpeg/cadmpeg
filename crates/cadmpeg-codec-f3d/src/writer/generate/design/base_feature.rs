@@ -26,9 +26,7 @@ use crate::records::references::DesignClassTag;
 use crate::records::sketch_links::{
     DesignPersistentIdText, PersistentDesignLink, PersistentSubentityTag,
 };
-use crate::writer::generate::presentation::{
-    deterministic_guid, BrowserNodeTail, GeneratedDesignRegistry, TypeRow,
-};
+use crate::writer::generate::presentation::{deterministic_guid, GeneratedDesignRegistry, TypeRow};
 
 /// The first value of the persistent-identity counter: a `Sketch` scope
 /// owns one identity and the `Base Feature` scope the next, in timeline
@@ -293,9 +291,11 @@ impl BaseFeaturePlan<'_> {
         .collect())
     }
 
-    /// The design's records, the parameter records whose tails name its
-    /// parameter collection, and the losses of the byte positions whose
-    /// values the specification does not state.
+    /// The records of a design with no result body, which has no timeline
+    /// item, the parameter records whose tails name its parameter
+    /// collection, and the losses of the byte positions whose values the
+    /// specification does not state. A design with a result body takes the
+    /// roster path ([`Self::roster_records`]).
     pub(super) fn encode(
         &self,
         parameters: &ParameterPlan,
@@ -303,15 +303,8 @@ impl BaseFeaturePlan<'_> {
     ) -> Result<(Vec<u8>, DesignRecords, Vec<LossNote>), CodecError> {
         let bodies = self.body_records(registry)?;
         let parameter_indices = parameters.allocate(registry)?;
-        let indices = Indices::allocate(registry, self.has_item())?;
+        let indices = Indices::allocate(registry)?;
         let classes = Classes::register(registry, &indices, &bodies)?;
-        if let (Some(item), Some(nodes)) = (&indices.item, registry.browser_nodes.as_mut()) {
-            nodes.tail = Some(BrowserNodeTail {
-                scope: item.scope,
-                paired_class: classes.object.clone(),
-                context: indices.context,
-            });
-        }
         let parameter_bytes =
             parameters.encode(registry, &parameter_indices, Some(indices.collection))?;
         let mut out = DesignRecords::default();
@@ -326,9 +319,6 @@ impl BaseFeaturePlan<'_> {
         };
         writer.timeline(&mut out)?;
         writer.context(&mut out)?;
-        if let Some(item) = &indices.item {
-            writer.item(&mut out, item)?;
-        }
         writer.components(&mut out)?;
         writer.origin(&mut out);
         writer.parameter_collection(&mut out, &parameter_indices)?;
@@ -496,25 +486,14 @@ impl Indices {
         }
     }
 
-    fn allocate(registry: &mut GeneratedDesignRegistry, item: bool) -> Result<Self, CodecError> {
+    /// The indices of a design with no timeline item.
+    fn allocate(registry: &mut GeneratedDesignRegistry) -> Result<Self, CodecError> {
         let timeline = registry.allocate()?;
         let context = registry.allocate()?;
-        let item = item
-            .then(|| {
-                Ok::<_, CodecError>(ItemIndices {
-                    scope: registry.allocate()?,
-                    result_owner: registry.allocate()?,
-                    result_companion: registry.allocate()?,
-                    tracked_results: registry.allocate()?,
-                    item_companion: registry.allocate()?,
-                    scope_timestamps: registry.allocate()?,
-                })
-            })
-            .transpose()?;
         Ok(Self {
             timeline,
             context,
-            item,
+            item: None,
             owner_collection: registry.allocate()?,
             component: registry.allocate()?,
             component_timestamps: registry.allocate()?,
@@ -1159,13 +1138,11 @@ fn residual_losses(indices: &Indices, bodies: &[BodyRecords]) -> Vec<LossNote> {
             indices.origin_planes + plane
         )
     }));
-    if indices.item.is_none() {
-        records.extend(
-            [indices.owner_collection, indices.context_members].map(|record| {
-                format!("record {record} (member list of a design with no Base Feature)")
-            }),
-        );
-    }
+    records.extend(
+        [indices.owner_collection, indices.context_members].map(|record| {
+            format!("record {record} (member list of a design with no Base Feature)")
+        }),
+    );
     records.extend(bodies.iter().flat_map(|body| {
         [body.design_reference, body.parameter_reference].map(|record| {
             format!("record {record} (body-reference record D3937028: its GUID and presentation members)")
@@ -1177,11 +1154,5 @@ fn residual_losses(indices: &Indices, bodies: &[BodyRecords]) -> Vec<LossNote> {
         records,
     )
     .into_iter()
-    .chain(
-        indices
-            .item
-            .as_ref()
-            .and_then(|item| item_tail_loss(item.scope)),
-    )
     .collect()
 }

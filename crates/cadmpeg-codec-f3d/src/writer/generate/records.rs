@@ -1018,17 +1018,6 @@ fn encode_browser_nodes(
         out.push(u8::from(!node.visible));
         out.extend_from_slice(&[0x01, 0x01]);
         out.extend_from_slice(&node.entity_suffix.to_le_bytes());
-        if let Some(tail) = &browser_nodes.tail {
-            out.extend_from_slice(&[0, 0, 1]);
-            out.extend_from_slice(&u64::from(tail.scope).to_le_bytes());
-            out.extend_from_slice(&[0, 0]);
-            native_lp_ascii(out, tail.paired_class.as_str())?;
-            out.extend_from_slice(&node.record_index.to_le_bytes());
-            out.extend_from_slice(&[0; 8]);
-            out.push(1);
-            out.extend_from_slice(&u64::from(tail.context).to_le_bytes());
-            out.extend_from_slice(&[0, 0]);
-        }
     }
     Ok(())
 }
