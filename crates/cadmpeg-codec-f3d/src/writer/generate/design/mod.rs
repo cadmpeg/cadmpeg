@@ -145,7 +145,7 @@ impl NeutralDesign<'_> {
         let ctx = roster::Context {
             table: roster::type_table(&roster, bodies.iter().any(|body| body.sheet))?,
             roster,
-            values: roster::values::Values::new(target, &scope.definition, smbh)?,
+            values: roster::values::Values::new(target, &scope.definition, smbh),
             bodies,
         };
         let mut records = DesignRecords::default();
