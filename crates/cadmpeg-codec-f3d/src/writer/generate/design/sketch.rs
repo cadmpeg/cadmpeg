@@ -3,7 +3,8 @@
 //! origin planes (cadir-v11.md §3.4; f3d.md §3.1, "Records of a Sketch
 //! item"): which sketches are written, each entity and relation in the
 //! fixed frame Fusion stores for its origin plane, and the losses of what is
-//! not written.
+//! not written. A tangency at the ends of its curves is written with its
+//! endpoint branch and the coincidence of those ends.
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -14,8 +15,8 @@ use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::datum::DatumElement;
 use cadmpeg_ir::design::ops::sketch::{
-    DefiningRole, EntityDefinition, Operand, Planar, PlanarCurve, Sketch, SketchConstraint,
-    SketchEntity, SketchPlane, SketchRelation,
+    Contact, DefiningRole, EntityDefinition, Operand, Planar, PlanarCurve, Sketch,
+    SketchConstraint, SketchEntity, SketchPlane, SketchRelation,
 };
 use cadmpeg_ir::design::selection::{PickTarget, Picks, PrincipalEntity};
 use cadmpeg_ir::document::CadIr;
@@ -146,10 +147,41 @@ pub(super) enum RelationKind {
     Perpendicular,
     Horizontal,
     Vertical,
-    Tangent,
+    /// Written in the tangency class, with its endpoint branch where the
+    /// source states the contact at the curves' ends.
+    Tangent(Option<TangencyEnds>),
     Curvature,
     Symmetric,
     Midpoint,
+}
+
+/// The endpoint branch the tangency class stores (f3d.md §3.1, "Sketch
+/// relations"): for each curve in member order, whether the contact is at its
+/// stored start, and whether the two curves' parameter directions agree
+/// there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct TangencyEnds {
+    pub(super) starts: [bool; 2],
+    pub(super) aligned: bool,
+}
+
+impl TangencyEnds {
+    /// The class's three flag bytes.
+    pub(super) fn bytes(self) -> [u8; 3] {
+        [
+            u8::from(self.starts[0]),
+            u8::from(self.starts[1]),
+            u8::from(self.aligned),
+        ]
+    }
+}
+
+/// Where a written tangency touches, from the contact its source states.
+struct Touch {
+    ends: Option<TangencyEnds>,
+    /// The coincidences the contact makes that the written curves do not
+    /// already hold.
+    joins: Vec<[Entity; 2]>,
 }
 
 /// A written relation and its members in semantic order.
@@ -472,18 +504,137 @@ impl<'a> PlannedSketch<'a> {
                 }
             }
         }
+        let mut joins = Vec::new();
         for constraint in target
             .design
             .sketch_constraints
             .iter()
             .filter(|constraint| constraint.sketch == sketch.id)
         {
-            match relations(constraint, &written, &planned.curves, frame) {
-                Ok(relations) => planned.relations.extend(relations),
-                Err(reason) => notes.omit(constraint.id.to_string(), reason),
+            let mut relations = match relations(constraint, &written, &planned.curves, frame) {
+                Ok(relations) => relations,
+                Err(reason) => {
+                    notes.omit(constraint.id.to_string(), reason);
+                    continue;
+                }
+            };
+            if let (Some(contact), [relation]) =
+                (contact(&constraint.relation), relations.as_mut_slice())
+            {
+                match planned.touch(contact, &relation.members, &written) {
+                    Ok(touch) => {
+                        if let RelationKind::Tangent(ends) = &mut relation.kind {
+                            *ends = touch.ends;
+                        }
+                        joins.extend(touch.joins);
+                    }
+                    Err(reason) => notes.omit(format!("the contact of {}", constraint.id), reason),
+                }
+            }
+            planned.relations.extend(relations);
+        }
+        for join in joins {
+            let stated = planned.relations.iter().any(|relation| {
+                relation.kind == RelationKind::Coincident
+                    && (relation.members == join || relation.members == [join[1], join[0]])
+            });
+            if !stated {
+                planned.relations.push(PlannedRelation {
+                    kind: RelationKind::Coincident,
+                    members: join.to_vec(),
+                });
             }
         }
         planned
+    }
+
+    /// Where the written tangency of `members` touches, from its source
+    /// `contact`: a contact at the ends of both curves gives the endpoint
+    /// branch and joins the two end points; a contact through a point puts
+    /// that point on each curve it does not bound.
+    fn touch(
+        &self,
+        contact: &Contact<Planar>,
+        members: &[Entity],
+        written: &HashMap<&SketchEntityId, Entity>,
+    ) -> Result<Touch, &'static str> {
+        let &[Entity::Curve(a), Entity::Curve(b)] = members else {
+            return Err("its members are not two written curves");
+        };
+        let point = |id: &SketchEntityId| match written.get(id) {
+            Some(Entity::Point(point)) => Ok(*point),
+            Some(Entity::Curve(_)) => Err("its contact names a curve, not a point"),
+            None => Err("its contact names an entity the writer does not write"),
+        };
+        match contact {
+            Contact::Via(p) => {
+                let p = point(p)?;
+                Ok(Touch {
+                    ends: None,
+                    joins: [a, b]
+                        .into_iter()
+                        .filter(|curve| self.end(*curve, p).is_none())
+                        .map(|curve| [Entity::Point(p), Entity::Curve(curve)])
+                        .collect(),
+                })
+            }
+            Contact::Ends([p, q]) => {
+                let (p, q) = (point(p)?, point(q)?);
+                let ((p, at_a), (q, at_b)) = match (self.end(a, p), self.end(b, q)) {
+                    (Some(at_a), Some(at_b)) => ((p, at_a), (q, at_b)),
+                    _ => match (self.end(a, q), self.end(b, p)) {
+                        (Some(at_a), Some(at_b)) => ((q, at_a), (p, at_b)),
+                        _ => {
+                            return Err(
+                                "its contact points are not ends of its curves as the writer bounds them",
+                            )
+                        }
+                    },
+                };
+                let ((start_a, [ax, ay]), (start_b, [bx, by])) = (at_a, at_b);
+                Ok(Touch {
+                    ends: Some(TangencyEnds {
+                        starts: [start_a, start_b],
+                        aligned: ax * bx + ay * by > 0.0,
+                    }),
+                    joins: (p != q)
+                        .then_some([Entity::Point(p), Entity::Point(q)])
+                        .into_iter()
+                        .collect(),
+                })
+            }
+        }
+    }
+
+    /// Whether `point` bounds `curve` at its stored start (`true`) or end
+    /// (`false`), with the curve's parameter direction there; `None` where
+    /// `point` bounds neither end.
+    fn end(&self, curve: usize, point: usize) -> Option<(bool, [f64; 2])> {
+        let at_start = |start: usize, end: usize| {
+            if point == start {
+                Some(true)
+            } else if point == end {
+                Some(false)
+            } else {
+                None
+            }
+        };
+        match self.curves.get(curve)?.geometry {
+            CurveGeometry::Line { start, end } => {
+                let at_start = at_start(start, end)?;
+                let ([x0, y0], [x1, y1]) = (*self.points.get(start)?, *self.points.get(end)?);
+                Some((at_start, [x1 - x0, y1 - y0]))
+            }
+            CurveGeometry::Arc {
+                start, end, angles, ..
+            } => {
+                let at_start = at_start(start, end)?;
+                let angle = if at_start { angles[0] } else { angles[1] };
+                let (sin, cos) = angle.portable_sin_cos();
+                Some((at_start, [-sin, cos]))
+            }
+            CurveGeometry::Circle { .. } => None,
+        }
     }
 
     /// The geometry of `curve`, with the points that bound it: the written
@@ -622,7 +773,7 @@ fn relations(
         SketchRelation::Collinear { a, b } => two(RelationKind::Collinear, a, b),
         SketchRelation::Parallel { a, b } => two(RelationKind::Parallel, a, b),
         SketchRelation::Perpendicular { a, b } => two(RelationKind::Perpendicular, a, b),
-        SketchRelation::Tangent { a, b, .. } => two(RelationKind::Tangent, a, b),
+        SketchRelation::Tangent { a, b, .. } => two(RelationKind::Tangent(None), a, b),
         SketchRelation::Curvature { a, b, .. } => two(RelationKind::Curvature, a, b),
         SketchRelation::Horizontal { a, b } => one_or_two(orientation(frame.x)?, a, b),
         SketchRelation::Vertical { a, b } => one_or_two(orientation(frame.y)?, a, b),
@@ -675,6 +826,16 @@ fn relations(
         | SketchRelation::FixedLength { .. }
         | SketchRelation::FixedAngle { .. }
         | SketchRelation::Native { .. } => Err("the writer writes no relation of this kind"),
+    }
+}
+
+/// The contact a tangency or curvature relation states.
+fn contact(relation: &SketchRelation<Planar>) -> Option<&Contact<Planar>> {
+    match relation {
+        SketchRelation::Tangent { contact, .. } | SketchRelation::Curvature { contact, .. } => {
+            contact.as_ref()
+        }
+        _ => None,
     }
 }
 

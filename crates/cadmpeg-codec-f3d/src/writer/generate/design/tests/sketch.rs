@@ -13,7 +13,7 @@ use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::design::ops::datum::{Datum, DatumElement};
 use cadmpeg_ir::design::ops::sketch::{
-    DefiningRole, EntityDefinition, EntityRole, Operand, Planar, PlanarCurve, Sketch,
+    Contact, DefiningRole, EntityDefinition, EntityRole, Operand, Planar, PlanarCurve, Sketch,
     SketchConstraint, SketchEntity, SketchPlane, SketchRelation, SketchSolve,
 };
 use cadmpeg_ir::design::options::NativeOptions;
@@ -980,4 +980,210 @@ fn a_failure_in_the_sketch_records_keeps_the_design() {
         &F3dLossCode::WriterSketchContentOmitted.kind().to_string()
     )
     .is_empty());
+}
+
+/// The model-space position of the decoded sketch point `id`.
+fn decoded_point(decoded: &CadIr, id: &SketchEntityId) -> Option<[f64; 3]> {
+    let entity = decoded
+        .model
+        .sketch_entities
+        .iter()
+        .find(|entity| entity.id() == id)?;
+    let cadmpeg_ir::sketches::SketchGeometryDefinition::Point { position } =
+        entity.geometry.definition()
+    else {
+        return None;
+    };
+    let sketch = decoded
+        .model
+        .sketches
+        .iter()
+        .find(|sketch| sketch.id == entity.sketch)?;
+    let (origin, normal, u) = sketch.resolved_placement()?;
+    let (origin, normal, u, p) = (origin.get(), normal.get(), u.get(), position.get());
+    let v = normal.cross(u);
+    Some([
+        origin.x + p.u * u.x + p.v * v.x,
+        origin.y + p.u * u.y + p.v * v.y,
+        origin.z + p.u * u.z + p.v * v.z,
+    ])
+}
+
+/// A line along +x to `(10, 0)` and an arc from there turning up to
+/// `(15, 5)`, each with its own end points: a tangent at the shared ends
+/// (`joint`), and a tangent of the arc to a rising line at a point that ends
+/// no curve as the writer bounds it (`rise`).
+fn tangent_sketch() -> Source {
+    let mut sketch = Source::new(
+        "tangent",
+        picked(principal(PrincipalEntity::XyPlane)),
+        frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+    );
+    sketch
+        .entity(
+            "l0",
+            PlanarCurve::Point(point2(0.0, 0.0)),
+            &[("line", DefiningRole::Start)],
+        )
+        .entity(
+            "line-end",
+            PlanarCurve::Point(point2(10.0, 0.0)),
+            &[("line", DefiningRole::End)],
+        )
+        .entity(
+            "arc-start",
+            PlanarCurve::Point(point2(10.0, 0.0)),
+            &[("arc", DefiningRole::Start)],
+        )
+        .entity(
+            "arc-end",
+            PlanarCurve::Point(point2(15.0, 5.0)),
+            &[("arc", DefiningRole::End)],
+        )
+        .entity("stray", PlanarCurve::Point(point2(15.0, 5.0)), &[])
+        .entity(
+            "line",
+            PlanarCurve::Line {
+                start: point2(0.0, 0.0),
+                end: point2(10.0, 0.0),
+            },
+            &[],
+        )
+        .entity(
+            "arc",
+            PlanarCurve::Arc {
+                center: point2(10.0, 5.0),
+                radius: PositiveLength::new(5.0).expect("a radius"),
+                start: Angle::THREE_QUARTER_TURN,
+                end: Angle::ZERO,
+            },
+            &[],
+        )
+        .entity(
+            "rise",
+            PlanarCurve::Line {
+                start: point2(15.0, 5.0),
+                end: point2(15.0, 15.0),
+            },
+            &[],
+        );
+    let (line, arc, rise) = (
+        sketch.operand("line"),
+        sketch.operand("arc"),
+        sketch.operand("rise"),
+    );
+    let contact = |p: &str, q: &str| {
+        Some(Contact::Ends([
+            entity_id("tangent", p),
+            entity_id("tangent", q),
+        ]))
+    };
+    sketch
+        .constraint(
+            "joint",
+            SketchRelation::Tangent {
+                a: line,
+                b: arc.clone(),
+                contact: contact("line-end", "arc-start"),
+            },
+        )
+        .constraint(
+            "rise",
+            SketchRelation::Tangent {
+                a: arc,
+                b: rise,
+                contact: contact("arc-end", "stray"),
+            },
+        );
+    sketch
+}
+
+#[test]
+fn a_tangent_contact_at_the_ends_is_written_as_a_coincidence_or_named() {
+    let mut ir = scoped_cube();
+    let id = tangent_sketch().add_to(&mut ir);
+    let Some(Container::Ordered { members, .. }) = ir.design.containers.first_mut() else {
+        panic!("the cube's timeline");
+    };
+    members.insert(0, Member::Feature(id));
+    let (report, decoded) = write(&ir);
+    assert_eq!(decoded.model.sketches.len(), 1, "{:#?}", report.losses);
+    let kinds = decoded
+        .model
+        .sketch_constraints
+        .iter()
+        .map(|constraint| constraint.definition.kind())
+        .collect::<Vec<_>>();
+    let tangents = kinds
+        .iter()
+        .filter(|kind| format!("{kind:?}").starts_with("Tangent"))
+        .count();
+    assert_eq!(tangents, 2, "{kinds:#?}");
+    let joint = [10.0, 0.0, 0.0];
+    let joined = kinds.iter().any(|kind| match kind {
+        cadmpeg_ir::sketches::SketchConstraintDefinitionInput::CoincidentLoci { loci } => {
+            loci.len() == 2
+                && loci.iter().all(|locus| match locus {
+                    cadmpeg_ir::sketches::SketchLocus::Entity(point) => {
+                        decoded_point(&decoded, point).is_some_and(|at| near(at, joint))
+                    }
+                    _ => false,
+                })
+        }
+        _ => false,
+    });
+    assert!(joined, "{kinds:#?}");
+    let omitted = loss(
+        &report,
+        &F3dLossCode::WriterSketchContentOmitted.kind().to_string(),
+    )
+    .join("\n");
+    assert!(
+        omitted.contains(&format!(
+            "the contact of {}",
+            constraint_id("tangent", "rise")
+        )),
+        "{omitted}"
+    );
+    assert!(
+        !omitted.contains(constraint_id("tangent", "joint").as_str()),
+        "{omitted}"
+    );
+}
+
+#[test]
+fn a_tangent_contact_at_the_ends_writes_its_endpoint_branch() {
+    use super::super::sketch::{plan, RelationKind, TangencyEnds};
+    let mut ir = scoped_cube();
+    let id = tangent_sketch().add_to(&mut ir);
+    let plan = plan(&ir, &[&id]);
+    let [item] = plan.items.as_slice() else {
+        panic!("one written sketch: {:?}", plan.unwritten);
+    };
+    let tangents = item
+        .relations
+        .iter()
+        .filter_map(|relation| match relation.kind {
+            RelationKind::Tangent(ends) => Some(ends),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    // The line's stored end meets the arc's stored start, where both run
+    // along +x.
+    assert_eq!(
+        tangents,
+        [
+            Some(TangencyEnds {
+                starts: [false, true],
+                aligned: true,
+            }),
+            None,
+        ]
+    );
+    let joins = item
+        .relations
+        .iter()
+        .filter(|relation| relation.kind == RelationKind::Coincident)
+        .count();
+    assert_eq!(joins, 1);
 }
