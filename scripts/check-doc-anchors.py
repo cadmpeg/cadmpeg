@@ -15,9 +15,8 @@ Every open-item ID a format document cites, such as ``DR-904``, names an item
 heading of the open-items document it cites. A citation resolves against the
 open-items document named right after the ID (``DR-904 in f3d-open-items.md``),
 else the last one the line names before the ID, else the document's own
-open-items document (``f3d.md`` and
-``f3d-coverage.md`` cite ``f3d-open-items.md``), else the only open-items
-document the file names. An ID whose prefix the target does not use (``UTF-8``)
+open-items document (``f3d.md`` and ``f3d-coverage.md`` cite
+``f3d-open-items.md``), else the only open-items document the file names. An ID whose prefix the target does not use (``UTF-8``)
 is no citation. ``former SE-08`` names a deleted item and is no citation.
 
 Usage: scripts/check-doc-anchors.py [doc.md ...]
@@ -245,7 +244,7 @@ def main(argv: list[str]) -> int:
         return 1
     print(
         f"check-doc-anchors: {len(paths)} document(s) checked; "
-        f"references resolve and field schema holds; "
+        "references resolve and field schema holds; "
         f"open-item citations in {len(documents)} document(s) name headings"
     )
     return 0
