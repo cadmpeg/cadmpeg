@@ -367,7 +367,7 @@ fn a_closed_edge_is_a_circle_only_on_a_cylinder_about_the_cap_normal() {
 }
 
 fn ctx() -> cadmpeg_core::decode::DecodeContext<'static> {
-    cadmpeg_test_support::service_decode_context()
+    cadmpeg_core::decode::test_support::service_decode_context()
 }
 
 fn line(id: &str, start: (f64, f64), end: (f64, f64)) -> SketchEntity {
@@ -793,7 +793,7 @@ fn cut_selection(
     let before = plane_faces(&[(1, 0.0, vec![plate.clone()]), (2, -5.0, vec![plate])]);
     let after = plane_faces(&[(3, 0.0, holed.clone()), (4, -5.0, holed)]);
     let history = cut_history(before, after);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let resolution = super::super::ScopedExtrudeProfileResolution {
         entities: &window.entities,
         spatial_entities: &[],
@@ -1027,7 +1027,7 @@ fn a_far_face_over_material_the_plane_already_held_selects_nothing() {
     let after = || plane_faces(&[(3, 0.0, opening.clone()), (4, -5.0, opening.clone())]);
     let select = |before| {
         let history = cut_history(before, after());
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let work = crate::design::geometry::ProfileGeometryWork::new();
         let resolution = super::super::ScopedExtrudeProfileResolution {
             entities: &window.entities,
@@ -1078,7 +1078,7 @@ fn a_cut_whose_regions_use_curves_outside_the_stored_profile_takes_the_proven_re
     let before = plane_faces(&[(1, 0.0, vec![plate.clone()]), (2, -5.0, vec![plate])]);
     let after = plane_faces(&[(3, 0.0, holed.clone()), (4, -5.0, holed)]);
     let history = cut_history(before, after);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let work = crate::design::geometry::ProfileGeometryWork::new();
     let resolution = super::super::ScopedExtrudeProfileResolution {
         entities: &window.entities,
@@ -1279,7 +1279,7 @@ fn compact_cut_certificate_checks_region_side_carriers_and_stored_travel() {
                    candidate: &ProfileRef,
                    length: f64| {
         let history = cut_history(before, after);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let work = crate::design::geometry::ProfileGeometryWork::new();
         let resolution = super::super::ScopedExtrudeProfileResolution {
             entities: &entities,

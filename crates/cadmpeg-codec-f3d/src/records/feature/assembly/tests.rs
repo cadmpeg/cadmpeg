@@ -1129,7 +1129,7 @@ fn native_legacy_alignment_wire_rewrite_matches_the_typed_selection_walk() {
     )
     .unwrap();
     let mut value = serde_json::to_value(&alignment).unwrap();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let remap = |id: &str| {
         Ok(format!(
             "f3d:occurrence:{}",
