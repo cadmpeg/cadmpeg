@@ -50,8 +50,9 @@ const UNRESOLVED_OWNER: &str = "owner_record_index";
 /// document's parameter scope, the root's or a referenced design's, is a user
 /// parameter of that document's scope. A model parameter whose owner is no
 /// such feature has no owner the scope states, so it is no parameter here.
-/// A document in `hosted` has no scope of its own, so its user parameters
-/// stay v10 parameters and one loss in `losses` names each of them.
+/// A document in `hosted`, or one `scopes` does not key, has no scope of its
+/// own, so its user parameters stay v10 parameters and one loss in `losses`
+/// names each of them.
 pub(super) fn project(
     legacy: &[LegacyParameter],
     scopes: &BTreeMap<String, ProductDefinitionId>,
@@ -78,7 +79,6 @@ pub(super) fn project(
         .filter_map(|parameter| {
             let stream = parameter.native_ref.as_deref().and_then(native_stream)?;
             let prefix = document_prefix(stream);
-            let scope = scopes.get(prefix)?;
             let owner = match &parameter.owner {
                 Some(owner) if is_document_parameters(owner) => None,
                 Some(owner) if features.contains(owner.as_str()) => Some(owner),
@@ -86,17 +86,22 @@ pub(super) fn project(
                 None if parameter.properties.contains_key(UNRESOLVED_OWNER) => return None,
                 None => None,
             };
-            if owner.is_none() && hosted.contains(prefix) {
-                unscoped.push(parameter.id.as_str());
-                return None;
-            }
+            let scope = match scopes.get(prefix) {
+                Some(scope) if owner.is_some() || !hosted.contains(prefix) => scope,
+                Some(_) | None => {
+                    if owner.is_none() {
+                        unscoped.push(parameter.id.as_str());
+                    }
+                    return None;
+                }
+            };
             let name = NonBlankString::new(parameter.name.clone())?;
             Some((parameter, scope, owner, name))
         })
         .collect::<Vec<_>>();
     if !unscoped.is_empty() {
         losses.push(F3dLossCode::ParameterReferencedDesignUnscoped.note(format!(
-            "{} user parameter(s) of referenced designs with no design scope of their own stay v10 parameters: {}",
+            "{} user parameter(s) of documents with no design scope of their own stay v10 parameters: {}",
             unscoped.len(),
             unscoped.join(" ")
         )));

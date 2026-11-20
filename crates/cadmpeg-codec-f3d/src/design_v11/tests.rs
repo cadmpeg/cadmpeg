@@ -597,6 +597,7 @@ fn a_hosted_referenced_designs_user_parameters_stay_off_the_scope_that_hosts_it(
     use cadmpeg_ir::scalar::Length;
     const FIRST: &str = "xref/role-1/reference-0/occurrence-0/";
     const SECOND: &str = "xref/role-1/reference-1/occurrence-0/";
+    const UNLISTED: &str = "xref/role-1/reference-2/occurrence-0/";
     const OWNER: &str = "f3d:xref/role-1/reference-0/occurrence-0/model:feature#extrude:5";
     let in_document = |prefix: &str, key: &str, name: &str, owner: &str| {
         let mut parameter = parameter(
@@ -625,6 +626,12 @@ fn a_hosted_referenced_designs_user_parameters_stay_off_the_scope_that_hosts_it(
             "second_width",
             "width",
             format!("f3d:{SECOND}model:document-parameters#0").as_str(),
+        ),
+        in_document(
+            UNLISTED,
+            "unlisted_height",
+            "height",
+            format!("f3d:{UNLISTED}model:document-parameters#0").as_str(),
         ),
         in_document(FIRST, "depth", "depth", OWNER),
         parameter(
@@ -682,7 +689,7 @@ fn a_hosted_referenced_designs_user_parameters_stay_off_the_scope_that_hosts_it(
         crate::loss::F3dLossCode::ParameterReferencedDesignUnscoped.kind()
     );
     let named = loss.message.split_whitespace().collect::<BTreeSet<_>>();
-    for unscoped in &legacy[..2] {
+    for unscoped in &legacy[..3] {
         assert!(named.contains(unscoped.id.as_str()), "{}", loss.message);
     }
 }
