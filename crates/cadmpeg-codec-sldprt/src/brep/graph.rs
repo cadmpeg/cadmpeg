@@ -8835,6 +8835,78 @@ fn ruled_surface_line_pcurve(
     }))
 }
 
+/// One closed circle of a complete cylindrical face and its stored vertex.
+struct SeamEnd {
+    edge: EdgeId,
+    vertex: VertexId,
+    center: Point3,
+    radius: f64,
+    /// `center - ref_direction * radius` of the cylinder (§6).
+    reference_point: Point3,
+}
+
+/// A complete cylindrical face whose two closed circles a derived seam joins.
+struct SeamCandidate {
+    face: FaceId,
+    loops: [LoopId; 2],
+    circles: [CoedgeId; 2],
+    ends: [SeamEnd; 2],
+    axis: cadmpeg_ir::math::Vector3,
+}
+
+/// The seam's two endpoints, and for each end whether its vertex keeps its
+/// stored position.
+///
+/// A circle vertex that another edge also ends at stays where it is stored.
+/// When such a vertex lies off its reference point, the seam is the ruling
+/// through it; `None` when another such vertex lies off that ruling.
+fn seam_endpoints(
+    candidate: &SeamCandidate,
+    vertex_edges: &HashMap<VertexId, Vec<EdgeId>>,
+    vertex_position: impl Fn(&VertexId) -> Option<Point3>,
+) -> Option<([Point3; 2], [bool; 2])> {
+    let shared = candidate.ends.each_ref().map(|end| {
+        vertex_edges
+            .get(&end.vertex)
+            .is_some_and(|edges| edges.iter().any(|edge| *edge != end.edge))
+    });
+    let positions = candidate
+        .ends
+        .each_ref()
+        .map(|end| vertex_position(&end.vertex));
+    let anchor = candidate
+        .ends
+        .iter()
+        .zip(positions.iter().zip(shared))
+        .find_map(|(end, (position, shared))| {
+            let position = (*position).filter(|_| shared)?;
+            (position.distance(end.reference_point) > LINEAR_RESOLUTION_MM)
+                .then_some((end, position))
+        });
+    let Some((anchor_end, anchor)) = anchor else {
+        return Some((
+            candidate.ends.each_ref().map(|end| end.reference_point),
+            [false; 2],
+        ));
+    };
+    let offset = anchor.vector_from(anchor_end.center);
+    let ruling = (offset + candidate.axis.scale(-offset.dot(candidate.axis))).unit()?;
+    let seam = candidate
+        .ends
+        .each_ref()
+        .map(|end| end.center.translated(ruling, end.radius));
+    let off_ruling =
+        positions
+            .iter()
+            .zip(seam.iter().zip(shared))
+            .any(|(position, (point, shared))| {
+                shared
+                    && position
+                        .is_some_and(|position| position.distance(*point) > LINEAR_RESOLUTION_MM)
+            });
+    (!off_ruling).then_some((seam, shared))
+}
+
 fn synthesize_cylinder_seams(
     ctx: &DecodeContext<'_>,
     out: &mut Brep,
@@ -8901,7 +8973,7 @@ fn synthesize_cylinder_seams(
         let Some(eb) = edges.get(&cb.edge) else {
             continue;
         };
-        let seam_point = |edge: &Edge| {
+        let seam_end = |edge: &Edge| {
             if edge.ends.as_ref().is_none_or(|ends| ends.start != ends.end) {
                 return None;
             }
@@ -8911,47 +8983,82 @@ fn synthesize_cylinder_seams(
             };
             let center = circle_curve.center().get();
             let radius = circle_curve.radius().get();
-            Some(cadmpeg_ir::math::Point3::new(
-                center.x - ref_direction.x * radius,
-                center.y - ref_direction.y * radius,
-                center.z - ref_direction.z * radius,
-            ))
+            Some(SeamEnd {
+                edge: edge.id.clone(),
+                vertex: edge.start()?.clone(),
+                center,
+                radius,
+                reference_point: cadmpeg_ir::math::Point3::new(
+                    center.x - ref_direction.x * radius,
+                    center.y - ref_direction.y * radius,
+                    center.z - ref_direction.z * radius,
+                ),
+            })
         };
-        if let (Some(pa), Some(pb), Some(va), Some(vb)) =
-            (seam_point(ea), seam_point(eb), ea.start(), eb.start())
-        {
-            candidates.push((
-                face.id.clone(),
-                a.id.clone(),
-                b.id.clone(),
-                ca.id.clone(),
-                cb.id.clone(),
-                va.clone(),
-                vb.clone(),
-                pa,
-                pb,
-            ));
+        if let (Some(end_a), Some(end_b)) = (seam_end(ea), seam_end(eb)) {
+            candidates.push(SeamCandidate {
+                face: face.id.clone(),
+                loops: [a.id.clone(), b.id.clone()],
+                circles: [ca.id.clone(), cb.id.clone()],
+                ends: [end_a, end_b],
+                axis: *cylinder_surface.frame().axis().as_raw(),
+            });
         }
     }
 
+    let mut vertex_edges = HashMap::<VertexId, Vec<EdgeId>>::new();
+    for edge in &out.edges {
+        if let Some(ends) = &edge.ends {
+            for vertex in [&ends.start, &ends.end] {
+                vertex_edges
+                    .entry(vertex.clone())
+                    .or_default()
+                    .push(edge.id.clone());
+            }
+        }
+    }
+    let mut point_indices = HashMap::new();
+    for (index, point) in out.points.iter().enumerate() {
+        point_indices.entry(&point.id).or_insert(index);
+    }
+    let mut vertex_points = HashMap::<VertexId, usize>::new();
+    for vertex in &out.vertices {
+        if let Some(&index) = point_indices.get(&vertex.point) {
+            vertex_points.entry(vertex.id.clone()).or_insert(index);
+        }
+    }
     let mut removed = HashSet::new();
     let mut coedge_indices = HashMap::new();
     for (index, coedge) in out.coedges.iter().enumerate() {
         let id = coedge.id.clone();
         coedge_indices.insert(id, index);
     }
-    for (face_id, loop_a, loop_b, circle_a, circle_b, vertex_a, vertex_b, pa, pb) in candidates {
-        for (vertex_id, position) in [(&vertex_a, pa), (&vertex_b, pb)] {
-            let Some(point_id) = out
-                .vertices
-                .iter()
-                .find(|vertex| vertex.id == *vertex_id)
-                .map(|vertex| &vertex.point)
-            else {
+    for candidate in candidates {
+        let vertex_position = |vertex_id: &VertexId| {
+            vertex_points
+                .get(vertex_id)
+                .map(|&index| out.points[index].position().get())
+        };
+        let Some((seam, kept)) = seam_endpoints(&candidate, &vertex_edges, vertex_position) else {
+            continue;
+        };
+        let SeamCandidate {
+            face: face_id,
+            loops: [loop_a, loop_b],
+            circles: [circle_a, circle_b],
+            ends: [end_a, end_b],
+            ..
+        } = candidate;
+        let (vertex_a, vertex_b) = (end_a.vertex, end_b.vertex);
+        let [pa, pb] = seam;
+        for ((vertex_id, position), kept) in
+            [(&vertex_a, pa), (&vertex_b, pb)].into_iter().zip(kept)
+        {
+            if kept {
                 continue;
-            };
-            if let Some(point) = out.points.iter_mut().find(|point| point.id == *point_id) {
-                point.set_position(
+            }
+            if let Some(&index) = vertex_points.get(vertex_id) {
+                out.points[index].set_position(
                     cadmpeg_ir::features::FinitePoint3::new(position).ok_or_else(|| {
                         cadmpeg_core::CodecError::Malformed(Point::NON_FINITE_POSITION.into())
                     })?,
@@ -9002,6 +9109,12 @@ fn synthesize_cylinder_seams(
             )),
             native_ref: None,
         });
+        for vertex in [&vertex_a, &vertex_b] {
+            vertex_edges
+                .entry(vertex.clone())
+                .or_default()
+                .push(edge_id.clone());
+        }
         admit_brep_entity(ctx)?;
         out.edges.push(Edge {
             id: edge_id.clone(),
