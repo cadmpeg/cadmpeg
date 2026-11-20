@@ -1501,18 +1501,57 @@ fn a_sketch_with_an_unbound_dimension_or_an_entity_without_a_curve_is_unresolved
 }
 
 /// Assert that the sketch of [`sketch_and_extrude`], after `change`, stays
-/// `Unresolved` for `reason`, and its extrude with it, and that its vertical
-/// dimension and the extrude's depth still state their parameters' quantity.
+/// `Unresolved` for `reason`, and its extrude with it; that its vertical
+/// dimension and the extrude's depth still state their parameters' quantity;
+/// and that its reference dimensions still make their parameters `Driven`,
+/// the tree's hole diameter and one minted for a dimension no tree node lists.
 fn assert_sketch_unresolved(change: impl FnOnce(&mut CadIr), reason: &str) {
+    use cadmpeg_ir::design::parameter::ParameterDefinition;
     use cadmpeg_ir::design::units::Quantity;
 
+    const MINTED: &str = "sldprt:model:parameter#reference";
     let (mut ir, native) = sketch_and_extrude();
+    let mut constraints = serde_json::to_value(&ir.model.sketch_constraints).unwrap();
+    let constraints_list = constraints.as_array_mut().unwrap();
+    let hole_constraint = constraints_list
+        .iter_mut()
+        .find(|constraint| constraint["id"].as_str().unwrap().ends_with(":4"))
+        .unwrap();
+    hole_constraint["driving"] = serde_json::json!(false);
+    let hole_parameter = hole_constraint["definition"]["parameter"].clone();
+    let mut reference = hole_constraint.clone();
+    reference["id"] = serde_json::json!(format!("{}:reference", reference["id"].as_str().unwrap()));
+    reference["definition"]["parameter"] = serde_json::json!(MINTED);
+    constraints_list.push(reference);
+    ir.model.sketch_constraints = serde_json::from_value(constraints).unwrap();
+    let mut parameters = serde_json::to_value(&ir.model.parameters).unwrap();
+    let parameters_list = parameters.as_array_mut().unwrap();
+    let mut minted = parameters_list
+        .iter()
+        .find(|parameter| parameter["id"] == hole_parameter)
+        .unwrap()
+        .clone();
+    minted["id"] = serde_json::json!(MINTED);
+    minted["name"] = serde_json::json!("D9");
+    parameters_list.push(minted);
+    ir.model.parameters = serde_json::from_value(parameters).unwrap();
     change(&mut ir);
     let (timeline, entries, typed) = typed_timeline(&ir, &native);
     assert!(typed.sketches.records.is_empty(), "{reason}");
     let sketch = timeline_feature(&timeline, "Sketch1");
     let height = entries.owned(&sketch.id, "D2").unwrap();
     assert_eq!(typed.bound.get(height), Some(&Quantity::LENGTH), "{reason}");
+    let hole = entries.owned(&sketch.id, "D3").unwrap();
+    assert!(typed.references.contains(hole), "{reason}");
+    assert!(
+        typed
+            .sketches
+            .driven
+            .iter()
+            .any(|parameter| parameter.id.as_str() == MINTED
+                && parameter.definition == ParameterDefinition::Driven),
+        "{reason}"
+    );
     let depth = entries
         .owned(&timeline_feature(&timeline, "Boss").id, "D1")
         .unwrap();

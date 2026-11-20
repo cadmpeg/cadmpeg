@@ -206,6 +206,8 @@ fn sketch(
         });
     }
     out.bound.extend(bound);
+    out.driven.extend(driven);
+    out.references.extend(references);
     if let Some(reason) = failure {
         return Err(reason);
     }
@@ -242,8 +244,6 @@ fn sketch(
             }),
     );
     out.constraints.extend(constraints);
-    out.driven.extend(driven);
-    out.references.extend(references);
     Ok(record.id.clone())
 }
 
