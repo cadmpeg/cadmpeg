@@ -74,15 +74,15 @@ fn a_graft_an_earlier_document_produced_is_not_read_again() {
         Document::deserialize(probe).is_ok()
     };
     let empty = json!({"items": []});
-    let fresh = sweep(&second, &empty, &accepts, &mut Probed::default())
+    let fresh = sweep(&second, &empty, accepts, &mut Probed::default())
         .expect("every path comes from the document");
     let fresh_reads = reads.replace(0);
 
     let mut probed = Probed::default();
-    sweep(&first, &empty, &accepts, &mut probed).expect("every path comes from the document");
+    sweep(&first, &empty, accepts, &mut probed).expect("every path comes from the document");
     reads.set(0);
     let shared =
-        sweep(&second, &empty, &accepts, &mut probed).expect("every path comes from the document");
+        sweep(&second, &empty, accepts, &mut probed).expect("every path comes from the document");
 
     assert_eq!(shared.accepting, fresh.accepting);
     assert_eq!(
