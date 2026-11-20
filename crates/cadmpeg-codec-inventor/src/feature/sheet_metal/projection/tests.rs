@@ -461,6 +461,25 @@ fn the_first_refusal_of_a_plate_is_kept_and_other_operations_have_none() {
 }
 
 #[test]
+fn a_native_plate_reports_the_first_direction_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    let fixture = Fixture::new();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let feature =
+        crate::feature::native_feature(&ctx, &fixture.plate.identity, None, fixture.plate.id())
+            .expect("native plate");
+    let mut refusals = Refusals::default();
+    refusals.insert(fixture.plate.id(), PlateRefusal::FirstDirection);
+    let notes = refusals.losses(&[feature]);
+    assert_eq!(notes.len(), 1);
+    let wire = serde_json::to_string(&notes).expect("notes");
+    assert!(wire.contains("feature.sheet-metal-plate-refused"));
+    assert!(wire.contains("first-direction"));
+}
+
+#[test]
 fn the_result_slot_follows_the_plate_form() {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     let arena = DecodeArena::new();

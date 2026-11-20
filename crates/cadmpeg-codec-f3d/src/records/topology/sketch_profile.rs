@@ -140,6 +140,10 @@ impl DesignSketchProfileOperand {
     pub(crate) fn paired_byte_offset(&self) -> u64 {
         self.paired_byte_offset
     }
+
+    pub(crate) fn paired_class_tag(&self) -> &DesignClassTag {
+        &self.paired_class_tag
+    }
 }
 
 impl Serialize for DesignSketchProfileOperand {

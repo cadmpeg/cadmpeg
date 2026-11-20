@@ -75,6 +75,8 @@ pub(crate) enum CatiaLossCode {
     GeometrySurfaceParametersNotTransferred,
     /// Native surface extrapolation controls remain outside the neutral carrier.
     GeometrySurfaceExtrapolationNotTransferred,
+    /// A model-space curve supplies a bounded plane projection.
+    GeometryPlanePcurveProjected,
     /// A witnessed conic branch exceeds the incident face bounds.
     GeometryConicBranchBoundsInferred,
     /// A sheet face uses a fitted surface carrier.
@@ -188,6 +190,7 @@ impl CatiaLossCode {
         Self::GeometryParameterMapAccuracyInferred,
         Self::GeometrySurfaceParametersNotTransferred,
         Self::GeometrySurfaceExtrapolationNotTransferred,
+        Self::GeometryPlanePcurveProjected,
         Self::GeometryConicBranchBoundsInferred,
         Self::GeometrySheetSurfaceFitted,
         Self::GeometryRollingBallRailsAdjusted,
@@ -261,6 +264,7 @@ impl CatiaLossCode {
             Self::GeometrySurfaceExtrapolationNotTransferred => {
                 "geometry.surface-extrapolation-not-transferred"
             }
+            Self::GeometryPlanePcurveProjected => "geometry.plane-pcurve-projected",
             Self::GeometrySheetSurfaceFitted => "geometry.sheet-surface-fitted",
             Self::GeometryRollingBallRailsAdjusted => "geometry.rolling-ball-rails-adjusted",
             Self::GeometryUnresolvedCarriers => "geometry.unresolved-carriers",
@@ -354,6 +358,7 @@ impl CatiaLossCode {
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryRollingSheetExtended
             | Self::GeometryParameterMapAccuracyInferred
+            | Self::GeometryPlanePcurveProjected
             | Self::GeometryConicBranchBoundsInferred
             | Self::GeometrySheetSurfaceFitted
             | Self::GeometryRollingBallRailsAdjusted => LossTaxonomy::GeometryAgreementSampled,
@@ -452,6 +457,7 @@ mod tests {
                 "geometry.parameter-map-accuracy-inferred",
                 "geometry.surface-parameters-not-transferred",
                 "geometry.surface-extrapolation-not-transferred",
+                "geometry.plane-pcurve-projected",
                 "geometry.conic-branch-bounds-inferred",
                 "geometry.sheet-surface-fitted",
                 "geometry.rolling-ball-rails-adjusted",

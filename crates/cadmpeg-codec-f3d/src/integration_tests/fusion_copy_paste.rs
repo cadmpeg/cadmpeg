@@ -98,13 +98,15 @@ fn bound_body(
 
 /// Each pasted copy has the volume of the source that the paste pairs it
 /// with, and no two sources have one volume, so no other pairing holds.
-fn assert_each_copy_has_its_source_volume(bytes: &[u8], pasted: usize) {
-    let result = decoded(bytes);
-    let native = crate::test_support::native_test::f3d_native(result.ir());
-    let scope = paste_scope(&native);
+fn assert_each_copy_has_its_source_volume(
+    ir: &cadmpeg_ir::document::CadIr,
+    native: &crate::native::F3dNative,
+    pasted: usize,
+) {
+    let scope = paste_scope(native);
     let construction = scope.base_feature_construction().expect("a paste");
-    let body = |suffix: u64| bound_body(&native, scope, suffix);
-    let volumes = volumes(result.ir());
+    let body = |suffix: u64| bound_body(native, scope, suffix);
+    let volumes = volumes(ir);
     let volume = |suffix: u64| volumes[&body(suffix)];
     let copies = construction.body_entity_suffixes().collect::<Vec<_>>();
     let sources = construction.copy_source_suffixes().collect::<Vec<_>>();
@@ -122,84 +124,86 @@ fn assert_each_copy_has_its_source_volume(bytes: &[u8], pasted: usize) {
     }
 }
 
-#[test]
-fn each_pasted_copy_names_the_source_it_was_copied_from() {
-    // The three-body and two-component scopes store their GUID pairs in the
-    // reverse of body order.
-    assert_each_copy_has_its_source_volume(
-        include_bytes!("../../../../corpus/f3d/copy_paste_three_bodies.f3d"),
-        3,
+/// The paste's one feature inserts the bodies of its copies, and none of
+/// its sources.
+fn assert_paste_inserts_its_copies(
+    ir: &cadmpeg_ir::document::CadIr,
+    native: &crate::native::F3dNative,
+    copies: usize,
+) {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, InsertedBodies};
+    let scope = paste_scope(native);
+    let mut features = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()));
+    let feature = features.next().expect("the paste's feature");
+    assert!(features.next().is_none());
+    assert!(
+        matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::InsertBodies {
+                bodies: InsertedBodies::Resolved { .. },
+            })
+        ),
+        "{:?}",
+        feature.evaluation.definition()
     );
-    assert_each_copy_has_its_source_volume(
-        include_bytes!("../../../../corpus/f3d/copy_paste_two_components.f3d"),
-        2,
-    );
-    assert_each_copy_has_its_source_volume(
-        include_bytes!("../../../../corpus/f3d/copy_paste_two_bodies.f3d"),
-        2,
-    );
+    let construction = scope.base_feature_construction().expect("a paste");
+    let expected = construction
+        .body_entity_suffixes()
+        .map(|suffix| bound_body(native, scope, suffix))
+        .collect::<Vec<_>>();
+    let sources = construction
+        .copy_source_suffixes()
+        .map(|suffix| bound_body(native, scope, suffix))
+        .collect::<Vec<_>>();
+    let outputs = feature
+        .evaluation
+        .outputs()
+        .iter()
+        .map(|body| body.as_str().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(outputs.len(), copies);
+    assert_eq!(outputs, expected);
+    assert!(outputs.iter().all(|output| !sources.contains(output)));
+    assert_eq!(feature.name.as_deref(), Some("CopyPasteBodies 1"));
 }
 
+/// Each corpus file decodes once for both checks.
 #[test]
-fn a_paste_into_another_component_inserts_its_copies() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, InsertedBodies};
-    for (bytes, copies) in [
+fn a_paste_inserts_its_copies_and_each_copy_names_its_source() {
+    // The three-body and two-component scopes store their GUID pairs in the
+    // reverse of body order. The one-body paste has no second source to
+    // tell apart by volume.
+    for (bytes, copies, volumes_pair_sources) in [
         (
             &include_bytes!("../../../../corpus/f3d/copy_paste_one_body.f3d")[..],
             1,
+            false,
         ),
         (
             &include_bytes!("../../../../corpus/f3d/copy_paste_two_components.f3d")[..],
             2,
+            true,
         ),
         (
             &include_bytes!("../../../../corpus/f3d/copy_paste_two_bodies.f3d")[..],
             2,
+            true,
         ),
         (
             &include_bytes!("../../../../corpus/f3d/copy_paste_three_bodies.f3d")[..],
             3,
+            true,
         ),
     ] {
         let result = decoded(bytes);
         let native = crate::test_support::native_test::f3d_native(result.ir());
-        let scope = paste_scope(&native);
-        let mut features = result
-            .ir()
-            .model
-            .features
-            .iter()
-            .filter(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()));
-        let feature = features.next().expect("the paste's feature");
-        assert!(features.next().is_none());
-        assert!(
-            matches!(
-                feature.evaluation.definition(),
-                FeatureDefinition::Operation(FeatureOperation::InsertBodies {
-                    bodies: InsertedBodies::Resolved { .. },
-                })
-            ),
-            "{:?}",
-            feature.evaluation.definition()
-        );
-        let construction = scope.base_feature_construction().expect("a paste");
-        let expected = construction
-            .body_entity_suffixes()
-            .map(|suffix| bound_body(&native, scope, suffix))
-            .collect::<Vec<_>>();
-        let sources = construction
-            .copy_source_suffixes()
-            .map(|suffix| bound_body(&native, scope, suffix))
-            .collect::<Vec<_>>();
-        let outputs = feature
-            .evaluation
-            .outputs()
-            .iter()
-            .map(|body| body.as_str().to_owned())
-            .collect::<Vec<_>>();
-        assert_eq!(outputs.len(), copies);
-        assert_eq!(outputs, expected);
-        assert!(outputs.iter().all(|output| !sources.contains(output)));
-        assert_eq!(feature.name.as_deref(), Some("CopyPasteBodies 1"));
+        assert_paste_inserts_its_copies(result.ir(), &native, copies);
+        if volumes_pair_sources {
+            assert_each_copy_has_its_source_volume(result.ir(), &native, copies);
+        }
     }
 }

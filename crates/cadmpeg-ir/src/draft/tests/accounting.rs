@@ -23,7 +23,7 @@ fn adding_accounting_preserves_entities_and_commits_exactness() {
         .commit(
             &mut base,
             &mut annotations,
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
         )
         .unwrap()
         .unwrap();
@@ -52,7 +52,7 @@ fn refused_accounted_draft_leaves_all_existing_destinations_unchanged() {
             .commit(
                 &mut base,
                 &mut annotations,
-                &cadmpeg_test_support::service_decode_context()
+                &cadmpeg_core::decode::test_support::service_decode_context()
             )
             .unwrap(),
         Err(DraftError::IdentityCollision(existing.into()))

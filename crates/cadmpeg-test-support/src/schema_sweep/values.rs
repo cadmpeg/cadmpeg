@@ -105,9 +105,7 @@ pub(super) fn probe_orders(
         match read(&swapped.to_string()) {
             Err(_) => report.sets += 1,
             Ok(written) => match (value_at(&swapped, &path), value_at(&written, &path)) {
-                (Some(stated), Some(written))
-                    if first_difference(stated, written, String::new()).is_none() =>
-                {
+                (Some(stated), Some(written)) if first_difference(stated, written).is_none() => {
                     report.ordered += 1;
                 }
                 _ => {

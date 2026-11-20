@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Pcurve ends mapped through their face support before orientation.
 
+use super::super::records::TopologyIndex;
 use super::super::{pcurve_orientation_context, UseDirection};
 use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
@@ -37,8 +38,9 @@ fn a_pcurve_end_whose_support_point_overflows_is_refused_as_non_finite() {
         ),
         native_ref: None,
     });
+    let index = TopologyIndex::new(&ir);
     let context = pcurve_orientation_context(
-        &ir,
+        &index,
         &surface,
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(1.0, 0.0, 0.0),
@@ -77,8 +79,9 @@ fn line_pcurve_end_error(surface: &SurfaceGeometry, line: LinePcurve) -> String 
         ),
         native_ref: None,
     });
+    let index = TopologyIndex::new(&ir);
     let context = pcurve_orientation_context(
-        &ir,
+        &index,
         surface,
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(1.0, 0.0, 0.0),
@@ -224,8 +227,9 @@ fn a_pcurve_on_an_extrusion_whose_directrix_acceleration_overflows_maps_to_finit
         construction,
         cache: None,
     };
+    let index = TopologyIndex::new(&ir);
     let context = pcurve_orientation_context(
-        &ir,
+        &index,
         &surface,
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(0.0, 0.0, 2.0),

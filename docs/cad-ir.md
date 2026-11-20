@@ -307,7 +307,7 @@ A declared measure names a quantity and its target bodies or product definition.
 
 ## Point clouds
 
-A point cloud holds measured or sampled points in the frame of its optional product definition. `positions` holds at least one point, in document length units. `normals` and `colors` are empty or hold one value for each point. Each channel has a name that is unique in its point cloud and one finite value for each point, in point order; channels hold per-point scalars such as intensity, confidence, or a classification code. `sensor` is the pose of the capturing sensor in the frame of the points.
+A point cloud holds measured or sampled points. `definition` names the product definition that holds it, in whose frame the points lie; that definition exists and its storage is not `external`. `positions` holds at least one point, in document length units. `normals` and `colors` are empty or hold one value for each point. Each channel has a name that is unique in its point cloud and one finite value for each point, in point order; channels hold per-point scalars such as intensity, confidence, or a classification code. `sensor` is the pose of the capturing sensor in the frame of the points.
 
 ## History bodies
 
@@ -385,7 +385,11 @@ supports only one normal domain.
 
 `triangle_groups` is empty or is an ordered partition of all triangle ordinals.
 Each group is nonempty, its ordinals are strictly increasing, and a nonempty
-`source_id` is unique within the tessellation. `texture_assignments` associates
+`source_id` is unique within the tessellation. A group's optional `face` names
+the B-rep face whose triangles the group holds. The face is a face of the
+tessellation's `body`, which is then present, and a member of `faces` when
+`faces` is not empty. Each face names at most one group of a tessellation.
+`texture_assignments` associates
 one source texture resource and asset with each nonempty, strictly increasing
 triangle subset. Nonempty texture-resource identities are unique. Anonymous
 assignments use an asset at most once. Distinct source resources can use the

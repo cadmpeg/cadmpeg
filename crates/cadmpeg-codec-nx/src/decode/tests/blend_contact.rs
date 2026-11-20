@@ -182,7 +182,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
     .unwrap();
 
     let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point.get(),
         None,
@@ -195,7 +195,7 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
     assert!((actual.v - expected.v).abs() < 1.0e-10);
 
     let after_invalid_seed = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point.get(),
         Some(Point2::new(f64::NAN, 0.5)),
@@ -659,7 +659,7 @@ fn nurbs_parameter_solver_rejects_a_remote_local_minimum_seed() {
     .unwrap();
 
     let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point.get(),
         Some(Point2::new(0.875, 0.3)),
@@ -698,7 +698,7 @@ fn nurbs_parameter_solver_preserves_close_equal_branches() {
     .unwrap();
 
     let actual = cadmpeg_ir::eval::nurbs_surface_closest_parameter_with_budget(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point.get(),
         Some(Point2::new(0.50011, 0.3)),
