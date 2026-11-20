@@ -632,3 +632,67 @@ fn a_closed_edge_beside_its_point_keeps_its_carrier() {
         "requires a parameter range",
     );
 }
+
+#[test]
+fn a_vertex_raised_by_one_edge_prevents_false_record_invalid_on_a_sibling_edge() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture");
+    // Edge 0 (E1): runs from V (vertex 1) to X (vertex 2), line on y = 0.2.
+    // Edge 1 (E2): runs from W (vertex 0, tol 0.6) to V (vertex 1), line on y = 0.
+    // V lies at (5, 0.5, 0) and X at (15, 0.5, 0): E2 raises V to 0.5 mm, which
+    // puts both ends of E1 within E1's 0.5 mm allowance (0.3 mm off y = 0.2).
+    let v_id = ir.geometry.vertices[1].id.clone();
+    let w_id = ir.geometry.vertices[0].id.clone();
+    let x_id = ir.geometry.vertices[2].id.clone();
+    ir.geometry.vertices[0].tolerance = Some(PositiveReal::new(0.6).expect("positive"));
+    ir.geometry.vertices[1].tolerance = None;
+    ir.geometry.vertices[2].tolerance = None;
+    for (index, coords) in [
+        (0, Point3::new(0.0, 0.0, 0.0)),
+        (1, Point3::new(5.0, 0.5, 0.0)),
+        (2, Point3::new(15.0, 0.5, 0.0)),
+    ] {
+        let point = &mut ir.geometry.points[index];
+        *point = Point::new(point.id.clone(), FinitePoint3::new(coords).unwrap(), None);
+    }
+    let e1_curve = ir.geometry.edges[0].curve().cloned().expect("e1 curve");
+    let e2_curve = ir.geometry.edges[1].curve().cloned().expect("e2 curve");
+    ir.geometry
+        .curves
+        .iter_mut()
+        .find(|row| row.id == e1_curve)
+        .expect("e1 curve row")
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::new(
+        FinitePoint3::new(Point3::new(0.0, 0.2, 0.0)).unwrap(),
+        cadmpeg_ir::units::UnitVector3::try_from(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+    )));
+    ir.geometry
+        .curves
+        .iter_mut()
+        .find(|row| row.id == e2_curve)
+        .expect("e2 curve row")
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(LineCurve::new(
+        FinitePoint3::new(Point3::new(0.0, 0.0, 0.0)).unwrap(),
+        cadmpeg_ir::units::UnitVector3::try_from(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+    )));
+    ir.geometry.edges[0].ends = Some(EdgeEnds::new(v_id.clone(), x_id));
+    ir.geometry.edges[0].carrier = EdgeCarrier::new(Some(e1_curve), None).unwrap();
+    ir.geometry.edges[0].tolerance = None;
+    ir.geometry.edges[1].ends = Some(EdgeEnds::new(w_id, v_id));
+    ir.geometry.edges[1].carrier = EdgeCarrier::new(Some(e2_curve), None).unwrap();
+    ir.geometry.edges[1].tolerance = None;
+    let e1_id = ir.geometry.edges[0].id.to_string();
+    let e2_id = ir.geometry.edges[1].id.to_string();
+
+    let (report, decoded) = write(&ir);
+    assert!(
+        !record_invalid_names(&report, &e1_id),
+        "E1 should not charge record.invalid once E2 raises V: {:#?}",
+        report.losses
+    );
+    assert!(
+        !record_invalid_names(&report, &e2_id),
+        "E2 should not charge record.invalid: {:#?}",
+        report.losses
+    );
+    assert_eq!(edge_errors(&decoded), Vec::<String>::new());
+}

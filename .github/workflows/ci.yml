@@ -288,7 +288,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.90.3
+        uses: taiki-e/install-action@v2.90.5
         with:
           tool: cargo-nextest
 
@@ -366,19 +366,15 @@ jobs:
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Compile cadmpeg-ir without optimization
-        # The steps below compile cadmpeg-ir with three feature sets and run
-        # few of its tests. A Cargo config profile overrides the manifest's.
-        shell: bash
-        run: printf '[profile.dev.package.cadmpeg-ir]\nopt-level = 0\n' >> "${CARGO_HOME:-$HOME/.cargo}/config.toml"
-
       - name: Schema feature
         if: needs.changes.outputs.schema == 'true'
-        # The CLI enables IR schemas. This gate also checks schema assertions
-        # and the core/assembly feature combinations without CLI defaults.
+        # No other build compiles the JsonSchema derives. This gate runs the
+        # schema tests, which compare the committed crates/cadmpeg-ir/schema
+        # files with the derives, and checks the core/assembly feature
+        # combinations.
         run: |
           set -euo pipefail
-          cargo test -q -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
+          cargo test -q -p cadmpeg-core -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
           cargo check -q -p cadmpeg-core -p cadmpeg-asm --all-targets \
             --features cadmpeg-core/schema,cadmpeg-asm/schema
 
@@ -534,7 +530,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.90.3
+        uses: taiki-e/install-action@v2.90.5
         with:
           tool: cargo-nextest
 
@@ -558,7 +554,7 @@ jobs:
       - name: Install cargo-audit
         # Prebuilt binary; rustsec/audit-check compiled cargo-audit from
         # source on every run and dominated the pipeline's wall-clock.
-        uses: taiki-e/install-action@v2.90.3
+        uses: taiki-e/install-action@v2.90.5
         with:
           tool: cargo-audit
 
