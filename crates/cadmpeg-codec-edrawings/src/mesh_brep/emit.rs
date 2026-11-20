@@ -13,8 +13,8 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Color, Edge, EdgeCarrier, Face, FaceLoops, Loop, LoopBoundary,
-    LoopRing, Point, Region, Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Color, Edge, EdgeCarrier, EdgeEnds, Face, FaceLoops, Loop,
+    LoopBoundary, LoopRing, Point, Region, Sense, Shell, Vertex,
 };
 
 use super::geom::{norm, sub, Slot, NONE, V3};
@@ -110,6 +110,7 @@ pub(super) fn emit(
             id: mesh_id!(VertexId, "vertex", key(index)),
             point: mesh_id!(PointId, "point", key(index)),
             tolerance: None,
+            native_ref: None,
         });
     }
 
@@ -131,6 +132,7 @@ pub(super) fn emit(
             id: mesh_id!(CurveId, "curve", key(edge_count)),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
             source_object: None,
+            native_ref: None,
         });
         out.edges.push(Edge {
             id: mesh_id!(EdgeId, "edge", key(edge_count)),
@@ -139,9 +141,12 @@ pub(super) fn emit(
                 Some([0.0, length]),
             )
             .map_err(model_error)?,
-            start: mesh_id!(VertexId, "vertex", key(run.start)),
-            end: mesh_id!(VertexId, "vertex", key(run.end)),
+            ends: Some(EdgeEnds::new(
+                mesh_id!(VertexId, "vertex", key(run.start)),
+                mesh_id!(VertexId, "vertex", key(run.end)),
+            )),
             tolerance: None,
+            native_ref: None,
         });
         *edge_of_run.slot_mut(index)? = edge_count;
         *edge_of_run.slot_mut(run.partner)? = edge_count;
@@ -179,6 +184,7 @@ pub(super) fn emit(
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)),
             source_object: None,
+            native_ref: None,
         });
         let face_id = mesh_id!(FaceId, "face", key(face_index));
         let mut loop_ids = Vec::with_capacity(region_rings.len());
@@ -202,6 +208,7 @@ pub(super) fn emit(
                     },
                     pcurves: Vec::new(),
                     use_curve: None,
+                    native_ref: None,
                 });
                 coedge_ids.push(coedge_id);
             }
@@ -211,6 +218,7 @@ pub(super) fn emit(
                 boundary: LoopBoundary::Ring(
                     LoopRing::new(coedge_ids, Vec::new()).map_err(model_error)?,
                 ),
+                native_ref: None,
             });
             loop_ids.push(loop_id);
         }
@@ -236,6 +244,7 @@ pub(super) fn emit(
             name: None,
             color: naming.color,
             tolerance: None,
+            native_ref: None,
         });
         face_component.push(
             *shells
@@ -283,35 +292,24 @@ pub(super) fn emit(
         }
     }
     let body_id = mesh_id!(BodyId, "body", scope.clone());
-    let mut region_ids = Vec::with_capacity(region_shells.len());
-    for (shell_index, faces) in shell_faces.iter().enumerate() {
+    for shell_index in 0..shell_faces.len() {
         let region_id = mesh_id!(RegionId, "region", key(*region_of_shell.slot(shell_index)?));
-        let mut face_ids = Vec::with_capacity(faces.len());
-        for &face_index in faces {
-            face_ids.push(out.faces.slot(face_index)?.id.clone());
-        }
-        out.shells.push(
-            Shell::new(
-                mesh_id!(ShellId, "shell", key(shell_index)),
-                region_id,
-                face_ids,
-                Vec::new(),
-                Vec::new(),
-            )
-            .map_err(model_error)?,
-        );
+        out.shells.push(Shell::new(
+            mesh_id!(ShellId, "shell", key(shell_index)),
+            region_id,
+        ));
     }
     for (region_index, members) in region_shells.iter().enumerate() {
         let region_id = mesh_id!(RegionId, "region", key(region_index));
         out.regions.push(Region {
-            id: region_id.clone(),
+            id: region_id,
             body: body_id.clone(),
             shells: members
                 .iter()
                 .map(|&shell| mesh_id!(ShellId, "shell", key(shell)))
                 .collect(),
+            native_ref: None,
         });
-        region_ids.push(region_id);
     }
     out.bodies.push(Body {
         id: body_id,
@@ -320,11 +318,11 @@ pub(super) fn emit(
         } else {
             BodyKind::Sheet
         },
-        regions: region_ids,
         transform: None,
         name: naming.name.map(str::to_owned),
         color: naming.color,
         visible: None,
+        native_ref: None,
     });
     Ok(out)
 }

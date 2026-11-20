@@ -84,7 +84,7 @@ fn cube() -> (Positions, Triangles) {
 }
 
 fn body_kind(ir: &CadIr) -> BodyKind {
-    ir.model.bodies.first().unwrap().kind
+    ir.geometry.bodies.first().unwrap().kind
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn unit_cube_has_six_faces() {
     assert_eq!((summary.open_edges, summary.non_manifold_edges), (0, 0));
     assert!((summary.signed_volume_mm3 - 1000.0).abs() < 1e-6);
     assert_eq!(body_kind(&ir), BodyKind::Solid);
-    assert_eq!(ir.model.coedges.len(), 24);
+    assert_eq!(ir.geometry.coedges.len(), 24);
     assert_valid(&ir);
 }
 
@@ -234,10 +234,15 @@ fn plate_with_through_hole_has_inner_loops() {
         (10, 24, 16)
     );
     assert!(summary.closed);
-    let with_hole = ir.model.faces.iter().filter(|f| f.loops.len() == 2).count();
+    let with_hole = ir
+        .geometry
+        .faces
+        .iter()
+        .filter(|f| f.loops.len() == 2)
+        .count();
     assert_eq!(with_hole, 2);
     assert!(ir
-        .model
+        .geometry
         .faces
         .iter()
         .filter(|f| f.loops.len() == 2)
@@ -301,7 +306,10 @@ fn two_disjoint_cubes_are_two_regions_of_one_body() {
         (12, 24, 16)
     );
     assert_eq!(summary.shells, 2);
-    assert_eq!((ir.model.bodies.len(), ir.model.regions.len()), (1, 2));
+    assert_eq!(
+        (ir.geometry.bodies.len(), ir.geometry.regions.len()),
+        (1, 2)
+    );
     assert_eq!(body_kind(&ir), BodyKind::Solid);
     assert_valid(&ir);
 }
@@ -376,7 +384,7 @@ fn hostile_inputs_are_refused_without_panic() {
             MeshBrepError::InvalidTolerance
         );
     }
-    assert!(ir.model.bodies.is_empty());
+    assert!(ir.geometry.bodies.is_empty());
 }
 
 #[test]
@@ -435,7 +443,7 @@ fn several_bodies_share_one_model() {
         add_mesh_body(&mut ir, &input, MeshBrepOptions::default()).unwrap();
     }
     ir.finalize();
-    assert_eq!(ir.model.bodies.len(), 2);
+    assert_eq!(ir.geometry.bodies.len(), 2);
     assert_valid(&ir);
 }
 
@@ -781,7 +789,7 @@ fn add_cube(
 }
 
 fn shells_of_regions(ir: &CadIr) -> Vec<usize> {
-    ir.model.regions.iter().map(|r| r.shells.len()).collect()
+    ir.geometry.regions.iter().map(|r| r.shells.len()).collect()
 }
 
 #[test]
@@ -863,7 +871,7 @@ fn closed_component_without_volume_is_dropped() {
     triangles.extend([[base, base + 1, base + 2], [base, base + 2, base + 1]]);
     let (ir, summary) = convert(&positions, &triangles).unwrap();
     assert_eq!(summary.dropped_component_triangles, 2);
-    assert_eq!((summary.faces, ir.model.regions.len()), (6, 1));
+    assert_eq!((summary.faces, ir.geometry.regions.len()), (6, 1));
     assert!(summary.closed);
     assert_valid(&ir);
 }
@@ -937,14 +945,14 @@ fn sliver_face_reduced_to_two_vertices_is_removed_and_neighbours_join() {
     assert_eq!(summary.collapsed_faces, 1);
     assert_eq!((summary.faces, summary.edges, summary.vertices), (6, 12, 8));
     assert!(ir
-        .model
+        .geometry
         .loops
         .iter()
         .all(|l| matches!(&l.boundary, cadmpeg_ir::topology::LoopBoundary::Ring(r) if r.coedges().len() >= 3)));
     // Every edge has exactly two coedges that name each other.
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         let other = ir
-            .model
+            .geometry
             .coedges
             .iter()
             .find(|c| c.id == coedge.radial_next)

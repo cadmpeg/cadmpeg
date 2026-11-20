@@ -353,7 +353,7 @@ fn check_input(input: &MeshInput<'_>, options: MeshBrepOptions) -> Result<(), Me
     Ok(())
 }
 
-/// Convert `input` into one body and append its entities to `ir.model`.
+/// Convert `input` into one body and append its entities to `ir.geometry`.
 ///
 /// A body that is not watertight at the requested weld tolerance is built a
 /// second time at [`FINE_WELD_TOLERANCE_MM`]: a feature as thin as the weld
@@ -382,18 +382,18 @@ pub(crate) fn add_mesh_body(
             }
         }
     }
-    let model = &mut ir.model;
-    model.points.extend(entities.points);
-    model.vertices.extend(entities.vertices);
-    model.curves.extend(entities.curves);
-    model.edges.extend(entities.edges);
-    model.surfaces.extend(entities.surfaces);
-    model.coedges.extend(entities.coedges);
-    model.loops.extend(entities.loops);
-    model.faces.extend(entities.faces);
-    model.shells.extend(entities.shells);
-    model.regions.extend(entities.regions);
-    model.bodies.extend(entities.bodies);
+    let geometry = &mut ir.geometry;
+    geometry.points.extend(entities.points);
+    geometry.vertices.extend(entities.vertices);
+    geometry.curves.extend(entities.curves);
+    geometry.edges.extend(entities.edges);
+    geometry.surfaces.extend(entities.surfaces);
+    geometry.coedges.extend(entities.coedges);
+    geometry.loops.extend(entities.loops);
+    geometry.faces.extend(entities.faces);
+    geometry.shells.extend(entities.shells);
+    geometry.regions.extend(entities.regions);
+    geometry.bodies.extend(entities.bodies);
     Ok(summary)
 }
 

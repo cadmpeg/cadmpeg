@@ -19,10 +19,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::products::{
-    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+    ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
 };
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::transform::Transform;
 
@@ -340,7 +339,7 @@ pub(super) fn emit(
     let mut shell_failures: Vec<String> = Vec::new();
     let mut shell_failure_count = 0_usize;
     let mut failed_bodies: Vec<String> = Vec::new();
-    let mut admitted = u64_from_index(ir.model.entity_count());
+    let mut admitted = u64_from_index(ir.entity_count());
     let options = MeshBrepOptions::default();
     let lone_set = matches!(sets.sets.as_slice(), [set] if set.len() == 1);
     let world = single_node
@@ -417,7 +416,7 @@ pub(super) fn emit(
             }
         }
         ctx.admit_entities(
-            u64_from_index(ir.model.entity_count()),
+            u64_from_index(ir.entity_count()),
             &mut admitted,
             ADMIT_ENTITIES,
         )?;
@@ -529,18 +528,18 @@ pub(super) fn emit(
             (false, None) => (None, label),
         };
         let index = ir.model.product_definitions.len();
-        ir.model.product_definitions.push(ProductDefinition {
-            id: crate::ids::definition(index),
-            kind: ProductDefinitionKind::Part,
-            source_name,
-            label,
-            description: None,
-            part_number: None,
-            bom_properties: BTreeMap::new(),
-            bodies,
-            sketches: Vec::new(),
-            native_ref: only.map(|library| library.path.clone()),
-        });
+        let id = crate::ids::definition(index);
+        let mut definition = if single {
+            ProductDefinition::root(id, ExternalDocument::default())
+        } else {
+            ProductDefinition::new(id, Storage::Embedded)
+        };
+        definition.kind = Some(ProductDefinitionKind::Part);
+        definition.source_name = source_name;
+        definition.label = label;
+        definition.bodies = bodies;
+        definition.native_ref = only.map(|library| library.path.clone());
+        ir.model.product_definitions.push(definition);
         part_definition.insert(set_index, index);
     }
     if single {
@@ -556,15 +555,14 @@ pub(super) fn emit(
         .filter(|text| !text.is_empty());
     ir.model.product_definitions.push(ProductDefinition {
         id: crate::ids::definition(root_definition),
-        kind: ProductDefinitionKind::Group,
+        kind: Some(ProductDefinitionKind::Group),
         source_name: document,
         label: None,
-        description: None,
-        part_number: None,
-        bom_properties: BTreeMap::new(),
         bodies: Vec::new(),
-        sketches: Vec::new(),
-        native_ref: None,
+        ..ProductDefinition::root(
+            crate::ids::definition(root_definition),
+            ExternalDocument::default(),
+        )
     });
     let mut assembly_definition: BTreeMap<usize, usize> = BTreeMap::new();
     for (index, node) in scene.nodes.iter().enumerate() {
@@ -574,37 +572,16 @@ pub(super) fn emit(
         let definition = ir.model.product_definitions.len();
         ir.model.product_definitions.push(ProductDefinition {
             id: crate::ids::definition(definition),
-            kind: ProductDefinitionKind::Group,
+            kind: Some(ProductDefinitionKind::Group),
             source_name: Some(display_name(scene, index)),
             label: None,
-            description: None,
-            part_number: None,
-            bom_properties: BTreeMap::new(),
             bodies: Vec::new(),
-            sketches: Vec::new(),
             native_ref: Some(node.segment.clone()),
+            ..ProductDefinition::new(crate::ids::definition(definition), Storage::Embedded)
         });
         assembly_definition.insert(index, definition);
     }
 
-    // Occurrences, parents before children.
-    let mut occurrence_of: BTreeMap<usize, usize> = BTreeMap::new();
-    let mut ordinals: BTreeMap<Option<usize>, u32> = BTreeMap::new();
-    ir.model.occurrences.push(Occurrence {
-        id: crate::ids::occurrence(0),
-        prototype: PrototypeReference::Local {
-            definition: crate::ids::definition(root_definition),
-        },
-        parent: OccurrenceParent::Root {},
-        ordinal: 0,
-        transform: Transform::identity(),
-        linked_prototype: None,
-        scale: [FiniteReal::ONE; 3],
-        name: None,
-        visible: None,
-        link: None,
-        native_ref: None,
-    });
     let mut invalid_placements = Vec::new();
     for (index, node) in scene.nodes.iter().enumerate() {
         let definition = if node.is_instance {
@@ -617,35 +594,27 @@ pub(super) fn emit(
         let Some(&definition) = definition else {
             continue;
         };
-        let parent_occurrence = node
+        let owner = node
             .parent
-            .and_then(|parent| occurrence_of.get(&parent).copied())
-            .unwrap_or(0);
-        let ordinal = ordinals.entry(Some(parent_occurrence)).or_insert(0);
+            .and_then(|parent| assembly_definition.get(&parent).copied())
+            .unwrap_or(root_definition);
         let transform = placement(node.matrix.as_ref()).unwrap_or_else(|| {
             invalid_placements.push(display_name(scene, index));
             Transform::identity()
         });
         let number = ir.model.occurrences.len();
-        ir.model.occurrences.push(Occurrence {
-            id: crate::ids::occurrence(number),
-            prototype: PrototypeReference::Local {
-                definition: crate::ids::definition(definition),
-            },
-            parent: OccurrenceParent::Occurrence {
-                occurrence: crate::ids::occurrence(parent_occurrence),
-            },
-            ordinal: *ordinal,
-            transform,
-            linked_prototype: None,
-            scale: [FiniteReal::ONE; 3],
-            name: Some(display_name(scene, index)),
-            visible: visibility(scene, index),
-            link: None,
-            native_ref: Some(node.segment.clone()),
-        });
-        *ordinal += 1;
-        occurrence_of.insert(index, number);
+        let mut occurrence = Occurrence::new(
+            crate::ids::occurrence(number),
+            crate::ids::definition(definition),
+            Some(transform),
+        );
+        occurrence.name = Some(display_name(scene, index));
+        occurrence.visible = visibility(scene, index);
+        occurrence.native_ref = Some(node.segment.clone());
+        ir.model.product_definitions[owner]
+            .occurrences
+            .push(occurrence.id.clone());
+        ir.model.occurrences.push(occurrence);
     }
     if !invalid_placements.is_empty() {
         losses.push(EdrawingsLossCode::StructurePlacementInvalid.note(format!(
@@ -658,10 +627,6 @@ pub(super) fn emit(
 }
 
 fn finish(ctx: &DecodeContext<'_>, ir: &mut CadIr, admitted: &mut u64) -> Result<bool, CodecError> {
-    ctx.admit_entities(
-        u64_from_index(ir.model.entity_count()),
-        admitted,
-        ADMIT_ENTITIES,
-    )?;
+    ctx.admit_entities(u64_from_index(ir.entity_count()), admitted, ADMIT_ENTITIES)?;
     Ok(true)
 }

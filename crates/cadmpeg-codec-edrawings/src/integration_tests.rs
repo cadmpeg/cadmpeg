@@ -136,7 +136,7 @@ fn decode_classifies_the_package_and_reports_a_broken_stream_as_blocking() {
     let note = result.report().losses.first().unwrap();
     assert_eq!(note.severity, cadmpeg_ir::report::Severity::Blocking);
     assert!(note.message.contains("at byte 5"), "{}", note.message);
-    assert!(result.ir().model.bodies.is_empty());
+    assert!(result.ir().geometry.bodies.is_empty());
 
     let report = cadmpeg_ir::validate_neutral(result.ir(), Vec::new()).unwrap();
     assert!(report.is_ok(), "{report:?}");

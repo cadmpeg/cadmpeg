@@ -6,7 +6,7 @@ use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::products::{OccurrenceParent, ProductDefinitionKind, PrototypeReference};
+use cadmpeg_ir::products::{owner, sole_placement, Occurrence, ProductDefinitionKind};
 use cadmpeg_ir::report::loss::LossKind;
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::topology::BodyKind;
@@ -26,6 +26,11 @@ use crate::test_support::{
     assembly_package, assembly_package_of, part_package, SOLIDWORKS_VERSION,
 };
 use crate::EdrawingsCodec;
+
+fn parent_placement<'a>(ir: &'a CadIr, occurrence: &Occurrence) -> Option<&'a Occurrence> {
+    let definition = owner(&ir.model.product_definitions, &occurrence.id).unwrap();
+    sole_placement(&ir.model.occurrences, &definition.id)
+}
 
 fn decode(bytes: &[u8]) -> DecodeResult {
     EdrawingsCodec
@@ -51,7 +56,7 @@ fn assert_valid(ir: &CadIr) {
 fn bounds(ir: &CadIr) -> ([f64; 3], [f64; 3]) {
     let mut low = [f64::MAX; 3];
     let mut high = [f64::MIN; 3];
-    for point in &ir.model.points {
+    for point in &ir.geometry.points {
         let Point3 { x, y, z } = point.position().get();
         for (axis, value) in [x, y, z].into_iter().enumerate() {
             low[axis] = low[axis].min(value);
@@ -93,14 +98,14 @@ fn a_cube_part_decodes_to_a_solid_with_six_faces() {
         codes(&result),
         [EdrawingsLossCode::GeometryReconstructedFromMesh.kind()]
     );
-    assert_eq!(ir.model.bodies.len(), 1);
-    let body = ir.model.bodies.first().unwrap();
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    let body = ir.geometry.bodies.first().unwrap();
     assert_eq!(body.kind, BodyKind::Solid);
     assert_eq!(body.name.as_deref(), Some("synthetic cube"));
     let colour = body.color.unwrap();
-    assert!(near(f64::from(colour.r()), 200.0 / 255.0));
-    assert_eq!(ir.model.faces.len(), 6);
-    assert_eq!(ir.model.shells.len(), 1);
+    assert!(near(colour.r(), 200.0 / 255.0));
+    assert_eq!(ir.geometry.faces.len(), 6);
+    assert_eq!(ir.geometry.shells.len(), 1);
 
     let (low, high) = bounds(ir);
     assert!(low.iter().all(|v| near(*v, 0.0)), "{low:?}");
@@ -108,7 +113,8 @@ fn a_cube_part_decodes_to_a_solid_with_six_faces() {
 
     assert_eq!(ir.model.product_definitions.len(), 1);
     let definition = ir.model.product_definitions.first().unwrap();
-    assert_eq!(definition.kind, ProductDefinitionKind::Part);
+    assert!(definition.is_root());
+    assert_eq!(definition.kind, Some(ProductDefinitionKind::Part));
     assert_eq!(definition.bodies.as_slice(), std::slice::from_ref(&body.id));
     assert_eq!(definition.source_name.as_deref(), Some("synthetic cube"));
     assert!(ir.model.occurrences.is_empty());
@@ -126,7 +132,7 @@ fn the_matrix_of_a_plain_part_moves_its_points() {
     );
     let result = decode(&part_package(&spec.stream()));
     let ir = result.ir();
-    assert_eq!(ir.model.bodies.first().unwrap().kind, BodyKind::Solid);
+    assert_eq!(ir.geometry.bodies.first().unwrap().kind, BodyKind::Solid);
     let (low, high) = bounds(ir);
     // x' = -y + 100, y' = x
     assert!(
@@ -146,7 +152,7 @@ fn a_mirroring_matrix_keeps_the_solid_outward() {
     let spec = model_of(box_shells([CUBE_EDGE; 3]), Some(mirror));
     let result = decode(&part_package(&spec.stream()));
     assert_eq!(
-        result.ir().model.bodies.first().unwrap().kind,
+        result.ir().geometry.bodies.first().unwrap().kind,
         BodyKind::Solid
     );
     assert_valid(result.ir());
@@ -161,24 +167,27 @@ fn an_assembly_decodes_to_definitions_occurrences_and_bodies() {
         codes(&result),
         [EdrawingsLossCode::GeometryReconstructedFromMesh.kind()]
     );
-    assert_eq!(ir.model.bodies.len(), 2);
-    assert!(ir.model.bodies.iter().all(|b| b.kind == BodyKind::Solid));
-    assert_eq!(ir.model.faces.len(), 12);
+    assert_eq!(ir.geometry.bodies.len(), 2);
+    assert!(ir.geometry.bodies.iter().all(|b| b.kind == BodyKind::Solid));
+    assert_eq!(ir.geometry.faces.len(), 12);
 
     let kinds: Vec<_> = ir
         .model
         .product_definitions
         .iter()
-        .map(|d| (d.kind.clone(), d.source_name.as_deref().unwrap_or("")))
+        .map(|d| (d.kind, d.source_name.as_deref().unwrap_or("")))
         .collect();
     assert_eq!(
         kinds,
         [
-            (ProductDefinitionKind::Part, "body0"),
-            (ProductDefinitionKind::Part, "body1"),
-            (ProductDefinitionKind::Group, "synthetic assembly.sldasm"),
-            (ProductDefinitionKind::Group, "Group A"),
-            (ProductDefinitionKind::Group, "Group B"),
+            (Some(ProductDefinitionKind::Part), "body0"),
+            (Some(ProductDefinitionKind::Part), "body1"),
+            (
+                Some(ProductDefinitionKind::Group),
+                "synthetic assembly.sldasm"
+            ),
+            (Some(ProductDefinitionKind::Group), "Group A"),
+            (Some(ProductDefinitionKind::Group), "Group B"),
         ]
     );
     let labels: Vec<_> = ir
@@ -195,27 +204,23 @@ fn an_assembly_decodes_to_definitions_occurrences_and_bodies() {
         .occurrences
         .iter()
         .map(|o| {
-            let parent = match &o.parent {
-                OccurrenceParent::Root {} => None,
-                OccurrenceParent::Occurrence { occurrence } => ir
-                    .model
-                    .occurrences
-                    .iter()
-                    .position(|p| &p.id == occurrence),
-            };
-            let definition = match &o.prototype {
-                PrototypeReference::Local { definition } => ir
-                    .model
-                    .product_definitions
-                    .iter()
-                    .position(|d| &d.id == definition),
-                _ => None,
-            };
+            let owner = owner(&ir.model.product_definitions, &o.id).unwrap();
+            let parent = ir
+                .model
+                .product_definitions
+                .iter()
+                .position(|d| d.id == owner.id);
+            let definition = ir
+                .model
+                .product_definitions
+                .iter()
+                .position(|d| d.id == o.prototype);
+            let ordinal = owner.occurrences.iter().position(|id| id == &o.id).unwrap();
             (
                 o.name.as_deref().unwrap_or(""),
                 parent,
                 definition,
-                o.ordinal,
+                ordinal,
                 o.visible,
             )
         })
@@ -223,12 +228,11 @@ fn an_assembly_decodes_to_definitions_occurrences_and_bodies() {
     assert_eq!(
         rows,
         [
-            ("", None, Some(2), 0, None),
-            ("Cube-1", Some(0), Some(0), 0, None),
-            ("Group A", Some(0), Some(3), 1, None),
-            ("Group B", Some(2), Some(4), 0, None),
-            ("Box-1", Some(3), Some(1), 0, None),
-            ("Cube-2", Some(2), Some(0), 1, Some(false)),
+            ("Cube-1", Some(2), Some(0), 0, None),
+            ("Group A", Some(2), Some(3), 1, None),
+            ("Group B", Some(3), Some(4), 0, None),
+            ("Box-1", Some(4), Some(1), 0, None),
+            ("Cube-2", Some(3), Some(0), 1, Some(false)),
         ]
     );
     assert_valid(ir);
@@ -248,12 +252,12 @@ fn occurrence_transforms_compose_to_the_world_placement() {
     // The sub-assemblies place themselves at the identity.
     for name in ["Group A", "Group B"] {
         assert_eq!(
-            by_name(name).transform.affine_rows(),
+            by_name(name).transform.unwrap().affine_rows(),
             Transform::identity().affine_rows()
         );
     }
     // Box-1: x' = -y + 50, y' = x + 20, z' = z + 10 (millimetres).
-    let rows = by_name("Box-1").transform.affine_rows();
+    let rows = by_name("Box-1").transform.unwrap().affine_rows();
     let expected = [
         [0.0, -1.0, 0.0, f64::from(BOX_OFFSET[0] * MM)],
         [1.0, 0.0, 0.0, f64::from(BOX_OFFSET[1] * MM)],
@@ -264,19 +268,14 @@ fn occurrence_transforms_compose_to_the_world_placement() {
             assert!(near(*got, want), "{rows:?}");
         }
     }
-    let cube2 = by_name("Cube-2").transform.affine_rows();
+    let cube2 = by_name("Cube-2").transform.unwrap().affine_rows();
     assert!(near(cube2[1][3], f64::from(CUBE_OFFSET[1] * MM)));
     // Composing the chain gives the world position of a box corner.
-    let mut world = by_name("Box-1").transform;
+    let mut world = by_name("Box-1").transform.unwrap();
     let mut parent = by_name("Box-1");
-    while let OccurrenceParent::Occurrence { occurrence } = &parent.parent {
-        parent = ir
-            .model
-            .occurrences
-            .iter()
-            .find(|o| &o.id == occurrence)
-            .unwrap();
-        world = parent.transform.compose(world).unwrap();
+    while let Some(placement) = parent_placement(ir, parent) {
+        parent = placement;
+        world = parent.transform.unwrap().compose(world).unwrap();
     }
     let corner = world
         .apply_point(Point3 {
@@ -294,7 +293,7 @@ fn a_turned_shell_instance_closes_the_box_body() {
     let result = decode(&assembly_package(&assembly().stream()));
     let ir = result.ir();
     let box_body = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .find(|b| b.name.as_deref() == Some("body1"))
@@ -323,7 +322,7 @@ fn an_open_body_becomes_a_sheet_with_a_loss() {
     let result = decode(&part_package(&model_of(one_face, None).stream()));
     assert!(result.report().geometry_transferred());
     assert_eq!(
-        result.ir().model.bodies.first().unwrap().kind,
+        result.ir().geometry.bodies.first().unwrap().kind,
         BodyKind::Sheet
     );
     assert_eq!(
@@ -343,8 +342,8 @@ fn a_micrometre_plate_stays_a_solid_and_the_finer_weld_is_charged() {
         &model_of(box_shells([0.01, 0.01, 1.0e-6]), None).stream(),
     ));
     let ir = result.ir();
-    assert_eq!(ir.model.bodies.first().unwrap().kind, BodyKind::Solid);
-    assert_eq!(ir.model.faces.len(), 6);
+    assert_eq!(ir.geometry.bodies.first().unwrap().kind, BodyKind::Solid);
+    assert_eq!(ir.geometry.faces.len(), 6);
     assert!(!codes(&result).contains(&EdrawingsLossCode::GeometryOpenBody.kind()));
     let note = result
         .report()
@@ -370,7 +369,7 @@ fn an_inside_out_body_is_reversed_and_charged() {
     }
     let result = decode(&part_package(&model_of(items, None).stream()));
     assert_eq!(
-        result.ir().model.bodies.first().unwrap().kind,
+        result.ir().geometry.bodies.first().unwrap().kind,
         BodyKind::Solid
     );
     assert!(codes(&result).contains(&EdrawingsLossCode::GeometryBodyReversed.kind()));
@@ -388,7 +387,7 @@ fn degenerate_triangles_are_dropped_and_charged() {
     let result = decode(&part_package(&model_of(items, None).stream()));
     assert!(codes(&result).contains(&EdrawingsLossCode::GeometryDegenerateTriangles.kind()));
     assert_eq!(
-        result.ir().model.bodies.first().unwrap().kind,
+        result.ir().geometry.bodies.first().unwrap().kind,
         BodyKind::Solid
     );
 }
@@ -402,7 +401,7 @@ fn bad_shells_are_left_out_and_charged() {
     });
     let result = decode(&part_package(&model_of(items, None).stream()));
     assert!(codes(&result).contains(&EdrawingsLossCode::ModelShellInvalid.kind()));
-    assert_eq!(result.ir().model.faces.len(), 6);
+    assert_eq!(result.ir().geometry.faces.len(), 6);
 }
 
 #[test]
@@ -433,7 +432,7 @@ fn broken_streams_are_blocking_losses_with_offsets() {
     assert_eq!(note.code, EdrawingsLossCode::ModelMalformed.kind());
     assert_eq!(note.severity, Severity::Blocking);
     assert!(note.message.contains("24 byte trailer"), "{}", note.message);
-    assert!(result.ir().model.bodies.is_empty());
+    assert!(result.ir().geometry.bodies.is_empty());
     assert!(!result.report().geometry_transferred());
 
     let mut cut = cube_part().stream();
@@ -504,9 +503,9 @@ fn a_solidworks_assembly_decodes_under_its_own_dialect() {
         .collect();
     assert!(messages[1].starts_with("1 face group colours in 1 bodies"));
     assert!(messages[2].starts_with("1 part colour overrides and 0 display state"));
-    assert_eq!(ir.model.bodies.len(), 3);
-    assert!(ir.model.bodies.iter().all(|b| b.kind == BodyKind::Solid));
-    assert_eq!(ir.model.faces.len(), 18);
+    assert_eq!(ir.geometry.bodies.len(), 3);
+    assert!(ir.geometry.bodies.iter().all(|b| b.kind == BodyKind::Solid));
+    assert_eq!(ir.geometry.faces.len(), 18);
     assert_valid(ir);
 }
 
@@ -515,16 +514,16 @@ fn body_colours_come_from_the_body_materials() {
     let result = decode_solidworks(&solidworks_assembly());
     let ir = result.ir();
     let colour = |name: &str| {
-        ir.model
+        ir.geometry
             .bodies
             .iter()
             .find(|b| b.name.as_deref() == Some(name))
             .and_then(|b| b.color)
             .unwrap()
     };
-    assert!(near(f64::from(colour("body0").r()), 202.0 / 255.0));
-    assert!(near(f64::from(colour("body1").b()), 1.0));
-    assert!(near(f64::from(colour("body2").g()), 1.0));
+    assert!(near(colour("body0").r(), 202.0 / 255.0));
+    assert!(near(colour("body1").b(), 1.0));
+    assert!(near(colour("body2").g(), 1.0));
 }
 
 #[test]
@@ -535,14 +534,14 @@ fn a_definition_holds_the_bodies_of_one_body_set_and_sets_are_shared() {
         .model
         .product_definitions
         .iter()
-        .filter(|d| d.kind == ProductDefinitionKind::Part)
+        .filter(|d| d.kind == Some(ProductDefinitionKind::Part))
         .collect();
     assert_eq!(
         parts.iter().map(|d| d.bodies.len()).collect::<Vec<_>>(),
         [1, 1, 2, 1]
     );
     let body = |name: &str| {
-        ir.model
+        ir.geometry
             .bodies
             .iter()
             .find(|b| b.name.as_deref() == Some(name))
@@ -564,28 +563,21 @@ fn a_definition_holds_the_bodies_of_one_body_set_and_sets_are_shared() {
     assert_ne!(prototype("Cube-1"), prototype("Cube-3"));
     // Four parts, the root, and three sub-assemblies.
     assert_eq!(ir.model.product_definitions.len(), 8);
-    assert_eq!(ir.model.occurrences.len(), 10);
+    assert_eq!(ir.model.occurrences.len(), 9);
 }
 
 #[test]
 fn nested_sub_assemblies_keep_their_names_and_the_identity_placement() {
     let result = decode_solidworks(&solidworks_assembly());
     let ir = result.ir();
-    let parent_name = |name: &str| match &occurrence_named(ir, name).parent {
-        OccurrenceParent::Occurrence { occurrence } => ir
-            .model
-            .occurrences
-            .iter()
-            .find(|o| &o.id == occurrence)
-            .and_then(|o| o.name.clone()),
-        OccurrenceParent::Root {} => None,
-    };
+    let parent_name =
+        |name: &str| parent_placement(ir, occurrence_named(ir, name)).and_then(|o| o.name.clone());
     assert_eq!(parent_name("Group B").as_deref(), Some("Group A"));
     assert_eq!(parent_name("Box-1").as_deref(), Some("Group B"));
     assert_eq!(parent_name("Group A"), None);
     for name in ["Group A", "Group B", "Group C"] {
         assert_eq!(
-            occurrence_named(ir, name).transform.affine_rows(),
+            occurrence_named(ir, name).transform.unwrap().affine_rows(),
             Transform::identity().affine_rows()
         );
     }
@@ -595,7 +587,7 @@ fn nested_sub_assemblies_keep_their_names_and_the_identity_placement() {
         .iter()
         .find(|d| d.source_name.as_deref() == Some("Group B"))
         .unwrap();
-    assert_eq!(group.kind, ProductDefinitionKind::Group);
+    assert_eq!(group.kind, Some(ProductDefinitionKind::Group));
     assert_eq!(group.native_ref.as_deref(), Some("subassem3"));
 }
 
@@ -605,21 +597,15 @@ fn a_leaf_two_sub_assemblies_deep_lands_exactly_at_its_matrix() {
     let ir = result.ir();
     let leaf = occurrence_named(ir, "Box-1");
     assert_eq!(leaf.native_ref.as_deref(), Some(SW_DEEP_SEGMENT));
-    let mut world = leaf.transform;
+    let mut world = leaf.transform.unwrap();
     let mut current = leaf;
     let mut depth = 0;
-    while let OccurrenceParent::Occurrence { occurrence } = &current.parent {
-        current = ir
-            .model
-            .occurrences
-            .iter()
-            .find(|o| &o.id == occurrence)
-            .unwrap();
-        world = current.transform.compose(world).unwrap();
+    while let Some(placement) = parent_placement(ir, current) {
+        current = placement;
+        world = current.transform.unwrap().compose(world).unwrap();
         depth += 1;
     }
-    // Group B, Group A, and the root.
-    assert_eq!(depth, 3);
+    assert_eq!(depth, 2);
     // p' = p * R + t with R = [[0,1,0],[-1,0,0],[0,0,1]] in the stream layout.
     let expected = [
         [0.0, -1.0, 0.0, f64::from(SW_BOX_OFFSET[0] * MM)],
@@ -647,7 +633,7 @@ fn a_shell_instance_may_name_a_source_in_another_body() {
     let result = decode_solidworks(&solidworks_assembly());
     let ir = result.ir();
     let body = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .find(|b| b.name.as_deref() == Some("body1"))
@@ -672,7 +658,7 @@ fn a_cross_body_source_that_is_missing_is_charged() {
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .bodies
             .iter()
             .find(|b| b.name.as_deref() == Some("body1"))
@@ -784,7 +770,7 @@ fn a_non_finite_assembly_placement_becomes_the_identity_and_is_charged() {
         .find(|o| o.name.as_deref() == Some("Cube-1"))
         .unwrap();
     assert_eq!(
-        cube.transform.affine_rows(),
+        cube.transform.unwrap().affine_rows(),
         Transform::identity().affine_rows()
     );
 }
