@@ -107,6 +107,9 @@ pub enum ResolvedTarget<'a> {
 pub struct ResolvedWrite<'a> {
     target: ResolvedTarget<'a>,
     available: TargetCatalog,
+    /// The encoder writes a preserved off-catalog source only by replay, and
+    /// synthesizes it as the catalog default.
+    synthesizes_preserved_as_default: bool,
 }
 
 impl<'a> ResolvedWrite<'a> {
@@ -280,10 +283,19 @@ mod resolution_sealed {
 pub trait TargetResolution: resolution_sealed::Sealed {
     /// The native target identity, or `None` for the neutral document.
     fn export_target(&self) -> Option<&DialectId>;
+
+    /// The identity of a synthesized write: [`Self::export_target`], except
+    /// that an encoder that synthesizes a preserved off-catalog source as the
+    /// catalog default writes that row (§3.4, Refusals, `Inherit`).
+    fn synthesized_target(&self) -> Option<&DialectId>;
 }
 
 impl TargetResolution for () {
     fn export_target(&self) -> Option<&DialectId> {
+        None
+    }
+
+    fn synthesized_target(&self) -> Option<&DialectId> {
         None
     }
 }
@@ -291,6 +303,17 @@ impl TargetResolution for () {
 impl TargetResolution for ResolvedWrite<'_> {
     fn export_target(&self) -> Option<&DialectId> {
         Some(self.target_id())
+    }
+
+    fn synthesized_target(&self) -> Option<&DialectId> {
+        match (&self.target, self.available.default()) {
+            (ResolvedTarget::Preserved { .. }, Some((_, entry)))
+                if self.synthesizes_preserved_as_default =>
+            {
+                Some(&entry.id)
+            }
+            _ => self.export_target(),
+        }
     }
 }
 
@@ -353,6 +376,7 @@ impl TargetDomain for DialectFree {
 pub struct Catalog {
     rows: TargetCatalog,
     replay_rows: &'static [DialectId],
+    synthesizes_preserved_as_default: bool,
 }
 
 impl Catalog {
@@ -366,6 +390,7 @@ impl Catalog {
         Self {
             rows: TargetCatalog::new(targets, default),
             replay_rows: &[],
+            synthesizes_preserved_as_default: false,
         }
     }
 
@@ -375,6 +400,15 @@ impl Catalog {
     #[must_use]
     pub const fn with_replay_rows(mut self, rows: &'static [DialectId]) -> Self {
         self.replay_rows = rows;
+        self
+    }
+
+    /// Declares that the encoder reaches an off-catalog source dialect only by
+    /// replay, and writes the catalog default when it synthesizes that
+    /// source. The report of such a synthesized write names the default.
+    #[must_use]
+    pub const fn synthesizing_preserved_as_default(mut self) -> Self {
+        self.synthesizes_preserved_as_default = true;
         self
     }
 }
@@ -392,7 +426,9 @@ impl TargetDomain for Catalog {
         request: TargetRequest<'a>,
         _format: FormatId,
     ) -> Result<ResolvedWrite<'a>, CodecError> {
-        resolve_write_request(ir, request, self.rows, self.replay_rows)
+        let mut resolved = resolve_write_request(ir, request, self.rows, self.replay_rows)?;
+        resolved.synthesizes_preserved_as_default = self.synthesizes_preserved_as_default;
+        Ok(resolved)
     }
 }
 
@@ -481,6 +517,7 @@ fn resolve_write_request<'a>(
     Ok(ResolvedWrite {
         target,
         available: catalog,
+        synthesizes_preserved_as_default: false,
     })
 }
 #[cfg(test)]
