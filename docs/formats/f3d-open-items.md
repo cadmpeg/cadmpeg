@@ -753,27 +753,40 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 ### DR-302. Word before the body-group reference of a Reverse Normal scope
 
-**Question.** Is the u32 before the marked body-group reference of a `Reverse Normal` scope the count of the marked references that follow it?
+**Question.** What does the u32 before the marked body-group reference of a `Reverse Normal` scope encode when it is not `1`?
 
-**Known.** `f3d.md` §3.1 "A `Reverse Normal` scope reverses" gives u32 `1` at offset 21 of the compact prefix and offset 25 of the shifted prefix, followed by one marked reference to the body group. The body group carries every selected body. The decoder keeps a scope with another value as a native feature.
+**Known.** `f3d.md` §3.1 "A `Reverse Normal` scope reverses" gives u32 `1` at offset 21 of the compact prefix and offset 25 of the shifted prefix, for any number of body-group members and for the linked scopes of a Reverse Normal of several components. One marked reference to the body group follows it. The decoder keeps a scope with another value as a native feature.
 
-**Need.** A `Reverse Normal` scope with a value other than `1`, or a controlled save that selects bodies from more than one component.
-
-**Conflict.** None.
-
-**Note.** None.
-
-### DR-303. GUID field of a Reverse Normal scope
-
-**Question.** What does the LP-UTF16 GUID after the body-group reference of a `Reverse Normal` scope identify?
-
-**Known.** `f3d.md` §3.1 "A `Reverse Normal` scope reverses" gives the null GUID at offset 36 of the compact prefix and offset 40 of the shifted prefix. The `CopyPaste` prefix stores the null GUID at the occurrence-key position when it has no removal operand. The decoder keeps a scope with another GUID as a native feature.
-
-**Need.** A `Reverse Normal` scope with a GUID other than the null GUID, and the selected bodies and their component occurrence as the application shows them.
+**Need.** A `Reverse Normal` scope with a value other than `1`, and the selected bodies as the application shows them.
 
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-303. Link GUID shared by several Reverse Normal timeline items
+
+**Question.** Can one non-null link GUID occur in the linked scopes of more than one `Reverse Normal` timeline item, and how does a reader then assign the linked scopes that are not timeline items?
+
+**Known.** `f3d.md` §3.1 "A `Reverse Normal` scope reverses" gives one shared non-null link GUID for the linked scopes of one item, with the scopes that the timeline does not name taking the positions directly after the named scope.
+
+**Need.** A save with two Reverse Normal items of several components each, and the link GUIDs of their linked scopes.
+
+**Conflict.** None.
+
+**Note.** When several timeline items carry one link GUID, the decoder leaves the linked scopes that are not timeline items without a timeline position and reports `feature.reverse-normal-link-shared` for each. A linked scope whose link GUID no timeline item carries takes no position and is reported as `feature.reverse-normal-link-unplaced`.
+
+### DR-894. Order of the linked Reverse Normal scopes after their timeline item
+
+**Question.** In what order do the linked scopes of a `Reverse Normal` timeline item that the timeline does not name follow the named scope?
+
+**Known.** `f3d.md` §3.1 "A `Reverse Normal` scope reverses" gives the timeline positions directly after the named scope to the other linked scopes of the item. Each linked scope selects the bodies of its own component.
+
+**Need.** A save with a Reverse Normal of three or more components, and the order of the linked scopes that Fusion applies or shows.
+
+**Conflict.** None.
+
+**Note.** The decoder places these scopes in record order and reports `feature.reverse-normal-link-order-assumed` for each scope when an item has two or more of them.
+
 ### DR-308. Canvas flag byte before the second boundary
 
 **Question.** What does the flag byte before the second boundary segment of a Canvas geometry record select, and does a zero value change the image placement or display?
@@ -846,6 +859,18 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer of several result bodies must number the faces of each body. The edge and vertex tags of the earlier bodies against the start of the next run would settle it.
 
+### DR-888. Nonzero one-byte ordinal prefix of an attributed local occurrence
+
+**Question.** What does a one-byte ordinal prefix with value `1` select in an attributed local component occurrence?
+
+**Known.** `f3d.md` §3.1 "A version-two attributed local occurrence also permits a one-byte zero ordinal prefix." defines the zero prefix. A class-`416` carrier in an inserted document stores prefix byte `1` and u32 ordinal `1`, followed by the carrier GUID and the occurrence key. The rest of its frame has the zero-prefix layout: a null identity reference, the repeated component reference, identity flag `1`, nine zero bytes, and the owner entity. A displayed-pose path names this carrier in its final pair under each insertion of the document. The decoder rejects the frame. The component definition then has a synthesized identity placement, and the displayed-pose rows of the carrier stay unbound with `scene.override-unbound`.
+
+**Need.** Saves that change only this prefix byte while the occurrence and its placement stay fixed, or a writer-side definition of the byte.
+
+**Conflict.** None.
+
+**Note.** Each carrier GUID, occurrence key, owner entity, and component reference of the frame resolves. The prefix value is the single field outside the specified grammar.
+
 ### DR-911. Fields of a sketch-driven Extrude without an established rule
 
 **Question.** For a sketch-driven `Extrude`, what does the byte at offset 27 of the scope frame encode, and what selects the family discriminator of its parameter records, the body key of its body map, the order of its five scope references, and the 107-byte form of its `Body` owner?
@@ -897,11 +922,11 @@ The first closing reference run identifies a direct contained child by its local
 
 **Known.** `f3d.md` §1.4 defines stored occurrence placement and component-path pose precedence. Assembly operand paths can select occurrences whose solved poses differ from their stored transforms. Operation-table type `549FBB80-B890-473E-A5C0-415D3D9BF4E6` has version-0 and version-1 forms. A typed one-element path identifies the affected occurrence. A parent descendant-path table can equal a child table's final Position matrix while the child's stored matrix equals its insertion entry. The direct table's final entry is a property of the occurrence inside its component definition, common to every instance. Component-path world poses constrain the containing instance. An instance-specific edit of the shared child violates this relation. The direct version-0 and version-1 grammar and precedence are in `f3d.md` §1.4.
 
-**Need.** Bind each operation-associated transform to its typed occurrence path, coordinate frame, and saved state. Establish its precedence relative to occurrence-placement and component-path transforms. Distinguish a contained placement change from a containing placement change. Identify the operation suppression state and saved timeline marker before selecting an entry. Independently authored saves must change one placement or one suppression or timeline state and retain the complete occurrence, operation, and constraint carriers.
+**Need.** Bind each operation-associated transform to its typed occurrence path, coordinate frame, and saved state. Identify the saved-state selector that establishes whether a displayed world pose or an operation-associated transform is the active joint solution. Establish its precedence relative to occurrence-placement and component-path transforms. Distinguish a contained placement change from a containing placement change. Identify the operation suppression state and saved timeline marker before selecting an entry. Independently authored saves must change one placement or one suppression or timeline state and retain the complete occurrence, operation, and constraint carriers.
 
 **Conflict.** A stored placement can disagree with the checked assembly while no projected joint selects the occurrence. This does not distinguish an unbound constraint, an unread placement carrier, and a different saved assembly state.
 
-**Note.** The root, local, contained, and owned component-path forms in `f3d.md` §1.4 keep their precedence. The remaining Need applies to other path forms, incompatible constraints, and saved-state selectors (DR-111). Direct one-element tables do not select suppression or an active timeline marker. A definition with incompatible component-path and table constraints keeps its stored pose for every instance; the operation table stays native. Other path forms and saved-state selectors remain unresolved.
+**Note.** `f3d.md` §1.1.4 "The prefix is followed by a counted pointer string" defines both uniformly tagged and untagged display paths. A complete display-path binding identifies the occurrence and its displayed world frame. The root, local, contained, and owned component-path forms in `f3d.md` §1.4 keep their precedence. The remaining Need applies to other path forms, incompatible constraints, and saved-state selectors (DR-111). Direct one-element tables do not select suppression or an active timeline marker. A definition with incompatible component-path and table constraints keeps its stored pose for every instance; the operation table stays native. Other path forms and saved-state selectors remain unresolved.
 
 ### DR-109. Legacy external placement control and extended envelopes
 
@@ -1076,6 +1101,56 @@ The first closing reference run identifies a direct contained child by its local
 **Need.** Controlled producer saves must vary the advanced channel ID and UVW source, preserve and verify their logical values after reopen, and identify the serialized member through a writer trace or equivalent invariant. A nonempty `swatch` control must separate its length from the adjacent link flag. Changed bytes alone can reflect mirrored or private backing values. A writer must establish the logical-to-physical assignment before it changes the ambiguous region.
 
 **Note.** The compatibility decoder selects advanced-ID omission. This selection is not proof of the physical omitted member. Neutral map-channel interpretation remains subject to MA-04.
+
+### DR-904. Protein stream header words
+
+**Question.** What do the two i32 words and the u32 word at bytes 4 through 15 of a Protein stream header record?
+
+**Known.** `protein.md` §2 "`InstanceProperties.bin` and `DefinitionIteratorProperties.bin` start with" gives the values `-1`, `-1`, and `0`. Every stream holds consecutive records with no page outside a record (`protein.md` §3).
+
+**Need.** A stream whose pages include a page outside every record, or a stream that a producer extended in place, to relate the words to page allocation.
+
+### DR-905. Text of the Protein schema documents
+
+**Question.** Which text do the nine schema documents of a Fusion Protein package hold, and does a reader take the property declarations from the package or from its own library schema of the same identifier and `SchemaVersion`?
+
+**Known.** `protein.md` §8 "A schema document declares one schema" gives the schemas, their bases, `type` values, and `SchemaVersion` values. `protein.md` §9 "The tables below give each instance record's value block" gives every serialized property with its declaring schema and carrier. A schema document also declares non-serialized properties, labels, bounds, user-interface and implementation members. The text of a schema document is the same in every package that has its identifier and `SchemaVersion`.
+
+**Need.** The declarations that a writer must emit beyond the serialized properties, so that a package with generated schema documents reads the same as one with library schema documents.
+
+### DR-906. Second form of the appearance of a Base Feature body
+
+**Question.** What selects the second form of the body's appearance and its twin in the Protein package of a Base Feature design?
+
+**Known.** `protein.md` §9 "The Protein package of a Fusion Base Feature design" gives the common form: the twin has base asset identifier `PrismOpaque` and the definition `Opaque(R,G,B)`, and the appearance has the colour `(246, 246, 243)`. In the second form, the twin is a copy of the appearance aspect: base asset identifier `PrismMaterial-022_physmat_aspects:Prism-374`, `AssetLibID` `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C`, the aspect's values, and a definition record equal to the aspect's definition. The appearance then has `generic_diffuse` equal to the aspect's `opaque_albedo`, `generic_glossiness` `0.7015873193740845`, and `generic_reflectivity_at_0deg` `0.0529`. The other values of the body's appearance and twin, and the records of the physical material and its aspects, equal the common form. The packages of the second form share the physical-material identifier and the body-appearance identifier. `protein.md` §9 "An appearance and its twin carry one colour" gives the appearance pairs that a per-face assignment adds to a package of the second form: each pair has the common form with the colour of its face.
+
+**Need.** The source property, for example a material or appearance setting of the design or of its template, that selects one form. A package of the common form with a per-face assignment, to show whether the form of an added pair follows the form of the body's appearance.
+
+### DR-907. Join from an instance record to its definition record
+
+**Question.** Which rule joins an instance record to its definition record when the definition's asset identifier differs from the instance's base asset identifier?
+
+**Known.** `protein.md` §6 "`AssetData/AssetTableOfContents.bin` lists the instance records" pairs each instance record with one definition record by page index. In the package of `protein.md` §9 "The Protein package of a Fusion Base Feature design", the structural aspect has base asset identifier `PrismMaterial-022_physmat_aspects_1:StructuralPlastic-004` and definition asset identifier `StructuralPlastic-004`, the appearance aspect has base asset identifier `PrismMaterial-022_physmat_aspects:Prism-374` and definition asset identifier `Prism-374`, and the twin has base asset identifier `PrismOpaque` and definition asset identifier `Opaque(R,G,B)`. The physical material and the appearance have a base asset identifier equal to the definition asset identifier. The decoder (`crates/cadmpeg-codec-f3d/src/materials.rs`) joins an instance record to a definition through an asset identifier equal to the instance's base asset identifier. A schema-bearing instance joins through the pair `(asset identifier, schema identifier)` of `protein.md` §5 "A definition stream can repeat one asset identifier", and a schema-less instance joins when its asset identifier has one catalog schema. The joined definition supplies the schema identifier and the category, and repeats with differing categories supply no category.
+
+**Conflict.** The equal-identifier join finds no definition for the two aspects and the twin, and the table of contents finds one for each.
+
+**Need.** A decision whether the decoder joins through the table of contents when the package has one.
+
+### DR-908. Members of other Fusion Protein packages
+
+**Question.** Which rule gives the members of the Protein package of a Fusion design whose package differs from the package of a Base Feature design?
+
+**Known.** `protein.md` §8 "The `.protein` member of a Fusion Base Feature design" gives the members of the package of a Base Feature design, in ZIP order. Other Fusion packages hold other member lists. Their `Schemas` folder adds schema documents, for example `PrismMetalSchema`, `PrismTransparentSchema`, `PrismLayeredSchema`, `StructuralMetalSchema`, `StructuralGenericSchema`, `ThermalCommonSchema`, `ThermalSolidSchema`, `BumpMapSchema`, `TextureMap2dSchema`, and `UnifiedBitmapSchema`, and can omit schema documents of the nine in §8. Some packages name the stream version member `AssetData/StreamVersionTable.inf`. Some packages add a `Resources` folder with `cnx.xml` and `core.xml`, and in it one folder per name of the form `{GUID}_Post2015`, with the suffix once or more, that holds `cnx.xml`, `core.xml`, and a `thumbnail` folder.
+
+**Need.** The rule that selects the schema documents, the name of the stream version member, and the `Resources` members of a package, and the ZIP entry fields, text, and order of those members, so that a writer can emit the package of a design with other materials or appearances.
+
+### DR-909. Separator of the `PrismMaterial-022` preview path
+
+**Question.** What selects the separator `<s>` in the preview path of the `PrismMaterial-022` definition record?
+
+**Known.** `protein.md` §9 "The table-of-contents entry of each instance names one definition record" gives the preview path `Mats<s>PrismOpaque<s>Presets<s>t_Prism-374.png`. The separator is `\` or `/`. Packages of the common form store either value. The packages of the second form (DR-906) store `\`.
+
+**Need.** The producer state, for example the Fusion version or the material library that saved the design, that selects the separator.
 
 ## 4. T-splines
 
@@ -1791,9 +1866,21 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Need.** Modeled threads on four or more faces, and the entity that carries a second value as its identity.
 
+**Conflict.** An extended standard Thread scope of a saved design, with modeled flag `1`, a result state, and helical result faces, stores entry count `0`.
+
+**Note.** The decoder admits an entry count of `0` or one entry for each face-selection pair. It reads an extended standard Thread with modeled flag `1` and entry count `0` as modeled and charges `feature.thread-modeled-entries-absent`. It reads the thread class after the entries and keeps the entry bytes only in the retained source image.
+
+### DR-897. Diameter of a fractional Thread nominal size
+
+**Question.** Which diameter does a fractional Thread nominal size state?
+
+**Known.** `f3d.md` §3.1 "The three LP-UTF16 fields are the designation, nominal-size text, and profile name" gives the fraction grammar and states the size in the units of the profile. A pipe thread with nominal size `1/8` stores major diameter `0.9728` cm; the fraction in inches is `0.3175` cm.
+
+**Need.** Pipe threads of several fractional sizes and profiles, compared against the diameter the source application reports for each.
+
 **Conflict.** None.
 
-**Note.** The decoder requires one entry for each face-selection pair of a modeled thread, reads the thread class after the entries, and keeps the entry bytes only in the retained source image.
+**Note.** The decoder projects the stored major diameter as the thread diameter and charges `feature.thread-fractional-size-diameter-assumed`.
 
 ### DR-206. Sides of a two-sided to-object Revolve
 
@@ -2569,13 +2656,13 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** How does a symmetric direction measure a seed-to-final-instance extent, and which byte stores the symmetric state of direction two?
 
-**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the symmetric byte of direction one at payload offset 109 and the zero byte at offset 110. A three-instance symmetric direction with adjacent spacing places one instance on each side of the seed at that spacing. A symmetric direction with an even count places half of the count along the direction: a four-instance symmetric direction at 10 mm spacing places instances at −10, 0, 10, and 20 mm, and a 120-instance direction places 60 instances along the direction and 59 against it. The decoder projects a symmetric direction with adjacent spacing as a linear pattern with `symmetric` set. A symmetric direction with an extent distance stays unresolved.
+**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the symmetric byte of direction one at payload offset 109 and the zero byte at offset 110. A three-instance symmetric direction with adjacent spacing places one instance on each side of the seed at that spacing. A symmetric direction with an even count places half of the count along the direction: a four-instance symmetric direction at 10 mm spacing places instances at −10, 0, 10, and 20 mm, and a 120-instance direction places 60 instances along the direction and 59 against it. The decoder projects a symmetric direction with adjacent spacing as a linear pattern with `symmetric` set.
 
 **Need.** Saves of a symmetric direction with an extent distance and of a symmetric direction two, each compared against the instance positions.
 
 **Conflict.** None.
 
-**Note.** R-Pattern 3 in `Parametric_extrusion_generator.f3d` stores zero at payload byte `133223`, the direction-one symmetric field. Its two counts are two. In this case adjacent distance and total extent give the same 15 mm spacing.
+**Note.** R-Pattern 3 in `Parametric_extrusion_generator.f3d` stores zero at payload byte `133223`, the direction-one symmetric field. Its two counts are two. In this case adjacent distance and total extent give the same 15 mm spacing. The decoder reads the extent of a symmetric direction with an extent distance as the span from the first to the last instance, divides it into one interval fewer than the count, keeps the count and the direction, and charges `feature.rectangular-pattern-symmetric-total-extent-assumed`.
 
 ### DR-298. SurfaceTrim cell-table entries outside the removal reading
 
@@ -2951,7 +3038,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which stored relation selects an atomic region for a compact complete-loop group when a Join updates its end caps, or the feature has an empty face delta, an unbound history state, or a selected-face start?
 
-**Known.** The compact group lists exterior and hole loops through persistent curve identities. An exact neutral loop join identifies each boundary. A one-sided blind Cut from the profile plane can certify its candidate set through the changed ASM planar regions and analytic lateral carriers. The decoder retains the native selection when this certificate is incomplete. An inserted analytic end-cap union can certify a complete initial boundary for a one-sided blind Join or NewBody when its directed intervals agree and every inserted lateral face stays on the boundary within the sweep. A scope can have an updated end cap, an empty face delta, or an unbound history state.
+**Known.** The compact group lists exterior and hole loops through persistent curve identities. An exact neutral loop join identifies each boundary. A one-sided blind Cut from the profile plane can certify its candidate set through the changed ASM planar regions and analytic lateral carriers. The decoder retains the native selection when this certificate is incomplete. An inserted analytic end-cap union can certify a complete initial boundary for a one-sided blind Join or NewBody when its directed intervals agree and every inserted lateral face stays on the boundary within the sweep or continues a deleted lateral face on the same carrier. A scope can have an updated end cap, an empty face delta, or an unbound history state.
 
 **Need.** The relation between the compact entry operands, the arrangement region identity, and the selected side of each boundary for these transition forms, including intersecting and nested loops.
 
@@ -3469,9 +3556,9 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** Which record carries the curve of a profile loop entry when no sketch-curve record of the owning Sketch has the entry's primary identity?
 
-**Known.** A public RailCore II 300ZL design stores a typed-reference profile selection under Sketch owner 1115 with one loop of seven entries. Their primary identities are 241, 233, 244, 228, 231, 237, and 238. The Sketch holds line records for every identity except 231, and one further line record with identity 245 that no entry names. Without 231 the six remaining lines form one closed boundary once the lines 228 and 238 end at the line 241. No uint64 property in the stream holds the value 231 outside the selection and ASM history records. A second design names primary identity 392 under Sketch owner 6681 as the only entry of a loop. The Sketch holds circle records with primary identities 352 to 390 in steps of two and none with 392. A third design lists fifteen entries with the even primary identities 314 to 342 under owner 1977. No Sketch placement, curve record, or point record names owner 1977. Five of its identities (326, 330, 332, 340, 342) are carried by curve records of owner 1014, a Sketch with its own placement and selection.
+**Known.** A public RailCore II 300ZL design stores a typed-reference profile selection under Sketch owner 1115 with one loop of seven entries. Their primary identities are 241, 233, 244, 228, 231, 237, and 238. The Sketch holds line records for every identity except 231, and one further line record with identity 245 that no entry names. Without 231 the six remaining lines form one closed boundary once the lines 228 and 238 end at the line 241. No uint64 property in the stream holds the value 231 outside the selection and ASM history records. A second design names primary identity 392 under Sketch owner 6681 as the only entry of a loop. The Sketch holds circle records with primary identities 352 to 390 in steps of two and none with 392. A third design lists fifteen entries with the even primary identities 314 to 342 under owner 1977. No Sketch placement, curve record, or point record names owner 1977. Five of its identities (326, 330, 332, 340, 342) are carried by curve records of owner 1014, a Sketch with its own placement and selection. A RailCore IR Probe Mount design stores a typed-reference profile selection whose chain record is sketchless (`f3d.md` §3.1). Its asset GUID `58fd6d71-6435-4a8e-9d6f-5344c0c14631` is not the asset GUID of the containing Design, and no member of the three RailCore archives has it as a document or asset GUID. Its owner text `46396` names no entity suffix of the Design stream, so the owning Sketch belongs to another design, and its primary identities 1817, 1826, 1828, 1833, 1834, 1835, and 1836 match no sketch-curve record of the Design. Four other records of the Design store the same asset GUID followed by GUID `81bef69d-071e-4b80-bf5a-a501ab34f2cf`. Extrude 1 is the first timeline feature, and no Sketch precedes it.
 
-**Need.** A stored carrier or a derivation rule for the absent curves, and the Sketch that owner 1977 names.
+**Need.** A stored carrier or a derivation rule for the absent curves, the Sketch that owner 1977 names, and the design that owns a sketchless selection's asset GUID.
 
 **Note.** The selection stays native with `feature.profile-selection-native`.
 
@@ -3718,3 +3805,29 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Paired saves with different property targets or entry widths, and the corresponding final body geometry.
 
 **Note.** The decoder retains positional pairing with `feature.owned-body-pairing-assumed` for the typed body runs.
+
+### DR-890. Tail marker of the two-opaque-byte planar curve tail
+
+**Question.** Which byte of the three bytes between the zero pad and the u32 lane is the tail marker when a planar sketch-curve tail stores two opaque bytes?
+
+**Known.** `f3d.md` §3.1 "Immediately after the 96-byte analytic payload" gives the three-opaque-byte tail, where the tail marker directly precedes the u32 `1`, and the two-opaque-byte tail, where one byte follows the two opaque bytes and precedes the u32 lane. The decoder reads that byte as the tail marker and charges `sketch.curve-tail-marker-assumed` for every two-opaque-byte tail.
+
+**Need.** A two-opaque-byte tail with a nonzero byte before the u32 lane, and the counted region member lists that name or omit that curve.
+
+### DR-898. Construction flag of the two-opaque-byte planar curve tail
+
+**Question.** Does a u32 lane of `1` in a two-opaque-byte planar sketch-curve tail mark construction geometry?
+
+**Known.** In the three-opaque-byte tail the u32 after the tail marker is `1`, and the byte after it is the construction flag. In the two-opaque-byte tail the byte after the u32 lane is always `1`, and the lane is `0` or `1`. The decoder reads a lane of `1` as construction geometry and charges `sketch.curve-tail-construction-assumed` for every two-opaque-byte tail.
+
+**Need.** Two-opaque-byte tails of curves with a known construction status, for lane `0` and for lane `1`.
+
+### DR-895. Direction record of an inactive rectangular-pattern direction one
+
+**Question.** Does a rectangular-pattern scope whose direction one has zero distance or count one, and whose pattern payload stores a V displacement, store a direction record for direction one, and does the payload's U-direction reference at offset 122 name that record?
+
+**Known.** `f3d.md` §3.1 states that a direction with count greater than one and zero distance repeats the seed in place, that a scope can store both records when one direction has count one, and that the payload names the U-direction record at offset 122 and stores the V displacement at offset 63.
+
+**Need.** A save with a zero-distance direction one beside a pattern payload, with its direction records and instance positions.
+
+**Note.** The decoder reads the record that the payload names as the direction-one record, takes direction two from the payload V displacement, and charges `feature.rectangular-pattern-direction-one-record-assumed`. A payload without a V displacement leaves the one record to direction two.

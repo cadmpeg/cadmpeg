@@ -179,7 +179,13 @@ fn attributed_local_children_repeat_under_each_containing_instance() {
         .losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::LocalOccurrenceUnplaced.kind()));
-    let expanded = crate::tree::expand(&model.product_definitions, &model.occurrences).unwrap();
+    let expanded = crate::tree::expand(
+        &cadmpeg_core::decode::ResourceLimits::default(),
+        &model.product_definitions,
+        &model.occurrences,
+        &std::collections::BTreeMap::new(),
+    )
+    .unwrap();
     let poses = crate::tree::world_poses(model);
     let leaves = expanded
         .occurrences
