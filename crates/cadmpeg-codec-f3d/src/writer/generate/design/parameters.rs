@@ -523,12 +523,11 @@ impl Names {
                     || format!("p{}", position + 1),
                     |name| legal_name(name.as_str()),
                 );
-                let mut name = base.clone();
-                let mut suffix = 2u32;
-                while !taken.insert(name.clone()) {
-                    name = format!("{base}_{suffix}");
-                    suffix = suffix.saturating_add(1);
-                }
+                let name = std::iter::once(base.clone())
+                    .chain((2..=candidates.len() + 1).map(|suffix| format!("{base}_{suffix}")))
+                    .find(|name| !taken.contains(name))
+                    .unwrap_or(base);
+                taken.insert(name.clone());
                 name
             })
             .collect();
