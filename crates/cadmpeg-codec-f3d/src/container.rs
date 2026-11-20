@@ -229,6 +229,8 @@ pub(crate) enum F3dContainerKind {
     Document {
         /// Exact archive folder of the Design asset.
         design_asset_folder: String,
+        /// Primary GUID of the Design asset's per-asset manifest.
+        design_asset_guid: String,
         /// Dialect classified from the document manifest.
         matched: DialectMatch,
     },
@@ -420,6 +422,17 @@ impl<'a> ContainerScan<'a> {
                 design_asset_folder,
                 ..
             } => Some(design_asset_folder),
+            F3dContainerKind::MultiDocument { .. } => None,
+        }
+    }
+
+    /// Primary GUID of the manifest-selected Design asset. An outer F3Z
+    /// archive has no Design asset of its own.
+    pub(crate) fn design_asset_guid(&self) -> Option<&str> {
+        match &self.kind {
+            F3dContainerKind::Document {
+                design_asset_guid, ..
+            } => Some(design_asset_guid),
             F3dContainerKind::MultiDocument { .. } => None,
         }
     }
@@ -710,14 +723,15 @@ fn scan_in<'a>(
     let kind = if let Some(top_level_manifest) = inflated_entries.get("Manifest.dat") {
         let top_level_manifest = manifest::parse_top_level(top_level_manifest.window())?;
         let matched = F3dDialect::classify_document(top_level_manifest.declared_version());
-        let design_asset_folder = manifest::resolve_design_folder(
+        let design_asset = manifest::resolve_design_folder(
             &top_level_manifest,
             inflated_entries.keys().map(String::as_str),
             |name| inflated_entries.get(name).map(|view| view.window()),
         )?;
         manifest_diagnostics = top_level_manifest.diagnostics;
         F3dContainerKind::Document {
-            design_asset_folder,
+            design_asset_folder: design_asset.folder,
+            design_asset_guid: design_asset.asset_guid,
             matched,
         }
     } else if inflated_entries.contains_key("Manifest.json")
