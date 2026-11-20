@@ -7651,10 +7651,19 @@ fn project_rectangular_pattern_scalars(
         },
         |distribution| !distribution.total_extent.value,
     );
-    let symmetric = distribution.is_some_and(|distribution| distribution.symmetric.value);
-    if symmetric && construction.u_extent() == 0.0 {
-        return None;
+    let direction_one_active = construction.u_count() > 1 && construction.u_extent() != 0.0;
+    let stored_symmetric = distribution.is_some_and(|distribution| distribution.symmetric.value);
+    let symmetric = stored_symmetric && direction_one_active;
+    if stored_symmetric && !direction_one_active {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureRectangularPatternInactiveSymmetricDropped.note(format!(
+                "RectangularPattern scope {} drops the symmetric flag of its inactive direction one.",
+                scope.id
+            )),
+        );
     }
+    let payload_names_direction_one =
+        construction.secondary_direction().is_some() || distribution.is_some();
     if symmetric && !adjacent {
         losses.push(
             crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricTotalExtentAssumed.note(format!(
@@ -7670,6 +7679,14 @@ fn project_rectangular_pattern_scalars(
     .into_iter()
     .enumerate()
     {
+        let payload_direction = axis == 1 && construction.secondary_direction().is_some();
+        let axis_active = count > 1 && extent != 0.0;
+        let record =
+            if payload_direction || !(axis_active || (axis == 0 && payload_names_direction_one)) {
+                None
+            } else {
+                direction_records.next()
+            };
         let Some(intervals) = PatternIntervals::new(count) else {
             continue;
         };
@@ -7680,12 +7697,6 @@ fn project_rectangular_pattern_scalars(
             ));
             continue;
         }
-        let payload_direction = axis == 1 && construction.secondary_direction().is_some();
-        let record = if payload_direction {
-            None
-        } else {
-            direction_records.next()
-        };
         let axis_adjacent = match (distribution, record) {
             (None, Some(record)) => record.distance_type == 7,
             _ => adjacent,

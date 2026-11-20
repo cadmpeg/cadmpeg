@@ -1333,3 +1333,135 @@ fn rectangular_pattern_without_a_direction_source_charges_the_unresolved_directi
         .expect("one active direction");
     assert!(losses.is_empty());
 }
+
+/// A pattern whose direction one repeats three instances in place and whose
+/// direction two places two instances 1.5 cm apart, from
+/// `coincident_direction_scope`'s symmetric adjacent distribution block.
+fn inactive_direction_one_scope(
+    directions: Vec<crate::records::feature::patterns::DesignRectangularPatternDirection>,
+    secondary: Option<[f64; 3]>,
+    distribution: bool,
+) -> DesignParameterScope {
+    let mut scope = coincident_direction_scope(true, false);
+    if let crate::records::feature::scope::DesignScopePayloadMut::RPattern(Some(construction)) =
+        scope.payload_mut()
+    {
+        let mut wire =
+            crate::records::feature::patterns::DesignRectangularPatternConstructionWire::from(
+                construction.clone(),
+            );
+        wire.u_count = 3;
+        wire.u_extent = 0.0;
+        wire.v_count = 2;
+        wire.v_extent = 1.5;
+        wire.directions = directions;
+        wire.secondary_direction = secondary.map(|value| crate::records::identity::Located {
+            value: crate::test_support::reals(value),
+            offset: 63,
+        });
+        if !distribution {
+            wire.distribution = None;
+        }
+        *construction = DesignRectangularPatternConstruction::try_from(wire).unwrap();
+    }
+    scope
+}
+
+fn linear_parts(
+    definition: &FeatureDefinition,
+) -> (Option<cadmpeg_ir::math::Vector3>, f64, u32, bool) {
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = definition else {
+        panic!("rectangular pattern definition");
+    };
+    let PatternTransform::Linear {
+        direction,
+        spacing,
+        count,
+        second,
+        symmetric,
+        ..
+    } = pattern.definition().clone()
+    else {
+        panic!("linear rectangular pattern");
+    };
+    assert!(second.is_none());
+    (
+        direction.map(|direction| cadmpeg_ir::features::FiniteVector3::from(direction).get()),
+        spacing.get(),
+        count,
+        symmetric,
+    )
+}
+
+#[test]
+fn an_inactive_symmetric_direction_one_keeps_direction_two_and_drops_the_flag() {
+    let mut u_record = direction_record(20, [2.0, 0.0, 0.0]);
+    u_record.distance_type = 10;
+    let dropped =
+        crate::loss::F3dLossCode::FeatureRectangularPatternInactiveSymmetricDropped.kind();
+    let placement =
+        crate::loss::F3dLossCode::FeatureRectangularPatternPlacementNotTransferred.kind();
+    let unresolved = crate::loss::F3dLossCode::FeatureRectangularPatternDirectionUnresolved.kind();
+    let codes = |losses: &[cadmpeg_ir::report::loss::LossNote]| {
+        losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>()
+    };
+
+    let mut losses = Vec::new();
+    let definition = project_rectangular_pattern_scalars(
+        &inactive_direction_one_scope(vec![u_record], Some([0.0, 3.0, 0.0]), true),
+        &[],
+        &[],
+        &[],
+        &[],
+        &mut losses,
+    )
+    .expect("payload direction two");
+    let (direction, spacing, count, symmetric) = linear_parts(&definition);
+    let direction = direction.expect("payload direction");
+    assert!((direction.y - 1.0).abs() < EPS_SPACING);
+    assert!(direction.x.abs() < EPS_SPACING && direction.z.abs() < EPS_SPACING);
+    assert!((spacing - 15.0).abs() < EPS_SPACING);
+    assert_eq!(count, 2);
+    assert!(!symmetric);
+    assert_eq!(codes(&losses), [dropped.clone(), placement.clone()]);
+    assert!(losses[1]
+        .message
+        .contains("the 3 coincident instances of direction one"));
+
+    let mut losses = Vec::new();
+    let definition = project_rectangular_pattern_scalars(
+        &inactive_direction_one_scope(vec![u_record], None, true),
+        &[],
+        &[],
+        &[],
+        &[],
+        &mut losses,
+    )
+    .expect("direction two without a payload vector");
+    let (direction, spacing, count, symmetric) = linear_parts(&definition);
+    assert!(direction.is_none());
+    assert!((spacing - 15.0).abs() < EPS_SPACING);
+    assert_eq!(count, 2);
+    assert!(!symmetric);
+    assert_eq!(codes(&losses), [dropped, unresolved, placement.clone()]);
+
+    let mut losses = Vec::new();
+    let definition = project_rectangular_pattern_scalars(
+        &inactive_direction_one_scope(vec![direction_record(30, [0.0, 0.0, 4.0])], None, false),
+        &[],
+        &[],
+        &[],
+        &[],
+        &mut losses,
+    )
+    .expect("direction two record");
+    let (direction, _, count, symmetric) = linear_parts(&definition);
+    let direction = direction.expect("record direction");
+    assert!((direction.z - 1.0).abs() < EPS_SPACING);
+    assert_eq!(count, 2);
+    assert!(!symmetric);
+    assert_eq!(codes(&losses), [placement]);
+}

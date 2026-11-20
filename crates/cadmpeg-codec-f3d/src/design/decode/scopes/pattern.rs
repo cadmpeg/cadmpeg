@@ -119,9 +119,7 @@ pub(super) fn exact_rectangular_pattern_construction(
         &directions,
         stream_types,
     ));
-    if directions.len() + usize::from(construction.secondary_direction().is_some())
-        == construction.active_direction_count()
-    {
+    if directions.len() == construction.bound_direction_record_count() {
         construction
             .try_set_directions(directions)
             .map_err(CodecError::malformed)?;
@@ -378,7 +376,7 @@ fn exact_rectangular_pattern_secondary_direction(
     let [direction] = directions else {
         return None;
     };
-    if construction.active_direction_count() != 2 {
+    if !construction.direction_two_active() {
         return None;
     }
     let mut found = None;
