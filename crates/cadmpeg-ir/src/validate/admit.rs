@@ -284,25 +284,18 @@ mod tests {
         RHINO_INSTANCE_CHECKS, SLDPRT_EXPORT_PRECONDITION_CHECKS,
     };
     use crate::report::check::Check;
-    use cadmpeg_test_support::admissibility::{
+    use crate::test_support::admissibility::{
         accepted_empty, rejected_missing_point, rejected_missing_region,
     };
 
-    // The shared fixture crate links the library instance of CadIr. Unit tests
-    // compile a separate instance, so transfer fixture data through its wire form.
-    fn fixture(value: impl serde::Serialize) -> crate::CadIr {
-        serde_json::from_value(serde_json::to_value(value).expect("fixture serializes"))
-            .expect("fixture deserializes into the unit-test IR")
-    }
-
     #[test]
     fn draft_core_agrees_with_full_on_freeze_fixtures() {
-        let accepted = fixture(accepted_empty());
+        let accepted = accepted_empty();
         assert!(super::super::validate_neutral(&accepted, Vec::new())
             .expect("validate the neutral model")
             .is_ok());
         assert!(admit(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &accepted,
             DRAFT_CORE_CHECKS,
             Vec::new()
@@ -310,12 +303,12 @@ mod tests {
         .expect("admit the model")
         .is_ok());
 
-        let missing_point = fixture(rejected_missing_point("test:model").expect("valid identity"));
+        let missing_point = rejected_missing_point("test:model").expect("valid identity");
         assert!(!super::super::validate_neutral(&missing_point, Vec::new())
             .expect("validate the neutral model")
             .is_ok());
         assert!(!admit(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &missing_point,
             DRAFT_CORE_CHECKS,
             Vec::new()
@@ -323,13 +316,12 @@ mod tests {
         .expect("admit the model")
         .is_ok());
 
-        let missing_region =
-            fixture(rejected_missing_region("test:model").expect("valid identity"));
+        let missing_region = rejected_missing_region("test:model").expect("valid identity");
         assert!(!super::super::validate_neutral(&missing_region, Vec::new())
             .expect("validate the neutral model")
             .is_ok());
         assert!(!admit(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &missing_region,
             DRAFT_CORE_CHECKS,
             Vec::new()
@@ -340,9 +332,9 @@ mod tests {
 
     #[test]
     fn filter_checks_drops_out_of_set_findings() {
-        let ir = fixture(rejected_missing_point("test:model").expect("valid identity"));
+        let ir = rejected_missing_point("test:model").expect("valid identity");
         let filtered = admit(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &ir,
             &[Check::Identity],
             Vec::new(),
@@ -411,8 +403,8 @@ mod tests {
         assert!(!DRAFT_CORE_CHECKS.contains(&Check::Counts));
         assert!(!RHINO_DRAFT_CHECKS.contains(&Check::ArenaOrder));
 
-        let accepted = fixture(accepted_empty());
-        let rejected = fixture(rejected_missing_point("test:model").expect("valid identity"));
+        let accepted = accepted_empty();
+        let rejected = rejected_missing_point("test:model").expect("valid identity");
         for allowed in [
             DRAFT_CORE_CHECKS,
             RHINO_DRAFT_CHECKS,
@@ -421,7 +413,7 @@ mod tests {
             SLDPRT_EXPORT_PRECONDITION_CHECKS,
         ] {
             assert!(admit(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &accepted,
                 allowed,
                 Vec::new()
@@ -429,7 +421,7 @@ mod tests {
             .expect("admit the model")
             .is_ok());
             assert!(!admit(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &rejected,
                 allowed,
                 Vec::new()

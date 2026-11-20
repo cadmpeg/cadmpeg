@@ -514,3 +514,70 @@ fn an_override_of_the_top_level_occurrence_places_its_nested_instance() {
         );
     }
 }
+
+/// `placed_block` with the root also placing `assembly` at the identity as
+/// `again`, so that `inner` has two instances.
+fn assembly_placed_twice() -> CadIr {
+    let mut ir = placed_block();
+    place(
+        &mut ir,
+        &root_id(),
+        placing(
+            assembly_id(),
+            "again",
+            [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+            ],
+        ),
+    );
+    ir.finalize();
+    ir
+}
+
+fn in_occurrence_through(ir: &CadIr, above: &[&str], key: &str) -> MeasureReport {
+    measure_in(
+        ir,
+        &Selection {
+            occurrence: Some(occurrence_id(key)),
+            occurrence_above: above.iter().map(|above| occurrence_id(above)).collect(),
+            ..Selection::default()
+        },
+    )
+    .expect("measured")
+}
+
+/// `inner` through `top` is placed as in
+/// `rows_are_placed_by_the_body_transform_then_the_occurrence_chain`, with
+/// its centroid at (107, 51.5, −1). Through `again`, the identity, the
+/// centroid is `inner`'s own (7, 51.5, −1). Without a listed occurrence the
+/// owner of `inner` is placed twice and the chain is broken; through
+/// `single`, which does not place that owner, it is broken too, and a
+/// listed occurrence that repeats breaks it.
+#[test]
+fn listed_occurrences_select_one_instance_of_a_reused_subassembly() {
+    let ir = assembly_placed_twice();
+    for (above, centroid) in [("top", [107.0, 51.5, -1.0]), ("again", [7.0, 51.5, -1.0])] {
+        let report = in_occurrence_through(&ir, &[above], "inner");
+        let [body] = report.bodies().as_slice() else {
+            panic!("{above}: one body row");
+        };
+        assert_point(body.centroid().as_ref().expect("centroid"), centroid);
+        let block = report.occurrence().as_ref().expect("occurrence block");
+        assert_eq!(
+            block.chain().as_slice(),
+            [
+                occurrence_id(above).as_str().to_owned(),
+                occurrence_id("inner").as_str().to_owned(),
+            ]
+        );
+    }
+    for above in [&[][..], &["single"][..], &["top", "inner"][..]] {
+        assert_no_rows(
+            &in_occurrence_through(&ir, above, "inner"),
+            UnavailableReason::PlacementOccurrenceChainBroken,
+            occurrence_id("inner").as_str(),
+        );
+    }
+}

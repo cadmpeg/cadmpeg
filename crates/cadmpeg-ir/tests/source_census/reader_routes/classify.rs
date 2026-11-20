@@ -201,22 +201,6 @@ fn receiver_description(receiver: &Receiver) -> String {
     }
 }
 
-pub(super) fn same_crate(left: &str, right: &str) -> bool {
-    match (
-        left.split('/')
-            .nth(1)
-            .filter(|_| left.starts_with("crates/")),
-        right
-            .split('/')
-            .nth(1)
-            .filter(|_| right.starts_with("crates/")),
-    ) {
-        (Some(left), Some(right)) => left == right,
-        (None, None) => left == right,
-        _ => false,
-    }
-}
-
 fn route_identity(route: &HandImplSource) -> (String, Vec<String>, String) {
     (route.path.clone(), route.scope.clone(), route.name.clone())
 }

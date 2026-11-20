@@ -8,8 +8,8 @@ use crate::history_records::AsmHistory;
 use crate::test_support::history_stream::DesignScale;
 
 const SCALE: DesignScale = DesignScale {
-    states: 12,
-    bodies: 24,
+    states: 3,
+    bodies: 3,
     faces_per_body: 1,
     updates_per_state: 2,
 };

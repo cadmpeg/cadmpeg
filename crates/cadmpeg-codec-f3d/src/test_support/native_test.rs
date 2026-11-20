@@ -98,7 +98,7 @@ impl Drop for F3dNativeMut<'_> {
     fn drop(&mut self) {
         self.native
             .store(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 self.ir.native.namespace_mut("f3d"),
             )
             .unwrap();

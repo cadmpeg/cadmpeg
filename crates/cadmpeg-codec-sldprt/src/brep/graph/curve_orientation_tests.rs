@@ -241,7 +241,7 @@ fn a_periodic_spline_leaves_the_vertex_order_to_the_marker() {
     ));
     assert_eq!(
         super::vertex_parameter_reversal(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &carrier,
             Some([Point3::new(0.5, 0.0, 0.0), Point3::new(0.0, 0.5, 0.0)]),
         )
@@ -252,7 +252,7 @@ fn a_periodic_spline_leaves_the_vertex_order_to_the_marker() {
 
 fn domain_reversal(carrier: &crate::brep::CurveCarrier, ends: [[f64; 3]; 2]) -> Option<bool> {
     super::domain_endpoint_reversal(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         carrier,
         Some(ends.map(|[x, y, z]| Point3::new(x, y, z))),
         [super::LINEAR_RESOLUTION_MM; 2],
@@ -379,7 +379,7 @@ fn a_stored_range_matches_a_tolerant_vertex_within_its_tolerance() {
                 .expect("finite fixture range"),
         ),
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         super::edge_parameter_range(&ctx, &carrier, Some(endpoints), [None; 2], false, true)
             .unwrap(),
@@ -446,7 +446,7 @@ fn a_stored_range_shorter_than_its_vertex_tolerances_takes_the_nearer_order() {
         Point3::new(1.0e-3_f64.cos(), 1.0e-3_f64.sin(), 0.0),
         Point3::new(1.0, 0.0, 0.0),
     ];
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         super::edge_parameter_range(
             &ctx,

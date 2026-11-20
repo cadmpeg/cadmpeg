@@ -131,37 +131,54 @@ fn f3z_archive_merges_identity_occurrences() {
         .all(|id| id.starts_with(&prefix)));
     // A merged F3Z has no retained image of itself, so there is nothing to
     // preserve, and `f3d:f3z-multi-document` is not a row the generator can
-    // synthesize. `Inherit` therefore refuses by name rather than quietly
-    // handing back a single-document archive under the F3Z document's identity.
-    let error = F3dCodec
+    // synthesize. `Inherit` writes the catalog default and says so.
+    let report = crate::test_support::assert_written_with_loss(
+        decoded.ir(),
+        Some(decoded.source_fidelity()),
+        &crate::loss::F3dLossCode::SourceDialectDisplaced
+            .kind()
+            .to_string(),
+        "f3d:f3z-multi-document",
+    );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::SourcePreservedImageUnavailable.kind()));
+    assert_eq!(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &report,
+            "identity/target"
+        )
+        .as_ref()
+        .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some(crate::dialect::TARGETS[0].id.as_str()),
+        "the report names the row the bytes are written as"
+    );
+
+    // An explicit request for the F3Z row is written as the single-document
+    // row, with the request's displacement charged.
+    let mut displaced = Vec::new();
+    let report = F3dCodec
         .plan(
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
-            TargetRequest::Inherit,
+            TargetRequest::Explicit("f3d:f3z-multi-document"),
         )
-        .expect_err("the F3Z row is not a synthesis target");
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(
-        ({
-            let wire = serde_json::to_value(refusal).expect("serialize refusal");
-            wire["refusal"]
-                .get("requested")
-                .or_else(|| wire["refusal"].get("source"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .as_deref(),
-        Some("f3d:f3z-multi-document")
-    );
+        .and_then(|plan| plan.write_to(&mut displaced))
+        .expect("an explicit F3Z request writes the single-document row");
     assert!(
-        refusal
-            .available()
-            .iter()
-            .any(|target| target.id.as_str() == "f3d:manifest-3-2-0-0"),
-        "{:?}",
-        refusal.available()
+        report.losses.iter().any(|loss| {
+            loss.code == crate::loss::F3dLossCode::TargetRequestDisplaced.kind()
+                && loss.message.contains("f3d:manifest-3-2-0-0")
+        }),
+        "{:#?}",
+        report.losses
     );
+    cadmpeg_ir::codec::Codec::decode(
+        &F3dCodec,
+        &mut Cursor::new(&displaced),
+        &DecodeOptions::default(),
+    )
+    .expect("the displaced write decodes");
 
     // Naming the row is the escape, and it still regenerates the merged model
     // as a single-document archive — now with the report saying so.

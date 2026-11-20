@@ -332,7 +332,8 @@ impl CadIr {
         let dependents = graph.dependents(&history, &currents, seeds);
         self.mark_states_stale(&history, &dependents.features);
         self.mark_sketches_stale(&dependents.features);
-        self.refresh_caches(&history, &currents, &dependents)
+        self.refresh_caches(&history, &currents, &dependents)?;
+        self.refresh_process(&history, &currents, &dependents)
     }
 
     /// Marks `Stale` every evaluation and current state that depends on any

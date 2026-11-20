@@ -138,9 +138,10 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &records,
             None,
+            &mut crate::mesh::MeshBudget::new(),
             &mut ir,
             &mut Diagnostics::new()
         )
@@ -177,9 +178,10 @@ fn projection_counts_dependency_on_later_producer() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &records,
             None,
+            &mut crate::mesh::MeshBudget::new(),
             &mut ir,
             &mut Diagnostics::new()
         )
@@ -199,9 +201,10 @@ fn projection_counts_dependency_with_ambiguous_producers() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &records,
             None,
+            &mut crate::mesh::MeshBudget::new(),
             &mut ir,
             &mut Diagnostics::new()
         )
@@ -238,7 +241,7 @@ fn history_value_accepts_a_future_minor_and_skips_its_suffix() {
     body.extend([0xaa, 0xbb]);
     let bytes = anonymous_value(9, &body);
     let (parsed, next) = parse_value(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0,
         bytes.len(),
@@ -448,9 +451,10 @@ fn projection_preserves_duplicate_values_and_same_record_descendants() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &records,
             None,
+            &mut crate::mesh::MeshBudget::new(),
             &mut ir,
             &mut Diagnostics::new()
         )
@@ -494,7 +498,7 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
         ));
         let geometry_value = value(10, &anonymous_value(0, &geometry_payload));
         let (parsed, _) = parse_value(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &geometry_value,
             0,
             geometry_value.len(),
@@ -504,6 +508,7 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
         let mut properties = BTreeMap::new();
         let mut sink = GeometrySink {
             warnings: &mut Diagnostics::new(),
+            mesh_budget: &mut crate::mesh::MeshBudget::new(),
             untyped: 0,
             failed: 0,
             redundant_repairs: 0,
@@ -544,9 +549,10 @@ fn embedded_history_point_cloud_projects_one_feature() {
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         assert_eq!(
             project(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &[source],
                 Some((expand, ArchiveVersion::V8, None, MillimeterScale::IDENTITY)),
+                &mut crate::mesh::MeshBudget::new(),
                 &mut ir,
                 &mut Diagnostics::new(),
             )
@@ -558,6 +564,40 @@ fn embedded_history_point_cloud_projects_one_feature() {
 }
 
 #[test]
+fn history_meshes_charge_the_document_mesh_budget() {
+    let payload = crate::test_support::test_archive::mesh_payload(3, 0, false, false);
+    let geometry = EmbeddedGeometry {
+        class_id: crate::mesh::ON_MESH,
+        class_data_range: 0..payload.len(),
+        userdata: Vec::new(),
+    };
+    let mut records = [record(3, 4, &[], &[]), record(5, 6, &[], &[])];
+    for source in &mut records {
+        source.values[0].value = Value::Geometries(vec![geometry.clone()]);
+    }
+    // Four vertices with float point, float normal, float UV and RGBA color buffers.
+    let one_mesh = 4 * (12 + 12 + 8 + 4);
+    let mut mesh_budget = crate::mesh::MeshBudget::with_limit(one_mesh);
+    crate::decode::with_expand_bytes(&payload, |expand| {
+        let mut ir = cadmpeg_ir::document::CadIr::empty();
+        assert_eq!(
+            project(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &records,
+                Some((expand, ArchiveVersion::V5, None, MillimeterScale::IDENTITY)),
+                &mut mesh_budget,
+                &mut ir,
+                &mut Diagnostics::new(),
+            )
+            .expect("project the embedded meshes"),
+            (1, 1, 0, 0)
+        );
+        assert_eq!(ir.model.features.len(), 2);
+    });
+    assert_eq!(mesh_budget.used(), one_mesh);
+}
+
+#[test]
 fn history_geometry_without_unit_binding_is_counted_and_source_located() {
     let mut geometry_payload = 1_i32.to_le_bytes().to_vec();
     geometry_payload.extend(crate::test_support::test_archive::class_wrapper(
@@ -566,7 +606,7 @@ fn history_geometry_without_unit_binding_is_counted_and_source_located() {
     ));
     let geometry_value = value(10, &anonymous_value(0, &geometry_payload));
     let (parsed, _) = parse_value(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &geometry_value,
         0,
         geometry_value.len(),
@@ -582,6 +622,7 @@ fn history_geometry_without_unit_binding_is_counted_and_source_located() {
     let (untyped, failed) = {
         let mut sink = GeometrySink {
             warnings: &mut warnings,
+            mesh_budget: &mut crate::mesh::MeshBudget::new(),
             untyped: 0,
             failed: 0,
             redundant_repairs: 0,
@@ -618,7 +659,7 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     geometry_payload.extend(geometry);
     let geometry_value = value(10, &anonymous_value(0, &geometry_payload));
     let (parsed, next) = parse_value(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &geometry_value,
         0,
         geometry_value.len(),
@@ -632,6 +673,7 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     let mut properties = BTreeMap::new();
     let mut sink = GeometrySink {
         warnings: &mut Diagnostics::new(),
+        mesh_budget: &mut crate::mesh::MeshBudget::new(),
         untyped: 0,
         failed: 0,
         redundant_repairs: 0,
@@ -669,7 +711,7 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     polyedges.extend(anonymous_value(0, &polyedge));
     let polyedge_value = value(13, &anonymous_value(0, &polyedges));
     let (parsed, _) = parse_value(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &polyedge_value,
         0,
         polyedge_value.len(),
@@ -697,7 +739,7 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     chains.extend(anonymous_value(1, &chain));
     let chain_value = value(14, &anonymous_value(1, &chains));
     let (parsed, _) = parse_value(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &chain_value,
         0,
         chain_value.len(),
@@ -762,7 +804,7 @@ fn subd_edge_chain_count_mismatch_drops_dependent_arrays_with_a_diagnostic() {
     let value = value(14, &anonymous_value(1, &chains));
     let mut warnings = Diagnostics::new();
     let (parsed, _) = parse_value_with_warnings(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &value,
         0,
         value.len(),
@@ -799,6 +841,27 @@ fn embedded_cage_payload() -> Vec<u8> {
     crate::test_support::test_dump::crc_chunk(crate::chunks::ArchiveVersion::V5, ANONYMOUS, &body)
 }
 
+/// The semantic text of one embedded history value decoded from `bytes`.
+fn embedded_geometry_json(
+    bytes: &[u8],
+    geometry: &EmbeddedGeometry,
+    archive: ArchiveVersion,
+    scale: MillimeterScale,
+    warnings: &mut Diagnostics,
+) -> Option<String> {
+    let mut sink = GeometrySink {
+        warnings,
+        mesh_budget: &mut crate::mesh::MeshBudget::new(),
+        untyped: 0,
+        failed: 0,
+        redundant_repairs: 0,
+        refusal: None,
+    };
+    crate::decode::with_expand_bytes(bytes, |expand| {
+        extended_geometry_json(expand, geometry, archive, None, scale, &mut sink)
+    })
+}
+
 #[test]
 fn embedded_cage_projects_exact_construction_semantics() {
     let bytes = embedded_cage_payload();
@@ -807,17 +870,13 @@ fn embedded_cage_projects_exact_construction_semantics() {
         class_data_range: 0..bytes.len(),
         userdata: Vec::new(),
     };
-    let semantic = crate::decode::with_expand_bytes(&bytes, |expand| {
-        extended_geometry_json(
-            expand,
-            &geometry,
-            ArchiveVersion::V8,
-            None,
-            crate::test_support::millimeter_scale(10.0),
-            &mut Diagnostics::new(),
-            &mut None,
-        )
-    })
+    let semantic = embedded_geometry_json(
+        &bytes,
+        &geometry,
+        ArchiveVersion::V8,
+        crate::test_support::millimeter_scale(10.0),
+        &mut Diagnostics::new(),
+    )
     .expect("cage semantics");
     let semantic: serde_json::Value = serde_json::from_str(&semantic).expect("required invariant");
     assert_eq!(semantic["kind"], "nurbs_cage");
@@ -833,17 +892,13 @@ fn embedded_cage_projects_exact_construction_semantics() {
         class_data_range: 0..1,
         userdata: Vec::new(),
     };
-    let semantic = crate::decode::with_expand_bytes(&empty_subd, |expand| {
-        extended_geometry_json(
-            expand,
-            &geometry,
-            ArchiveVersion::V8,
-            None,
-            MillimeterScale::IDENTITY,
-            &mut Diagnostics::new(),
-            &mut None,
-        )
-    })
+    let semantic = embedded_geometry_json(
+        &empty_subd,
+        &geometry,
+        ArchiveVersion::V8,
+        MillimeterScale::IDENTITY,
+        &mut Diagnostics::new(),
+    )
     .expect("empty SubD semantics");
     assert_eq!(
         serde_json::from_str::<serde_json::Value>(&semantic).expect("required invariant"),
@@ -856,17 +911,13 @@ fn embedded_cage_projects_exact_construction_semantics() {
         class_data_range: 0..brep.len(),
         userdata: Vec::new(),
     };
-    let semantic = crate::decode::with_expand_bytes(&brep, |expand| {
-        extended_geometry_json(
-            expand,
-            &geometry,
-            ArchiveVersion::V8,
-            None,
-            crate::test_support::millimeter_scale(10.0),
-            &mut Diagnostics::new(),
-            &mut None,
-        )
-    })
+    let semantic = embedded_geometry_json(
+        &brep,
+        &geometry,
+        ArchiveVersion::V8,
+        crate::test_support::millimeter_scale(10.0),
+        &mut Diagnostics::new(),
+    )
     .expect("Brep topology semantics");
     let semantic: serde_json::Value = serde_json::from_str(&semantic).expect("required invariant");
     assert_eq!(semantic["kind"], "brep");
@@ -1099,6 +1150,7 @@ fn history_polyedge_minor_versions_preserve_reference_and_paired_domains() {
         let mut properties = BTreeMap::new();
         let mut sink = GeometrySink {
             warnings: &mut Diagnostics::new(),
+            mesh_budget: &mut crate::mesh::MeshBudget::new(),
             untyped: 0,
             failed: 0,
             redundant_repairs: 0,
@@ -1147,17 +1199,13 @@ fn scaled_hatch_semantics(offset: usize, value: f64, warnings: &mut Diagnostics)
         class_data_range: 0..payload.len(),
         userdata: Vec::new(),
     };
-    crate::decode::with_expand_bytes(&payload, |expand| {
-        extended_geometry_json(
-            expand,
-            &geometry,
-            ArchiveVersion::V8,
-            None,
-            crate::test_support::millimeter_scale(10.0),
-            warnings,
-            &mut None,
-        )
-    })
+    embedded_geometry_json(
+        &payload,
+        &geometry,
+        ArchiveVersion::V8,
+        crate::test_support::millimeter_scale(10.0),
+        warnings,
+    )
 }
 
 /// Byte 0 of the hatch fixture is the version; the plane's sixteen reals
@@ -1237,17 +1285,13 @@ fn embedded_history_hatch_retains_base_geometry_after_malformed_gradient() {
         )],
     };
     let mut warnings = Diagnostics::new();
-    let semantic = crate::decode::with_expand_bytes(&data, |expand| {
-        extended_geometry_json(
-            expand,
-            &geometry,
-            archive,
-            None,
-            MillimeterScale::IDENTITY,
-            &mut warnings,
-            &mut None,
-        )
-    })
+    let semantic = embedded_geometry_json(
+        &data,
+        &geometry,
+        archive,
+        MillimeterScale::IDENTITY,
+        &mut warnings,
+    )
     .expect("hatch geometry survives malformed gradient");
     let semantic: serde_json::Value = serde_json::from_str(&semantic).expect("hatch JSON");
     assert_eq!(semantic["basepoint"], serde_json::json!([3.0, 4.0]));
@@ -1310,17 +1354,13 @@ fn embedded_history_mesh_keeps_geometry_and_checked_identity() {
         class_data_range: 0..bytes.len(),
         userdata: Vec::new(),
     };
-    let text = crate::decode::with_expand_bytes(&bytes, |expand| {
-        extended_geometry_json(
-            expand,
-            &geometry,
-            ArchiveVersion::V5,
-            None,
-            MillimeterScale::IDENTITY,
-            &mut Diagnostics::new(),
-            &mut None,
-        )
-    })
+    let text = embedded_geometry_json(
+        &bytes,
+        &geometry,
+        ArchiveVersion::V5,
+        MillimeterScale::IDENTITY,
+        &mut Diagnostics::new(),
+    )
     .expect("embedded mesh geometry");
     let json: serde_json::Value = serde_json::from_str(&text).expect("mesh JSON");
     assert_eq!(json["id"], "rhino:history:mesh#embedded");

@@ -424,7 +424,7 @@ mod tests {
                 candidates: vec![candidate],
                 ..Default::default()
             });
-            let ctx = cadmpeg_test_support::service_decode_context();
+            let ctx = cadmpeg_core::decode::test_support::service_decode_context();
             let definition = project(&ctx, &scope, &mut Vec::new()).unwrap();
             let cadmpeg_ir::features::FeatureOperation::DatumAxis { axis } = definition.operation()
             else {
@@ -478,7 +478,7 @@ mod tests {
                 ..Default::default()
             });
             let mut losses = Vec::new();
-            let ctx = cadmpeg_test_support::service_decode_context();
+            let ctx = cadmpeg_core::decode::test_support::service_decode_context();
             let definition = project(&ctx, &scope, &mut losses).unwrap();
             assert!(
                 losses.is_empty(),
