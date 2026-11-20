@@ -400,7 +400,11 @@ fn parameters_with_readings(
     )],
     classes: &[(&str, crate::records::ArchiveParameterClass)],
     length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
-) -> (CadIr, Vec<cadmpeg_ir::design::parameter::DesignParameter>) {
+) -> (
+    CadIr,
+    Vec<cadmpeg_ir::design::parameter::DesignParameter>,
+    Option<cadmpeg_ir::report::loss::LossNote>,
+) {
     let ir = part_with_history(keywords, &[]);
     let native = crate::native::SldprtNative::load(ir.native.namespace("sldprt").unwrap()).unwrap();
     let mut v10 = ir.model.parameters.clone();
@@ -430,18 +434,20 @@ fn parameters_with_readings(
             .collect(),
     };
     let timeline = super::tree::timeline(&native.feature_histories).unwrap();
-    let parameters = super::parameters::Entries::new(&native.feature_histories, &timeline)
-        .unwrap()
-        .parameters(
-            &ir.design.scopes[0].definition,
-            &super::parameters::Readings {
-                decoded,
-                length_unit,
-                bound: std::collections::HashMap::new(),
-                measured: std::collections::HashMap::new(),
-            },
-        );
-    (ir, parameters)
+    let (parameters, rounded) =
+        super::parameters::Entries::new(&native.feature_histories, &timeline)
+            .unwrap()
+            .parameters(
+                &ir.design.scopes[0].definition,
+                &super::parameters::Readings {
+                    decoded,
+                    length_unit,
+                    bound: std::collections::HashMap::new(),
+                    measured: std::collections::HashMap::new(),
+                    driven: std::collections::HashSet::new(),
+                },
+            );
+    (ir, parameters, rounded)
 }
 
 #[test]
@@ -453,7 +459,7 @@ fn a_dimension_caches_the_stored_value_not_its_display() {
     use cadmpeg_ir::scalar::Length;
 
     let length = |millimetres: f64| V10::Length(Length::new(millimetres).unwrap());
-    let (ir, parameters) = parameters_with_readings(
+    let (ir, parameters, rounded) = parameters_with_readings(
         br#"<Keywords Name="Bracket">
             <Extrusion Name="Inch" Type="BossExtrude" id="7">
                 <Dimension Name="D1">1</Dimension>
@@ -533,6 +539,7 @@ fn a_dimension_caches_the_stored_value_not_its_display() {
     let unread = named("Pattern", "D2");
     assert!(matches!(&unread.kind, ValueKind::Native(kind) if kind.as_str() == "sldprt:dimension"));
     assert_eq!(unread.value, None);
+    assert!(rounded.is_none(), "{rounded:?}");
 }
 
 #[test]
@@ -544,7 +551,7 @@ fn a_length_display_is_a_literal_in_the_part_length_unit() {
     use cadmpeg_ir::scalar::Length;
 
     let length = |millimetres: f64| V10::Length(Length::new(millimetres).unwrap());
-    let (ir, parameters) = parameters_with_readings(
+    let (ir, parameters, rounded) = parameters_with_readings(
         br#"<Keywords Name="Bracket">
             <Extrusion Name="Stored" Type="BossExtrude" id="7">
                 <Dimension Name="D1">1</Dimension>
@@ -609,6 +616,19 @@ fn a_length_display_is_a_literal_in_the_part_length_unit() {
     }
     assert_eq!(named("Round").display, Some(DimensionDisplay::Radius));
     assert_eq!(expression_json(named("Pattern"))["kind"], "source");
+    let rounded = rounded.expect("the displayed literal is charged");
+    assert_eq!(
+        rounded.code,
+        crate::loss::SldprtLossCode::DesignParameterDisplayRounded.kind()
+    );
+    assert!(
+        rounded.message.starts_with("1 parameters")
+            && rounded
+                .message
+                .ends_with(&format!(": {}", named("Display").id.as_str())),
+        "{}",
+        rounded.message
+    );
 }
 
 #[test]
@@ -1262,13 +1282,14 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
         assert_eq!(typed.bound.get(parameter), Some(&Quantity::LENGTH));
     }
 
-    let parameters = entries.parameters(
+    let (parameters, _) = entries.parameters(
         &definition,
         &super::parameters::Readings {
             decoded: super::parameters::Decoded::new(&ir.model.parameters, &[]),
             length_unit: Some(UnitSymbol::Mm),
             bound: typed.bound,
             measured: typed.measured,
+            driven: typed.references,
         },
     );
     for parameter in &parameters {
@@ -1297,6 +1318,214 @@ fn a_sketch_and_its_extrude_are_typed_with_their_dimensions() {
     ir.design.sketch_entities = sketches.entities;
     ir.design.sketch_constraints = sketches.constraints;
     assert_no_design_findings(&ir);
+}
+
+/// The timeline of `ir`'s design, with its sketches and extrudes typed, and
+/// the parameter entries of its features.
+fn typed_timeline<'a>(
+    ir: &CadIr,
+    native: &'a crate::native::SldprtNative,
+) -> (
+    super::tree::Timeline,
+    super::parameters::Entries<'a>,
+    super::typed::Typed,
+) {
+    let mut timeline = super::tree::timeline(&native.feature_histories).unwrap();
+    let entries = super::parameters::Entries::new(&native.feature_histories, &timeline).unwrap();
+    let typed = super::typed::project(
+        &ir.model,
+        &native.feature_histories,
+        &[],
+        &mut timeline,
+        &entries,
+        &ir.design.scopes[0].definition,
+    );
+    (timeline, entries, typed)
+}
+
+fn timeline_feature<'a>(
+    timeline: &'a super::tree::Timeline,
+    name: &str,
+) -> &'a cadmpeg_ir::design::feature::Feature {
+    timeline
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some(name))
+        .unwrap()
+}
+
+#[test]
+fn a_two_sided_extrude_binds_only_the_depth_its_record_lists() {
+    use cadmpeg_ir::design::ops::shared::{Limit, Span};
+    use cadmpeg_ir::design::units::Quantity;
+    use cadmpeg_ir::scalar::Length;
+
+    let (mut ir, native) = sketch_and_extrude_from(
+        br#"<Keywords Name="Block">
+            <Feature Name="Front" id="2"/>
+            <Feature Name="Top" id="3"/>
+            <Feature Name="Right" id="4"/>
+            <Sketch Name="Origin" Type="OriginProfileFeature" id="106"/>
+            <Sketch Name="Sketch1" Type="ProfileFeature" id="8">
+                <Dimension Name="D1">50</Dimension>
+                <Dimension Name="D2">30</Dimension>
+                <Dimension Name="D3">&lt;MOD-DIAM&gt;10</Dimension>
+            </Sketch>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                <Dimension Name="D2">5</Dimension>
+            </Extrusion>
+        </Keywords>"#,
+    );
+    let sketch_feature = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .unwrap()
+        .id
+        .clone();
+    let definition = serde_json::from_value(serde_json::json!({"kind": "operation",
+        "value": {"kind": "extrude", "value": {
+            "profile": {"kind": "planar", "value": {"kind": "feature",
+                "value": sketch_feature.as_str()}},
+            "direction": {"kind": "profile_normal"}, "start": {"kind": "profile_plane"},
+            "extent": {"kind": "two_sided",
+                "first": {"termination": {"kind": "blind", "length": 10.0}},
+                "second": {"termination": {"kind": "blind", "length": 5.0}}},
+            "op": "join", "solid": true}}}))
+    .unwrap();
+    ir.model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .unwrap()
+        .evaluation
+        .edit(|current, _| *current = definition);
+    let (timeline, entries, typed) = typed_timeline(&ir, &native);
+    let boss = timeline_feature(&timeline, "Boss");
+    let FeatureOperation::Extrude(extrude) = &boss.definition.operation else {
+        panic!("the extrude is typed: {:?}", boss.definition.operation);
+    };
+    let second = entries.owned(&boss.id, "D2").unwrap().clone();
+    assert_eq!(
+        extrude.span,
+        Some(Span::Between {
+            start: Box::new(Limit::Amount(Dimension::Parameter(second.clone()))),
+            end: Box::new(Limit::Amount(Dimension::Literal(
+                Length::new(10.0).unwrap()
+            ))),
+        })
+    );
+    assert_eq!(typed.bound.get(&second), Some(&Quantity::LENGTH));
+}
+
+#[test]
+fn a_reference_dimension_makes_the_tree_parameter_it_binds_driven() {
+    use cadmpeg_ir::design::ops::sketch::SketchRelation;
+    use cadmpeg_ir::design::parameter::{ParameterDefinition, ParameterValue};
+    use cadmpeg_ir::design::units::UnitSymbol;
+    use cadmpeg_ir::scalar::FiniteReal;
+
+    let (mut ir, native) = sketch_and_extrude();
+    for constraint in &mut ir.model.sketch_constraints {
+        if constraint.id.as_str().ends_with(":4") {
+            constraint.driving = Some(false);
+        }
+    }
+    let (timeline, entries, typed) = typed_timeline(&ir, &native);
+    assert!(typed.loss.is_none(), "{:?}", typed.loss);
+    let hole = entries
+        .owned(&timeline_feature(&timeline, "Sketch1").id, "D3")
+        .unwrap()
+        .clone();
+    assert!(typed.sketches.constraints.iter().any(|constraint| matches!(
+        &constraint.relation,
+        SketchRelation::Radial { value: Dimension::Parameter(parameter), .. } if parameter == &hole
+    )));
+    let (parameters, _) = entries.parameters(
+        &ir.design.scopes[0].definition,
+        &super::parameters::Readings {
+            decoded: super::parameters::Decoded::new(&ir.model.parameters, &[]),
+            length_unit: Some(UnitSymbol::Mm),
+            bound: typed.bound,
+            measured: typed.measured,
+            driven: typed.references,
+        },
+    );
+    let diameter = parameters
+        .iter()
+        .find(|parameter| parameter.id == hole)
+        .unwrap();
+    assert_eq!(diameter.definition, ParameterDefinition::Driven);
+    assert_eq!(
+        diameter.value,
+        Some(ParameterValue::Number(FiniteReal::new(10.0).unwrap()))
+    );
+    let sketches = typed.sketches;
+    ir.design.features = timeline.features;
+    ir.design.parameters = parameters;
+    ir.design.sketches = sketches.records;
+    ir.design.sketch_entities = sketches.entities;
+    ir.design.sketch_constraints = sketches.constraints;
+    assert_no_design_findings(&ir);
+}
+
+#[test]
+fn a_sketch_with_an_unbound_dimension_or_an_entity_without_a_curve_is_unresolved() {
+    assert_sketch_unresolved(
+        |ir| {
+            let mut constraints = serde_json::to_value(&ir.model.sketch_constraints).unwrap();
+            for constraint in constraints.as_array_mut().unwrap() {
+                if constraint["id"].as_str().unwrap().ends_with(":1") {
+                    constraint["definition"]["parameter"] =
+                        serde_json::json!("sldprt:model:parameter#unlisted");
+                }
+            }
+            ir.model.sketch_constraints = serde_json::from_value(constraints).unwrap();
+        },
+        "a sketch dimension binds no parameter",
+    );
+    assert_sketch_unresolved(
+        |ir| {
+            ir.model.sketch_entities.push(
+                serde_json::from_value(serde_json::json!({
+                    "id": "sldprt:model:sketch-entity#test:text",
+                    "sketch": "sldprt:model:sketch#test",
+                    "construction": false, "endpoint_refs": [],
+                    "geometry": {"kind": "native", "native_kind": "sldprt:sketch-text"}}))
+                .unwrap(),
+            );
+        },
+        "a sketch entity has no planar curve",
+    );
+}
+
+/// Assert that the sketch of [`sketch_and_extrude`], after `change`, stays
+/// `Unresolved` for `reason`, and its extrude with it.
+fn assert_sketch_unresolved(change: impl FnOnce(&mut CadIr), reason: &str) {
+    let (mut ir, native) = sketch_and_extrude();
+    change(&mut ir);
+    let (timeline, _, typed) = typed_timeline(&ir, &native);
+    assert!(typed.sketches.records.is_empty(), "{reason}");
+    let sketch = timeline_feature(&timeline, "Sketch1");
+    assert_eq!(
+        sketch.definition.operation,
+        FeatureOperation::Unresolved {
+            family: OperationFamily::Sketch
+        },
+        "{reason}"
+    );
+    assert!(matches!(
+        timeline_feature(&timeline, "Boss").definition.operation,
+        FeatureOperation::Unresolved { .. }
+    ));
+    let loss = typed.loss.expect("the sketch is reported");
+    assert!(
+        loss.message
+            .contains(&format!("{} ({reason})", sketch.id.as_str())),
+        "{}",
+        loss.message
+    );
 }
 
 #[test]

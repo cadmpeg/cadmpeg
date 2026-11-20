@@ -10,8 +10,11 @@
 //! coincidence of two of its ends is that entity's. The decoder reads the
 //! construction flag where it sets it, so an entity it does not mark states
 //! no flag. A dimension binds the parameter that holds its value, and states
-//! that parameter's quantity; a reference dimension whose parameter no tree
-//! node lists binds a `Driven` parameter minted for it.
+//! that parameter's quantity; a reference dimension makes the tree parameter
+//! it binds `Driven`, and one whose parameter no tree node lists binds a
+//! `Driven` parameter minted for it. A sketch with a dimension that binds no
+//! parameter, or with an entity that has no planar curve, stays
+//! `Unresolved`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -24,8 +27,8 @@ use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::feature::{Feature, FeatureOperation, OperationFamily};
 use cadmpeg_ir::design::ops::sketch::{
-    AngleOperands, DefiningRole, DistanceAxis, EntityDefinition, EntityForm, EntityRole, Operand,
-    Planar, PlanarCurve, RadialMeasure, Sketch, SketchConstraint, SketchEntity, SketchPlane,
+    AngleOperands, DefiningRole, DistanceAxis, EntityDefinition, EntityRole, Operand, Planar,
+    PlanarCurve, RadialMeasure, Sketch, SketchConstraint, SketchEntity, SketchPlane,
     SketchRelation, SketchSolve,
 };
 use cadmpeg_ir::design::options::NativeOptions;
@@ -60,6 +63,8 @@ pub(super) struct Sketches {
     pub(super) constraints: Vec<SketchConstraint<Planar>>,
     /// The `Driven` parameters minted for reference dimensions.
     pub(super) driven: Vec<DesignParameter>,
+    /// The tree parameters a reference dimension binds.
+    pub(super) references: HashSet<ParameterId>,
     /// The quantity of each parameter a dimension binds.
     pub(super) bound: HashMap<ParameterId, Quantity>,
     /// The parameters a radius or diameter dimension binds, by what it
@@ -138,18 +143,11 @@ fn sketch(
     let roles = Roles::new(&entities);
     let mut sketch_entities = Vec::with_capacity(entities.len());
     for entity in &entities {
+        let form = curve(&entity.geometry).ok_or("a sketch entity has no planar curve")?;
         sketch_entities.push(SketchEntity {
             id: entity.id().clone(),
             sketch: record.id.clone(),
-            definition: curve(&entity.geometry).map_or_else(
-                || EntityDefinition::Defined {
-                    form: Box::new(EntityForm::Native(cadmpeg_core::nonblank_literal!(
-                        "sldprt:sketch_entity"
-                    ))),
-                    solved: None,
-                },
-                EntityDefinition::Free,
-            ),
+            definition: EntityDefinition::Free(form),
             roles: roles.of(entity.id()),
             construction: entity.construction.then_some(true),
             centerline: None,
@@ -161,6 +159,7 @@ fn sketch(
     }
     let mut constraints = Vec::new();
     let mut driven = Vec::new();
+    let mut references = Vec::new();
     let mut bound = Vec::new();
     for constraint in model
         .sketch_constraints
@@ -173,11 +172,14 @@ fn sketch(
             roles: &roles,
             entities: &entities,
         };
-        let (relation, binding) = relations.relation(constraint, &driven);
+        let (relation, binding) = relations.relation(constraint, &driven)?;
         if matches!(&relation, SketchRelation::Coincident { a, b } if a == b) {
             continue;
         }
         if let Some((parameter, quantity, minted)) = binding {
+            if constraint.driving == Some(false) && context.entries.contains(&parameter) {
+                references.push(parameter.clone());
+            }
             bound.push((parameter, quantity));
             driven.extend(minted);
         }
@@ -226,6 +228,7 @@ fn sketch(
     );
     out.constraints.extend(constraints);
     out.driven.extend(driven);
+    out.references.extend(references);
     out.bound.extend(bound);
     Ok(record.id.clone())
 }
@@ -497,30 +500,29 @@ struct Relations<'a> {
 }
 
 impl Relations<'_> {
-    /// The relation of `constraint`, and the parameter its value binds.
+    /// The relation of `constraint`, and the parameter its value binds. A
+    /// dimension that binds no parameter has no relation.
     fn relation(
         &self,
         constraint: &cadmpeg_ir::sketches::SketchConstraint,
         minted: &[DesignParameter],
-    ) -> (SketchRelation<Planar>, Option<Binding>) {
+    ) -> Result<(SketchRelation<Planar>, Option<Binding>), &'static str> {
+        const UNBOUND: &str = "a sketch dimension binds no parameter";
         let kind = constraint.definition.kind();
-        let driving = constraint.driving;
         if let Some(relation) = self.geometric(kind) {
-            return (relation, None);
+            return Ok((relation, None));
         }
-        if let Some((parameter, quantity)) = dimension_parameter(kind) {
-            if let Some(binding) = self.binding(parameter, quantity, driving, minted) {
-                let value = binding.0.clone();
-                if let Some(relation) = self.dimension(kind, value) {
-                    return (relation, Some(binding));
-                }
-                return (
-                    native(kind, operands(kind), vec![scalar(quantity, &binding.0)]),
-                    Some(binding),
-                );
-            }
+        if !is_dimension(kind) {
+            return Ok((native(kind, operands(kind), Vec::new()), None));
         }
-        (native(kind, operands(kind), Vec::new()), None)
+        let (parameter, quantity) = dimension_parameter(kind).ok_or(UNBOUND)?;
+        let binding = self
+            .binding(parameter, quantity, constraint.driving, minted)
+            .ok_or(UNBOUND)?;
+        let relation = self
+            .dimension(kind, binding.0.clone())
+            .unwrap_or_else(|| native(kind, operands(kind), vec![scalar(quantity, &binding.0)]));
+        Ok((relation, Some(binding)))
     }
 
     /// The parameter `parameter` as a dimension of `quantity` binds it: a
@@ -794,6 +796,72 @@ const NATIVE_LENGTH_DIMENSIONS: [&str; 6] = [
     "sgCircleDim",
 ];
 const NATIVE_ANGLE_DIMENSIONS: [&str; 1] = ["sgAnglDim"];
+
+/// Whether `kind` is a dimension: a relation that states a value.
+fn is_dimension(kind: &Kind) -> bool {
+    match kind {
+        Kind::Native { native_kind, .. } => {
+            NATIVE_LENGTH_DIMENSIONS.contains(&native_kind.as_str())
+                || NATIVE_ANGLE_DIMENSIONS.contains(&native_kind.as_str())
+        }
+        Kind::PointCoordinateValues { .. }
+        | Kind::MidpointCoordinate { .. }
+        | Kind::Offset { .. }
+        | Kind::ArcAngle { .. }
+        | Kind::EllipseAngle { .. }
+        | Kind::Distance { .. }
+        | Kind::DistanceLoci { .. }
+        | Kind::DistanceLociValue { .. }
+        | Kind::PolarDistance { .. }
+        | Kind::AngleDifference { .. }
+        | Kind::HorizontalDistance { .. }
+        | Kind::VerticalDistance { .. }
+        | Kind::RepeatedDistance { .. }
+        | Kind::RepeatedLength { .. }
+        | Kind::ParallelLineSetDistance { .. }
+        | Kind::Angle { .. }
+        | Kind::AngleToAxis { .. }
+        | Kind::Radius { .. }
+        | Kind::RepeatedRadius { .. }
+        | Kind::Diameter { .. }
+        | Kind::RepeatedDiameter { .. }
+        | Kind::SnellsLaw { .. }
+        | Kind::Weight { .. } => true,
+        Kind::Disabled {}
+        | Kind::Coincident { .. }
+        | Kind::Polygon { .. }
+        | Kind::SplineGroup { .. }
+        | Kind::RectangularPattern { .. }
+        | Kind::CircularPattern { .. }
+        | Kind::TextFrame { .. }
+        | Kind::TextPath { .. }
+        | Kind::CoincidentLoci { .. }
+        | Kind::SameCoordinate { .. }
+        | Kind::PointOnObject { .. }
+        | Kind::Midpoint { .. }
+        | Kind::ProjectedCopy { .. }
+        | Kind::AtIntersection { .. }
+        | Kind::Concentric { .. }
+        | Kind::Coradial { .. }
+        | Kind::Collinear { .. }
+        | Kind::Symmetric { .. }
+        | Kind::PointSymmetric { .. }
+        | Kind::Horizontal { .. }
+        | Kind::Vertical { .. }
+        | Kind::Parallel { .. }
+        | Kind::Perpendicular { .. }
+        | Kind::Tangent { .. }
+        | Kind::TangentLoci { .. }
+        | Kind::Curvature { .. }
+        | Kind::Equal { .. }
+        | Kind::Fixed { .. }
+        | Kind::ScalarEquality { .. }
+        | Kind::EqualDistance { .. }
+        | Kind::InternalAlignment { .. }
+        | Kind::Group { .. }
+        | Kind::Text { .. } => false,
+    }
+}
 
 /// The parameter a dimension relation binds and the quantity it measures.
 fn dimension_parameter(kind: &Kind) -> Option<(&ParameterId, Quantity)> {

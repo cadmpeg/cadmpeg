@@ -321,6 +321,9 @@ pub(crate) enum SldprtLossCode {
     /// A feature folder whose members regeneration order does not keep in
     /// one run is not stated.
     DesignFolderDropped,
+    /// Parameters whose literal and value are their dimension's displayed
+    /// number, which Keywords rounds to the display precision.
+    DesignParameterDisplayRounded,
 }
 
 impl SldprtLossCode {
@@ -457,6 +460,7 @@ impl SldprtLossCode {
         Self::AssemblyBomExclusionNotTransferred,
         Self::DesignFeatureUnresolved,
         Self::DesignFolderDropped,
+        Self::DesignParameterDisplayRounded,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -615,6 +619,7 @@ impl SldprtLossCode {
             Self::AssemblyBomExclusionNotTransferred => "assembly.bom-exclusion-not-transferred",
             Self::DesignFeatureUnresolved => "design.feature-unresolved",
             Self::DesignFolderDropped => "design.folder-dropped",
+            Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
         }
     }
 
@@ -744,7 +749,8 @@ impl SldprtLossCode {
             Self::AssemblyMatesNotTransferred
             | Self::AssemblyVirtualComponentsNotTransferred
             | Self::AssemblyEmbeddedDocumentsNotTransferred
-            | Self::DesignFolderDropped => Severity::Warning,
+            | Self::DesignFolderDropped
+            | Self::DesignParameterDisplayRounded => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
@@ -798,6 +804,7 @@ impl SldprtLossCode {
             }
             Self::DesignFeatureUnresolved => LossTaxonomy::RecordNotTyped,
             Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
+            Self::DesignParameterDisplayRounded => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -1189,6 +1196,7 @@ mod tests {
                 "assembly.bom-exclusion-not-transferred",
                 "design.feature-unresolved",
                 "design.folder-dropped",
+                "design.parameter-display-rounded",
             ]
         );
     }

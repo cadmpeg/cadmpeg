@@ -217,7 +217,7 @@ fn span(
             undrafted(side)?;
             Span::Between {
                 start: Box::new(Limit::AtOrigin),
-                end: Box::new(limit(&side.termination, depths.first.as_ref(), bound)?),
+                end: Box::new(limit(&side.termination, depths.first_or_sole(), bound)?),
             }
         }
         ExtrudeExtent::TwoSided { first, second } => {
@@ -230,7 +230,7 @@ fn span(
         }
         ExtrudeExtent::Symmetric { side } => {
             undrafted(side)?;
-            match limit(&side.termination, depths.first.as_ref(), bound)? {
+            match limit(&side.termination, depths.first_or_sole(), bound)? {
                 Limit::Amount(amount) => Span::Symmetric {
                     amount,
                     measure: Some(SymmetricMeasure::Total),
@@ -268,11 +268,14 @@ fn limit(
 }
 
 /// The dimensions that hold an extrude's two depths: `Depth` and `Depth2`,
-/// else `D1` and `D2`, the names the decoder reads the distances from, else
-/// the feature's one dimension for its first depth.
+/// else `D1` and `D2`, the names the decoder reads the distances from. A
+/// one-sided or mid-plane extrude without `Depth` or `D1` takes the
+/// feature's one dimension for its depth; a two-sided extrude's first depth
+/// without them is the literal the decoder read.
 struct Depths {
     first: Option<ParameterId>,
     second: Option<ParameterId>,
+    sole: Option<ParameterId>,
 }
 
 impl Depths {
@@ -300,8 +303,14 @@ impl Depths {
             context.entries.owned(&feature.id, name.as_str()).cloned()
         };
         Self {
-            first: owned(["Depth", "D1"]).or_else(sole),
+            first: owned(["Depth", "D1"]),
             second: owned(["Depth2", "D2"]),
+            sole: sole(),
         }
+    }
+
+    /// The dimension of a single depth: the first, else the sole one.
+    fn first_or_sole(&self) -> Option<&ParameterId> {
+        self.first.as_ref().or(self.sole.as_ref())
     }
 }

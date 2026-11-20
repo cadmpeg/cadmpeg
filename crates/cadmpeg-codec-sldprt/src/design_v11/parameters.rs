@@ -15,8 +15,10 @@
 //! definition states its length unit, a length dimension whose text is such
 //! a display is a literal in that unit, and an angle dimension's a literal
 //! in degrees (§5.12): the stored value where a record stores one, else the
-//! displayed number. Where it states none, a length display is no cache
-//! (§5.13). A dimension's kind is the quantity its stored record states: the
+//! displayed number, which Keywords rounds to the display precision and the
+//! `design.parameter-display-rounded` note names. Where it states none, a
+//! length display is no cache (§5.13). A parameter that a reference
+//! dimension binds is `Driven` and keeps its value (§6.1). A dimension's kind is the quantity its stored record states: the
 //! archive class of the `ResolvedFeatures` scalar it is bound to, the kind
 //! the decoder's own parameter took from a record, a relation, or the
 //! feature, or the quantity of the sketch or feature dimension that binds
@@ -38,6 +40,7 @@ use cadmpeg_ir::design::parameter::{
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use cadmpeg_ir::features::{FeatureId, ParameterId};
 use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{FiniteReal, NonNegativeReal};
 
 use super::tree::Timeline;
@@ -47,6 +50,7 @@ use crate::history::parameters::{
     expression_identifier_tokens, native_parameter_is_length, parse_native_parameter_literal,
 };
 use crate::history::project::{neutral_parameter_id, projected_parameter_names};
+use crate::loss::{NamedCount, SldprtLossCode};
 use crate::records::{ArchiveParameterClass, Feature, FeatureHistory, FeatureInputLane};
 
 /// The kind of a dimension whose quantity the decoder has not read: a bare
@@ -234,6 +238,8 @@ pub(super) struct Readings<'a> {
     /// The parameters a radius or diameter dimension binds, by what it
     /// measures: such a parameter states no display of that measure.
     pub(super) measured: HashMap<ParameterId, DimensionDisplay>,
+    /// The parameters a reference dimension binds.
+    pub(super) driven: HashSet<ParameterId>,
 }
 
 /// The parameters of the timeline's features and of the equations folders,
@@ -277,17 +283,34 @@ impl<'a> Entries<'a> {
         self.ids.contains(id)
     }
 
-    /// The parameters, their expressions read.
+    /// The parameters, their expressions read, and the note naming those
+    /// whose literal is a rounded display.
     pub(super) fn parameters(
         &self,
         scope: &ProductDefinitionId,
         readings: &Readings<'_>,
-    ) -> Vec<DesignParameter> {
+    ) -> (Vec<DesignParameter>, Option<LossNote>) {
         let aliases = Aliases::new(&self.list);
-        self.list
+        let mut rounded = NamedCount::default();
+        let parameters = self
+            .list
             .iter()
-            .map(|entry| parameter(entry, &aliases, scope, readings))
-            .collect()
+            .map(|entry| {
+                let reading = read(entry, &aliases, readings);
+                if reading.rounded {
+                    rounded.push(entry.id.as_str());
+                }
+                parameter(entry, reading, scope, readings)
+            })
+            .collect();
+        let loss = (!rounded.is_empty()).then(|| {
+            SldprtLossCode::DesignParameterDisplayRounded.note(format!(
+                "{} parameters hold their dimension's displayed number, rounded to the display \
+                 precision, as their literal and value: {rounded}",
+                rounded.count()
+            ))
+        });
+        (parameters, loss)
     }
 }
 
@@ -327,11 +350,10 @@ fn entries<'a>(
 
 fn parameter(
     entry: &Entry<'_>,
-    aliases: &Aliases,
+    reading: Reading,
     scope: &ProductDefinitionId,
     readings: &Readings<'_>,
 ) -> DesignParameter {
-    let reading = read(entry, aliases, readings);
     DesignParameter {
         id: entry.id.clone(),
         scope: scope.clone(),
@@ -339,7 +361,11 @@ fn parameter(
         name: Some(entry.name.clone()),
         kind: reading.kind,
         unit: None,
-        definition: ParameterDefinition::Expression(reading.expression),
+        definition: if readings.driven.contains(&entry.id) {
+            ParameterDefinition::Driven
+        } else {
+            ParameterDefinition::Expression(reading.expression)
+        },
         value: reading.value,
         display: reading.display,
         tolerance: None,
@@ -356,6 +382,8 @@ struct Reading {
     expression: Expression,
     value: Option<ParameterValue>,
     display: Option<DimensionDisplay>,
+    /// The literal and value are a display's rounded number.
+    rounded: bool,
 }
 
 fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Reading {
@@ -368,6 +396,7 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
             expression: Expression::Neutral(Neutral(node)),
             value: Some(value),
             display: None,
+            rounded: false,
         };
     }
     let tokens = source_tokens(text, entry.owner.as_ref(), aliases);
@@ -386,6 +415,7 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
             expression: Expression::Neutral(Neutral(Node::Text(text.to_owned()))),
             value: Some(ParameterValue::Text(text.to_owned())),
             display: None,
+            rounded: false,
         };
     }
     let stored = feature
@@ -430,13 +460,14 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
         })
         .filter(|display| readings.measured.get(&entry.id) != Some(display));
     if let Some(number) = bare.filter(|_| !user && !references) {
-        if let Some((node, value)) =
+        if let Some((node, literal)) =
             displayed_literal(number, &kind, value.as_ref(), readings.length_unit)
         {
             return Reading {
                 kind,
                 expression: Expression::Neutral(Neutral(node)),
-                value: Some(value),
+                rounded: value.is_none(),
+                value: Some(literal),
                 display,
             };
         }
@@ -449,6 +480,7 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
         },
         value,
         display,
+        rounded: false,
     }
 }
 

@@ -28,6 +28,8 @@ pub(super) struct Typed {
     pub(super) sketches: Sketches,
     pub(super) bound: HashMap<ParameterId, Quantity>,
     pub(super) measured: HashMap<ParameterId, DimensionDisplay>,
+    /// The tree parameters a reference dimension binds.
+    pub(super) references: HashSet<ParameterId>,
     pub(super) loss: Option<LossNote>,
 }
 
@@ -77,8 +79,10 @@ pub(super) fn project(
     }
     let loss = loss(&sketches.unprojected, &extrudes.unprojected);
     let measured = std::mem::take(&mut sketches.measured);
+    let references = std::mem::take(&mut sketches.references);
     Typed {
         measured,
+        references,
         bound: bound
             .into_iter()
             .filter_map(|(parameter, quantity)| Some((parameter, quantity?)))
