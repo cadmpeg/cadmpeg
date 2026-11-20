@@ -749,6 +749,9 @@ pub(crate) enum F3dLossCode {
     FeatureWorkAxisCandidatesUnresolved,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
+    /// A pattern seed or `RemoveBody` selection of omitted bodies has no
+    /// resolved ASM history: its producer is the one inserting state of any
+    /// history, or the selection keeps its native slots.
     FeatureGeneratedBodyHistoryUnresolved,
     /// Reverse Normal body-group members lack the whole-body record type.
     FeatureReverseNormalBodyUnverified,

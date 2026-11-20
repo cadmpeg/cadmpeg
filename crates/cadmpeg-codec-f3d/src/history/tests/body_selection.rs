@@ -915,7 +915,7 @@ fn a_shared_state_pair_uses_the_selecting_scopes_bound_history() {
 }
 
 #[test]
-fn an_unbound_shared_state_pair_keeps_the_selection_with_a_history_loss() {
+fn an_unbound_shared_state_pair_binds_the_one_inserting_state_with_a_history_loss() {
     use cadmpeg_ir::features::{
         patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
     };
@@ -928,21 +928,27 @@ fn an_unbound_shared_state_pair_keeps_the_selection_with_a_history_loss() {
             &histories,
             &std::collections::HashMap::new(),
         );
-        match feature.evaluation.definition() {
+        let selection = match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => {
-                assert!(matches!(
-                    seeds.as_slice(),
-                    [PatternSeed::Bodies(BodySelection::Historical { bodies, .. })]
-                        if bodies.len() == 1 && super::super::historical_body_slot(bodies[0].as_str()) == Some(1)
-                ));
+                let [PatternSeed::Bodies(selection)] = seeds.as_slice() else {
+                    panic!("one body seed");
+                };
+                selection
             }
-            FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, .. }) => {
-                assert!(matches!(bodies, BodySelection::Native(_)));
-            }
+            FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, .. }) => bodies,
             _ => panic!("body selection"),
-        }
-        assert!(results.is_empty());
-        assert!(feature.dependencies.is_empty());
+        };
+        let BodySelection::Generated { bodies, .. } = selection else {
+            panic!("generated body: {selection:?}");
+        };
+        assert_eq!(bodies.len(), 1);
+        assert_eq!(bodies[0].feature.as_str(), "f3d:test:feature#extrude");
+        assert_eq!(bodies[0].local_id.as_str(), "1");
+        assert_eq!(feature.dependencies.as_slice(), [bodies[0].feature.clone()]);
+        let [result] = results.as_slice() else {
+            panic!("one result state");
+        };
+        assert_eq!(result.output_of, bodies[0].feature);
         let [loss] = losses.as_slice() else {
             panic!("one unresolved history loss: {losses:?}");
         };
@@ -954,6 +960,7 @@ fn an_unbound_shared_state_pair_keeps_the_selection_with_a_history_loss() {
         );
         assert!(loss.message.contains(feature.id.as_str()));
         assert!(loss.message.contains("body slots [1]"));
+        assert!(loss.message.contains("taken as its producer"));
     }
 }
 

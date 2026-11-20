@@ -3694,7 +3694,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** Which native relation selects the history of a body-pattern seed or `RemoveBody` operand when scope-history bindings and state identities leave several candidate histories?
 
-**Known.** Generated-body selections use the scope-history map and state tests in DR-150. As a last fallback, the decoder uses the unique history that holds both selecting endpoints, then the unique history that holds either endpoint, then the file's sole history. When every selected slot is absent from the live bodies and the selecting history stays unresolved, the decoder retains the Historical pattern seed or native `RemoveBody` group and reports `feature.generated-body-history-unresolved` with the selecting feature and body slots.
+**Known.** Generated-body selections use the scope-history map and state tests in DR-150. As a last fallback, the decoder uses the unique history that holds both selecting endpoints, then the unique history that holds either endpoint, then the file's sole history. When every selected slot is absent from the live bodies and the selecting history stays unresolved, the decoder takes, for each slot, the one state of any history that inserts it and the one same-stream scope with that state as the producer, and reports `feature.generated-body-history-unresolved` with the selecting feature, the body slots and that assumption. Without such a state and scope, it retains the Historical pattern seed or native `RemoveBody` group with the same loss.
 
 **Need.** Controlled designs with repeated endpoint pairs and one omitted seed body, with the native reference chain from the selecting scope to its history.
 
