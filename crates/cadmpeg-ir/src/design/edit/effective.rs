@@ -17,7 +17,7 @@ use std::borrow::Cow;
 
 use super::EditError;
 use crate::appearance::AppearanceTarget;
-use crate::design::configuration::{Arrangement, ArrangementRef, OccurrenceOverride};
+use crate::design::configuration::{Arrangement, ArrangementRef, OccurrenceOverride, Overrides};
 use crate::design::refs::{ConfigurationRef, StateRef};
 use crate::design::scope::DesignScope;
 use crate::design::selection::{OccurrencePath, StepRef};
@@ -322,7 +322,7 @@ impl CadIr {
             (Some(stated), _) => Some(stated.clone()),
             (None, None) => None,
             (None, Some(scope)) => {
-                let from = |overrides: &crate::design::configuration::Overrides| {
+                let from = |overrides: &Overrides| {
                     overrides
                         .occurrences
                         .get(level.occurrence)
@@ -365,43 +365,101 @@ impl CadIr {
     /// Resolves every occurrence of a path, outermost first; `None` where a
     /// step is `Native` or names an occurrence the document does not hold.
     fn resolve_path(&self, path: &OccurrencePath) -> Result<Option<Vec<Resolved>>, EditError> {
+        let Some(levels) = self.levels(path)? else {
+            return Ok(None);
+        };
+        let ids: Vec<&OccurrenceId> = levels.iter().map(|level| level.occurrence).collect();
+        let mut resolved = Vec::with_capacity(levels.len());
+        for at in 0..levels.len() {
+            resolved.push(self.resolve_level(&levels, &ids, at)?);
+        }
+        Ok(Some(resolved))
+    }
+
+    /// The definition of the scope that states the design of what the
+    /// instance at `path` holds, and the configuration of that scope that
+    /// applies to it: its prototype's scope, in the configuration the path's
+    /// last occurrence selects for it, else the scope of that occurrence,
+    /// which spans the prototype, in that occurrence's configuration (§5.1,
+    /// part 9). `None` where the path is empty, a step is `Native` or names
+    /// an occurrence the document does not hold, an override in force
+    /// replaces the prototype of one of its occurrences, or no scope states
+    /// that design.
+    ///
+    /// # Errors
+    ///
+    /// As [`CadIr::effective_transform`].
+    pub(crate) fn instance_configuration(
+        &self,
+        path: &OccurrencePath,
+    ) -> Result<Option<(ProductDefinitionId, Option<ConfigurationId>)>, EditError> {
+        let Some(levels) = self.levels(path)? else {
+            return Ok(None);
+        };
+        for at in 0..levels.len() {
+            if self.replaced(&levels, at)? {
+                return Ok(None);
+            }
+        }
+        let Some(last) = levels.last() else {
+            return Ok(None);
+        };
+        let Some(scope) = self.design_scope(&last.record.prototype).or(last.scope) else {
+            return Ok(None);
+        };
+        let stated = path.0.last().and_then(|step| step.configuration.as_ref());
+        let configuration = self.configuration_below(Some(last), Some(scope), stated)?;
+        Ok(Some((scope.definition.clone(), configuration)))
+    }
+
+    /// Whether an override in force for the occurrence at `at` of a path
+    /// whose levels are `levels` replaces its prototype.
+    fn replaced(&self, levels: &[Level<'_>], at: usize) -> Result<bool, EditError> {
+        let level = &levels[at];
+        let replaces = |overrides: &Overrides| {
+            overrides
+                .occurrences
+                .get(level.occurrence)
+                .is_some_and(|entry| entry.prototype.is_some())
+        };
+        if self
+            .arranged_for(levels, at)?
+            .into_iter()
+            .any(|arrangement| replaces(&arrangement.overrides))
+        {
+            return Ok(true);
+        }
+        Ok(match &level.configuration {
+            Some(configuration) => self
+                .configuration_chain(configuration)?
+                .into_iter()
+                .any(|state| replaces(&state.overrides)),
+            None => false,
+        })
+    }
+
+    /// The levels of a path, outermost first; `None` where a step is
+    /// `Native` or names an occurrence the document does not hold.
+    fn levels<'a>(&'a self, path: &'a OccurrencePath) -> Result<Option<Vec<Level<'a>>>, EditError> {
         let Some(ids) = occurrence_ids(path) else {
             return Ok(None);
         };
-        let mut levels: Vec<Level<'_>> = Vec::with_capacity(ids.len());
-        for (at, occurrence) in ids.iter().enumerate() {
+        let mut levels: Vec<Level<'a>> = Vec::with_capacity(ids.len());
+        for (at, occurrence) in ids.into_iter().enumerate() {
             let Some(record) = self
                 .model
                 .occurrences
                 .iter()
-                .find(|record| &record.id == *occurrence)
+                .find(|record| &record.id == occurrence)
             else {
                 return Ok(None);
             };
             let parent = levels.last();
             let scope = self.owning_scope(occurrence, parent.and_then(|level| level.scope));
-            let configuration = match parent {
-                None => scope.and_then(|scope| scope.active_configuration.clone()),
-                Some(parent) => {
-                    let own_scope =
-                        scope.is_some_and(|scope| scope.definition == parent.record.prototype);
-                    if own_scope {
-                        let stated = path.0[at - 1].configuration.as_ref();
-                        let selected = self.selected_configuration(parent, stated)?;
-                        selected
-                            .filter(|selected| {
-                                self.design.configurations.iter().any(|candidate| {
-                                    &candidate.id == selected
-                                        && Some(&candidate.scope)
-                                            == scope.map(|scope| &scope.definition)
-                                })
-                            })
-                            .or_else(|| scope.and_then(|scope| scope.active_configuration.clone()))
-                    } else {
-                        parent.configuration.clone()
-                    }
-                }
-            };
+            let stated = at
+                .checked_sub(1)
+                .and_then(|above| path.0[above].configuration.as_ref());
+            let configuration = self.configuration_below(parent, scope, stated)?;
             levels.push(Level {
                 occurrence,
                 record,
@@ -409,11 +467,35 @@ impl CadIr {
                 configuration,
             });
         }
-        let mut resolved = Vec::with_capacity(levels.len());
-        for at in 0..levels.len() {
-            resolved.push(self.resolve_level(&levels, &ids, at)?);
-        }
-        Ok(Some(resolved))
+        Ok(Some(levels))
+    }
+
+    /// The configuration of `scope` that applies below `parent`, the
+    /// occurrence whose prototype holds what `scope` states, where `parent`'s
+    /// path step states `stated`: with no parent, the scope's active
+    /// configuration; where `scope` is the prototype's own, the configuration
+    /// of it that `parent` selects, else its active one; where `scope` spans
+    /// the prototype, `parent`'s own configuration.
+    fn configuration_below(
+        &self,
+        parent: Option<&Level<'_>>,
+        scope: Option<&DesignScope>,
+        stated: Option<&ConfigurationRef>,
+    ) -> Result<Option<ConfigurationId>, EditError> {
+        let Some(parent) = parent else {
+            return Ok(scope.and_then(|scope| scope.active_configuration.clone()));
+        };
+        let Some(scope) = scope.filter(|scope| scope.definition == parent.record.prototype) else {
+            return Ok(parent.configuration.clone());
+        };
+        let selected = self.selected_configuration(parent, stated)?;
+        Ok(selected
+            .filter(|selected| {
+                self.design.configurations.iter().any(|candidate| {
+                    &candidate.id == selected && candidate.scope == scope.definition
+                })
+            })
+            .or_else(|| scope.active_configuration.clone()))
     }
 
     /// Resolves the occurrence at `at` of a path whose levels are `levels`.

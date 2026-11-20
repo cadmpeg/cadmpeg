@@ -7,16 +7,20 @@ use std::fmt::Debug;
 use crate::codec::{
     Codec, CodecBackend, Confidence, DecodeBody, DecodeOptions, DecodeResult, Decoded, FormatId,
 };
+use crate::design::configuration::{DesignConfiguration, Overrides};
 use crate::design::names::{CodecId, NativeName, NativeNameValue};
 use crate::design::refs::{ConfigurationRef, EntityRef};
 use crate::design::scope::OccurrenceDesign;
 use crate::design::selection::{OccurrencePath, PathStep, StepRef, Witness};
-use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
-use crate::ids::EdgeId;
+use crate::geometry::nurbs::NurbsCurve;
+use crate::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+use crate::ids::{EdgeId, OccurrenceId, ProductDefinitionId};
+use crate::math::Point3;
 use crate::process::feature::{MachiningFeature, MachiningFeatureClass};
 use crate::process::operation::{GeometryRole, GeometrySource, ProcessGeometry};
 use crate::process::state::{ProcessBase, ProcessContent, ProcessState, ProcessStateOf};
 use crate::process::{ProcessConstruction, WorkpieceSelection};
+use crate::products::{Occurrence, ProductDefinition, Storage};
 use crate::report::loss::LossNote;
 use crate::report::Severity;
 use crate::source_fidelity::SourceFidelity;
@@ -812,6 +816,66 @@ fn a_parameter_ratio_on_a_line_edge_is_a_ratio() {
 }
 
 #[test]
+fn a_parameter_ratio_on_an_edge_that_a_stored_state_holds_as_a_spline_stays() {
+    let mut ir = document();
+    let (edge, _) = line_edge(&ir);
+    let carrier = ir
+        .geometry
+        .edges
+        .iter()
+        .find(|record| record.id == edge)
+        .and_then(|record| match &record.carrier {
+            EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _) => Some(curve.clone()),
+            EdgeCarrier::Free | EdgeCarrier::Endpoints(_) => None,
+        })
+        .unwrap();
+    let spline = NurbsCurve::from_lanes(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(5.0, 3.0, 0.0),
+            Point3::new(10.0, 0.0, 0.0),
+        ],
+        None,
+        false,
+    )
+    .unwrap();
+    ir.design.evaluations[0]
+        .content
+        .as_mut()
+        .unwrap()
+        .delta
+        .records
+        .curves
+        .push(Curve {
+            id: carrier,
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(spline)),
+            parameter_range: None,
+            source_object: None,
+            native_ref: None,
+        });
+    let resolved = Picked {
+        resolved: Some(vec![EntityRef::Edge(edge)]),
+        ..pick(PickTarget::Native { within: None })
+    };
+    ir.design.features.push(datum(
+        "edges",
+        DatumElement::Points(vec![point_at(selection(named(vec![resolved])), 0.25)]),
+    ));
+    normalize(&mut ir).unwrap();
+    let DatumElement::Points(points) = datum_element(&ir, "edges") else {
+        panic!("points");
+    };
+    assert_eq!(
+        points[0].inputs[0].value,
+        Some(ScalarDimension::ParameterRatio(Dimension::Literal(real(
+            0.25
+        ))))
+    );
+}
+
+#[test]
 fn process_records_take_their_one_spelling() {
     let mut ir = document();
     let workpiece = WorkpieceSelection {
@@ -881,9 +945,113 @@ fn process_records_take_their_one_spelling() {
     );
 }
 
+/// `document()` placed in an assembly: definition `root` owns occurrence
+/// `cube` of `part` and occurrence `other` of `other`, and `part` owns
+/// occurrence `inner` of the embedded definition `inner`. `part`'s scope
+/// spans `inner`, which has no scope of its own, and holds the
+/// configurations `base`, its active one, and `large`. `root` and `other`
+/// have scopes with no configuration.
+fn placed() -> CadIr {
+    let mut ir = document();
+    for key in ["root", "part", "inner", "other"] {
+        ir.model.product_definitions.push(ProductDefinition::new(
+            id("definition", key),
+            Storage::Embedded,
+        ));
+    }
+    for (owner, key, prototype) in [
+        ("root", "cube", "part"),
+        ("root", "other", "other"),
+        ("part", "inner", "inner"),
+    ] {
+        let occurrence: OccurrenceId = id("occurrence", key);
+        let owner: ProductDefinitionId = id("definition", owner);
+        ir.model
+            .product_definitions
+            .iter_mut()
+            .find(|definition| definition.id == owner)
+            .unwrap()
+            .occurrences
+            .push(occurrence.clone());
+        ir.model.occurrences.push(Occurrence::new(
+            occurrence,
+            id("definition", prototype),
+            None,
+        ));
+    }
+    for key in ["root", "other"] {
+        ir.design.scopes.push(DesignScope {
+            definition: id("definition", key),
+            roots: Vec::new(),
+            active_configuration: None,
+            active_arrangements: BTreeSet::new(),
+            occurrences: BTreeMap::new(),
+            current: Vec::new(),
+        });
+    }
+    for key in ["base", "large"] {
+        ir.design.configurations.push(DesignConfiguration {
+            id: id("configuration", key),
+            scope: id("definition", "part"),
+            name: key.to_owned(),
+            parent: None,
+            comment: None,
+            overrides: Overrides::default(),
+            active_arrangements: BTreeSet::new(),
+            materials: Vec::new(),
+            native_ref: None,
+        });
+    }
+    ir
+}
+
+/// The path through the occurrences `keys`, outermost first, each step
+/// reading the configuration paired with it where one is stated.
+fn steps(keys: &[(&str, Option<&str>)]) -> OccurrencePath {
+    OccurrencePath(
+        keys.iter()
+            .map(|(key, configuration)| PathStep {
+                occurrence: StepRef::Occurrence(id("occurrence", key)),
+                configuration: configuration.map(|configuration| {
+                    ConfigurationRef::Local(id("configuration", configuration))
+                }),
+            })
+            .collect(),
+    )
+}
+
+/// The root scope's entry for occurrence `cube`, selecting `configuration`.
+fn cube_uses(ir: &mut CadIr, configuration: &str) {
+    let root: ProductDefinitionId = id("definition", "root");
+    ir.design
+        .scopes
+        .iter_mut()
+        .find(|scope| scope.definition == root)
+        .unwrap()
+        .occurrences
+        .insert(
+            id("occurrence", "cube"),
+            OccurrenceDesign {
+                configuration: Some(ConfigurationRef::Local(id("configuration", configuration))),
+                arrangements: Vec::new(),
+                grounded: None,
+                flexible: None,
+                parameters: BTreeMap::new(),
+            },
+        );
+}
+
+/// A target on the cube's body at `path`, in the current state of `base`.
+fn in_base(path: OccurrencePath) -> InstanceTarget<PmiTarget> {
+    InstanceTarget {
+        path: Some(path),
+        ..target(Some(state(Some("base"), after_body())))
+    }
+}
+
 #[test]
 fn a_target_whose_path_selects_the_active_configuration_states_none() {
-    let mut ir = document();
+    let mut ir = placed();
     ir.model.pmi[0].targets[1].path = Some(path(None));
     normalize(&mut ir).unwrap();
     assert_eq!(ir.model.pmi[0].targets[1].state, None);
@@ -891,27 +1059,49 @@ fn a_target_whose_path_selects_the_active_configuration_states_none() {
 
 #[test]
 fn a_target_whose_path_selects_another_configuration_keeps_its_state() {
-    let mut ir = document();
-    let base = || Some(state(Some("base"), after_body()));
+    let mut ir = placed();
     ir.model.pmi[0].targets[1].path = Some(path(Some("large")));
-    ir.model.pmi[0].targets.push(InstanceTarget {
-        path: Some(path(None)),
-        ..target(base())
-    });
-    ir.design.scopes[0].occurrences.insert(
-        id("occurrence", "cube"),
-        OccurrenceDesign {
-            configuration: Some(ConfigurationRef::Local(id("configuration", "large"))),
-            arrangements: Vec::new(),
-            grounded: None,
-            flexible: None,
-            parameters: BTreeMap::new(),
-        },
-    );
+    ir.model.pmi[0].targets.push(in_base(path(None)));
+    cube_uses(&mut ir, "large");
     normalize(&mut ir).unwrap();
     let kept = Some(state(Some("base"), after_feature("fillet")));
     assert_eq!(ir.model.pmi[0].targets[1].state, kept);
     assert_eq!(ir.model.pmi[0].targets[4].state, kept);
+}
+
+#[test]
+fn a_target_in_a_spanned_definition_reads_the_configuration_its_ancestor_selects() {
+    let mut ir = placed();
+    cube_uses(&mut ir, "large");
+    ir.model.pmi[0].targets = vec![
+        in_base(steps(&[("cube", None), ("inner", None)])),
+        in_base(steps(&[("cube", Some("base")), ("inner", None)])),
+    ];
+    normalize(&mut ir).unwrap();
+    let states: Vec<Option<StateRef>> = ir.model.pmi[0]
+        .targets
+        .iter()
+        .map(|target| target.state.clone())
+        .collect();
+    assert_eq!(
+        states,
+        [Some(state(Some("base"), after_feature("fillet"))), None]
+    );
+}
+
+#[test]
+fn a_target_through_an_occurrence_of_another_scope_keeps_its_state() {
+    let mut ir = placed();
+    ir.model.pmi[0].targets = vec![
+        in_base(steps(&[("other", None)])),
+        in_base(steps(&[("absent", None)])),
+    ];
+    normalize(&mut ir).unwrap();
+    let kept = Some(state(Some("base"), after_feature("fillet")));
+    assert!(ir.model.pmi[0]
+        .targets
+        .iter()
+        .all(|target| target.state == kept));
 }
 
 /// A point at `ParameterRatio` 1 of nothing, inside `depth - 1` points

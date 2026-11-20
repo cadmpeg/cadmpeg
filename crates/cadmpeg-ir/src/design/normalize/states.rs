@@ -14,11 +14,9 @@ use crate::declared_measures::DeclaredTarget;
 use crate::design::container::{Container, Rollback};
 use crate::design::evaluation::StateBase;
 use crate::design::ids::ContainerId;
-use crate::design::refs::{ConfigurationRef, Evaluated, Member, Position, StateRef};
-use crate::design::selection::{OccurrencePath, StepRef};
-use crate::document::{Design, Model, Process};
+use crate::design::refs::{Evaluated, Member, Position, StateRef};
+use crate::document::{CadIr, Design, Model, Process};
 use crate::features::ConfigurationId;
-use crate::ids::OccurrenceId;
 use crate::physics::solver::SolverValue;
 use crate::pmi::PmiDefinition;
 use crate::process::state::ProcessBase;
@@ -36,22 +34,6 @@ pub(super) struct States {
     /// The active configuration of each scope and the positions of its
     /// current states, in their one spelling.
     current: BTreeMap<String, (Option<ConfigurationId>, Vec<Position>)>,
-    /// What the design states of the configuration each occurrence uses, by
-    /// the occurrence's id.
-    occurrences: BTreeMap<OccurrenceId, Uses>,
-}
-
-/// The statements of the configuration of its prototype that one
-/// occurrence uses (§5.1, §5.11).
-#[derive(Debug, Default)]
-struct Uses {
-    /// The base value of each scope entry that lists the occurrence; `None`
-    /// is the prototype's active configuration.
-    bases: Vec<Option<ConfigurationRef>>,
-    /// The value each configuration or arrangement override states.
-    overrides: Vec<ConfigurationRef>,
-    /// Whether an override replaces the occurrence's prototype.
-    replaced: bool,
 }
 
 impl States {
@@ -73,7 +55,6 @@ impl States {
             rollbacks,
             scopes: BTreeMap::new(),
             current: BTreeMap::new(),
-            occurrences: occurrence_uses(design),
         };
         for scope in &design.scopes {
             let definition = scope.definition.as_str();
@@ -170,29 +151,31 @@ impl States {
 
     /// Spells every `StateRef` of the model records through its member, and
     /// clears each instance target's `state` that names what `None` names.
-    pub(super) fn normalize_model(&self, model: &mut Model) {
+    /// `products` holds the document's design and product structure, which
+    /// resolve a target's path.
+    pub(super) fn normalize_model(&self, products: &CadIr, model: &mut Model) {
         for binding in &mut model.appearance_bindings {
-            self.target(&mut binding.target);
+            self.target(products, &mut binding.target);
         }
         for attribute in &mut model.attributes {
-            self.target(&mut attribute.target);
+            self.target(products, &mut attribute.target);
         }
         for annotation in &mut model.pmi {
             for target in &mut annotation.targets {
-                self.target(target);
+                self.target(products, target);
             }
             match &mut annotation.definition {
                 PmiDefinition::DatumTarget { basis, .. } => {
                     for target in basis {
-                        self.target(target);
+                        self.target(products, target);
                     }
                 }
                 PmiDefinition::GeometricTolerance { zones, .. } => {
                     for projection in zones.iter_mut().flat_map(|zone| &mut zone.projections) {
                         for target in &mut projection.boundaries {
-                            self.target(target);
+                            self.target(products, target);
                         }
-                        self.target(&mut projection.end);
+                        self.target(products, &mut projection.end);
                     }
                 }
                 PmiDefinition::Datum { .. }
@@ -203,27 +186,27 @@ impl States {
         }
         for layer in &mut model.presentation_layers {
             for item in &mut layer.items {
-                self.target(item);
+                self.target(products, item);
             }
         }
         for properties in &mut model.mass_properties {
-            self.target(&mut properties.target);
+            self.target(products, &mut properties.target);
         }
         for body in &mut model.rigid_bodies {
-            self.target(&mut body.target);
+            self.target(products, &mut body.target);
         }
         for collider in &mut model.colliders {
-            self.target(&mut collider.target);
+            self.target(products, &mut collider.target);
         }
         for articulation in &mut model.articulations {
-            self.target(&mut articulation.root);
+            self.target(products, &mut articulation.root);
         }
         for settings in &mut model.solver_settings {
-            self.target(&mut settings.target);
+            self.target(products, &mut settings.target);
             for value in settings.values.values_mut() {
                 if let SolverValue::Targets { targets } = value {
                     for target in targets {
-                        self.target(target);
+                        self.target(products, target);
                     }
                 }
             }
@@ -241,11 +224,14 @@ impl States {
     }
 
     /// Spells a target's `state` through its member, and clears it where it
-    /// names a current state of its scope in the configuration that
-    /// `state: None` reads: the configuration in use (`configuration` of
-    /// `None`), or the scope's active configuration where the target has no
-    /// path or its path's instance selects that configuration (§8).
-    fn target<E>(&self, target: &mut InstanceTarget<E>) {
+    /// names a current state of its scope that `state: None` reads. With no
+    /// path, `None` reads the scope's active configuration. With a path,
+    /// `None` reads the configuration the path's instance selects, so the
+    /// state is cleared only where the scope that holds it states the design
+    /// of what that instance holds, and that instance selects the active
+    /// configuration (§8, part 9). A `configuration` of `None` is the
+    /// configuration in use.
+    fn target<E>(&self, products: &CadIr, target: &mut InstanceTarget<E>) {
         let Some(state) = &mut target.state else {
             return;
         };
@@ -257,84 +243,31 @@ impl States {
             Position::Start(container) => Member::Container(container.clone()),
             Position::After(member) => member.clone(),
         };
-        let Some((active, positions)) = self
+        let Some((holder, (active, positions))) = self
             .scopes
             .get(&member)
-            .and_then(|scope| self.current.get(scope))
+            .and_then(|scope| Some((scope, self.current.get(scope)?)))
         else {
             return;
         };
-        let configuration_reads = state.configuration.is_none()
-            || (state.configuration == *active
-                && target
-                    .path
-                    .as_ref()
-                    .is_none_or(|path| self.selects(path, active.as_ref())));
-        if configuration_reads && positions.contains(position) {
+        if !positions.contains(position) {
+            return;
+        }
+        let reads = match &target.path {
+            None => state.configuration.is_none() || state.configuration == *active,
+            Some(path) => match products.instance_configuration(path) {
+                Ok(Some((scope, selected))) => {
+                    scope.as_str() == holder
+                        && (state.configuration.is_none()
+                            || (state.configuration == selected && selected == *active))
+                }
+                Ok(None) | Err(_) => false,
+            },
+        };
+        if reads {
             target.state = None;
         }
     }
-
-    /// Whether the instance a path places selects `active`, the active
-    /// configuration of the scope that holds the target's state, whatever
-    /// configuration the occurrences above it read: its last step states
-    /// it, or every statement of the configuration its occurrence uses is
-    /// `active`, an unstated base being the prototype's active configuration
-    /// (§5.1). A `Named` configuration, a `Native` step, and an occurrence
-    /// whose prototype an override replaces are not known to select it.
-    fn selects(&self, path: &OccurrencePath, active: Option<&ConfigurationId>) -> bool {
-        let is_active = |configuration: &ConfigurationRef| matches!(configuration, ConfigurationRef::Local(id) if Some(id) == active);
-        let Some(last) = path.0.last() else {
-            return false;
-        };
-        if let Some(configuration) = &last.configuration {
-            return is_active(configuration);
-        }
-        let StepRef::Occurrence(occurrence) = &last.occurrence else {
-            return false;
-        };
-        self.occurrences.get(occurrence).is_none_or(|uses| {
-            !uses.replaced
-                && uses
-                    .bases
-                    .iter()
-                    .all(|base| base.as_ref().is_none_or(is_active))
-                && uses.overrides.iter().all(is_active)
-        })
-    }
-}
-
-/// Every statement of the configuration each occurrence uses: the base
-/// entries of the scopes, and the overrides of every configuration and
-/// arrangement.
-fn occurrence_uses(design: &Design) -> BTreeMap<OccurrenceId, Uses> {
-    let mut uses: BTreeMap<OccurrenceId, Uses> = BTreeMap::new();
-    for scope in &design.scopes {
-        for (occurrence, entry) in &scope.occurrences {
-            uses.entry(occurrence.clone())
-                .or_default()
-                .bases
-                .push(entry.configuration.clone());
-        }
-    }
-    let overrides = design
-        .configurations
-        .iter()
-        .map(|configuration| &configuration.overrides)
-        .chain(
-            design
-                .arrangements
-                .iter()
-                .map(|arrangement| &arrangement.overrides),
-        );
-    for overrides in overrides {
-        for (occurrence, stated) in &overrides.occurrences {
-            let entry = uses.entry(occurrence.clone()).or_default();
-            entry.replaced |= stated.prototype.is_some();
-            entry.overrides.extend(stated.configuration.clone());
-        }
-    }
-    uses
 }
 
 /// The position an ordered container's `After(Container(c))` names: the
