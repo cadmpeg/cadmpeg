@@ -867,11 +867,12 @@ pub(crate) enum F3dLossCode {
     /// builds, and the generating feature is not proven.
     FeatureCombineToolBodyUnbound,
     /// The browser node of an operand-list Combine operand names no distinct
-    /// body of the preceding history state, so that operand does not bind
-    /// through its node.
+    /// body of the preceding history state, and the body recipes of the scope
+    /// bind no body for it, so that operand stays native.
     FeatureCombineOperandBodyUnbound,
     /// A Combine frame that matches the fixed fields of the operand-list
-    /// prologue is read in the standard prologue.
+    /// prologue, and whose lists do not complete that prologue, is read in the
+    /// standard prologue.
     FeatureCombinePrologueAssumed,
     FeatureCombineKeptToolsCutAssumed,
     /// A Combine whose lists name its operands, whose other fields contradict
@@ -880,7 +881,7 @@ pub(crate) enum F3dLossCode {
     FeatureCombineOperandListRefused,
     /// A Combine with a companion `RemoveBody` scope reads every tool as
     /// removed, though the companion body selections do not name exactly the
-    /// tools.
+    /// tools that its consumed-body list omits.
     FeatureCombineToolConsumptionAssumed,
     FeatureSplitFaceMethodUnresolved,
     FeatureSplitFaceDirectionUnresolved,

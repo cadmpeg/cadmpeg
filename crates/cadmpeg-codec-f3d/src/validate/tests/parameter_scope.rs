@@ -470,6 +470,8 @@ fn operand_list_combine_requires_its_own_offsets() {
                 },
 
                 destination: Default::default(),
+                created_body_nodes: Vec::new(),
+                consumed_body_nodes: Vec::new(),
             });
         }
         let mut native = crate::native::F3dNative::default();

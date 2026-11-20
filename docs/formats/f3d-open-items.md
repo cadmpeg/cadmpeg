@@ -58,7 +58,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Known.** `f3d.md` §3.1 "The Fusion feature-timeline record has type GUID" defines the context reference and ordered item run. One local corpus file has one 54-item run and two empty runs. Its final item is a Combine scope. Both history-state identities of that scope are null, which establishes suppression under §3.1 "An `Extrude`, `Fillet`, `Chamfer`, `Hole`, `Thread`, or `Combine` scope". Move scopes 6194 and 6642 occupy positions 45 and 51 and carry result states 3100 and 3106. Assemble scope 10307 occupies position 52. Companion RemoveBody 10422 belongs to the Combine item. The bound ASM histories terminate at states 3106 and 441.
 
-**Need.** Controlled saves that move the timeline marker across one active feature while preserving its suppression state. Bind the changed field to the timeline context and the selected BREP state in two independent designs. Compare a separate pair that changes suppression while preserving the marker position.
+**Need.** Controlled saves that move the timeline marker across one active feature while preserving its suppression state. Include a `Combine` that is added after the marker and never computed. Bind the changed field to the timeline context and the selected BREP state in two independent designs. Compare a separate pair that changes suppression while preserving the marker position.
+
+**Conflict.** A `Combine` after the saved marker that Fusion reports as rolled back and not suppressed has null current and preceding history-state identities, and the §3.1 rule reads it as suppressed. A rolled-back `Combine` that was computed before the marker moved keeps both identities.
 
 **Note.** A suppressed final item establishes its own execution state. Its authored position and the terminal ASM state identities remain distinct from the saved rollback position. Joint activation remains under DR-249.
 
@@ -1781,41 +1783,29 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Question.** Which of the three lists between the tool list and the target list does an operand-list `Combine` prologue omit when it stores two?
 
-**Known.** `f3d.md` §3.1 gives the three middle lists: an empty list, a component-node list, and a consumed-body list. The two-list form can carry two empty lists with a companion, or an empty list followed by consumed-body references without a companion. A companion `RemoveBody` scope removes tools through its browser-node selections. The decoder compares those selections with the tool nodes and reports `feature.combine-tool-consumption-assumed` for an incomplete match. The new-component Boolean is independent of the number of middle lists.
+**Known.** `f3d.md` §3.1 gives the three middle lists: an empty list, the created-body list, and the consumed-body list. Saves of every operation, keep-tools state, new-component state, result-lump count from one to three, and tools from one or two components store three lists. The two-list form can carry two empty lists with a companion, or an empty list followed by consumed-body references without a companion.
 
-**Need.** Controlled saves that vary component creation and tool retention in the two-list form, or the Fusion version that adds the third list.
-
-**Conflict.** None.
-
-**Note.** A two-list form without a companion reads the middle lists as the component-node and consumed-body lists and reports `feature.combine-middle-list-omitted-assumed`. A nonempty first list is read as the requested component's browser node. DR-561 tracks the destination of a new-component request.
-
-### DR-272. Prologue of a Combine frame whose byte 20 is one
-
-**Question.** Which prologue does a `Combine` frame store when byte 20 is one and its fixed fields match both the standard and the operand-list prologue?
-
-**Known.** `f3d.md` §3.1 gives the standard and operand-list prologues. A standard join and an operand-list prologue with an empty property block both store `01 00 00 00 00` at offsets 20 through 24. An operand-list prologue without a companion can also store zero at offsets 26 through 32. A complete list reading independently checks the ordered operation identities, the counted GUID and exact reference-table boundary. The legacy reading takes the standard prefix when both readings hold and reports `feature.combine-prologue-assumed`. DR-560 covers the expanded named tail's separate reading. A new-component request retains its Boolean and unresolved placement. A frame whose lists match its operands but contradict other required list fields reports `feature.combine-operand-list-refused` when no prologue reads it.
-
-**Need.** A frame of this kind with its operation and keep-tools state shown by result volumes.
+**Need.** A save that stores the two-list form with a nonempty list, together with the result bodies and the consumed tools of that `Combine`.
 
 **Conflict.** None.
 
-**Note.** For a non-operand-list Combine stored as Join with kept tools and no deleted bodies, the history binding assumes Cut and reports `feature.combine-kept-tools-cut-assumed`. The native operation remains stored in the scope.
+**Note.** A two-list form without a companion reads the middle lists as the created-body and consumed-body lists and reports `feature.combine-middle-list-omitted-assumed`. DR-561 tracks the destination of a new-component request.
 
 ### DR-561. Destination of a Combine new-component result
 
 **Question.** How does a Combine's new-component request identify the product definition and placement that contain its result?
 
-**Known.** The operand-list prologue stores a new-component Boolean. The three-middle-list form names one browser node when that Boolean is one. A two-middle-list request can omit that node. The named tail can carry a distinct middle reference; it is separate from that browser node and remains located in the native scope. The Boolean operation and ordered target and tool selections remain readable.
+**Known.** The operand-list prologue stores a new-component Boolean. With that Boolean one, the created-body list of the three-middle-list form names the browser node of each result body in the new component. A two-middle-list request can omit these nodes. The named tail can carry a distinct middle reference; it is separate from that browser node and remains located in the native scope. The Boolean operation and ordered target and tool selections remain readable.
 
 **Need.** A complete identity join from the result browser node and named-tail references to the component and placement, including a request whose middle lists omit the node.
 
-**Note.** The neutral Combine retains the new-component request, and the native operation retains its browser-node reference when present. The decoder reports `feature.combine-component-destination-assumed` for the unresolved destination placement and assumes the input component frame.
+**Note.** The neutral Combine retains the new-component request, and the native operation retains the first created-body node as its destination browser node and the complete created-body list. The decoder reports `feature.combine-component-destination-assumed` for the unresolved destination placement and assumes the input component frame.
 
 ### DR-560. Prologue of a Combine with an expanded named tail
 
 **Question.** Does an expanded named tail select the complete operand-list prologue whenever its fixed prefix also matches the standard prologue?
 
-**Known.** The expanded tail retains references outside the operand table. The complete operand-list reading supplies independent operation, keep-tools and new-component fields. The standard prefix can match only the initial bytes and give different control values. A component-Join control has zero-based operation zero, keep-tools one and new-component one.
+**Known.** The expanded tail retains references outside the operand table. The complete operand-list reading supplies independent operation, keep-tools and new-component fields. `f3d.md` §3.1 selects the complete operand-list reading of a frame without an expanded named tail when the standard prologue also reads its fixed fields. The standard prefix can match only the initial bytes and give different control values. A component-Join control has zero-based operation zero, keep-tools one and new-component one.
 
 **Need.** Independent saves with expanded named tails across Boolean operations and tool-retention modes, including a frame whose complete operand lists contradict the standard-prefix reading.
 
