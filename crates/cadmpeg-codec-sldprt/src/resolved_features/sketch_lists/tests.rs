@@ -543,3 +543,71 @@ fn a_curve_after_a_projected_record_belongs_to_the_preceding_sketch() {
         })
     );
 }
+
+/// The reading of the record at `offset` against the chord from `start` to
+/// `end`, in sketch millimetres.
+fn chord(payload: &[u8], offset: usize, start: Point2, end: Point2) -> Option<ChordRecord> {
+    let lists = SketchRecordLists::new(payload);
+    chord_record(payload, &lists, offset, [start, end], &millimetres)
+}
+
+#[test]
+fn a_sensed_record_between_the_chord_endpoints_is_its_arc_in_either_order() {
+    let sample = sample();
+    let arc = geometry(&sample, sample.arc).expect("arc record did not read");
+    let (first, second) = (Point2::new(10.0, 0.0), Point2::new(0.0, 10.0));
+    assert_eq!(
+        chord(&sample.payload, sample.arc, first, second),
+        Some(ChordRecord::Arc(arc.clone()))
+    );
+    assert_eq!(
+        chord(&sample.payload, sample.arc, second, first),
+        Some(ChordRecord::Arc(arc))
+    );
+}
+
+#[test]
+fn a_sensed_record_between_other_points_conflicts_with_the_chord() {
+    let sample = sample();
+    assert_eq!(
+        chord(
+            &sample.payload,
+            sample.arc,
+            Point2::new(10.0, 0.0),
+            Point2::new(20.0, 0.0)
+        ),
+        Some(ChordRecord::Conflict(ChordConflict::OtherEndpoints))
+    );
+}
+
+#[test]
+fn a_full_circle_record_conflicts_and_a_line_record_leaves_the_chord() {
+    let sample = sample();
+    let (first, second) = (Point2::new(10.0, 0.0), Point2::new(0.0, 10.0));
+    assert_eq!(
+        chord(&sample.payload, sample.circle, first, second),
+        Some(ChordRecord::Conflict(ChordConflict::FullCircle))
+    );
+    assert_eq!(chord(&sample.payload, sample.line, first, second), None);
+}
+
+#[test]
+fn unequal_radii_and_an_index_past_the_points_conflict_with_the_chord() {
+    let mut payload = vec![0; 7];
+    header(&mut payload, 3);
+    point(&mut payload, 0.0, 0.0);
+    point(&mut payload, 0.01, 0.0);
+    point(&mut payload, 0.0, 0.02);
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    let unequal = curve(&mut payload, 1, 2, -1, Some(0));
+    let past = curve(&mut payload, 1, 5, 1, Some(0));
+    let (first, second) = (Point2::new(10.0, 0.0), Point2::new(0.0, 20.0));
+    assert_eq!(
+        chord(&payload, unequal, first, second),
+        Some(ChordRecord::Conflict(ChordConflict::NoArc))
+    );
+    assert_eq!(
+        chord(&payload, past, first, second),
+        Some(ChordRecord::Conflict(ChordConflict::PointUnread))
+    );
+}
