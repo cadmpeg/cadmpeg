@@ -15,7 +15,7 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::units::FinitePoint2;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Read;
 use std::io::Write;
 
@@ -612,8 +612,8 @@ pub(super) fn patch_line_profiles(
     ir: &cadmpeg_ir::CadIr,
     native: &mut crate::native::SldprtNative,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    let mut requested = HashMap::<(String, usize, u32), Point3>::new();
-    let mut curves = Vec::new();
+    let mut requested = BTreeMap::<(String, usize, u32), Point3>::new();
+    let mut streams = BTreeMap::<(String, usize), StreamPatches>::new();
     for sketch in &ir.model.sketches {
         let lane_id = sketch.native_ref.as_ref().ok_or_else(|| {
             cadmpeg_core::CodecError::NotImplemented(
@@ -692,22 +692,31 @@ pub(super) fn patch_line_profiles(
                             }
                         }
                     }
-                    curves.push(CurvePatch {
-                        lane_id: lane_id.clone(),
-                        stream,
-                        carrier_attr,
-                        start_attr,
-                        end_attr,
-                        geometry: patch_geometry,
-                        origin,
-                        u_axis,
-                        v_axis,
-                    });
+                    streams
+                        .entry((lane_id.clone(), stream))
+                        .or_default()
+                        .curves
+                        .push(CurvePatch {
+                            carrier_attr,
+                            start_attr,
+                            end_attr,
+                            geometry: patch_geometry,
+                            origin,
+                            u_axis,
+                            v_axis,
+                        });
                 }
             }
         }
     }
-    for ((lane_id, stream_ordinal, attr), point) in requested {
+    for ((lane_id, stream, attr), point) in requested {
+        streams
+            .entry((lane_id, stream))
+            .or_default()
+            .points
+            .push((attr, [point.x * 0.001, point.y * 0.001, point.z * 0.001]));
+    }
+    for ((lane_id, stream), patches) in streams {
         let lane = native
             .feature_input_lanes
             .iter_mut()
@@ -717,22 +726,27 @@ pub(super) fn patch_line_profiles(
                     "SLDPRT sketch lane {lane_id} is missing"
                 ))
             })?;
-        patch_direct_stream_point(&mut lane.native_payload, stream_ordinal, attr, point)?;
-    }
-    for request in curves {
-        let lane = native
-            .feature_input_lanes
-            .iter_mut()
-            .find(|lane| lane.id == request.lane_id)
-            .ok_or_else(|| {
+        edit_stream(&mut lane.native_payload, stream, |ctx, body| {
+            crate::brep::topology::patch_points(body, &patches.points).map_err(|attr| {
                 cadmpeg_core::CodecError::malformed(format_args!(
-                    "SLDPRT sketch lane {} is missing",
-                    request.lane_id
+                    "SLDPRT sketch point {attr} is missing"
                 ))
             })?;
-        patch_direct_curve(&mut lane.native_payload, &request)?;
+            patches
+                .curves
+                .iter()
+                .try_for_each(|request| patch_direct_curve_body(ctx, body, request))
+        })?;
     }
     Ok(())
+}
+
+/// The edits of one stream: its points in metres, then its curves in
+/// sketch order.
+#[derive(Default)]
+struct StreamPatches {
+    points: Vec<(u32, [f64; 3])>,
+    curves: Vec<CurvePatch>,
 }
 
 fn bounded_endpoints(geometry: &SketchGeometry) -> Option<[Point2; 2]> {
@@ -838,8 +852,6 @@ impl TryFrom<&SketchGeometry> for PatchCurve {
 }
 
 struct CurvePatch {
-    lane_id: String,
-    stream: usize,
     carrier_attr: u32,
     start_attr: u32,
     end_attr: u32,
@@ -870,32 +882,6 @@ fn lift_point(point: Point2, origin: Point3, u_axis: Vector3, v_axis: Vector3) -
         origin.y + point.u * u_axis.y + point.v * v_axis.y,
         origin.z + point.u * u_axis.z + point.v * v_axis.z,
     )
-}
-
-fn patch_direct_stream_point(
-    payload: &mut Vec<u8>,
-    stream_ordinal: usize,
-    attr: u32,
-    point_mm: Point3,
-) -> Result<(), cadmpeg_core::CodecError> {
-    let xyz_m = [point_mm.x * 0.001, point_mm.y * 0.001, point_mm.z * 0.001];
-    edit_stream(payload, stream_ordinal, |_ctx, body| {
-        if !crate::brep::topology::patch_point(body, attr, xyz_m) {
-            return Err(cadmpeg_core::CodecError::malformed(format_args!(
-                "SLDPRT sketch point {attr} is missing"
-            )));
-        }
-        Ok(())
-    })
-}
-
-fn patch_direct_curve(
-    payload: &mut Vec<u8>,
-    request: &CurvePatch,
-) -> Result<(), cadmpeg_core::CodecError> {
-    edit_stream(payload, request.stream, |ctx, body| {
-        patch_direct_curve_body(ctx, body, request)
-    })
 }
 
 fn patch_direct_curve_body(

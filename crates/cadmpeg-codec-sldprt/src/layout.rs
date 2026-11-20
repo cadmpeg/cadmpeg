@@ -3415,3 +3415,17 @@ pub(crate) mod extrusion_compact_operation_trailer {
     /// Offset of `zero_tail` (`bytes[4]`). Spec §2.
     pub(crate) const ZERO_TAIL: usize = 36;
 }
+
+/// Byte offsets for the `pmark_record_head` record.
+///
+/// Spec §3.4. Record length 12 B.
+pub(crate) mod pmark_record_head {
+    /// Record length in bytes. Spec §3.4.
+    pub(crate) const LEN: usize = 12;
+    /// Offset of `mark` (`u32`, little-endian). Spec §3.4.
+    pub(crate) const MARK: usize = 0;
+    /// Offset of `form` (`u32`, little-endian). Spec §3.4.
+    pub(crate) const FORM: usize = 4;
+    /// Offset of `form_word` (`u32`, little-endian). Spec §3.4.
+    pub(crate) const FORM_WORD: usize = 8;
+}
