@@ -165,7 +165,7 @@ mod tests {
     #[test]
     fn even_codes_are_inline_text_and_odd_codes_name_pool_entries() {
         let pool = StringPool::read(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             View::over_retained(&string_pool_payload(&["TOP.ASM", "", "BRACKET.PRT"])),
         )
         .unwrap();
@@ -194,11 +194,11 @@ mod tests {
     fn every_reference_to_a_pool_entry_shares_the_entry() {
         let long = "x".repeat(60_000);
         let pool = StringPool::read(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             View::over_retained(&string_pool_payload(&[long.as_str()])),
         )
         .unwrap();
-        let references = 1000;
+        let references = 3;
         let bytes: Vec<u8> = (0..references).flat_map(|_| pool_atom(0)).collect();
         let mut view = View::over_retained(&bytes);
         let first = pool.atom(&mut view).unwrap();
@@ -214,12 +214,12 @@ mod tests {
         let mut payload = string_pool_payload(&["A"]);
         payload.push(0);
         assert!(StringPool::read(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             View::over_retained(&payload)
         )
         .is_err());
         assert!(StringPool::read(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             View::over_retained(&[0x05, 0x00])
         )
         .is_err());

@@ -463,6 +463,7 @@ fn decode_exchange_mode(
         &mut session.ir,
         session.ctx,
         &mut session.admitted_ir_entities,
+        product::MAX_OCCURRENCES,
     )?;
     session.charge_pending_ir_entities("step_csg_design")?;
     let mut design_losses = csg::attach_design(

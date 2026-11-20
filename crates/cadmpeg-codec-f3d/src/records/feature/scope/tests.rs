@@ -391,7 +391,7 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
             reference_type_offset: 0,
         });
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut native = cadmpeg_ir::native::NativeNamespace::default();
     native
         .set_arena(
