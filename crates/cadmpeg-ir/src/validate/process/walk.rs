@@ -258,7 +258,7 @@ impl Capture {
                 _ => {}
             },
             Self::Whole { fields, .. } => {
-                if let Ok(value) = serde_json::to_value(value) {
+                if let Ok(value) = crate::hash::finite_json::to_json_value(value) {
                     fields.insert(key.to_owned(), value);
                 }
             }
@@ -266,7 +266,7 @@ impl Capture {
                 field, value: slot, ..
             } => {
                 if key == *field {
-                    *slot = serde_json::to_value(value).ok();
+                    *slot = crate::hash::finite_json::to_json_value(value).ok();
                 }
             }
         }
@@ -310,7 +310,7 @@ impl Capture {
 }
 
 fn strings<T: Serialize + ?Sized>(value: &T) -> Vec<String> {
-    match serde_json::to_value(value) {
+    match crate::hash::finite_json::to_json_value(value) {
         Ok(Value::Array(items)) => items
             .into_iter()
             .filter_map(|item| item.as_str().map(String::from))
