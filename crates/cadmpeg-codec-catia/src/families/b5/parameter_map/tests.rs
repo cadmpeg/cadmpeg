@@ -7,7 +7,7 @@ use crate::test_support::test_parameter_map::payload;
 
 #[test]
 fn a8_map_retains_block_pairs_zero_fit_and_active_subrange() {
-    let _ctx = cadmpeg_test_support::service_decode_context();
+    let _ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for count in [2, 17, 127, 128, 232] {
         for descending in [false, true] {
             let parsed = parse(&payload(count, descending, 0.0)).expect("bounded parse");
@@ -32,7 +32,7 @@ fn a8_map_retains_block_pairs_zero_fit_and_active_subrange() {
 #[test]
 fn a8_map_declines_incomplete_counts_markers_and_numeric_invariants() {
     let bytes = payload(3, true, 0.0);
-    let _ctx = cadmpeg_test_support::service_decode_context();
+    let _ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for end in 0..bytes.len() {
         assert!(parse(&bytes[..end]).is_none());
     }

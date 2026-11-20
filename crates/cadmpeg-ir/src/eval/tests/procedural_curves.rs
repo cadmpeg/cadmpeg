@@ -85,7 +85,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
         );
         assert_eq!(
             model_curve_parameter_near_point_with_tolerance(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &index,
                 &subset,
                 expected,
