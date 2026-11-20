@@ -471,11 +471,6 @@ impl CarrierIndex {
                 return Some(super::chart_refine::Support::Analytic(&surface.geometry));
             }
             let blend = blends[slot].as_deref()?;
-            // A ball on a NURBS surface fits blend caches; charts refine
-            // against analytic balls only.
-            if !blend.exact_analytic() {
-                return None;
-            }
             match self.blend_bounds.get(&attr) {
                 Some(bound) => Some(super::chart_refine::Support::Track(blend, 1 - bound.side)),
                 None => Some(super::chart_refine::Support::Pipe(blend)),
@@ -621,7 +616,7 @@ impl CarrierIndex {
         memo: &BlendMemo<'a, 'ctx>,
     ) -> Result<Option<super::blend_fit::Side<'a, 'ctx>>, cadmpeg_core::CodecError> {
         match self.surfaces.get(&attr) {
-            Some(surface) => Ok(Some(super::blend_fit::Side::surface(&surface.geometry))),
+            Some(surface) => Ok(Some(super::blend_fit::Side::Surface(&surface.geometry))),
             None => Ok(self
                 .nested_blend_geometry(ctx, attr, depth + 1, vertices, memo)?
                 .map(super::blend_fit::Side::Blend)),

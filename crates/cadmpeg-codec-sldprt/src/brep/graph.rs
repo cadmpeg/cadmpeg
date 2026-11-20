@@ -1502,11 +1502,13 @@ fn closed_edge_start(
 /// a larger miss is another branch of the rolling ball.
 const BLEND_VERTEX_MISS_RADIUS_FRACTION: f64 = 0.25;
 
-/// Least distance a blend cache may pass from a face vertex: the departure
-/// a rolling-ball fit keeps at its deepest split.
+/// Least distance, besides its fit tolerance, a blend cache may pass from
+/// its face's vertices and edge samples and still bound the face: the
+/// departure a rolling-ball fit keeps at its deepest split.
 const BLEND_VERTEX_MISS_FLOOR_MM: f64 = 1.0e-3;
 
-/// How far a blend cache may pass from the vertices of `face`: the largest
+/// How far, besides its fit tolerance, a blend cache may pass from the
+/// vertices and edge samples of `face` and still bound it: the largest
 /// tolerance the face's edges state, and no less than
 /// [`BLEND_VERTEX_MISS_FLOOR_MM`].
 fn blend_vertex_allowance(
@@ -1524,8 +1526,8 @@ fn blend_vertex_allowance(
 
 /// Why the rolling-ball fit of a blend has no side, by side.
 const BLEND_SIDE_UNRESOLVED: [&str; 2] = [
-    "support 0 is not an analytic or NURBS surface, a pair of them or a rolling ball",
-    "support 1 is not an analytic or NURBS surface, a pair of them or a rolling ball",
+    "support 0 is not an analytic surface, a pair of them or a rolling ball",
+    "support 1 is not an analytic surface, a pair of them or a rolling ball",
 ];
 
 /// What one fit step did for a blend left without a cache.
@@ -1535,7 +1537,7 @@ enum BlendStep {
     /// The step ran and found no cache, for the reason given.
     NoCache(String),
     /// The step's cache missed a face vertex by `miss` millimetres, more
-    /// than the `allowed` miss.
+    /// than the `allowed` quarter of the radius.
     Missed { miss: f64, allowed: f64 },
 }
 
@@ -1546,7 +1548,7 @@ impl std::fmt::Display for BlendStep {
             Self::NoCache(why) => f.write_str(why),
             Self::Missed { miss, allowed } => write!(
                 f,
-                "its cache misses a face vertex by {miss} mm, more than the {allowed} mm the face's edges and a quarter of the radius allow"
+                "its cache misses a face vertex by {miss} mm, more than the {allowed} mm a quarter of the radius allows"
             ),
         }
     }
@@ -4423,8 +4425,8 @@ fn decode_graph_inner(
             .count();
         faces.retain(|face| bridge_group.contains_key(&face.bridge_attr));
     }
-    // The tolerance each emitted edge states: a blend cache may pass that far
-    // from the vertices of the face the edge bounds.
+    // The tolerance each emitted edge states: a blend cache bounds the face
+    // the edge bounds within that distance.
     let edge_tolerances = out
         .edges
         .iter()
@@ -4739,50 +4741,8 @@ fn decode_graph_inner(
                         }
                         (None, _, _) => None,
                     };
-                    let spine_curve = carriers.curve(blend.spine);
-                    let branch = blend.signed_radius.abs() * BLEND_VERTEX_MISS_RADIUS_FRACTION;
-                    let edges_allow = blend_vertex_allowance(t, f, &edge_tolerances);
-                    // A cache stands for the face only where it passes within
-                    // the face's edge tolerance and its own fit tolerance of
-                    // the face's vertices and edge samples, which lie that far
-                    // from the exact edges and the cache from the exact
-                    // surface; and within a quarter of the radius, past which
-                    // it is another branch.
-                    let bound = |cache: blend_surface::BlendCache| -> Result<
-                        Result<blend_surface::BlendCache, BlendStep>,
-                        cadmpeg_core::CodecError,
-                    > {
-                        let Some(spine) = spine_curve else {
-                            return Ok(Err(BlendStep::NotRun("the spine curve does not resolve")));
-                        };
-                        let allowed = branch.min(edges_allow + cache.fit_tolerance);
-                        Ok(
-                            match blend_surface::vertex_miss(
-                                ctx,
-                                &cache,
-                                &spine.carrier().geometry,
-                                &boundary,
-                            )? {
-                                Some(miss) if miss <= allowed => {
-                                    let mut cache = cache;
-                                    cache.fit_tolerance = cache.fit_tolerance.max(miss);
-                                    Ok(cache)
-                                }
-                                Some(miss) => Err(BlendStep::Missed { miss, allowed }),
-                                None => Err(BlendStep::NoCache(
-                                    "the face's boundary does not project onto the spine".into(),
-                                )),
-                            },
-                        )
-                    };
-                    let (mut cache, off_vertex) = match solved {
-                        Some(solved) if solved.holds => match bound(solved.cache)? {
-                            Ok(cache) => (Some(cache), None),
-                            Err(step) => {
-                                sections = step;
-                                (None, None)
-                            }
-                        },
+                    let (cache, off_vertex) = match solved {
+                        Some(solved) if solved.holds => (Some(solved.cache), None),
                         Some(solved) => {
                             sections = BlendStep::NoCache(
                                 "its cache does not pass through every face vertex within its fit tolerance"
@@ -4792,10 +4752,13 @@ fn decode_graph_inner(
                         }
                         None => (None, None),
                     };
-                    // Fallback for blends `blend_surface::solve` leaves without a cache.
                     let mut rolling = BlendStep::NotRun("the spine curve does not resolve");
-                    if cache.is_none() {
-                        if let Some(spine) = spine_curve {
+                    // The kept cache and the fit tolerance it was fitted to,
+                    // with a fallback for blends `blend_surface::solve` leaves
+                    // without a cache.
+                    let cache = match (cache, carriers.curve(blend.spine)) {
+                        (Some(cache), _) => Some((cache.fit_tolerance, cache)),
+                        (None, Some(spine)) => {
                             let blend_memo: super::index::BlendMemo<'_, '_> =
                                 std::cell::RefCell::new(HashMap::new());
                             let mut sides = [None, None];
@@ -4843,31 +4806,84 @@ fn decode_graph_inner(
                                     None
                                 }
                             };
-                            if let Some(fitted) = fitted {
-                                match bound(fitted)? {
-                                    Ok(fitted) => cache = Some(fitted),
-                                    Err(step) => rolling = step,
+                            // The cache states its largest vertex miss; a miss of
+                            // a sizeable share of the radius is another branch.
+                            let step = if fitted.is_some() {
+                                &mut rolling
+                            } else {
+                                &mut sections
+                            };
+                            match fitted.or(off_vertex) {
+                                Some(mut cache) => {
+                                    let branch = blend.signed_radius.abs()
+                                        * BLEND_VERTEX_MISS_RADIUS_FRACTION;
+                                    match blend_surface::vertex_miss(
+                                        ctx,
+                                        &cache,
+                                        &spine.carrier().geometry,
+                                        &vertices,
+                                    )? {
+                                        Some(miss) if miss <= branch => {
+                                            let fitted = cache.fit_tolerance;
+                                            cache.fit_tolerance = fitted.max(miss);
+                                            Some((fitted, cache))
+                                        }
+                                        Some(miss) => {
+                                            *step = BlendStep::Missed {
+                                                miss,
+                                                allowed: branch,
+                                            };
+                                            None
+                                        }
+                                        None => {
+                                            *step = BlendStep::NoCache(
+                                                "the face's vertices do not invert onto the spine"
+                                                    .into(),
+                                            );
+                                            None
+                                        }
+                                    }
                                 }
+                                None => None,
                             }
                         }
-                    }
-                    if cache.is_none() {
-                        if let Some(off_vertex) = off_vertex {
-                            match bound(off_vertex)? {
-                                Ok(off_vertex) => cache = Some(off_vertex),
-                                Err(step) => sections = step,
+                        (None, None) => None,
+                    };
+                    match (&cache, carriers.curve(blend.spine)) {
+                        (Some((fitted, cache)), Some(spine)) => {
+                            let spine = &spine.carrier().geometry;
+                            let allowed =
+                                blend_vertex_allowance(t, f, &edge_tolerances) + fitted;
+                            if let Some(miss) =
+                                blend_surface::vertex_miss(ctx, cache, spine, &boundary)?
+                                    .filter(|miss| *miss > allowed)
+                            {
+                                let at_vertex =
+                                    blend_surface::vertex_miss(ctx, cache, spine, &vertices)?
+                                        .filter(|vertex_miss| *vertex_miss >= miss);
+                                let (miss, at) = match at_vertex {
+                                    Some(vertex_miss) => (vertex_miss, "a face vertex"),
+                                    None => (miss, "a point sampled on the face's edges"),
+                                };
+                                out.losses.push(
+                                    crate::loss::SldprtLossCode::GeometryCarrierApproximated.note(format!(
+                                        "{}: the cache of the rolling-ball blend of radius {} mm misses {at} by {miss} mm, more than the {allowed} mm its edges' tolerance and its fit tolerance allow; the face keeps the cache.",
+                                        id_face(f.bridge_attr).as_str(),
+                                        blend.signed_radius.abs(),
+                                    )),
+                                );
                             }
                         }
-                    }
-                    if cache.is_none() {
-                        out.losses.push(
+                        (Some(_), None) => {}
+                        (None, _) => out.losses.push(
                             crate::loss::SldprtLossCode::GeometryBlendCacheUnsolved.note(format!(
                                 "{}: the rolling-ball blend of radius {} mm has no solved cache and keeps its construction alone; section solve: {sections}; rolling-ball fit: {rolling}",
                                 id_face(f.bridge_attr).as_str(),
                                 blend.signed_radius.abs(),
                             )),
-                        );
+                        ),
                     }
+                    let cache = cache.map(|(_, cache)| cache);
                     let admitted_payload = BlendRadiusLaw::constant(blend.signed_radius)
                         .and_then(|radius| {
                             cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(

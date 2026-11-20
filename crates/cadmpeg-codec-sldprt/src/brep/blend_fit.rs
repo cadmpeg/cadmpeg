@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! A B-spline cache for a constant-radius rolling-ball blend that
 //! `blend_surface::solve` does not solve: a support pair, a nested blend, or a
-//! polyline spine chart (`sldprt.md` §7.4). A support is an analytic or NURBS
-//! surface, a pair of them, or another rolling ball. Sections are exact
-//! rational arcs about the solved ball centre, joined along the spine by cubic
-//! Hermite pieces within [`BLEND_FIT_TOLERANCE_MM`].
+//! polyline spine chart (`sldprt.md` §7.4). Sections are exact rational arcs
+//! about the solved ball centre, joined along the spine by cubic Hermite
+//! pieces within [`BLEND_FIT_TOLERANCE_MM`].
 
 use std::cell::{Cell, RefCell};
 
@@ -15,7 +14,7 @@ use cadmpeg_ir::geometry::nurbs::{NurbsPoleGrid, NurbsSurface, NurbsSurfaceAxis,
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::NonZeroReal;
 
 /// Departure of a fitted section from the exact section: the linear
@@ -54,17 +53,15 @@ pub(super) struct BlendFit {
     pub(super) fit_tolerance: f64,
 }
 
-/// Why a rolling ball has no fitted cache: the first failure of the last
-/// spine interval tried.
+/// Why a rolling ball has no fitted cache: the first failure of the fit.
 #[derive(Clone, Copy, Debug)]
 pub(super) enum FitFailure {
-    /// A side is neither an analytic or NURBS surface, a support pair of
-    /// them, nor a rolling ball.
+    /// A side is neither an analytic surface, a support pair of them, nor a
+    /// rolling ball.
     Unsupported,
     /// The face's vertices do not invert onto the spine.
     SpineInterval,
-    /// No support foot near the ball centre: the perpendicular foot on a
-    /// NURBS support lies beyond its stored domain, or a surface has no foot.
+    /// A side has no foot near the ball centre at a spine parameter.
     Foot { side: usize, s: f64 },
     /// The ball centre does not solve at a spine parameter.
     Center { s: f64 },
@@ -74,8 +71,6 @@ pub(super) enum FitFailure {
     HalfTurn { s: f64 },
     /// No fit within the split depth or the span count.
     SpanLimit,
-    /// The fit ran out of NURBS feet ([`MAX_NURBS_FEET`]).
-    WorkCapped,
     /// The fitted sections form no surface.
     Surface,
 }
@@ -83,17 +78,21 @@ pub(super) enum FitFailure {
 impl std::fmt::Display for FitFailure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Unsupported => f.write_str("a support is not an analytic or NURBS surface, a support pair or a rolling ball"),
+            Self::Unsupported => f.write_str(
+                "a support is not an analytic surface, a support pair or a rolling ball",
+            ),
             Self::SpineInterval => f.write_str("the face's vertices do not invert onto the spine"),
-            Self::Foot { side, s } => write!(f, "support {side} has no foot inside its surface near the ball centre at spine parameter {s}"),
+            Self::Foot { side, s } => write!(
+                f,
+                "support {side} has no foot near the ball centre at spine parameter {s}"
+            ),
             Self::Center { s } => write!(f, "no ball centre solves at spine parameter {s}"),
-            Self::Contact { side, s } => write!(f, "the ball at spine parameter {s} does not touch support {side} at its radius"),
+            Self::Contact { side, s } => write!(
+                f,
+                "the ball at spine parameter {s} does not touch support {side} at its radius"
+            ),
             Self::HalfTurn { s } => write!(f, "the section at spine parameter {s} is a half turn"),
             Self::SpanLimit => f.write_str("no fit within the span limit"),
-            Self::WorkCapped => write!(
-                f,
-                "the fit ran out of its {MAX_NURBS_FEET} feet on NURBS surfaces"
-            ),
             Self::Surface => f.write_str("the fitted sections form no surface"),
         }
     }
@@ -117,10 +116,6 @@ pub(super) struct BlendGeometry<'a, 'ctx> {
     refusal: RefCell<Option<CodecError>>,
     /// Centre solves spent, against [`MAX_CENTER_SOLVES`].
     center_solves: Cell<usize>,
-    /// NURBS feet solved, against [`MAX_NURBS_FEET`].
-    nurbs_feet: Cell<usize>,
-    /// Whether this use, or a ball it rolls on, ran out of NURBS feet.
-    capped: Cell<bool>,
     /// The spine parameter of the last point inverted, which seeds the next.
     last_parameter: RefCell<Option<f64>>,
     /// The exact spine of each choice of side candidates, once solved over a
@@ -128,7 +123,7 @@ pub(super) struct BlendGeometry<'a, 'ctx> {
     exact_spines: RefCell<Vec<ExactSpineEntry>>,
     /// The stored spine's points and parameters when it is a polyline.
     polyline: Option<SpinePolyline>,
-    /// The first failure of the current fit attempt.
+    /// The first failure of the current fit.
     failure: Cell<Option<FitFailure>>,
     /// The side whose foot the last centre solve did not find.
     foot_miss: Cell<Option<usize>>,
@@ -246,63 +241,16 @@ fn hermite_spine_point(nodes: &[SpineNode], s: f64) -> Option<Point3> {
 /// rolling-ball blend the ball rolls against, or a support pair's convex
 /// edge.
 pub(super) enum Side<'a, 'ctx> {
-    Surface(Support<'a>),
+    Surface(&'a SurfaceGeometry),
     Blend(std::rc::Rc<BlendGeometry<'a, 'ctx>>),
     Wedge(Wedge<'a>),
-}
-
-impl<'a> Side<'a, '_> {
-    /// A side on one support surface.
-    pub(super) fn surface(geometry: &'a SurfaceGeometry) -> Self {
-        Self::Surface(Support::new(geometry))
-    }
-}
-
-/// One support surface and the parameters of its last foot, which seed the
-/// next foot on a NURBS surface.
-pub(super) struct Support<'a> {
-    geometry: &'a SurfaceGeometry,
-    seed: Cell<Option<Point2>>,
-}
-
-impl<'a> Support<'a> {
-    const fn new(geometry: &'a SurfaceGeometry) -> Self {
-        Self {
-            geometry,
-            seed: Cell::new(None),
-        }
-    }
-}
-
-/// The point of `support` nearest `point` and the unit natural normal
-/// there: the analytic foot, or on a NURBS surface the perpendicular foot
-/// inside its stored domain, from the last foot and then from its grid.
-fn support_foot(
-    ctx: &DecodeContext<'_>,
-    support: &Support<'_>,
-    point: Point3,
-) -> Result<Option<(Point3, cadmpeg_ir::math::Vector3)>, CodecError> {
-    match support.geometry {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-            let seed = support.seed.get();
-            let mut foot = super::evaluation::nurbs_surface_foot(ctx, nurbs, point, seed)?;
-            if foot.is_none() && seed.is_some() {
-                foot = super::evaluation::nurbs_surface_foot(ctx, nurbs, point, None)?;
-            }
-            Ok(foot.map(|(at, normal, parameters)| {
-                support.seed.set(Some(parameters));
-                (at, normal)
-            }))
-        }
-        surface => Ok(super::evaluation::analytic_surface_foot(surface, point)),
-    }
 }
 
 /// The material bounded by two analytic surfaces that meet at a convex edge
 /// (`sldprt.md` §7.4). The ball touches one surface where its foot there
 /// lies on the material side of the other, and their common edge elsewhere.
 pub(super) struct Wedge<'a> {
-    members: [Support<'a>; 2],
+    members: [&'a SurfaceGeometry; 2],
     /// Sign of the side of each member's natural normal the ball is on.
     outside: [f64; 2],
 }
@@ -310,7 +258,7 @@ pub(super) struct Wedge<'a> {
 impl<'a> Wedge<'a> {
     /// The wedge of `members`, its outside per member taken from the side of
     /// the spine farthest from it over the face's spine interval. `None` when
-    /// a member is neither analytic nor NURBS, or the spine touches it.
+    /// a member is not analytic or the spine touches it.
     ///
     /// # Errors
     ///
@@ -321,16 +269,17 @@ impl<'a> Wedge<'a> {
         members: [&'a SurfaceGeometry; 2],
         vertices: &[Point3],
     ) -> Result<Option<Self>, CodecError> {
-        if !members.iter().all(|member| supported(member)) {
+        if !members.iter().all(|member| analytic(member)) {
             return Ok(None);
         }
-        let members = members.map(Support::new);
         let samples = spine_samples(ctx, spine, face_interval(ctx, spine, vertices)?)?;
         let mut outside = [0.0; 2];
         for (slot, member) in members.iter().enumerate() {
             let mut farthest: f64 = 0.0;
             for sample in &samples {
-                let Some((foot, normal)) = support_foot(ctx, member, *sample)? else {
+                let Some((foot, normal)) =
+                    super::evaluation::analytic_surface_foot(member, *sample)
+                else {
                     continue;
                 };
                 let distance = sample.vector_from(foot).dot(normal);
@@ -421,8 +370,8 @@ fn spine_samples(
 }
 
 /// Fit the cache of a blend whose spine and supports are given, over the
-/// spine interval of `vertices` widened by [`DOMAIN_MARGIN_FRACTION`], else
-/// over that interval alone; or the [`FitFailure`] of the last interval.
+/// spine interval of `vertices` widened by [`DOMAIN_MARGIN_FRACTION`], or the
+/// [`FitFailure`] that left it without one.
 ///
 /// # Errors
 ///
@@ -437,13 +386,9 @@ pub(super) fn fit(
     let [first, second] = supports;
     let fitter =
         BlendGeometry::with_sides(ctx, spine, [vec![first], vec![second]], signed_radius.abs());
-    let fitted = fitter.fit(vertices).ok_or_else(|| {
-        if fitter.capped.get() {
-            FitFailure::WorkCapped
-        } else {
-            fitter.failure.get().unwrap_or(FitFailure::Surface)
-        }
-    });
+    let fitted = fitter
+        .fit(vertices)
+        .ok_or_else(|| fitter.failure.get().unwrap_or(FitFailure::Surface));
     fitter.finish(fitted)
 }
 
@@ -454,9 +399,6 @@ const CENTER_STEP_TOLERANCE_MM: f64 = 1.0e-11;
 const MAX_CENTER_STEPS: usize = 32;
 /// Centre solves one use of a blend may spend.
 const MAX_CENTER_SOLVES: usize = 1 << 20;
-/// Feet on NURBS surfaces one use of a blend may solve. Each foot costs tens
-/// to hundreds of surface evaluations, where an analytic foot is closed form.
-const MAX_NURBS_FEET: usize = 1 << 14;
 /// Smallest `|n1 × n2|²` of two transversal support offsets.
 const MIN_CENTER_TRANSVERSALITY: f64 = 1.0e-8;
 /// Separation of two parallel support offsets at which they coincide, so a
@@ -507,8 +449,8 @@ pub(super) fn pair_member(
         ctx,
         spine,
         [
-            vec![Side::surface(members[0])],
-            vec![Side::surface(members[1])],
+            vec![Side::Surface(members[0])],
+            vec![Side::Surface(members[1])],
         ],
         signed_radius.abs(),
     );
@@ -518,7 +460,7 @@ pub(super) fn pair_member(
 
 impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
     /// The rolling ball of `spine` between the candidate surfaces of each
-    /// side, or `None` when a candidate is neither analytic nor NURBS.
+    /// side, or `None` when a candidate is not analytic.
     pub(super) fn new(
         ctx: &'a DecodeContext<'ctx>,
         spine: &'a CurveGeometry,
@@ -526,7 +468,7 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
         signed_radius: f64,
     ) -> Option<Self> {
         let geometry = Self::with_sides(ctx, spine, sides, signed_radius.abs());
-        (geometry.supported() && geometry.radius > 0.0 && geometry.radius.is_finite())
+        (geometry.analytic() && geometry.radius > 0.0 && geometry.radius.is_finite())
             .then_some(geometry)
     }
 
@@ -543,8 +485,6 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
             radius,
             refusal: RefCell::new(None),
             center_solves: Cell::new(0),
-            nurbs_feet: Cell::new(0),
-            capped: Cell::new(false),
             last_parameter: RefCell::new(None),
             exact_spines: RefCell::new(Vec::new()),
             polyline: SpinePolyline::of(spine),
@@ -566,19 +506,6 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
     pub(super) fn reset_seed(&self) {
         *self.last_parameter.borrow_mut() = None;
         self.center_solves.set(0);
-        self.nurbs_feet.set(0);
-        self.capped.set(false);
-        for candidate in self.sides.iter().flatten() {
-            match candidate {
-                Side::Surface(support) => support.seed.set(None),
-                Side::Wedge(wedge) => {
-                    for member in &wedge.members {
-                        member.seed.set(None);
-                    }
-                }
-                Side::Blend(_) => {}
-            }
-        }
     }
 
     /// The first resource refusal an evaluation met.
@@ -586,57 +513,20 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
         self.refusal.borrow_mut().take()
     }
 
-    fn supported(&self) -> bool {
+    fn analytic(&self) -> bool {
         self.sides.iter().all(|side| {
             !side.is_empty()
                 && side.iter().all(|candidate| match candidate {
-                    Side::Surface(support) => supported(support.geometry),
+                    Side::Surface(surface) => analytic(surface),
                     Side::Blend(_) | Side::Wedge(_) => true,
                 })
         })
     }
 
-    /// Whether every surface this ball rolls on, through nested balls and
-    /// support pairs, is analytic.
-    pub(super) fn exact_analytic(&self) -> bool {
-        self.sides
-            .iter()
-            .flatten()
-            .all(|candidate| match candidate {
-                Side::Surface(support) => analytic(support.geometry),
-                Side::Blend(blend) => blend.exact_analytic(),
-                Side::Wedge(wedge) => wedge.members.iter().all(|member| analytic(member.geometry)),
-            })
-    }
-
-    /// Record `failure` unless the attempt already has one.
+    /// Record `failure` unless the fit already has one.
     fn fail(&self, failure: FitFailure) {
         if self.failure.get().is_none() {
             self.failure.set(Some(failure));
-        }
-    }
-
-    /// The foot of `support`, keeping a resource refusal; `None` once this
-    /// use has solved [`MAX_NURBS_FEET`] feet on NURBS surfaces.
-    fn foot(
-        &self,
-        support: &Support<'_>,
-        point: Point3,
-    ) -> Option<(Point3, cadmpeg_ir::math::Vector3)> {
-        if !analytic(support.geometry) {
-            let feet = self.nurbs_feet.get() + 1;
-            self.nurbs_feet.set(feet);
-            if feet > MAX_NURBS_FEET {
-                self.capped.set(true);
-                return None;
-            }
-        }
-        match support_foot(self.ctx, support, point) {
-            Ok(foot) => foot,
-            Err(error) => {
-                self.refusal.borrow_mut().get_or_insert(error);
-                None
-            }
         }
     }
 
@@ -931,18 +821,15 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
         point: Point3,
     ) -> Option<(Point3, cadmpeg_ir::math::Vector3)> {
         match candidate {
-            Side::Surface(support) => self.foot(support, point),
+            Side::Surface(surface) => super::evaluation::analytic_surface_foot(surface, point),
             Side::Blend(blend) => {
                 let foot = blend.pipe_foot(point);
                 if let Some(limit) = blend.take_refusal() {
                     self.refusal.borrow_mut().get_or_insert(limit);
                 }
-                if blend.capped.get() {
-                    self.capped.set(true);
-                }
                 foot
             }
-            Side::Wedge(wedge) => self.wedge_foot(wedge, point),
+            Side::Wedge(wedge) => Self::wedge_foot(wedge, point),
         }
     }
 
@@ -950,23 +837,21 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
     /// member's foot when `point` is outside that member and the foot is on
     /// the material side of the other, else the nearest point of their edge
     /// with the normal toward `point`.
-    fn wedge_foot(
-        &self,
-        wedge: &Wedge<'_>,
-        point: Point3,
-    ) -> Option<(Point3, cadmpeg_ir::math::Vector3)> {
+    fn wedge_foot(wedge: &Wedge<'_>, point: Point3) -> Option<(Point3, cadmpeg_ir::math::Vector3)> {
         for slot in 0..2 {
-            let (foot, normal) = self.foot(&wedge.members[slot], point)?;
+            let (foot, normal) =
+                super::evaluation::analytic_surface_foot(wedge.members[slot], point)?;
             if wedge.outside[slot] * point.vector_from(foot).dot(normal) <= 0.0 {
                 continue;
             }
             let other = 1 - slot;
-            let (other_foot, other_normal) = self.foot(&wedge.members[other], foot)?;
+            let (other_foot, other_normal) =
+                super::evaluation::analytic_surface_foot(wedge.members[other], foot)?;
             if wedge.outside[other] * foot.vector_from(other_foot).dot(other_normal) <= 0.0 {
                 return Some((foot, normal));
             }
         }
-        let edge = self.edge_point(wedge, point)?;
+        let edge = Self::edge_point(wedge, point)?;
         let offset = point.vector_from(edge);
         let length = offset.norm();
         (length > 0.0 && length.is_finite()).then(|| {
@@ -984,11 +869,11 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
     /// The point of a wedge's edge nearest `point`: the point on both
     /// members' tangent planes nearest `point`, until it lies on both
     /// members.
-    fn edge_point(&self, wedge: &Wedge<'_>, point: Point3) -> Option<Point3> {
+    fn edge_point(wedge: &Wedge<'_>, point: Point3) -> Option<Point3> {
         let mut current = point;
         for _ in 0..MAX_EDGE_STEPS {
-            let (a, na) = self.foot(&wedge.members[0], current)?;
-            let (b, nb) = self.foot(&wedge.members[1], current)?;
+            let (a, na) = super::evaluation::analytic_surface_foot(wedge.members[0], current)?;
+            let (b, nb) = super::evaluation::analytic_surface_foot(wedge.members[1], current)?;
             let cross = na.cross(nb);
             if cross.dot(cross) < MIN_EDGE_TRANSVERSALITY {
                 return None;
@@ -1016,13 +901,9 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
         None
     }
 
-    /// The cache over the face's spine interval widened by
-    /// [`DOMAIN_MARGIN_FRACTION`], else over the interval alone, which a
-    /// support can end beyond; the failure of the last attempt stays in
-    /// `failure`.
     fn fit(&self, vertices: &[Point3]) -> Option<BlendFit> {
         self.failure.set(None);
-        if !(self.radius > 0.0 && self.radius.is_finite() && self.supported()) {
+        if !(self.radius > 0.0 && self.radius.is_finite() && self.analytic()) {
             self.fail(FitFailure::Unsupported);
             return None;
         }
@@ -1031,22 +912,7 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
             return None;
         };
         let margin = (high - low) * DOMAIN_MARGIN_FRACTION;
-        let widened = self.clamp([low - margin, high + margin]);
-        let exact = self.clamp([low, high]);
-        for interval in [widened, exact] {
-            self.failure.set(None);
-            if let Some(fitted) = self.fit_over(interval) {
-                return Some(fitted);
-            }
-            if interval == exact {
-                break;
-            }
-        }
-        None
-    }
-
-    /// The cache over the spine interval `[low, high]`.
-    fn fit_over(&self, [low, high]: [f64; 2]) -> Option<BlendFit> {
+        let [low, high] = self.clamp([low - margin, high + margin]);
         if high.partial_cmp(&low) != Some(std::cmp::Ordering::Greater) {
             self.fail(FitFailure::SpineInterval);
             return None;
@@ -1627,15 +1493,6 @@ fn arc_point(section: &Section, t: f64) -> Point3 {
     Point3::new(sum[0] / sum[3], sum[1] / sum[3], sum[2] / sum[3])
 }
 
-/// Whether a ball can roll on `surface`: analytic or NURBS.
-const fn supported(surface: &SurfaceGeometry) -> bool {
-    analytic(surface)
-        || matches!(
-            surface,
-            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
-        )
-}
-
 const fn analytic(surface: &SurfaceGeometry) -> bool {
     matches!(
         surface,
@@ -1773,7 +1630,7 @@ mod tests {
                 Vector3::new(0.0, direction, 0.0),
             );
             for supports in [[&floor, &wall], [&wall, &floor]] {
-                let fitted = super::fit(&ctx, &spine, supports.map(Side::surface), 1.0, &vertices)
+                let fitted = super::fit(&ctx, &spine, supports.map(Side::Surface), 1.0, &vertices)
                     .unwrap()
                     .unwrap()
                     .surface;
@@ -1818,7 +1675,7 @@ mod tests {
         let geometry = super::BlendGeometry::new(
             &ctx,
             &spine,
-            [vec![Side::surface(&floor)], vec![Side::surface(&wall)]],
+            [vec![Side::Surface(&floor)], vec![Side::Surface(&wall)]],
             1.0,
         )
         .unwrap();
@@ -1913,7 +1770,7 @@ mod tests {
             let geometry = super::BlendGeometry::new(
                 &ctx,
                 &spine,
-                [vec![Side::surface(&floor)], vec![Side::surface(other)]],
+                [vec![Side::Surface(&floor)], vec![Side::Surface(other)]],
                 1.0,
             )
             .unwrap();
@@ -1927,7 +1784,7 @@ mod tests {
         let geometry = super::BlendGeometry::new(
             &ctx,
             &spine,
-            [vec![Side::surface(&floor)], vec![Side::surface(&above)]],
+            [vec![Side::Surface(&floor)], vec![Side::Surface(&above)]],
             1.0,
         )
         .unwrap();
@@ -1960,7 +1817,7 @@ mod tests {
         let geometry = super::BlendGeometry::new(
             &ctx,
             &spine,
-            [vec![Side::surface(&floor)], vec![Side::surface(&wall)]],
+            [vec![Side::Surface(&floor)], vec![Side::Surface(&wall)]],
             1.0,
         )
         .unwrap();
@@ -2008,7 +1865,7 @@ mod tests {
         let fitted = super::fit(
             &ctx,
             &spine,
-            [Side::surface(&floor), Side::surface(&wall)],
+            [Side::Surface(&floor), Side::Surface(&wall)],
             1.0,
             &vertices,
         )
@@ -2060,7 +1917,7 @@ mod tests {
         let fitted = super::fit(
             &ctx,
             &spine,
-            [Side::surface(&floor), Side::surface(&wall)],
+            [Side::Surface(&floor), Side::Surface(&wall)],
             1.0,
             &vertices,
         )
@@ -2144,7 +2001,7 @@ mod tests {
         let geometry = super::BlendGeometry::new(
             &ctx,
             &spine,
-            [vec![Side::surface(&floor)], vec![Side::surface(&wall)]],
+            [vec![Side::Surface(&floor)], vec![Side::Surface(&wall)]],
             1.0,
         )
         .unwrap();
@@ -2193,7 +2050,7 @@ mod tests {
         let geometry = super::BlendGeometry::new(
             &ctx,
             &spine,
-            [vec![Side::surface(&floor)], vec![Side::surface(&wall)]],
+            [vec![Side::Surface(&floor)], vec![Side::Surface(&wall)]],
             1.0,
         )
         .unwrap();
@@ -2211,192 +2068,37 @@ mod tests {
         }
     }
 
-    /// The floor z = 0 over `x` and `y` as a bilinear NURBS patch whose
-    /// natural normal is +z, like the analytic floor's.
-    fn nurbs_floor(x: [f64; 2], y: [f64; 2]) -> SurfaceGeometry {
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
-            cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    false,
-                ),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-                    1,
-                    vec![0.0, 0.0, 1.0, 1.0],
-                    false,
-                ),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-                    vec![
-                        vec![Point3::new(x[0], y[0], 0.0), Point3::new(x[0], y[1], 0.0)],
-                        vec![Point3::new(x[1], y[0], 0.0), Point3::new(x[1], y[1], 0.0)],
-                    ],
-                    None,
-                ),
-                false,
-            )
-            .unwrap(),
-        ))
-    }
-
-    /// A unit ball rolling along y between `floor` and the wall x = 0 over
-    /// the face from y = 0 to y = 2: the fit, or why there is none.
-    fn fit_against_the_wall(floor: &SurfaceGeometry) -> Result<super::BlendFit, super::FitFailure> {
-        let wall = plane(
+    #[test]
+    fn a_ball_between_parallel_supports_names_the_centre_it_cannot_solve() {
+        // A unit ball rolling along y cannot touch both z = 0 and z = 5.
+        let floor = plane(
             Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
             Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        );
+        let ceiling = plane(
+            Point3::new(0.0, 0.0, 5.0),
+            Vector3::new(0.0, 0.0, -1.0),
+            Vector3::new(1.0, 0.0, 0.0),
         );
         let spine = line(Point3::new(1.0, 0.0, 1.0), Vector3::new(0.0, 1.0, 0.0));
-        let vertices = [
-            Point3::new(1.0, 0.0, 0.0),
-            Point3::new(0.0, 0.0, 1.0),
-            Point3::new(1.0, 2.0, 0.0),
-            Point3::new(0.0, 2.0, 1.0),
-        ];
+        let vertices = [Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 2.0, 0.0)];
         let arena = DecodeArena::new();
         let policy = DecodePolicy::service();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        super::fit(
+        let failure = super::fit(
             &ctx,
             &spine,
-            [Side::surface(floor), Side::surface(&wall)],
+            [Side::Surface(&floor), Side::Surface(&ceiling)],
             1.0,
             &vertices,
         )
         .unwrap()
-    }
-
-    /// The largest distance of the fitted surface from the ball's axis
-    /// x = 1, z = 1, less the radius, over a grid of its parameters.
-    fn largest_radius_error(fitted: &super::BlendFit) -> f64 {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let u = fitted.surface.u_knots().as_slice();
-        let (low, high) = (u[0], u[u.len() - 1]);
-        let mut largest: f64 = 0.0;
-        for i in 0..=8 {
-            for j in 0..=4 {
-                let point = super::super::evaluation::nurbs_surface_point(
-                    &ctx,
-                    &fitted.surface,
-                    low + (high - low) * f64::from(i) / 8.0,
-                    f64::from(j) / 4.0,
-                )
-                .unwrap()
-                .unwrap()
-                .get();
-                largest = largest.max(((point.x - 1.0).hypot(point.z - 1.0) - 1.0).abs());
-            }
-        }
-        largest
-    }
-
-    #[test]
-    fn a_ball_on_a_nurbs_support_fits_like_on_an_analytic_one() {
-        let analytic = plane(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-        );
-        let on_plane = fit_against_the_wall(&analytic).unwrap();
-        let on_nurbs = fit_against_the_wall(&nurbs_floor([-1.0, 3.0], [-1.0, 3.0])).unwrap();
-        assert!(largest_radius_error(&on_nurbs) < 1.0e-5);
-        let (nurbs_u, plane_u) = (
-            on_nurbs.surface.u_knots().as_slice(),
-            on_plane.surface.u_knots().as_slice(),
-        );
-        assert_eq!(nurbs_u.len(), plane_u.len());
-        for (left, right) in nurbs_u.iter().zip(plane_u) {
-            assert!((left - right).abs() < 1.0e-9, "{nurbs_u:?} {plane_u:?}");
-        }
-    }
-
-    #[test]
-    fn a_nurbs_support_that_ends_short_of_the_contact_gives_no_fit() {
-        // The contact with the floor is on x = 1; the patch starts at x = 1.5.
-        let failure = fit_against_the_wall(&nurbs_floor([1.5, 3.0], [-1.0, 3.0]))
-            .map(|_| ())
-            .unwrap_err();
+        .map(|_| ())
+        .unwrap_err();
         assert!(
-            matches!(failure, super::FitFailure::Foot { side: 0, .. }),
+            matches!(failure, super::FitFailure::Center { .. }),
             "{failure:?}"
         );
-    }
-
-    #[test]
-    fn a_fit_falls_back_to_the_face_interval_when_a_support_ends_in_the_margin() {
-        // The face runs from y = 0 to y = 2 and its widened interval from
-        // -0.1 to 2.1; the floor patch stops at -0.05 and 2.05.
-        let fitted = fit_against_the_wall(&nurbs_floor([-1.0, 3.0], [-0.05, 2.05])).unwrap();
-        let u = fitted.surface.u_knots().as_slice();
-        assert!((u[u.len() - 1] - u[0] - 2.0).abs() < 1.0e-6, "{u:?}");
-        assert!(largest_radius_error(&fitted) < 1.0e-5);
-    }
-
-    #[test]
-    fn a_wedge_with_a_nurbs_member_is_touched_on_a_face_or_on_its_edge() {
-        let floor = nurbs_floor([-5.0, 5.0], [-5.0, 5.0]);
-        let wall = plane(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-        );
-        let spine = line(Point3::new(1.0, 0.0, 1.0), Vector3::new(0.0, 1.0, 0.0));
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let geometry = super::BlendGeometry::new(
-            &ctx,
-            &spine,
-            [vec![Side::surface(&floor)], vec![Side::surface(&wall)]],
-            1.0,
-        )
-        .unwrap();
-        let wedge = Side::Wedge(
-            super::Wedge::new(&ctx, &spine, [&floor, &wall], &[])
-                .unwrap()
-                .unwrap(),
-        );
-        for (point, foot) in [
-            (Point3::new(-0.5, 2.0, 2.0), Point3::new(-0.5, 2.0, 0.0)),
-            (Point3::new(2.0, 2.0, -0.5), Point3::new(0.0, 2.0, -0.5)),
-            (Point3::new(1.0, 2.0, 1.0), Point3::new(0.0, 2.0, 0.0)),
-        ] {
-            let (got, _) = geometry.side_normal(&wedge, point).unwrap();
-            assert!(got.distance(foot) < 1.0e-9, "{got:?} {foot:?}");
-        }
-    }
-
-    #[test]
-    fn a_ball_on_a_nurbs_support_is_not_exactly_analytic() {
-        let floor = nurbs_floor([-1.0, 3.0], [-1.0, 3.0]);
-        let wall = plane(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(1.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-        );
-        let analytic_floor = plane(
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-        );
-        let spine = line(Point3::new(1.0, 0.0, 1.0), Vector3::new(0.0, 1.0, 0.0));
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::service();
-        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-        let exact = |floor: &SurfaceGeometry| {
-            super::BlendGeometry::new(
-                &ctx,
-                &spine,
-                [vec![Side::surface(floor)], vec![Side::surface(&wall)]],
-                1.0,
-            )
-            .unwrap()
-            .exact_analytic()
-        };
-        assert!(!exact(&floor));
-        assert!(exact(&analytic_floor));
     }
 }

@@ -209,12 +209,20 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
 
 /// The fit tolerance, in millimetres, of the cache the decoded blend holds.
 fn blend_cache_fit_tolerance(body: &[u8]) -> Option<f64> {
-    blend_cache(body).0
+    blend_cache(body).fit_tolerance
 }
 
-/// The fit tolerance of the decoded blend's cache, and the message of the
-/// loss that reports a blend without one.
-fn blend_cache(body: &[u8]) -> (Option<f64>, Option<String>) {
+/// The decoded blend's cache and the losses that report on it.
+struct DecodedBlend {
+    /// The fit tolerance of the cache.
+    fit_tolerance: Option<f64>,
+    /// The loss that reports a blend without a cache.
+    unsolved: Option<String>,
+    /// The loss that reports a kept cache that misses its face.
+    approximate: Option<String>,
+}
+
+fn blend_cache(body: &[u8]) -> DecodedBlend {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
     let result = SldprtCodec
@@ -233,13 +241,14 @@ fn blend_cache(body: &[u8]) -> (Option<f64>, Option<String>) {
         .cache_fit_tolerance()
         .map(cadmpeg_ir::geometry::FitTolerance::get);
     assert_eq!(cached, fit_tolerance.is_some());
-    let losses: Vec<_> = result
+    let (losses, mut approximate): (Vec<_>, Vec<_>) = result
         .report()
         .losses
         .iter()
         .filter(|loss| loss.code == crate::loss::SldprtLossCode::GeometryCarrierApproximated.kind())
-        .collect();
+        .partition(|loss| loss.message.starts_with("1 fitted blend surface(s)"));
     assert_eq!(losses.len(), usize::from(cached));
+    assert!(approximate.len() <= usize::from(cached), "{approximate:?}");
     if let Some(tolerance) = fit_tolerance {
         assert_eq!(losses[0].message, format!(
             "1 fitted blend surface(s) use approximate carriers; largest fit tolerance {tolerance} mm."
@@ -254,14 +263,21 @@ fn blend_cache(body: &[u8]) -> (Option<f64>, Option<String>) {
         .collect();
     assert_eq!(unsolved.len(), usize::from(!cached), "{unsolved:?}");
 
-    (fit_tolerance, unsolved.into_iter().next())
+    DecodedBlend {
+        fit_tolerance,
+        unsolved: unsolved.into_iter().next(),
+        approximate: approximate.pop().map(|loss| loss.message.clone()),
+    }
 }
 
 #[test]
 fn a_blend_on_a_swept_support_solves_its_cache_through_the_face_on_the_sweep() {
-    let fit_tolerance = blend_cache_fit_tolerance(&blend_on_swept_wall_body(true, 0.0))
+    let blend = blend_cache(&blend_on_swept_wall_body(true, 0.0));
+    let fit_tolerance = blend
+        .fit_tolerance
         .expect("the wall's face states the sweep");
     assert!(fit_tolerance < 1.0e-5);
+    assert_eq!(blend.approximate, None);
 }
 
 #[test]
@@ -274,28 +290,40 @@ fn a_blend_on_a_sweep_that_no_face_carries_has_no_cache() {
 
 #[test]
 fn a_blend_cache_within_the_vertex_floor_is_kept_with_its_miss() {
-    let fit_tolerance = blend_cache_fit_tolerance(&blend_on_swept_wall_body(true, 5.0e-7))
-        .expect("a 0.5 um miss is within 1e-3 mm");
+    let blend = blend_cache(&blend_on_swept_wall_body(true, 5.0e-7));
+    let fit_tolerance = blend
+        .fit_tolerance
+        .expect("a 0.5 um miss is the same branch");
     assert!(fit_tolerance >= 4.0e-4, "{fit_tolerance}");
     assert!(fit_tolerance <= 6.0e-4, "{fit_tolerance}");
+    assert_eq!(blend.approximate, None, "a 0.5 um miss is within 1e-3 mm");
 }
 
 #[test]
-fn a_blend_cache_that_misses_a_vertex_beyond_its_edges_is_reported_not_kept() {
-    // A 1 mm miss on a 100 mm ball is the same branch, but the face's edges
-    // state no tolerance, so the cache does not bound the face.
-    let (fit_tolerance, unsolved) = blend_cache(&blend_on_swept_wall_body(true, 0.001));
-    assert_eq!(fit_tolerance, None);
-    let message = unsolved.expect("the blend is reported");
+fn a_blend_cache_covers_a_vertex_inside_a_quarter_of_the_radius() {
+    // A 1 mm miss on a 100 mm ball is the same branch; the face's edges
+    // state no tolerance, so the kept cache is reported as approximate.
+    let blend = blend_cache(&blend_on_swept_wall_body(true, 0.001));
+    let fit_tolerance = blend
+        .fit_tolerance
+        .expect("a 1 mm miss on a 100 mm ball is the same branch");
+    assert!(fit_tolerance >= 0.9, "{fit_tolerance}");
+    assert!(fit_tolerance <= 1.1, "{fit_tolerance}");
+    let message = blend
+        .approximate
+        .expect("the approximate cache is reported");
     assert!(message.contains("misses a face vertex by"), "{message}");
+    assert!(message.contains("the face keeps the cache"), "{message}");
 }
 
 #[test]
 fn a_blend_cache_past_a_quarter_of_the_radius_from_a_vertex_is_refused() {
-    assert_eq!(
-        blend_cache_fit_tolerance(&blend_on_swept_wall_body(true, 0.03)),
-        None
-    );
+    let blend = blend_cache(&blend_on_swept_wall_body(true, 0.03));
+    assert_eq!(blend.fit_tolerance, None);
+    let message = blend
+        .unsolved
+        .expect("the blend without a cache is reported");
+    assert!(message.contains("a quarter of the radius"), "{message}");
 }
 
 #[test]
