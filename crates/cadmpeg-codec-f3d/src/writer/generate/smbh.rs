@@ -16,7 +16,7 @@ use cadmpeg_ir::geometry::{
     pcurve::{PcurveGeometry, PcurveMetadata},
     CurveGeometry, SolvedCurveGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{ShellId, VertexId};
+use cadmpeg_ir::ids::{CurveId, ShellId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::topology::Sense;
 
@@ -28,9 +28,9 @@ use super::{
     },
     index::NativeGenerationIndex,
     native_bytes::{
-        native_curve_base, native_f64, native_history_tail, native_i64, native_ident, native_point,
-        native_record_index, native_ref, native_string, native_surface_base, native_transform,
-        native_vector,
+        native_curve_base, native_f64, native_history_tail, native_i64, native_ident,
+        native_intcurve_base, native_point, native_record_index, native_ref, native_string,
+        native_surface_base, native_transform, native_vector,
     },
     native_geometry::{
         native_cacheless_procedural_curve, native_cacheless_procedural_surface, native_nurbs_curve,
@@ -559,7 +559,7 @@ fn encode_wire_body_smbh(
         }
         edge_base += shell.wire_edges().count();
     }
-    encode_source_less_curves(&mut records, target, owners)?;
+    encode_source_less_curves(&mut records, target, topology, owners)?;
     let mut wire_edge_owners = geometry
         .edges
         .iter()
@@ -606,6 +606,40 @@ fn encode_wire_body_smbh(
     let mut bytes = native_smbh_header(target)?;
     bytes.extend_from_slice(&records);
     Ok(bytes)
+}
+
+/// The curves every edge of which carries a retained reversed sense. The
+/// decoder states such a curve on its edges' own parameterization, the
+/// reverse of the native record (asm.md §5, "Edge"), so the writer writes the
+/// record as the reverse of the curve.
+fn reversed_curves<'a>(
+    target: &'a CadIr,
+    topology: &NativeGenerationIndex<'_>,
+) -> HashSet<&'a CurveId> {
+    let mut reversed = HashSet::new();
+    let mut forward = HashSet::new();
+    for edge in &target.geometry.edges {
+        let Some(curve) = edge.curve() else {
+            continue;
+        };
+        if retained_sense(topology, edge) == Sense::Reversed {
+            reversed.insert(curve);
+        } else {
+            forward.insert(curve);
+        }
+    }
+    reversed.retain(|curve| !forward.contains(curve));
+    reversed
+}
+
+fn retained_sense(
+    topology: &NativeGenerationIndex<'_>,
+    edge: &cadmpeg_ir::topology::Edge,
+) -> Sense {
+    topology
+        .edge_continuities
+        .get(edge.id.as_str())
+        .map_or(Sense::Forward, |metadata| metadata.sense)
 }
 
 /// Whether the B-rep stream has no form for `surface`: the carriers the face
@@ -668,12 +702,19 @@ pub(super) fn curve_has_no_form(
 fn encode_source_less_curves(
     records: &mut Vec<u8>,
     target: &CadIr,
+    topology: &NativeGenerationIndex<'_>,
     owners: &ProceduralOwners<'_>,
 ) -> Result<(), CodecError> {
     let geometry = &target.geometry;
+    let reversed = reversed_curves(target, topology);
     for carrier in &geometry.curves {
+        let reverse = reversed.contains(&carrier.id);
         match carrier.geometry.solved() {
             Some(SolvedCurveGeometry::Line(line_curve)) => {
+                let mut line_curve = *line_curve;
+                if reverse {
+                    line_curve.reverse_parameterization();
+                }
                 let origin = line_curve.origin().get();
                 let direction = *line_curve.direction().as_raw();
                 native_curve_base(records, "straight")?;
@@ -688,6 +729,10 @@ fn encode_source_less_curves(
                 native_vector(records, [direction.x, direction.y, direction.z]);
             }
             Some(SolvedCurveGeometry::Circle(circle_curve)) => {
+                let mut circle_curve = *circle_curve;
+                if reverse {
+                    circle_curve.reverse_parameterization();
+                }
                 let center = circle_curve.center().get();
                 let axis = *circle_curve.frame().axis().as_raw();
                 let ref_direction = *circle_curve.frame().reference().as_raw();
@@ -713,6 +758,10 @@ fn encode_source_less_curves(
                 native_f64(records, 1.0);
             }
             Some(SolvedCurveGeometry::Ellipse(ellipse_curve)) => {
+                let mut ellipse_curve = *ellipse_curve;
+                if reverse {
+                    ellipse_curve.reverse_parameterization();
+                }
                 let center = ellipse_curve.center().get();
                 let axis = *ellipse_curve.frame().axis().as_raw();
                 let major_direction = *ellipse_curve.frame().reference().as_raw();
@@ -739,8 +788,8 @@ fn encode_source_less_curves(
                 native_f64(records, minor_radius / major_radius);
             }
             Some(SolvedCurveGeometry::Nurbs(ref curve)) => {
-                if !native_procedural_curve(records, target, owners, &carrier.id, curve)? {
-                    native_curve_base(records, "intcurve")?;
+                if !native_procedural_curve(records, target, owners, &carrier.id, curve, reverse)? {
+                    native_intcurve_base(records, reverse)?;
                     native_nurbs_curve(records, curve)?;
                 }
             }
@@ -1317,7 +1366,7 @@ fn encode_face_topology_smbh(
         records.push(0x11);
     }
 
-    encode_source_less_curves(&mut records, target, owners)?;
+    encode_source_less_curves(&mut records, target, topology, owners)?;
 
     for pcurve in &pcurves {
         native_pcurve(&mut records, pcurve.geometry, &pcurve.form, pcurve.support)?;
@@ -1601,6 +1650,7 @@ fn encode_source_less_edges_vertices_points(
         .enumerate()
         .map(|(ordinal, point)| (&point.id, ordinal))
         .collect();
+    let reversed_curves = reversed_curves(target, topology);
     let edge_positions = first_positions(geometry.edges.iter().map(|edge| &edge.id));
     let mut first_edge_uses = HashMap::new();
     for (ordinal, edge) in geometry.edges.iter().enumerate() {
@@ -1724,7 +1774,7 @@ fn encode_source_less_edges_vertices_points(
         native_f64(records, range[1]);
         native_ref(records, edge_owners.get(&edge.id).copied().unwrap_or(-1));
         native_ref(records, curve_ref);
-        let (sense, continuity) = edge_record_metadata(topology, edge)?;
+        let (sense, continuity) = edge_record_metadata(topology, edge, &reversed_curves)?;
         records.push(native_bool(sense == Sense::Reversed));
         native_string(records, &continuity)?;
         native_tolerant_edge_tail(records, topology, edge);
@@ -1972,14 +2022,24 @@ fn native_tolerant_edge_tail(
     }
 }
 
+/// The native sense and continuity of `edge`. An edge on a curve that a
+/// forward edge also uses runs forward on that curve.
 fn edge_record_metadata(
     topology: &NativeGenerationIndex<'_>,
     edge: &cadmpeg_ir::topology::Edge,
+    reversed_curves: &HashSet<&CurveId>,
 ) -> Result<(Sense, String), CodecError> {
     let metadata = topology.edge_continuities.get(edge.id.as_str()).copied();
-    let sense = metadata
-        .as_ref()
-        .map_or(Sense::Forward, |metadata| metadata.sense);
+    let sense = match retained_sense(topology, edge) {
+        Sense::Reversed
+            if edge
+                .curve()
+                .is_none_or(|curve| reversed_curves.contains(curve)) =>
+        {
+            Sense::Reversed
+        }
+        Sense::Reversed | Sense::Forward => Sense::Forward,
+    };
     let continuity = metadata.map_or_else(
         || "unknown".to_owned(),
         |metadata| metadata.continuity.clone(),
