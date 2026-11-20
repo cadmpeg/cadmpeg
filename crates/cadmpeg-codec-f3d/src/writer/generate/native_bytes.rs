@@ -25,9 +25,14 @@ pub(super) fn native_curve_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(), C
     native_ref(bytes, -1);
     native_i64(bytes, -1);
     native_ref(bytes, -1);
-    if kind == "intcurve" {
-        bytes.push(native_bool(false));
-    }
+    Ok(())
+}
+
+/// An `intcurve` record head and its record-level sense: `reversed` states
+/// the curve as the reverse of its cache, `C(t) = cache(-t)`.
+pub(super) fn native_intcurve_base(bytes: &mut Vec<u8>, reversed: bool) -> Result<(), CodecError> {
+    native_curve_base(bytes, "intcurve")?;
+    bytes.push(native_bool(reversed));
     Ok(())
 }
 

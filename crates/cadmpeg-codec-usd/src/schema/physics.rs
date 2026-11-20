@@ -51,6 +51,23 @@ pub(crate) struct Drive {
     pub(crate) max_force: Option<f64>,
 }
 
+/// One `PhysicsLimitAPI` instance of a joint (spec §16.5), in scene units
+/// and degrees.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Limit {
+    /// The degree of freedom: `transX` to `rotZ`, or `distance`.
+    pub(crate) instance: String,
+    pub(crate) low: Option<f64>,
+    pub(crate) high: Option<f64>,
+}
+
+impl Limit {
+    /// A low value above the high value locks the degree of freedom.
+    pub(crate) fn locks(&self) -> bool {
+        matches!((self.low, self.high), (Some(low), Some(high)) if low > high)
+    }
+}
+
 /// A joint prim's data in scene units and degrees.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct JointData {
@@ -67,6 +84,7 @@ pub(crate) struct JointData {
     pub(crate) max_distance: Option<f64>,
     pub(crate) enabled: bool,
     pub(crate) drives: Vec<Drive>,
+    pub(crate) limits: Vec<Limit>,
     /// The coupling ratio of a gear or rack-and-pinion joint: a pure ratio
     /// for a gear, degrees per length unit for a rack and pinion.
     pub(crate) ratio: Option<f64>,
@@ -110,6 +128,17 @@ fn finite(prim: &Prim<'_>, name: &str, issues: &mut Issues) -> Option<f64> {
         .filter(|value| value.is_finite())
 }
 
+/// A limit bound scalar, keeping finite and infinite values for lock detection
+/// and reporting `NaN` as malformed.
+fn bound(prim: &Prim<'_>, name: &str, issues: &mut Issues) -> Option<f64> {
+    let value = vector(prim, name, 1, issues)?.first().copied()?;
+    if value.is_nan() {
+        issues.malformed(prim, name, "expected a numeric bound, not NaN");
+        return None;
+    }
+    Some(value)
+}
+
 fn tuple<const N: usize>(prim: &Prim<'_>, name: &str, issues: &mut Issues) -> Option<[f64; N]> {
     let values = vector(prim, name, N, issues)?;
     let mut out = [0.0; N];
@@ -142,6 +171,17 @@ pub(crate) fn joint(prim: &Prim<'_>, kind: JointType, issues: &mut Issues) -> Jo
             stiffness: finite(prim, &name("stiffness"), issues),
             damping: finite(prim, &name("damping"), issues),
             max_force: finite(prim, &name("maxForce"), issues),
+        });
+    }
+    let mut limits = Vec::new();
+    for schema in prim.api_schemas() {
+        let Some(instance) = schema.strip_prefix("PhysicsLimitAPI:") else {
+            continue;
+        };
+        limits.push(Limit {
+            instance: instance.to_owned(),
+            low: bound(prim, &format!("limit:{instance}:physics:low"), issues),
+            high: bound(prim, &format!("limit:{instance}:physics:high"), issues),
         });
     }
     let instances: Vec<String> = drives.iter().map(|drive| drive.instance.clone()).collect();
@@ -193,6 +233,7 @@ pub(crate) fn joint(prim: &Prim<'_>, kind: JointType, issues: &mut Issues) -> Jo
         max_distance: finite(prim, "physics:maxDistance", issues).filter(|value| *value >= 0.0),
         enabled: boolean(prim, "physics:jointEnabled", issues).unwrap_or(true),
         drives,
+        limits,
         ratio: match kind {
             JointType::Gear => finite(prim, "physics:gearRatio", issues),
             JointType::RackPinion => finite(prim, "physics:ratio", issues),

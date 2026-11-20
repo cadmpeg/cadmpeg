@@ -591,7 +591,7 @@ pub(super) fn check_references(
         use crate::attributes::{AttributeTarget, AttributeValue};
 
         let owner = attribute.id.as_str();
-        for value in &attribute.values {
+        for value in attribute.values.iter().flatten() {
             if let AttributeValue::Parameter(id) = value {
                 if !records.holds_parameter(id) {
                     ref_error(findings, owner, "parameter", id.as_str());
