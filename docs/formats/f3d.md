@@ -3228,11 +3228,11 @@ This subsection gives the records that a Design stream holds when its MetaStream
 | `493A89BA-E146-498D-9033-2783FE727AF4` | `D0D7E795-ECF7-48A8-A7A3-F983C5A29F8B` | 3 | `Fusion` | Base Feature result owner |
 | `5988EB6C-011B-4012-B500-089A713F57BF` | `5C069ACB-169F-4555-9792-815B4671DDA0` | 2 | `Fusion` | Base Feature body tracking entry |
 
-**Record roster.** The Design stream of a `Base Feature` design with one solid result body holds the records below, in ascending record index. Each further solid body adds ten records: its two body-reference records, two Scene nodes (type `702B9CD2-537C-429E-8CC4-22BEEEB98C37`), their two records of type `A9DCF6C1-617C-4F65-8302-C6F3A9EBBC4C` and two auxiliary records (type `2343B7AB-A2E0-4C66-8B74-99A05E4C670B`), one body tracking entry, and one browser-node member. A sheet result body adds one record of the alternate `Body` owner type `3A8E00DC-E342-4C03-8521-846BD9F7513E`, type version `3`, which its design body-reference record names in place of the design `Body` owner.
+**Record roster.** The Design stream of a `Base Feature` design with one solid result body holds the records below, in ascending record index. Each type GUID of this subsection is spelled in the letter case that the type table stores, and a writer stores that spelling. Each further solid body adds ten records: its two body-reference records, two Scene nodes (type `702b9cd2-537c-429e-8cc4-22beeeb98c37`), their two records of type `a9dcf6c1-617c-4f65-8302-c6f3a9ebbc4c` and two auxiliary records (type `2343b7ab-a2e0-4c66-8b74-99a05e4c670b`), one body tracking entry, and one browser-node member. A sheet result body adds one record of the alternate `Body` owner type `3A8E00DC-E342-4C03-8521-846BD9F7513E`, type version `3`, which its design body-reference record names in place of the design `Body` owner.
 
 | Index | Type GUID | Version | Length | Role |
 |---|---|---|---|---|
-| 0 | `23FD63FB-4EBE-4C85-A42B-5D9809AA3499` | 17 | 494 | `AssetSettings` |
+| 0 | `23FD63FB-4EBE-4c85-A42B-5D9809AA3499` | 17 | 494 | `AssetSettings` |
 | 1 | `2C54F6D6-5C2B-4C4A-89A2-2AB486EF152D` | 0 | variable | Protein asset manager |
 | 2 | `3B9288E7-E1DE-414D-90BD-1C0CDAC77EB1` | 0 | 22 | the header and eleven zero bytes |
 | 3 | `E03784ED-5E19-4E14-B9F2-3B07017018CD` | 23 | variable | component aggregate |
@@ -3258,7 +3258,7 @@ This subsection gives the records that a Design stream holds when its MetaStream
 | 25 | `0E18EEF2-0D6F-480C-997E-5EBC7369AE5F` | 0 | 165 | origin point |
 | 26–28 | `19031004-3AB6-4D13-ABBF-C51EE214688D` | 0 | 205 | origin axes `X`, `Y`, `Z` |
 | 29–31 | `8D424E29-DE23-4B1F-A3AD-84C52A497D1A` | 1 | 252 | origin planes `XY`, `XZ`, `YZ` |
-| 32 | `64435F6E-077A-4F6B-A7B6-537BF84BA414` | 0 | 55 | |
+| 32 | `64435F6E-077A-4f6b-A7B6-537BF84BA414` | 0 | 55 | |
 | 33 | `BF7A6B8B-6E56-4C84-8882-1E8A1C1FE487` | 0 | 55 | |
 | 34 | `8EF00D65-F18D-4179-A644-FE0CA39943D6` | 5 | 80 | |
 | 36 | `878C70A7-15B8-4B0B-B1B7-C2A7A23CC45C` | 3 | 60 | |
@@ -3271,13 +3271,13 @@ This subsection gives the records that a Design stream holds when its MetaStream
 | 43 | `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` | 2 | 252 | `rootInstance` |
 | 44 | `D50DCC35-42CC-4E7D-9B81-4EB8252712D0` | 0 | 85 | |
 | 45 | `0FAF9824-8ECA-45ED-B199-589022ED5F6D` | 9 | 114 | |
-| 46 | `A1675506-5D2D-47A5-8AD2-8FD5CE946DA0` | 0 | 103 | |
-| 47–160 | `21086CE0-C398-4B1B-9CD6-86F092429833`, `B61F1D39-4984-47B0-9248-3A1113E86FC1`, `C6EE7300-667E-4EA5-9F61-71F98412DE8B` | 2, 0, 0 | 95 to 356 | six unit-system groups. Each group is one unit-system record of type `21086CE0-C398-4B1B-9CD6-86F092429833`, two records of type `B61F1D39-4984-47B0-9248-3A1113E86FC1`, and 17 or 14 unit-type records of type `C6EE7300-667E-4EA5-9F61-71F98412DE8B` |
+| 46 | `A1675506-5D2D-47a5-8AD2-8FD5CE946DA0` | 0 | 103 | |
+| 47–160 | `21086CE0-C398-4b1b-9CD6-86F092429833`, `B61F1D39-4984-47b0-9248-3A1113E86FC1`, `C6EE7300-667E-4ea5-9F61-71F98412DE8B` | 2, 0, 0 | 95 to 356 | six unit-system groups. Each group is one unit-system record of type `21086CE0-C398-4b1b-9CD6-86F092429833`, two records of type `B61F1D39-4984-47b0-9248-3A1113E86FC1`, and 17 or 14 unit-type records of type `C6EE7300-667E-4ea5-9F61-71F98412DE8B` |
 | 161 | `778FECF0-46E7-4EB8-A8D0-52C950CCEAAE` | 0 | 48 | |
 | 162 | `B4CDE096-07DE-4272-BA4A-B257EFE0B470` | 0 | 51 | |
 | 163 | `88A5C187-5E68-4318-8A33-3AAA72F9DDB1` | 0 | 70 | |
 | 164–171 | `736DEAAF-2425-405E-B871-003AAB726295`, `1787C882-91E2-4363-9C18-80C98EBE4C77` | 5, 0 | 153; 54 to 58 | four alternating pairs |
-| 172 | `D9554B4F-2333-42C2-9495-2148D96F7437` | 11 | 261 | lighting environment |
+| 172 | `d9554b4f-2333-42c2-9495-2148d96f7437` | 11 | 261 | lighting environment |
 | 173–176 | `830A2A2B-0AA9-4D6A-ACA1-F7A2B2A06573` | 0 | 25 | archive-entry names |
 | 177 | `C170F594-38B1-4C2A-B649-7FE0164C44E3` | 0 | 99 | `WorkingModelPlaceholderRoot` |
 | 178 | `60F93DE2-6329-4598-A6AF-096AC63E627C` | 0 | 57 | |
@@ -3285,9 +3285,9 @@ This subsection gives the records that a Design stream holds when its MetaStream
 | 185 | `49B2AA69-7655-4C36-A14E-9582CCF1283C` | 0 | 202 | configuration-table serializer trigger |
 | 186 | `3185B924-6C84-4804-BE77-9105B09209DA` | 0 | 207 | configuration-rule serializer trigger |
 | 187 | `D3937028-C20C-4E65-B010-94AD418A5C20` | 19 | 891 | design body-reference record |
-| 188 | `702B9CD2-537C-429E-8CC4-22BEEEB98C37` | 1 | 133 | Scene node of the design body-reference record |
-| 189 | `A9DCF6C1-617C-4F65-8302-C6F3A9EBBC4C` | 0 | 95 | |
-| 190 | `2343B7AB-A2E0-4C66-8B74-99A05E4C670B` | 1 | 144 | Scene auxiliary record |
+| 188 | `702b9cd2-537c-429e-8cc4-22beeeb98c37` | 1 | 133 | Scene node of the design body-reference record |
+| 189 | `a9dcf6c1-617c-4f65-8302-c6f3a9ebbc4c` | 0 | 95 | |
+| 190 | `2343b7ab-a2e0-4c66-8b74-99a05e4c670b` | 1 | 144 | Scene auxiliary record |
 | 191 | `A2EDAFD4-B122-49CC-AF09-96BE5C57A89D` | 0 | 72 | |
 | 192 | `E55D0457-898F-4A8E-B1A5-C85BDBA8794F` | 0 | variable | snapshot body-map companion |
 | 193 | `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA` | 4 | 93 | parameter `Body` owner |
@@ -3314,9 +3314,9 @@ This subsection gives the records that a Design stream holds when its MetaStream
 | 214 | `6CCF41D5-40BE-48ED-A834-18F3EAED6C57` | 1 | 58 | parameter companion of the result owner |
 | 215 | `D3937028-C20C-4E65-B010-94AD418A5C20` | 19 | 891 | parameter body-reference record |
 | 219 | `E55D0457-898F-4A8E-B1A5-C85BDBA8794F` | 0 | variable | snapshot body-map companion |
-| 220 | `702B9CD2-537C-429E-8CC4-22BEEEB98C37` | 1 | 133 | Scene node of the parameter body-reference record |
-| 221 | `A9DCF6C1-617C-4F65-8302-C6F3A9EBBC4C` | 0 | 95 | |
-| 222 | `2343B7AB-A2E0-4C66-8B74-99A05E4C670B` | 1 | 144 | Scene auxiliary record |
+| 220 | `702b9cd2-537c-429e-8cc4-22beeeb98c37` | 1 | 133 | Scene node of the parameter body-reference record |
+| 221 | `a9dcf6c1-617c-4f65-8302-c6f3a9ebbc4c` | 0 | 95 | |
+| 222 | `2343b7ab-a2e0-4c66-8b74-99a05e4c670b` | 1 | 144 | Scene auxiliary record |
 | 223 | `5988EB6C-011B-4012-B500-089A713F57BF` | 2 | 197 | body tracking entry |
 | 224 | `D26351F0-5940-4D23-AA20-2C35475A6D9E` | 2 | 151 | browser-node member |
 
@@ -3381,7 +3381,7 @@ The archive of such a design also holds an ACT segment (segment ID `1`) and a Br
 | Paired-header type | Records whose paired header carries it |
 |---|---|
 | `CB844AB6-240D-4fc9-9C9F-3679DC896D6F` | `D7015B81-AB4D-4C89-BED7-AA4411E1964A`, `493A89BA-E146-498D-9033-2783FE727AF4`, `5D15E992-1E93-4D79-A553-10D2624148AE`, `B7F34D7B-DAC4-41A5-B67D-D672537C3BFA`, `C3423E04-7E85-4B44-8E31-A5FA9C100052`, `D26351F0-5940-4D23-AA20-2C35475A6D9E`, `B4CDE096-07DE-4272-BA4A-B257EFE0B470` |
-| `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | `3A6D1E62-99F8-4E32-BAAA-DBA0A2CFB27C`, `0FAF9824-8ECA-45ED-B199-589022ED5F6D`, `1E650EA7-07C5-4111-B639-7DEE3A659799`, `64435F6E-077A-4F6B-A7B6-537BF84BA414`, `878C70A7-15B8-4B0B-B1B7-C2A7A23CC45C`, `8EF00D65-F18D-4179-A644-FE0CA39943D6`, `BF7A6B8B-6E56-4C84-8882-1E8A1C1FE487`, `C170F594-38B1-4C2A-B649-7FE0164C44E3`, `F670456D-872C-4818-95E9-DE115B264ACA` |
+| `834C9DEF-4C39-4587-A08D-A5BD1267B7B4` | `3A6D1E62-99F8-4E32-BAAA-DBA0A2CFB27C`, `0FAF9824-8ECA-45ED-B199-589022ED5F6D`, `1E650EA7-07C5-4111-B639-7DEE3A659799`, `64435F6E-077A-4f6b-A7B6-537BF84BA414`, `878C70A7-15B8-4B0B-B1B7-C2A7A23CC45C`, `8EF00D65-F18D-4179-A644-FE0CA39943D6`, `BF7A6B8B-6E56-4C84-8882-1E8A1C1FE487`, `C170F594-38B1-4C2A-B649-7FE0164C44E3`, `F670456D-872C-4818-95E9-DE115B264ACA` |
 | `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` | `3978701C-58EC-401A-8D24-A6FF4103DC24`, `60F93DE2-6329-4598-A6AF-096AC63E627C`, `7E84430B-74C7-4B67-92D0-4131A0B79109`, `FA21074E-32D2-4DC9-9E77-8F53D7E7D96B` |
 | `5C069ACB-169F-4555-9792-815B4671DDA0` | `5988EB6C-011B-4012-B500-089A713F57BF` |
 | `42054630-20A0-40E1-B969-CFE9E742F5C9` | `E03784ED-5E19-4E14-B9F2-3B07017018CD` |
@@ -3479,7 +3479,7 @@ The 891-byte form continues after the LP-UTF16 name `0_<index>`, which ends at o
 | 592 | LP-UTF16 | physical material `PrismMaterial-022` |
 | 630 | reference | the `Body` owner: the design `Body` owner in the design body-reference record, the parameter `Body` owner in the parameter body-reference record |
 | 641 | u8 | `0`, a null reference |
-| 642 | reference | the record's Scene node (type `702B9CD2-537C-429E-8CC4-22BEEEB98C37`) |
+| 642 | reference | the record's Scene node (type `702b9cd2-537c-429e-8cc4-22beeeb98c37`) |
 | 653 | u32 | `0` |
 | 657 | 4 × f32 | appearance colour: `0.9647059`, `0.9647059`, `0.9529412`, `1.0` |
 | 673 | reference | the Protein asset manager |
@@ -3608,7 +3608,7 @@ The record of type `E276745D-D84E-40D5-88BC-8C94DD4ACCDF`, type version `1`, is 
 | 26 | f32 | `1.0` |
 | 30, 41, 52, 63, 74 | reference | records of types `8EF00D65-F18D-4179-A644-FE0CA39943D6`, `878C70A7-15B8-4B0B-B1B7-C2A7A23CC45C`, `1E650EA7-07C5-4111-B639-7DEE3A659799`, `F670456D-872C-4818-95E9-DE115B264ACA`, `B4CDE096-07DE-4272-BA4A-B257EFE0B470` |
 | 85 | reference | the origin container |
-| 96, 107 | reference | records of types `64435F6E-077A-4F6B-A7B6-537BF84BA414`, `BF7A6B8B-6E56-4C84-8882-1E8A1C1FE487` |
+| 96, 107 | reference | records of types `64435F6E-077A-4f6b-A7B6-537BF84BA414`, `BF7A6B8B-6E56-4C84-8882-1E8A1C1FE487` |
 | 118 | u32 | property-group count `G` |
 | 122 | u64 | next value of the persistent-identity counter: greater than every identity of the persistent-id table, `300` when the table holds none, and `301` in a `Base Feature` design |
 | 130 | reference | record of type `AD3F9695-7FDF-4708-AE05-B21309CDE969` |
@@ -3671,7 +3671,7 @@ The record is `904 + 2L` bytes. The two lowercase GUIDs at offsets 709 and 812 o
 | g + 10 | LP-UTF16 | name |
 | — | 3 × u8 | `00 00 01` |
 | — | 8 × u8 | zero |
-| — | reference | the `AssetSettings` record (type `23FD63FB-4EBE-4C85-A42B-5D9809AA3499`) |
+| — | reference | the `AssetSettings` record (type `23FD63FB-4EBE-4c85-A42B-5D9809AA3499`) |
 | — | 2 × u8 | zero |
 | — | f32 | `1.0` |
 | — | f32 | `1.0` for the point and the planes, `1.3` for the axes |
