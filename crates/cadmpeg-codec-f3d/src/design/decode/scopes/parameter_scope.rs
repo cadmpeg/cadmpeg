@@ -1625,42 +1625,40 @@ fn unparsed_rigid_group_tail_length(
     paired.checked_sub(kind_end)
 }
 
-fn typed_fixed_scope_tail_is_valid(
+/// The tail offset of the suppressed flag of a typed-reference tail in the
+/// 196-byte form, or the Assemble form with one more typed reference.
+fn typed_scope_tail(
     bytes: &[u8],
     kind_end: usize,
     paired_at: usize,
     extended: bool,
     label_units: usize,
-) -> bool {
+) -> Option<usize> {
     use crate::bytes::typed_local_reference_target as target;
-    (|| {
-        let tail = bytes.get(kind_end..paired_at)?;
-        let label = label_units.checked_mul(2)?;
-        let first = typed_tail::FIRST_REFERENCE.checked_add(label)?;
-        let shift = label + usize::from(extended) * crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
-        let state =
-            tail.get(typed_tail::SECOND_ZERO_RUN_2 + shift..typed_tail::THIRD_REFERENCE + shift)?;
-        let zero_run = if label_units == 0 {
-            tail.get(typed_tail::ZERO_RUN_15..first)? == [0; 15]
-        } else {
-            tail_label(tail, 0)?.1 == named_tail::ASSOCIATED_COUNT + label
-                && tail.get(named_tail::ASSOCIATED_COUNT + label..first)? == [0; 7]
-        };
-        (tail.len() == typed_tail::LEN + shift
-            && zero_run
-            && target(tail, first).is_some()
-            && (!extended || target(tail, typed_tail::PREVIOUS_HISTORY_STATE_ID + label).is_some())
-            && target(tail, typed_tail::SECOND_REFERENCE + shift).is_some()
-            && if extended {
-                state.iter().all(|byte| *byte <= 1)
-            } else {
-                state == [0; 2]
-            }
-            && target(tail, typed_tail::THIRD_REFERENCE + shift).is_some()
-            && tail.get(typed_tail::THIRD_ZERO_RUN_2 + shift..typed_tail::LEN + shift)? == [0; 2])
-            .then_some(())
-    })()
-    .is_some()
+    let tail = bytes.get(kind_end..paired_at)?;
+    let label = label_units.checked_mul(2)?;
+    let first = typed_tail::FIRST_REFERENCE.checked_add(label)?;
+    let shift = label + usize::from(extended) * crate::bytes::TYPED_LOCAL_REFERENCE_LEN;
+    let counts = if label_units == 0 {
+        tail.get(typed_tail::ZERO_WORD..typed_tail::STATE_BYTES)? == [0; 12]
+    } else {
+        tail_label(tail, 0)?.1 == typed_tail::ZERO_COUNT + label
+            && tail.get(typed_tail::ZERO_COUNT + label..typed_tail::STATE_BYTES + label)? == [0; 4]
+    };
+    let state = tail.get(typed_tail::STATE_BYTES + label..first)?;
+    let suppressed = *tail.get(typed_tail::SUPPRESSED_FLAG + shift)?;
+    let rolled_back = *tail.get(typed_tail::ROLLED_BACK_FLAG + shift)?;
+    (tail.len() == typed_tail::LEN + shift
+        && counts
+        && suppressed <= 1
+        && rolled_back <= 1
+        && (suppressed == 1 || state == [0; 3])
+        && target(tail, first).is_some()
+        && (!extended || target(tail, typed_tail::PREVIOUS_HISTORY_STATE_ID + label).is_some())
+        && target(tail, typed_tail::SECOND_REFERENCE + shift).is_some()
+        && target(tail, typed_tail::THIRD_REFERENCE + shift).is_some()
+        && tail.get(typed_tail::THIRD_ZERO_RUN_2 + shift..typed_tail::LEN + shift)? == [0; 2])
+        .then_some(typed_tail::SUPPRESSED_FLAG + shift)
 }
 
 pub(crate) fn typed_scope_previous_history_offset(kind: &str, tail_length: usize) -> Option<usize> {
@@ -1818,15 +1816,10 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 } else {
                     ScopeTailForm::TypedFixed
                 };
-                if typed_fixed_scope_tail_is_valid(
-                    bytes,
-                    kind_end,
-                    paired_at,
-                    extended,
-                    label_units,
-                ) && fixed_candidate
-                    .replace((at, kind_end, tail_length, form, label_units))
-                    .is_some()
+                if typed_scope_tail(bytes, kind_end, paired_at, extended, label_units).is_some()
+                    && fixed_candidate
+                        .replace((at, kind_end, tail_length, form, label_units))
+                        .is_some()
                 {
                     fixed_ambiguous = true;
                 }
@@ -1835,7 +1828,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 kind == "Combine" || (registered_boundary_fill && kind == "BoundaryFill");
             let named_tail = label_units > 0
                 && tail_length <= 590
-                && (named_scope_tail(bytes, kind_end, paired_at).is_some_and(|tail| {
+                && (plain_scope_tail(bytes, kind_end, paired_at).is_some_and(|tail| {
                     extended_named || tail.references.extra_bytes() == Some(0)
                 }) || (kind == "Hole"
                     && named_reciprocal_hole_history(
@@ -1884,7 +1877,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             None
         };
         let named = (tail_form == ScopeTailForm::Named)
-            .then(|| named_scope_tail(bytes, kind_end, paired_at))
+            .then(|| plain_scope_tail(bytes, kind_end, paired_at))
             .flatten();
         let reference_table_end = kind_at.checked_sub(4)?;
         let feature_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, kind_end)?)?;
@@ -2043,6 +2036,27 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
                 ),
             })
             .and_then(|offset| kind_end.checked_add(offset));
+        let tail_flags = match tail_form {
+            ScopeTailForm::Named => named.as_ref().map(|named| named.flags),
+            ScopeTailForm::TypedFixed | ScopeTailForm::TypedExtended => typed_scope_tail(
+                bytes,
+                kind_end,
+                paired_at,
+                tail_form == ScopeTailForm::TypedExtended,
+                label_units,
+            ),
+            ScopeTailForm::Fixed => {
+                plain_scope_tail(bytes, kind_end, paired_at).map(|plain| plain.flags)
+            }
+        }
+        .and_then(|at| {
+            let at = kind_end.checked_add(at)?;
+            Some(scope::DesignScopeTailFlags {
+                suppressed: *bytes.get(at)? == 1,
+                rolled_back: *bytes.get(at.checked_add(1)?)? == 1,
+                offset: u64_from_index(at),
+            })
+        });
         let named_references = named
             .map(|named| named.references)
             .filter(|references| references.extra_bytes().is_some_and(|extra| extra > 0));
@@ -2257,6 +2271,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         })
         .ok()?;
         scope.source_kind = source_kind;
+        scope.tail_flags = tail_flags;
         if let Some(prologue) = extrude_prologue {
             {
                 let construction = Some(scope::DesignExtrudeScope {
@@ -2515,16 +2530,31 @@ fn tail_label(bytes: &[u8], kind_end: usize) -> Option<(String, usize)> {
     (!label.chars().any(char::is_control)).then_some((label, end.checked_sub(kind_end)?))
 }
 
-/// A labeled parameter-scope tail in the plain reference spelling.
-struct NamedScopeTail {
+/// A parameter-scope tail in the plain reference spelling.
+struct PlainScopeTail {
     references: scope::DesignNamedScopeReferences,
     /// Tail offset of the preceding history-state identity.
     previous_history_state_id: usize,
+    /// Tail offset of the suppressed flag; the rolled-back flag follows it.
+    flags: usize,
 }
 
-fn named_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<NamedScopeTail> {
+fn plain_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<PlainScopeTail> {
     let bytes = bytes.get(..paired_at)?;
-    let (_, label_end) = tail_label(bytes, kind_end)?;
+    let label_end = if View::u32_le_at(bytes, kind_end.checked_add(named_tail::LABEL_LENGTH)?)? == 0
+    {
+        if View::u32_le_at(bytes, kind_end)? == 0
+            || bytes.get(
+                kind_end.checked_add(named_tail::ZERO_WORD)?
+                    ..kind_end.checked_add(named_tail::LABEL_LENGTH)?,
+            )? != [0; 4]
+        {
+            return None;
+        }
+        named_tail::ASSOCIATED_COUNT
+    } else {
+        tail_label(bytes, kind_end)?.1
+    };
     let mut cursor = kind_end.checked_add(label_end)?;
     let count = usize::try_from(View::u32_le_at(bytes, cursor)?).ok()?;
     cursor = cursor.checked_add(4)?;
@@ -2535,11 +2565,9 @@ fn named_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<N
     for _ in 0..count {
         associated.push(named_scope_reference(bytes, &mut cursor)?.into_local()?);
     }
-    let padding_end = cursor.checked_add(named_tail::FIRST_REFERENCE - named_tail::PADDING)?;
-    if bytes.get(cursor..padding_end)? != [0; 3] {
-        return None;
-    }
-    cursor = padding_end;
+    let state_end = cursor.checked_add(named_tail::FIRST_REFERENCE - named_tail::STATE_BYTES)?;
+    let state = bytes.get(cursor..state_end)?;
+    cursor = state_end;
     named_scope_reference(bytes, &mut cursor)?.into_local()?;
     let middle = named_scope_reference(bytes, &mut cursor)?.into_local();
     let previous_history_state_id = cursor.checked_sub(kind_end)?;
@@ -2567,24 +2595,28 @@ fn named_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<N
     let long_form = (bytes.get(cursor) == Some(&1) && flag(cursor + 1) && flag(cursor + 2))
         .then(|| close(cursor + flags))
         .flatten();
-    let closing = match long_form {
-        Some(closing) => closing,
+    let (closing, suppressed_at) = match long_form {
+        Some(closing) => (closing, cursor.checked_add(1)?),
         None => {
             let short_form =
                 associated.is_empty() && middle.is_none() && flag(cursor) && flag(cursor + 1);
             if !short_form || close(cursor + flags - 1)?.is_some() {
                 return None;
             }
-            None
+            (None, cursor)
         }
     };
-    Some(NamedScopeTail {
+    if *bytes.get(suppressed_at)? == 0 && state != [0; 3] {
+        return None;
+    }
+    Some(PlainScopeTail {
         references: scope::DesignNamedScopeReferences {
             associated,
             middle,
             closing,
         },
         previous_history_state_id,
+        flags: suppressed_at.checked_sub(kind_end)?,
     })
 }
 

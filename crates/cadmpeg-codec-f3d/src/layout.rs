@@ -20,8 +20,8 @@ pub(crate) mod named_parameter_scope_tail {
     pub(crate) const LABEL_LENGTH: usize = 8;
     /// Offset of `associated_count` (`u32`, little-endian). Spec §3.1.
     pub(crate) const ASSOCIATED_COUNT: usize = 12;
-    /// Offset of `padding` (`bytes[3]`). Spec §3.1.
-    pub(crate) const PADDING: usize = 16;
+    /// Offset of `state_bytes` (`bytes[3]`). Spec §3.1.
+    pub(crate) const STATE_BYTES: usize = 16;
     /// Offset of `first_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const FIRST_REFERENCE: usize = 19;
     /// Offset of `middle_reference` (`u8`). Spec §3.1.
@@ -7723,16 +7723,22 @@ pub(crate) mod two_sided_revolve_prologue {
 pub(crate) mod typed_reference_parameter_scope_tail {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 196;
-    /// Offset of `zero_run_15` (`bytes[15]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_15: usize = 4;
+    /// Offset of `zero_word` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_WORD: usize = 4;
+    /// Offset of `zero_count` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_COUNT: usize = 12;
+    /// Offset of `state_bytes` (`bytes[3]`). Spec §3.1.
+    pub(crate) const STATE_BYTES: usize = 16;
     /// Offset of `first_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const FIRST_REFERENCE: usize = 19;
     /// Offset of `previous_history_state_id` (`u32`, little-endian). Spec §3.1.
     pub(crate) const PREVIOUS_HISTORY_STATE_ID: usize = 70;
     /// Offset of `second_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const SECOND_REFERENCE: usize = 90;
-    /// Offset of `second_zero_run_2` (`bytes[2]`). Spec §3.1.
-    pub(crate) const SECOND_ZERO_RUN_2: usize = 141;
+    /// Offset of `suppressed_flag` (`u8`). Spec §3.1.
+    pub(crate) const SUPPRESSED_FLAG: usize = 141;
+    /// Offset of `rolled_back_flag` (`u8`). Spec §3.1.
+    pub(crate) const ROLLED_BACK_FLAG: usize = 142;
     /// Offset of `third_reference` (`bytes[51]`). Spec §3.1.
     pub(crate) const THIRD_REFERENCE: usize = 143;
     /// Offset of `third_zero_run_2` (`bytes[2]`). Spec §3.1.
