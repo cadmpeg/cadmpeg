@@ -204,8 +204,8 @@ fn a_neutral_schema_is_its_wire_form() {
 
 #[test]
 fn every_design_root_type_has_a_schema() {
-    let mut generator = SchemaGenerator::default();
     use crate::design::{configuration, container, evaluation, feature, parameter, program, scope};
+    let mut generator = SchemaGenerator::default();
     generates::<crate::document::Design>(&mut generator);
     generates::<scope::DesignScope>(&mut generator);
     generates::<scope::OccurrenceDesign>(&mut generator);
