@@ -768,7 +768,7 @@ fn encode_source_less_curves(
             _ => {
                 return Err(CodecError::NotImplemented(
                     "source-less F3D does not support this curve carrier".into(),
-                ))
+                ));
             }
         }
         records.push(0x11);
@@ -1535,7 +1535,7 @@ fn closed_edge_traversal(
         ) {
             Ok(end) => end.get(),
             Err(EvaluationFailure::ResourceLimit(limit)) => {
-                return Err(CodecError::ResourceLimit(limit))
+                return Err(CodecError::ResourceLimit(limit));
             }
             Err(
                 EvaluationFailure::NoValue
@@ -1890,7 +1890,7 @@ fn native_wire_side(
         (Some(_), Some(_)) => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D generation has duplicate native wire metadata on shell {shell}"
-            )))
+            )));
         }
     };
     Ok(match side {

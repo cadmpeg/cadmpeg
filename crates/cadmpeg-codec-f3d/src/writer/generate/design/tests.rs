@@ -7,7 +7,7 @@ use std::io::Cursor;
 use std::num::NonZeroI8;
 
 use cadmpeg_core::text::NonBlankString;
-use cadmpeg_ir::codec::write::{EncodeInput, Encoder, target::TargetRequest};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
@@ -30,14 +30,14 @@ use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKin
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ConfigurationId, FeatureId, ParameterId};
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
-use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::report::export::ExportReport;
+use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::scalar::NonNegativeReal;
 use cadmpeg_ir::transform::Transform;
 
-use crate::F3dCodec;
 use crate::loss::F3dLossCode;
 use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+use crate::F3dCodec;
 
 const SKETCH: &str = "test:design:feature#sketch";
 const EXTRUDE: &str = "test:design:feature#extrude";
@@ -248,12 +248,11 @@ fn user_parameters_are_written_and_decode_by_name_and_value() {
     assert_length(&ir, "Width", "60 mm", 60.0);
     assert_length(&ir, "Half", "(Width / 2)", 30.0);
     assert_length(&ir, "Wall", "5 mm", 5.0);
-    assert!(
-        ir.model
-            .parameters
-            .iter()
-            .all(|parameter| parameter.owner.is_none())
-    );
+    assert!(ir
+        .model
+        .parameters
+        .iter()
+        .all(|parameter| parameter.owner.is_none()));
     assert_eq!(ir.geometry.bodies.len(), 1);
 }
 
@@ -286,13 +285,11 @@ fn every_feature_not_written_is_charged_evaluation_missing() {
     let missing = loss(&report, "export/evaluation.missing");
     assert_eq!(missing.len(), 1, "{:#?}", report.losses);
     assert!(missing[0].contains(SKETCH) && missing[0].contains(EXTRUDE));
-    assert!(
-        loss(
-            &report,
-            &F3dLossCode::WriterParameterOmitted.kind().to_string()
-        )
-        .is_empty()
-    );
+    assert!(loss(
+        &report,
+        &F3dLossCode::WriterParameterOmitted.kind().to_string()
+    )
+    .is_empty());
 }
 
 #[test]
@@ -313,11 +310,9 @@ fn an_illegal_name_is_renamed() {
         .expect("a renamed parameter is charged");
     assert_eq!(renamed.severity, Severity::Info);
     assert!(renamed.message.contains(parameter_id("thickness").as_str()));
-    assert!(
-        renamed
-            .message
-            .contains("`wall thickness` -> `wall_thickness`")
-    );
+    assert!(renamed
+        .message
+        .contains("`wall thickness` -> `wall_thickness`"));
 }
 
 #[test]
@@ -334,12 +329,10 @@ fn a_parameter_with_no_cache_and_no_expressible_expression_is_not_written() {
     ));
     let (report, decoded_ir) = write(&ir);
     assert!(decoded(&decoded_ir, "Uncached").is_none());
-    assert!(
-        loss(&report, "export/parameter.flattened")
-            .iter()
-            .any(|message| message.contains("no cached value")
-                && message.contains(parameter_id("uncached").as_str()))
-    );
+    assert!(loss(&report, "export/parameter.flattened")
+        .iter()
+        .any(|message| message.contains("no cached value")
+            && message.contains(parameter_id("uncached").as_str())));
 }
 
 #[test]
@@ -352,12 +345,10 @@ fn a_reference_cycle_is_written_as_a_cached_value_where_it_is_broken() {
     let (report, decoded_ir) = write(&ir);
     assert_length(&decoded_ir, "A", "7 mm", 7.0);
     assert_length(&decoded_ir, "B", "A", 7.0);
-    assert!(
-        loss(&report, "export/parameter.flattened")
-            .iter()
-            .any(|message| message.contains(parameter_id("a").as_str())
-                && !message.contains(parameter_id("b").as_str()))
-    );
+    assert!(loss(&report, "export/parameter.flattened")
+        .iter()
+        .any(|message| message.contains(parameter_id("a").as_str())
+            && !message.contains(parameter_id("b").as_str())));
 }
 
 #[test]
@@ -366,13 +357,12 @@ fn a_comment_is_written_with_its_parameter() {
     ir.design.parameters[0].comment = Some("overall width".into());
     let (_, decoded_ir) = write(&ir);
     assert_length(&decoded_ir, "Width", "60 mm", 60.0);
-    assert!(
-        f3d_native(&decoded_ir)
-            .design_parameters
-            .iter()
-            .any(|parameter| parameter.name() == "Width"
-                && parameter.comment() == Some("overall width"))
-    );
+    assert!(f3d_native(&decoded_ir)
+        .design_parameters
+        .iter()
+        .any(
+            |parameter| parameter.name() == "Width" && parameter.comment() == Some("overall width")
+        ));
 }
 
 #[test]
@@ -381,14 +371,12 @@ fn a_failure_of_the_design_module_drops_the_design_not_the_body() {
     let (report, ir) = write(&scoped_cube());
     assert_eq!(ir.geometry.bodies.len(), 1);
     assert!(ir.model.parameters.is_empty());
-    assert!(
-        loss(&report, "export/evaluation.missing")
-            .iter()
-            .any(
-                |message| message.contains("a test failure of the design module")
-                    && message.contains(SKETCH)
-            )
-    );
+    assert!(loss(&report, "export/evaluation.missing")
+        .iter()
+        .any(
+            |message| message.contains("a test failure of the design module")
+                && message.contains(SKETCH)
+        ));
     assert!(report.losses.iter().any(|loss| {
         loss.code.to_string() == F3dLossCode::WriterParameterOmitted.kind().to_string()
             && loss.message.contains(parameter_id("width").as_str())
@@ -546,11 +534,9 @@ fn the_cube_is_one_base_feature_item_of_the_timeline() {
         panic!("one timeline");
     };
     assert_eq!(timeline.frame().items().len(), 1);
-    assert!(
-        loss(&report, "export/record.residual-unavailable")
-            .iter()
-            .any(|message| message.contains("component aggregate"))
-    );
+    assert!(loss(&report, "export/record.residual-unavailable")
+        .iter()
+        .any(|message| message.contains("component aggregate")));
 }
 
 #[test]
@@ -1114,13 +1100,11 @@ fn an_integer_parameter_is_written_as_a_real_with_a_note() {
     count.value = Some(ParameterValue::Integer(4));
     ir.design.parameters.push(count);
     let (report, decoded_ir) = write(&ir);
-    assert!(
-        decoded_ir
-            .model
-            .parameters
-            .iter()
-            .any(|parameter| parameter.name == "Count")
-    );
+    assert!(decoded_ir
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "Count"));
     let notes = report
         .losses
         .iter()
