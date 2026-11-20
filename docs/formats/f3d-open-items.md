@@ -888,11 +888,15 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 ### DR-898. Records and snapshot stream of a design with several or sheet result bodies
 
-**Question.** How does a `Base Feature` design with several result bodies allocate the record indices of its further body-reference records and Scene records, and how does its snapshot stream differ from the solved part of its history stream? What sets the first value of the design snapshot body-map companion of a sheet body?
+**Question.** How does a `Base Feature` design with several result bodies, or with a sheet result body, allocate the record indices of its roster, and what values do its snapshot body-map companions list? How does the snapshot stream of a design with several result bodies differ from the solved part of its history stream? What sets the first value of the design snapshot body-map companion of a sheet body?
 
 **Known.** `f3d.md` §3.1 "**Record roster.**" gives the ten records that each further solid body adds. In a design with three solid bodies, the further design body-reference records and their Scene records follow record 192, the further parameter body-reference records and Scene records follow record 222 with unused indices between them, and the further tracking entries and browser-node members follow. Its snapshot stream has the same topology counts as the history stream, and geometry records of the two streams differ. In a design with one sheet body, whose faces, edges, and vertices carry generic-tag attributes, the design companion's values start 4 above the parameter companion's next value.
 
-**Need.** A writer of several bodies must allocate the indices and write the snapshot stream. Designs with two and with more than three result bodies would settle the allocation and the geometry difference.
+Record indices below are the indices of the roster of a design with one solid result body. In a design with one sheet body, the alternate `Body` owner is record 193 and every later record moves up one index. Records 194 and 196 are records 195 and 197, with the same bytes apart from their indexed headers. The bodies root names records 187 and 216. Browser record 16, and the browser root's entry-map pair for it, name the parameter `Body` owner, record 194.
+
+In the design with three solid bodies, records 193 to 200 are the further design body-reference records and their Scene records, and records 193 to 222 move up eight indices. Records 194 and 196 are records 202 and 204, with the same bytes apart from their indexed headers. The bodies root is 116 bytes and names records 187, 193, 197, 223, 231, and 238. Browser record 16, and the browser root's entry-map pair for it, name the parameter `Body` owner, record 201. The parameter companion lists one run of `F + E` consecutive values for each body, in body order, from `0`, with one unused value after each run; its next value is the value after the last unused value. The design companion lists the `n` values that follow, from that next value.
+
+**Need.** A writer of several bodies or of a sheet body must allocate the indices, list the companion values, and write the snapshot stream. Designs with two and with more than three result bodies, and with several sheet bodies, would settle the allocation, the companion runs, and the geometry difference.
 
 ### DR-900. Alternate forms of Base Feature roster records
 
