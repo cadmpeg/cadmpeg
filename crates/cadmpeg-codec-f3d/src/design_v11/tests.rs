@@ -323,7 +323,8 @@ fn a_built_item_after_a_rolled_back_item_leaves_the_marker_unread() {
 
 #[test]
 fn the_current_state_stands_at_the_rollback_marker() {
-    let id = cadmpeg_ir::design::ids::ContainerId::mint("f3d:timeline#0".to_owned()).unwrap();
+    let id =
+        cadmpeg_ir::design::ids::ContainerId::mint("f3d:design:timeline#0".to_owned()).unwrap();
     let members = [10, 20, 30]
         .map(|key| Member::Feature(FeatureId::mint(format!("f3d:model:feature#{key}")).unwrap()));
     assert_eq!(

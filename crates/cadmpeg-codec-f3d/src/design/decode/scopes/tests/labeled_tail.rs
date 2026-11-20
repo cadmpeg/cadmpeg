@@ -41,7 +41,9 @@ fn plain_labeled_frame(tail: &PlainTail) -> (Vec<u8>, usize) {
     bytes.extend_from_slice(&12u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(&1u32.to_le_bytes());
-    push_reference_u64(&mut bytes, 55);
+    // Read as LP-UTF16 from the count, the reference's first code unit is a
+    // control character, so the reference table reads as no family name.
+    push_reference_u64(&mut bytes, 0x100);
     bytes.extend_from_slice(&7u32.to_le_bytes());
     lp_utf16(&mut bytes, "Draft");
     let kind_end = bytes.len();
@@ -220,7 +222,9 @@ fn plain_tails_read_their_suppressed_and_rolled_back_flags() {
                     ..PlainTail::default()
                 };
                 let (bytes, kind_end) = plain_labeled_frame(&tail);
-                let scope = parse_plain(&bytes).expect("plain scope");
+                let scope = parse_plain(&bytes).unwrap_or_else(|| {
+                    panic!("plain scope: label {label:?}, long form {long_form}, flags {suppressed} {rolled_back}")
+                });
                 let at = kind_end + 62 + usize::from(long_form) + 2 * label.len();
                 assert_eq!(bytes[at..at + 2], [suppressed, rolled_back]);
                 assert_eq!(
