@@ -556,13 +556,13 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 ### DR-95. Rectangular-pattern direction selection kind `16` and the reference at offset 138
 
-**Question.** What does selection kind `16` select in a rectangular-pattern direction record, what do its origin and displacement mean, and what record does the marked reference at offset 138 name?
+**Question.** What does selection kind `16` select in a rectangular-pattern direction record, what do its origin and displacement mean, and which objects do the auxiliary selection references name?
 
-**Known.** `f3d.md` §3.1 "A rectangular-pattern direction record has a 220-byte, 221-byte, 195-byte, or 196-byte form" gives the frame, the U-then-V order, and the direction as the normalized displacement. Kind `8` selects a linear edge, with the edge start point and the edge vector. A kind-`16` record stores a unit displacement and an origin on the selected entity. The reference at offset 138 names a record outside the scope reference table.
+**Known.** `f3d.md` §3.1 "A rectangular-pattern direction record has a 220-byte, 221-byte, 195-byte, 196-byte, 215-byte, or 216-byte form" gives the frame, the U-then-V order, and the direction as the normalized displacement. Kind `8` selects a linear edge, with the edge start point and the edge vector. A kind-`16` record stores a unit displacement and an origin on the selected entity. The reference at offset 138 names a record outside the scope reference table. The 215-byte extent form and the 216-byte spacing form have two further marked references after its selection reference; these links remain native.
 
-**Need.** A writer must emit the selection kind, the origin, and the reference at offset 138 for a direction that does not come from a linear edge, and a reader must know whether a kind-`16` origin is a point of a planar face, an axis, or another entity.
+**Need.** A writer must emit the selection kind, the origin, and the reference at offset 138 for a direction that does not come from a linear edge, and a reader must know whether a kind-`16` origin is a point of a planar face, an axis, or another entity. The linked forms also need the two further selection links bound to their source objects.
 
-**Note.** In one design, R-Pattern 3 scope `4709` has kind-`16` direction record `4736` at Design byte `135573`. Its displacement is `(0, 0, 1)`, its U distance is `-1.5` cm, and payload record `4716` supplies V displacement `(1, 0, 0)` at byte `133177`. Both counts are two and the V distance is `1.5` cm. The decoder transfers the two directions and their 15 mm spacings. The auxiliary reference names record `7609`.
+**Note.** In one design, R-Pattern 3 scope `4709` has kind-`16` direction record `4736` at Design byte `135573`. Its displacement is `(0, 0, 1)`, its U distance is `-1.5` cm, and payload record `4716` supplies V displacement `(1, 0, 0)` at byte `133177`. Both counts are two and the V distance is `1.5` cm. The decoder transfers the two directions and their 15 mm spacings. The auxiliary reference names record `7609`. The linked forms retain their two further selection links with `feature.rectangular-pattern-direction-links-native`.
 
 
 ### DR-654. Stored profile loop curves off the selected material boundary

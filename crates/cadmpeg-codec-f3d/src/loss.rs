@@ -471,6 +471,12 @@ pub(crate) enum F3dLossCode {
     /// A linear rectangular-pattern direction has no admitted direction
     /// record and no generated-instance run.
     FeatureRectangularPatternDirectionUnresolved,
+    /// The auxiliary selection links of a 215- or 216-byte direction remain native.
+    FeatureRectangularPatternDirectionLinksNative,
+    /// A malformed rectangular-pattern construction remains native.
+    FeatureRectangularPatternConstructionNative,
+    /// A rectangular pattern or an unproved input retains its native record.
+    FeatureRectangularPatternDesignNative,
     /// A single linear rectangular-pattern direction record disagrees with
     /// the generated-instance run; the run direction is kept.
     FeatureRectangularPatternDirectionRecordDisagrees,
@@ -1608,6 +1614,9 @@ impl F3dLossCode {
         Self::FeatureRectangularPatternInactiveSymmetricDropped,
         Self::FeatureRectangularPatternDirectionOneRecordAssumed,
         Self::FeatureRectangularPatternDirectionUnresolved,
+        Self::FeatureRectangularPatternDirectionLinksNative,
+        Self::FeatureRectangularPatternConstructionNative,
+        Self::FeatureRectangularPatternDesignNative,
         Self::FeatureRectangularPatternDirectionRecordDisagrees,
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
@@ -2412,6 +2421,15 @@ impl F3dLossCode {
             }
             Self::FeatureRectangularPatternDirectionOneRecordAssumed => {
                 "feature.rectangular-pattern-direction-one-record-assumed"
+            }
+            Self::FeatureRectangularPatternDirectionLinksNative => {
+                "feature.rectangular-pattern-direction-links-native"
+            }
+            Self::FeatureRectangularPatternConstructionNative => {
+                "feature.rectangular-pattern-construction-native"
+            }
+            Self::FeatureRectangularPatternDesignNative => {
+                "feature.rectangular-pattern-design-native"
             }
             Self::FeatureRectangularPatternDirectionUnresolved => {
                 "feature.rectangular-pattern-direction-unresolved"
@@ -3529,6 +3547,9 @@ impl F3dLossCode {
             | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureRectangularPatternInactiveSymmetricDropped
             | Self::FeatureRectangularPatternDirectionOneRecordAssumed
+            | Self::FeatureRectangularPatternDirectionLinksNative
+            | Self::FeatureRectangularPatternConstructionNative
+            | Self::FeatureRectangularPatternDesignNative
             | Self::FeatureRectangularPatternDirectionUnresolved
             | Self::FeatureRectangularPatternDirectionRecordDisagrees
             | Self::FeatureDerivedBaseUnresolved
@@ -4251,6 +4272,9 @@ impl F3dLossCode {
             | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureRectangularPatternInactiveSymmetricDropped
             | Self::FeatureRectangularPatternDirectionOneRecordAssumed
+            | Self::FeatureRectangularPatternDirectionLinksNative
+            | Self::FeatureRectangularPatternConstructionNative
+            | Self::FeatureRectangularPatternDesignNative
             | Self::FeatureRectangularPatternDirectionUnresolved
             | Self::FeatureRectangularPatternDirectionRecordDisagrees
             | Self::FeatureDerivedBaseUnresolved
@@ -5174,6 +5198,9 @@ mod tests {
                 "feature.rectangular-pattern-inactive-symmetric-dropped",
                 "feature.rectangular-pattern-direction-one-record-assumed",
                 "feature.rectangular-pattern-direction-unresolved",
+                "feature.rectangular-pattern-direction-links-native",
+                "feature.rectangular-pattern-construction-native",
+                "feature.rectangular-pattern-design-native",
                 "feature.rectangular-pattern-direction-record-disagrees",
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",

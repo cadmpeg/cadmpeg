@@ -897,3 +897,39 @@ fn sketch_scope_binding_selects_the_container_shared_with_its_placement() {
         assert_eq!(at, 1);
     }
 }
+
+#[test]
+fn a_malformed_rectangular_pattern_is_a_local_loss() {
+    let mut losses = Vec::new();
+    let construction = super::rectangular_construction_or_native(
+        Err(cadmpeg_core::CodecError::malformed(
+            "direction records must use the same distance representation",
+        )),
+        "f3d:scope#10",
+        &mut losses,
+    )
+    .unwrap();
+    assert!(construction.is_none());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::FeatureRectangularPatternConstructionNative.kind()
+    );
+    assert!(
+        super::rectangular_construction_or_native(Ok(None), "f3d:scope#11", &mut losses).is_ok()
+    );
+    assert_eq!(losses.len(), 1);
+}
+
+#[test]
+fn rectangular_pattern_recovery_preserves_file_level_errors() {
+    let mut losses = Vec::new();
+    let error = super::rectangular_construction_or_native(
+        Err(cadmpeg_core::CodecError::WrongFormat("source".into())),
+        "f3d:scope#10",
+        &mut losses,
+    )
+    .unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::WrongFormat(reason) if reason == "source"));
+    assert!(losses.is_empty());
+}

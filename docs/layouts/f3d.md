@@ -12193,7 +12193,7 @@ Parsed by:
 | 25 | 24 | `origin` | `f64[3]` | little | spec | The compact spacing direction form is a 195-byte frame. |
 | 49 | 24 | `displacement` | `f64[3]` | little | spec | The compact spacing direction form is a 195-byte frame. |
 | 73 | 16 | `zero_run_16` | `bytes[16]` | little | spec | The compact spacing direction form is a 195-byte frame. |
-| 89 | 4 | `distance_type` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. · value `7` |
+| 89 | 4 | `distance_type` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. |
 | 93 | 4 | `selection_count` | `u32` | little | spec | The compact spacing direction form is a 195-byte frame. |
 | 97 | 11 | `selection_reference` | `bytes[11]` | little | spec | The compact spacing direction form is a 195-byte frame. |
 | 108 | 2 | `zero_run_2` | `bytes[2]` | little | spec | The compact spacing direction form is a 195-byte frame. |
@@ -15511,6 +15511,73 @@ Offsets are relative to the collection's indexed header. The `k` container refer
 | 43 | 27 | `property_type` | `bytes[27]` | little | spec | The sketch collection of a component with `k` sketches stores, in order · value `[23, 0, 0, 0, 73, 110, 116, 114, 105, 110, 115, 105, 99, 77, 101, 116, 97, 84, 121, 112, 101, 117, 105, 110, 116, 54, 52]` |
 | 70 | 8 | `crv_tag_id_idx` | `u64` | little | spec | The sketch collection of a component with `k` sketches stores, in order |
 | 78 | 4 | `container_count` | `u32` | little | spec | The sketch collection of a component with `k` sketches stores, in order |
+
+## `rectangular_pattern_linked_spacing_direction_record`
+
+Spec §Assembly operands · layout: byte offsets · size: 216 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 21 | 4 | `selection_kind` | `u32` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 25 | 24 | `origin` | `f64[3]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 49 | 24 | `displacement` | `f64[3]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 73 | 16 | `zero_run_16` | `bytes[16]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 89 | 4 | `distance_type` | `u32` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 93 | 4 | `selection_count` | `u32` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 97 | 11 | `selection_reference` | `bytes[11]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 108 | 11 | `selection_link_one` | `bytes[11]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 119 | 11 | `selection_link_two` | `bytes[11]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 130 | 4 | `auxiliary_count` | `u32` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 134 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 145 | 8 | `role` | `u64` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 153 | 10 | `zero_run_after_role` | `bytes[10]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 163 | 4 | `opaque_index` | `u32` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 167 | 8 | `opaque_scalar` | `f64` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 175 | 4 | `opaque_index_repeat` | `u32` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 179 | 11 | `index_plus_two_reference` | `bytes[11]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 190 | 1 | `separator_flag` | `u8` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 191 | 2 | `separator_zero_run` | `bytes[2]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 193 | 11 | `index_plus_one_reference` | `bytes[11]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 204 | 1 | `scope_separator` | `u8` | little | spec | The linked spacing direction form is a 216-byte frame. |
+| 205 | 11 | `scope_reference` | `bytes[11]` | little | spec | The linked spacing direction form is a 216-byte frame. |
+
+## `rectangular_pattern_linked_extent_direction_record`
+
+Spec §Assembly operands · layout: byte offsets · size: 215 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 21 | 4 | `selection_kind` | `u32` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 25 | 24 | `origin` | `f64[3]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 49 | 24 | `displacement` | `f64[3]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 73 | 16 | `zero_run_16` | `bytes[16]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 89 | 4 | `distance_type` | `u32` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 93 | 4 | `selection_count` | `u32` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 97 | 11 | `selection_reference` | `bytes[11]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 108 | 11 | `selection_link_one` | `bytes[11]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 119 | 11 | `selection_link_two` | `bytes[11]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 130 | 4 | `auxiliary_count` | `u32` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 134 | 11 | `auxiliary_reference` | `bytes[11]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 145 | 8 | `role` | `u64` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 153 | 10 | `zero_run_after_role` | `bytes[10]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 163 | 4 | `opaque_index` | `u32` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 167 | 8 | `opaque_scalar` | `f64` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 175 | 4 | `opaque_index_repeat` | `u32` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 179 | 11 | `index_plus_two_reference` | `bytes[11]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 190 | 2 | `separator_zero_run` | `bytes[2]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 192 | 11 | `index_plus_one_reference` | `bytes[11]` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 203 | 1 | `scope_separator` | `u8` | little | spec | The linked extent direction form is a 215-byte frame. |
+| 204 | 11 | `scope_reference` | `bytes[11]` | little | spec | The linked extent direction form is a 215-byte frame. |
 
 ## Not tabulated
 

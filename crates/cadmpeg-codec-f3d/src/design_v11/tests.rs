@@ -122,6 +122,7 @@ fn each_item_of_a_listing_timeline_is_one_feature_in_item_order() {
             &features,
             &timelines,
             &types,
+            &[],
             &BTreeSet::new(),
             &mut losses,
         )
@@ -199,6 +200,7 @@ fn a_stream_whose_timelines_list_no_item_states_no_container() {
             &[],
             &[timeline(STREAM, 0, &[])],
             &[],
+            &[],
             &BTreeSet::new(),
             &mut losses,
         )
@@ -215,6 +217,7 @@ fn an_item_of_an_unregistered_type_is_a_native_timeline_item() {
             ctx,
             &[],
             &[timeline(STREAM, 0, &[7])],
+            &[],
             &[],
             &BTreeSet::new(),
             &mut Vec::new(),
@@ -371,7 +374,15 @@ fn a_base_feature_whose_bodies_are_current_is_stored_geometry() {
         let current = current.iter().copied().collect::<BTreeSet<_>>();
         let timelines = [timeline(STREAM, 0, &[10])];
         crate::test_support::with_decode_context(|ctx| {
-            super::timeline::project(ctx, &[feature], &timelines, &[], &current, &mut Vec::new())
+            super::timeline::project(
+                ctx,
+                &[feature],
+                &timelines,
+                &[],
+                &[],
+                &current,
+                &mut Vec::new(),
+            )
         })
         .unwrap()
         .remove("")

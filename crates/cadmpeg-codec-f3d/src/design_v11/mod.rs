@@ -24,6 +24,7 @@
 mod configurations;
 mod operation;
 mod parameters;
+mod pattern;
 #[cfg(test)]
 mod tests;
 mod thread;
@@ -74,11 +75,17 @@ pub(crate) fn project(
         .iter()
         .map(|body| body.id.as_str())
         .collect::<BTreeSet<_>>();
+    let scopes = namespace
+        .arena_as_for_decode::<crate::records::feature::scope::DesignParameterScope>(
+            ctx,
+            "design_parameter_scopes",
+        )?;
     let documents = timeline::project(
         ctx,
         &ir.model.features,
         &timelines,
         &types,
+        &scopes,
         &current,
         losses,
     )?;

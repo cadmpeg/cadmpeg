@@ -13444,3 +13444,29 @@ pub(crate) mod base_feature_browser_root_prefix {
     /// The `(offset, width)` of each field with no stated value, the header included. Spec §Records of a Base Feature design.
     pub(crate) const UNSTATED: [(usize, usize); 4] = [(0, 11), (41, 15), (61, 624), (685, 11)];
 }
+
+/// Byte offsets for the `rectangular_pattern_linked_spacing_direction_record` record.
+///
+/// Spec §Assembly operands. Record length 216 B.
+pub(crate) mod rectangular_pattern_linked_spacing_direction_record {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 216;
+    /// Offset of `selection_link_one` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SELECTION_LINK_ONE: usize = 108;
+    /// Offset of `selection_link_two` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const SELECTION_LINK_TWO: usize = 119;
+    /// Offset of `auxiliary_count` (`u32`, little-endian). Spec §Assembly operands.
+    pub(crate) const AUXILIARY_COUNT: usize = 130;
+}
+
+/// Byte offsets for the `rectangular_pattern_linked_extent_direction_record` record.
+///
+/// Spec §Assembly operands. Record length 215 B.
+pub(crate) mod rectangular_pattern_linked_extent_direction_record {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 215;
+    /// Offset of `separator_zero_run` (`bytes[2]`). Spec §Assembly operands.
+    pub(crate) const SEPARATOR_ZERO_RUN: usize = 190;
+    /// Offset of `index_plus_one_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const INDEX_PLUS_ONE_REFERENCE: usize = 192;
+}

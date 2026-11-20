@@ -58,9 +58,14 @@ pub(super) fn project(
     features: &[LegacyFeature],
     timelines: &[DesignFeatureTimeline],
     types: &[SegmentType],
+    scopes: &[crate::records::feature::scope::DesignParameterScope],
     bodies: &BTreeSet<&str>,
     losses: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<String, Projected>, CodecError> {
+    let scopes = scopes
+        .iter()
+        .map(|scope| (scope.id.as_str(), scope))
+        .collect::<HashMap<_, _>>();
     let mut streams = BTreeMap::<&str, Vec<&DesignFeatureTimeline>>::new();
     for timeline in timelines {
         if let Some(stream) = native_stream(timeline.id()) {
@@ -97,7 +102,7 @@ pub(super) fn project(
                     .and_then(|candidates| item_feature(candidates, item.value))
                     .map_or_else(
                         || unprojected_item(stream, timeline, item.value, &item_types),
-                        |feature| resolved_item(feature, bodies),
+                        |feature| resolved_item(feature, bodies, &scopes, losses),
                     );
                 members.push(Member::Feature(feature.id.clone()));
                 projected.features.push(feature);
@@ -149,12 +154,30 @@ fn item_feature<'a>(candidates: &[&'a LegacyFeature], record: u64) -> Option<&'a
         .copied()
 }
 
-fn resolved_item(feature: &LegacyFeature, bodies: &BTreeSet<&str>) -> Feature {
+fn resolved_item(
+    feature: &LegacyFeature,
+    bodies: &BTreeSet<&str>,
+    scopes: &HashMap<&str, &crate::records::feature::scope::DesignParameterScope>,
+    losses: &mut Vec<LossNote>,
+) -> Feature {
     let operation = feature.evaluation.definition().operation();
-    let operation = stored(operation, bodies).unwrap_or_else(|| match family(operation) {
-        Family::Typed(family) => FeatureOperation::Unresolved { family },
-        Family::Native(kind) => native(&kind),
-    });
+    let typed_pattern = || {
+        let scope = scopes.get(feature.native_ref.as_deref()?)?;
+        scope.rectangular_pattern_construction()?;
+        let projected = super::pattern::project(operation, scope, losses);
+        if projected.is_none() {
+            losses.push(F3dLossCode::FeatureRectangularPatternDesignNative.note(format!(
+                "feature {} retains its rectangular pattern in its native record: its direction, seeds, or run cannot be transferred to a v11 linear layout.", feature.id
+            )));
+        }
+        projected
+    };
+    let operation = stored(operation, bodies)
+        .or_else(typed_pattern)
+        .unwrap_or_else(|| match family(operation) {
+            Family::Typed(family) => FeatureOperation::Unresolved { family },
+            Family::Native(kind) => native(&kind),
+        });
     Feature {
         id: feature.id.clone(),
         name: feature.name.clone(),
