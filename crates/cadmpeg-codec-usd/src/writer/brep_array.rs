@@ -4,7 +4,7 @@
 use cadmpeg_ir::topology::Body;
 
 use super::text::{quoted, real, tuple};
-use super::{records, Placement, Writer, MILLIMETRES_PER_UNIT};
+use super::{records, Placement, Writer};
 use crate::brep::solid::{
     Curves, Packed, EDGE_CURVE_API, SURFACE_API, TRIM_CURVE_API, VERTEX_POINT_API,
 };
@@ -89,7 +89,7 @@ impl Writer<'_> {
             ));
             return None;
         }
-        let records = exported.brep.divided(MILLIMETRES_PER_UNIT);
+        let records = exported.brep.divided(self.millimetres_per_unit);
         let converted = match crate::brep::convert::nurbs_only(&records) {
             Ok(converted) => converted,
             Err(reason) => {
@@ -379,6 +379,7 @@ impl Writer<'_> {
             );
             self.out.open();
             self.out.line("uniform token elementType = \"face\"");
+            self.out.line("uniform token familyName = \"materialBind\"");
             self.out.array(
                 "int[] indices",
                 &indices.iter().map(ToString::to_string).collect::<Vec<_>>(),

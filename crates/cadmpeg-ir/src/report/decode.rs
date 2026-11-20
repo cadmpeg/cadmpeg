@@ -33,7 +33,7 @@ pub struct DecodeReport {
 ///
 /// The backend reports the state it delivered; the sealed decode wrapper
 /// records its [`depth`](Self::depth) on the document.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[non_exhaustive]
@@ -209,7 +209,7 @@ pub enum TransferDisposition {
 /// The disposition is the wire's tag, so each outcome carries exactly the
 /// fields valid for it: an emitted record has no note to state, and an omitted
 /// record has no target.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

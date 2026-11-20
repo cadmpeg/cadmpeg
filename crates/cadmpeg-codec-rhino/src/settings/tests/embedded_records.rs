@@ -484,7 +484,7 @@ fn parses_selector_widths_and_skips_direct_suffix() {
     let material_record =
         crate::container::Record::long(0x2000_8039, 0..material_data.len(), 0..material_data.len());
     settings::parse_setting(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &material_data,
         &material_record,
         &mut settings_value,
@@ -510,7 +510,7 @@ fn parses_selector_widths_and_skips_direct_suffix() {
     let color_record =
         crate::container::Record::long(0x2000_803a, 0..color_data.len(), 0..color_data.len());
     settings::parse_setting(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &color_data,
         &color_record,
         &mut settings_value,
@@ -538,7 +538,7 @@ fn parses_selector_widths_and_skips_direct_suffix() {
     ] {
         let record = crate::container::Record::short(typecode, 0..0, value);
         settings::parse_setting(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &[],
             &record,
             &mut settings_value,
@@ -560,7 +560,7 @@ fn current_material_accepts_the_source_reader_i32_range() {
     let mut settings_value = settings::DocumentSettings::default();
 
     settings::parse_setting(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &data,
         &record,
         &mut settings_value,

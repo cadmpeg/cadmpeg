@@ -1204,11 +1204,7 @@ fn local_plane_trim_target_counts_in_the_unjoined_body_loss() {
 }
 
 fn empty_producer_records() -> ProducerRecords<'static> {
-    ProducerRecords {
-        features: &[],
-        labels: &[],
-        properties: &[],
-    }
+    ProducerRecords::new(&[], &[], &[])
 }
 
 fn native_derived_producer() -> (cadmpeg_ir::features::Feature, FeatureInventory, String) {
@@ -1297,11 +1293,11 @@ fn check_derived_selection(trim: bool, ordinal: u64, suppressed: Option<bool>, j
         &ir.model.features,
         &ir.model.feature_result_topologies,
         &ir.model.features[1],
-        &ProducerRecords {
-            features: &inventory.features,
-            labels: &inventory.labels,
-            properties: &inventory.properties,
-        },
+        &ProducerRecords::new(
+            &inventory.features,
+            &inventory.labels,
+            &inventory.properties,
+        ),
     );
     if trim {
         assert!(split_matches(original, actual, &bodies, &earlier, true));
@@ -1675,11 +1671,11 @@ fn check_native_base_split(
         &ir.model.features,
         &ir.model.feature_result_topologies,
         &ir.model.features[1],
-        &ProducerRecords {
-            features: &inventory.features,
-            labels: &inventory.labels,
-            properties: &inventory.properties,
-        },
+        &ProducerRecords::new(
+            &inventory.features,
+            &inventory.labels,
+            &inventory.properties,
+        ),
     );
     let eligible = ordinal < 6 && suppressed == Some(false);
     assert_eq!(

@@ -77,14 +77,17 @@ fn captured_position_identity_rewrite_maps_selector_and_occurrence() {
         source
     );
     source
-        .visit_identity_references(&cadmpeg_test_support::service_decode_context(), &mut |id| {
-            references.push(id.to_owned());
-            Ok(())
-        })
+        .visit_identity_references(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &mut |id| {
+                references.push(id.to_owned());
+                Ok(())
+            },
+        )
         .unwrap();
     assert_eq!(references, ["synthetic:source:occurrence#one"]);
     let rewritten = crate::schema::rewrite::identities(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         source.clone(),
         |id| Ok(id.replace(":source:", ":copy:")),
     )

@@ -1387,7 +1387,7 @@ mod tests {
         ]);
         let mut ir = CadIr::empty();
         install(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut ir,
         )
@@ -1427,7 +1427,7 @@ mod tests {
         )]);
         let mut ir = CadIr::empty();
         let losses = install(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut ir,
         )
@@ -1465,7 +1465,7 @@ mod tests {
             .clone();
         let mut ir = CadIr::empty();
         let losses = install(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut ir,
         )
@@ -1515,7 +1515,7 @@ mod tests {
 
         let mut ir = CadIr::empty();
         install(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut ir,
         )
@@ -1554,7 +1554,7 @@ mod tests {
         bytes.extend(15_i32.to_le_bytes());
         bytes.extend(utf16_bytes("secondary"));
         let dot = decode_dot(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             0..bytes.len(),
             crate::test_support::millimeter_scale(10.0),
@@ -1586,7 +1586,7 @@ mod tests {
         bytes.extend(0_i32.to_le_bytes());
         bytes.extend([0xde, 0xad]);
         let dot = decode_dot(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             0..bytes.len(),
             crate::settings::MillimeterScale::IDENTITY,
@@ -1617,7 +1617,7 @@ mod tests {
         bytes.extend(utf16_bytes("V2 dot"));
         bytes.extend([0xd1, 0xce]);
         let dot = decode_v2_text_dot(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             0..bytes.len(),
             crate::test_support::millimeter_scale(2.0),
@@ -1688,7 +1688,7 @@ mod tests {
         ]);
         let mut ir = CadIr::empty();
         install(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut ir,
         )
@@ -1710,7 +1710,7 @@ mod tests {
     fn modern_text_and_leader_readers_leave_class_data_suffixes_bounded() {
         let text = modern_annotation(false);
         let (text, points) = decode_annotation(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &text,
             0..text.len(),
             ArchiveVersion::V8,
@@ -1725,7 +1725,7 @@ mod tests {
 
         let leader = modern_annotation(true);
         let (leader, points) = decode_annotation(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &leader,
             0..leader.len(),
             ArchiveVersion::V8,
@@ -1753,7 +1753,7 @@ mod tests {
             .expect("text rotation in source bytes");
         text[offset..offset + 8].copy_from_slice(&f64::NAN.to_le_bytes());
         let result = decode_annotation(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &text,
             0..text.len(),
             ArchiveVersion::V8,
