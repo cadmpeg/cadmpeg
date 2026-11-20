@@ -374,11 +374,13 @@ jobs:
 
       - name: Schema feature
         if: needs.changes.outputs.schema == 'true'
-        # The CLI enables IR schemas. This gate also checks schema assertions
-        # and the core/assembly feature combinations without CLI defaults.
+        # No other build compiles the JsonSchema derives. This gate runs the
+        # schema tests, which compare the committed crates/cadmpeg-ir/schema
+        # files with the derives, and checks the core/assembly feature
+        # combinations.
         run: |
           set -euo pipefail
-          cargo test -q -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
+          cargo test -q -p cadmpeg-core -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
           cargo check -q -p cadmpeg-core -p cadmpeg-asm --all-targets \
             --features cadmpeg-core/schema,cadmpeg-asm/schema
 
