@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::design::construction::{Construction, kinds};
+use cadmpeg_ir::design::construction::{kinds, Construction};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::names::NameKind;
@@ -24,7 +24,7 @@ use cadmpeg_ir::features::{self as old, FeatureId, FeatureOperation as LegacyOpe
 use cadmpeg_ir::scalar::Length;
 
 use super::super::names;
-use super::{Stated, selections};
+use super::{selections, Stated};
 
 pub(super) fn controls() -> BlendControls {
     BlendControls {

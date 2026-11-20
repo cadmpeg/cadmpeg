@@ -10,7 +10,7 @@ use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 use cadmpeg_ir::units::UnitVector3;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 
 use super::*;
 

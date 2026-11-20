@@ -7,7 +7,7 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::design::construction::{Construction, FrameValue, PlaneValue, kinds};
+use cadmpeg_ir::design::construction::{kinds, Construction, FrameValue, PlaneValue};
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::datum::{Datum, DatumElement};
 use cadmpeg_ir::features::FeatureOperation as LegacyOperation;

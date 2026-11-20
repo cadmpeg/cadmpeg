@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::design::construction::{
-    AxisValue, Construction, ConstructionInput, InputReference, kinds,
+    kinds, AxisValue, Construction, ConstructionInput, InputReference,
 };
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
@@ -25,7 +25,7 @@ use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::units::UnitVector3;
 
-use super::{Stated, selections};
+use super::{selections, Stated};
 
 /// The largest departure from ±1 of the cosine between the travel and the
 /// section normal at which the travel is the section normal.
