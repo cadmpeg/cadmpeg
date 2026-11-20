@@ -17,7 +17,9 @@ use std::collections::{HashMap, HashSet};
 /// is absent from the model bodies, the one feature whose history transition
 /// inserts that slot generates the body, and the selection names it there.
 /// A Reverse Normal reads its slots in its bound history: see
-/// [`reverse_normal_binding`]. The generating feature becomes a dependency of
+/// [`reverse_normal_binding`]. A body pattern seed whose every slot is a model
+/// body selects those model bodies: see [`live_seed_binding`]. The generating
+/// feature becomes a dependency of
 /// the selecting feature. Returns the result states of the producers of
 /// generated bodies, each listing every body slot that the producer's
 /// transition inserts.
@@ -85,13 +87,18 @@ pub(crate) fn bind_generated_body_selections(
             .native_ref
             .as_deref()
             .and_then(|native| inputs.scopes.iter().find(|scope| scope.id == native));
+        let mut seed_state = None;
         let selected = match feature.evaluation.definition() {
             FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => {
-                let [PatternSeed::Bodies(BodySelection::Historical { bodies, native, .. })] =
-                    seeds.as_slice()
+                let [PatternSeed::Bodies(BodySelection::Historical {
+                    state,
+                    bodies,
+                    native,
+                })] = seeds.as_slice()
                 else {
                     continue;
                 };
+                seed_state = historical_state_number(state.as_str());
                 bodies
                     .iter()
                     .map(|body| historical_body_slot(body.as_str()))
@@ -129,12 +136,41 @@ pub(crate) fn bind_generated_body_selections(
         if slots.is_empty() {
             continue;
         }
+        let pattern = matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Pattern { .. })
+        );
+        if pattern && slots.iter().all(|slot| live.contains(slot)) {
+            let Some(ModelBodies {
+                bodies,
+                dependencies,
+            }) = scope.zip(seed_state).and_then(|(scope, seed_state)| {
+                live_seed_binding(&reverse_context, feature, scope, seed_state, &slots)
+            })
+            else {
+                continue;
+            };
+            let resolved = BodySelection::Resolved { bodies, native };
+            feature.evaluation.edit(|definition, _| {
+                if let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
+                    definition
+                {
+                    if let [PatternSeed::Bodies(selection)] = seeds.as_mut_slice() {
+                        *selection = resolved;
+                    }
+                }
+            });
+            for dependency in dependencies {
+                feature.dependencies.insert(dependency);
+            }
+            continue;
+        }
         let producers = if reverse {
             match reverse_normal_binding(&reverse_context, feature, scope, &slots) {
-                Ok(ReverseBinding::Model {
+                Ok(ReverseBinding::Model(ModelBodies {
                     bodies,
                     dependencies,
-                }) => {
+                })) => {
                     feature.evaluation.edit(|definition, _| {
                         if let FeatureDefinition::Operation(FeatureOperation::ReverseShape {
                             source,
@@ -248,12 +284,16 @@ struct ReverseContext<'a> {
     feature_by_scope: &'a HashMap<String, (cadmpeg_ir::features::FeatureId, u64)>,
 }
 
+/// The model bodies of a selection of body slots, with the earlier features
+/// whose transitions insert those slots.
+struct ModelBodies {
+    bodies: cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::ids::BodyId>,
+    dependencies: Vec<cadmpeg_ir::features::FeatureId>,
+}
+
 enum ReverseBinding {
     /// Every slot is a result body of the bound history's BREP source.
-    Model {
-        bodies: cadmpeg_ir::features::DistinctMembers<cadmpeg_ir::ids::BodyId>,
-        dependencies: Vec<cadmpeg_ir::features::FeatureId>,
-    },
+    Model(ModelBodies),
     /// No slot is a result body of that source; each has a generating feature.
     Generated(Vec<Producer>),
 }
@@ -273,49 +313,14 @@ fn reverse_normal_binding(
         .ok_or("no one bound history holds its input and result states")?;
     let source = super::historical_brep_source(&history.id)
         .ok_or_else(|| format!("its bound history {} names no BREP source", history.id))?;
-    let producer = |slot: i64| -> Option<Producer> {
-        let mut inserting = history
-            .states()
-            .iter()
-            .filter(|state| inserts_body(state, slot));
-        let state = inserting.next()?;
-        if inserting.next().is_some() {
-            return None;
-        }
-        let mut scopes = inputs.scopes.iter().filter(|scope| {
-            scope.history_state_id() == Some(state.state_id)
-                && scope_history(scope, context.scope_histories, inputs.histories)
-                    .is_some_and(|scope_history| std::ptr::eq(scope_history, history))
-        });
-        let scope = scopes.next()?;
-        if scopes.next().is_some() {
-            return None;
-        }
-        let (producer, ordinal) = context.feature_by_scope.get(&scope.id)?;
-        if *ordinal >= feature.ordinal {
-            return None;
-        }
-        let inserted = state.transition.as_ref()?.topology.bodies.inserted.clone();
-        Some((producer.clone(), state.state_id, inserted))
-    };
     let live = slots
         .iter()
         .filter(|slot| context.active.contains_in_source(**slot, Some(source)))
         .count();
     if live == slots.len() {
-        let bodies = context
-            .active
-            .resolve(slots, Some(source))
-            .ok_or_else(|| format!("a slot names no unique result body of BREP source {source}"))?;
-        let dependencies = slots
-            .iter()
-            .filter_map(|slot| producer(*slot))
-            .map(|(producer, _, _)| producer)
-            .collect();
-        return Ok(ReverseBinding::Model {
-            bodies,
-            dependencies,
-        });
+        return history_model_bodies(context, feature, history, source, slots)
+            .map(ReverseBinding::Model)
+            .ok_or_else(|| format!("a slot names no unique result body of BREP source {source}"));
     }
     if live != 0 {
         return Err(format!(
@@ -324,7 +329,7 @@ fn reverse_normal_binding(
     }
     slots
         .iter()
-        .map(|slot| producer(*slot))
+        .map(|slot| history_producer(context, feature, history, *slot))
         .collect::<Option<Vec<_>>>()
         .map(ReverseBinding::Generated)
         .ok_or_else(|| {
@@ -333,6 +338,114 @@ fn reverse_normal_binding(
                 history.id
             )
         })
+}
+
+/// The model bodies of a body-pattern seed of `slots` in state `seed_state`,
+/// read in the feature's bound history as a Reverse Normal reads its slots.
+/// The walk from that history's terminal state back to the seed state passes
+/// the scope's input state, and no transition on it updates or deletes a slot.
+fn live_seed_binding(
+    context: &ReverseContext<'_>,
+    feature: &cadmpeg_ir::features::Feature,
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    seed_state: i64,
+    slots: &[i64],
+) -> Option<ModelBodies> {
+    let histories = context.inputs.histories;
+    let history = scope_state_history(scope, context.scope_histories, histories)?;
+    let previous = super::effective_scope_previous_history_state_id(scope, histories)?;
+    let mut current = super::terminal_state(history)?.state_id;
+    let mut passed_previous = false;
+    let mut steps = 0;
+    while current != seed_state {
+        passed_previous |= current == previous;
+        steps += 1;
+        if steps > history.states().len() {
+            return None;
+        }
+        let state = history
+            .states()
+            .iter()
+            .find(|state| state.state_id == current)?;
+        let bodies = &state.transition.as_ref()?.topology.bodies;
+        if slots
+            .iter()
+            .any(|slot| bodies.updated.contains(slot) || bodies.deleted.contains(slot))
+        {
+            return None;
+        }
+        current = super::transition_or_header_previous_state_id(history, state)?;
+    }
+    if !(passed_previous || current == previous) {
+        return None;
+    }
+    let source = super::historical_brep_source(&history.id)?;
+    history_model_bodies(context, feature, history, source, slots)
+}
+
+/// The result bodies of `slots` in BREP source `source` of `history`, with the
+/// generating feature of each slot that has one.
+fn history_model_bodies(
+    context: &ReverseContext<'_>,
+    feature: &cadmpeg_ir::features::Feature,
+    history: &AsmHistory,
+    source: &str,
+    slots: &[i64],
+) -> Option<ModelBodies> {
+    let bodies = context.active.resolve(slots, Some(source))?;
+    let dependencies = slots
+        .iter()
+        .filter_map(|slot| history_producer(context, feature, history, *slot))
+        .map(|(producer, _, _)| producer)
+        .collect();
+    Some(ModelBodies {
+        bodies,
+        dependencies,
+    })
+}
+
+/// The generating feature of body slot `slot` in `history`: the feature of
+/// the one scope of that history whose state is the one state that inserts
+/// the slot. That feature precedes `feature`.
+fn history_producer(
+    context: &ReverseContext<'_>,
+    feature: &cadmpeg_ir::features::Feature,
+    history: &AsmHistory,
+    slot: i64,
+) -> Option<Producer> {
+    let inputs = context.inputs;
+    let mut inserting = history
+        .states()
+        .iter()
+        .filter(|state| inserts_body(state, slot));
+    let state = inserting.next()?;
+    if inserting.next().is_some() {
+        return None;
+    }
+    let mut scopes = inputs.scopes.iter().filter(|scope| {
+        scope.history_state_id() == Some(state.state_id)
+            && scope_history(scope, context.scope_histories, inputs.histories)
+                .is_some_and(|scope_history| std::ptr::eq(scope_history, history))
+    });
+    let scope = scopes.next()?;
+    if scopes.next().is_some() {
+        return None;
+    }
+    let (producer, ordinal) = context.feature_by_scope.get(&scope.id)?;
+    if *ordinal >= feature.ordinal {
+        return None;
+    }
+    let inserted = state.transition.as_ref()?.topology.bodies.inserted.clone();
+    Some((producer.clone(), state.state_id, inserted))
+}
+
+/// The ASM state number of a history-input state identity.
+fn historical_state_number(id: &str) -> Option<i64> {
+    id.strip_prefix("f3d:history-input:state#")?
+        .rsplit_once(':')?
+        .1
+        .parse()
+        .ok()
 }
 
 fn inserts_body(state: &crate::history_records::AsmDeltaState, slot: i64) -> bool {
