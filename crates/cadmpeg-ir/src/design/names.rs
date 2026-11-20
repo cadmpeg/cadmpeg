@@ -141,7 +141,7 @@ pub struct NativeName {
 }
 
 /// The stored form of a native name.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -269,7 +269,7 @@ pub enum TopoName {
 
 /// The wire form of [`TopoName`]. Each nested name has passed the name
 /// ceiling; reading admits this one level above the deepest of them.
-#[derive(Deserialize)]
+#[derive(cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -524,7 +524,7 @@ pub enum NameKind {
 }
 
 /// The entity that generated a named entity.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -542,7 +542,7 @@ pub enum Generator {
 }
 
 /// The role of a generated entity in the feature that produced it.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",

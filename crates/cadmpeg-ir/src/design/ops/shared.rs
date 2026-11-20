@@ -161,7 +161,7 @@ pub enum Law<Q> {
 
 /// How a value or a section changes between consecutive stations or
 /// sections.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -182,7 +182,7 @@ pub enum Interpolation {
 }
 
 /// The corner law between offset faces.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -217,7 +217,7 @@ pub enum SheetCutNormal {
 
 /// Where a pattern's instances lie. Every direction, axis, and plane is a
 /// construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -359,7 +359,7 @@ pub struct ChainLayout {
 }
 
 /// How the seeds of a chain link along its path.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -556,7 +556,7 @@ pub enum UpToFill<Q> {
 }
 
 /// A point on a seed.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Locus {
@@ -569,7 +569,7 @@ pub enum Locus {
 
 /// Whether a circular or path instance keeps the seed's orientation or turns
 /// with the layout.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -610,7 +610,7 @@ pub enum InstanceOrientation {
 }
 
 /// The direction a rolled instance's reference axis lies on.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PathReference {
@@ -721,7 +721,7 @@ pub struct Joint {
 /// A connector: a construction of the element a joint relates, or the picked
 /// entity itself. Its resolved value is in the coordinates of the definition
 /// its picks resolve in.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum JointConnector {
@@ -740,7 +740,7 @@ pub enum JointConnector {
 }
 
 /// The relative sense of a joint's connectors' z axes or normals.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -764,7 +764,7 @@ pub enum Alignment {
 }
 
 /// What a joint does to its connectors.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -957,7 +957,7 @@ pub enum JointKind {
 
 /// The degrees of freedom a motion joint leaves. An axis is an axis of the
 /// first connector's frame, or of `axes` where that is stated.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -1042,7 +1042,7 @@ pub struct JointOffset {
 
 /// The limits of one degree of freedom a motion leaves; it states `limits`,
 /// `rest`, or both.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum AxisLimits {
@@ -1111,7 +1111,7 @@ pub struct Bounds<Q> {
 }
 
 /// A coupling of the rotations or translations of two members.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -1230,7 +1230,7 @@ pub struct JointDrive {
 
 /// The degree of freedom a drive acts on, an axis of the first connector's
 /// frame.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DriveAxis {
@@ -1269,7 +1269,7 @@ pub enum TangentContact {
 }
 
 /// Where a width joint holds its element between the pair.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -1303,7 +1303,7 @@ pub enum WidthMode {
 }
 
 /// Where a slot joint's pin lies along the slot.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -1323,7 +1323,7 @@ pub enum SlotPosition {
 }
 
 /// Where a path joint's point lies along the path.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PathPosition {
@@ -1360,7 +1360,7 @@ pub enum PathPosition {
 
 /// How a path joint holds an axis of the second element against the path's
 /// tangent.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PathAxisControl {
@@ -1383,7 +1383,7 @@ pub enum PathAxisControl {
 }
 
 /// How a path joint holds an axis of the second element along a direction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PathRollControl {
