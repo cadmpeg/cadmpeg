@@ -3557,7 +3557,7 @@ fn build_geometry_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
-    let mut held_handles = Vec::new();
+    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,
@@ -4871,7 +4871,7 @@ fn build_metadata_ir(
         );
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
-    let mut held_handles = Vec::new();
+    let mut held_handles = crate::resolved_features::profiles::HeldMarkerGeometry::default();
     crate::resolved_features::profiles::project_marker_backed_sketches(
         ctx,
         &mut ir.model.features,

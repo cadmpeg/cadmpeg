@@ -719,7 +719,8 @@ pub(crate) fn project_configuration_sketch_states(
                 scoped_lanes,
                 &mut losses,
             )?;
-            let mut held_handles = Vec::new();
+            let mut held_handles =
+                crate::resolved_features::profiles::HeldMarkerGeometry::default();
             crate::resolved_features::profiles::project_marker_backed_sketches(
                 ctx,
                 &mut features,

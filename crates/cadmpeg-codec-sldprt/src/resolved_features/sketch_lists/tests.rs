@@ -116,7 +116,19 @@ fn scaled(point: [f64; 2], v_sign: f64) -> Option<Point2> {
 
 fn geometry(sample: &Sample, offset: usize) -> Option<SketchGeometry> {
     let lists = SketchRecordLists::new(&sample.payload);
-    listed_record_geometry(&sample.payload, &lists, offset, &millimetres)
+    listed_record_geometry(
+        &sample.payload,
+        &lists,
+        offset,
+        &millimetres,
+        ListedReading::Complete,
+    )
+}
+
+/// The geometry [`ListedReading::Roster`] reads at `offset`.
+fn roster_geometry(payload: &[u8], offset: usize) -> Option<SketchGeometry> {
+    let lists = SketchRecordLists::new(payload);
+    listed_record_geometry(payload, &lists, offset, &millimetres, ListedReading::Roster)
 }
 
 fn expected(definition: SketchGeometryDefinition) -> Option<SketchGeometry> {
@@ -158,6 +170,10 @@ fn point_records_supply_points() {
 fn a_line_joins_the_point_records_its_indices_select() {
     let sample = sample();
     assert_eq!(
+        roster_geometry(&sample.payload, sample.line),
+        geometry(&sample, sample.line)
+    );
+    assert_eq!(
         geometry(&sample, sample.line),
         expected(SketchGeometryDefinition::Line {
             start: Point2::new(10.0, 0.0),
@@ -185,6 +201,7 @@ fn a_mirroring_map_keeps_the_arc_on_its_own_side() {
         &lists,
         sample.arc,
         &mirrored,
+        ListedReading::Complete,
     ));
     // The mirrored quarter arc runs from -pi/2 to 0.
     assert!((start_angle + FRAC_PI_2).abs() < EPS_TEST);
@@ -213,7 +230,13 @@ fn a_header_whose_count_covers_a_curve_record_frames_no_sketch() {
     let lists = SketchRecordLists::new(&payload);
     assert_eq!(lists.record(first), None);
     assert_eq!(
-        listed_record_geometry(&payload, &lists, line, &millimetres),
+        listed_record_geometry(
+            &payload,
+            &lists,
+            line,
+            &millimetres,
+            ListedReading::Complete
+        ),
         None
     );
 }
@@ -233,11 +256,23 @@ fn an_unread_curve_type_and_an_index_past_the_points_stay_unresolved() {
         Some(ListedRecord::Curve { .. })
     ));
     assert_eq!(
-        listed_record_geometry(&payload, &lists, reversed, &millimetres),
+        listed_record_geometry(
+            &payload,
+            &lists,
+            reversed,
+            &millimetres,
+            ListedReading::Complete
+        ),
         None
     );
     assert_eq!(
-        listed_record_geometry(&payload, &lists, past, &millimetres),
+        listed_record_geometry(
+            &payload,
+            &lists,
+            past,
+            &millimetres,
+            ListedReading::Complete
+        ),
         None
     );
 }
@@ -262,12 +297,22 @@ fn a_counterclockwise_arc_can_sweep_past_half_a_turn() {
     let (payload, arc) = quarter_points_arc(2, 1, 1);
     let lists = SketchRecordLists::new(&payload);
     for project in [millimetres, mirrored] {
-        let (_, _, start_angle, end_angle) =
-            arc_parts(listed_record_geometry(&payload, &lists, arc, &project));
+        let (_, _, start_angle, end_angle) = arc_parts(listed_record_geometry(
+            &payload,
+            &lists,
+            arc,
+            &project,
+            ListedReading::Complete,
+        ));
         assert!((end_angle - start_angle - 3.0 * FRAC_PI_2).abs() < EPS_TEST);
     }
-    let (_, _, start_angle, _) =
-        arc_parts(listed_record_geometry(&payload, &lists, arc, &millimetres));
+    let (_, _, start_angle, _) = arc_parts(listed_record_geometry(
+        &payload,
+        &lists,
+        arc,
+        &millimetres,
+        ListedReading::Complete,
+    ));
     assert!((start_angle - FRAC_PI_2).abs() < EPS_TEST);
 }
 
@@ -276,16 +321,26 @@ fn a_counterclockwise_arc_can_sweep_past_half_a_turn() {
 fn a_clockwise_arc_runs_from_its_second_index_counterclockwise() {
     let (payload, arc) = quarter_points_arc(2, 1, -1);
     let lists = SketchRecordLists::new(&payload);
-    let (center, radius, start_angle, end_angle) =
-        arc_parts(listed_record_geometry(&payload, &lists, arc, &millimetres));
+    let (center, radius, start_angle, end_angle) = arc_parts(listed_record_geometry(
+        &payload,
+        &lists,
+        arc,
+        &millimetres,
+        ListedReading::Complete,
+    ));
     assert_eq!(center, Point2::new(0.0, 0.0));
     assert!((radius - 10.0).abs() < EPS_TEST);
     assert!(start_angle.abs() < EPS_TEST);
     assert!((end_angle - FRAC_PI_2).abs() < EPS_TEST);
     let (payload, arc) = quarter_points_arc(1, 2, -1);
     let lists = SketchRecordLists::new(&payload);
-    let (_, _, start_angle, end_angle) =
-        arc_parts(listed_record_geometry(&payload, &lists, arc, &millimetres));
+    let (_, _, start_angle, end_angle) = arc_parts(listed_record_geometry(
+        &payload,
+        &lists,
+        arc,
+        &millimetres,
+        ListedReading::Complete,
+    ));
     assert!((start_angle - FRAC_PI_2).abs() < EPS_TEST);
     assert!((end_angle - 2.0 * PI).abs() < EPS_TEST);
 }
@@ -326,7 +381,14 @@ fn put_u32(payload: &mut [u8], at: usize, value: u32) {
 fn curve_stays_unresolved(payload: &[u8], offset: usize) -> bool {
     let lists = SketchRecordLists::new(payload);
     matches!(lists.record(offset), Some(ListedRecord::Curve { .. }))
-        && listed_record_geometry(payload, &lists, offset, &millimetres).is_none()
+        && listed_record_geometry(
+            payload,
+            &lists,
+            offset,
+            &millimetres,
+            ListedReading::Complete,
+        )
+        .is_none()
 }
 
 /// Where a current-layout line record stores its trailer u32.
@@ -341,6 +403,10 @@ fn a_line_reads_point_positions_whatever_its_trailer_and_identity() {
         let mut sample = sample();
         put_u32(&mut sample.payload, sample.line + LINE_TRAILER, trailer);
         put_u32(&mut sample.payload, sample.line + LINE_IDENTITY, identity);
+        assert_eq!(
+            roster_geometry(&sample.payload, sample.line).is_some(),
+            identity == u32::MAX
+        );
         assert_eq!(
             geometry(&sample, sample.line),
             expected(SketchGeometryDefinition::Line {
@@ -368,6 +434,7 @@ fn a_link_bearing_selector_reads_point_positions() {
         {
             assert!(plain.is_some());
             assert_eq!(geometry(&sample, offset), plain);
+            assert_eq!(roster_geometry(&sample.payload, offset), None);
         }
     }
 }
@@ -404,20 +471,40 @@ fn a_curve_without_the_eight_zero_bytes_reads_point_positions() {
     let circle = compact_curve(&mut payload, 1, 1, 1, Some(0));
     let lists = SketchRecordLists::new(&payload);
     assert_eq!(
-        listed_record_geometry(&payload, &lists, line, &millimetres),
+        listed_record_geometry(
+            &payload,
+            &lists,
+            line,
+            &millimetres,
+            ListedReading::Complete
+        ),
         expected(SketchGeometryDefinition::Line {
             start: Point2::new(10.0, 0.0),
             end: Point2::new(0.0, 10.0),
         })
     );
-    let (center, radius, start_angle, end_angle) =
-        arc_parts(listed_record_geometry(&payload, &lists, arc, &millimetres));
+    let (center, radius, start_angle, end_angle) = arc_parts(listed_record_geometry(
+        &payload,
+        &lists,
+        arc,
+        &millimetres,
+        ListedReading::Complete,
+    ));
     assert_eq!(center, Point2::new(0.0, 0.0));
     assert!((radius - 10.0).abs() < EPS_TEST);
     assert!(start_angle.abs() < EPS_TEST);
     assert!((end_angle - FRAC_PI_2).abs() < EPS_TEST);
-    let circle = listed_record_geometry(&payload, &lists, circle, &millimetres)
-        .expect("circle record did not read");
+    for offset in [line, arc, circle] {
+        assert_eq!(roster_geometry(&payload, offset), None);
+    }
+    let circle = listed_record_geometry(
+        &payload,
+        &lists,
+        circle,
+        &millimetres,
+        ListedReading::Complete,
+    )
+    .expect("circle record did not read");
     assert!(matches!(
         circle.definition(),
         SketchGeometryDefinition::Circle { .. }
@@ -441,8 +528,15 @@ fn a_curve_after_a_projected_record_belongs_to_the_preceding_sketch() {
     let later = curve(&mut payload, 1, 0, 0, None);
     let lists = SketchRecordLists::new(&payload);
     assert_eq!(lists.record(projected), None);
+    assert_eq!(roster_geometry(&payload, later), None);
     assert_eq!(
-        listed_record_geometry(&payload, &lists, later, &millimetres),
+        listed_record_geometry(
+            &payload,
+            &lists,
+            later,
+            &millimetres,
+            ListedReading::Complete
+        ),
         expected(SketchGeometryDefinition::Line {
             start: Point2::new(10.0, 0.0),
             end: Point2::new(0.0, 0.0),

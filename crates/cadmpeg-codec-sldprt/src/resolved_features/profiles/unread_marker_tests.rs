@@ -8,7 +8,7 @@ use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
 };
 
-use super::{finalize_unread_marker_entities, project_marker_backed_sketches};
+use super::{finalize_unread_marker_entities, project_marker_backed_sketches, HeldMarkerGeometry};
 use crate::loss::SldprtLossCode;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputLane, FeatureSource, SketchInputEntity,
@@ -49,12 +49,12 @@ fn placeholder(kind: &str) -> SketchGeometry {
     SketchGeometry::native(cadmpeg_core::text::NonBlankString::new(kind).unwrap())
 }
 
-/// The entities and held arc handles `project_marker_backed_sketches` emits
+/// The entities and held marker geometry `project_marker_backed_sketches` emits
 /// for `markers` of one sketch feature whose lane holds `payload`.
 fn projected_entities(
     markers: Vec<SketchInputEntity>,
     payload: Vec<u8>,
-) -> (Vec<SketchEntity>, Vec<SketchEntity>) {
+) -> (Vec<SketchEntity>, HeldMarkerGeometry) {
     let histories = vec![FeatureHistory {
         id: "history".into(),
         part_name: None,
@@ -115,7 +115,7 @@ fn projected_entities(
     }];
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
-    let mut held = Vec::new();
+    let mut held = HeldMarkerGeometry::default();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -204,7 +204,7 @@ fn each_placeholder_takes_its_marker_role_and_resolved_geometry_is_untouched() {
         ),
     ];
     let mut losses = Vec::new();
-    finalize_unread_marker_entities(&mut entities, Vec::new(), &mut losses);
+    finalize_unread_marker_entities(&mut entities, HeldMarkerGeometry::default(), &mut losses);
 
     assert_eq!(entities[0].geometry, line);
     assert_eq!(entities[1].geometry, source_native);
@@ -293,7 +293,7 @@ fn an_inline_arc_whose_read_points_define_no_minor_arc_keeps_its_handle() {
             .all(|entity| entity.native_ref.as_deref() != Some("arc")),
         "the sketch-geometry passes never see the arc handle"
     );
-    let [held_arc] = held.as_slice() else {
+    let [held_arc] = held.handles.as_slice() else {
         panic!("the arc handle keeps its entity");
     };
     assert_eq!(held_arc.native_ref.as_deref(), Some("arc"));
@@ -314,4 +314,33 @@ fn an_inline_arc_whose_read_points_define_no_minor_arc_keeps_its_handle() {
         SldprtLossCode::SketchHandleUnresolved.kind()
     );
     assert!(losses[0].message.contains(id.as_str()));
+}
+
+/// A placeholder whose marker has held `sgSketch` curve-record geometry in
+/// its sketch takes that geometry and charges no loss; the same marker in
+/// another sketch keeps its role and its loss.
+#[test]
+fn a_placeholder_with_held_curve_record_geometry_takes_it_without_a_loss() {
+    let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: Point2::new(0.0, 0.0),
+        end: Point2::new(1.0, 0.0),
+    })
+    .unwrap();
+    let read = entity("read", placeholder("sldprt:marker-geometry:1"));
+    let mut other_sketch = entity("read", placeholder("sldprt:marker-geometry:1"));
+    other_sketch.sketch = SketchId::mint("synthetic:test:id#other-sketch").unwrap();
+    let mut held = HeldMarkerGeometry::default();
+    held.listed.insert(
+        (read.sketch.clone(), "marker-read".to_owned()),
+        line.clone(),
+    );
+    let mut entities = vec![read, other_sketch];
+    let mut losses = Vec::new();
+    finalize_unread_marker_entities(&mut entities, held, &mut losses);
+    assert_eq!(entities[0].geometry, line);
+    assert_eq!(
+        native_kind(&entities[1]),
+        Some("sldprt:line-or-circle-handle")
+    );
+    assert_eq!(losses.len(), 1);
 }

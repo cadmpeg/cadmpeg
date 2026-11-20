@@ -40,6 +40,12 @@ const LEGACY_FIELDS: usize = 56;
 const SELECTOR: usize = 37;
 /// The selector bit of the curve records of open item EV-27.
 const SELECTOR_OPEN_BIT: u16 = 1;
+/// The selectors of the curve records that [`ListedReading::Roster`] reads.
+const ROSTER_SELECTORS: [u16; 2] = [4, 12];
+/// Where a current-layout line record stores its trailer u32.
+const LINE_TRAILER: usize = 84;
+/// Where a current-layout line record stores its identity.
+const LINE_IDENTITY: usize = 88;
 /// Where a curve record's sense word stands after its fields start.
 const SENSE: usize = 16;
 /// Where an arc record's centre index stands after its fields start.
@@ -54,6 +60,17 @@ const LINE_TYPE_MASK: i32 = 0xffff;
 const PLANAR_POINT_MASKS: [u16; 6] = [0x12, 0x13, 0x16, 0x1a, 0x1e, 0x1f];
 /// A point record's coordinate masks that write three coordinates.
 const SPATIAL_POINT_MASKS: [u16; 2] = [0x0e, 0x0f];
+
+/// The curve records a listed reading takes geometry from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ListedReading {
+    /// Records of a sketch's first curve list in the current layout with
+    /// selector `4` or `12`, without a line's identifier trailer: the records
+    /// the sketch passes read before their own rules.
+    Roster,
+    /// Every curve record whose selector has bit 0 clear.
+    Complete,
+}
 
 /// A curve record's sense word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,16 +107,28 @@ impl SketchRecordList {
 pub(super) enum ListedRecord<'a> {
     /// A point record.
     Point,
-    /// A curve record of `sketch`.
-    Curve { sketch: &'a SketchRecordList },
+    /// A curve record of `sketch`; `later` when it follows the first curve
+    /// list.
+    Curve {
+        sketch: &'a SketchRecordList,
+        later: bool,
+    },
+}
+
+/// Where a record stands in its sketch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RecordPlace {
+    Point,
+    FirstCurveList,
+    LaterCurveList,
 }
 
 /// Every `sgSketch` record list of one stream.
 #[derive(Debug, Clone, Default)]
 pub(super) struct SketchRecordLists {
     lists: Vec<SketchRecordList>,
-    /// Record offset to list index and point flag.
-    records: BTreeMap<usize, (usize, bool)>,
+    /// Record offset to list index and place.
+    records: BTreeMap<usize, (usize, RecordPlace)>,
 }
 
 impl SketchRecordLists {
@@ -122,6 +151,15 @@ impl SketchRecordLists {
             index += list.points.len() + list.curves.len();
             lists.push(list);
         }
+        let mut records = BTreeMap::new();
+        for (list_index, list) in lists.iter().enumerate() {
+            for &point in &list.points {
+                records.insert(point, (list_index, RecordPlace::Point));
+            }
+            for &curve in &list.curves {
+                records.insert(curve, (list_index, RecordPlace::FirstCurveList));
+            }
+        }
         let mut owner = None;
         let mut next = 0;
         for curve in later_curves {
@@ -133,17 +171,8 @@ impl SketchRecordLists {
                 owner = Some(next);
                 next += 1;
             }
-            if let Some(list) = owner.and_then(|owner| lists.get_mut(owner)) {
-                list.curves.push(curve);
-            }
-        }
-        let mut records = BTreeMap::new();
-        for (list_index, list) in lists.iter().enumerate() {
-            for &point in &list.points {
-                records.insert(point, (list_index, true));
-            }
-            for &curve in &list.curves {
-                records.insert(curve, (list_index, false));
+            if let Some(owner) = owner {
+                records.insert(curve, (owner, RecordPlace::LaterCurveList));
             }
         }
         Self { lists, records }
@@ -151,12 +180,18 @@ impl SketchRecordLists {
 
     /// The listed record that starts at `offset`.
     pub(super) fn record(&self, offset: usize) -> Option<ListedRecord<'_>> {
-        let &(list, point) = self.records.get(&offset)?;
+        let &(list, place) = self.records.get(&offset)?;
         let sketch = self.lists.get(list)?;
-        Some(if point {
-            ListedRecord::Point
-        } else {
-            ListedRecord::Curve { sketch }
+        Some(match place {
+            RecordPlace::Point => ListedRecord::Point,
+            RecordPlace::FirstCurveList => ListedRecord::Curve {
+                sketch,
+                later: false,
+            },
+            RecordPlace::LaterCurveList => ListedRecord::Curve {
+                sketch,
+                later: true,
+            },
         })
     }
 }
@@ -292,10 +327,22 @@ pub(super) fn point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2
 /// The form of the curve record at `offset`, in either head layout, when its
 /// selector has bit 0 clear: a line when the low half of its sense word is
 /// `0`, and an arc when the word is `1` or `-1` and the centre index is
-/// followed by i32 `-2`.
-pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
+/// followed by i32 `-2`. [`ListedReading::Roster`] also requires the current
+/// layout, a roster selector, and for a line no identifier trailer.
+pub(super) fn curve_form(
+    payload: &[u8],
+    offset: usize,
+    reading: ListedReading,
+) -> Option<CurveForm> {
     let fields = curve_fields(payload, offset)?;
-    if View::u16_le_at(payload, offset.checked_add(SELECTOR)?)? & SELECTOR_OPEN_BIT != 0 {
+    let selector = View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?;
+    if selector & SELECTOR_OPEN_BIT != 0 {
+        return None;
+    }
+    let roster = reading == ListedReading::Roster;
+    if roster
+        && (fields != offset.checked_add(CURRENT_FIELDS)? || !ROSTER_SELECTORS.contains(&selector))
+    {
         return None;
     }
     let start = usize::from(View::u16_le_at(payload, fields)?);
@@ -315,7 +362,18 @@ pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
             counterclockwise: sense == COUNTERCLOCKWISE,
         });
     }
-    (sense & LINE_TYPE_MASK == 0 && start != end).then_some(CurveForm::Line { start, end })
+    (sense & LINE_TYPE_MASK == 0
+        && start != end
+        && !(roster && identifier_trailer_line(payload, offset)?))
+    .then_some(CurveForm::Line { start, end })
+}
+
+/// Whether the current-layout line record at `offset` stores a trailer u32
+/// `1`, or a zero trailer and an identity other than `0` and null.
+fn identifier_trailer_line(payload: &[u8], offset: usize) -> Option<bool> {
+    let trailer = View::u32_le_at(payload, offset.checked_add(LINE_TRAILER)?)?;
+    let identity = View::u32_le_at(payload, offset.checked_add(LINE_IDENTITY)?)?;
+    Some(trailer == 1 || (trailer == 0 && identity != 0 && identity != u32::MAX))
 }
 
 /// The geometry of the listed record at `offset`, from the record and the
@@ -325,12 +383,13 @@ pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
 /// record's sense.
 /// `project` maps a coordinate pair in metres to sketch coordinates. `None`
 /// when the offset starts no listed record, a referenced point record writes
-/// no coordinates, or the record's form is not one this module reads.
+/// no coordinates, or `reading` does not admit the record.
 pub(super) fn listed_record_geometry(
     payload: &[u8],
     lists: &SketchRecordLists,
     offset: usize,
     project: &impl Fn([f64; 2]) -> Option<Point2>,
+    reading: ListedReading,
 ) -> Option<SketchGeometry> {
     let point =
         |sketch: &SketchRecordList, index: usize| point_coordinates(payload, sketch.point(index)?);
@@ -339,7 +398,8 @@ pub(super) fn listed_record_geometry(
             let position = project(point_coordinates(payload, offset)?)?;
             SketchGeometry::try_from(SketchGeometryDefinition::Point { position }).ok()
         }
-        ListedRecord::Curve { sketch } => match curve_form(payload, offset)? {
+        ListedRecord::Curve { later: true, .. } if reading == ListedReading::Roster => None,
+        ListedRecord::Curve { sketch, .. } => match curve_form(payload, offset, reading)? {
             CurveForm::Line { start, end } => {
                 let start = project(point(sketch, start)?)?;
                 let end = project(point(sketch, end)?)?;
