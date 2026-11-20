@@ -51,18 +51,27 @@ fn every_schema_position_has_one_spelling() {
         report.unprobed.len(),
         report.unprobed.join("\n")
     );
+    let mut accepting = report.accepting;
+    for admitted in INTERIM_SECOND_SPELLINGS {
+        assert!(
+            accepting.remove(*admitted),
+            "the interim second spelling is no longer admitted; delete its entry: {admitted}"
+        );
+    }
     assert!(
-        report.accepting.is_empty(),
+        accepting.is_empty(),
         "{} second spellings are admitted:\n{}",
-        report.accepting.len(),
-        report
-            .accepting
-            .iter()
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n")
+        accepting.len(),
+        accepting.iter().cloned().collect::<Vec<_>>().join("\n")
     );
 }
+
+/// Second spellings the readers admit until errata item Q rules CADIR
+/// reading (RULINGS-P P7-D5, gap 20261119-ERR1-C-I6-3): `main` read the
+/// dimension modifiers as a list in any order.
+const INTERIM_SECOND_SPELLINGS: &[&str] = &[
+    "#/$defs/PmiDefinition/oneOf/4/properties/modifiers: two members out of order are read and written back sorted",
+];
 
 /// Every readable golden document, every example, and every hand-written
 /// document.

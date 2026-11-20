@@ -231,6 +231,7 @@ fn state_chain(count: usize) -> CadIr {
             Some(stored(base)),
         ));
     }
+    ir.finalize();
     ir
 }
 

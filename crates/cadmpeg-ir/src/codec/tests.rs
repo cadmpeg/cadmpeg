@@ -562,3 +562,64 @@ fn the_wrapper_refuses_records_of_a_class_the_scope_excludes() {
     assert_eq!(result.ir().scope(), ContentScope::full());
     assert_eq!(result.ir().model.parameters.len(), 1);
 }
+
+struct RepeatedIdentityCodec;
+
+impl CodecBackend for RepeatedIdentityCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(
+        &self,
+        _ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        _prefix: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Confidence, cadmpeg_core::CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the repeated identity test does not inspect")
+    }
+
+    fn decode_impl(
+        &self,
+        _ctx: &DecodeContext<'_>,
+        _root: View<'_>,
+    ) -> Result<Decoded, CodecError> {
+        let mut ir = unit_cube().expect("valid unit cube fixture");
+        for copy in ["second", "third"] {
+            let mut point = ir.geometry.points[0].clone();
+            point.native_ref = Some(copy.into());
+            ir.geometry.points.push(point);
+        }
+        Ok(decoded(ir))
+    }
+}
+
+#[test]
+fn the_sealed_wrapper_keeps_the_first_emitted_copy_of_a_repeated_id_and_charges_one_loss() {
+    let result = RepeatedIdentityCodec
+        .decode(&mut Cursor::new(Vec::new()), &DecodeOptions::default())
+        .expect("a decoder's repeated id does not refuse the file");
+    let cube = unit_cube().expect("valid unit cube fixture");
+    assert_eq!(result.ir().geometry.points, cube.geometry.points);
+    let repeated = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == super::loss::DecodeLossCode::IdRepeated.note("").code)
+        .collect::<Vec<_>>();
+    let [loss] = repeated.as_slice() else {
+        panic!("one loss for the one repeated id: {repeated:?}");
+    };
+    assert_eq!(loss.severity, crate::report::Severity::Error);
+    assert!(
+        loss.message.contains(cube.geometry.points[0].id.as_str())
+            && loss.message.contains("2 dropped"),
+        "{}",
+        loss.message
+    );
+}

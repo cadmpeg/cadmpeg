@@ -117,7 +117,7 @@ impl Parser<'_, '_, '_> {
     pub(super) fn recover_data_record(
         &mut self,
         records: &mut BTreeMap<u64, RawRecord>,
-        ambiguous: &mut BTreeSet<u64>,
+        stated: &mut BTreeSet<u64>,
         omitted: &mut Vec<Range<usize>>,
     ) -> Result<(), ParseError> {
         let start = self.current_offset();
@@ -138,28 +138,27 @@ impl Parser<'_, '_, '_> {
                     cause,
                     super::LiteralAdmission::Required,
                 )?;
+                // The first statement of a name stands. A defective first
+                // statement gives the name up with it, so no later statement
+                // of the name is chosen in its place.
                 if let Some(id) = source_id {
-                    self.given_up_names.entry(id).or_insert(part);
-                    if let Some(previous) = records.remove(&id) {
-                        self.drop_for_part(part, previous.span, omitted);
+                    if stated.insert(id) {
+                        self.given_up_names.insert(id, part);
                     }
-                    // A readable name in a defective statement cannot give a
-                    // later statement permission to select another definition.
-                    ambiguous.insert(id);
                 }
                 return Ok(());
             }
         };
-        if let Some(&part) = self.given_up_names.get(&id) {
-            self.drop_for_part(part, record.span, omitted);
-            return Ok(());
-        }
-        if ambiguous.contains(&id) || records.contains_key(&id) {
-            if let Some(previous) = records.remove(&id) {
-                self.omit_record(previous.span, omitted, format_args!("duplicate instance name #{id}; ambiguous instance omitted; exact source retained"));
-            }
-            ambiguous.insert(id);
-            self.omit_record(record.span, omitted, format_args!("duplicate instance name #{id}; ambiguous instance omitted; exact source retained"));
+        if !stated.insert(id) {
+            let span = record.span.clone();
+            self.omit_record(
+                record.span,
+                omitted,
+                format_args!(
+                    "repeated instance name #{id}: the first statement stands; the copy at bytes {}..{} is not stated; exact source retained",
+                    span.start, span.end
+                ),
+            );
             return Ok(());
         }
         records.insert(id, record);

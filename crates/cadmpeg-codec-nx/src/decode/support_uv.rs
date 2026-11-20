@@ -3137,6 +3137,7 @@ mod tests {
                 None,
             ));
         }
+        ir.finalize();
         let before = serde_json::to_value(&ir).expect("model serialization");
         crate::test_support::with_decode_context(|ctx| {
             let support_budget = cadmpeg_core::decode::WorkBudget::new(100);

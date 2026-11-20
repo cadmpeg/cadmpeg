@@ -16,6 +16,7 @@ use super::super::expanded::{
 use super::super::native::emit_arena;
 use super::super::native::{annotate, emit_uniform, store_arena, UniformArena};
 use super::super::records::family_table_record;
+use super::super::records::CreoSurfaceRowRecord;
 use super::super::records::{
     cross_section_curve_row_records, curve_expression_records, curve_parameter_records,
     curve_prototype_records, curve_prototype_topology_records, curve_topology_row_records,
@@ -106,6 +107,28 @@ pub(super) fn emit_reference_arenas(
     Ok(())
 }
 
+/// The first row of each surface id, in the order the streams are read. Each
+/// later row with that id is read and not stated, and is charged with its
+/// stream and offset (CADIR §2.2).
+fn first_surface_rows<'a>(
+    rows: Vec<CreoSurfaceRowRecord<'a>>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Vec<CreoSurfaceRowRecord<'a>> {
+    let mut stated = std::collections::BTreeSet::new();
+    rows.into_iter()
+        .filter(|row| {
+            if stated.insert(row.id.clone()) {
+                return true;
+            }
+            losses.push(crate::loss::CreoLossCode::SurfaceRowRepeated.note(format!(
+                "surface row {} in {} at offset {} restates the id of an earlier row; the first row stands and this copy is not stated",
+                row.id, row.source_section, row.offset
+            )));
+            false
+        })
+        .collect()
+}
+
 /// Emit the surface, curve, topology, plane, and feature arenas.
 ///
 /// Each arena is built from the scan and stored under its native key in the
@@ -117,6 +140,7 @@ pub(super) fn emit_geometry_arenas(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     brep_diagnostics: &BrepTransferDiagnostics,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let mut surface_rows = surface_row_records(scan, &scan.surfaces.rows, "visibgeom");
     for plane in &scan.planes.datum_boundary_planes {
@@ -126,6 +150,7 @@ pub(super) fn emit_geometry_arenas(
             "actdatums",
         ));
     }
+    let surface_rows = first_surface_rows(surface_rows, losses);
     emit_uniform(
         ctx,
         ir,
@@ -140,8 +165,10 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let nonvisible_surface_rows =
-        surface_row_records(scan, &scan.surfaces.nonvisible_rows, "novisgeom");
+    let nonvisible_surface_rows = first_surface_rows(
+        surface_row_records(scan, &scan.surfaces.nonvisible_rows, "novisgeom"),
+        losses,
+    );
     emit_uniform(
         ctx,
         ir,
@@ -156,10 +183,13 @@ pub(super) fn emit_geometry_arenas(
             exactness: Exactness::ByteExact,
         },
     )?;
-    let cross_section_surface_rows = surface_row_records(
-        scan,
-        &scan.surfaces.cross_section_rows,
-        "cross_section_geometry",
+    let cross_section_surface_rows = first_surface_rows(
+        surface_row_records(
+            scan,
+            &scan.surfaces.cross_section_rows,
+            "cross_section_geometry",
+        ),
+        losses,
     );
     emit_uniform(
         ctx,

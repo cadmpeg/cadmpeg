@@ -22,6 +22,9 @@ pub(crate) enum DecodeLossCode {
         /// The requested class the document does not hold.
         class: ArenaClass,
     },
+    /// A decoder emitted one id more than once in an arena; the first copy
+    /// it emitted is kept and the others dropped (interim, item Q).
+    IdRepeated,
 }
 
 impl DecodeLossCode {
@@ -29,27 +32,36 @@ impl DecodeLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::DepthNotDelivered { .. } => "depth.not-delivered",
+            Self::IdRepeated => "id.repeated",
         }
     }
 
     const fn severity(self) -> Severity {
         match self {
             Self::DepthNotDelivered { .. } => Severity::Error,
+            Self::IdRepeated => Severity::Error,
         }
     }
 
     /// Shared category of the content the shallower depth left out.
     const fn shared_taxonomy(self) -> LossTaxonomy {
-        let Self::DepthNotDelivered { class } = self;
-        match class {
-            ArenaClass::Model => LossTaxonomy::GeometryNotTransferred,
-            ArenaClass::Design | ArenaClass::Process => LossTaxonomy::ParametricRecordOmitted,
+        match self {
+            Self::DepthNotDelivered {
+                class: ArenaClass::Model,
+            } => LossTaxonomy::GeometryNotTransferred,
+            Self::DepthNotDelivered {
+                class: ArenaClass::Design | ArenaClass::Process,
+            } => LossTaxonomy::ParametricRecordOmitted,
+            Self::IdRepeated => LossTaxonomy::DecodeDiagnostic,
         }
     }
 
     fn kind(self) -> LossKind {
         NamespacedLossKind::new(NAMESPACE, self.code(), self.shared_taxonomy())
-            .with_strict_floor(Some(Severity::Warning))
+            .with_strict_floor(match self {
+                Self::DepthNotDelivered { .. } => Some(Severity::Warning),
+                Self::IdRepeated => None,
+            })
             .into()
     }
 

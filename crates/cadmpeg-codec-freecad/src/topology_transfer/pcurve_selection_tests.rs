@@ -221,6 +221,20 @@ Co 1001000 +2 1 +2 {second_location} *
         assert_eq!(result.ir().geometry.edges.len(), expected_edges);
         assert_eq!(result.ir().geometry.vertices.len(), 2 * expected_edges);
         assert_eq!(result.ir().geometry.points.len(), 2 * expected_edges);
+        // An alias lists the edge twice at one location: its wire region is
+        // stated once and the later copy is charged.
+        let repeated = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code
+                    == crate::loss::FreecadLossCode::TopologyRecordRepeated
+                        .note(String::new())
+                        .code
+            })
+            .count();
+        assert_eq!(repeated > 0, expected_edges == 1, "{repeated}");
     }
 }
 

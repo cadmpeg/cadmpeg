@@ -1637,7 +1637,10 @@ fn dimension_representations_merge_numeric_values_and_modifiers_in_either_order(
         assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
             &annotation.definition,
             PmiDefinition::Dimension(dimension) if dimension.modifiers
-                == [cadmpeg_ir::pmi::DimensionModifier::Other("theoretical".into())]
+                == [cadmpeg_ir::pmi::DimensionModifier::Other(
+                    cadmpeg_core::nonblank_literal!("theoretical")
+                )]
+                .into()
         )));
     }
 }

@@ -143,6 +143,7 @@ pub(crate) fn transfer(
                 continue;
             }
         };
+        let starts = RepeatableStarts::of(ir);
         builder.emit_pcurves(ir)?;
         for root in builder.body_roots()? {
             builder.append_body(ctx, ir, root)?;
@@ -150,6 +151,7 @@ pub(crate) fn transfer(
         builder.emit_unowned_triangulations(ir)?;
         occurrences.extend(builder.occurrences);
         losses.extend(builder.losses);
+        starts.keep_first(ir, payload, losses);
     }
     close_radial_rings(&mut ir.geometry.coedges);
     let referenced_pcurves = referenced_pcurve_ids(&ir.geometry.coedges);
@@ -157,6 +159,98 @@ pub(crate) fn transfer(
         .pcurves
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
     Ok(occurrences)
+}
+
+/// The lengths of the topology arenas whose ids a repeated shape listing can
+/// restate, before one payload is transferred.
+struct RepeatableStarts {
+    regions: usize,
+    shells: usize,
+    faces: usize,
+    loops: usize,
+    coedges: usize,
+}
+
+impl RepeatableStarts {
+    fn of(ir: &CadIr) -> Self {
+        Self {
+            regions: ir.geometry.regions.len(),
+            shells: ir.geometry.shells.len(),
+            faces: ir.geometry.faces.len(),
+            loops: ir.geometry.loops.len(),
+            coedges: ir.geometry.coedges.len(),
+        }
+    }
+
+    /// A compound or a shell that lists one shape twice at one location
+    /// restates the ids of that shape's records, since an id is its shape and
+    /// location (`freecad_fcstd.md` §7). The first record of each id the
+    /// payload added stands; each later one is read and not stated, and is
+    /// charged (CADIR §2.2).
+    fn keep_first(&self, ir: &mut CadIr, payload: &ShapePayloadRecord, losses: &mut Vec<LossNote>) {
+        let geometry = &mut ir.geometry;
+        keep_first_from(
+            &mut geometry.regions,
+            self.regions,
+            |r| r.id.as_str(),
+            payload,
+            losses,
+        );
+        keep_first_from(
+            &mut geometry.shells,
+            self.shells,
+            |r| r.id.as_str(),
+            payload,
+            losses,
+        );
+        keep_first_from(
+            &mut geometry.faces,
+            self.faces,
+            |r| r.id.as_str(),
+            payload,
+            losses,
+        );
+        keep_first_from(
+            &mut geometry.loops,
+            self.loops,
+            |r| r.id.as_str(),
+            payload,
+            losses,
+        );
+        keep_first_from(
+            &mut geometry.coedges,
+            self.coedges,
+            |r| r.id.as_str(),
+            payload,
+            losses,
+        );
+    }
+}
+
+fn keep_first_from<T>(
+    arena: &mut Vec<T>,
+    start: usize,
+    id: impl Fn(&T) -> &str,
+    payload: &ShapePayloadRecord,
+    losses: &mut Vec<LossNote>,
+) {
+    let mut stated = HashSet::new();
+    let mut repeated = Vec::new();
+    let mut index = 0;
+    arena.retain(|record| {
+        let keep = index < start || stated.insert(id(record).to_owned()) || {
+            repeated.push(id(record).to_owned());
+            false
+        };
+        index += 1;
+        keep
+    });
+    for id in repeated {
+        losses.push(FreecadLossCode::TopologyRecordRepeated.note(format!(
+            "shape payload {} lists one shape twice at one location: {id} is stated once and its later copy is not stated",
+            payload.id,
+        )));
+    }
 }
 
 fn referenced_pcurve_ids(coedges: &[Coedge]) -> HashSet<&PcurveId> {
