@@ -94,10 +94,12 @@ fn physics_records_survive_a_write() {
             }
         }
     }
-    assert!(after
-        .rigid_bodies
-        .iter()
-        .all(|body| matches!(body.target.entity, PhysicsTarget::Occurrence { .. })));
+    assert!(
+        after
+            .rigid_bodies
+            .iter()
+            .all(|body| matches!(body.target.entity, PhysicsTarget::Occurrence { .. }))
+    );
 }
 
 #[test]
@@ -523,10 +525,12 @@ fn a_group_body_carries_its_mass() {
         group.contains("point3f physics:centerOfMass = (0.005, 0.01, 0.015)"),
         "{text}"
     );
-    assert!(!report
-        .losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::UsdLossCode::ExportPhysicsNotWritten.kind()));
+    assert!(
+        !report
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::UsdLossCode::ExportPhysicsNotWritten.kind())
+    );
 }
 
 /// A body with a transform of its own is a group prim whose space is not the
@@ -544,10 +548,12 @@ fn a_transformed_group_body_reports_its_mass() {
     );
     let (text, report) = encode(&ir);
     assert!(!text.contains("physics:mass"), "{text}");
-    assert!(report
-        .losses
-        .iter()
-        .any(|loss| loss.code == crate::loss::UsdLossCode::ExportPhysicsNotWritten.kind()));
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::UsdLossCode::ExportPhysicsNotWritten.kind())
+    );
 }
 
 /// `LAYER` with its hinge replaced by a generic joint that applies
@@ -723,4 +729,28 @@ fn a_cylindrical_joint_survives_a_write() {
     assert!(close(low, -std::f64::consts::PI / 6.0) && close(high, std::f64::consts::PI / 3.0));
     let (low, high) = range(linear_limits.as_ref());
     assert!(close(low, 0.0) && close(high, 20.0));
+}
+
+/// An infinite bound still participates in the lock test (`low > high`):
+/// `transZ` at `(0, -inf)` locks translation along Z, leaving a revolute
+/// joint about Z with no `limit:transZ` loss.
+#[test]
+fn an_infinite_lock_bound_locks_the_axis_as_a_revolute_joint() {
+    let mut limits = LOCKED.to_vec();
+    limits.push(("transZ", 0.0, f64::NEG_INFINITY));
+    let (kind, losses) = joint_kind(&generic_joint(&limits));
+    assert!(
+        matches!(
+            kind,
+            PairedJointKind::Revolute {
+                angular_limits: None,
+                ..
+            }
+        ),
+        "{kind:?}"
+    );
+    assert!(
+        losses.iter().all(|loss| !loss.contains("limit:transZ")),
+        "{losses:#?}"
+    );
 }

@@ -2,7 +2,7 @@
 //! The `UsdPhysics` schemas (spec §16): joints, rigid bodies, mass,
 //! collision, articulation roots, and physics materials, in scene units.
 
-use crate::schema::{boolean, token, vector, Issues};
+use crate::schema::{Issues, boolean, token, vector};
 use crate::stage::Prim;
 
 /// The joint prim types (spec §16.4).
@@ -128,6 +128,17 @@ fn finite(prim: &Prim<'_>, name: &str, issues: &mut Issues) -> Option<f64> {
         .filter(|value| value.is_finite())
 }
 
+/// A limit bound scalar, keeping finite and infinite values for lock detection
+/// and reporting `NaN` as malformed.
+fn bound(prim: &Prim<'_>, name: &str, issues: &mut Issues) -> Option<f64> {
+    let value = vector(prim, name, 1, issues)?.first().copied()?;
+    if value.is_nan() {
+        issues.malformed(prim, name, "expected a numeric bound, not NaN");
+        return None;
+    }
+    Some(value)
+}
+
 fn tuple<const N: usize>(prim: &Prim<'_>, name: &str, issues: &mut Issues) -> Option<[f64; N]> {
     let values = vector(prim, name, N, issues)?;
     let mut out = [0.0; N];
@@ -169,8 +180,8 @@ pub(crate) fn joint(prim: &Prim<'_>, kind: JointType, issues: &mut Issues) -> Jo
         };
         limits.push(Limit {
             instance: instance.to_owned(),
-            low: finite(prim, &format!("limit:{instance}:physics:low"), issues),
-            high: finite(prim, &format!("limit:{instance}:physics:high"), issues),
+            low: bound(prim, &format!("limit:{instance}:physics:low"), issues),
+            high: bound(prim, &format!("limit:{instance}:physics:high"), issues),
         });
     }
     let instances: Vec<String> = drives.iter().map(|drive| drive.instance.clone()).collect();

@@ -24,7 +24,7 @@ use cadmpeg_ir::physics::solver::SolverTarget;
 
 use crate::schema::physics::{Drive, JointData, JointType, Limit};
 use crate::schema::physx::Holder;
-use crate::schema::xform::{compose, quaternion, Affine};
+use crate::schema::xform::{Affine, compose, quaternion};
 use crate::stage::Prim;
 
 /// A joint prim collected for the pass after the traversal.
@@ -614,8 +614,14 @@ fn generic_kind(limits: &[Limit], scale: f64) -> Option<PairedJointKind> {
     let range = |instance: &str, factor: f64| {
         limit(instance).and_then(|limit| {
             JointLimits::new(
-                limit.low.map(|low| low * factor),
-                limit.high.map(|high| high * factor),
+                limit
+                    .low
+                    .filter(|value| value.is_finite())
+                    .map(|low| low * factor),
+                limit
+                    .high
+                    .filter(|value| value.is_finite())
+                    .map(|high| high * factor),
             )
         })
     };
