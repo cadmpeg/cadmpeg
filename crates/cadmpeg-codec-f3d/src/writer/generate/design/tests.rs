@@ -23,6 +23,7 @@ use cadmpeg_ir::design::parameter::{
 };
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::{DesignScope, OccurrenceDesign};
+use cadmpeg_ir::design::selection::{OccurrencePath, PathStep, StepRef};
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{ConfigurationId, FeatureId, ParameterId};
@@ -30,6 +31,7 @@ use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::report::export::ExportReport;
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::scalar::NonNegativeReal;
+use cadmpeg_ir::transform::Transform;
 
 use crate::loss::F3dLossCode;
 use crate::test_support::native_test::{f3d_native, f3d_native_mut};
@@ -973,6 +975,42 @@ fn a_dropped_design_charges_every_scope_container_feature_and_parameter() {
         .iter()
         .any(|message| message.contains(parameter_id("width").as_str())
             && message.contains(parameter_id("depth").as_str())),
+        "{:#?}",
+        report.losses
+    );
+}
+
+#[test]
+fn a_stale_current_state_and_its_pose_are_charged() {
+    let mut ir = scoped_cube();
+    let occurrence = OccurrenceId::mint("test:model:occurrence#pin").expect("identity grammar");
+    let state = &mut ir.design.scopes[0].current[0];
+    state.status = EvaluationStatus::Stale;
+    state.poses.insert(
+        OccurrencePath(vec![PathStep {
+            occurrence: StepRef::Occurrence(occurrence.clone()),
+            configuration: None,
+        }]),
+        Transform::identity(),
+    );
+    let (report, _) = write(&ir);
+    let root = root();
+    let stale = format!("{root} current state after {EXTRUDE} (stale)");
+    assert!(
+        loss(&report, "export/evaluation.stale")
+            .iter()
+            .any(|message| message.contains(&stale)),
+        "{:#?}",
+        report.losses
+    );
+    let pose = format!("{root} pose of `{occurrence}` in the current state after {EXTRUDE}");
+    assert!(
+        loss(
+            &report,
+            &F3dLossCode::WriterDesignRecordOmitted.kind().to_string()
+        )
+        .iter()
+        .any(|message| message.contains(&pose)),
         "{:#?}",
         report.losses
     );
