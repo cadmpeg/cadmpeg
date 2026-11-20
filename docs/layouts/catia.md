@@ -1452,6 +1452,68 @@ Parsed by:
 | 8 | 2 | `value_type` | `u16` | big | spec | Each counted record starts |
 | 10 | 4 | `value_bytes` | `u32` | big | spec | Each counted record starts |
 
+## `surface_weight_row_prefix`
+
+Spec §6.1 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `command` | `u8` | little | spec | row command `01` or `05` |
+| 1 | 2 | `mirror` | `u16` | little | spec | row control |
+
+## `surface_weight_repeat_row_prefix`
+
+Spec §6.1 · layout: byte offsets · size: 5 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `command` | `u8` | little | spec | row command `01` or `05` · value `5` |
+| 1 | 2 | `mirror` | `u16` | little | spec | row control |
+| 3 | 2 | `leading_repeats` | `u16` | little | spec | leading-repeat count for command `05` |
+
+## `surface_weight_symmetric_03_prefix`
+
+Spec §6.1 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `command` | `u8` | little | spec | Command `01` with row control `0003` or `0007` · value `1` |
+| 1 | 2 | `control` | `u16` | little | spec | Command `01` with row control `0003` or `0007` · value `3` |
+
+## `surface_weight_symmetric_07_prefix`
+
+Spec §6.1 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/a5a8/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `command` | `u8` | little | spec | Command `01` with row control `0003` or `0007` · value `1` |
+| 1 | 2 | `control` | `u16` | little | spec | Command `01` with row control `0003` or `0007` · value `7` |
+
+## `consolidated_vertex_wide_roster`
+
+Spec §6.4 · layout: byte offsets · size: 5 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/stations.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | \| `+0` \| `u8` \| wide roster-reference marker `0e` \| · value `14` |
+| 1 | 3 | `ordinal` | `u24` | little | spec | \| `+1` \| `u24le` \| forward allocation ordinal \| |
+| 4 | 1 | `terminal` | `u8` | little | spec | \| `+4` \| `u8` \| roster-reference terminal `00` \| · value `0` |
+
 ## `consolidated_packed_plane_full_u_payload`
 
 Spec §6.3 · layout: byte offsets · size: 67 B
@@ -1526,19 +1588,6 @@ Parsed by:
 | 34 | 8 | `direction_u_z` | `f64` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
 | 42 | 8 | `direction_v_y` | `f64` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
 | 50 | 32 | `bounds` | `f64[4]` | little | spec | The 82-byte `d4 a0` form stores V's signed Y component |
-
-## `consolidated_vertex_wide_roster`
-
-Spec §6.4 · layout: byte offsets · size: 5 B
-
-Parsed by:
-- `crates/cadmpeg-codec-catia/src/families/freeform/owned_patch/stations.rs`
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 1 | `marker` | `u8` | little | spec | \| `+0` \| `u8` \| wide roster-reference marker `0e` \| · value `14` |
-| 1 | 3 | `ordinal` | `u24` | little | spec | \| `+1` \| `u24le` \| forward allocation ordinal \| |
-| 4 | 1 | `terminal` | `u8` | little | spec | \| `+4` \| `u8` \| roster-reference terminal `00` \| · value `0` |
 
 ## Not tabulated
 

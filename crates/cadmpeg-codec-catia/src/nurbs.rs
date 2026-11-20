@@ -174,6 +174,12 @@ impl LaneRefusals {
         )));
     }
 
+    pub(crate) fn push_surface_weights_inferred(&mut self, source: usize) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometrySurfaceWeightsInferred.note(format!(
+            "For the rational A5 surface at offset {source}, interpreted extended row controls as reflected-column masks and command-05 leading repeats; these control meanings are inferred."
+        )));
+    }
+
     pub(crate) fn push_plane_pcurve_projected(&mut self, source: usize, gap: f64) {
         self.notes.push(crate::loss::CatiaLossCode::GeometryPlanePcurveProjected.note(format!(
             "Projected the class-18 model curve at offset {source} onto its compatible plane. Positive rational weights bound the lift discrepancy by the largest control-point distance, {gap:.9} mm."
