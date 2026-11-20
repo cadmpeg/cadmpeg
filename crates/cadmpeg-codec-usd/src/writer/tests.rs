@@ -204,7 +204,7 @@ fn a_document_root_is_the_layer_and_no_prim() {
     let mut rooted = bare.clone();
     rooted
         .state_root_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "test:model:product-definition#root".try_into().unwrap(),
             cadmpeg_ir::products::ExternalDocument::default(),
         )

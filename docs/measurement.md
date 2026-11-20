@@ -159,7 +159,7 @@ one of its rows is not compared. Cause codes follow the reason discipline.
 
 | Code | When |
 | --- | --- |
-| `compare.occurrence-placement` | A document's occurrences place bodies non-trivially. |
+| `compare.occurrence-placement` | A document's occurrences place bodies non-trivially, and its instances do not enumerate: an occurrence chain repeats, a placement is not finite, or the instances exceed 2²⁰. |
 | `compare.unavailable` | A quantity is unavailable for a `budget`, `unsupported` or `placement` reason on at least one side and has no comparable candidates. |
 | `compare.ambiguous-class` | Bodies whose compatibility is not transitive. |
 | `compare.unmeasured-body` | A body with no comparable quantity. |
@@ -258,7 +258,8 @@ each other. Winding numbers use each loop's parameter-plane polyline,
 sampled until the deviation of each chord midpoint is at most `1e-3` of the
 loop's parameter-plane box diagonal.
 
-On a cylinder, cone, or extrusion with a periodic directrix, a loop with zero
+On a cylinder, cone, extrusion with a periodic directrix, or NURBS carrier
+periodic in `u` alone, a loop with zero
 net shift in `u` is contractible, and a loop that goes around the period once
 is not. With `m` loops that go around the period:
 
@@ -284,7 +285,15 @@ On a NURBS carrier's finite parameter domain:
 | `FaceLoops::Classified` | `nesting` by the planar rule in the parameter plane. |
 | `FaceLoops::Unspecified` | `declared_orientation`: the region lies on the left of every loop, after each loop is reversed when the declared normal is reversed. The region reaches the domain's natural edges when a point just left of a loop has a total winding number of zero. |
 
-Loops on a periodic NURBS domain are `region.domain-unsupported`.
+A NURBS parameter is periodic when the surface states it periodic, or when
+its knots are clamped and its first and last pole columns are one boundary
+curve: their corresponding weights are equal and their paired control points
+lie within `1e-6` of the control net's diagonal of each other. A periodic
+parameter repeats with the period of its knot domain, and a parameter outside
+that domain is evaluated at its value moved by whole periods into it. Loops
+on a NURBS carrier periodic in `u` alone, and not curve-bounded with an
+implicit outer boundary, follow the cylinder rule above. Loops on another
+periodic NURBS domain are `region.domain-unsupported`.
 
 On a sphere, a ring torus or a selected spindle-torus sheet both regions
 that the loops bound are bounded, so the loops do not choose a side:
@@ -752,9 +761,34 @@ and matches bodies by their measured geometry, not by their IDs.
   identity within `1e-8` and whose translation is within
   `tolerances.linear` of zero, every product definition that lists bodies,
   other than a root definition, is the prototype of exactly one occurrence,
-  and no body is listed by two definitions. Otherwise it is `occurrences`:
-  the document row `occurrences` is not compared
-  (`compare.occurrence-placement`), and the bodies are still compared.
+  and no body is listed by two definitions. Otherwise it is `occurrences`,
+  and the comparison also compares the documents' instances. An instance is
+  a path of occurrences from a root definition, placed by
+  `T(o₁) ∘ … ∘ T(oₙ)`. `T(oⱼ)` is the transform of `oⱼ`, the identity where
+  it states none, replaced by the transform a nested override of an
+  occurrence above it states for the path from that occurrence to `oⱼ`;
+  where two occurrences above it state one, the outer one holds
+  (`docs/cadir-v11.md` §8.1). Suppression resolves the same way, and a
+  suppressed instance places nothing below it. An occurrence whose
+  prototype is of `External` storage places nothing. An instance shows its
+  prototype's bodies, or the bodies that a definition above it lists for
+  its path in `instance_bodies`, the outermost such definition first. A
+  root definition's bodies, and a body no definition lists, are placed once
+  at the identity. The row `instances` compares the number of instances of
+  the paired bodies `exact`. The row `instance_placement` (mm) matches each
+  pair's instances in one document to its instances in the other one to
+  one, each to the nearest unmatched one, and agrees when the pair's
+  instance counts are equal and every matched distance is within
+  `floor × L + tolerances.linear(a) + tolerances.linear(b)`. The distance
+  of two placements is the length of their translation difference plus
+  `L` times the largest difference of a linear coefficient; the row's
+  `difference` is the largest matched distance, absent when a count
+  differs. The `occurrences` row then states each document's class and
+  takes no part in the verdict. When an occurrence chain repeats, a
+  placement does not compose to a finite transform, or a document has more
+  than 2²⁰ instances, the `occurrences` row is not compared
+  (`compare.occurrence-placement`) and the instance rows are absent. The
+  bodies are compared in either case.
 - Tolerance. A value compares within
   `t = e_a + e_b + u_a + u_b + floor × max(|a|, |b|, L^d)`, with `e` the
   numeric error, `u` the model uncertainty, `L` the larger document box
@@ -793,7 +827,9 @@ and matches bodies by their measured geometry, not by their IDs.
   unmatched; another class is ambiguous (`compare.ambiguous-class`). A body
   with no comparable quantity is unmeasured (`compare.unmeasured-body`).
 - Document rows: `body_count` (`exact`), total `area` and `closed_volume`
-  when measured on both sides, the union box, and `occurrences`.
+  when measured on both sides, the union box, `occurrences`, and, when a
+  document's placement is `occurrences`, `instances` and
+  `instance_placement`.
 - Verdict: `disagree` when a compared row disagrees or a body is
   unmatched; else `inconclusive` when a cause applies, including
   `compare.nothing-compared`; else `agree`. Surface-kind counts and `visible`

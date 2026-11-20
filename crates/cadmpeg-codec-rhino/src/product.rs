@@ -355,7 +355,7 @@ mod tests {
             .clone();
         let mut ir = CadIr::empty();
         let losses = install(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut ir,
         )

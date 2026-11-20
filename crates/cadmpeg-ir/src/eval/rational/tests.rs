@@ -23,7 +23,7 @@ fn homogeneous_weights_preserve_early_missing_and_empty_input() {
         weight_sum(crate::math::sum::scaled_finite(1.0)),
     ];
     for (values, expected) in [(&missing[..], None), (&[][..], Some(Vec::<f64>::new()))] {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let scratch = Scratch::new(&ctx);
         assert_eq!(Homogeneous::weights(&scratch, values).unwrap(), expected);
         ctx.finish_session().unwrap();
@@ -53,7 +53,7 @@ fn homogeneous_sum_projects_unit_weight_poles_and_keeps_exact_cancellation() {
             [0.0, 2.0, 0.0],
         ),
     ] {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let scratch = Scratch::new(&ctx);
         let poles = points.map(|point| FinitePoint3::new(point).expect("finite pole"));
         let sum = Homogeneous::sum(
@@ -100,7 +100,7 @@ fn homogeneous_weights_rescale_the_net_when_a_weight_leaves_the_normal_range() {
         (&overflow[..], Some(vec![f64::MAX * 0.5; 2])),
         (&impossible[..], None),
     ] {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let scratch = Scratch::new(&ctx);
         assert_eq!(Homogeneous::weights(&scratch, values).unwrap(), expected);
         ctx.finish_session().unwrap();
@@ -180,7 +180,7 @@ fn budgeted_sum(
     shared: bool,
     budget: usize,
 ) -> (Result<Option<Lanes>, EvaluationRefusal>, Option<usize>) {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let parent = cadmpeg_core::decode::WorkBudget::new(budget);
     let sum = EvaluationAdmission::Decode(&ctx)
         .within_work_slice(&parent, |admission| {
@@ -242,7 +242,7 @@ proptest! {
         terms in proptest::collection::vec(any_term(), 0..10),
         shape in 0_u8..3,
     ) {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let unbudgeted = Scratch::new(&ctx);
         prop_assert_eq!(
             shaped_sum(&unbudgeted, &terms, shape, true),

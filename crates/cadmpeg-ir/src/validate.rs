@@ -313,7 +313,7 @@ mod tests {
 
     #[test]
     fn validation_finding_keeps_absent_identity_and_formatted_message() {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut findings = Vec::new();
         for entity in [None, Some("test:model:point#missing")] {
             super::record_finding(

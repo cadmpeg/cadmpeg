@@ -50,7 +50,7 @@ fn entry_reference_index_preserves_order_and_deduplicates_property_markers() {
             })
             .collect();
         let entries = super::entry_records(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             scan,
             &properties,
         )
@@ -633,7 +633,7 @@ fn retains_every_reference_to_a_shared_side_entry() {
         .native
         .namespace_mut("fcstd")
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "entries",
             &corrupted_entries,
         )

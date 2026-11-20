@@ -768,6 +768,20 @@ impl DesignRectangularPatternConstruction {
             .count()
     }
 
+    pub(crate) fn direction_two_active(&self) -> bool {
+        self.v_count.get() > 1 && self.v_extent != 0.0
+    }
+
+    /// The number of direction records the scope binds: the one U-direction
+    /// record beside a payload V direction, or one record per active direction.
+    pub(crate) fn bound_direction_record_count(&self) -> usize {
+        if self.secondary_direction.is_some() {
+            1
+        } else {
+            self.active_direction_count()
+        }
+    }
+
     pub(crate) fn distribution(&self) -> Option<&DesignRectangularPatternDistribution> {
         self.distribution.as_ref()
     }
@@ -791,15 +805,15 @@ impl DesignRectangularPatternConstruction {
         if self.secondary_direction.is_some() && directions.len() != 1 {
             return Err("payload V direction requires one U direction record");
         }
-        if directions
-            .windows(2)
-            .any(|pair| pair[0].distance_type != pair[1].distance_type)
-        {
+        if directions.windows(2).any(|pair| {
+            pair[0].distance_type != pair[1].distance_type
+                && pair[0].distance_type != 10
+                && pair[1].distance_type != 10
+        }) {
             return Err("direction records must use the same distance representation");
         }
         if !directions.is_empty() {
-            let secondary_count = usize::from(self.secondary_direction.is_some());
-            if directions.len() + secondary_count != self.active_direction_count() {
+            if directions.len() != self.bound_direction_record_count() {
                 return Err("directions must hold one record per active direction");
             }
             if directions.iter().any(|record| record.direction().is_none()) {
@@ -821,11 +835,13 @@ impl DesignRectangularPatternConstruction {
         direction: Option<crate::records::identity::Located<[FiniteReal; 3]>>,
     ) -> Result<(), &'static str> {
         if let Some(direction) = &direction {
-            if self.active_direction_count() != 2
+            if !self.direction_two_active()
                 || UnitVector3::normalized(Vector3::from(direction.value.map(FiniteReal::get)))
                     .is_none()
             {
-                return Err("secondary direction requires two active axes and a nonzero vector");
+                return Err(
+                    "secondary direction requires an active direction two and a nonzero vector",
+                );
             }
         }
         self.secondary_direction = direction;
@@ -1437,6 +1453,45 @@ mod tests {
         );
     }
     #[test]
+    fn a_distance_type_ten_record_can_pair_with_another_distance_type() {
+        let record =
+            |record_index, distance_type, displacement| super::DesignRectangularPatternDirection {
+                record_index,
+                selection_record_index: record_index + 3,
+                selection_kind: 8,
+                distance_type,
+                origin: crate::test_support::reals([0.0, 0.0, 0.0]),
+                origin_offset: 0,
+                displacement: crate::test_support::reals(displacement),
+                displacement_offset: 24,
+            };
+        let wire = |directions| {
+            let mut wire = DesignRectangularPatternConstructionWire {
+                directions,
+                ..DesignRectangularPatternConstructionWire::from(construction(None))
+            };
+            wire.v_count = 3;
+            wire.v_extent = 1.0;
+            wire
+        };
+        for (first, second) in [(10, 7), (7, 10), (10, 8)] {
+            assert!(
+                DesignRectangularPatternConstruction::try_from(wire(vec![
+                    record(20, first, [1.0, 0.0, 0.0]),
+                    record(30, second, [0.0, 1.0, 0.0]),
+                ]))
+                .is_ok(),
+                "{first} and {second}"
+            );
+        }
+        assert!(DesignRectangularPatternConstruction::try_from(wire(vec![
+            record(20, 7, [1.0, 0.0, 0.0]),
+            record(30, 8, [0.0, 1.0, 0.0]),
+        ]))
+        .is_err());
+    }
+
+    #[test]
     fn rectangular_pattern_payload_direction_validates_wire_fields() {
         let mut wire = DesignRectangularPatternConstructionWire::from(construction(None));
         wire.v_count = 3;
@@ -1479,6 +1534,18 @@ mod tests {
         let mut missing = encoded;
         missing["directions"] = serde_json::json!([]);
         assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(missing).is_err());
+        let mut inactive_one = wire.clone();
+        inactive_one.u_extent = 0.0;
+        let record = DesignRectangularPatternConstruction::try_from(inactive_one).unwrap();
+        assert_eq!(record.active_direction_count(), 1);
+        assert_eq!(record.directions().len(), 1);
+        assert!(record.secondary_direction().is_some());
+        assert!(
+            serde_json::from_value::<DesignRectangularPatternConstruction>(
+                serde_json::to_value(&record).unwrap()
+            )
+            .is_ok()
+        );
         wire.v_count = 1;
         wire.v_extent = 0.0;
         assert!(DesignRectangularPatternConstruction::try_from(wire).is_err());

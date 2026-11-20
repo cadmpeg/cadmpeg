@@ -385,7 +385,11 @@ supports only one normal domain.
 
 `triangle_groups` is empty or is an ordered partition of all triangle ordinals.
 Each group is nonempty, its ordinals are strictly increasing, and a nonempty
-`source_id` is unique within the tessellation. `texture_assignments` associates
+`source_id` is unique within the tessellation. A group's optional `face` names
+the B-rep face whose triangles the group holds. The face is a face of the
+tessellation's `body`, which is then present, and a member of `faces` when
+`faces` is not empty. Each face names at most one group of a tessellation.
+`texture_assignments` associates
 one source texture resource and asset with each nonempty, strictly increasing
 triangle subset. Nonempty texture-resource identities are unique. Anonymous
 assignments use an asset at most once. Distinct source resources can use the
@@ -436,7 +440,7 @@ Readers accept exactly `ir_version: "11"` ([`cadir-v11.md`](cadir-v11.md) §3.6)
 
 `Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
-JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`, which requires the crate's `schema` feature.
+JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`, which requires the crate's `schema` feature. `crates/cadmpeg-ir/schema/cadir.schema.json` is its committed output, and `cadmpeg_ir::CADIR_JSON_SCHEMA` embeds that file.
 
 ## Worked cube
 

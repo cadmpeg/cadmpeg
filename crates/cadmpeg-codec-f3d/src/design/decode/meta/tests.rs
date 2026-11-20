@@ -61,7 +61,7 @@ fn flat_pattern_settings_retain_the_complete_type_table_and_related_headers() {
         zip.write_all(&bulk).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            let _ctx = cadmpeg_test_support::service_decode_context();
+            let _ctx = cadmpeg_core::decode::test_support::service_decode_context();
             let types = super::decode_types(scan).unwrap();
             assert_eq!(types.len(), expected_types);
             let timelines = super::decode_feature_timelines(scan, &mut Vec::new()).unwrap();

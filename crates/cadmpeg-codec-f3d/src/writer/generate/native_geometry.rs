@@ -4,17 +4,19 @@
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::{CadIr, Topology};
+use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
     pcurve::{PcurveGeometry, PcurveInlineForm, PcurveNurbs, PcurveNurbsPoles},
-    BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    BlendRadiusLaw, CurveGeometry, ProceduralCurve, ProceduralSurface, ProceduralSurfaceDefinition,
+    SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{PcurveId, SurfaceId};
+use cadmpeg_ir::ids::{CurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use std::borrow::Cow;
+use std::collections::HashMap;
+use std::hash::Hash;
 
 use super::native_bytes::{
     native_curve_base, native_enum, native_f64, native_i64, native_ident,
@@ -96,28 +98,109 @@ pub(super) fn native_nurbs_surface(
 pub(crate) fn native_procedural_surface(
     bytes: &mut Vec<u8>,
     target: &CadIr,
+    owners: &ProceduralOwners<'_>,
     solved_surface: &Surface,
     solved_cache: &NurbsSurface,
 ) -> Result<bool, CodecError> {
     let written =
-        native_procedural_surface_definition(bytes, target, solved_surface, solved_cache)?;
+        native_procedural_surface_definition(bytes, target, owners, solved_surface, solved_cache)?;
     if written {
-        native_record_bounds(bytes, target, &solved_surface.id);
+        native_record_bounds(bytes, owners, &solved_surface.id);
     }
     Ok(written)
 }
 
+/// The procedural constructions each carrier of one document owns: those its
+/// geometry names, where no other carrier names the same construction. A
+/// carrier id selects the first carrier with that id.
+pub(crate) struct ProceduralOwners<'a> {
+    surfaces: HashMap<&'a SurfaceId, Vec<&'a ProceduralSurface>>,
+    curves: HashMap<&'a CurveId, Vec<&'a ProceduralCurve>>,
+}
+
+impl<'a> ProceduralOwners<'a> {
+    pub(crate) fn new(target: &'a CadIr) -> Self {
+        let geometry = &target.geometry;
+        Self {
+            surfaces: owned_constructions(
+                geometry
+                    .surfaces
+                    .iter()
+                    .map(|surface| (&surface.id, surface.geometry.procedural_construction())),
+                geometry
+                    .procedural_surfaces
+                    .iter()
+                    .map(|procedural| (&procedural.id, procedural)),
+            ),
+            curves: owned_constructions(
+                geometry
+                    .curves
+                    .iter()
+                    .map(|curve| (&curve.id, curve.geometry.procedural_construction())),
+                geometry
+                    .procedural_curves
+                    .iter()
+                    .map(|procedural| (&procedural.id, procedural)),
+            ),
+        }
+    }
+
+    /// The constructions `surface` owns, in arena order.
+    pub(crate) fn surface(&self, surface: &SurfaceId) -> &[&'a ProceduralSurface] {
+        self.surfaces.get(surface).map_or(&[], Vec::as_slice)
+    }
+
+    /// The constructions `curve` owns, in arena order.
+    pub(crate) fn curve(&self, curve: &CurveId) -> &[&'a ProceduralCurve] {
+        self.curves.get(curve).map_or(&[], Vec::as_slice)
+    }
+}
+
+/// Each carrier's owned construction rows, from the carriers with the
+/// construction each names and the construction rows with their ids.
+fn owned_constructions<'a, Carrier, Construction, Row>(
+    carriers: impl Iterator<Item = (&'a Carrier, Option<&'a Construction>)> + Clone,
+    rows: impl Iterator<Item = (&'a Construction, &'a Row)>,
+) -> HashMap<&'a Carrier, Vec<&'a Row>>
+where
+    Carrier: Eq + Hash + 'a,
+    Construction: Eq + Hash + 'a,
+    Row: 'a,
+{
+    let mut carrier_counts = HashMap::<&Construction, usize>::new();
+    for construction in carriers
+        .clone()
+        .filter_map(|(_, construction)| construction)
+    {
+        *carrier_counts.entry(construction).or_default() += 1;
+    }
+    let mut rows_by_construction = HashMap::<&Construction, Vec<&Row>>::new();
+    for (construction, row) in rows {
+        rows_by_construction
+            .entry(construction)
+            .or_default()
+            .push(row);
+    }
+    let mut owned = HashMap::new();
+    for (carrier, construction) in carriers {
+        owned.entry(carrier).or_insert_with(|| {
+            construction
+                .filter(|construction| carrier_counts.get(construction) == Some(&1))
+                .and_then(|construction| rows_by_construction.remove(construction))
+                .unwrap_or_default()
+        });
+    }
+    owned
+}
+
 /// Emit the four optional record-level U/V bound fields retained on the
 /// surface's procedural construction, after its subtype scope closes.
-fn native_record_bounds(bytes: &mut Vec<u8>, target: &CadIr, surface: &cadmpeg_ir::ids::SurfaceId) {
-    let bounds = target
-        .geometry
-        .procedural_surfaces
-        .iter()
-        .find(|procedural| {
-            target.geometry.procedural_surface_owner(&procedural.id) == Some(surface)
-        })
-        .and_then(cadmpeg_ir::geometry::ProceduralSurface::record_bounds);
+fn native_record_bounds(bytes: &mut Vec<u8>, owners: &ProceduralOwners<'_>, surface: &SurfaceId) {
+    let bounds = owners
+        .surface(surface)
+        .first()
+        .copied()
+        .and_then(ProceduralSurface::record_bounds);
     if let Some(bounds) = bounds {
         for bound in bounds.get() {
             native_optional_f64(bytes, bound);
@@ -128,25 +211,20 @@ fn native_record_bounds(bytes: &mut Vec<u8>, target: &CadIr, surface: &cadmpeg_i
 fn native_procedural_surface_definition(
     bytes: &mut Vec<u8>,
     target: &CadIr,
+    owners: &ProceduralOwners<'_>,
     solved_surface: &Surface,
     solved_cache: &NurbsSurface,
 ) -> Result<bool, CodecError> {
-    let mut definitions = target
-        .geometry
-        .procedural_surfaces
-        .iter()
-        .filter(|procedural| {
-            target.geometry.procedural_surface_owner(&procedural.id) == Some(&solved_surface.id)
-        });
-    let Some(procedural) = definitions.next() else {
-        return Ok(false);
+    let procedural = match owners.surface(&solved_surface.id) {
+        [] => return Ok(false),
+        [procedural] => *procedural,
+        _ => {
+            return Err(CodecError::malformed(format_args!(
+                "surface {} has multiple procedural constructions",
+                solved_surface.id
+            )))
+        }
     };
-    if definitions.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "surface {} has multiple procedural constructions",
-            solved_surface.id
-        )));
-    }
     match procedural.definition() {
         ProceduralSurfaceDefinition::Deformable(definition_payload) => {
             use cadmpeg_ir::geometry::DeformableSurfaceData;
@@ -1941,11 +2019,12 @@ fn encode_native_scaled_compound_loft(
 pub(super) fn native_cacheless_procedural_surface(
     bytes: &mut Vec<u8>,
     target: &CadIr,
+    owners: &ProceduralOwners<'_>,
     surface: &Surface,
 ) -> Result<bool, CodecError> {
-    let written = native_cacheless_procedural_surface_definition(bytes, target, surface)?;
+    let written = native_cacheless_procedural_surface_definition(bytes, target, owners, surface)?;
     if written {
-        native_record_bounds(bytes, target, &surface.id);
+        native_record_bounds(bytes, owners, &surface.id);
     }
     Ok(written)
 }
@@ -1953,24 +2032,19 @@ pub(super) fn native_cacheless_procedural_surface(
 fn native_cacheless_procedural_surface_definition(
     bytes: &mut Vec<u8>,
     target: &CadIr,
+    owners: &ProceduralOwners<'_>,
     surface: &Surface,
 ) -> Result<bool, CodecError> {
-    let mut definitions = target
-        .geometry
-        .procedural_surfaces
-        .iter()
-        .filter(|procedural| {
-            target.geometry.procedural_surface_owner(&procedural.id) == Some(&surface.id)
-        });
-    let Some(procedural) = definitions.next() else {
-        return Ok(false);
+    let procedural = match owners.surface(&surface.id) {
+        [] => return Ok(false),
+        [procedural] => *procedural,
+        _ => {
+            return Err(CodecError::malformed(format_args!(
+                "surface {} has multiple procedural constructions",
+                surface.id
+            )))
+        }
     };
-    if definitions.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "surface {} has multiple procedural constructions",
-            surface.id
-        )));
-    }
     if let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() {
         let directrix = definition_payload.directrix();
         let parameter_interval = definition_payload.parameter_interval();
@@ -4846,7 +4920,7 @@ mod native_interval_curve_tests {
     }
 
     #[test]
-    fn source_less_sweep_refuses_unallocatable_conic_intervals_before_writing() {
+    fn source_less_sweep_with_unallocatable_conic_intervals_writes_with_a_loss() {
         use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
         use cadmpeg_ir::codec::{Codec, DecodeOptions};
         use cadmpeg_ir::geometry::surface_payloads::SweepSurfacePayload;
@@ -4922,9 +4996,18 @@ mod native_interval_curve_tests {
                     .expect("ordinary circle interval decodes");
                 assert_eq!(decoded.ir().geometry.procedural_surfaces.len(), 1);
             } else {
-                let error = result.expect_err("unallocatable conic interval must be refused");
-                assert!(error.to_string().contains("conic"), "{error}");
-                assert_eq!(output, [0x93, 0x2a]);
+                let report = result.expect("an unallocatable conic interval still writes");
+                crate::F3dCodec
+                    .decode(&mut Cursor::new(&output[2..]), &DecodeOptions::default())
+                    .expect("the written file decodes");
+                assert!(
+                    report
+                        .losses
+                        .iter()
+                        .any(|loss| loss.message.contains("conic")),
+                    "{:#?}",
+                    report.losses
+                );
             }
         }
     }
@@ -4958,24 +5041,19 @@ fn native_spring_pcurve(
 pub(crate) fn native_procedural_curve(
     bytes: &mut Vec<u8>,
     target: &CadIr,
-    curve_id: &cadmpeg_ir::ids::CurveId,
+    owners: &ProceduralOwners<'_>,
+    curve_id: &CurveId,
     solved_cache: &NurbsCurve,
 ) -> Result<bool, CodecError> {
-    let mut definitions = target
-        .geometry
-        .procedural_curves
-        .iter()
-        .filter(|procedural| {
-            target.geometry.procedural_curve_owner(&procedural.id) == Some(curve_id)
-        });
-    let Some(procedural) = definitions.next() else {
-        return Ok(false);
+    let procedural = match owners.curve(curve_id) {
+        [] => return Ok(false),
+        [procedural] => *procedural,
+        _ => {
+            return Err(CodecError::malformed(format_args!(
+                "curve {curve_id} has multiple procedural constructions"
+            )))
+        }
     };
-    if definitions.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "curve {curve_id} has multiple procedural constructions"
-        )));
-    }
     if matches!(
         procedural.definition(),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. }
@@ -5774,24 +5852,18 @@ pub(crate) fn native_procedural_curve(
 
 pub(super) fn native_cacheless_procedural_curve(
     bytes: &mut Vec<u8>,
-    target: &CadIr,
-    curve_id: &cadmpeg_ir::ids::CurveId,
+    owners: &ProceduralOwners<'_>,
+    curve_id: &CurveId,
 ) -> Result<bool, CodecError> {
-    let mut definitions = target
-        .geometry
-        .procedural_curves
-        .iter()
-        .filter(|procedural| {
-            target.geometry.procedural_curve_owner(&procedural.id) == Some(curve_id)
-        });
-    let Some(procedural) = definitions.next() else {
-        return Ok(false);
+    let procedural = match owners.curve(curve_id) {
+        [] => return Ok(false),
+        [procedural] => *procedural,
+        _ => {
+            return Err(CodecError::malformed(format_args!(
+                "curve {curve_id} has multiple procedural constructions"
+            )))
+        }
     };
-    if definitions.next().is_some() {
-        return Err(CodecError::malformed(format_args!(
-            "curve {curve_id} has multiple procedural constructions"
-        )));
-    }
     if procedural.cache_fit_tolerance().is_some() {
         return Err(CodecError::malformed(format_args!(
             "cacheless procedural curve {} carries a cache-fit tolerance",
@@ -6043,13 +6115,12 @@ fn native_support_pcurve_for_range(
 #[cfg(test)]
 mod pcurve_chart_tests {
     use super::native_support_pcurve;
-    use cadmpeg_core::CodecError;
     use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::math::{Point3, Vector3};
 
     #[test]
-    fn generated_spring_refuses_overflowing_pcurve_poles_before_writing() {
+    fn generated_spring_with_overflowing_pcurve_poles_writes_its_solved_curve() {
         use cadmpeg_ir::codec::{Codec, DecodeOptions};
         use cadmpeg_ir::geometry::{
             pcurve::LinePcurve, ProceduralCurveDefinition, SpringLayout, SpringPcurve,
@@ -6088,18 +6159,16 @@ mod pcurve_chart_tests {
                 .expect("line pcurve is an admitted spring input");
             });
             let mut output = vec![0x93, 0x2a];
-            let result = crate::writer::generate::write_new(&target, &mut output);
-            if origin == 1.0 {
-                result.expect("finite pcurve poles write successfully");
-                crate::F3dCodec
-                    .decode(&mut Cursor::new(&output[2..]), &DecodeOptions::default())
-                    .expect("finite pcurve output decodes");
-            } else {
-                let error = result.expect_err("pcurve evaluation overflows a pole coordinate");
-                assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
-                assert!(error.to_string().contains("control_points"), "{error}");
-                assert_eq!(output, [0x93, 0x2a]);
-            }
+            let generated = crate::writer::generate::write_new(&target, &mut output)
+                .expect("a spring whose construction cannot be written still writes");
+            crate::F3dCodec
+                .decode(&mut Cursor::new(&output[2..]), &DecodeOptions::default())
+                .expect("the written file decodes");
+            let reduced = generated.losses.iter().any(|loss| {
+                loss.code == crate::loss::F3dLossCode::WriterProceduralReduced.kind()
+                    && loss.message.contains("control_points")
+            });
+            assert_eq!(reduced, origin != 1.0, "{:?}", generated.losses);
         }
     }
 
@@ -6184,90 +6253,6 @@ mod pcurve_chart_tests {
             }
         }
     }
-}
-
-pub(in crate::writer) fn pcurve_support_geometry<'a>(
-    geometry: &'a Topology,
-    pcurve_id: &PcurveId,
-) -> Result<&'a SurfaceGeometry, CodecError> {
-    let surface_id = pcurve_support_surface(geometry, pcurve_id)?;
-    geometry
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == *surface_id)
-        .map(|surface| &surface.geometry)
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "F3D pcurve {pcurve_id} references missing support {surface_id}"
-            ))
-        })
-}
-
-/// The surface of the faces that use a pcurve.
-pub(in crate::writer) fn pcurve_support_surface<'a>(
-    geometry: &'a Topology,
-    pcurve_id: &PcurveId,
-) -> Result<&'a SurfaceId, CodecError> {
-    fn surface_for_loop<'a>(
-        geometry: &'a Topology,
-        loop_: &cadmpeg_ir::topology::Loop,
-        pcurve_id: &PcurveId,
-    ) -> Result<&'a SurfaceId, CodecError> {
-        let face = geometry
-            .faces
-            .iter()
-            .find(|face| face.id == loop_.face)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "pcurve {pcurve_id} is used by loop {} with missing face {}",
-                    loop_.id, loop_.face
-                ))
-            })?;
-        Ok(&face.surface)
-    }
-
-    fn record_surface<'a>(
-        selected: &mut Option<&'a SurfaceId>,
-        surface: &'a SurfaceId,
-        pcurve_id: &PcurveId,
-    ) -> Result<(), CodecError> {
-        if selected.is_some_and(|selected| selected != surface) {
-            return Err(CodecError::NotImplemented(format!(
-                "F3D pcurve {pcurve_id} is shared by faces with different support surfaces"
-            )));
-        }
-        selected.get_or_insert(surface);
-        Ok(())
-    }
-
-    let mut surface_id = None;
-    for coedge in &geometry.coedges {
-        if coedge.pcurves.iter().any(|use_| use_.pcurve == *pcurve_id) {
-            let loop_ = geometry
-                .loops
-                .iter()
-                .find(|loop_| loop_.id == coedge.owner_loop)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "pcurve {pcurve_id} is used by missing loop {}",
-                        coedge.owner_loop
-                    ))
-                })?;
-            let surface = surface_for_loop(geometry, loop_, pcurve_id)?;
-            record_surface(&mut surface_id, surface, pcurve_id)?;
-        }
-    }
-    for loop_ in &geometry.loops {
-        if loop_.vertex_pcurves().any(|use_| use_.pcurve == *pcurve_id) {
-            let surface = surface_for_loop(geometry, loop_, pcurve_id)?;
-            record_surface(&mut surface_id, surface, pcurve_id)?;
-        }
-    }
-    surface_id.ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "F3D pcurve {pcurve_id} is not used by a coedge or pole vertex"
-        ))
-    })
 }
 
 fn native_intcurve_support_context(
@@ -7224,6 +7209,83 @@ mod null_law_token_tests {
         };
         let error = error.to_string();
         assert!(error.contains(NULL_LAW_TOKEN), "{error}");
+    }
+}
+
+#[cfg(test)]
+mod procedural_owners_tests {
+    use super::ProceduralOwners;
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::ids::SurfaceId;
+    use std::io::Cursor;
+
+    /// Each surface's constructions, from the IR owner relation.
+    fn owned_by_relation(ir: &CadIr) -> Vec<Vec<&str>> {
+        ir.geometry
+            .surfaces
+            .iter()
+            .map(|surface| {
+                ir.geometry
+                    .procedural_surfaces
+                    .iter()
+                    .filter(|procedural| {
+                        ir.geometry.procedural_surface_owner(&procedural.id) == Some(&surface.id)
+                    })
+                    .map(|procedural| procedural.id.as_str())
+                    .collect()
+            })
+            .collect()
+    }
+
+    /// Each surface's constructions, from the index.
+    fn owned_by_index(ir: &CadIr) -> Vec<Vec<&str>> {
+        let owners = ProceduralOwners::new(ir);
+        ir.geometry
+            .surfaces
+            .iter()
+            .map(|surface| {
+                owners
+                    .surface(&surface.id)
+                    .iter()
+                    .copied()
+                    .map(|procedural| procedural.id.as_str())
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn procedural_owners_match_the_ir_owner_relation() {
+        let decoded = crate::F3dCodec
+            .decode(
+                &mut Cursor::new(crate::test_support::zip_test::f3d_with_smbh(
+                    &crate::test_support::smbh_surfaces_test::synthetic_cyl_spl_sur_smbh(),
+                )),
+                &DecodeOptions::default(),
+            )
+            .expect("generated procedural surface decode");
+        let (mut ir, _, _) = decoded.into_parts();
+        let construction = ir.geometry.procedural_surfaces[0].id.clone();
+        let owner = ir
+            .geometry
+            .procedural_surface_owner(&construction)
+            .expect("procedural surface owner")
+            .clone();
+        let owner_index = ir
+            .geometry
+            .surfaces
+            .iter()
+            .position(|surface| surface.id == owner)
+            .expect("owner surface row");
+        assert_eq!(owned_by_index(&ir), owned_by_relation(&ir));
+        assert_eq!(owned_by_index(&ir)[owner_index], [construction.as_str()]);
+
+        let mut second = ir.geometry.surfaces[owner_index].clone();
+        second.id = SurfaceId::mint("test:model:surface#second-carrier").expect("identity grammar");
+        ir.geometry.surfaces.push(second);
+        assert_eq!(owned_by_index(&ir), owned_by_relation(&ir));
+        assert!(owned_by_index(&ir).iter().all(Vec::is_empty));
     }
 }
 

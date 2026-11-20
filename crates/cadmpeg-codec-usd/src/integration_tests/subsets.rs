@@ -142,3 +142,125 @@ fn a_face_subset_of_a_brep_array_binds_its_faces() {
     );
     assert_eq!(faces(&crate::test_support::decode(&written)), 6);
 }
+
+/// A mesh from the document binds the material of each face that a triangle
+/// group names to that group's triangles, in a `materialBind` subset; the
+/// group's face identity stays a loss.
+#[test]
+fn a_face_named_by_a_triangle_group_binds_its_material_to_the_group() {
+    use cadmpeg_ir::tessellation::TessellationTriangleGroup;
+    let text = std::fs::read_to_string(format!(
+        "{}/tests/golden/fixtures/brep_array_box.usda",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .expect("fixture");
+    let mut ir = decode(&text).ir().clone();
+    let faces: Vec<_> = ir
+        .geometry
+        .faces
+        .iter()
+        .map(|face| face.id.clone())
+        .collect();
+    // Face 0 gets a material of its own.
+    let mut other = ir.model.appearances[0].clone();
+    other.id = cadmpeg_ir::ids::AppearanceId::try_from("test:usd:appearance#other".to_owned())
+        .expect("an id");
+    other.name = Some("Other".into());
+    let other_id = other.id.clone();
+    ir.model.appearances.push(other);
+    for binding in &mut ir.model.appearance_bindings {
+        if binding.target.entity == AppearanceTarget::Face(faces[0].clone()) {
+            binding.appearance = other_id.clone();
+        }
+    }
+    let mesh = &mut ir.model.tessellations[0];
+    let count = u32::try_from(mesh.triangles().len()).expect("a count");
+    let half = count / 2;
+    let groups = vec![
+        TessellationTriangleGroup::new(None, (0..half).collect()).with_face(faces[0].clone()),
+        TessellationTriangleGroup::new(None, (half..count).collect()).with_face(faces[1].clone()),
+    ];
+    *mesh = mesh
+        .clone()
+        .with_triangle_groups(groups)
+        .expect("a partition");
+    let (written, report) = encode(&ir);
+    // The mesh's subsets: the BrepArray before it has face subsets of the same names.
+    let mesh_prim = &written[written.find("def Mesh").expect("the mesh")..];
+    let indices = |name: &str| -> Vec<u32> {
+        let at = mesh_prim
+            .find(&format!("def GeomSubset \"{name}\""))
+            .unwrap_or_else(|| panic!("no {name} subset:\n{written}"));
+        let rest = &mesh_prim[at..];
+        let body = &rest[rest.find("int[] indices = [").unwrap() + 17..];
+        body[..body.find(']').unwrap()]
+            .split(',')
+            .filter_map(|value| value.trim().parse().ok())
+            .collect()
+    };
+    assert_eq!(indices("Other"), (0..half).collect::<Vec<_>>());
+    assert_eq!(
+        indices("Box_face_1_material"),
+        (half..count).collect::<Vec<_>>()
+    );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::UsdLossCode::ExportGroupFaceNotWritten.kind()));
+}
+
+/// A material bound to a `NurbsPatch` binds to the patch's face, and no loss says it was dropped.
+#[test]
+fn a_patch_material_binds_the_patch_face() {
+    let text = r#"#usda 1.0
+def NurbsPatch "Sheet" (
+    prepend apiSchemas = ["MaterialBindingAPI"]
+)
+{
+    int uVertexCount = 2
+    int vVertexCount = 2
+    int uOrder = 2
+    int vOrder = 2
+    double[] uKnots = [0, 0, 1, 1]
+    double[] vKnots = [0, 0, 1, 1]
+    point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0)]
+    rel material:binding = </Looks/Red>
+}
+def Scope "Looks"
+{
+    def Material "Red"
+    {
+        token outputs:surface.connect = </Looks/Red/S.outputs:surface>
+        def Shader "S"
+        {
+            uniform token info:id = "UsdPreviewSurface"
+            color3f inputs:diffuseColor = (1, 0, 0)
+            token outputs:surface
+        }
+    }
+}
+"#;
+    let decoded = decode(text);
+    let model = &decoded.ir().model;
+    let [face] = decoded.ir().geometry.faces.as_slice() else {
+        panic!("one face");
+    };
+    let bound: Vec<_> = model
+        .appearance_bindings
+        .iter()
+        .filter(|binding| binding.target.entity == AppearanceTarget::Face(face.id.clone()))
+        .filter_map(|binding| {
+            model
+                .appearances
+                .iter()
+                .find(|appearance| appearance.id == binding.appearance)
+        })
+        .collect();
+    assert_eq!(bound.len(), 1, "{:?}", model.appearance_bindings);
+    assert_eq!(bound[0].name.as_deref(), Some("Red"));
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("material")));
+}
