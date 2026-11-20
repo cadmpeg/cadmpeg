@@ -443,6 +443,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_SPANS`                               | `1 << 10`                                               | 4    | Spans of one fitted blend cache. A fit that needs more leaves the blend without a cache. |
 | `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_CENTER_STEPS`                        | `32`                                                    | 4    | Newton steps for one ball centre. A centre that does not converge leaves its section, and the blend cache, unresolved. |
 | `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_CENTER_SOLVES`                       | `1 << 20`                                               | 4    | Centre solves of one use of a blend: one fit, or one chart or face side it supports. Past it the remaining centres do not solve. |
+| `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_NURBS_FEET`                          | `1 << 14`                                               | 4    | Feet on NURBS supports of one use of a blend; each costs tens to hundreds of surface evaluations. Past it the remaining centres do not solve and the blend's loss names the cap. |
 | `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_EDGE_STEPS`                          | `32`                                                    | 4    | Steps for one point of a support pair's edge. A point that does not converge leaves its section unresolved. |
 | `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_SPINE_CACHE_DEPTH`                   | `10`                                                    | 4    | Midpoint splits below one stored spine segment of an exact spine. Past it the run ends there, and centres in the gap are solved one at a time. |
 | `cadmpeg-codec-sldprt`   | `src/brep/blend_fit.rs`                            | `MAX_NEAREST_STEPS`                       | `16`                                                    | 4    | Newton steps when a point is inverted onto a contact track or the spine. Past it the point has no foot. |
@@ -567,16 +568,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 345.
+Production `MAX_*` constants: 346.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 42    |
 | 2    | Per-input bound            | 77    |
 | 3    | Session ceiling            | 0     |
-| 4    | Local work cap             | 172   |
+| 4    | Local work cap             | 173   |
 | N    | Not a decode bound         | 54    |
-|      | Total                      | 345   |
+|      | Total                      | 346   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -585,7 +586,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-mea
 `cadmpeg-protein` 3, `cadmpeg` 4, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 8,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 28,
-`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 38,
+`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 39,
 `cadmpeg-codec-catia` 79, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 
