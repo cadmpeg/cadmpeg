@@ -7664,12 +7664,25 @@ fn project_rectangular_pattern_scalars(
         },
         |distribution| !distribution.total_extent.value,
     );
-    let symmetric = distribution.is_some_and(|distribution| distribution.symmetric.value);
-    if symmetric {
-        // The extent of a symmetric direction has no settled measurement.
-        if !adjacent || construction.u_extent() == 0.0 {
-            return None;
-        }
+    let direction_one_active = construction.u_count() > 1 && construction.u_extent() != 0.0;
+    let stored_symmetric = distribution.is_some_and(|distribution| distribution.symmetric.value);
+    let symmetric = stored_symmetric && direction_one_active;
+    if stored_symmetric && !direction_one_active {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureRectangularPatternInactiveSymmetricDropped.note(format!(
+                "RectangularPattern scope {} drops the symmetric flag of its inactive direction one.",
+                scope.id
+            )),
+        );
+    }
+    let payload_names_direction_one = construction.secondary_direction().is_some();
+    if symmetric && !adjacent {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricTotalExtentAssumed.note(format!(
+                "RectangularPattern scope {} reads the total extent of its symmetric direction one as the span from the first to the last instance.",
+                scope.id
+            )),
+        );
     }
     for (axis, (count, extent)) in [
         (construction.u_count(), construction.u_extent()),
@@ -7678,6 +7691,22 @@ fn project_rectangular_pattern_scalars(
     .into_iter()
     .enumerate()
     {
+        let payload_direction = axis == 1 && construction.secondary_direction().is_some();
+        let axis_active = count > 1 && extent != 0.0;
+        let record =
+            if payload_direction || !(axis_active || (axis == 0 && payload_names_direction_one)) {
+                None
+            } else {
+                direction_records.next()
+            };
+        if let (false, Some(record)) = (axis_active, record) {
+            losses.push(
+                crate::loss::F3dLossCode::FeatureRectangularPatternDirectionOneRecordAssumed.note(format!(
+                    "RectangularPattern scope {} reads direction record {} as the record of its inactive direction one: the pattern payload names it as the U-direction record.",
+                    scope.id, record.record_index
+                )),
+            );
+        }
         let Some(intervals) = PatternIntervals::new(count) else {
             continue;
         };
@@ -7688,14 +7717,18 @@ fn project_rectangular_pattern_scalars(
             ));
             continue;
         }
-        let stored_direction = if axis == 1 && construction.secondary_direction().is_some() {
+        let axis_adjacent = match (distribution, record) {
+            (None, Some(record)) => record.distance_type == 7,
+            _ => adjacent,
+        };
+        let stored_direction = if payload_direction {
             construction.secondary_direction().and_then(|record| {
                 cadmpeg_ir::units::UnitVector3::normalized(Vector3::from(
                     record.value.map(cadmpeg_ir::scalar::FiniteReal::get),
                 ))
             })
         } else {
-            direction_records.next().and_then(
+            record.and_then(
                 crate::records::feature::patterns::DesignRectangularPatternDirection::direction,
             )
         };
@@ -7706,7 +7739,7 @@ fn project_rectangular_pattern_scalars(
                 direction
             }
         });
-        let divisor = if adjacent {
+        let divisor = if axis_adjacent {
             1.0
         } else {
             f64::from(intervals.get())
@@ -7734,7 +7767,14 @@ fn project_rectangular_pattern_scalars(
                     if 1.0 - run.as_raw().dot(*record.as_raw())
                         > EPS_RECTANGULAR_PATTERN_DIRECTION_AGREEMENT =>
                 {
-                    None
+                    losses.push(
+                        crate::loss::F3dLossCode::FeatureRectangularPatternDirectionRecordDisagrees
+                            .note(format!(
+                                "RectangularPattern scope {} keeps the direction of its generated-instance run; its direction record states another direction.",
+                                scope.id
+                            )),
+                    );
+                    Some(run)
                 }
                 (run, record) => run.or(record),
             };
@@ -7764,13 +7804,21 @@ fn project_rectangular_pattern_scalars(
     .ok()?;
     if let Some(record) = construction
         .directions()
-        .first()
-        .filter(|record| distribution.is_none() && record.distance_type == 10)
+        .iter()
+        .find(|record| distribution.is_none() && record.distance_type == 10)
     {
         losses.push(crate::loss::F3dLossCode::FeatureRectangularPatternDistanceFormAssumed.note(format!(
             "RectangularPattern scope {} reads its distances as seed-to-final-instance extents: direction record {} stores distance type 10 without a readable distribution block.",
             scope.id, record.record_index
         )));
+    }
+    if direction.is_none() {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureRectangularPatternDirectionUnresolved.note(format!(
+                "RectangularPattern scope {} keeps its first direction unresolved: it has no admitted direction record or generated-instance run.",
+                scope.id
+            )),
+        );
     }
     if !dropped.is_empty() {
         losses.push(

@@ -446,6 +446,21 @@ pub(crate) enum F3dLossCode {
     /// A rectangular-pattern direction record of distance type 10 without a
     /// readable distribution block is read as a seed-to-final-instance extent.
     FeatureRectangularPatternDistanceFormAssumed,
+    /// The total extent of a symmetric rectangular-pattern direction is read
+    /// as the span from the first to the last instance.
+    FeatureRectangularPatternSymmetricTotalExtentAssumed,
+    /// The symmetric flag of an inactive rectangular-pattern direction one is
+    /// dropped.
+    FeatureRectangularPatternInactiveSymmetricDropped,
+    /// The record that a rectangular-pattern payload names as its
+    /// U-direction record is read as the record of an inactive direction one.
+    FeatureRectangularPatternDirectionOneRecordAssumed,
+    /// A linear rectangular-pattern direction has no admitted direction
+    /// record and no generated-instance run.
+    FeatureRectangularPatternDirectionUnresolved,
+    /// A single linear rectangular-pattern direction record disagrees with
+    /// the generated-instance run; the run direction is kept.
+    FeatureRectangularPatternDirectionRecordDisagrees,
     /// A feature scope has no complete unique ASM output transition interval.
     FeatureOutputStateChainUnbound,
     /// An affected body slot has no unique active body in the selected BREP.
@@ -1512,6 +1527,11 @@ impl F3dLossCode {
         Self::FeatureCircularPatternDistributionAssumed,
         Self::FeaturePatternPayloadSeedUnconfirmed,
         Self::FeatureRectangularPatternDistanceFormAssumed,
+        Self::FeatureRectangularPatternSymmetricTotalExtentAssumed,
+        Self::FeatureRectangularPatternInactiveSymmetricDropped,
+        Self::FeatureRectangularPatternDirectionOneRecordAssumed,
+        Self::FeatureRectangularPatternDirectionUnresolved,
+        Self::FeatureRectangularPatternDirectionRecordDisagrees,
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
         Self::FeatureDerivedBaseUnresolved,
@@ -2279,6 +2299,21 @@ impl F3dLossCode {
             }
             Self::FeatureRectangularPatternDistanceFormAssumed => {
                 "feature.rectangular-pattern-distance-form-assumed"
+            }
+            Self::FeatureRectangularPatternSymmetricTotalExtentAssumed => {
+                "feature.rectangular-pattern-symmetric-total-extent-assumed"
+            }
+            Self::FeatureRectangularPatternInactiveSymmetricDropped => {
+                "feature.rectangular-pattern-inactive-symmetric-dropped"
+            }
+            Self::FeatureRectangularPatternDirectionOneRecordAssumed => {
+                "feature.rectangular-pattern-direction-one-record-assumed"
+            }
+            Self::FeatureRectangularPatternDirectionUnresolved => {
+                "feature.rectangular-pattern-direction-unresolved"
+            }
+            Self::FeatureRectangularPatternDirectionRecordDisagrees => {
+                "feature.rectangular-pattern-direction-record-disagrees"
             }
             Self::FeatureOutputStateChainUnbound => "feature.output-state-chain-unbound",
             Self::FeatureOutputBodyUnbound => "feature.output-body-unbound",
@@ -3342,6 +3377,11 @@ impl F3dLossCode {
             | Self::FeatureCircularPatternDistributionAssumed
             | Self::FeaturePatternPayloadSeedUnconfirmed
             | Self::FeatureRectangularPatternDistanceFormAssumed
+            | Self::FeatureRectangularPatternSymmetricTotalExtentAssumed
+            | Self::FeatureRectangularPatternInactiveSymmetricDropped
+            | Self::FeatureRectangularPatternDirectionOneRecordAssumed
+            | Self::FeatureRectangularPatternDirectionUnresolved
+            | Self::FeatureRectangularPatternDirectionRecordDisagrees
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
@@ -4035,6 +4075,11 @@ impl F3dLossCode {
             | Self::FeatureCircularPatternDistributionAssumed
             | Self::FeaturePatternPayloadSeedUnconfirmed
             | Self::FeatureRectangularPatternDistanceFormAssumed
+            | Self::FeatureRectangularPatternSymmetricTotalExtentAssumed
+            | Self::FeatureRectangularPatternInactiveSymmetricDropped
+            | Self::FeatureRectangularPatternDirectionOneRecordAssumed
+            | Self::FeatureRectangularPatternDirectionUnresolved
+            | Self::FeatureRectangularPatternDirectionRecordDisagrees
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeaturePipeCircularSectionInferred
             | Self::FeaturePipeWholePathExtentAssumed
@@ -4924,6 +4969,11 @@ mod tests {
                 "feature.circular-pattern-distribution-assumed",
                 "feature.pattern-payload-seed-unconfirmed",
                 "feature.rectangular-pattern-distance-form-assumed",
+                "feature.rectangular-pattern-symmetric-total-extent-assumed",
+                "feature.rectangular-pattern-inactive-symmetric-dropped",
+                "feature.rectangular-pattern-direction-one-record-assumed",
+                "feature.rectangular-pattern-direction-unresolved",
+                "feature.rectangular-pattern-direction-record-disagrees",
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",
                 "feature.derived-base-unresolved",

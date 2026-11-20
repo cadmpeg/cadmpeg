@@ -2627,13 +2627,13 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** How does a symmetric direction measure a seed-to-final-instance extent, and which byte stores the symmetric state of direction two?
 
-**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the symmetric byte of direction one at payload offset 109 and the zero byte at offset 110. A three-instance symmetric direction with adjacent spacing places one instance on each side of the seed at that spacing. A symmetric direction with an even count places half of the count along the direction: a four-instance symmetric direction at 10 mm spacing places instances at −10, 0, 10, and 20 mm, and a 120-instance direction places 60 instances along the direction and 59 against it. The decoder projects a symmetric direction with adjacent spacing as a linear pattern with `symmetric` set. A symmetric direction with an extent distance stays unresolved.
+**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the symmetric byte of direction one at payload offset 109 and the zero byte at offset 110. A three-instance symmetric direction with adjacent spacing places one instance on each side of the seed at that spacing. A symmetric direction with an even count places half of the count along the direction: a four-instance symmetric direction at 10 mm spacing places instances at −10, 0, 10, and 20 mm, and a 120-instance direction places 60 instances along the direction and 59 against it. The decoder projects a symmetric direction with adjacent spacing as a linear pattern with `symmetric` set.
 
 **Need.** Saves of a symmetric direction with an extent distance and of a symmetric direction two, each compared against the instance positions.
 
 **Conflict.** None.
 
-**Note.** R-Pattern 3 in `Parametric_extrusion_generator.f3d` stores zero at payload byte `133223`, the direction-one symmetric field. Its two counts are two. In this case adjacent distance and total extent give the same 15 mm spacing.
+**Note.** R-Pattern 3 in `Parametric_extrusion_generator.f3d` stores zero at payload byte `133223`, the direction-one symmetric field. Its two counts are two. In this case adjacent distance and total extent give the same 15 mm spacing. The decoder reads the extent of a symmetric direction with an extent distance as the span from the first to the last instance, divides it into one interval fewer than the count, keeps the count and the direction, and charges `feature.rectangular-pattern-symmetric-total-extent-assumed`.
 
 ### DR-298. SurfaceTrim cell-table entries outside the removal reading
 
@@ -3792,3 +3792,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Known.** In the three-opaque-byte tail the u32 after the tail marker is `1`, and the byte after it is the construction flag. In the two-opaque-byte tail the byte after the u32 lane is always `1`, and the lane is `0` or `1`. The decoder reads a lane of `1` as construction geometry and charges `sketch.curve-tail-construction-assumed` for every two-opaque-byte tail.
 
 **Need.** Two-opaque-byte tails of curves with a known construction status, for lane `0` and for lane `1`.
+
+### DR-895. Direction record of an inactive rectangular-pattern direction one
+
+**Question.** Does a rectangular-pattern scope whose direction one has zero distance or count one, and whose pattern payload stores a V displacement, store a direction record for direction one, and does the payload's U-direction reference at offset 122 name that record?
+
+**Known.** `f3d.md` §3.1 states that a direction with count greater than one and zero distance repeats the seed in place, that a scope can store both records when one direction has count one, and that the payload names the U-direction record at offset 122 and stores the V displacement at offset 63.
+
+**Need.** A save with a zero-distance direction one beside a pattern payload, with its direction records and instance positions.
+
+**Note.** The decoder reads the record that the payload names as the direction-one record, takes direction two from the payload V displacement, and charges `feature.rectangular-pattern-direction-one-record-assumed`. A payload without a V displacement leaves the one record to direction two.
