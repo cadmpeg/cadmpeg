@@ -191,6 +191,10 @@ pub(super) fn write(
     let Some(root) = roster.root else {
         return Ok(());
     };
+    #[cfg(test)]
+    if let Some(error) = super::super::requested_sketch_failure() {
+        return Err(error);
+    }
     let classes = Classes::of(ctx)?;
     let mut identity = FIRST_IDENTITY;
     for (ordinal, (records, planned)) in (1u32..).zip(roster.items.iter().zip(sketches)) {
