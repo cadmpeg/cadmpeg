@@ -1839,9 +1839,9 @@ fn brep_entities(
         if !stored_pcurves.contains(pcurve_id) {
             continue;
         }
-        let index = entities.len();
+        let entity_index = entities.len();
         entities.push(pcurve_entity(index, pcurve)?);
-        pcurve_indices.insert(pcurve_id.to_owned(), index);
+        pcurve_indices.insert(pcurve_id.to_owned(), entity_index);
     }
 
     let mut body_ids = bodies
@@ -2698,9 +2698,9 @@ fn topology_entities(
         if !stored_pcurves.contains(pcurve_id) {
             continue;
         }
-        let index = entities.len();
+        let entity_index = entities.len();
         entities.push(pcurve_entity(index, pcurve)?);
-        pcurve_indices.insert(pcurve_id.to_owned(), index);
+        pcurve_indices.insert(pcurve_id.to_owned(), entity_index);
     }
 
     let mut boundary_indices = BTreeMap::new();
@@ -4541,7 +4541,7 @@ fn stored_pcurve_ids<'ir>(
 /// The entity of each written pcurve use. A reversed copy is appended to
 /// `entities`.
 fn pcurve_use_entities<'ir>(
-    index: &TopologyIndex<'_>,
+    records: &TopologyIndex<'_>,
     uses: &[WrittenPcurveUse<'ir>],
     pcurve_indices: &BTreeMap<String, usize>,
     entities: &mut Vec<Entity>,
@@ -4559,7 +4559,7 @@ fn pcurve_use_entities<'ir>(
                     })?,
                 CarrierEntity::ReversedCopy => {
                     let index = entities.len();
-                    entities.push(oriented_pcurve_entity(index, written.pcurve)?);
+                    entities.push(oriented_pcurve_entity(records, written.pcurve)?);
                     index
                 }
             };
