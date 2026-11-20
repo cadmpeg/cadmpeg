@@ -6,6 +6,7 @@ use std::io::Cursor;
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_test_support::zip_fixture::{archive, RawEntry};
+use cadmpeg_test_support::EditableDecodeResult;
 use serde_json::json;
 
 use crate::test_support::{blob_name, box_document, container, import_container, STEP_TEXT};
@@ -1040,4 +1041,566 @@ fn body_and_face_looks_colour_the_cached_body() {
     assert_eq!(look["name"], "Blue");
     assert_eq!(look["properties"]["metallic"], 0.25);
     assert_eq!(model["physical_materials"][0]["density"], 1.2);
+}
+
+mod replay {
+    use std::io::Cursor;
+
+    use cadmpeg_core::decode::DecodeDepth;
+    use cadmpeg_ir::codec::write::target::TargetRequest;
+    use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_test_support::EditableDecodeResult;
+
+    use crate::test_support::{box_document, container, CACHED_DESIGN};
+    use crate::SolidcraftCodec;
+
+    fn full() -> DecodeOptions {
+        DecodeOptions {
+            depth: DecodeDepth::Full,
+            ..DecodeOptions::default()
+        }
+    }
+
+    fn replayed(bytes: &[u8], request: TargetRequest<'_>) -> Vec<u8> {
+        let decoded = EditableDecodeResult::from(
+            SolidcraftCodec
+                .decode(&mut Cursor::new(bytes), &full())
+                .unwrap(),
+        );
+        let plan = SolidcraftCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+                request,
+            )
+            .unwrap();
+        let mut out = Vec::new();
+        plan.write_to(&mut out).unwrap();
+        out
+    }
+
+    #[test]
+    fn an_unedited_container_is_written_back_byte_for_byte() {
+        assert_eq!(
+            replayed(CACHED_DESIGN, TargetRequest::Inherit),
+            CACHED_DESIGN
+        );
+        let plain = container(&box_document("solidcraft/57"), &[]);
+        assert_eq!(replayed(&plain, TargetRequest::Inherit), plain);
+    }
+
+    #[test]
+    fn an_unedited_plain_json_design_is_written_back_byte_for_byte() {
+        let json = serde_json::to_vec_pretty(&box_document("solidcraft/57")).unwrap();
+        assert_eq!(replayed(&json, TargetRequest::Inherit), json);
+    }
+
+    fn plan_bytes(decoded: &EditableDecodeResult, request: TargetRequest<'_>) -> Vec<u8> {
+        let plan = SolidcraftCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+                request,
+            )
+            .unwrap();
+        let mut out = Vec::new();
+        plan.write_to(&mut out).unwrap();
+        out
+    }
+
+    fn features(bytes: &[u8]) -> Vec<(String, String)> {
+        let decoded = EditableDecodeResult::from(
+            SolidcraftCodec
+                .decode(&mut Cursor::new(bytes), &full())
+                .unwrap(),
+        );
+        decoded
+            .ir()
+            .model
+            .features
+            .iter()
+            .map(|feature| {
+                (
+                    feature.name.clone().unwrap_or_default(),
+                    serde_json::to_string(feature).unwrap(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_explicit_dialect_converts_between_the_two_encodings() {
+        let json = serde_json::to_vec_pretty(&box_document("solidcraft/57")).unwrap();
+        let decoded = EditableDecodeResult::from(
+            SolidcraftCodec
+                .decode(&mut Cursor::new(&json), &full())
+                .unwrap(),
+        );
+        let packed = plan_bytes(
+            &decoded,
+            TargetRequest::Explicit("solidcraft:container-1-v57"),
+        );
+        assert!(packed.starts_with(b"PK"));
+        assert_eq!(features(&packed), features(&json));
+        assert_eq!(expressions(&packed), expressions(&json));
+        let again = EditableDecodeResult::from(
+            SolidcraftCodec
+                .decode(&mut Cursor::new(&packed), &full())
+                .unwrap(),
+        );
+        let plain = plan_bytes(&again, TargetRequest::Explicit("solidcraft:json-v57"));
+        assert_eq!(features(&plain), features(&json));
+    }
+
+    #[test]
+    fn a_source_less_model_is_generated_and_read_back() {
+        let json = serde_json::to_vec_pretty(&box_document("solidcraft/57")).unwrap();
+        let mut decoded = EditableDecodeResult::from(
+            SolidcraftCodec
+                .decode(&mut Cursor::new(&json), &full())
+                .unwrap(),
+        );
+        decoded.ir_mut().source = None;
+        let plan = SolidcraftCodec
+            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+            .unwrap();
+        let mut out = Vec::new();
+        plan.write_to(&mut out).unwrap();
+        assert!(out.starts_with(b"PK"));
+        assert_eq!(features(&out), features(&json));
+        assert_eq!(expressions(&out), expressions(&json));
+    }
+
+    #[test]
+    fn an_unlisted_dialect_is_refused_with_the_catalog() {
+        let json = serde_json::to_vec_pretty(&box_document("solidcraft/57")).unwrap();
+        let decoded = EditableDecodeResult::from(
+            SolidcraftCodec
+                .decode(&mut Cursor::new(&json), &full())
+                .unwrap(),
+        );
+        let error = SolidcraftCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+                TargetRequest::Explicit("solidcraft:json-v56"),
+            )
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("solidcraft:container-1-v57"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn a_feature_without_a_serializer_is_refused_by_name() {
+        let mut document = box_document("solidcraft/57");
+        document["features"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id": 2, "name": "Round", "suppressed": false, "type": "fillet",
+                "radius": "1 mm", "edges": [[0.0, 0.0, 2.0]]
+            }));
+        let json = serde_json::to_vec_pretty(&document).unwrap();
+        let mut decoded = EditableDecodeResult::from(
+            SolidcraftCodec
+                .decode(&mut Cursor::new(&json), &full())
+                .unwrap(),
+        );
+        decoded.ir_mut().source = None;
+        let error = SolidcraftCodec
+            .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+            .unwrap_err();
+        assert!(error.to_string().contains("Round"), "{error}");
+    }
+
+    #[test]
+    fn an_edited_design_is_refused_instead_of_replayed_stale() {
+        let json = serde_json::to_vec_pretty(&box_document("solidcraft/57")).unwrap();
+        let mut decoded = EditableDecodeResult::from(
+            SolidcraftCodec
+                .decode(&mut Cursor::new(&json), &full())
+                .unwrap(),
+        );
+        decoded.ir_mut().source.as_mut().unwrap().attributes.insert(
+            cadmpeg_core::nonblank_const!("document_name"),
+            "Edited".to_owned(),
+        );
+        let error = SolidcraftCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+                TargetRequest::Inherit,
+            )
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("beyond parameter expressions"),
+            "{error}"
+        );
+    }
+
+    fn with_expression(bytes: &[u8], name: &str, expression: &str) -> Vec<u8> {
+        let mut decoded = EditableDecodeResult::from(
+            SolidcraftCodec
+                .decode(&mut Cursor::new(bytes), &full())
+                .unwrap(),
+        );
+        for parameter in &mut decoded.ir_mut().model.parameters {
+            if parameter.name == name {
+                parameter.expression = expression.to_owned();
+            }
+        }
+        let plan = SolidcraftCodec
+            .plan(
+                EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+                TargetRequest::Inherit,
+            )
+            .unwrap();
+        let mut out = Vec::new();
+        plan.write_to(&mut out).unwrap();
+        out
+    }
+
+    fn expressions(bytes: &[u8]) -> Vec<(String, String)> {
+        let decoded = EditableDecodeResult::from(
+            SolidcraftCodec
+                .decode(&mut Cursor::new(bytes), &full())
+                .unwrap(),
+        );
+        decoded
+            .ir()
+            .model
+            .parameters
+            .iter()
+            .map(|parameter| (parameter.name.clone(), parameter.expression.clone()))
+            .collect()
+    }
+
+    #[test]
+    fn an_edited_parameter_is_patched_into_a_plain_json_design() {
+        let json = serde_json::to_vec_pretty(&box_document("solidcraft/57")).unwrap();
+        let out = with_expression(&json, "w", "35 mm");
+        assert_eq!(
+            expressions(&out),
+            vec![("w".to_owned(), "35 mm".to_owned())]
+        );
+        assert!(serde_json::from_slice::<serde_json::Value>(&out).is_ok());
+    }
+
+    #[test]
+    fn an_edited_container_is_repacked_without_its_stale_cache() {
+        let source = crate::test_support::cached_design_editing(|document| {
+            document["params"] =
+                serde_json::json!([{"name": "w", "expr": "20 mm", "unit": "mm", "model": false}]);
+        });
+        let out = with_expression(&source, "w", "35 mm");
+        let before = crate::test_support::members(&source);
+        let after = crate::test_support::members(&out);
+        assert!(before.iter().any(|(name, _)| name.starts_with("cache/")));
+        assert!(!after.iter().any(|(name, _)| name.starts_with("cache/")));
+        assert_eq!(
+            after.len(),
+            before
+                .iter()
+                .filter(|(name, _)| !name.starts_with("cache/"))
+                .count()
+        );
+        assert!(expressions(&out).iter().any(|(_, text)| text == "35 mm"));
+    }
+
+    /// Writes an unedited and an edited container for the native check
+    /// (`scripts/verify-solidcraft-cli.py`) into `SOLIDCRAFT_WRITE_DIR`.
+    #[test]
+    #[ignore = "feeds scripts/verify-solidcraft-cli.py"]
+    fn write_files_for_the_native_check() {
+        let Some(dir) = std::env::var_os("SOLIDCRAFT_WRITE_DIR") else {
+            return;
+        };
+        let dir = std::path::PathBuf::from(dir);
+        let source = crate::test_support::cached_design_editing(|document| {
+            document["params"] =
+                serde_json::json!([{"name": "w", "expr": "20 mm", "unit": "mm", "model": false}]);
+            document["features"][0]["length"] = serde_json::json!("w");
+        });
+        std::fs::write(dir.join("source.sc"), &source).unwrap();
+        std::fs::write(
+            dir.join("edited.sc"),
+            with_expression(&source, "w", "35 mm"),
+        )
+        .unwrap();
+        let json = serde_json::to_vec_pretty(&box_document("solidcraft/57")).unwrap();
+        std::fs::write(dir.join("source.json.sc"), &json).unwrap();
+        std::fs::write(
+            dir.join("edited.json.sc"),
+            with_expression(&json, "w", "35 mm"),
+        )
+        .unwrap();
+        // Generated from the model alone, without its source.
+        let mut decoded = EditableDecodeResult::from(
+            SolidcraftCodec
+                .decode(&mut Cursor::new(&json), &full())
+                .unwrap(),
+        );
+        decoded.ir_mut().source = None;
+        for (name, request) in [
+            (
+                "generated.sc",
+                TargetRequest::Explicit("solidcraft:container-1-v57"),
+            ),
+            (
+                "generated.json.sc",
+                TargetRequest::Explicit("solidcraft:json-v57"),
+            ),
+        ] {
+            let plan = SolidcraftCodec
+                .plan(EncodeInput::new(decoded.ir(), None), request)
+                .unwrap();
+            let mut out = Vec::new();
+            plan.write_to(&mut out).unwrap();
+            std::fs::write(dir.join(name), out).unwrap();
+        }
+    }
+}
+
+#[test]
+fn a_pattern_about_a_model_axis_takes_the_axis_it_was_made_with() {
+    let document = json!({
+        "format": "solidcraft/57", "name": "Ring", "units": "mm", "params": [],
+        "features": [
+            {"id": 1, "name": "Hole1", "suppressed": false, "type": "cylinder",
+             "base": [22, 0, 0], "axis": [0.0, 0.0, 1.0], "radius": "3", "height": "5",
+             "operation": "new_body"},
+            {"id": 2, "name": "AboutFace", "suppressed": false, "type": "pattern", "features": [1],
+             "pattern": {"type": "circular", "origin": [0.0, 0.0, 10.0], "axis": [0.0, 0.0, 1.0],
+                         "axis_ref": {"type": "face", "name": "F2:side", "at": [15.0, 0.0, 20.0]},
+                         "count": "5", "angle": "360 deg"}},
+            {"id": 3, "name": "AboutAxis", "suppressed": false, "type": "pattern", "features": [1],
+             "pattern": {"type": "circular", "origin": [0.0, 0.0, 0.0], "axis": [0.0, 1.0, 0.0],
+                         "axis_feature": "Axis1", "count": "3", "angle": "360 deg"}}
+        ]
+    });
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let mut features = features(&bytes);
+    features.sort_by_key(|feature| feature["ordinal"].as_u64());
+    for feature in &features[1..] {
+        assert_eq!(
+            feature["definition"]["value"]["kind"], "pattern",
+            "{feature}"
+        );
+        assert_eq!(
+            feature["definition"]["value"]["value"]["pattern"]["kind"],
+            "circular"
+        );
+    }
+    let first = &features[1]["definition"]["value"]["value"]["pattern"];
+    assert_eq!(first["count"], 5);
+    assert_eq!(first["axis_origin"], json!({"x": 0.0, "y": 0.0, "z": 10.0}));
+}
+
+#[test]
+fn a_sweep_carries_its_orientation_twist_and_scale_and_keeps_rails_native() {
+    let path = json!({"id": 1, "name": "Path", "suppressed": false, "type": "sketch",
+        "plane": {"type": "origin", "name": "XZ"},
+        "sketch": {"points": [{"id": "origin", "pos": [0.0, 0.0], "fixed": true},
+                              {"id": "p1", "pos": [0.0, 0.0]}, {"id": "p2", "pos": [0.0, 30.0]}],
+                   "curves": [{"id": "l1", "type": "line", "a": 1, "b": 2}], "constraints": []}});
+    let section = json!({"id": 2, "name": "Section", "suppressed": false, "type": "sketch",
+        "plane": {"type": "origin", "name": "XY"},
+        "sketch": {"points": [{"id": "origin", "pos": [0.0, 0.0], "fixed": true},
+                              {"id": "c", "pos": [0.0, 0.0]}],
+                   "curves": [{"id": "c1", "type": "circle", "c": 1, "r": 2.0}], "constraints": []}});
+    let sweep = |id: u64, extra: serde_json::Value| {
+        let mut record = json!({"id": id, "name": format!("Sweep{id}"), "suppressed": false,
+            "type": "sweep", "sketch": 2, "profiles": {"type": "all"}, "path_sketch": 1,
+            "path": ["l1"], "operation": "new_body"});
+        for (key, value) in extra.as_object().unwrap() {
+            record[key] = value.clone();
+        }
+        record
+    };
+    let document = json!({"format": "solidcraft/57", "name": "Sweeps", "units": "mm", "params": [],
+        "features": [path, section,
+            sweep(3, json!({"twist": "90 deg", "scale": "0.5", "orientation": "parallel"})),
+            sweep(4, json!({"rails": [{"sketch": 1, "curves": ["l1"]}]})),
+            sweep(5, json!({"orientation": {"direction": [1.0, 0.0, 0.0]}}))]});
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let mut features = features(&bytes);
+    features.sort_by_key(|feature| feature["ordinal"].as_u64());
+    let value = |index: usize| &features[index]["definition"]["value"];
+    assert_eq!(value(2)["kind"], "sweep");
+    assert_eq!(value(2)["value"]["orientation"]["kind"], "fixed");
+    assert!(
+        (value(2)["value"]["twist"].as_f64().unwrap() - std::f64::consts::FRAC_PI_2).abs() < 1e-9
+    );
+    assert_eq!(value(2)["value"]["scale"], 0.5);
+    assert_eq!(value(3)["kind"], "native");
+    assert_eq!(value(4)["kind"], "native");
+}
+
+#[test]
+fn a_loft_carries_its_rails() {
+    let line = |id: u64, name: &str, plane: &str, top: f64| {
+        json!({"id": id, "name": name,
+        "suppressed": false, "type": "sketch", "plane": {"type": "origin", "name": plane},
+        "sketch": {"points": [{"id": "origin", "pos": [0.0, 0.0], "fixed": true},
+                              {"id": "p1", "pos": [0.0, 0.0]}, {"id": "p2", "pos": [0.0, top]}],
+                   "curves": [{"id": "l1", "type": "line", "a": 1, "b": 2}], "constraints": []}})
+    };
+    let circle = |id: u64, name: &str, radius: f64| {
+        json!({"id": id, "name": name,
+        "suppressed": false, "type": "sketch", "plane": {"type": "origin", "name": "XY"},
+        "sketch": {"points": [{"id": "origin", "pos": [0.0, 0.0], "fixed": true},
+                              {"id": "c", "pos": [0.0, 0.0]}],
+                   "curves": [{"id": "c1", "type": "circle", "c": 1, "r": radius}], "constraints": []}})
+    };
+    let loft = |id: u64, extra: serde_json::Value| {
+        let mut record = json!({"id": id, "name": format!("Loft{id}"), "suppressed": false,
+            "type": "loft", "operation": "new_body",
+            "sections": [{"sketch": 1, "profiles": {"type": "all"}}, {"sketch": 2, "profiles": {"type": "all"}}]});
+        for (key, value) in extra.as_object().unwrap() {
+            record[key] = value.clone();
+        }
+        record
+    };
+    let document = json!({"format": "solidcraft/57", "name": "Lofts", "units": "mm", "params": [],
+        "features": [circle(1, "A", 5.0), circle(2, "B", 3.0), line(3, "Rail", "XZ", 20.0),
+            loft(4, json!({"rails": [{"sketch": 3, "curves": ["l1"]}]})),
+            loft(5, json!({"rails": [{"sketch": 3, "curves": ["l1"]}], "rail_fit": "stretch"}))]});
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let mut features = features(&bytes);
+    features.sort_by_key(|feature| feature["ordinal"].as_u64());
+    let value = |index: usize| &features[index]["definition"]["value"];
+    assert_eq!(value(3)["kind"], "loft");
+    assert_eq!(
+        value(3)["value"]["guidance"]["value"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(value(4)["kind"], "native");
+}
+
+#[test]
+fn conics_and_nurbs_splines_become_neutral_nurbs_entities() {
+    let document = json!({"format": "solidcraft/57", "name": "Curves", "units": "mm", "params": [],
+        "features": [{"id": 1, "name": "S", "suppressed": false, "type": "sketch",
+            "plane": {"type": "origin", "name": "XY"},
+            "sketch": {"points": [
+                {"id": "origin", "pos": [0.0, 0.0], "fixed": true},
+                {"id": "a", "pos": [0.0, 0.0]}, {"id": "b", "pos": [10.0, 0.0]},
+                {"id": "apex", "pos": [5.0, 8.0]},
+                {"id": "q1", "pos": [0.0, 20.0]}, {"id": "q2", "pos": [5.0, 30.0]},
+                {"id": "q3", "pos": [10.0, 20.0]}],
+              "curves": [
+                {"id": "k1", "type": "conic", "a": 1, "b": 2, "apex": 3, "rho": 0.5},
+                {"id": "s1", "type": "spline", "pts": [4, 5, 6], "control": true, "degree": 2,
+                 "nurbs": {"knots": [0.0, 0.0, 0.0, 1.0, 1.0, 1.0], "weights": [1.0, 2.0, 1.0]}}],
+              "constraints": []}}]});
+    let decoded = EditableDecodeResult::from(
+        SolidcraftCodec
+            .decode(
+                &mut Cursor::new(serde_json::to_vec(&document).unwrap()),
+                &DecodeOptions::default(),
+            )
+            .unwrap(),
+    );
+    let entities = serde_json::to_value(&decoded.ir().model.sketch_entities).unwrap();
+    let entities = entities.as_array().unwrap();
+    assert_eq!(entities.len(), 2, "{entities:?}");
+    let weights: Vec<f64> = entities[0]["geometry"]["curve"]["poles"]["points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|pole| pole["weight"].as_f64().unwrap())
+        .collect();
+    assert_eq!(weights, [1.0, 1.0, 1.0]);
+    assert_eq!(
+        entities[1]["geometry"]["curve"]["poles"]["points"][1]["weight"],
+        2.0
+    );
+}
+
+#[test]
+fn a_point_cloud_decodes_placed_in_the_design() {
+    let mut blob = b"SCPNTS01".to_vec();
+    blob.extend_from_slice(&2_u64.to_le_bytes());
+    blob.extend_from_slice(&1_u64.to_le_bytes());
+    for value in [1.0_f32, 0.0, 0.0, 0.0, 2.0, 0.0] {
+        blob.extend_from_slice(&value.to_le_bytes());
+    }
+    blob.extend_from_slice(&[255, 0, 0, 0, 0, 255]);
+    let name = blob_name(&blob, "points");
+    let mut document = box_document("solidcraft/57");
+    document["point_clouds"] = json!([{
+        "id": 1, "name": "Scan", "file": "scan.xyz", "origin": [10.0, 0.0, 0.0],
+        "points": "", "points_blob": name, "units": "mm",
+        "transform": [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 5.0], [0.0, 0.0, 1.0, 0.0],
+                      [0.0, 0.0, 0.0, 1.0]],
+    }]);
+    let bytes = container(&document, &[(&name, &blob)]);
+    let decoded = EditableDecodeResult::from(
+        SolidcraftCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap(),
+    );
+    let clouds = serde_json::to_value(&decoded.ir().model.point_clouds).unwrap();
+    let cloud = &clouds[0];
+    assert_eq!(cloud["name"], "Scan");
+    assert_eq!(
+        cloud["positions"][0],
+        json!({"x": 11.0, "y": 5.0, "z": 0.0})
+    );
+    assert_eq!(
+        cloud["positions"][1],
+        json!({"x": 10.0, "y": 7.0, "z": 0.0})
+    );
+    assert_eq!(cloud["colors"][1]["b"], 1.0);
+}
+
+#[test]
+fn a_note_decodes_to_a_text_annotation_at_its_anchor() {
+    let mut document = box_document("solidcraft/57");
+    document["notes"] = json!([
+        {"id": 1, "anchor": [1.0, 2.0, 3.0], "text": "Check clearance\nhere"},
+        {"id": 2, "anchor": [0.0, 0.0, 0.0], "text": "Hidden one", "hidden": true},
+    ]);
+    let bytes = serde_json::to_vec(&document).unwrap();
+    let decoded = EditableDecodeResult::from(
+        SolidcraftCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap(),
+    );
+    let notes = serde_json::to_value(&decoded.ir().model.semantic_annotations).unwrap();
+    let messages: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.message.clone())
+        .collect();
+    assert_eq!(notes.as_array().unwrap().len(), 2, "{messages:?}");
+    assert_eq!(notes[0]["kind"], "text");
+    assert_eq!(notes[0]["text"], json!(["Check clearance", "here"]));
+    assert_eq!(notes[1]["parameters"]["hidden"], "true");
+}
+
+#[test]
+fn a_canvas_image_decodes_to_an_embedded_asset() {
+    let png = b"\x89PNG\r\n\x1a\nimage";
+    let name = blob_name(png, "png");
+    let mut document = box_document("solidcraft/57");
+    document["canvases"] = json!([{
+        "id": 1, "name": "Front", "format": "png", "data": "", "image_blob": name,
+        "pixels": [2, 2], "plane": {"type": "origin", "name": "XZ"}, "center": [0.0, 0.0],
+        "width": 10.0, "angle": 0.0, "opacity": 0.5, "visible": true,
+    }]);
+    let bytes = container(&document, &[(&name, png)]);
+    let decoded = EditableDecodeResult::from(
+        SolidcraftCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap(),
+    );
+    let assets = serde_json::to_value(&decoded.ir().model.assets).unwrap();
+    assert_eq!(assets.as_array().unwrap().len(), 1, "{assets}");
+    assert_eq!(assets[0]["name"], "Front");
+    assert_eq!(assets[0]["media_type"], "image/png");
+    assert_eq!(assets[0]["content"]["kind"], "embedded");
 }

@@ -19,6 +19,15 @@ cadmpeg-core.workspace = true
 cadmpeg-ir.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+zip.workspace = true
+
+[[bin]]
+name = "solidcraft-profile"
+path = "src/bin/solidcraft_profile.rs"
+
+# Local evidence generator. cargo-dist would otherwise ship it as a release app.
+[package.metadata.dist]
+dist = false
 
 [dev-dependencies]
 # Test-only raw ZIP fixture assembly.

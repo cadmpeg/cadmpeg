@@ -223,6 +223,7 @@
     },
     "source": {
       "attributes": {
+        "document_local_sha256": "ff807e404ca41a8ffcb931e24bf60fa24c72cda75478408466286a30147bb23b",
         "document_name": "Block",
         "feature_records": "1",
         "parameter_records": "1",
@@ -320,6 +321,15 @@
         },
         "offset": 0,
         "stream": "",
+        "untyped": []
+      },
+      "solidcraft:native:source-image#0": {
+        "bytes": {
+          "data": "ewogICJmb3JtYXQiOiAic29saWRjcmFmdC81NyIsCiAgIm5hbWUiOiAiQmxvY2siLAogICJ1bml0cyI6ICJtbSIsCiAgInBhcmFtcyI6IFsKICAgIHsKICAgICAgIm5hbWUiOiAidyIsCiAgICAgICJleHByIjogIjIwIG1tIiwKICAgICAgInVuaXQiOiAibW0iLAogICAgICAibW9kZWwiOiBmYWxzZQogICAgfQogIF0sCiAgImZlYXR1cmVzIjogWwogICAgewogICAgICAiaWQiOiAxLAogICAgICAibmFtZSI6ICJCb3gxIiwKICAgICAgInN1cHByZXNzZWQiOiBmYWxzZSwKICAgICAgInR5cGUiOiAiYm94IiwKICAgICAgImNvcm5lciI6IFsKICAgICAgICAwLjAsCiAgICAgICAgMC4wLAogICAgICAgIDAuMAogICAgICBdLAogICAgICAibGVuZ3RoIjogInciLAogICAgICAid2lkdGgiOiAiMTAgbW0iLAogICAgICAiaGVpZ2h0IjogIjUgbW0iLAogICAgICAib3BlcmF0aW9uIjogIm5ld19ib2R5IgogICAgfQogIF0sCiAgImFwcGVhcmFuY2VzIjogewogICAgImJvZGllcyI6IHt9CiAgfQp9Cg==",
+          "kind": "inline"
+        },
+        "offset": 0,
+        "stream": "solidcraft",
         "untyped": []
       }
     },

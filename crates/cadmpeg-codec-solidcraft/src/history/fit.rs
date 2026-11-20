@@ -116,7 +116,10 @@ fn scale(a: V2, factor: f64) -> V2 {
 }
 
 fn lin(a: V2, factor_a: f64, b: V2, factor_b: f64) -> V2 {
-    [a[0] * factor_a + b[0] * factor_b, a[1] * factor_a + b[1] * factor_b]
+    [
+        a[0] * factor_a + b[0] * factor_b,
+        a[1] * factor_a + b[1] * factor_b,
+    ]
 }
 
 fn dist(a: V2, b: V2) -> f64 {
@@ -205,7 +208,10 @@ mod tests {
     fn the_chain_knots_repeat_at_each_join() {
         let pieces = bezier_pieces(&[[0.0, 0.0], [1.0, 1.0], [2.0, 0.0]]).unwrap();
         let (knots, poles) = bezier_chain(&pieces);
-        assert_eq!(knots, vec![0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(
+            knots,
+            vec![0.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0]
+        );
         assert_eq!(poles.len(), knots.len() - 4);
         assert_eq!(poles[0], [0.0, 0.0]);
         assert_eq!(poles[poles.len() - 1], [2.0, 0.0]);

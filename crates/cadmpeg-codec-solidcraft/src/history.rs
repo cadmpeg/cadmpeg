@@ -183,7 +183,7 @@ pub(crate) fn decode(
         outcome
             .losses
             .push(SolidcraftLossCode::SketchCurveUntyped.note(format!(
-                "{} sketch curves (fit splines, conics, weighted or periodic splines) have no \
+                "{} sketch curves (periodic splines, splines with tangent handles) have no \
              neutral entity and stay in the retained document",
                 tally.curves
             )));

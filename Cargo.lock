@@ -429,6 +429,7 @@ dependencies = [
  "cadmpeg-test-support",
  "serde",
  "serde_json",
+ "zip",
 ]
 
 [[package]]

@@ -1226,7 +1226,7 @@ charge source.kernel-dialect-unverified from this layer"""
 [[support]]
 dialect = "solidcraft:container-1-v57"
 read = "L5"
-write = "none"
+write = "verified"
 reason = """
 the final state of the model cache decodes into connected neutral B-rep:
 SCBREP05 bodies with typed analytic and NURBS carriers, pcurves, oriented
@@ -1235,12 +1235,15 @@ tessellations, coloured by the document's body and face looks. The
 timeline decodes with sketches, extrudes, revolves, and primitives carrying
 their operation semantics. design-container-v57-cached.sc pins it. A
 container with no cache carries no geometry and is charged
-solidcraft/cache.model-absent"""
+solidcraft/cache.model-absent. The builder generates this dialect from the neutral model and
+`scripts/verify-solidcraft-cli.py` opens the generated file in `solidcraft-cli`,
+which rebuilds the model from the history: the independent-application
+acceptance gate"""
 
 [[support]]
 dialect = "solidcraft:container-1-v1-56"
 read = "L5"
-write = "none"
+write = "preserved"
 reason = """
 L2, L3, and the geometry criteria of L5 are inapplicable: a container of an
 earlier format carries no model cache, so its geometry is the evaluation of
@@ -1251,18 +1254,21 @@ row"""
 [[support]]
 dialect = "solidcraft:json-v57"
 read = "L5"
-write = "none"
+write = "verified"
 reason = """
 L2, L3, and the geometry criteria of L5 are inapplicable: a plain JSON
 design holds no model cache and no geometry record, only the feature
 history whose evaluation is the geometry. Decode charges
 solidcraft/cache.model-absent. The timeline decodes as on the container
-row. design-json-v57.sc pins the row"""
+row. design-json-v57.sc pins the row. The builder generates this dialect from the neutral model and
+`scripts/verify-solidcraft-cli.py` opens the generated file in `solidcraft-cli`,
+which rebuilds the model from the history: the independent-application
+acceptance gate"""
 
 [[support]]
 dialect = "solidcraft:json-v1-56"
 read = "L5"
-write = "none"
+write = "preserved"
 reason = """
 L2, L3, and the geometry criteria of L5 are inapplicable: a plain JSON
 design holds no model cache and no geometry record. The document upgrades to
@@ -1275,7 +1281,7 @@ design-json-v13-legacy-tag.sc pins the row"""
 [[support]]
 dialect = "solidcraft:container-1-v58-pending"
 read = "L4"
-write = "none"
+write = "preserved"
 reason = """
 the next design format, which lists only changes this decoder knows by name.
 Features decode with their operation semantics and their history, and the
@@ -1288,7 +1294,7 @@ design-container-v58-pending.sc pins the row"""
 [[support]]
 dialect = "solidcraft:json-v58-pending"
 read = "L4"
-write = "none"
+write = "preserved"
 reason = """
 the next design format as a plain JSON document, read as the container row is.
 The geometry is the evaluation of the history, which this codec does not
@@ -1298,7 +1304,7 @@ pins the row"""
 [[support]]
 dialect = "solidcraft:drawing-container-1"
 read = "detected"
-write = "none"
+write = "preserved"
 reason = """
 the container layer is read and every member is retained; the drawing
 document is not decoded"""
@@ -1306,7 +1312,7 @@ document is not decoded"""
 [[support]]
 dialect = "solidcraft:unknown"
 read = "unclassified-recovered"
-write = "none"
+write = "preserved"
 reason = """
 a container with any other marker, a design format past 57, or a nonempty
 format_pending list is read on the residual path, and decode charges

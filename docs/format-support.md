@@ -634,31 +634,33 @@ These gaps remain:
 
 **Ladder: L5.**
 
-| Dialect                              | Read                   | Write |
-| ------------------------------------ | ---------------------- | ----- |
-| `solidcraft:container-1-v57`         | L5                     | none  |
-| `solidcraft:container-1-v1-56`       | L5                     | none  |
-| `solidcraft:json-v57`                | L5                     | none  |
-| `solidcraft:container-1-v58-pending` | L4                     | none  |
-| `solidcraft:json-v58-pending`        | L4                     | none  |
-| `solidcraft:json-v1-56`              | L5                     | none  |
-| `solidcraft:drawing-container-1`     | detected               | none  |
-| `solidcraft:unknown`                 | unclassified-recovered | none  |
+| Dialect                              | Read                   | Write     |
+| ------------------------------------ | ---------------------- | --------- |
+| `solidcraft:container-1-v57`         | L5                     | verified  |
+| `solidcraft:container-1-v1-56`       | L5                     | preserved |
+| `solidcraft:json-v57`                | L5                     | verified  |
+| `solidcraft:container-1-v58-pending` | L4                     | preserved |
+| `solidcraft:json-v58-pending`        | L4                     | preserved |
+| `solidcraft:json-v1-56`              | L5                     | preserved |
+| `solidcraft:drawing-container-1`     | detected               | preserved |
+| `solidcraft:unknown`                 | unclassified-recovered | preserved |
 
 <!-- /generated: dialects solidcraft -->
 
 The codec selects the encoding from the first bytes, reads the container marker and the document format tag, and classifies the file by encoding and format number. It opens every container member under the decode caps, checks each blob against the SHA-256 in its name, and lists the blobs, the caches, the plugin and provenance members, and the linked design files. Decode reads the document name, unit, and record counts into the source metadata and retains every container member, or the whole plain JSON document, as a named native record. The final state of a container's model cache decodes into connected neutral B-rep, with mesh bodies as tessellations, and the document's body and face looks colour it. The feature timeline decodes in order: sketches with their planes and curves, and extrudes, revolves, and primitives with their operation semantics, their lengths and angles evaluated over the parameters. A plain JSON document carries no cache, so its geometry exists only as the evaluation of its feature history.
 
+The writer replays an unedited design byte for byte, patches parameter expressions into the retained document, and generates `solidcraft/57` from parameters and primitive features. `scripts/verify-solidcraft-cli.py` has `solidcraft-cli` open what it writes. The ladder stays at L5 because L6 to L8 still have the gaps below, and the gate is cumulative.
+
 These gaps remain:
 
-- Plastic features (boss, lip, rest, snap fit) have no neutral operation in the IR and stay native, with their fields (`docs/formats/solidcraft.md` section 3.12). Sheet-metal, frame, and surface features, and the other families past the typed ones are native operations with their scalar fields (`solidcraft/history.features-undecoded`). So are a variable-radius fillet, a pattern about a model edge or a construction axis, a path pattern whose copies turn, a mirror that joins its copies, a sweep with a guide, twist, taper, or scale, a loft with rails, a coil on a sketch profile, and a plane that depends on the model. Edge and face operands are native selections of picks and persistent names, not resolved topology.
+- Plastic features (boss, lip, rest, snap fit) have no neutral operation in the IR and stay native, with their fields (`docs/formats/solidcraft.md` section 3.12). Sheet-metal, frame, and surface features, and the other families past the typed ones are native operations with their scalar fields (`solidcraft/history.features-undecoded`). So are a variable-radius fillet, a path pattern whose copies turn, a mirror that joins its copies, a sweep held by a direction or by rails, a loft whose rails stretch it, a coil on a sketch profile, and a plane that depends on the model. A pattern about a model face, edge, or construction axis takes the axis stored with it; a sweep carries its orientation, twist, and end scale; a loft carries its rails (`docs/formats/solidcraft-open-items.md` SC-04). Edge and face operands are native selections of picks and persistent names, not resolved topology.
 - The history of an earlier document format decodes through the upgrade steps that change what the codec reads. The steps that mark stored names (the legacy mark of a face name and the piece order of a split) are not applied, so a name that an earlier design stored is retained as it was written.
 - Sketch pattern, arc-length, slot, circle-distance, linear-diameter, offset, pierce, and point-along relations are native relations (`solidcraft/history.sketch-constraint-native`). A relation on a spline control point or an ellipse axis end has no neutral locus and stays in the retained document. Sketch profiles are not computed.
-- Conics, weighted splines, periodic splines, and splines with tangent handles have no sketch entity (`solidcraft/history.sketch-curve-untyped`). A sketch on a datum or a midplane is unplaced (`solidcraft/history.sketch-plane-unresolved`).
+- A conic is the rational quadratic it is, and a control spline with its own knots and weights is a NURBS entity. Periodic splines and fit splines with tangent handles have no sketch entity (`solidcraft/history.sketch-curve-untyped`, SC-05). A sketch on a datum or a midplane is unplaced (`solidcraft/history.sketch-plane-unresolved`).
 - The model states before the final state are retained without decoding (`solidcraft/cache.model-undecoded`). A design without the cache carries no evaluated geometry (`solidcraft/cache.model-absent`).
 - A joint whose snap is on geometry (the centre of a face or of a circular edge), and a joint of the pin-slot, planar, parallel, perpendicular, angle, point-on-plane, point-on-line, and line-on-plane kinds, stay in the retained document (`solidcraft/assembly.joint-unresolved`). Joint links, motion studies, and drive values are retained without decoding (`solidcraft/assembly.links-undecoded`). A body transfer between components is a native operation. Edge names are not neutral names.
 - Pcurves in the parameters of a face's NURBS form are omitted where the face keeps its analytic carrier (`solidcraft/geometry.pcurve-omitted`). A blend face keeps its net and drops its definition (`solidcraft/geometry.blend-reduced`). A placed revolution face without a NURBS form has no carrier (`solidcraft/geometry.surface-untyped`).
-- A look of a whole component, a note, a canvas, a point cloud, the render setups, the metadata, the plugin data, the browser groups, and the other application data have no neutral record. Each is a retained record of its own section with identity (`solidcraft/document.section-undecoded`).
+- A note is a text annotation at its anchor, a canvas image is an embedded asset (its placement stays in the section), and a point cloud is a neutral cloud placed in the design (its segments, triangles, file properties, filters, and display settings stay in the section). A look of a whole component, the render setups, the metadata, the plugin data, the browser groups, and the other application data have no neutral record. Each is a retained record of its own section with identity (`solidcraft/document.section-undecoded`).
 - Blob payloads are retained without decoding (`solidcraft/blob.payload-undecoded`).
 - Drawing containers are retained without decoding (`solidcraft/document.drawing-undecoded`).
 - No evaluation of real files is recorded in `docs/evaluations.toml`.

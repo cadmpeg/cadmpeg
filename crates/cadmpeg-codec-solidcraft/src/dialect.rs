@@ -17,6 +17,20 @@ use crate::package::Marker;
 include!("dialect/registry_ids.rs");
 
 /// The newest released design format.
+/// The synthesis catalog: the two current dialects the builder generates. The
+/// first is the default of a source-less model. Preserving a source in any
+/// other dialect is not listed here: an inherited target replays it.
+pub(crate) const TARGETS: &[cadmpeg_core::target::TargetDescriptor] = &[
+    cadmpeg_core::target::TargetDescriptor {
+        id: SOLIDCRAFT_CONTAINER_1_V57,
+        aliases: &[],
+    },
+    cadmpeg_core::target::TargetDescriptor {
+        id: SOLIDCRAFT_JSON_V57,
+        aliases: &[],
+    },
+];
+
 pub(crate) const CURRENT_FORMAT: u32 = 57;
 
 /// Key of the container marker format in [`DialectMatch::declared`].

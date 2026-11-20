@@ -491,13 +491,12 @@ impl Inputs<'_> {
         Some(linear)
     }
 
+    /// A circular pattern about the stored axis. A pattern about a model
+    /// face or edge (`axis_ref`) or a construction axis (`axis_feature`)
+    /// keeps `origin` and `axis` as they were when it was made, and that frame
+    /// is the axis here, as a face plane takes the frame it had when picked.
+    /// The reference stays in the retained document.
     fn circular(&self, pattern: &Value) -> Option<Value> {
-        if ["axis_ref", "axis_feature"]
-            .iter()
-            .any(|field| pattern.get(*field).is_some_and(|value| !value.is_null()))
-        {
-            return None;
-        }
         let origin = sketch::point(pattern.get("origin"), self.scope)?;
         let mut axis = unit(sketch::direction(pattern.get("axis"))?)?;
         let count = count(self.scope, pattern.get("count"))?;
@@ -550,24 +549,34 @@ impl Inputs<'_> {
     /// The sketch curves of a path in the sketch `path_sketch`.
     fn path_curves(&self, record: &Value, dependencies: &mut BTreeSet<u64>) -> Option<Value> {
         let path_sketch = record.get("path_sketch")?.as_u64()?;
-        let entities = &self.sketches.get(&path_sketch)?.entities;
-        let mut curves = Vec::new();
-        for curve in record.get("path")?.as_array()? {
+        self.chain(path_sketch, record.get("path")?, dependencies)
+    }
+
+    /// The chain of `curves` of the sketch `sketch`, as a path reference.
+    fn chain(
+        &self,
+        sketch: u64,
+        curves: &Value,
+        dependencies: &mut BTreeSet<u64>,
+    ) -> Option<Value> {
+        let entities = &self.sketches.get(&sketch)?.entities;
+        let mut chain = Vec::new();
+        for curve in curves.as_array()? {
             let curve = curve.as_str()?;
             if !entities.contains(curve) {
                 return None;
             }
-            let curve = id("entity", &format!("{path_sketch}:{curve}"));
-            if curves.contains(&curve) {
+            let curve = id("entity", &format!("{sketch}:{curve}"));
+            if chain.contains(&curve) {
                 return None;
             }
-            curves.push(curve);
+            chain.push(curve);
         }
-        (!curves.is_empty()).then_some(())?;
-        dependencies.insert(path_sketch);
+        (!chain.is_empty()).then_some(())?;
+        dependencies.insert(sketch);
         Some(json!({"kind": "sketch_curves", "value": {
-            "sketch": id("sketch", &path_sketch.to_string()),
-            "curves": curves,
+            "sketch": id("sketch", &sketch.to_string()),
+            "curves": chain,
         }}))
     }
 
@@ -636,21 +645,57 @@ impl Inputs<'_> {
         })
     }
 
+    /// A sweep with the orientation, twist, and end scale of the source.
+    /// Guide rails, an orientation held by a direction, and a thin wall have
+    /// no neutral form here and stay native.
     fn sweep(&self, record: &Value, dependencies: &mut BTreeSet<u64>) -> Option<Value> {
-        let unsupported = ["guide", "twist", "taper", "scale", "orientation", "thin"]
+        let unsupported = ["guide", "taper", "thin"]
             .iter()
-            .any(|field| record.get(*field).is_some_and(|value| !value.is_null()));
+            .any(|field| record.get(*field).is_some_and(|value| !value.is_null()))
+            || record
+                .get("rails")
+                .is_some_and(|rails| rails.as_array().is_none_or(|rails| !rails.is_empty()));
         if unsupported {
             return None;
         }
+        let orientation = match record.get("orientation") {
+            None | Some(Value::Null) => json!({"kind": "corrected_frenet"}),
+            Some(Value::String(name)) => match name.as_str() {
+                "perpendicular" => json!({"kind": "corrected_frenet"}),
+                "parallel" => json!({"kind": "fixed"}),
+                _ => return None,
+            },
+            Some(_) => return None,
+        };
+        let present = |field: &str| record.get(field).filter(|value| !value.is_null());
+        let twist = match present("twist") {
+            Some(angle) => Some(self.scope.eval_json(angle, Kind::Angle)?),
+            None => None,
+        };
+        let scale = match present("scale") {
+            Some(factor) => Some(
+                self.scope
+                    .eval_json(factor, Kind::Unitless)
+                    .filter(|factor| *factor > 0.0)?,
+            ),
+            None => None,
+        };
         let section = self.section(record, false, dependencies)?;
         let path = self.path_curves(record, dependencies)?;
-        Some(json!({"kind": "sweep", "value": {
+        let mut sweep = json!({"kind": "sweep", "value": {
             "shape": {"kind": "solid", "op": boolean(record), "section": section, "sections": []},
             "path": path,
+            "orientation": orientation,
             "path_tangent": false,
             "linearize": false,
-        }}))
+        }});
+        if let Some(twist) = twist {
+            sweep["value"]["twist"] = json!(twist);
+        }
+        if let Some(scale) = scale {
+            sweep["value"]["scale"] = json!(scale);
+        }
+        Some(sweep)
     }
 
     /// A coil of a generated section. Its turn is right-handed about its
@@ -726,14 +771,19 @@ impl Inputs<'_> {
     }
 
     fn loft(&self, record: &Value, dependencies: &mut BTreeSet<u64>) -> Option<Value> {
-        let unsupported = ["rails", "guides", "centerline", "start", "end"]
+        let unsupported = ["guides", "centerline", "start", "end"]
             .iter()
             .any(|field| {
                 record
                     .get(*field)
                     .is_some_and(|value| !value.is_null() && value != &json!([]))
             });
-        if unsupported {
+        // Rails reshape the sections evenly unless the source asks for the
+        // fit across the rails, which has no neutral form.
+        let scale_fit = record
+            .get("rail_fit")
+            .is_none_or(|fit| fit.is_null() || fit.as_str() == Some("scale"));
+        if unsupported || !scale_fit {
             return None;
         }
         let sections = record
@@ -743,9 +793,23 @@ impl Inputs<'_> {
             .map(|section| self.section(section, true, dependencies))
             .collect::<Option<Vec<_>>>()?;
         (sections.len() >= 2).then_some(())?;
+        let rails = match record.get("rails") {
+            None | Some(Value::Null) => Vec::new(),
+            Some(rails) => rails
+                .as_array()?
+                .iter()
+                .map(|rail| {
+                    self.chain(
+                        rail.get("sketch")?.as_u64()?,
+                        rail.get("curves")?,
+                        dependencies,
+                    )
+                })
+                .collect::<Option<Vec<_>>>()?,
+        };
         Some(json!({"kind": "loft", "value": {
             "sections": sections,
-            "guidance": {"kind": "guides", "value": []},
+            "guidance": {"kind": "guides", "value": rails},
             "closed": record.get("closed").and_then(Value::as_bool) == Some(true),
             "ruled": record.get("ruled").and_then(Value::as_bool) == Some(true),
             "solid": true,

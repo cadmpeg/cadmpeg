@@ -110,7 +110,9 @@
       "process": true
     },
     "source": {
-      "attributes": {},
+      "attributes": {
+        "document_local_sha256": "f94c116454145ad0b4d2979d62383487e5eee2b65e9dfb4ba604fc38866a411e"
+      },
       "identity": {
         "dialects": {
           "extra": [],
@@ -202,6 +204,15 @@
         },
         "offset": 0,
         "stream": "",
+        "untyped": []
+      },
+      "solidcraft:native:source-image#0": {
+        "bytes": {
+          "data": "UEsDBBQAAAAAAAAAIQAFIX7GIQAAACEAAAAMAAAAZHJhd2luZy5qc29ueyJmb3JtYXQiOiJzb2xpZGNyYWZ0LWRyYXdpbmcvMyJ9UEsDBBQAAAAAAAAAIQCxtCthNwAAADcAAAAOAAAAY29udGFpbmVyLmpzb257ImZvcm1hdCI6InNvbGlkY3JhZnQtY29udGFpbmVyLzEiLCJjb250ZW50IjoiZHJhd2luZyJ9UEsBAhQDFAAAAAAAAAAhAAUhfsYhAAAAIQAAAAwAAAAAAAAAAAAAAKQBAAAAAGRyYXdpbmcuanNvblBLAQIUAxQAAAAAAAAAIQCxtCthNwAAADcAAAAOAAAAAAAAAAAAAACkAUsAAABjb250YWluZXIuanNvblBLBQYAAAAAAgACAHYAAACuAAAAAAA=",
+          "kind": "inline"
+        },
+        "offset": 0,
+        "stream": "solidcraft",
         "untyped": []
       }
     },

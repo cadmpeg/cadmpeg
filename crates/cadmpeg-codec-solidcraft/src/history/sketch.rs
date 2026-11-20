@@ -253,9 +253,9 @@ fn distance(a: [f64; 2], b: [f64; 2]) -> f64 {
 fn fit_spline(curve: &Value) -> bool {
     curve.get("control").and_then(Value::as_bool) != Some(true)
         && curve.get("periodic").and_then(Value::as_bool) != Some(true)
-        && curve
-            .get("handles")
-            .is_none_or(|handles| handles.is_null() || handles.as_array().is_some_and(Vec::is_empty))
+        && curve.get("handles").is_none_or(|handles| {
+            handles.is_null() || handles.as_array().is_some_and(Vec::is_empty)
+        })
 }
 
 /// The positions of the points that a spline record indexes.
@@ -264,7 +264,14 @@ fn point_list(curve: &Value, points: &[Option<SketchPoint>]) -> Option<Vec<[f64;
         .get("pts")?
         .as_array()?
         .iter()
-        .map(|index| Some(points.get(usize::try_from(index.as_u64()?).ok()?)?.as_ref()?.pos))
+        .map(|index| {
+            Some(
+                points
+                    .get(usize::try_from(index.as_u64()?).ok()?)?
+                    .as_ref()?
+                    .pos,
+            )
+        })
         .collect()
 }
 
@@ -346,6 +353,66 @@ pub(super) fn curve_geometry(curve: &Value, points: &[Option<SketchPoint>]) -> O
                     "poles": {"kind": "polynomial", "points": poles.iter().copied().map(uv).collect::<Vec<_>>()},
                 }
             })
+        }
+        "spline"
+            if curve.get("control").and_then(Value::as_bool) == Some(true)
+                && curve.get("nurbs").is_some_and(|nurbs| !nurbs.is_null())
+                && curve.get("periodic").and_then(Value::as_bool) != Some(true) =>
+        {
+            let poles = point_list(curve, points)?;
+            let degree = usize::from(u8::try_from(curve.get("degree")?.as_u64()?).ok()?);
+            let nurbs = curve.get("nurbs")?;
+            let knots: Vec<f64> = nurbs
+                .get("knots")?
+                .as_array()?
+                .iter()
+                .map(Value::as_f64)
+                .collect::<Option<_>>()?;
+            let weights: Vec<f64> = match nurbs.get("weights") {
+                None | Some(Value::Null) => Vec::new(),
+                Some(weights) => weights
+                    .as_array()?
+                    .iter()
+                    .map(Value::as_f64)
+                    .collect::<Option<_>>()?,
+            };
+            if degree == 0 || poles.len() <= degree || knots.len() != poles.len() + degree + 1 {
+                return None;
+            }
+            let poles = if weights.is_empty() {
+                json!({"kind": "polynomial", "points": poles.iter().copied().map(uv).collect::<Vec<_>>()})
+            } else if weights.len() == poles.len() {
+                json!({"kind": "rational", "points": poles
+                    .iter()
+                    .zip(&weights)
+                    .map(|(pole, weight)| json!({"point": uv(*pole), "weight": weight}))
+                    .collect::<Vec<_>>()})
+            } else {
+                return None;
+            };
+            json!({"kind": "nurbs", "curve": {
+                "degree": degree, "knots": knots, "periodic": false, "poles": poles,
+            }})
+        }
+        "conic" => {
+            // A conic from `a` to `b` shaped by `apex` is the rational
+            // quadratic whose middle weight is rho / (1 - rho): 0.5 is the
+            // parabola, below it the ellipse, above it the hyperbola.
+            let rho = curve
+                .get("rho")?
+                .as_f64()
+                .filter(|rho| *rho > 0.0 && *rho < 1.0)?;
+            let (a, b, apex) = (at("a")?, at("b")?, at("apex")?);
+            json!({"kind": "nurbs", "curve": {
+                "degree": 2,
+                "knots": [0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                "periodic": false,
+                "poles": {"kind": "rational", "points": [
+                    {"point": uv(a), "weight": 1.0},
+                    {"point": uv(apex), "weight": rho / (1.0 - rho)},
+                    {"point": uv(b), "weight": 1.0},
+                ]},
+            }})
         }
         _ => return None,
     })

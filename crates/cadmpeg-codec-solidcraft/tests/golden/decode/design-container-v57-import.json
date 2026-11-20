@@ -191,6 +191,7 @@
     },
     "source": {
       "attributes": {
+        "document_local_sha256": "92d7e26275b6fe63749bfd6ecd0e6a0e400df4a853abe1afb026f52646fd4fec",
         "document_name": "Imported",
         "feature_records": "1",
         "parameter_records": "0",
@@ -323,6 +324,15 @@
         },
         "offset": 0,
         "stream": "",
+        "untyped": []
+      },
+      "solidcraft:native:source-image#0": {
+        "bytes": {
+          "data": "UEsDBBQAAAAAAAAAIQD/RePNPgAAAD4AAABLAAAAYmxvYnMvMjZiYzAwYWFiMjI4MDkwYzMyMDBjMDRiYWRiMGIwMDYyMGRmODQ4ZjJmZWY1MTVjZDYxZGZmOGEwN2U4NWE3Yy5zdGVwSVNPLTEwMzAzLTIxOwpIRUFERVI7CkVORFNFQzsKREFUQTsKRU5EU0VDOwpFTkQtSVNPLTEwMzAzLTIxOwpQSwMEFAAAAAAAAAAhAKKL9PoGAQAABgEAAA0AAABkb2N1bWVudC5qc29ueyJmZWF0dXJlcyI6W3siZmlsZSI6InBhcnQuc3RlcCIsImlkIjoxLCJuYW1lIjoiSW1wb3J0MSIsInN0ZXAiOiIiLCJzdGVwX2Jsb2IiOiJibG9icy8yNmJjMDBhYWIyMjgwOTBjMzIwMGMwNGJhZGIwYjAwNjIwZGY4NDhmMmZlZjUxNWNkNjFkZmY4YTA3ZTg1YTdjLnN0ZXAiLCJzdXBwcmVzc2VkIjpmYWxzZSwidHlwZSI6ImltcG9ydCJ9XSwiZm9ybWF0Ijoic29saWRjcmFmdC81NyIsIm5hbWUiOiJJbXBvcnRlZCIsInBhcmFtcyI6W10sInVuaXRzIjoibW0ifVBLAwQUAAAAAAAAACEA7MT1CiMAAAAjAAAADgAAAGNvbnRhaW5lci5qc29ueyJmb3JtYXQiOiJzb2xpZGNyYWZ0LWNvbnRhaW5lci8xIn1QSwECFAMUAAAAAAAAACEA/0XjzT4AAAA+AAAASwAAAAAAAAAAAAAApAEAAAAAYmxvYnMvMjZiYzAwYWFiMjI4MDkwYzMyMDBjMDRiYWRiMGIwMDYyMGRmODQ4ZjJmZWY1MTVjZDYxZGZmOGEwN2U4NWE3Yy5zdGVwUEsBAhQDFAAAAAAAAAAhAKKL9PoGAQAABgEAAA0AAAAAAAAAAAAAAKQBpwAAAGRvY3VtZW50Lmpzb25QSwECFAMUAAAAAAAAACEA7MT1CiMAAAAjAAAADgAAAAAAAAAAAAAApAHYAQAAY29udGFpbmVyLmpzb25QSwUGAAAAAAMAAwDwAAAAJwIAAAAA",
+          "kind": "inline"
+        },
+        "offset": 0,
+        "stream": "solidcraft",
         "untyped": []
       }
     },

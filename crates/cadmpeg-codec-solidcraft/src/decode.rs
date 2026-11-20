@@ -120,6 +120,19 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             };
             losses.extend(outcome.losses);
             crate::look::views(&document.object, &mut ir)?;
+            losses.extend(crate::canvas::canvases(
+                ctx,
+                source.package.as_ref(),
+                &document.object,
+                &mut ir,
+            )?);
+            losses.extend(crate::notes::notes(ctx, &document.object, &mut ir)?);
+            losses.extend(crate::points::clouds(
+                ctx,
+                source.package.as_ref(),
+                &document.object,
+                &mut ir,
+            )?);
         }
     }
     ir.finalize();
@@ -128,6 +141,33 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
     if !ctx.container_only() {
         let records = retained_records(ctx, &source)?;
         source_fidelity.attach_native_unknown_records(&mut ir, FORMAT, records, ctx)?;
+        // The whole file, so that an unedited design is written back byte for
+        // byte. Only the writer reads it, and it needs the full document.
+        if ctx.depth() == DecodeDepth::Full {
+            let bytes = root.window();
+            ctx.retain_bytes(
+                u64_from_index(bytes.len()),
+                "retain SolidCraft source image",
+            )?;
+            source_fidelity.retain_unknown_records(
+                FORMAT,
+                [UnknownRecord::retained(
+                    crate::writer::source_image_id(),
+                    0,
+                    bytes.to_vec(),
+                    Vec::new(),
+                )],
+            )?;
+            let digest = crate::writer::document_local_sha256(&ir)?;
+            if let Some(meta) = &mut ir.source {
+                meta.attributes.insert(
+                    cadmpeg_core::nonblank_const!(
+                        cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE
+                    ),
+                    digest,
+                );
+            }
+        }
     }
     Ok(Decoded {
         ir,
@@ -151,6 +191,9 @@ const DECODED_SECTIONS: &[&str] = &[
     "user_materials",
     "visibility",
     "named_views",
+    "notes",
+    "point_clouds",
+    "canvases",
 ];
 
 /// The document sections that have a retained record of their own, so that
