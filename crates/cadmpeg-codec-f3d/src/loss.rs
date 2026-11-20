@@ -576,6 +576,8 @@ pub(crate) enum F3dLossCode {
     ConfigurationReferencedDesignUnscoped,
     /// Configuration cells that set a parameter or feature the design does not state.
     ConfigurationOverrideUnstated,
+    /// Configuration parameter cells whose cached value the design does not state.
+    ConfigurationOverrideValueUnprojected,
     /// Configuration rows of a scope whose active row does not resolve stay v10 configurations.
     ConfigurationScopeWithoutActiveRow,
     /// Configuration properties the design does not state.
@@ -1540,6 +1542,7 @@ impl F3dLossCode {
         Self::ParameterNameBlank,
         Self::ConfigurationReferencedDesignUnscoped,
         Self::ConfigurationOverrideUnstated,
+        Self::ConfigurationOverrideValueUnprojected,
         Self::ConfigurationScopeWithoutActiveRow,
         Self::ConfigurationPropertyUnprojected,
         Self::HistoryRollbackUnread,
@@ -2449,6 +2452,9 @@ impl F3dLossCode {
                 "configuration.referenced-design-unscoped"
             }
             Self::ConfigurationOverrideUnstated => "configuration.override-unstated",
+            Self::ConfigurationOverrideValueUnprojected => {
+                "configuration.override-value-unprojected"
+            }
             Self::ConfigurationScopeWithoutActiveRow => "configuration.scope-without-active-row",
             Self::ConfigurationPropertyUnprojected => "configuration.property-unprojected",
             Self::HistoryRollbackUnread => "history.rollback-unread",
@@ -3369,6 +3375,7 @@ impl F3dLossCode {
             | Self::ParameterNameBlank
             | Self::ConfigurationReferencedDesignUnscoped
             | Self::ConfigurationOverrideUnstated
+            | Self::ConfigurationOverrideValueUnprojected
             | Self::ConfigurationScopeWithoutActiveRow
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
@@ -4045,6 +4052,7 @@ impl F3dLossCode {
             | Self::ParameterNameBlank
             | Self::ConfigurationReferencedDesignUnscoped
             | Self::ConfigurationOverrideUnstated
+            | Self::ConfigurationOverrideValueUnprojected
             | Self::ConfigurationScopeWithoutActiveRow
             | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
@@ -4842,6 +4850,7 @@ mod tests {
                 "parameter.name-blank",
                 "configuration.referenced-design-unscoped",
                 "configuration.override-unstated",
+                "configuration.override-value-unprojected",
                 "configuration.scope-without-active-row",
                 "configuration.property-unprojected",
                 "history.rollback-unread",

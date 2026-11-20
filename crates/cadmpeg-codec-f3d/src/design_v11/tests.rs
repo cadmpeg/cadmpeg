@@ -984,8 +984,8 @@ fn rows_and_cells_the_design_omits_are_named_by_one_loss_per_class() {
         variant.overrides.features.keys().collect::<Vec<_>>(),
         [&FeatureId::mint(OWNER).unwrap()]
     );
-    let [unscoped, inactive, unstated] = losses.as_slice() else {
-        panic!("three losses: {losses:?}")
+    let [unscoped, inactive, unstated, uncached] = losses.as_slice() else {
+        panic!("four losses: {losses:?}")
     };
     assert_eq!(
         unscoped.code,
@@ -1019,6 +1019,18 @@ fn rows_and_cells_the_design_omits_are_named_by_one_loss_per_class() {
             unstated.message
         );
     }
+    assert_eq!(variant.overrides.parameters[&d1].value, None);
+    assert_eq!(
+        uncached.code,
+        F3dLossCode::ConfigurationOverrideValueUnprojected.kind()
+    );
+    assert!(
+        uncached
+            .message
+            .ends_with(&format!(": {d1} in {}", legacy[1].id)),
+        "{}",
+        uncached.message
+    );
 }
 
 #[test]
@@ -1094,22 +1106,129 @@ fn configuration_properties_are_named_by_a_loss() {
         F3dLossCode::ConfigurationPropertyUnprojected.kind()
     );
     assert!(
-        properties.message.starts_with("2 "),
+        properties
+            .message
+            .ends_with(&format!(": property:Part Number in {}", legacy[0].id)),
         "{}",
         properties.message
     );
-    for row in &legacy[..2] {
+    assert_eq!(
+        projected.records[1].overrides.definitions[&crate::tree::file_root_id()].part_number,
+        Some(cadmpeg_ir::design::configuration::PartNumber::Text(
+            "N-1".to_owned()
+        ))
+    );
+}
+
+#[test]
+fn part_number_and_description_cells_of_other_rows_override_the_scope_definition() {
+    use crate::loss::F3dLossCode;
+    use cadmpeg_ir::design::configuration::{DefinitionOverride, PartNumber};
+    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration as LegacyConfiguration};
+    let root = crate::tree::file_root_id();
+    let scopes = BTreeMap::from([(String::new(), root.clone())]);
+    let row = |key: &str, active: bool, properties: &[(&str, &str)]| LegacyConfiguration {
+        id: ConfigurationId::mint(format!("f3d:configuration:variant#{key}")).unwrap(),
+        ordinal: 0,
+        active,
+        source_index: None,
+        name: Some(key.to_owned()),
+        material: None,
+        properties: properties
+            .iter()
+            .map(|(key, value)| {
+                (
+                    cadmpeg_core::text::NonBlankString::new((*key).to_owned()).unwrap(),
+                    (*value).to_owned(),
+                )
+            })
+            .collect(),
+        parameter_overrides: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: Some("f3d:configuration:entry#table".to_owned()),
+    };
+    let legacy = [
+        row(
+            "base",
+            true,
+            &[
+                ("property:Part Number", "B-1"),
+                ("property:Description", "Base"),
+            ],
+        ),
+        row(
+            "typed",
+            false,
+            &[
+                ("property:Part Number", "W-1"),
+                ("property:Description", "Wide plate"),
+                ("property:Finish", "Anodized"),
+            ],
+        ),
+        row(
+            "blank",
+            false,
+            &[("property:Part Number", ""), ("property:Description", "")],
+        ),
+    ];
+    let mut losses = Vec::new();
+    let projected = super::configurations::project(
+        &legacy,
+        &scopes,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &[],
+        &mut losses,
+    );
+    let [base, typed, blank] = projected.records.as_slice() else {
+        panic!("three configurations: {:?}", projected.records)
+    };
+    assert!(base.overrides.definitions.is_empty());
+    assert_eq!(
+        typed.overrides.definitions,
+        BTreeMap::from([(
+            root.clone(),
+            DefinitionOverride {
+                description: Some("Wide plate".to_owned()),
+                part_number: Some(PartNumber::Text("W-1".to_owned())),
+                ..DefinitionOverride::default()
+            }
+        )])
+    );
+    assert_eq!(
+        blank.overrides.definitions,
+        BTreeMap::from([(
+            root,
+            DefinitionOverride {
+                description: Some(String::new()),
+                part_number: Some(PartNumber::ConfigurationName),
+                ..DefinitionOverride::default()
+            }
+        )])
+    );
+    let [properties] = losses.as_slice() else {
+        panic!("one loss: {losses:?}")
+    };
+    assert_eq!(
+        properties.code,
+        F3dLossCode::ConfigurationPropertyUnprojected.kind()
+    );
+    assert!(
+        properties.message.starts_with("3 "),
+        "{}",
+        properties.message
+    );
+    for named in [
+        format!("property:Part Number in {}", legacy[0].id),
+        format!("property:Description in {}", legacy[0].id),
+        format!("property:Finish in {}", legacy[1].id),
+    ] {
         assert!(
-            properties
-                .message
-                .contains(&format!("property:Part Number in {}", row.id)),
+            properties.message.contains(&named),
             "{}",
             properties.message
         );
     }
-    assert!(
-        !properties.message.contains(legacy[2].id.as_str()),
-        "{}",
-        properties.message
-    );
 }
