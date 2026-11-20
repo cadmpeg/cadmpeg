@@ -9,7 +9,7 @@ use std::io::{Cursor, Read};
 use super::{scoped_cube, u32_at, u64_at, write_bytes};
 
 /// One segment's `MetaStream` fields and its `BulkStream`.
-struct Segment {
+pub(super) struct Segment {
     short_name: String,
     id: u32,
     words: [u32; 4],
@@ -20,7 +20,7 @@ struct Segment {
     /// `(type GUID, base GUID, version, add-in, entity IDs)` in table order.
     types: Vec<(String, String, u32, String, Vec<u64>)>,
     named: Vec<u64>,
-    primary: Vec<(u64, u64)>,
+    pub(super) primary: Vec<(u64, u64)>,
     secondary: Vec<(u64, u64)>,
     next: u64,
     bulk: Vec<u8>,
@@ -75,7 +75,7 @@ fn member(archive: &[u8], name: &str) -> Vec<u8> {
     bytes
 }
 
-fn segment(archive: &[u8], folder: &str) -> Segment {
+pub(super) fn segment(archive: &[u8], folder: &str) -> Segment {
     let meta = member(archive, &format!("{folder}/MetaStream.dat"));
     let mut reader = Reader {
         bytes: &meta,
@@ -121,7 +121,7 @@ fn segment(archive: &[u8], folder: &str) -> Segment {
 
 impl Segment {
     /// The bytes of record `index`, bounded by the next primary entry.
-    fn record(&self, index: u64) -> &[u8] {
+    pub(super) fn record(&self, index: u64) -> &[u8] {
         let position = self
             .primary
             .iter()
@@ -138,7 +138,7 @@ impl Segment {
     }
 
     /// The type GUID and version of record `index`.
-    fn type_of(&self, index: u64) -> (&str, u32) {
+    pub(super) fn type_of(&self, index: u64) -> (&str, u32) {
         self.types
             .iter()
             .find(|row| row.4.contains(&index))

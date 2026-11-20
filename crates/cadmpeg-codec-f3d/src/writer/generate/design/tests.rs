@@ -772,3 +772,4 @@ fn an_integer_parameter_is_written_as_a_real_with_a_note() {
 }
 
 mod roster;
+mod sketch;

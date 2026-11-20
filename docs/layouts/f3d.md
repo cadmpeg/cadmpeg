@@ -14930,6 +14930,38 @@ Offsets are relative to the owner's indexed header, for the 104-byte form; the p
 | 115 | 8 | `paired_zero_run` | `bytes[8]` | little | spec | The paired indexed header, eight zero bytes, and the owner collection reference follow |
 | 123 | 11 | `owner_collection` | `bytes[11]` | little | spec | The paired indexed header, eight zero bytes, and the owner collection reference follow |
 
+## `sketch_item_sketches_root_head`
+
+Spec §Records of a Sketch item · layout: byte offsets · size: 53 B
+
+Offsets are relative to the node's indexed header. The `k` container references and a zero byte follow.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A design holds one `SketchesRoot` node. |
+| 11 | 4 | `zero_word` | `u32` | little | spec | A design holds one `SketchesRoot` node. · value `0` |
+| 15 | 16 | `name` | `bytes[16]` | little | spec | A design holds one `SketchesRoot` node. · value `[12, 0, 0, 0, 83, 107, 101, 116, 99, 104, 101, 115, 82, 111, 111, 116]` |
+| 31 | 2 | `zero_pair` | `bytes[2]` | little | spec | A design holds one `SketchesRoot` node. · value `[0, 0]` |
+| 33 | 16 | `name_repeat` | `bytes[16]` | little | spec | A design holds one `SketchesRoot` node. · value `[12, 0, 0, 0, 83, 107, 101, 116, 99, 104, 101, 115, 82, 111, 111, 116]` |
+| 49 | 4 | `container_count` | `u32` | little | spec | A design holds one `SketchesRoot` node. |
+
+## `sketch_item_sketch_collection_head`
+
+Spec §Records of a Sketch item · layout: byte offsets · size: 82 B
+
+Offsets are relative to the collection's indexed header. The `k` container references, the u32 `w`, `u8 1`, a u8 `0` or `1`, the record-22 reference, a zero byte, u32 `k`, the `k` container references, and the component aggregate reference follow.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The sketch collection of a component with `k` sketches stores, in order |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | The sketch collection of a component with `k` sketches stores, in order · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `property_marker` | `u8` | little | spec | The sketch collection of a component with `k` sketches stores, in order · value `1` |
+| 21 | 4 | `property_count` | `u32` | little | spec | The sketch collection of a component with `k` sketches stores, in order · value `1` |
+| 25 | 18 | `property_name` | `bytes[18]` | little | spec | The sketch collection of a component with `k` sketches stores, in order · value `[14, 0, 0, 0, 99, 114, 118, 95, 116, 97, 103, 95, 105, 100, 95, 105, 100, 120]` |
+| 43 | 27 | `property_type` | `bytes[27]` | little | spec | The sketch collection of a component with `k` sketches stores, in order · value `[23, 0, 0, 0, 73, 110, 116, 114, 105, 110, 115, 105, 99, 77, 101, 116, 97, 84, 121, 112, 101, 117, 105, 110, 116, 54, 52]` |
+| 70 | 8 | `crv_tag_id_idx` | `u64` | little | spec | The sketch collection of a component with `k` sketches stores, in order |
+| 78 | 4 | `container_count` | `u32` | little | spec | The sketch collection of a component with `k` sketches stores, in order |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

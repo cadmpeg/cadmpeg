@@ -110,7 +110,7 @@ fn attempt<W: Write + Seek>(
         return Err(Failure::neutral_design(error));
     }
     let mut neutral = if write_neutral {
-        design::plan(target)
+        design::plan(target).map_err(Failure::neutral_design)?
     } else {
         None
     };
@@ -191,17 +191,22 @@ fn attempt<W: Write + Seek>(
             .map_err(Failure::neutral_design)?;
         write_archive(staged, &ArchiveEntries::BaseFeature { members: &members })
             .map_err(Failure::archive)?;
+        let mut coverage = coverage(
+            false,
+            ArenaDisposition::Reported,
+            true,
+            ArenaDisposition::Reported,
+        );
+        // The written `Sketch` items carry the design's sketches; the plan
+        // charges each sketch, entity and relation it does not write.
+        if design.writes_sketches() {
+            coverage.design.sketches = ArenaDisposition::Reported;
+            coverage.design.sketch_entities = ArenaDisposition::Reported;
+            coverage.design.sketch_constraints = ArenaDisposition::Reported;
+        }
         let mut losses = roster_losses(target, &native);
         losses.extend(design.into_losses());
-        return Ok((
-            coverage(
-                false,
-                ArenaDisposition::Reported,
-                true,
-                ArenaDisposition::Reported,
-            ),
-            losses,
-        ));
+        return Ok((coverage, losses));
     }
     let mut neutral_records = None;
     let parameter_bytes = match (neutral.as_mut(), &native_parameters) {

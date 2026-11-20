@@ -11,6 +11,7 @@ mod component;
 mod fixed;
 mod rows;
 pub(super) mod segment;
+pub(super) mod sketches;
 mod units;
 pub(super) mod values;
 mod views;
@@ -24,6 +25,7 @@ use super::frames::DesignRecords;
 use crate::records::references::DesignClassTag;
 use crate::writer::generate::presentation::TypeRow;
 use segment::TypeTable;
+use sketches::SketchRoster;
 use values::Values;
 
 /// The `AssetSettings` record.
@@ -100,13 +102,20 @@ pub(super) struct BodyIndices {
 pub(super) struct Roster {
     pub(super) bodies: Vec<BodyIndices>,
     pub(super) parameters: Vec<u32>,
+    /// The records of the `Sketch` items, after the user parameters.
+    pub(super) sketches: SketchRoster,
     rows: Vec<(u32, TypeRow)>,
 }
 
 impl Roster {
-    /// The one-body roster, with the ten records of each further body and
-    /// then one record of each user parameter at the indices from 225.
-    pub(super) fn new(bodies: usize, parameters: usize) -> Result<Self, CodecError> {
+    /// The one-body roster, with the ten records of each further body, one
+    /// record of each user parameter, and then the records of each `Sketch`
+    /// item, at the indices from 225.
+    pub(super) fn new(
+        bodies: usize,
+        parameters: usize,
+        sketches: &[super::sketch::PlannedSketch<'_>],
+    ) -> Result<Self, CodecError> {
         let overflow = || CodecError::NotImplemented("Base Feature record index overflow".into());
         let mut entries = rows::ONE_BODY.to_vec();
         let row_of = |index: u32| {
@@ -159,9 +168,11 @@ impl Roster {
             parameter_indices.push(next);
             next = next.checked_add(1).ok_or_else(overflow)?;
         }
+        let (sketches, _) = SketchRoster::allocate(sketches, next, &mut entries)?;
         Ok(Self {
             bodies: indices,
             parameters: parameter_indices,
+            sketches,
             rows: entries,
         })
     }
@@ -196,6 +207,8 @@ pub(super) struct Context<'a> {
     pub(super) roster: Roster,
     pub(super) values: Values,
     pub(super) bodies: Vec<RosterBody<'a>>,
+    /// The `Sketch` items, in the order of [`Roster::sketches`].
+    pub(super) sketches: &'a [super::sketch::PlannedSketch<'a>],
 }
 
 impl Context<'_> {
@@ -236,11 +249,15 @@ impl Context<'_> {
 }
 
 /// The Design type table of `roster`: its records' rows and the rows with an
-/// empty entity-ID run, with the sheet row where a result body is a sheet.
+/// empty entity-ID run, with the sheet row where a result body is a sheet
+/// and the ancestors of the `Sketch` records where the design writes one.
 pub(super) fn type_table(roster: &Roster, sheet: bool) -> Result<TypeTable, CodecError> {
     let mut known = rows::EMPTY_ROWS.to_vec();
     if sheet {
         known.push(rows::SHEET_ROW);
+    }
+    if !roster.sketches.is_empty() {
+        known.extend(super::types::SKETCH_ANCESTORS);
     }
     TypeTable::new(roster.rows(), &known)
 }
@@ -272,6 +289,7 @@ pub(super) fn archive(
     views::write(ctx, &mut records)?;
     component::write(ctx, &mut records)?;
     bodies::write(ctx, &mut records)?;
+    sketches::write(ctx, ctx.sketches, &mut records)?;
     let records = records.sorted()?;
     let design = segment::Segment {
         kind: segment::SegmentKind::Design,
@@ -352,6 +370,23 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         "stores the box of each body's vertex points as its axis-aligned bounding box in the Scene records, the HOME camera and the scene radius; a curved face can extend past its vertices",
         ctx.bodies.iter().map(|body| body.id.to_string()),
     ));
+    if !ctx.roster.sketches.is_empty() {
+        notes.extend(record_residual_unavailable(
+            "F3D",
+            "writes the Sketch items before the Base Feature with these records and bytes by the majority of Fusion's Sketch designs; f3d-open-items.md DR-901 leaves their rule open",
+            [
+                "record 199 (owner collection: the order of the Sketch and Base Feature members)".to_owned(),
+                "record 200 (B65B5682: the order of its members)".to_owned(),
+                "record 201 (dependency table: the order of its entries)".to_owned(),
+                "record 203 (persistent-id table of Sketch items before a Base Feature)".to_owned(),
+                "Sketch scopes (P = 0, F = 1)".to_owned(),
+                "sketch containers (word 1, sketch word 7, no base record)".to_owned(),
+                "sketch points (flags and state by role)".to_owned(),
+                "sketch curves (curve flag A, EntityGenesis)".to_owned(),
+                "placement tracking flags (01 01 00)".to_owned(),
+            ],
+        ));
+    }
     notes.extend(record_residual_unavailable(
         "F3D",
         "stores the unit box in the Scene records of these bodies, whose vertices span no extent",
