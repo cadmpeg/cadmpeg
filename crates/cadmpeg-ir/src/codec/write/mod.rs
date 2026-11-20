@@ -30,7 +30,11 @@ mod carried;
 mod coverage;
 pub mod edge_recovery;
 mod loss;
-pub use loss::{edit_dropped, native_records_omitted, output_empty, record_invalid};
+pub use loss::{
+    edit_dropped, evaluation_missing, evaluation_stale, native_records_omitted, output_empty,
+    parameter_flattened, parameter_renamed, record_invalid, record_residual_unavailable,
+    value_unwritable,
+};
 mod scene;
 pub mod subset_lowering;
 pub mod target;
