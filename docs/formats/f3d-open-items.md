@@ -2679,6 +2679,16 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
+### DR-344. Symmetric rectangular-pattern extents with a negative extent or a count above seven
+
+**Question.** Does the extent of a symmetric direction keep the spacing extent / ⌊n / 2⌋ for a negative extent and for counts above seven, and which side of the seed holds the extra instance of an even count when the extent is negative?
+
+**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the spacing of a symmetric direction with an extent distance as the extent divided by ⌊n / 2⌋, with the ⌊n / 2⌋ instances along the direction ending at the full extent. The saves `sym_extent_q2.f3d`, `optimized_symmetric_extent_pattern.f3d`, `sym_extent_q4.f3d`, `sym_extent_q5_dir2only.f3d`, `sym_extent_q6.f3d`, `sym_extent_q7.f3d`, and `sym_extent_q4x5.f3d` cover counts 2 through 7 at positive extents. A negative extent reverses the direction, and the decoder places the ⌊n / 2⌋ instances along the reversed direction.
+
+**Need.** Saves of a symmetric direction with a negative extent at an odd and an even count, and a save at a count of eight or more, each compared against the instance positions.
+
+**Conflict.** None.
+
 ### DR-298. SurfaceTrim cell-table entries outside the removal reading
 
 **Question.** What do the entry values and the trailing value of a `SurfaceTrim` BRep-cell table encode when the entry count equals the trailing value or two entries store the same value?

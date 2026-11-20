@@ -307,7 +307,12 @@ fn a_symmetric_extent_direction_places_its_copies_where_fusion_does() {
     // patterned with distance type Extent 20 mm along +x, +y, or both.
     const EPS_POSITION_MM: f64 = 1.0e-9;
     let third = 20.0 / 3.0;
-    let files: [(&[u8], Vec<f64>, Vec<f64>); 4] = [
+    let files: [(&[u8], Vec<f64>, Vec<f64>); 6] = [
+        (
+            include_bytes!("../../../../corpus/f3d/sym_extent_q2.f3d"),
+            vec![0.0, 20.0],
+            vec![0.0],
+        ),
         (
             include_bytes!("../../../../corpus/f3d/sym_extent_q4.f3d"),
             vec![-10.0, 0.0, 10.0, 20.0],
@@ -316,6 +321,11 @@ fn a_symmetric_extent_direction_places_its_copies_where_fusion_does() {
         (
             include_bytes!("../../../../corpus/f3d/sym_extent_q6.f3d"),
             vec![-2.0 * third, -third, 0.0, third, 2.0 * third, 20.0],
+            vec![0.0],
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/sym_extent_q7.f3d"),
+            vec![-20.0, -2.0 * third, -third, 0.0, third, 2.0 * third, 20.0],
             vec![0.0],
         ),
         (
