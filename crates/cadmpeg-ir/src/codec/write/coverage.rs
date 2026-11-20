@@ -66,7 +66,15 @@ impl ArenaCoverage {
     pub(super) fn omission_losses(&self, ir: &CadIr, format: &str) -> Vec<LossNote> {
         match self {
             Self::Complete => Vec::new(),
-            Self::Declared(dispositions) => dispositions.omission_losses(ir, format),
+            Self::Declared(dispositions) => {
+                let mut losses = dispositions.omission_losses(ir, format);
+                if !ir.manufacturing.is_empty() {
+                    losses.push(ExportLossCode::ManufacturingOmitted.note(format!(
+                        "the {format} write omits source manufacturing definitions"
+                    )));
+                }
+                losses
+            }
         }
     }
 }

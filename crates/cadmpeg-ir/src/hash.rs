@@ -167,6 +167,7 @@ pub fn document_local_sha256_without_carried(
             model: ir.model.sorted()?,
             design: ir.design.sorted(),
             process: ir.process.sorted(),
+            manufacturing: (!ir.manufacturing.is_empty()).then_some(&ir.manufacturing),
             native: normalized_native(&ir.native, format, &unknowns, carried),
         })
     })()?;
@@ -213,6 +214,8 @@ struct NormalizedDocument<'a> {
     model: SortedModel<'a>,
     design: SortedDesign<'a>,
     process: SortedProcess<'a>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    manufacturing: Option<&'a crate::manufacturing::Manufacturing>,
     native: BTreeMap<&'a str, BTreeMap<&'a str, Vec<&'a NativeRecord>>>,
 }
 

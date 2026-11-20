@@ -229,6 +229,8 @@ pub enum ArenaKind {
     /// The name table of the design, serialized as `design.names`, keyed by
     /// entity id.
     DesignNames,
+    /// A source manufacturing collection.
+    Manufacturing(String),
     /// A native namespace arena, serialized as `native.{format}.{name}`.
     Native {
         /// Source-format namespace.
@@ -256,6 +258,7 @@ impl fmt::Display for ArenaKind {
         match self {
             Self::Model(name) => f.write_str(name.as_str()),
             Self::DesignNames => f.write_str(DESIGN_NAMES),
+            Self::Manufacturing(name) => write!(f, "manufacturing.{name}"),
             Self::Native { format, name } => write!(f, "native.{format}.{name}"),
         }
     }
@@ -266,6 +269,9 @@ impl PartialEq<str> for ArenaKind {
         match self {
             Self::Model(name) => name.as_str() == other,
             Self::DesignNames => other == DESIGN_NAMES,
+            Self::Manufacturing(name) => {
+                other.strip_prefix("manufacturing.") == Some(name.as_str())
+            }
             Self::Native { format, name } => {
                 other
                     .strip_prefix("native.")
@@ -607,6 +613,26 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
         .then_some((left.tolerances, right.tolerances));
     let mut per_arena = diff_arenas(left, right);
     per_arena.push(diff_names(left, right));
+    if !left.manufacturing.is_empty() || !right.manufacturing.is_empty() {
+        per_arena.push(arena(
+            ArenaKind::Manufacturing("setups".into()),
+            &left.manufacturing.setups,
+            &right.manufacturing.setups,
+            |record| record.id.as_str(),
+        ));
+        per_arena.push(arena(
+            ArenaKind::Manufacturing("operations".into()),
+            &left.manufacturing.operations,
+            &right.manufacturing.operations,
+            |record| record.id.as_str(),
+        ));
+        per_arena.push(arena(
+            ArenaKind::Manufacturing("tools".into()),
+            &left.manufacturing.tools,
+            &right.manufacturing.tools,
+            |record| record.id.as_str(),
+        ));
+    }
     per_arena.extend(diff_native_namespaces(left, right));
     IrDiff {
         tolerance_change,

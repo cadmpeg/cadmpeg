@@ -30,6 +30,7 @@ pub mod geometry_consistency;
 mod geometry_payloads;
 mod history_bodies;
 mod identity_order;
+mod manufacturing;
 mod physics;
 mod pmi;
 mod point_clouds;
@@ -168,6 +169,7 @@ fn validate_model_with_index<'ir>(
     history_bodies::check_history_bodies(ctx, ir, ids, &mut findings)?;
     design::check_design(ctx, ir, ids, &mut findings)?;
     process::check_process(ctx, ir, ids, &mut findings)?;
+    manufacturing::check_manufacturing(ir, ids, &mut findings);
 
     Ok(ValidationReport {
         entity_counts: crate::document::census::count(ids.native_view()),

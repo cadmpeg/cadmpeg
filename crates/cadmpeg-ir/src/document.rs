@@ -2046,6 +2046,8 @@ pub struct CadIr {
     pub design: Design,
     /// The manufacturing process.
     pub process: Process,
+    /// Source manufacturing definitions.
+    pub manufacturing: crate::manufacturing::Manufacturing,
     /// Per-format native namespaces, each an arena map.
     pub native: Native,
 }
@@ -2103,6 +2105,8 @@ struct CadIrWriteWire<'a> {
     model: &'a Model,
     design: &'a Design,
     process: &'a Process,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    manufacturing: Option<&'a crate::manufacturing::Manufacturing>,
     native: &'a Native,
 }
 
@@ -2128,6 +2132,8 @@ struct CadIrReadWire {
     model: Model,
     design: Design,
     process: Process,
+    #[serde(default, deserialize_with = "deserialize_manufacturing")]
+    manufacturing: Option<crate::manufacturing::Manufacturing>,
     native: Native,
 }
 
@@ -2146,6 +2152,7 @@ impl Serialize for CadIr {
             model: &self.model,
             design: &self.design,
             process: &self.process,
+            manufacturing: (!self.manufacturing.is_empty()).then_some(&self.manufacturing),
             native: &self.native,
         }
         .serialize(serializer)
@@ -2185,6 +2192,7 @@ impl TryFrom<CadIrReadWire> for CadIr {
             model: wire.model,
             design: wire.design,
             process: wire.process,
+            manufacturing: wire.manufacturing.unwrap_or_default(),
             native: wire.native,
         };
         ir.check_scope()?;
@@ -2387,6 +2395,7 @@ impl CadIr {
             model: Model::default(),
             design: Design::default(),
             process: Process::default(),
+            manufacturing: crate::manufacturing::Manufacturing::default(),
             native: Native::default(),
         }
     }
@@ -2447,6 +2456,12 @@ impl CadIr {
                 arena: None,
             });
         }
+        if !scope.holds(ArenaClass::Process) && !self.manufacturing.is_empty() {
+            return Err(ScopeViolation {
+                class: ArenaClass::Process,
+                arena: None,
+            });
+        }
         for class in ArenaClass::ALL {
             if !scope.holds(class) {
                 if let Some(arena) = self.populated_arena(class) {
@@ -2488,6 +2503,9 @@ impl CadIr {
     #[must_use]
     pub fn entity_count(&self) -> usize {
         self.arenas().entity_count()
+            + self.manufacturing.setups.len()
+            + self.manufacturing.operations.len()
+            + self.manufacturing.tools.len()
     }
 
     /// Serialize a finalized, identity-sorted view as pretty JSON.
@@ -2632,4 +2650,10 @@ cadmpeg_core::named_optional_field!(
     deserialize_repro,
     Box<crate::repro::BundleMetadata>,
     "repro"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_manufacturing,
+    crate::manufacturing::Manufacturing,
+    "manufacturing"
 );

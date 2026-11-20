@@ -567,3 +567,42 @@ The extract omits repeated faces, loops, coedges, edges, vertices, points, surfa
 ```sh
 cargo run -p cadmpeg-ir --example emit_cube > cube.cadir.json
 ```
+
+## Manufacturing source definitions
+
+The optional `manufacturing` section holds CAM definitions before native
+geometry selections are resolved. An empty section is omitted. A missing
+section reads as an empty section. It belongs to the process content scope.
+CADIR wire version 11 applies to this section.
+
+`setups`, `operations`, and `tools` are ordered lists. Setup, operation, and
+tool identities use `SetupId`, `OperationId`, and `ToolId`. Each operation
+references a setup and has a zero-based order within that setup. Its optional
+tool reference names a tool in the section. F3Z member identities have separate
+namespaces.
+
+Each setup holds a name, stock definition, WCS definition, model references,
+and ordered source parameters. A stock definition retains its kind and the
+parameters for dimensions and offsets. `stock.dimensions` and `stock.offsets`
+retain the corresponding named parameters with units. A WCS definition holds
+`orientation`, `origin_mode`, `origin`, and the complete WCS parameters.
+`orientation` retains frame and axis parameters; `origin` retains point and
+placement parameters with units. Each
+parameter holds `name`, `value`, `unit`, `kind`, and `native_xml`. `value`
+preserves the stored value text, including expressions used as values.
+`native_xml` retains the source element and its expression attributes. Source unit symbols apply
+to these values. Tool records retain number and type text, geometry and
+cutting parameters, holder parameters, vendor, and product identifier.
+
+Operations retain their stored `strategy` and a normalized `family`:
+`face`, `adaptive2d`, `pocket2d`, `contour2d`, `drilling`, `adaptive3d`, `parallel`,
+`scallop`, or `other`. Their parameters retain source order and repeated
+names. Geometry selections hold a native element kind and exact XML.
+`computed_path_present` states descriptor presence; `computed_path_valid`
+holds its Boolean validity flag when readable.
+
+Each record's `source` holds the archive member path, a half-open XML byte
+range (`start`, `end`), and the exact record XML. These source values are
+byte-exact. `source.exactness` states the exactness of the record
+interpretation. Strategy families are derived from stored names. A synthesized
+setup is inferred and has a named loss.

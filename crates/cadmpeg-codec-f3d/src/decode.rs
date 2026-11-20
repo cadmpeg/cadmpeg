@@ -5360,6 +5360,7 @@ fn decode_result(
     retained: RetainedArtifacts,
     admitted_entities: &mut u64,
 ) -> Result<AuthoredDecoded, CodecError> {
+    crate::cam::read(ctx, scan, &mut ir.manufacturing, &mut report.losses)?;
     // ASM transfer already charged its delta; admit any remaining neutral entities
     // (sketches, appearances, products) before finalizing.
     ctx.admit_entities(

@@ -25,6 +25,15 @@ use cadmpeg_ir::report::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum F3dLossCode {
     /// A counted display override candidate fails its local grammar.
+    CamToolNumberReferenceAssumed,
+    CamStructureAssumed,
+    CamSetupAssumed,
+    CamToolReferenceLastAssumed,
+    CamDocumentUnreadable,
+    CamSetupUnreadable,
+    CamOperationUnreadable,
+    CamToolUnreadable,
+    CamSelectionUnresolved,
     SceneOverrideRefused,
     DraftPartingControlsPartial,
     DraftNeutralAnchorAssumed,
@@ -1244,6 +1253,15 @@ impl F3dLossCode {
     /// Every code, in declaration order.
     #[cfg(test)]
     const ALL: &'static [F3dLossCode] = &[
+        Self::CamToolNumberReferenceAssumed,
+        Self::CamStructureAssumed,
+        Self::CamSetupAssumed,
+        Self::CamToolReferenceLastAssumed,
+        Self::CamDocumentUnreadable,
+        Self::CamSetupUnreadable,
+        Self::CamOperationUnreadable,
+        Self::CamToolUnreadable,
+        Self::CamSelectionUnresolved,
         Self::SceneOverrideRefused,
         Self::DraftPartingControlsPartial,
         Self::DraftNeutralAnchorAssumed,
@@ -2008,6 +2026,15 @@ impl F3dLossCode {
     #[must_use]
     const fn code(self) -> &'static str {
         match self {
+            Self::CamToolNumberReferenceAssumed => "cam.tool-number-reference-assumed",
+            Self::CamStructureAssumed => "cam.structure-assumed",
+            Self::CamSetupAssumed => "cam.setup-assumed",
+            Self::CamToolReferenceLastAssumed => "cam.tool-reference-last-assumed",
+            Self::CamDocumentUnreadable => "cam.document-unreadable",
+            Self::CamSetupUnreadable => "cam.setup-unreadable",
+            Self::CamOperationUnreadable => "cam.operation-unreadable",
+            Self::CamToolUnreadable => "cam.tool-unreadable",
+            Self::CamSelectionUnresolved => "cam.selection-unresolved",
             Self::SceneOverrideRefused => "scene.override-refused",
             Self::DraftPartingControlsPartial => "feature.draft-parting-controls-partial",
             Self::DraftNeutralAnchorAssumed => "feature.draft-neutral-anchor-assumed",
@@ -3126,6 +3153,15 @@ impl F3dLossCode {
     #[must_use]
     const fn severity(self) -> Severity {
         match self {
+            Self::CamToolNumberReferenceAssumed => Severity::Warning,
+            Self::CamStructureAssumed => Severity::Warning,
+            Self::CamSetupAssumed => Severity::Warning,
+            Self::CamToolReferenceLastAssumed => Severity::Warning,
+            Self::CamDocumentUnreadable => Severity::Warning,
+            Self::CamSetupUnreadable => Severity::Warning,
+            Self::CamOperationUnreadable => Severity::Warning,
+            Self::CamToolUnreadable => Severity::Warning,
+            Self::CamSelectionUnresolved => Severity::Warning,
             Self::SceneOverrideRefused => Severity::Warning,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
@@ -3888,6 +3924,15 @@ impl F3dLossCode {
     /// The shared cross-codec category this loss reports under.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
+            Self::CamToolNumberReferenceAssumed => LossTaxonomy::DecodeDiagnostic,
+            Self::CamStructureAssumed => LossTaxonomy::DecodeDiagnostic,
+            Self::CamSetupAssumed => LossTaxonomy::DecodeDiagnostic,
+            Self::CamToolReferenceLastAssumed => LossTaxonomy::DecodeDiagnostic,
+            Self::CamDocumentUnreadable => LossTaxonomy::ProcessRecordOmitted,
+            Self::CamSetupUnreadable => LossTaxonomy::ProcessRecordOmitted,
+            Self::CamOperationUnreadable => LossTaxonomy::ProcessRecordOmitted,
+            Self::CamToolUnreadable => LossTaxonomy::ProcessRecordOmitted,
+            Self::CamSelectionUnresolved => LossTaxonomy::ProcessRecordOmitted,
             Self::SceneOverrideRefused => LossTaxonomy::RecordNotTyped,
             Self::BendStationaryRoleAssumed
             | Self::BendAngleUnresolved
@@ -4698,6 +4743,15 @@ mod tests {
         assert_eq!(
             codes,
             [
+                "cam.tool-number-reference-assumed",
+                "cam.structure-assumed",
+                "cam.setup-assumed",
+                "cam.tool-reference-last-assumed",
+                "cam.document-unreadable",
+                "cam.setup-unreadable",
+                "cam.operation-unreadable",
+                "cam.tool-unreadable",
+                "cam.selection-unresolved",
                 "scene.override-refused",
                 "feature.draft-parting-controls-partial",
                 "feature.draft-neutral-anchor-assumed",

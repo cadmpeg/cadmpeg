@@ -469,6 +469,18 @@ impl MergeSession<'_, '_> {
                         child_table
                     },
                 };
+                parent_ir
+                    .manufacturing
+                    .setups
+                    .append(&mut component_ir.manufacturing.setups);
+                parent_ir
+                    .manufacturing
+                    .operations
+                    .append(&mut component_ir.manufacturing.operations);
+                parent_ir
+                    .manufacturing
+                    .tools
+                    .append(&mut component_ir.manufacturing.tools);
                 extend_native(
                     self.ctx,
                     &mut parent_ir.native,

@@ -372,6 +372,7 @@ impl<'a> F3zSession<'a> {
             ctx.with_arena(&arena, |local| {
                 let mut decoded =
                     crate::decode::decode_archive_member(local, scan, &self.archive.layers)?;
+                crate::cam::scope_member(&mut decoded.ir.manufacturing, id)?;
                 if id == self.model_root {
                     crate::scene::collect(local, scan, &mut decoded.ir, &mut decoded.body.losses)?;
                     decoded.ir.finalize();

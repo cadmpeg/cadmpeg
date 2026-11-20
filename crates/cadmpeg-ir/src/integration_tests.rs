@@ -314,5 +314,7 @@ mod wire_form_census;
 
 mod repro;
 
+mod manufacturing;
+
 #[cfg(feature = "schema")]
 mod json_schema;

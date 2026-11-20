@@ -17,6 +17,8 @@ const NAMESPACE: LossNamespace<'static> = crate::loss_namespace!("export");
 pub(crate) enum ExportLossCode {
     /// The write path does not represent a non-empty model arena.
     ArenaOmitted(EntityKind),
+    /// The write path omits source manufacturing definitions.
+    ManufacturingOmitted,
     /// A writer dropped native records of its own namespace (§3.4, W1, W3).
     NativeRecordsOmitted,
     /// The output holds no geometry (§3.5).
@@ -31,6 +33,7 @@ impl ExportLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::ArenaOmitted(_) => "arena.omitted",
+            Self::ManufacturingOmitted => "manufacturing.omitted",
             Self::NativeRecordsOmitted => "native.records-omitted",
             Self::OutputEmpty => "output.empty",
             Self::RecordInvalid(_) => "record.invalid",
@@ -39,9 +42,10 @@ impl ExportLossCode {
 
     const fn severity(self) -> Severity {
         match self {
-            Self::ArenaOmitted(_) | Self::NativeRecordsOmitted | Self::OutputEmpty => {
-                Severity::Warning
-            }
+            Self::ArenaOmitted(_)
+            | Self::ManufacturingOmitted
+            | Self::NativeRecordsOmitted
+            | Self::OutputEmpty => Severity::Warning,
             Self::RecordInvalid(_) => Severity::Error,
         }
     }
@@ -50,6 +54,7 @@ impl ExportLossCode {
     const fn shared_taxonomy(self) -> LossTaxonomy {
         let kind = match self {
             Self::ArenaOmitted(kind) | Self::RecordInvalid(kind) => kind,
+            Self::ManufacturingOmitted => return LossTaxonomy::ProcessRecordOmitted,
             Self::NativeRecordsOmitted => return LossTaxonomy::PassthroughRecordOmitted,
             Self::OutputEmpty => return LossTaxonomy::NoExportableSolids,
         };

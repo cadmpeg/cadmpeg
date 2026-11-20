@@ -3833,6 +3833,16 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Note.** The decoder retains positional pairing with `feature.owned-body-pairing-assumed` for the typed body runs.
 
+### CAM-2. Numbered stock-box origin selectors
+
+**Question.** Which stock-box corner does each numbered `wcs_origin_boxPoint` selector identify?
+
+**Known.** The decoder retains the selector text in the setup's WCS origin parameters. Relative stock offsets and model bounds define the stock-box extents.
+
+**Need.** A mapping from numbered selectors to the low or high coordinate on each box axis, checked against resolved setup frames.
+
+**Note.** Coordinate comparison for a numbered selector remains unresolved.
+
 ### DR-890. Tail marker of the two-opaque-byte planar curve tail
 
 **Question.** Which byte of the three bytes between the zero pad and the u32 lane is the tail marker when a planar sketch-curve tail stores two opaque bytes?
