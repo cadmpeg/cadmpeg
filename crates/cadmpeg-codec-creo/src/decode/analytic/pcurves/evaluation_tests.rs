@@ -47,11 +47,12 @@ fn plane() -> SurfaceGeometry {
 fn model() -> CadIr {
     let mut ir = CadIr::empty();
     for face in [7, 8] {
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: SurfaceId::mint(format!("creo:visibgeom:surface#{face}"))
                 .expect("surface identity"),
             geometry: plane(),
             source_object: None,
+            native_ref: None,
         });
     }
     ir
@@ -71,7 +72,7 @@ fn two_chart_mapping_maps_degree_sixteen_endpoints() {
         super::mapped_two_chart_endpoint_sets(
             ctx,
             &scan,
-            &super::ModelSurfaceIndex::new(&ir.model.surfaces),
+            &super::ModelSurfaceIndex::new(&ir.geometry.surfaces),
             &pcurve,
             &SourceUnitCarriers::default(),
         )

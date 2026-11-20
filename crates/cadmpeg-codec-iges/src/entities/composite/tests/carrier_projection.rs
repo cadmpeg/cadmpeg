@@ -408,7 +408,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
         let composite_id = CurveId::mint("test:model:curve#composite").expect("identity grammar");
         let first_end = Point3::new(1.0, 0.0, 0.0);
         let mut ir = CadIr::empty();
-        ir.model.curves.extend([
+        ir.geometry.curves.extend([
             Curve {
                 parameter_range: None,
                 id: first_id.clone(),
@@ -419,6 +419,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
                     None,
                 ))),
                 source_object: None,
+                native_ref: None,
             },
             Curve {
                 parameter_range: None,
@@ -430,6 +431,7 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
                     None,
                 ))),
                 source_object: None,
+                native_ref: None,
             },
             Curve {
                 parameter_range: None,
@@ -451,19 +453,23 @@ fn tolerance_allows_a_bounded_carrier_join_within_resolution() {
                     self_intersect: None,
                 }),
                 source_object: None,
+                native_ref: None,
             },
         ]);
         for (index, curve) in [first_id, second_id].into_iter().enumerate() {
-            ir.model.edges.push(Edge {
+            ir.geometry.edges.push(Edge {
                 id: EdgeId::mint(format!("test:model:edge#edge-{index}"))
                     .expect("identity grammar"),
                 carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some([0.0, 1.0]))
                     .unwrap(),
-                start: VertexId::mint(format!("test:model:vertex#start-{index}"))
-                    .expect("identity grammar"),
-                end: VertexId::mint(format!("test:model:vertex#end-{index}"))
-                    .expect("identity grammar"),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    VertexId::mint(format!("test:model:vertex#start-{index}"))
+                        .expect("identity grammar"),
+                    VertexId::mint(format!("test:model:vertex#end-{index}"))
+                        .expect("identity grammar"),
+                )),
                 tolerance: None,
+                native_ref: None,
             });
         }
         assert!(
@@ -544,10 +550,10 @@ fn decode_concatenates_ordered_composite_curve_children() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_curves.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_curves.len(), 1);
     let composite = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
@@ -583,7 +589,7 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         .unwrap();
     let within_curve = within_resolution
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
@@ -602,7 +608,7 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         .unwrap();
     let outside_curve = outside_resolution
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
@@ -634,7 +640,7 @@ fn composite_join_uses_global_resolution_and_reports_degradation() {
         .unwrap();
     let at_or_beyond_resolution_curve = at_or_beyond_resolution
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
@@ -688,7 +694,7 @@ fn decode_concatenates_exact_circular_arc_and_line_children() {
 
     let composite = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
@@ -719,7 +725,7 @@ fn decode_converts_heterogeneous_composite_curve_children_to_an_exact_carrier() 
 
     let composite = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
@@ -750,7 +756,7 @@ fn decode_projects_mixed_degree_composite_pcurve() {
 
     let curve = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D7")
@@ -762,7 +768,7 @@ fn decode_projects_mixed_degree_composite_pcurve() {
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| edge
@@ -774,20 +780,20 @@ fn decode_projects_mixed_degree_composite_pcurve() {
     );
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D11")
         .unwrap_or_else(|| panic!("losses={:#?}", result.report().losses));
     assert_eq!(face.loops.len(), 1);
-    assert_eq!(result.ir().model.pcurves.len(), 1);
+    assert_eq!(result.ir().geometry.pcurves.len(), 1);
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } =
-        &result.ir().model.pcurves[0].geometry
+        &result.ir().geometry.pcurves[0].geometry
     else {
         panic!("expected an elevated cubic composite pcurve");
     };
     assert_eq!(nurbs.degree(), 3);
-    assert_eq!(result.ir().model.pcurves[0].fit_tolerance(), None);
+    assert_eq!(result.ir().geometry.pcurves[0].fit_tolerance(), None);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",
@@ -809,7 +815,7 @@ fn decode_projects_a_composite_curve_with_an_inconsistent_parametric_spline_chil
 
     let composite = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
@@ -880,7 +886,10 @@ fn decode_projects_a_large_composite_batch_without_repeated_curve_scans() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_curves.len(), COMPOSITE_COUNT);
+    assert_eq!(
+        result.ir().geometry.procedural_curves.len(),
+        COMPOSITE_COUNT
+    );
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",

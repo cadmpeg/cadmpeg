@@ -45,7 +45,7 @@ fn validation_accepts_transformed_insert_frames_with_other_paired_tags() {
         if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(slot) =
             scope.payload_mut()
         {
-            *slot = Some(DesignComponentInsertConstruction {
+            slot.construction = Some(DesignComponentInsertConstruction {
                 relation_record_index: 167,
                 carrier_record_index: 166,
                 occurrence_identity: Some(17),
@@ -132,7 +132,7 @@ fn validation_accepts_identity_insert_frame_with_any_paired_class_tag() {
     if let crate::records::feature::scope::DesignScopePayloadMut::ComponentInsert(slot) =
         scope.payload_mut()
     {
-        *slot = Some(DesignComponentInsertConstruction {
+        slot.construction = Some(DesignComponentInsertConstruction {
             relation_record_index: 167,
             carrier_record_index: 166,
             occurrence_identity: Some(17),
@@ -254,5 +254,75 @@ fn component_insert_roles_accept_qualified_strings_within_the_utf16_bound() {
         format!("urn:{}", "x".repeat(253)),
     ] {
         assert!(!super::super::valid_component_insert_role(&role));
+    }
+}
+
+#[test]
+fn partial_insert_validation_checks_its_matrix_location_without_a_source_carrier() {
+    use crate::records::feature::assembly_features::DesignComponentInsertPlacement;
+    use crate::records::feature::scope::{
+        DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
+    };
+    let scope_id = "f3d:Design/BulkStream.dat:design-parameter-scope#100";
+    for (matrix_offset, rejected) in [(154, false), (155, true)] {
+        let mut scope =
+            DesignParameterScope::empty(scope_id, DesignFeatureKind::ComponentInsert, 30);
+        scope
+            .try_edit(|draft| {
+                draft.byte_offset = 100;
+                draft.frame_length = 404;
+                draft.paired_byte_offset = 504;
+                draft.reference_count_offset = 361;
+                draft.reference_members = crate::records::identity::ReferenceRun::from_columns(
+                    vec![20],
+                    vec![366],
+                    "reference_members",
+                )
+                .unwrap();
+                draft.kind_offset = 384;
+                draft.feature_ordinal_offset = 416;
+            })
+            .unwrap();
+        if let DesignScopePayloadMut::ComponentInsert(payload) = scope.payload_mut() {
+            payload.unresolved_placement = Some(DesignComponentInsertPlacement {
+                occurrence_identity: 19,
+                matrix: Some(crate::records::identity::Located {
+                    value: crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY,
+                    offset: matrix_offset,
+                }),
+            });
+        }
+        let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        {
+            let mut native = f3d_native_mut(&mut ir);
+            native
+                .design_record_headers
+                .push(crate::records::decal::DesignRecordHeader {
+                    id: "f3d:Design/BulkStream.dat:design-record-header#20".to_owned(),
+                    record_index: 20,
+                    class_tag: "299".to_owned().try_into().unwrap(),
+                    byte_offset: 80,
+                });
+            native
+                .design_record_headers
+                .push(crate::records::decal::DesignRecordHeader {
+                    id: "f3d:Design/BulkStream.dat:design-record-header#30".to_owned(),
+                    record_index: 30,
+                    class_tag: "256".to_owned().try_into().unwrap(),
+                    byte_offset: 100,
+                });
+            native.design_parameter_scopes.push(scope);
+        }
+        let findings = crate::test_support::with_decode_context(|ctx| {
+            crate::validate::validate_native(ctx, &ir).unwrap()
+        });
+        assert_eq!(
+            findings
+                .iter()
+                .any(|finding| finding.entity.as_deref() == Some(scope_id)
+                    && finding.message
+                        == "Fusion Design parameter scope has an invalid paired frame"),
+            rejected
+        );
     }
 }

@@ -8,7 +8,6 @@
 //! design-entity join backbone in
 //! [spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#32-materials).
 
-use cadmpeg_core::convert::f32_from_f64;
 use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
 use crate::records::references::DesignVisualToken;
@@ -209,7 +208,7 @@ fn write_color(out: &mut [u8], offset: usize, color: Option<Color>) -> Result<()
         .enumerate()
     {
         let at = offset + ordinal * 8;
-        out[at..at + 8].copy_from_slice(&f64::from(value).to_le_bytes());
+        out[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
     Ok(())
 }
@@ -441,7 +440,7 @@ fn patch_instance_colors(
                 patch_logical_f64(
                     bytes,
                     frame.logical_offset() + relative + ordinal * 8,
-                    f64::from(value),
+                    value,
                 )?;
             }
         }
@@ -731,7 +730,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
     let body_overrides = decode_body_appearance_overrides(ctx, scan, body_bindings)?;
     for over in &body_overrides {
         if bindings.iter().any(
-            |binding| matches!(&binding.target, AppearanceTarget::Body(body) if body == &over.body),
+            |binding| matches!(&binding.target.entity, AppearanceTarget::Body(body) if body == &over.body),
         ) {
             continue;
         }
@@ -743,7 +742,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
                 over.entity_suffix,
                 over.visual_guid.identity_key(),
             ),
-            target: AppearanceTarget::Body(over.body.clone()),
+            target: AppearanceTarget::Body(over.body.clone()).into(),
             appearance: appearance.id.clone(),
             source_entity_id: None,
             object_type: (object_types.get(&over.entity_suffix).map(String::as_str))
@@ -887,8 +886,8 @@ fn appearance_opacity(
                 record.guid
             ))
         })?;
-    f32_from_f64(1.0 - transparency.get())
-        .and_then(|opacity| color.with_alpha(opacity))
+    color
+        .with_alpha(1.0 - transparency.get())
         .ok_or_else(|| CodecError::Malformed("Protein opacity is outside [0, 1]".into()))
 }
 
@@ -939,14 +938,7 @@ fn decoded_color(values: [f64; 4]) -> Option<Color> {
     values
         .iter()
         .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
-        .then(|| {
-            Color::new(
-                f32_from_f64(values[0])?,
-                f32_from_f64(values[1])?,
-                f32_from_f64(values[2])?,
-                f32_from_f64(values[3])?,
-            )
-        })
+        .then(|| Color::new(values[0], values[1], values[2], values[3]))
         .flatten()
 }
 
@@ -1259,7 +1251,12 @@ fn legacy_face_appearance_assignments(
 fn normalized_legacy_face_color(bytes: &[u8], offset: usize) -> Option<Color> {
     let raw = bytes.get(offset..offset + 4 * size_of::<f32>())?;
     let component = |at: usize| View::f32_le_at(raw, at);
-    let color = Color::new(component(0)?, component(4)?, component(8)?, component(12)?)?;
+    let color = Color::new(
+        f64::from(component(0)?),
+        f64::from(component(4)?),
+        f64::from(component(8)?),
+        f64::from(component(12)?),
+    )?;
     (color.a() == 1.0).then_some(color)
 }
 
@@ -1543,7 +1540,7 @@ fn bind_bodies(
                     "F3D appearance binding identity is invalid: {error}"
                 ))
             })?,
-            target: AppearanceTarget::Body(body),
+            target: AppearanceTarget::Body(body).into(),
             appearance: appearance.id.clone(),
             source_entity_id: Some(assignment.entity_id.as_str().to_owned()),
             object_type: (object_types

@@ -28,7 +28,7 @@ fn direct_surface_fixture(
     let surface_id =
         SurfaceId::mint(format!("test:model:surface#{surface_name}")).expect("valid identity");
     let mut ir = CadIr::empty();
-    ir.model.curves = vec![
+    ir.geometry.curves = vec![
         Curve {
             parameter_range: None,
             id: CurveId::mint("test:model:entity#first").expect("valid identity"),
@@ -43,6 +43,7 @@ fn direct_surface_fixture(
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
         Curve {
             parameter_range: None,
@@ -58,17 +59,19 @@ fn direct_surface_fixture(
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         },
     ];
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction_id.clone(),
             cache: None,
         },
         source_object: None,
+        native_ref: None,
     });
-    ir.model.procedural_surfaces.push(procedural_surface! {
+    ir.geometry.procedural_surfaces.push(procedural_surface! {
         id: construction_id,
         definition: definition,
         cache_fit_tolerance: None,
@@ -102,7 +105,7 @@ fn cacheless_ruled_surface_interpolates_profiles_and_partials() {
         model_surface_point(
             crate::eval::admission::EvaluationAdmission::Standard,
             &ir,
-            &ir.model.surfaces[0].geometry,
+            &ir.geometry.surfaces[0].geometry,
             0.25,
             0.5
         )
@@ -191,7 +194,7 @@ fn a_ruled_surface_whose_point_overflows_reports_the_point_it_reached() {
     assert!(reached(model_surface_point(
         crate::eval::admission::EvaluationAdmission::Standard,
         &ir,
-        &ir.model.surfaces[0].geometry,
+        &ir.geometry.surfaces[0].geometry,
         0.25,
         f64::MAX
     )));
@@ -213,7 +216,7 @@ fn a_sum_surface_whose_point_overflows_reports_the_point_it_reached() {
     );
     // Both profiles lie at x = MAX, so their sum leaves the finite range in
     // x only.
-    for (curve, poles) in ir.model.curves.iter_mut().zip([
+    for (curve, poles) in ir.geometry.curves.iter_mut().zip([
         [
             Point3::new(f64::MAX, 2.0, 3.0),
             Point3::new(f64::MAX, 4.0, 3.0),

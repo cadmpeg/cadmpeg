@@ -89,7 +89,7 @@ fn encode_does_not_attempt_replay_when_the_source_records_no_dialect() {
     let format = source.format().to_owned();
     unclassified.source = Some(
         serde_json::from_value(serde_json::json!({
-            "identity": {"classification": "unclassified", "format": format},
+            "identity": {"kind": "unclassified", "format": format},
             "attributes": source.attributes,
         }))
         .expect("unclassified source deserializes"),
@@ -160,7 +160,7 @@ fn a_synthesized_export_states_the_target_it_wrote() {
         (IgesVersion::V5_3, "iges:5.3-fixed-ascii"),
     ] {
         let mut ir = CadIr::empty();
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint(format!("test:model:point#{id}")).expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
                 .expect("a finite position is a point"),
@@ -195,7 +195,7 @@ fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
             .expect("point fixture decodes"),
     );
     let mut edited = decoded.ir().clone();
-    edited.model.points.push(Point::new(
+    edited.geometry.points.push(Point::new(
         PointId::mint("test:model:point#edited").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(7.0, 8.0, 9.0))
             .expect("a finite position is a point"),

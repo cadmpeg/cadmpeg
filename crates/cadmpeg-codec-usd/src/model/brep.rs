@@ -522,6 +522,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
             geometry: CurveGeometry::Solved(geometry),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
         curve_ids.insert((catalog, index), curve_id);
     }
@@ -536,6 +537,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(geometry),
                 source_object: None,
+                native_ref: None,
             }),
             SurfaceShape::Constructed(definition) => {
                 out.surfaces.push(Surface {
@@ -544,6 +546,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
                         record: None,
                     }),
                     source_object: None,
+                    native_ref: None,
                 });
                 out.constructions.push((
                     surface_id.clone(),
@@ -573,6 +576,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
             id: id::vertex(key, *vertex),
             point,
             tolerance: None,
+            native_ref: None,
         });
     }
 
@@ -621,9 +625,12 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
         out.edges.push(Edge {
             id: edge_id.clone(),
             carrier,
-            start: id::vertex(key, start),
-            end: id::vertex(key, end),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                id::vertex(key, start),
+                id::vertex(key, end),
+            )),
             tolerance,
+            native_ref: None,
         });
     }
 
@@ -644,6 +651,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
                         vertex: id::vertex(key, vertex),
                         pcurves: Vec::new(),
                     },
+                    native_ref: None,
                 });
             }
             continue;
@@ -666,6 +674,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
                     metadata: PcurveMetadata::General {
                         form: cadmpeg_ir::geometry::pcurve::PcurveGeneralForm::default(),
                     },
+                    native_ref: None,
                 });
                 pcurves.push(PcurveUse {
                     pcurve: pcurve_id,
@@ -686,6 +695,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
                 },
                 pcurves,
                 use_curve: None,
+                native_ref: None,
             });
             coedge_ids.push(coedge_id);
         }
@@ -695,6 +705,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
             id: loop_id,
             face: face_id,
             boundary: LoopBoundary::Ring(ring),
+            native_ref: None,
         });
     }
     for members in radial.values() {
@@ -734,24 +745,16 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
         out.face_ids.insert(record.id, face_id);
     }
     for (shell, record) in brep.shells.iter().enumerate() {
         let region = shell_region[shell].unwrap_or_default();
-        let faces: Vec<FaceId> = record
-            .faces
-            .iter()
-            .map(|face| id::face(key, *face))
-            .collect();
-        let shell_record = Shell::new(
-            id::shell(key, shell),
-            id::region(key, region),
-            faces,
-            Vec::new(),
-            Vec::new(),
-        )
-        .map_err(|_| format!("shell {shell} holds no face"))?;
+        if record.faces.is_empty() {
+            return Err(format!("shell {shell} holds no face"));
+        }
+        let shell_record = Shell::new(id::shell(key, shell), id::region(key, region));
         out.shells.push(shell_record);
     }
     for (region, shells) in regions.iter().enumerate() {
@@ -759,6 +762,7 @@ pub(super) fn import(brep: &Brep, key: &str, scale: f64) -> Result<Imported, Ref
             id: id::region(key, region),
             body: crate::ids::body(key),
             shells: shells.iter().map(|shell| id::shell(key, *shell)).collect(),
+            native_ref: None,
         });
     }
     Ok(out)
@@ -954,7 +958,7 @@ impl super::Builder<'_, '_, '_, '_> {
                     .appearance_bindings
                     .push(cadmpeg_ir::appearance::AppearanceBinding {
                         id: crate::ids::subset_binding(key, &format!("{}#{ordinal}", child.path)),
-                        target,
+                        target: target.into(),
                         appearance: appearance.clone(),
                         source_entity_id: Some(surface.material.clone()),
                         object_type: None,
@@ -985,7 +989,7 @@ impl super::Builder<'_, '_, '_, '_> {
             .appearance_bindings
             .push(cadmpeg_ir::appearance::AppearanceBinding {
                 id: crate::ids::appearance_binding(key),
-                target: cadmpeg_ir::appearance::AppearanceTarget::Body(body.clone()),
+                target: cadmpeg_ir::appearance::AppearanceTarget::Body(body.clone()).into(),
                 appearance,
                 source_entity_id: Some(surface.material),
                 object_type: None,
@@ -1064,20 +1068,19 @@ impl super::Builder<'_, '_, '_, '_> {
             kind,
             face_ids: _,
         } = imported;
-        let model = &mut self.ir.model;
-        let region_ids = regions.iter().map(|region| region.id.clone()).collect();
-        model.points.extend(points);
-        model.vertices.extend(vertices);
-        model.curves.extend(curves);
-        model.surfaces.extend(surfaces);
-        model.pcurves.extend(pcurves);
-        model.edges.extend(edges);
-        model.coedges.extend(coedges);
-        model.loops.extend(loops);
-        model.faces.extend(faces);
-        model.shells.extend(shells);
-        model.regions.extend(regions);
-        if let Err(error) = model.add_procedural_surfaces(constructions)? {
+        let geometry = &mut self.ir.geometry;
+        geometry.points.extend(points);
+        geometry.vertices.extend(vertices);
+        geometry.curves.extend(curves);
+        geometry.surfaces.extend(surfaces);
+        geometry.pcurves.extend(pcurves);
+        geometry.edges.extend(edges);
+        geometry.coedges.extend(coedges);
+        geometry.loops.extend(loops);
+        geometry.faces.extend(faces);
+        geometry.shells.extend(shells);
+        geometry.regions.extend(regions);
+        if let Err(error) = geometry.add_procedural_surfaces(constructions)? {
             return Ok(Err(error.to_string()));
         }
         let tolerance = records.tolerance * self.scale;
@@ -1087,7 +1090,7 @@ impl super::Builder<'_, '_, '_, '_> {
             }
         }
         let body = crate::ids::body(key);
-        self.body(prim, key, kind.unwrap_or(BodyKind::General), region_ids);
+        self.body(prim, key, kind.unwrap_or(BodyKind::General));
         self.transferred = true;
         self.admit("usd_brep")?;
         Ok(Ok(body))

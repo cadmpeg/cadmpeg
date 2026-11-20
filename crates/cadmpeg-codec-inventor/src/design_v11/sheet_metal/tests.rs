@@ -1,0 +1,490 @@
+// SPDX-License-Identifier: Apache-2.0
+use super::*;
+use crate::feature::sheet_metal::style;
+use crate::record_identity::{Located, RecordTypeId};
+use crate::test_support::root_part_ir;
+use crate::test_support::test_fixtures::parse;
+use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+use cadmpeg_ir::ids::IdentityKey;
+use cadmpeg_ir::scalar::FiniteReal;
+
+fn style(ordinal: u32) -> Style {
+    let mut bytes = vec![0; style::prefix_len(29).expect("prefix")];
+    for value in 1_u32..=15 {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    let payload = parse(&bytes, |ctx, view| style::parse(ctx, view, 29)).expect("style");
+    Located::new(
+        payload,
+        RecordTypeId::from_bytes(style::TYPE),
+        IdentityKey::try_new("fixture").expect("token"),
+        ordinal,
+    )
+}
+
+fn projected(styles: &[Style], factor: Option<&str>) -> Vec<SheetMetalRule> {
+    projected_with_losses(styles, factor).0
+}
+
+fn projected_with_losses(
+    styles: &[Style],
+    factor: Option<&str>,
+) -> (Vec<SheetMetalRule>, Vec<LossNote>) {
+    projected_with_style_factor(styles, factor, StyleFactor::Absent)
+}
+
+fn projected_with_style_factor(
+    styles: &[Style],
+    factor: Option<&str>,
+    style_factor: StyleFactor,
+) -> (Vec<SheetMetalRule>, Vec<LossNote>) {
+    let ir = root_part_ir();
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let active = factor.map(|expression| DocumentRule {
+        id: "inventor:pmdc:sheet-metal-unfold-rule#fixture-12".into(),
+        expression,
+    });
+    let mut losses = Vec::new();
+    let rules = rules(
+        &ctx,
+        &ir,
+        styles,
+        |_, reference| match reference.index() {
+            1 => Length::new(0.5),
+            2 => Length::new(1.25),
+            _ => None,
+        },
+        |_| style_factor,
+        active.as_ref(),
+        &mut losses,
+    )
+    .expect("rules");
+    (rules, losses)
+}
+
+fn codes(losses: &[LossNote]) -> Vec<&str> {
+    losses.iter().map(|loss| loss.code.local_code()).collect()
+}
+
+#[test]
+fn sheet_metal_style_states_literal_thickness_radius_and_k() {
+    let style = style(20);
+    let rules = projected(std::slice::from_ref(&style), Some("0.44 ul"));
+    assert_eq!(rules.len(), 1);
+    let rule = &rules[0];
+    assert_eq!(
+        rule.id.as_str(),
+        crate::feature::history_feature_id(&style.identity)
+            .expect("identity")
+            .as_str()
+    );
+    assert_eq!(rule.scope.as_str(), "inventor:document:product#root");
+    assert_eq!(
+        rule.thickness,
+        Some(Dimension::Literal(
+            PositiveLength::new(0.5).expect("thickness")
+        ))
+    );
+    assert_eq!(
+        rule.bend.radius,
+        Some(Dimension::Literal(
+            PositiveLength::new(1.25).expect("radius")
+        ))
+    );
+    assert_eq!(
+        rule.allowance,
+        Some(BendAllowance::KFactor(Dimension::Literal(
+            FiniteReal::new(0.44).expect("K")
+        )))
+    );
+    assert_eq!(rule.bend.radius_side, None);
+    assert_eq!(rule.name, None);
+    assert_eq!(rule.native_ref, Some(style.id()));
+}
+
+#[test]
+fn sheet_metal_without_style_has_no_rule() {
+    assert!(projected(&[], Some("0.44 ul")).is_empty());
+}
+
+#[test]
+fn sheet_metal_two_styles_have_distinct_rules() {
+    let rules = projected(&[style(20), style(30)], None);
+    assert_eq!(rules.len(), 2);
+    assert_ne!(rules[0].id, rules[1].id);
+    assert_eq!(rules[0].scope, rules[1].scope);
+}
+
+#[test]
+fn sheet_metal_unitless_k_text_states_allowance() {
+    assert_eq!(
+        projected(&[style(20)], Some("0.29"))[0].allowance,
+        Some(BendAllowance::KFactor(Dimension::Literal(
+            FiniteReal::new(0.29).expect("K")
+        )))
+    );
+}
+
+#[test]
+fn sheet_metal_absent_or_equation_k_has_no_allowance() {
+    let (rules, losses) = projected_with_losses(&[style(20)], None);
+    assert_eq!(rules[0].allowance, None);
+    assert_eq!(
+        codes(&losses),
+        ["feature.sheet-metal-unfold-rule-unresolved"]
+    );
+    for factor in ["Thickness * 0.5", "table.csv"] {
+        let (rules, losses) = projected_with_losses(&[style(20), style(30)], Some(factor));
+        assert!(rules.iter().all(|rule| rule.allowance.is_none()));
+        assert_eq!(
+            codes(&losses),
+            ["feature.sheet-metal-unfold-factor-native"],
+            "{factor:?}"
+        );
+    }
+}
+
+#[test]
+fn sheet_metal_equal_style_k_parameter_keeps_rule_allowance() {
+    let (rules, losses) = projected_with_style_factor(
+        &[style(20)],
+        Some("0.440 ul"),
+        StyleFactor::Value(FiniteReal::new(0.44).expect("K")),
+    );
+    assert_eq!(
+        rules[0].allowance,
+        Some(BendAllowance::KFactor(Dimension::Literal(
+            FiniteReal::new(0.44).expect("K")
+        )))
+    );
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn sheet_metal_differing_or_unresolved_style_k_parameter_has_no_allowance() {
+    for style_factor in [
+        StyleFactor::Value(FiniteReal::new(0.5).expect("K")),
+        StyleFactor::Unresolved,
+    ] {
+        let (rules, losses) =
+            projected_with_style_factor(&[style(20), style(30)], Some("0.44 ul"), style_factor);
+        assert!(rules.iter().all(|rule| rule.allowance.is_none()));
+        assert_eq!(
+            codes(&losses),
+            [
+                "feature.sheet-metal-style-factor-conflict",
+                "feature.sheet-metal-style-factor-conflict"
+            ],
+            "{style_factor:?}"
+        );
+    }
+}
+
+#[test]
+fn sheet_metal_decimal_k_or_no_style_charges_no_unfold_loss() {
+    assert!(projected_with_losses(&[style(20)], Some("0.44 ul"))
+        .1
+        .is_empty());
+    assert!(projected_with_losses(&[], Some("Thickness * 0.5"))
+        .1
+        .is_empty());
+}
+
+/// Project one style through the document path with the given unfold
+/// records and an optional style `KFactor` parameter value.
+fn projected_document(
+    unfold_rules: Vec<unfold::Rule>,
+    selections: Vec<unfold::Selection>,
+    style_factor: Option<f64>,
+) -> (Vec<SheetMetalRule>, Vec<LossNote>) {
+    use crate::design::{PmDcParameter, PmDcParameterPayload};
+    use crate::pmdc::PmDcContentHeader;
+    use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId};
+
+    let mut ir = root_part_ir();
+    let null = PmDcReference::from_packed(0);
+    let mut parameters: Vec<PmDcParameter> = Vec::new();
+    if let Some(value) = style_factor {
+        let value = FiniteReal::new(value).expect("K");
+        let raw: PmDcParameter = Located::new(
+            PmDcParameterPayload {
+                save_version_major: 19,
+                header: PmDcContentHeader {
+                    header_value: 0,
+                    header_id: 0,
+                    next: null,
+                    flags: 0,
+                    flags_extension: None,
+                    context: null,
+                    source_index: 0,
+                    stamps: Vec::new(),
+                },
+                name: STYLE_FACTOR_NAME.into(),
+                name_value: 0,
+                unit: null,
+                formula: null,
+                nominal_value: value,
+                model_value: value,
+                tolerance: 0,
+                terminal_value: 0,
+            },
+            RecordTypeId::from_bytes(crate::pmdc::inventor_id(0x9087_4d26)),
+            IdentityKey::try_new("fixture").expect("token"),
+            70,
+        );
+        ir.model.parameters.push(DesignParameter {
+            product_definition: None,
+            id: ParameterId::mint("inventor:design:parameter#kfactor").expect("id"),
+            owner: None,
+            ordinal: 0,
+            name: STYLE_FACTOR_NAME.into(),
+            expression: "0.44".into(),
+            display: None,
+            value: Some(ParameterValue::Real(value)),
+            dependencies: DistinctMembers::default(),
+            properties: BTreeMap::default(),
+            pmi: None,
+            native_ref: Some(raw.id()),
+        });
+        parameters.push(raw);
+    }
+    let mut inventory = FeatureInventory::default();
+    inventory.sheet_metal_styles.push(style(20));
+    inventory.sheet_metal_unfold_rules = unfold_rules;
+    inventory.sheet_metal_unfold_selections = selections;
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut losses = Vec::new();
+    project(&ctx, &mut ir, &inventory, &parameters, &mut losses).expect("project");
+    (ir.design.sheet_metal_rules, losses)
+}
+
+fn k_allowance(value: f64) -> BendAllowance {
+    BendAllowance::KFactor(Dimension::Literal(FiniteReal::new(value).expect("K")))
+}
+
+#[test]
+fn sheet_metal_no_unfold_rule_takes_style_k_parameter() {
+    let (rules, losses) = projected_document(Vec::new(), Vec::new(), Some(0.44));
+    assert_eq!(rules[0].allowance, Some(k_allowance(0.44)));
+    assert_eq!(
+        codes(&losses),
+        [
+            "feature.sheet-metal-unfold-rule-unresolved",
+            "feature.sheet-metal-style-factor-assumed"
+        ]
+    );
+}
+
+#[test]
+fn sheet_metal_no_unfold_rule_without_style_k_parameter_has_no_allowance() {
+    let (rules, losses) = projected_document(Vec::new(), Vec::new(), None);
+    assert_eq!(rules[0].allowance, None);
+    assert_eq!(
+        codes(&losses),
+        ["feature.sheet-metal-unfold-rule-unresolved"]
+    );
+}
+
+#[test]
+fn sheet_metal_several_unfold_entries_take_style_k_parameter() {
+    use unfold::tests::{rule, selection, RULE_ORDINAL};
+    let entries = [("Unfold_A", RULE_ORDINAL + 1), ("Unfold_B", 40)];
+    for selections in [
+        vec![selection(&entries)],
+        vec![selection(&entries[..1]), selection(&entries[..1])],
+    ] {
+        let (rules, losses) =
+            projected_document(vec![rule("Unfold_A", "0.37 ul")], selections, Some(0.44));
+        assert_eq!(rules[0].allowance, Some(k_allowance(0.44)));
+        assert_eq!(
+            codes(&losses),
+            [
+                "feature.sheet-metal-unfold-rule-unresolved",
+                "feature.sheet-metal-style-factor-assumed"
+            ]
+        );
+    }
+}
+
+#[test]
+fn sheet_metal_unfold_entry_naming_no_rule_is_unresolved() {
+    use unfold::tests::{rule, selection, RULE_ORDINAL};
+    for (entry, factor) in [
+        (("Unfold_B", RULE_ORDINAL + 1), Some(0.44)),
+        (("Unfold_A", RULE_ORDINAL), None),
+    ] {
+        let (rules, losses) = projected_document(
+            vec![rule("Unfold_A", "0.37 ul")],
+            vec![selection(&[entry])],
+            factor,
+        );
+        assert_eq!(rules[0].allowance, factor.map(k_allowance));
+        let mut expected = vec!["feature.sheet-metal-unfold-rule-unresolved"];
+        if factor.is_some() {
+            expected.push("feature.sheet-metal-style-factor-assumed");
+        }
+        assert_eq!(codes(&losses), expected, "{entry:?}");
+    }
+}
+
+#[test]
+fn sheet_metal_active_rule_and_equal_style_k_parameter_charge_no_loss() {
+    use unfold::tests::{rule, selection, RULE_ORDINAL};
+    let (rules, losses) = projected_document(
+        vec![rule("Unfold_A", "0.44 ul")],
+        vec![selection(&[("Unfold_A", RULE_ORDINAL + 1)])],
+        Some(0.44),
+    );
+    assert_eq!(rules[0].allowance, Some(k_allowance(0.44)));
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn sheet_metal_no_unfold_rule_with_unresolved_style_k_parameter_is_a_conflict() {
+    let (rules, losses) = projected_with_style_factor(&[style(20)], None, StyleFactor::Unresolved);
+    assert_eq!(rules[0].allowance, None);
+    assert_eq!(
+        codes(&losses),
+        [
+            "feature.sheet-metal-unfold-rule-unresolved",
+            "feature.sheet-metal-style-factor-conflict"
+        ]
+    );
+}
+
+#[test]
+fn sheet_metal_projection_joins_parameter_literals_and_retains_unread_fields() {
+    use crate::design::{PmDcParameter, PmDcParameterPayload};
+    use crate::pmdc::PmDcContentHeader;
+    use cadmpeg_ir::features::{DesignParameter, DistinctMembers, ParameterId};
+
+    let mut ir = root_part_ir();
+    let null = PmDcReference::from_packed(0);
+    let raw: PmDcParameter = Located::new(
+        PmDcParameterPayload {
+            save_version_major: 29,
+            header: PmDcContentHeader {
+                header_value: 0,
+                header_id: 0,
+                next: null,
+                flags: 0,
+                flags_extension: None,
+                context: null,
+                source_index: 0,
+                stamps: Vec::new(),
+            },
+            name: "Thickness".into(),
+            name_value: 0,
+            unit: null,
+            formula: null,
+            nominal_value: FiniteReal::ZERO,
+            model_value: FiniteReal::ZERO,
+            tolerance: 0,
+            terminal_value: 0,
+        },
+        RecordTypeId::from_bytes(crate::pmdc::inventor_id(0x9087_4d26)),
+        IdentityKey::try_new("fixture").expect("token"),
+        0,
+    );
+    ir.model.parameters.push(DesignParameter {
+        product_definition: None,
+        id: ParameterId::mint("inventor:design:parameter#thickness").expect("id"),
+        owner: None,
+        ordinal: 0,
+        name: "Thickness".into(),
+        expression: "width / 2".into(),
+        display: None,
+        value: Some(ParameterValue::Length(Length::new(0.75).expect("length"))),
+        dependencies: DistinctMembers::default(),
+        properties: BTreeMap::default(),
+        pmi: None,
+        native_ref: Some(raw.id()),
+    });
+    let mut inventory = FeatureInventory::default();
+    inventory.sheet_metal_styles.extend([style(30), style(20)]);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut losses = Vec::new();
+    project(
+        &ctx,
+        &mut ir,
+        &inventory,
+        std::slice::from_ref(&raw),
+        &mut losses,
+    )
+    .expect("project");
+    assert_eq!(ir.design.sheet_metal_rules.len(), 2);
+    assert!(ir.design.sheet_metal_rules[0].id < ir.design.sheet_metal_rules[1].id);
+    for rule in &ir.design.sheet_metal_rules {
+        assert_eq!(
+            rule.thickness,
+            Some(Dimension::Literal(
+                PositiveLength::new(0.75).expect("length")
+            ))
+        );
+        assert_eq!(rule.bend.radius, None);
+        assert_eq!(rule.allowance, None);
+    }
+}
+
+#[test]
+fn sheet_metal_binds_projected_length_parameters() {
+    use cadmpeg_ir::design::expr::{Expression, ExpressionDialect};
+    use cadmpeg_ir::design::parameter::{DesignParameter, ParameterDefinition};
+    use cadmpeg_ir::design::units::{Quantity, ValueKind};
+
+    let mut ir = root_part_ir();
+    let (raw, legacy) = crate::feature::fillet::tests::parameter(
+        0,
+        ParameterValue::Length(Length::new(0.75).expect("length")),
+    );
+    let id = legacy.id.clone();
+    ir.design.parameters.push(DesignParameter {
+        id: id.clone(),
+        scope: ir.model.product_definitions[0].id.clone(),
+        owner: None,
+        name: cadmpeg_core::text::NonBlankString::new("Thickness"),
+        kind: ValueKind::Quantity(Quantity::LENGTH),
+        unit: None,
+        definition: ParameterDefinition::Expression(Expression::Source {
+            dialect: ExpressionDialect::Inventor,
+            tokens: Vec::new(),
+        }),
+        value: None,
+        display: None,
+        tolerance: None,
+        decimals: None,
+        comment: None,
+        native_options: BTreeMap::default(),
+        source_settings: BTreeMap::default(),
+        native_ref: Some(raw.id()),
+    });
+    ir.model.parameters.push(legacy);
+    let mut inventory = FeatureInventory::default();
+    let mut style = style(20);
+    style.identity.segment_token = raw.identity.segment_token.clone();
+    style.edit(|payload| {
+        payload.thickness = PmDcReference::from_packed(1);
+        payload.bend_radius = PmDcReference::from_packed(1);
+    });
+    inventory.sheet_metal_styles.push(style);
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).expect("context");
+    let mut losses = Vec::new();
+    project(&ctx, &mut ir, &inventory, &[raw], &mut losses).expect("projection");
+    assert_eq!(
+        ir.design.sheet_metal_rules[0].thickness,
+        Some(Dimension::Parameter(id.clone()))
+    );
+    assert_eq!(
+        ir.design.sheet_metal_rules[0].bend.radius,
+        Some(Dimension::Parameter(id))
+    );
+    assert_eq!(ir.design.sheet_metal_rules[0].allowance, None);
+}

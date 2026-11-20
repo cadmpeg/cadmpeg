@@ -6,8 +6,9 @@ use std::io::Cursor;
 use std::path::Path;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::design::parameter::{Deviations, Tolerance as DimensionTolerance};
 use cadmpeg_ir::pmi::{
-    DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition, PmiTarget,
+    GeometricToleranceKind, PmiDefinition, PmiDimensionKind as DimensionKind, PmiTarget,
 };
 use serde_json::Value;
 
@@ -21,24 +22,27 @@ enum Expected {
     Limits(f64, f64),
 }
 
-fn tolerance_matches(actual: Option<&DimensionTolerance>, expected: Expected) -> bool {
+/// Whether the stated deviations are the expected ones; expected limits are
+/// deviations about `nominal`.
+fn tolerance_matches(
+    actual: Option<&DimensionTolerance>,
+    nominal: f64,
+    expected: Expected,
+) -> bool {
     let close = |left: f64, right: f64| (left - right).abs() < VALUE_TOLERANCE;
-    match (actual, expected) {
-        (Some(DimensionTolerance::PlusMinus { lower, upper }), Expected::PlusMinus(low, high)) => {
-            close(lower.value.get(), low) && close(upper.value.get(), high)
-        }
-        (Some(DimensionTolerance::Limits { lower, upper }), Expected::Limits(low, high)) => {
-            close(lower.value.get(), low) && close(upper.value.get(), high)
-        }
-        _ => false,
-    }
+    let (low, high) = match expected {
+        Expected::PlusMinus(low, high) => (low, high),
+        Expected::Limits(low, high) => (low - nominal, high - nominal),
+    };
+    matches!(actual, Some(DimensionTolerance::Deviations(Deviations { lower, upper }))
+        if close(lower.get(), low) && close(upper.get(), high))
 }
 
 /// The radius of the cylinder of a target face, or of the circle of a target
 /// edge.
-fn target_radius(model: &Value, target: &PmiTarget) -> Option<f64> {
+fn target_radius(topology: &Value, target: &PmiTarget) -> Option<f64> {
     let find = |arena: &str, id: &str| {
-        model[arena]
+        topology[arena]
             .as_array()?
             .iter()
             .find(|entry| entry["id"] == id)
@@ -55,7 +59,7 @@ fn target_radius(model: &Value, target: &PmiTarget) -> Option<f64> {
         }
         _ => return None,
     };
-    geometry["radius"].as_f64()
+    geometry["value"]["radius"].as_f64()
 }
 
 #[test]
@@ -66,7 +70,7 @@ fn nist_ctc_01_transfers_dimension_tolerances_and_targets() {
     let result = InventorCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode Inventor specimen");
-    let model = serde_json::to_value(&result.ir().model).expect("serialize model");
+    let topology = serde_json::to_value(&result.ir().geometry).expect("serialize geometry");
     let half_degree = 0.5_f64.to_radians();
     let expected = [
         (
@@ -126,11 +130,11 @@ fn nist_ctc_01_transfers_dimension_tolerances_and_targets() {
         let matching: Vec<_> = dimensions
             .iter()
             .filter(|(_, dimension)| {
-                *dimension.kind() == kind
+                dimension.dimension == kind
                     && dimension
-                        .nominal()
+                        .literal_nominal()
                         .is_some_and(|value| (value.value.get() - nominal).abs() < 1.0e-9)
-                    && tolerance_matches(dimension.tolerance(), tolerance)
+                    && tolerance_matches(dimension.tolerance.as_ref(), nominal, tolerance)
             })
             .collect();
         assert_eq!(matching.len(), count, "{kind:?} {nominal} {tolerance:?}");
@@ -139,7 +143,7 @@ fn nist_ctc_01_transfers_dimension_tolerances_and_targets() {
                 let [target] = pmi.targets.as_slice() else {
                     panic!("{} has {} targets", pmi.id.as_str(), pmi.targets.len());
                 };
-                let radius = target_radius(&model, target).expect("target radius");
+                let radius = target_radius(&topology, &target.entity).expect("target radius");
                 assert!(
                     (2.0 * radius - nominal).abs() < 1.0e-9,
                     "{}",
@@ -152,7 +156,7 @@ fn nist_ctc_01_transfers_dimension_tolerances_and_targets() {
     }
     let diameter_targets: std::collections::BTreeSet<_> = dimensions
         .iter()
-        .filter(|(_, dimension)| *dimension.kind() == DimensionKind::Diameter)
+        .filter(|(_, dimension)| dimension.dimension == DimensionKind::Diameter)
         .flat_map(|(pmi, _)| pmi.targets.iter().map(|target| format!("{target:?}")))
         .collect();
     assert_eq!(diameter_targets.len(), 7);
@@ -161,11 +165,15 @@ fn nist_ctc_01_transfers_dimension_tolerances_and_targets() {
     // no tolerance.
     let locations: Vec<_> = dimensions
         .iter()
-        .filter(|(_, dimension)| *dimension.kind() == DimensionKind::Location)
+        .filter(|(_, dimension)| dimension.dimension == DimensionKind::Location)
         .collect();
     assert_eq!(locations.len(), 2);
     for (pmi, dimension) in locations {
-        assert!(dimension.tolerance().is_none(), "{}", pmi.id.as_str());
+        assert!(
+            dimension.tolerance.as_ref().is_none(),
+            "{}",
+            pmi.id.as_str()
+        );
         assert_eq!(pmi.targets.len(), 2, "{}", pmi.id.as_str());
     }
 }

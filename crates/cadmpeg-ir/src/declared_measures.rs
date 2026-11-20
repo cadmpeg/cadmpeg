@@ -6,16 +6,18 @@
 //! Volumes are cubic millimetres, areas square millimetres, and points
 //! millimetres, in the coordinates of the target.
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::design::refs::StateRef;
 use crate::features::FinitePoint3;
 use crate::ids::{BodyId, DeclaredMeasureId, ProductDefinitionId};
 use crate::scalar::{FiniteReal, NonNegativeReal};
 
 /// The bodies that a declared measure describes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DeclaredTarget {
@@ -31,13 +33,17 @@ pub enum DeclaredTarget {
         /// The bodies.
         bodies: Vec<BodyId>,
     },
+    /// The bodies of a state of the design, whether or not that state's
+    /// geometry is stored.
+    State(StateRef),
     /// The source names a target that does not resolve to bodies of the
     /// model.
-    Unresolved {},
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::read")]
+    Unresolved,
 }
 
 /// One stated quantity.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum DeclaredQuantity {
@@ -76,7 +82,7 @@ pub enum DeclaredQuantity {
 }
 
 /// The evidence class of a source-stated quantity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -217,6 +223,37 @@ mod tests {
             serde_json::from_value::<DeclaredMeasure>(json).unwrap(),
             exact
         );
+    }
+
+    #[test]
+    fn a_target_is_a_state_or_a_bare_unresolved_tag() {
+        let state = serde_json::json!({
+            "kind": "state",
+            "of": {"kind": "tool", "value": "test:design:feature#3"}
+        });
+        let target = serde_json::from_value::<DeclaredTarget>(state.clone()).unwrap();
+        assert!(matches!(target, DeclaredTarget::State(_)));
+        assert_eq!(serde_json::to_value(&target).unwrap(), state);
+        let unresolved = serde_json::json!({"kind": "unresolved"});
+        assert_eq!(
+            serde_json::from_value::<DeclaredTarget>(unresolved.clone()).unwrap(),
+            DeclaredTarget::Unresolved
+        );
+        assert_eq!(
+            serde_json::to_value(DeclaredTarget::Unresolved).unwrap(),
+            unresolved
+        );
+        for wire in [
+            serde_json::json!({"kind": "unresolved", "value": null}),
+            serde_json::json!({"kind": "unresolved", "bodies": []}),
+            serde_json::json!({"kind": "state", "value": {"of": {"kind": "tool", "value": "test:design:feature#3"}}}),
+            serde_json::json!({"kind": "state", "configuration": null, "of": {"kind": "tool", "value": "test:design:feature#3"}}),
+        ] {
+            assert!(
+                serde_json::from_value::<DeclaredTarget>(wire.clone()).is_err(),
+                "{wire}"
+            );
+        }
     }
 
     #[test]

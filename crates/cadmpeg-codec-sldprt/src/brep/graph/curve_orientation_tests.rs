@@ -39,8 +39,8 @@ fn decode_marked_edge(mut carrier: Vec<u8>, marker: u8) -> (String, String, Sens
         .find(|coedge| coedge.edge == edge.id)
         .unwrap();
     (
-        edge.start.as_str().to_owned(),
-        edge.end.as_str().to_owned(),
+        edge.ends.as_ref().unwrap().start.as_str().to_owned(),
+        edge.ends.as_ref().unwrap().end.as_str().to_owned(),
         coedge.sense,
     )
 }
@@ -148,8 +148,8 @@ fn decode_spline_edge(first: [f64; 3], last: [f64; 3]) -> (String, String, Sense
         .find(|coedge| coedge.edge == edge.id)
         .unwrap();
     (
-        edge.start.as_str().to_owned(),
-        edge.end.as_str().to_owned(),
+        edge.ends.as_ref().unwrap().start.as_str().to_owned(),
+        edge.ends.as_ref().unwrap().end.as_str().to_owned(),
         coedge.sense,
     )
 }
@@ -241,7 +241,7 @@ fn a_periodic_spline_leaves_the_vertex_order_to_the_marker() {
     ));
     assert_eq!(
         super::vertex_parameter_reversal(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &carrier,
             Some([Point3::new(0.5, 0.0, 0.0), Point3::new(0.0, 0.5, 0.0)]),
         )
@@ -252,7 +252,7 @@ fn a_periodic_spline_leaves_the_vertex_order_to_the_marker() {
 
 fn domain_reversal(carrier: &crate::brep::CurveCarrier, ends: [[f64; 3]; 2]) -> Option<bool> {
     super::domain_endpoint_reversal(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         carrier,
         Some(ends.map(|[x, y, z]| Point3::new(x, y, z))),
         [super::LINEAR_RESOLUTION_MM; 2],
@@ -379,7 +379,7 @@ fn a_stored_range_matches_a_tolerant_vertex_within_its_tolerance() {
                 .expect("finite fixture range"),
         ),
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         super::edge_parameter_range(&ctx, &carrier, Some(endpoints), [None; 2], false, true)
             .unwrap(),
@@ -446,7 +446,7 @@ fn a_stored_range_shorter_than_its_vertex_tolerances_takes_the_nearer_order() {
         Point3::new(1.0e-3_f64.cos(), 1.0e-3_f64.sin(), 0.0),
         Point3::new(1.0, 0.0, 0.0),
     ];
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         super::edge_parameter_range(
             &ctx,
@@ -473,6 +473,7 @@ fn a_full_turn_edge_range_starts_at_its_vertex() {
         id: curve_id.clone(),
         geometry: unit_circle(),
         source_object: None,
+        native_ref: None,
     });
     let point_id = PointId::mint("test:model:point#seam").expect("point id");
     brep.points.push(Point::new(
@@ -485,6 +486,7 @@ fn a_full_turn_edge_range_starts_at_its_vertex() {
         id: vertex_id.clone(),
         point: point_id,
         tolerance: None,
+        native_ref: None,
     });
     // A sentinel closed circle starts at its reference direction; its vertex
     // has since moved to θ = 3π/2.
@@ -495,9 +497,12 @@ fn a_full_turn_edge_range_starts_at_its_vertex() {
             Some([0.0, std::f64::consts::TAU]),
         )
         .expect("edge carrier"),
-        start: vertex_id.clone(),
-        end: vertex_id,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            vertex_id.clone(),
+            vertex_id,
+        )),
         tolerance: None,
+        native_ref: None,
     });
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
     super::phase_full_turn_edge_ranges(&mut brep, &mut annotations).expect("phase");

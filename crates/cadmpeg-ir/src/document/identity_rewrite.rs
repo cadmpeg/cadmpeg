@@ -4,3 +4,5 @@
 use super::FeatureRegenerationEdge;
 
 rewrite_record!(FeatureRegenerationEdge, []; {child, parent});
+
+rewrite_scalar!(super::SourceMeta);

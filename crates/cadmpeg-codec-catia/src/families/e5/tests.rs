@@ -451,15 +451,15 @@ fn decode_e5_stream_transfers_circle_carrier() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.curves.len(), 1);
-    assert_eq!(result.ir().model.vertices.len(), 2);
-    assert!(result.ir().model.edges.is_empty());
+    assert_eq!(result.ir().geometry.curves.len(), 1);
+    assert_eq!(result.ir().geometry.vertices.len(), 2);
+    assert!(result.ir().geometry.edges.is_empty());
     assert!(result.report().losses.iter().any(|loss| {
         loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Topology
             && loss.severity == cadmpeg_ir::report::Severity::Blocking
     }));
     assert!(matches!(
-        result.ir().model.curves[0].geometry,
+        result.ir().geometry.curves[0].geometry,
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
     ));
     assert!(result.ir().native_unknowns("catia").unwrap()[0]
@@ -484,15 +484,18 @@ fn decode_e5_stream_transfers_standalone_d8_carrier() {
         .decode(&mut cur, &DecodeOptions::default())
         .expect("E5 D8 decode");
 
-    assert_eq!(result.ir().model.surfaces.len(), 1);
-    let [procedural] = result.ir().model.procedural_surfaces.as_slice() else {
+    assert_eq!(result.ir().geometry.surfaces.len(), 1);
+    let [procedural] = result.ir().geometry.procedural_surfaces.as_slice() else {
         panic!("one standalone rolling-ball construction");
     };
     assert_eq!(
-        result.ir().model.procedural_surface_owner(&procedural.id),
-        Some(&result.ir().model.surfaces[0].id)
+        result
+            .ir()
+            .geometry
+            .procedural_surface_owner(&procedural.id),
+        Some(&result.ir().geometry.surfaces[0].id)
     );
-    let surface = &result.ir().model.surfaces[0];
+    let surface = &result.ir().geometry.surfaces[0];
     assert!(matches!(
         &surface.geometry,
         SurfaceGeometry::Procedural { construction, .. } if construction == &procedural.id
@@ -594,35 +597,35 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.loops.len(), 1);
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .faces
             .iter()
-            .find(|face| face.id == result.ir().model.loops[0].face)
-            .map(|face| face.loop_role(&result.ir().model.loops[0].id))
+            .find(|face| face.id == result.ir().geometry.loops[0].face)
+            .map(|face| face.loop_role(&result.ir().geometry.loops[0].id))
             .unwrap_or_default(),
         cadmpeg_ir::topology::LoopBoundaryRole::Outer
     );
-    assert_eq!(result.ir().model.coedges.len(), 4);
-    assert_eq!(result.ir().model.edges.len(), 4);
-    assert_eq!(result.ir().model.vertices.len(), 4);
-    assert_eq!(result.ir().model.pcurves.len(), 4);
-    assert_eq!(result.ir().model.curves.len(), 4);
-    assert_eq!(result.ir().model.procedural_curves.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 4);
+    assert_eq!(result.ir().geometry.edges.len(), 4);
+    assert_eq!(result.ir().geometry.vertices.len(), 4);
+    assert_eq!(result.ir().geometry.pcurves.len(), 4);
+    assert_eq!(result.ir().geometry.curves.len(), 4);
+    assert_eq!(result.ir().geometry.procedural_curves.len(), 1);
     assert!(matches!(
-        result.ir().model.procedural_curves[0].definition(),
+        result.ir().geometry.procedural_curves[0].definition(),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
             family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric { .. },
         }
     ));
     assert!(result
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .all(|edge| edge.curve().is_some() && edge.param_range().is_some()));
@@ -674,10 +677,10 @@ fn decode_e5_stream_binds_file_level_vertex_run() {
     let result = CatiaCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .expect("E5 decode");
-    assert_eq!(result.ir().model.points.len(), 4);
-    assert_eq!(result.ir().model.vertices.len(), 4);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.edges.len(), 4);
+    assert_eq!(result.ir().geometry.points.len(), 4);
+    assert_eq!(result.ir().geometry.vertices.len(), 4);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.edges.len(), 4);
 }
 
 pub(super) fn e5_loop_members(

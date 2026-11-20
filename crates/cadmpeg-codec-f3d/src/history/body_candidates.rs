@@ -4,7 +4,7 @@ use crate::records::recipes::{ConstructionRecipe, ConstructionRecipeKind};
 use crate::records::sketch_links::PersistentDesignLink;
 use crate::records::topology::body_recipe::DesignBodyRecipeOperand;
 use cadmpeg_ir::ids::{BodyId, FaceId};
-use cadmpeg_ir::topology::{Body, Region, Shell};
+use cadmpeg_ir::topology::{Body, Face, Region, Shell};
 use std::collections::{BTreeSet, HashMap};
 
 struct ExternalIndex<'a> {
@@ -20,6 +20,7 @@ pub(super) struct BodyCandidates<'a> {
     bodies: &'a [Body],
     regions: &'a [Region],
     shells: &'a [Shell],
+    faces: &'a [Face],
     recipes: &'a [ConstructionRecipe],
     links: &'a [PersistentDesignLink],
     external: Option<ExternalIndex<'a>>,
@@ -30,6 +31,7 @@ impl<'a> BodyCandidates<'a> {
         bodies: &'a [Body],
         regions: &'a [Region],
         shells: &'a [Shell],
+        faces: &'a [Face],
         recipes: &'a [ConstructionRecipe],
         links: &'a [PersistentDesignLink],
     ) -> Self {
@@ -37,6 +39,7 @@ impl<'a> BodyCandidates<'a> {
             bodies,
             regions,
             shells,
+            faces,
             recipes,
             links,
             external: None,
@@ -44,19 +47,22 @@ impl<'a> BodyCandidates<'a> {
         }
     }
     fn external_index(&mut self) -> &ExternalIndex<'a> {
-        let (bodies, regions, shells) = (self.bodies, self.regions, self.shells);
+        let (bodies, regions, shells, faces) = (self.bodies, self.regions, self.shells, self.faces);
         self.external.get_or_insert_with(|| {
             let mut body_by_region = HashMap::new();
             for region in regions {
                 body_by_region.insert(&region.id, &region.body);
             }
-            let mut body_by_face = HashMap::new();
+            let mut body_by_shell = HashMap::new();
             for shell in shells {
-                let Some(body) = body_by_region.get(&shell.region).copied() else {
-                    continue;
-                };
-                for face in shell.faces() {
-                    body_by_face.insert(face, body);
+                if let Some(body) = body_by_region.get(&shell.region).copied() {
+                    body_by_shell.insert(&shell.id, body);
+                }
+            }
+            let mut body_by_face = HashMap::new();
+            for face in faces {
+                if let Some(body) = body_by_shell.get(&face.shell).copied() {
+                    body_by_face.insert(&face.id, body);
                 }
             }
             let mut metadata = HashMap::new();

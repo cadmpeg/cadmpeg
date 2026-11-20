@@ -43,7 +43,7 @@ fn reference_findings(
     records: &[MetadataReference],
     section: &MetaSectionRecord,
 ) -> Result<usize, cadmpeg_core::CodecError> {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut namespace = NativeNamespace::default();
     namespace.set_arena(&ctx, "drawing_metadata_references", records)?;
     let mut findings = Vec::new();
@@ -143,7 +143,7 @@ fn drawing_family_validation_requires_one_registry_identity_and_exact_type() {
 #[test]
 fn drawing_refusal_records_require_unique_identity_scope_and_detail() -> TestResult {
     use crate::native::StructuralIssueRecord;
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let valid = StructuralIssueRecord {
         id: "inventor:drawing:record-issue#generated-0".into(),
         scope: "generated-0".into(),

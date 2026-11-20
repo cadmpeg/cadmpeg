@@ -187,9 +187,12 @@ fn ellipse_edge_annotation_names_only_a_stored_carrier_range() {
                     range,
                 )
                 .unwrap(),
-                start: VertexId::from(crate::brep::id(crate::asm_format!("sat"), 3)),
-                end: VertexId::from(crate::brep::id(crate::asm_format!("sat"), 4)),
+                ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                    VertexId::from(crate::brep::id(crate::asm_format!("sat"), 3)),
+                    VertexId::from(crate::brep::id(crate::asm_format!("sat"), 4)),
+                )),
                 tolerance: None,
+                native_ref: None,
             }],
             ..AsmBrep::default()
         };
@@ -240,12 +243,14 @@ fn unresolved_analytic_carriers_have_no_derived_geometry_fields() {
             id: SurfaceId::from(crate::brep::id(crate::asm_format!("sat"), 0)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         }],
         curves: vec![Curve {
             id: CurveId::from(crate::brep::id(crate::asm_format!("sat"), 1)),
             parameter_range: None,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         }],
         ..AsmBrep::default()
     };

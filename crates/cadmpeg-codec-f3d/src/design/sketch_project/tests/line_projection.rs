@@ -40,6 +40,7 @@ fn planar_line_endpoints_define_the_profile_for_each_auxiliary_normal() {
                 let record_index = u32::try_from(index).unwrap() + 101;
                 SketchCurveIdentity {
                     planar_z_noise: None,
+                    tail_marker: None,
                     id: format!("f3d:Design/BulkStream.dat:curve#{record_index}"),
                     record_index,
                     owner_reference: Some(42),

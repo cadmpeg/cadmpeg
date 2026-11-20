@@ -10,19 +10,39 @@ pub(super) struct ReferenceLaneFaces {
     pub(super) disjoint_names: bool,
 }
 
+/// How the Design references of one persistent name combine into its faces.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum NameReferences {
+    /// Every face that one of the name's references joins.
+    Union,
+    /// The faces that every reference of the name joins; the union when no
+    /// face carries all of them.
+    Common,
+}
+
+/// The faces of one lane with the Design references of each name joined by
+/// [`NameReferences::Union`].
 pub(super) fn reference_lane_faces(
     lane: &[crate::records::dimensions::DesignRecipeReference],
 ) -> ReferenceLaneFaces {
-    let mut names: std::collections::BTreeMap<_, Vec<_>> = std::collections::BTreeMap::new();
+    reference_lane_faces_by(lane, NameReferences::Union)
+}
+
+pub(super) fn reference_lane_faces_by(
+    lane: &[crate::records::dimensions::DesignRecipeReference],
+    combine: NameReferences,
+) -> ReferenceLaneFaces {
+    let mut references: std::collections::BTreeMap<_, Vec<_>> = std::collections::BTreeMap::new();
     for reference in lane {
-        let faces = names.entry(reference.selector_offset).or_default();
-        for face in super::effective_faces(reference) {
-            if !faces.contains(face) {
-                faces.push(face.clone());
-            }
-        }
+        references
+            .entry(reference.selector_offset)
+            .or_default()
+            .push(super::effective_faces(reference));
     }
-    let mut names = names.into_values().filter(|faces| !faces.is_empty());
+    let mut names = references
+        .into_values()
+        .map(|references| name_faces(&references, combine))
+        .filter(|faces| !faces.is_empty());
     let mut faces = names.next().unwrap_or_default();
     let mut union = faces.clone();
     for name in names {
@@ -37,6 +57,33 @@ pub(super) fn reference_lane_faces(
     ReferenceLaneFaces {
         faces: if disjoint_names { union } else { faces },
         disjoint_names,
+    }
+}
+
+/// The faces of one persistent name from the candidate faces of each of its
+/// Design references.
+fn name_faces(
+    references: &[&[cadmpeg_ir::ids::FaceId]],
+    combine: NameReferences,
+) -> Vec<cadmpeg_ir::ids::FaceId> {
+    let mut union: Vec<cadmpeg_ir::ids::FaceId> = Vec::new();
+    for face in references.iter().copied().flatten() {
+        if !union.contains(face) {
+            union.push(face.clone());
+        }
+    }
+    if combine == NameReferences::Union {
+        return union;
+    }
+    let common: Vec<_> = union
+        .iter()
+        .filter(|face| references.iter().all(|faces| faces.contains(face)))
+        .cloned()
+        .collect();
+    if common.is_empty() {
+        union
+    } else {
+        common
     }
 }
 
@@ -187,6 +234,54 @@ mod tests {
         assert!(conflict.disjoint_names);
         assert!(!super::reference_lane_faces(&lane).disjoint_names);
         assert!(super::reference_lane_faces(&[]).faces.is_empty());
+    }
+
+    #[test]
+    fn persistent_name_selects_faces_that_carry_every_design_reference() {
+        use crate::records::dimensions::DesignRecipeReference;
+        use cadmpeg_ir::ids::FaceId;
+        let face = |slot| FaceId::mint(format!("f3d:brep:entity#{slot}")).unwrap();
+        let reference = |selector_offset, design_reference, slots: &[i64]| DesignRecipeReference {
+            selector: 1,
+            selector_offset,
+            token: "1".into(),
+            token_integer: 0,
+            token_offset: selector_offset + 8,
+            design_reference,
+            design_reference_offset: selector_offset + 17,
+            candidate_faces: slots.iter().map(|slot| face(*slot)).collect(),
+            candidate_edges: Vec::new(),
+            alternate_selector_faces: Vec::new(),
+            alternate_selector_edges: Vec::new(),
+            operand_offset: Some(0),
+        };
+        // One name with two Design references: the reference that every
+        // fragment of the token carries does not widen the name.
+        let name = [reference(0, 920, &[10]), reference(0, 934, &[10, 20, 30])];
+        let lane = super::reference_lane_faces_by(&name, super::NameReferences::Common);
+        assert_eq!(lane.faces, [face(10)]);
+        assert!(!lane.disjoint_names);
+        assert_eq!(
+            super::reference_lane_faces(&name).faces,
+            [face(10), face(20), face(30)]
+        );
+        // A second name of the same operand intersects the first name's faces.
+        let operand = [
+            name[0].clone(),
+            name[1].clone(),
+            reference(40, 922, &[10]),
+            reference(40, 934, &[10, 20, 30]),
+        ];
+        assert_eq!(
+            super::reference_lane_faces_by(&operand, super::NameReferences::Common).faces,
+            [face(10)]
+        );
+        // No face carries both references: the name keeps their union.
+        let split = [reference(0, 920, &[10]), reference(0, 934, &[20, 30])];
+        assert_eq!(
+            super::reference_lane_faces_by(&split, super::NameReferences::Common).faces,
+            [face(10), face(20), face(30)]
+        );
     }
 
     #[test]

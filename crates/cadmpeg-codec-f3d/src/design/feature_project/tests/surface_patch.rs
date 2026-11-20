@@ -182,6 +182,92 @@ fn interior_group_form_projects_boundary_continuity_and_interior_constraints() {
 }
 
 #[test]
+fn interior_group_projection_retains_the_ordered_source_references() {
+    use super::super::{project_parameter_design_with_edge_identities, ProjectInputs};
+    use crate::design::test_support::synthetic_feature_timelines;
+
+    let references = [101, 102, 103, 104, 105, 106, 107];
+    let scopes = [interior_scope(references.to_vec(), vec![101])];
+    let groups = interior_groups(0, 4);
+    let timelines = synthetic_feature_timelines(&scopes);
+    let projection = crate::test_support::with_decode_context(|ctx| {
+        project_parameter_design_with_edge_identities(
+            ctx,
+            &ProjectInputs {
+                scopes: &scopes,
+                timelines: &timelines,
+                construction_groups: &groups,
+                ..Default::default()
+            },
+        )
+    })
+    .unwrap();
+    let [feature] = projection.features.as_slice() else {
+        panic!("one authored SurfacePatch");
+    };
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::FilledSurface { .. })
+    ));
+    for (ordinal, record) in references.into_iter().enumerate() {
+        assert_eq!(
+            feature
+                .source_properties
+                .get(format!("reference:{ordinal}").as_str()),
+            Some(&record.to_string())
+        );
+    }
+}
+
+#[test]
+fn sketch_profile_patch_accepts_a_leading_tool_and_consecutive_profile_pairs() {
+    for (references, first_ordinal, first_member, projected) in [
+        ([104, 101, 102, 105, 106], 1, 102, true),
+        ([101, 104, 102, 105, 106], 0, 102, false),
+        ([104, 101, 104, 105, 106], 1, 104, false),
+        ([104, 101, 106, 105, 102], 1, 102, false),
+    ] {
+        let mut scope = DesignParameterScope::empty(
+            &format!("{STREAM}:design-parameter-scope#50"),
+            DesignFeatureKind::SurfacePatch,
+            50,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.reference_members = ReferenceRun::unlocated(references.to_vec());
+                draft.layout_fixture_references();
+                draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+                draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        let groups = [
+            group(
+                101,
+                first_ordinal,
+                &[first_member],
+                DesignOperandRole::PROFILE,
+            ),
+            group(105, 3, &[106], DesignOperandRole::PROFILE),
+        ];
+        let (definition, losses) = project(&scope, &groups);
+        if projected {
+            assert!(matches!(
+                definition,
+                Some(FeatureDefinition::Operation(FeatureOperation::FilledSurface {
+                    boundary: SurfaceBoundary::Path(PathRef::Native(ref boundary)),
+                    ref continuity,
+                    ..
+                })) if boundary == &scope.id && continuity.resolved().is_none()
+            ));
+        } else {
+            assert_eq!(definition, None);
+        }
+        assert!(losses.is_empty());
+    }
+}
+
+#[test]
 fn interior_group_form_treats_unnamed_groups_as_inactive_with_a_loss() {
     let scope = interior_scope(vec![101, 102, 103, 104, 105, 106, 107, 108, 109], vec![101]);
     let mut groups = interior_groups(0, 4);

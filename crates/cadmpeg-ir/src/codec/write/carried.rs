@@ -46,10 +46,10 @@ impl<'ir, 'r> FindingLocator<'ir, 'r> {
         };
 
         macro_rules! walk_model {
-            ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+            ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
                 $(
-                    for entity in &ir.model.$field {
-                        record(entity.identity(), EntityLocation::Model(arena_kind(&ir.model.$field)));
+                    for entity in &ir.$home.$field {
+                        record(entity.identity(), EntityLocation::Model(arena_kind(&ir.$home.$field)));
                     }
                 )*
             };

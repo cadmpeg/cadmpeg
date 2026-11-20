@@ -5,9 +5,11 @@ use super::scalars::FeatureObjectNames;
 use crate::classification::{classify, FeatureClass};
 use crate::history::classify::has_default_extrusion_operation;
 use crate::layout::extrusion_boundary_operation_trailer as boundary_tr;
+use crate::layout::extrusion_compact_operation_trailer as compact_tr;
 use crate::layout::extrusion_narrow_boundary_operation_trailer as narrow_boundary_tr;
 use crate::layout::extrusion_sparse_long_zero_operation_trailer as sparse_long_tr;
 use crate::layout::extrusion_sparse_operation_trailer as sparse_tr;
+use crate::layout::mfc_new_class_header as class_hdr;
 use crate::records::ObjectId;
 use crate::records::{Feature, FeatureInputLane, FeatureInputName};
 use cadmpeg_core::decode::{u64_from_index, View};
@@ -285,6 +287,20 @@ fn complete_long_zero_operation_trailer(payload: &[u8], trailer: usize) -> bool 
         })
 }
 
+fn complete_compact_operation_trailer(payload: &[u8], trailer: usize) -> bool {
+    trailer
+        .checked_add(compact_tr::LEN)
+        .and_then(|end| payload.get(trailer..end))
+        .is_some_and(|frame| {
+            View::u16_le_at(frame, compact_tr::MARKER) == Some(1)
+                && View::u16_le_at(frame, compact_tr::REFERENCE)
+                    .is_some_and(|reference| (1..0x7fff).contains(&reference))
+                && frame[compact_tr::ZERO_AFTER_REFERENCE..compact_tr::FINAL_TOKEN] == [0; 12]
+                && View::u16_le_at(frame, compact_tr::FINAL_TOKEN).is_some_and(|token| token != 0)
+                && frame[compact_tr::ZERO_TAIL..compact_tr::LEN] == [0; 4]
+        })
+}
+
 fn boundary_operation_trailer(payload: &[u8], name_offset: usize, trailer: usize) -> bool {
     let Some(name_token) = payload.get(name_offset..name_offset + 2) else {
         return false;
@@ -310,14 +326,27 @@ fn boundary_operation_trailer(payload: &[u8], name_offset: usize, trailer: usize
             .is_some_and(|frame| narrow(frame) && next_object_at(trailer + narrow_boundary_tr::LEN))
 }
 
+fn operation_trailer_start(name: &FeatureInputName) -> Option<usize> {
+    let name_offset = usize::try_from(name.offset).ok()?;
+    let name_bytes = name.value.encode_utf16().count().checked_mul(2)?;
+    name_offset.checked_add(6)?.checked_add(name_bytes)
+}
+
 /// Inline extrusion trailer fields: the family word and operation byte.
 pub(super) fn feature_inline_operation_fields(
     lane: &FeatureInputLane,
     name: &FeatureInputName,
 ) -> Option<(u16, u8)> {
+    inline_operation_fields(lane, name, true)
+}
+
+fn inline_operation_fields(
+    lane: &FeatureInputLane,
+    name: &FeatureInputName,
+    include_compact: bool,
+) -> Option<(u16, u8)> {
     let name_offset = usize::try_from(name.offset).ok()?;
-    let name_bytes = name.value.encode_utf16().count().checked_mul(2)?;
-    let trailer = name_offset.checked_add(6 + name_bytes)?;
+    let trailer = operation_trailer_start(name)?;
     let bytes = lane.native_payload.get(trailer..trailer + 19)?;
     let terminated = bytes[sparse_tr::SPARSE_ZERO_PREFIX..19] == [0xff, 0xfe, 0xff]
         || lane
@@ -362,6 +391,7 @@ pub(super) fn feature_inline_operation_fields(
                         && suffix[20..24] == [0; 4])
             });
     let terminated = terminated
+        || (include_compact && complete_compact_operation_trailer(&lane.native_payload, trailer))
         || complete_long_zero_operation_trailer(&lane.native_payload, trailer)
         || boundary_operation_trailer(&lane.native_payload, name_offset, trailer);
     if bytes[sparse_tr::ZERO_HEADER..sparse_tr::FAMILY] != [0; 4]
@@ -386,6 +416,34 @@ fn feature_inline_operation(lane: &FeatureInputLane, name: &FeatureInputName) ->
         (0x01ca, 0 | 2) => Some(BooleanOp::Cut),
         _ => None,
     }
+}
+
+fn inline_join_has_class_scope(
+    feature: &Feature,
+    lane: &FeatureInputLane,
+    name: &FeatureInputName,
+) -> bool {
+    if feature.input_class.as_deref().is_some_and(|class| {
+        matches!(class, "moExtrusion_c" | "moICE_c" | "moBossThin_c")
+            && lane.classes.iter().any(|declaration| {
+                declaration.name == class
+                    && declaration
+                        .offset
+                        .checked_add(u64_from_index(class_hdr::LEN))
+                        .and_then(|offset| offset.checked_add(u64_from_index(class.len())))
+                        == Some(name.offset)
+            })
+    }) {
+        return true;
+    }
+    let Some(trailer) = operation_trailer_start(name) else {
+        return false;
+    };
+    !complete_compact_operation_trailer(&lane.native_payload, trailer)
+        || View::u16_le_at(
+            &lane.native_payload,
+            trailer + compact_tr::CONTINUATION_WORD,
+        ) == Some(0)
 }
 
 pub(crate) fn ambiguous_thin_join_operation(
@@ -431,7 +489,13 @@ pub(crate) fn bind_extrusion_operations(
             }
             let mut operations = lane_names.iter().filter_map(|(lane, names)| {
                 let name = names.of(history)?;
-                if let Some(operation) = feature_inline_operation(lane, name) {
+                if default_join && inline_operation_fields(lane, name, false).is_none() {
+                    return None;
+                }
+                if let Some(operation) = feature_inline_operation(lane, name).filter(|operation| {
+                    *operation != BooleanOp::Join
+                        || inline_join_has_class_scope(history, lane, name)
+                }) {
                     return Some(operation);
                 }
                 if default_join {

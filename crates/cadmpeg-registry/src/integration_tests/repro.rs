@@ -5,7 +5,7 @@ use std::time::Duration;
 
 fn bundle() -> Bundle {
     let mut document = cadmpeg_ir::examples::unit_cube().unwrap();
-    document.model.points[0].set_position(Point3::new(50.0, 0.0, 0.0).try_into().unwrap());
+    document.geometry.points[0].set_position(Point3::new(50.0, 0.0, 0.0).try_into().unwrap());
     let finding = cadmpeg_ir::validate_neutral(&document, Vec::new())
         .unwrap()
         .findings
@@ -16,9 +16,9 @@ fn bundle() -> Bundle {
     let unrelated = cadmpeg_ir::examples::unit_cube().unwrap();
     bundle
         .document
-        .model
+        .geometry
         .points
-        .extend(unrelated.model.points.into_iter().map(|mut point| {
+        .extend(unrelated.geometry.points.into_iter().map(|mut point| {
             point.id = cadmpeg_ir::ids::PointId::mint(format!(
                 "synthetic:extra:point#{}",
                 point.id.as_str().split('#').next_back().unwrap()
@@ -39,7 +39,7 @@ fn repro_composed_check_and_shrink_keep_signature_and_reduce_rows() {
     let reduced = shrink(&bundle, &bundle.signature, Duration::from_secs(10), &|| {
         false
     });
-    assert!(reduced.document.model.points.len() < bundle.document.model.points.len());
+    assert!(reduced.document.geometry.points.len() < bundle.document.geometry.points.len());
     assert!(check(&reduced)
         .iter()
         .any(|finding| bundle.signature.reproduces(finding)));
@@ -97,16 +97,16 @@ fn repro_nonreproducing_cut_retains_rows_and_reason() {
     let finding = cadmpeg_ir::report::check::Finding {
         check: Check::GeometricConsistency,
         severity: cadmpeg_ir::report::Severity::Error,
-        entity: Some(document.model.bodies[0].id.to_string()),
+        entity: Some(document.geometry.bodies[0].id.to_string()),
         related: Vec::new(),
         message: "synthetic finding requiring additional context".into(),
     };
     let bundle = cut(&document, &finding, &CutOptions::default()).unwrap();
     assert!(bundle.incomplete_reason.is_some());
-    assert_eq!(bundle.document.model.bodies.len(), 1);
+    assert_eq!(bundle.document.geometry.bodies.len(), 1);
     assert_eq!(
-        bundle.document.model.faces.len(),
-        document.model.faces.len()
+        bundle.document.geometry.faces.len(),
+        document.geometry.faces.len()
     );
     let parsed: Bundle = serde_json::from_slice(&serde_json::to_vec(&bundle).unwrap()).unwrap();
     assert_eq!(parsed, bundle);
@@ -119,7 +119,7 @@ fn repro_nonreproducing_cut_retains_rows_and_reason() {
 fn repro_body_orientation_uses_the_composed_document_check() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut document = cadmpeg_ir::examples::unit_cube().unwrap();
-    document.model.faces[0].sense = match document.model.faces[0].sense {
+    document.geometry.faces[0].sense = match document.geometry.faces[0].sense {
         cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
         cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
     };
@@ -140,7 +140,7 @@ fn repro_body_orientation_uses_the_composed_document_check() {
         .iter()
         .find(|finding| {
             finding.check == Check::Orientation
-                && finding.entity.as_deref() == Some(document.model.bodies[0].id.as_str())
+                && finding.entity.as_deref() == Some(document.geometry.bodies[0].id.as_str())
         })
         .unwrap();
     let bundle = cut(&document, finding, &CutOptions::default()).unwrap();
@@ -150,8 +150,8 @@ fn repro_body_orientation_uses_the_composed_document_check() {
         bundle.incomplete_reason
     );
     assert_eq!(
-        bundle.document.model.faces.len(),
-        document.model.faces.len()
+        bundle.document.geometry.faces.len(),
+        document.geometry.faces.len()
     );
     assert!(check(&bundle)
         .iter()

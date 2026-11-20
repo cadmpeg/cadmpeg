@@ -40,16 +40,16 @@ pub(in crate::design::decode) fn rigid_transform_at(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct FixedScalarFrame<T = FiniteReal> {
-    pub(super) start: u64,
-    pub(super) end: u64,
-    pub(super) owner_record_index: Option<u32>,
-    pub(super) ordinal: u8,
-    pub(super) value: T,
-    pub(super) value_offset: u64,
+pub(in crate::design) struct FixedScalarFrame<T = FiniteReal> {
+    pub(in crate::design) start: u64,
+    pub(in crate::design) end: u64,
+    pub(in crate::design) owner_record_index: Option<u32>,
+    pub(in crate::design) ordinal: u8,
+    pub(in crate::design) value: T,
+    pub(in crate::design) value_offset: u64,
 }
 
-pub(super) fn exact_fixed_scalar(
+pub(in crate::design) fn exact_fixed_scalar(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_index: u32,
@@ -77,14 +77,15 @@ pub(super) fn exact_fixed_scalar(
                 bytes,
                 start.checked_add(typed_extrude_scalar::TRAILING_OWNER_REFERENCE)?,
             )?;
+            let mut companion_indices = [parameter.0, presentation.0];
+            companion_indices.sort_unstable();
             if bytes.get(start + 11..start + 19) != Some(&[0; 8])
                 || bytes.get(start + 19..start + 24) != Some(&[1, 1, 0, 0, 0])
                 || owner.1 != "DD405BC2-D673-44F0-8833-5CB2A1C186C7"
                 || repeated_owner != owner
                 || trailing_owner != owner
-                || parameter.0 != record_index.checked_add(1)?
+                || companion_indices != [record_index.checked_add(1)?, record_index.checked_add(2)?]
                 || parameter.1 != "7A6A3D31-BE74-4E19-9115-20642944C2E4"
-                || presentation.0 != record_index.checked_add(2)?
                 || !matches!(
                     presentation.1,
                     "6CCF41D5-40BE-48ED-A834-18F3EAED6C57" | "8C780195-72C0-4A56-A911-E43AB14357F2"
@@ -157,7 +158,10 @@ pub(in crate::design::decode) fn marked_record_reference(bytes: &[u8], at: usize
     View::u32_le_at(bytes, at + 1)
 }
 
-pub(super) fn extrude_operation_at(bytes: &[u8], offset: usize) -> Option<DesignExtrudeOperation> {
+pub(in crate::design) fn extrude_operation_at(
+    bytes: &[u8],
+    offset: usize,
+) -> Option<DesignExtrudeOperation> {
     match View::u32_le_at(bytes, offset)? {
         1 => Some(DesignExtrudeOperation::Join),
         2 => Some(DesignExtrudeOperation::Cut),
@@ -170,10 +174,11 @@ pub(super) fn extrude_operation_at(bytes: &[u8], offset: usize) -> Option<Design
 #[cfg(test)]
 mod tests {
     use super::exact_fixed_scalar;
+    use super::typed_extrude_scalar;
 
     #[test]
     fn typed_fixed_scalar_keeps_its_owner_ordinal_and_value() {
-        let mut bytes = vec![0; 303];
+        let mut bytes = vec![0; typed_extrude_scalar::LEN];
         bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
         bytes[4..7].copy_from_slice(b"326");
         bytes[7..11].copy_from_slice(&30u32.to_le_bytes());
@@ -200,6 +205,17 @@ mod tests {
         assert_eq!(scalar.ordinal, 1);
         assert_eq!(scalar.value.get(), -2.5);
         assert_eq!(scalar.value_offset, 80);
+
+        let parameter_target = typed_extrude_scalar::PARAMETER_REFERENCE + 1;
+        let presentation_target = typed_extrude_scalar::PRESENTATION_REFERENCE + 1;
+        bytes[parameter_target..parameter_target + 8].copy_from_slice(&32u64.to_le_bytes());
+        bytes[presentation_target..presentation_target + 8].copy_from_slice(&31u64.to_le_bytes());
+        assert_eq!(exact_fixed_scalar(&bytes, &records, 30), Some(scalar));
+
+        bytes[presentation_target..presentation_target + 8].copy_from_slice(&32u64.to_le_bytes());
+        assert!(exact_fixed_scalar(&bytes, &records, 30).is_none());
+
+        bytes[presentation_target..presentation_target + 8].copy_from_slice(&31u64.to_le_bytes());
         bytes[265] = b'0';
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         assert!(exact_fixed_scalar(&bytes, &records, 30).is_none());

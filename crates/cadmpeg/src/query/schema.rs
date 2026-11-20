@@ -8,6 +8,7 @@
 //! presence, JSON type, an example, and a `relation` column per dotted path.
 
 use anyhow::{bail, Context, Result};
+use cadmpeg_ir::ArenaHome;
 use clap::{Args, Subcommand};
 use serde_json::{Map, Value};
 
@@ -17,7 +18,7 @@ use super::{cell, print_json};
 /// Target selection for `query schema`.
 #[derive(Debug, Args)]
 pub(crate) struct SchemaArgs {
-    /// Schema source; omit to list model arenas.
+    /// Schema source; omit to list the neutral arenas.
     #[command(subcommand)]
     target: Option<SchemaTarget>,
     /// Print the schema as JSON.
@@ -30,7 +31,8 @@ pub(crate) struct SchemaArgs {
 enum SchemaTarget {
     /// Describe compiled IR types.
     Types {
-        /// Model arena; omit to list all model arenas.
+        /// Neutral arena (`<home>.<arena>` or a bare `<arena>`); omit to list
+        /// every neutral arena.
         arena: Option<String>,
     },
     /// Infer arena fields from a CADIR document.
@@ -59,21 +61,26 @@ pub(super) fn run(args: &SchemaArgs) -> Result<()> {
 }
 
 fn compile_run(spec: Option<&str>, json: bool) -> Result<()> {
-    let root =
-        serde_json::to_value(cadmpeg_ir::cadir_json_schema()).context("serializing the schema")?;
+    let root: Value =
+        serde_json::from_str(cadmpeg_ir::CADIR_JSON_SCHEMA).context("reading the schema")?;
     let defs = root
         .get("$defs")
         .and_then(Value::as_object)
         .context(SHAPE)?;
-    let model = root
-        .get("properties")
-        .and_then(|p| p.get("model"))
-        .map(|node| resolve(defs, node))
-        .and_then(Value::as_object)
-        .context(SHAPE)?;
+    let homes = ArenaHome::ALL
+        .into_iter()
+        .map(|home| {
+            root.get("properties")
+                .and_then(|p| p.get(home.as_str()))
+                .map(|node| resolve(defs, node))
+                .and_then(Value::as_object)
+                .map(|schema| (home, arena_properties(schema)))
+                .context(SHAPE)
+        })
+        .collect::<Result<Vec<_>>>()?;
 
     match spec {
-        None => listing(model, defs, json),
+        None => listing(&homes, defs, json),
         Some(spec) => {
             let target = ArenaTarget::parse(spec)?;
             match &target {
@@ -82,37 +89,57 @@ fn compile_run(spec: Option<&str>, json: bool) -> Result<()> {
                      from a decoded CADIR file: `cadmpeg query schema file FILE \
                      native.{codec}.{arena}`"
                 ),
-                ArenaTarget::Model { arena } => arena_table(arena, model, defs, json),
+                ArenaTarget::Neutral { home, arena } => {
+                    arena_table(&homes, *home, arena, defs, json)
+                }
             }
         }
     }
 }
 
-fn listing(model: &Map<String, Value>, defs: &Map<String, Value>, json: bool) -> Result<()> {
-    let properties = model
-        .get("properties")
-        .and_then(Value::as_object)
-        .context(SHAPE)?;
-    let required = required_set(model.get("required"));
+/// A home's arena schemas and the arenas its schema requires. A home with no
+/// arenas has an object schema without `properties`.
+type HomeArenas<'a> = (&'a Map<String, Value>, std::collections::BTreeSet<&'a str>);
+
+fn arena_properties(schema: &Map<String, Value>) -> HomeArenas<'_> {
+    static EMPTY: std::sync::OnceLock<Map<String, Value>> = std::sync::OnceLock::new();
+    (
+        schema
+            .get("properties")
+            .and_then(Value::as_object)
+            .unwrap_or_else(|| EMPTY.get_or_init(Map::new)),
+        required_set(schema.get("required")),
+    )
+}
+
+fn listing(
+    homes: &[(ArenaHome, HomeArenas<'_>)],
+    defs: &Map<String, Value>,
+    json: bool,
+) -> Result<()> {
     if json {
         let mut payload = Map::new();
-        for (arena, node) in properties {
-            payload.insert(
-                format!("model.{arena}"),
-                Value::String(element_label(node, defs)),
-            );
+        for (home, (properties, _)) in homes {
+            for (arena, node) in *properties {
+                payload.insert(
+                    format!("{home}.{arena}"),
+                    Value::String(element_label(node, defs)),
+                );
+            }
         }
         print_json("schema", Value::Object(payload))?;
         return Ok(());
     }
     println!("arena\telement\trequired");
-    for (arena, node) in properties {
-        let flag = if required.contains(arena.as_str()) {
-            "yes"
-        } else {
-            "no"
-        };
-        println!("model.{arena}\t{}\t{flag}", element_label(node, defs));
+    for (home, (properties, required)) in homes {
+        for (arena, node) in *properties {
+            let flag = if required.contains(arena.as_str()) {
+                "yes"
+            } else {
+                "no"
+            };
+            println!("{home}.{arena}\t{}\t{flag}", element_label(node, defs));
+        }
     }
     eprintln!(
         "note: native arena fields are per-document — \
@@ -123,19 +150,27 @@ fn listing(model: &Map<String, Value>, defs: &Map<String, Value>, json: bool) ->
 }
 
 fn arena_table(
+    homes: &[(ArenaHome, HomeArenas<'_>)],
+    home: ArenaHome,
     arena: &str,
-    model: &Map<String, Value>,
     defs: &Map<String, Value>,
     json: bool,
 ) -> Result<()> {
-    let properties = model
-        .get("properties")
-        .and_then(Value::as_object)
-        .context(SHAPE)?;
-    let Some(node) = properties.get(arena) else {
-        let known: Vec<&str> = properties.keys().map(String::as_str).collect();
+    let node = homes
+        .iter()
+        .find(|(candidate, _)| *candidate == home)
+        .and_then(|(_, (properties, _))| properties.get(arena));
+    let Some(node) = node else {
+        let known: Vec<String> = homes
+            .iter()
+            .flat_map(|(home, (properties, _))| {
+                properties
+                    .keys()
+                    .map(move |arena| format!("{home}.{arena}"))
+            })
+            .collect();
         bail!(
-            "unknown model arena {arena:?}; the IR defines: {}; a document's \
+            "unknown {home} arena {arena:?}; the IR defines: {}; a document's \
              actual arenas come from `cadmpeg query counts FILE`",
             known.join(", ")
         );
@@ -144,7 +179,7 @@ fn arena_table(
     let element = resolve(defs, items);
     if json {
         let payload = serde_json::json!({
-            "arena": format!("model.{arena}"),
+            "arena": format!("{home}.{arena}"),
             "element": ref_name(items).unwrap_or("(inline)"),
             "schema": element,
             "defs": defs_closure(element, defs),
@@ -157,8 +192,8 @@ fn arena_table(
 }
 
 fn sidecar(json: bool) -> Result<()> {
-    let root = serde_json::to_value(cadmpeg_ir::decode_sidecar_json_schema())
-        .context("serializing the sidecar schema")?;
+    let root: Value = serde_json::from_str(cadmpeg_ir::DECODE_SIDECAR_JSON_SCHEMA)
+        .context("reading the sidecar schema")?;
     let empty = Map::new();
     let defs = root
         .get("$defs")

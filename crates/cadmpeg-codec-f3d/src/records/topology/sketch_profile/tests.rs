@@ -19,6 +19,7 @@ fn sketch_profile_operand_borrowed_wire_matches_owned_wire_bytes() {
     for selection in [
         None,
         Some(super::DesignSketchProfileRegionSelection {
+            atomic_regions: Vec::new(),
             record_index: 8,
             byte_offset: 90,
             class_tag: "302".to_owned().try_into().unwrap(),
@@ -95,7 +96,19 @@ fn profile_region_member_preserves_fixed_words_and_nonzero_incidence_values() {
         .expect_err("nonzero u32 identity");
         assert!(error.to_string().contains("curve_primary_id"));
     }
-    for index in 0..8 {
+    // The word at index 1 is the secondary curve identity.
+    let json = wire(3, 1, [0, 3, 0, 0, 1, 1, 0, 0]);
+    let member: super::DesignSketchProfileRegionMember =
+        serde_json::from_str(&json).expect("region member with a secondary identity");
+    assert_eq!(
+        member.curve_secondary_id.map(std::num::NonZeroU32::get),
+        Some(3)
+    );
+    assert_eq!(
+        serde_json::to_string(&member).expect("region member wire"),
+        json
+    );
+    for index in [0, 2, 3, 4, 5, 6, 7] {
         let mut words = [0, 0, 0, 0, 1, 1, 0, 0];
         words[index] = if matches!(index, 4 | 5) { 0 } else { 3 };
         let error =
@@ -127,4 +140,54 @@ fn sketch_profile_offsets_must_follow_their_predecessors() {
         invalid[field] = preceding.into();
         assert!(serde_json::from_value::<DesignSketchProfileOperand>(invalid).is_err());
     }
+}
+
+fn selection_with_loops(holes: &[bool]) -> super::DesignSketchProfileRegionSelection {
+    let loops: Vec<_> = holes
+        .iter()
+        .map(|hole| {
+            json!({
+                "member_count_offset": 0,
+                "members": [],
+                "hole": hole,
+            })
+        })
+        .collect();
+    serde_json::from_value(json!({
+        "record_index": 8, "byte_offset": 90, "class_tag": "302",
+        "region_count_offset": 100, "regions": loops,
+        "companion_class_tag": "303", "companion_byte_offset": 140
+    }))
+    .unwrap()
+}
+
+#[test]
+fn selection_beyond_one_face_rings_is_reported() {
+    // An outer loop whose later loops are holes: the exterior bytes are 1, 0, 0.
+    assert!(selection_with_loops(&[false, true, true]).is_beyond_one_face_rings());
+    // Only the last loop is a hole, or every loop is outer.
+    assert!(!selection_with_loops(&[false, true]).is_beyond_one_face_rings());
+    assert!(!selection_with_loops(&[false, false]).is_beyond_one_face_rings());
+}
+
+#[test]
+fn selection_with_atomic_regions_is_beyond_one_face_rings() {
+    let mut selection = selection_with_loops(&[false]);
+    assert!(!selection.is_beyond_one_face_rings());
+    selection
+        .atomic_regions
+        .push(super::DesignSketchProfileAtomicRegion {
+            region_ordinal: 0,
+            loop_count_offset: 0,
+            loops: Vec::new(),
+        });
+    assert!(selection.is_beyond_one_face_rings());
+}
+
+#[test]
+fn selection_with_two_selected_regions_is_beyond_one_face_rings() {
+    let mut selection = selection_with_loops(&[false, false]);
+    assert!(!selection.is_beyond_one_face_rings());
+    selection.regions[1].region_ordinal = 1;
+    assert!(selection.is_beyond_one_face_rings());
 }

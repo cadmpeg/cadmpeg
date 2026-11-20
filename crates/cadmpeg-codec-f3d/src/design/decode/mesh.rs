@@ -47,7 +47,8 @@ use crate::records::mesh::{
     DesignMeshOperationInput, DesignMeshPlacement, DesignMeshRecordIdentity, DesignMeshSceneBounds,
     DesignMeshSceneNode, DesignMeshSceneState, DesignMeshScope, DesignMeshSourceRecord,
     DesignMeshTextureResource, DesignMeshTextureTable, MeshAffineTransform, MeshBodyLayout,
-    VariableMeshBodyLayout, MESH_COLLECTION_ENTRY_NAME,
+    VariableMeshBodyLayout, MESH_COLLECTION_ENTRY_NAME, MESH_GUID_BASE_TYPE_GUID,
+    MESH_GUID_TYPE_GUID, MESH_GUID_TYPE_VERSION,
 };
 use cadmpeg_core::decode::{bounded_len, u64_from_index, View};
 use cadmpeg_core::CodecError;
@@ -63,9 +64,6 @@ const SCENE_MODULE: &str = "Scene";
 const MESH_ENTRY_NAME_TYPE_GUID: &str = "A1BAA3F6-4B67-4A0D-BACC-75F38A2230F3";
 const MESH_ENTRY_NAME_BASE_TYPE_GUID: &str = "130A0711-4E92-4FCD-AADE-B9C82238BB27";
 const MESH_ENTRY_NAME_TYPE_VERSION: u32 = 0;
-const MESH_GUID_TYPE_GUID: &str = "A8338A26-5436-433C-8BAC-C3CF024AD595";
-const MESH_GUID_BASE_TYPE_GUID: &str = "98542EB9-A4F2-4137-A808-DBB5B3CD6159";
-const MESH_GUID_TYPE_VERSION: u32 = 1;
 const MESH_BODY_TYPE_GUID: &str = "EA90DA22-556C-4C61-89BB-20C2681B7A9D";
 const MESH_BODY_BASE_TYPE_GUID: &str = "CB844AB6-240D-4FC9-9C9F-3679DC896D6F";
 const MESH_BODY_TYPE_VERSION: u32 = 7;
@@ -2433,6 +2431,22 @@ pub(crate) fn mesh_split_stream_losses(
     })
 }
 
+pub(crate) fn mesh_component_flag_losses(
+    features: &[DesignMeshFeature],
+) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
+    features.iter().flat_map(DesignMeshFeature::all_bodies).flat_map(|body| {
+        body.split_streams
+            .iter()
+            .filter(|stream| stream.component_flag)
+            .map(|stream| {
+                crate::loss::F3dLossCode::MeshComponentFlagAssumed.note(format!(
+                    "mesh body {} stream {} reads its components flagged Z: true as unflagged f32 components; the native record retains the flag",
+                    body.placement.record().record_index(), stream.name
+                ))
+            })
+    })
+}
+
 pub(crate) fn mesh_history_window_losses(
     features: &[DesignMeshFeature],
 ) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
@@ -2538,11 +2552,7 @@ pub(crate) fn decode_mesh_bodies(
 ) -> Result<MeshDecode, CodecError> {
     let mut design_records = decode_mesh_design_records(ctx, scan)?;
     let mut outcomes = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::Paramesh))
-    {
+    for entry in crate::container::paramesh_entries(scan) {
         let container = match scan
             .entry_bytes(&entry.name)
             .and_then(|bytes| decode_mesh_container(ctx, bytes))

@@ -12,6 +12,7 @@ mod reports;
 pub(crate) mod round_trips;
 mod signed_carriers;
 mod styles;
+mod surface_sets;
 mod targets;
 
 mod ownership;

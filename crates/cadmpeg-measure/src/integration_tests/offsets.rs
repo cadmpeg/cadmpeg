@@ -17,28 +17,29 @@ use crate::test_support::builders::{assert_measured, cuboid, measure, Builder};
 
 fn make_offset(ir: &mut CadIr, surface: &SurfaceId, distance: f64) {
     let index = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .position(|candidate| candidate.id == *surface)
         .unwrap();
     let support = SurfaceId::mint(format!(
         "test:model:offset-support#{}",
-        ir.model.surfaces.len()
+        ir.geometry.surfaces.len()
     ))
     .unwrap();
     let construction = ProceduralSurfaceId::mint(format!(
         "test:model:offset#{}",
-        ir.model.procedural_surfaces.len()
+        ir.geometry.procedural_surfaces.len()
     ))
     .unwrap();
-    let geometry = ir.model.surfaces[index].geometry.clone();
-    ir.model.surfaces.push(Surface {
+    let geometry = ir.geometry.surfaces[index].geometry.clone();
+    ir.geometry.surfaces.push(Surface {
         id: support.clone(),
         source_object: None,
         geometry,
+        native_ref: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         construction.clone(),
         ProceduralSurfaceDefinition::Offset(OffsetSurfaceConstruction::legacy(
             support,
@@ -51,7 +52,7 @@ fn make_offset(ir: &mut CadIr, surface: &SurfaceId, distance: f64) {
         )),
         None,
     ));
-    ir.model.surfaces[index].geometry = SurfaceGeometry::Procedural {
+    ir.geometry.surfaces[index].geometry = SurfaceGeometry::Procedural {
         construction,
         cache: None,
     };
@@ -101,14 +102,14 @@ fn cacheless_offset_cuboid_preserves_flux_and_placement() {
         for scale in [1.0, 2.0] {
             let mut ir = cuboid([0.0; 3], [2.0, 3.0, 4.0]);
             let surfaces = ir
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .map(|surface| surface.id.clone())
                 .collect::<Vec<_>>();
             for (ordinal, id) in surfaces.into_iter().enumerate() {
                 let surface = ir
-                    .model
+                    .geometry
                     .surfaces
                     .iter_mut()
                     .find(|surface| surface.id == id)
@@ -154,7 +155,7 @@ fn cacheless_offset_cuboid_preserves_flux_and_placement() {
                         construction: construction.clone(),
                         cache: None,
                     };
-                    ir.model.curves.push(Curve {
+                    ir.geometry.curves.push(Curve {
                         id: profile.clone(),
                         source_object: None,
                         parameter_range: None,
@@ -168,8 +169,9 @@ fn cacheless_offset_cuboid_preserves_flux_and_placement() {
                             )
                             .unwrap(),
                         )),
+                        native_ref: None,
                     });
-                    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+                    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
                         construction,
                         ProceduralSurfaceDefinition::LinearSweep(
                             cadmpeg_ir::geometry::surface_payloads::LinearSweepSurfaceConstruction::try_new(
@@ -192,7 +194,7 @@ fn cacheless_offset_cuboid_preserves_flux_and_placement() {
                 }
                 make_offset(&mut ir, &id, distance);
             }
-            ir.model.bodies[0].transform = Some(
+            ir.geometry.bodies[0].transform = Some(
                 Transform::affine([
                     [scale, 0.0, 0.0, 17.0],
                     [0.0, scale, 0.0, -11.0],
@@ -265,7 +267,7 @@ fn a_whole_periodic_offset_measures_a_closed_toroidal_shell() {
                     .collect()
             })
             .collect();
-        ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
+        ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
             NurbsSurface::from_lanes(
                 NurbsSurfaceAxis::new(2, knots.clone(), true),
                 NurbsSurfaceAxis::new(2, knots.clone(), true),

@@ -11,7 +11,8 @@ use super::parameters::value_only_scalar_offset;
 use super::relation_geometry::{
     owned_relation_parameters, relation_display_scalar_for_parameter, LaneIds,
     RELATION_DISPLAY_SCALAR_ID_PROPERTY, RELATION_PARAMETER_ID_PROPERTY,
-    RELATION_PARAMETER_ROLE_PROPERTY, RELATION_PARAMETER_ROLE_REFERENCE,
+    RELATION_PARAMETER_ROLE_DRIVING, RELATION_PARAMETER_ROLE_PROPERTY,
+    RELATION_PARAMETER_ROLE_REFERENCE,
 };
 use super::relation_loci::same_dimension_length;
 use super::scalars::FeatureObjectNames;
@@ -22,7 +23,8 @@ use super::selections::{
 use super::terminations::compact_surface_selection_value;
 use crate::records::{
     FeatureInputEdgeSelection, FeatureInputLane, FeatureInputRelationFamily,
-    FeatureInputScalarRole, FeatureInputSurfaceSelection,
+    FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole,
+    FeatureInputSurfaceSelection,
 };
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_core::decode::{DecodeContext, View};
@@ -617,13 +619,57 @@ fn relation_display_parameter_value(
     })
 }
 
-/// Apply relation-defined units and display semantics to parameters named by display scalars.
+#[derive(Clone, Copy)]
+struct RelationDriver<'a> {
+    relation: &'a FeatureInputRelationInstance,
+    scalar: &'a FeatureInputScalar,
+}
+
+fn owned_driving_scalars<'a>(
+    ownership: &HashMap<String, Option<ParameterId>>,
+    lanes: &'a [FeatureInputLane],
+) -> HashMap<ParameterId, Option<RelationDriver<'a>>> {
+    let mut drivers = HashMap::<ParameterId, Option<RelationDriver<'a>>>::new();
+    for lane in lanes {
+        for relation in &lane.relation_instances {
+            let Some(Some(parameter)) = ownership.get(&relation.id) else {
+                continue;
+            };
+            let candidate = (|| {
+                let source = relation.parameter_scalar_ref()?;
+                let mut matches = lane.scalars.iter().filter(|scalar| scalar.id == source);
+                let (Some(scalar), None) = (matches.next(), matches.next()) else {
+                    return None;
+                };
+                (scalar.role == FeatureInputScalarRole::Driving
+                    && scalar.feature_ref.as_deref() == Some(relation.feature_ref.as_str())
+                    && scalar.parent == lane.id
+                    && scalar.value.get() >= 0.0)
+                    .then_some(RelationDriver { relation, scalar })
+            })();
+            drivers
+                .entry(parameter.clone())
+                .and_modify(|previous| {
+                    if !matches!((*previous, candidate), (Some(first), Some(second))
+                        if first.scalar.id == second.scalar.id)
+                    {
+                        *previous = None;
+                    }
+                })
+                .or_insert(candidate);
+        }
+    }
+    drivers
+}
+
+/// Apply relation-defined units and evaluated driving values to owned parameters.
 pub(crate) fn type_display_relation_parameters(
     parameters: &mut [cadmpeg_ir::features::DesignParameter],
     features: &[cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
 ) -> Result<(), cadmpeg_core::CodecError> {
     let ownership = owned_relation_parameters(features, parameters, lanes);
+    let drivers = owned_driving_scalars(&ownership, lanes);
     let mut families = HashMap::<&cadmpeg_ir::features::ParameterId, HashSet<_>>::new();
     for relation in lanes.iter().flat_map(|lane| &lane.relation_instances) {
         if let Some(Some(parameter)) = ownership.get(&relation.id) {
@@ -639,6 +685,43 @@ pub(crate) fn type_display_relation_parameters(
         let (Some(&family), None) = (families.next(), families.next()) else {
             continue;
         };
+        if matches!(
+            family,
+            FeatureInputRelationFamily::PointPointDistance
+                | FeatureInputRelationFamily::PointLineDistance
+        ) && parameter.native_ref.is_none()
+            && matches!(parameter.value, Some(ParameterValue::Real(_)))
+            && parameter.dependencies.is_empty()
+            && parameter
+                .expression
+                .trim()
+                .parse::<f64>()
+                .is_ok_and(f64::is_finite)
+        {
+            if let Some(driver) = drivers
+                .get(&parameter.id)
+                .copied()
+                .flatten()
+                .filter(|driver| parameter.value != Some(ParameterValue::Real(driver.scalar.value)))
+            {
+                if let Some((value, display, expression)) =
+                    relation_display_parameter_value(family, driver.scalar.value.get())
+                {
+                    parameter.value = Some(value);
+                    parameter.expression = expression;
+                    parameter.native_ref = Some(driver.scalar.id.clone());
+                    parameter.display = parameter.display.or(display);
+                    parameter.properties.insert(
+                        cadmpeg_core::nonblank_const!(RELATION_PARAMETER_ID_PROPERTY),
+                        driver.relation.id.clone(),
+                    );
+                    parameter.properties.insert(
+                        cadmpeg_core::nonblank_const!(RELATION_PARAMETER_ROLE_PROPERTY),
+                        RELATION_PARAMETER_ROLE_DRIVING.into(),
+                    );
+                }
+            }
+        }
         match family {
             FeatureInputRelationFamily::Angle => {
                 // Every relation that owns the parameter is an angle relation.

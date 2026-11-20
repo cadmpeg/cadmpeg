@@ -1103,13 +1103,16 @@ fn as_built_378_alignment_reads_wide_locators() {
         let owners = owners_of(count);
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         let read = |bytes: &[u8], kind| {
-            exact_assembly_alignment_with_types(
-                bytes,
-                &records,
-                &scope_of(kind, count),
-                &owners,
-                &types,
-            )
+            crate::test_support::with_decode_context(|ctx| {
+                exact_assembly_alignment_with_types(
+                    ctx,
+                    bytes,
+                    &records,
+                    &scope_of(kind, count),
+                    &owners,
+                    &types,
+                )
+            })
             .unwrap()
         };
         let alignment = read(&bytes, DesignFeatureKind::AsBuilt)
@@ -1161,13 +1164,16 @@ fn as_built_378_alignment_reads_wide_locators() {
                         draft.layout_fixture_tail();
                     })
                     .unwrap();
-                assert!(exact_assembly_alignment_with_types(
-                    &bytes,
-                    &records,
-                    &wrong_table,
-                    &owners,
-                    &types
-                )
+                assert!(crate::test_support::with_decode_context(|ctx| {
+                    exact_assembly_alignment_with_types(
+                        ctx,
+                        &bytes,
+                        &records,
+                        &wrong_table,
+                        &owners,
+                        &types,
+                    )
+                })
                 .unwrap()
                 .is_none());
             }
@@ -1952,7 +1958,7 @@ fn axial_test_component_scope(record_index: u32, role: &str) -> DesignParameterS
         record_index,
     );
     if let DesignScopePayloadMut::ComponentInsert(slot) = scope.payload_mut() {
-        *slot = Some(DesignComponentInsertConstruction {
+        slot.construction = Some(DesignComponentInsertConstruction {
             relation_record_index: record_index + 1,
             carrier_record_index: record_index + 2,
             occurrence_identity: None,

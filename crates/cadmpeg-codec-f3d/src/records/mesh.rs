@@ -12,6 +12,10 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::transform::Transform;
 use serde::{Deserialize, Serialize};
 
+pub(crate) const MESH_GUID_TYPE_GUID: &str = "A8338A26-5436-433C-8BAC-C3CF024AD595";
+pub(crate) const MESH_GUID_BASE_TYPE_GUID: &str = "98542EB9-A4F2-4137-A808-DBB5B3CD6159";
+pub(crate) const MESH_GUID_TYPE_VERSION: u32 = 1;
+
 cadmpeg_core::named_optional_field!(
     deserialize_container_mesh_uuid,
     DesignMeshUuid,
@@ -1111,6 +1115,9 @@ pub(crate) struct DesignMeshHistoryStream {
 pub(crate) struct DesignMeshSplitStream {
     pub(crate) name: String,
     pub(crate) descriptor: NativeBytes<Vec<u8>>,
+    /// Whether the nested components store the `Z: true` descriptor flag.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) component_flag: bool,
 }
 
 /// One mesh body and its complete Design identity graph.

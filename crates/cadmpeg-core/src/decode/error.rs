@@ -38,9 +38,35 @@ pub struct SourceLocation {
     pub offset: u64,
 }
 
+/// The boundary at which a resource refusal applies.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LimitScope {
+    /// The decode session cannot continue: the whole file is refused.
+    Session,
+    /// The current part cannot continue: the decoder gives up that part only.
+    Part,
+}
+
+impl LimitScope {
+    /// The scope of a refusal in `dimension`. Nesting depth bounds one part's
+    /// structure; every other dimension is cumulative over the session.
+    #[must_use]
+    pub const fn for_dimension(dimension: ResourceDimension) -> Self {
+        match dimension {
+            ResourceDimension::RecursionDepth => Self::Part,
+            ResourceDimension::InputBytes
+            | ResourceDimension::DecompressedBytes
+            | ResourceDimension::RetainedBytes
+            | ResourceDimension::Entities => Self::Session,
+        }
+    }
+}
+
 /// A resource refusal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResourceLimit {
+    /// Whether the refusal stops the session or only its current part.
+    pub scope: LimitScope,
     /// The dimension that refused the request.
     pub dimension: ResourceDimension,
     /// Whether policy or the allocator refused.
@@ -65,6 +91,7 @@ impl ResourceLimit {
         operation: &'static str,
     ) -> Self {
         Self {
+            scope: LimitScope::for_dimension(dimension),
             dimension,
             reason: ResourceFailure::AllocationFailed,
             limit,

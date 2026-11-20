@@ -38,6 +38,7 @@ fn shared_vertex_joins_faces_into_one_component() {
                 vertex: vertex.clone(),
                 pcurves: Vec::new(),
             },
+            native_ref: None,
         },
         Loop {
             id: LoopId::try_from("step:data:loop#2").expect("test loop id"),
@@ -46,6 +47,7 @@ fn shared_vertex_joins_faces_into_one_component() {
                 vertex,
                 pcurves: Vec::new(),
             },
+            native_ref: None,
         },
     ];
     let arena = DecodeArena::new();
@@ -76,6 +78,7 @@ fn shared_vertex_components_use_spanning_links_and_preserve_partitions() {
                         .expect("vertex id"),
                     pcurves: Vec::new(),
                 },
+                native_ref: None,
             })
             .collect::<Vec<_>>();
         let arena = DecodeArena::new();

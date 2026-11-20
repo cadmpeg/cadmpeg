@@ -75,42 +75,48 @@ fn add_bounded_curve(
     let edge = crate::ids::edge(&stem);
 
     ctx.charge_entities(2, "iges_geometry_conics")?;
-    ir.model.points.extend([
+    ir.geometry.points.extend([
         Point::new(start_point.clone(), start, None),
         Point::new(end_point.clone(), end, None),
     ]);
 
     ctx.charge_entities(2, "iges_geometry_conics")?;
-    ir.model.vertices.extend([
+    ir.geometry.vertices.extend([
         Vertex {
             id: start_vertex.clone(),
             point: start_point,
             tolerance,
+            native_ref: None,
         },
         Vertex {
             id: end_vertex.clone(),
             point: end_point,
             tolerance,
+            native_ref: None,
         },
     ]);
     sequences.record_curve(&curve, entry.sequence);
 
     ctx.charge_entities(1, "iges_geometry_conics")?;
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: curve.clone(),
         geometry,
         source_object: Some(source_object(entry)?),
+        native_ref: None,
     });
 
     ctx.charge_entities(1, "iges_geometry_conics")?;
-    ir.model.edges.push(Edge {
+    ir.geometry.edges.push(Edge {
         id: edge.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve), Some(parameter_range))
             .map_err(cadmpeg_core::CodecError::malformed)?,
-        start: start_vertex,
-        end: end_vertex,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            start_vertex,
+            end_vertex,
+        )),
         tolerance,
+        native_ref: None,
     });
     Ok(edge)
 }

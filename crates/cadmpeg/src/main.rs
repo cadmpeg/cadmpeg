@@ -161,7 +161,7 @@ enum Command {
     /// With no `--to`, a same-format conversion keeps the dialect the input
     /// already is, and a cross-format conversion writes the format's default.
     ///
-    /// Convert refuses when the check finds an error in what the output writes. `--allow-errors` writes the file anyway.
+    /// Convert writes the file when the check finds errors and reports them. `--reject-errors` refuses when the check finds an error in what the output writes.
     #[command(
         display_order = 1,
         after_help = "Examples:\n  cadmpeg convert part.sldprt -o part.step\n  cadmpeg convert part.sldprt -o out.3dm --to rhino:archive-80\n  cadmpeg convert part.f3d -o out.igs --to 5.1\n  cadmpeg convert part.f3d --to step"
@@ -178,9 +178,9 @@ enum Command {
         format: Option<String>,
         #[command(flatten)]
         destinations: ConversionDestinations,
-        /// Write output even if the check finds errors in what the output writes. The check runs and prints every finding.
+        /// Do not write if the check finds an error in what the output writes.
         #[arg(long)]
-        allow_errors: bool,
+        reject_errors: bool,
         /// Decode the whole source, design intent included, even when the
         /// output format needs only its geometry.
         #[arg(long, conflicts_with = "container_only")]
@@ -524,7 +524,7 @@ fn main() -> ExitCode {
             _reject_json: _,
             format,
             destinations,
-            allow_errors,
+            reject_errors,
             full_decode,
             reject_lossy,
             input_args,
@@ -532,7 +532,7 @@ fn main() -> ExitCode {
         } => {
             let conversion_args = commands::ConversionArgs {
                 losses: reject_lossy.unwrap_or_default(),
-                allow_errors,
+                reject_errors,
                 full_decode,
                 destination: destinations.destination,
                 report: destinations.report,

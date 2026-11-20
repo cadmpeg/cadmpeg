@@ -1,57 +1,108 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
+      "articulations": [],
       "assembly_joints": [],
+      "assets": [],
       "attributes": [],
-      "bodies": [],
-      "coedges": [],
+      "colliders": [],
       "configurations": [],
-      "curves": [],
+      "declared_measures": [],
       "drawings": [],
-      "edges": [],
-      "faces": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [],
-      "loops": [],
+      "history_bodies": [],
+      "mass_properties": [],
       "occurrences": [],
       "parameters": [],
-      "pcurves": [],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [
         {
           "definition": {
-            "dimension": "size",
+            "dimension": {
+              "kind": "size"
+            },
             "kind": "dimension",
+            "modifiers": [],
             "nominal": {
-              "quantity": "length",
-              "value": 12.0
+              "kind": "literal",
+              "value": {
+                "quantity": "length",
+                "value": 12.0
+              }
             },
             "tolerance": {
-              "fit": {
-                "form_variance": "H",
-                "grade": "7",
-                "source": "ISO 286",
-                "zone_variance": ""
-              },
-              "form": "plus_minus_fit",
-              "lower": {
-                "quantity": "length",
-                "value": -0.1
-              },
-              "upper": {
-                "quantity": "length",
-                "value": 0.2
+              "kind": "fit",
+              "value": {
+                "deviations": {
+                  "kind": "unchecked",
+                  "lower": -0.1,
+                  "upper": 0.2
+                },
+                "fit": {
+                  "form_variance": "H",
+                  "grade": "7",
+                  "source": {
+                    "kind": "iso286"
+                  },
+                  "zone": "hole"
+                }
               }
             }
           },
           "id": "step:presentation:pmi#10",
           "name": "width",
+          "native_options": {},
+          "source_settings": {},
           "targets": [
             {
-              "kind": "shape_aspect",
-              "source_id": "#6"
+              "entity": {
+                "kind": "shape_aspect",
+                "source_id": "#6"
+              }
             }
           ]
         },
@@ -62,39 +113,50 @@
               "quantity": "length",
               "value": 0.05
             },
-            "tolerance": "flatness"
+            "modifiers": [],
+            "tolerance": {
+              "kind": "flatness"
+            },
+            "zones": []
           },
           "id": "step:presentation:pmi#12",
           "name": "surface flatness",
+          "native_options": {},
+          "source_settings": {},
           "targets": [
             {
-              "kind": "shape_aspect",
-              "source_id": "#6"
+              "entity": {
+                "kind": "shape_aspect",
+                "source_id": "#6"
+              }
             }
           ]
         },
         {
           "definition": {
-            "dimension": "diameter",
+            "dimension": {
+              "kind": "diameter"
+            },
             "kind": "dimension",
+            "modifiers": [],
             "tolerance": {
-              "form": "plus_minus",
-              "lower": {
-                "quantity": "length",
-                "value": -0.1
-              },
-              "upper": {
-                "quantity": "length",
-                "value": 0.2
+              "kind": "deviations",
+              "value": {
+                "lower": -0.1,
+                "upper": 0.2
               }
             }
           },
           "id": "step:presentation:pmi#25",
           "name": "datum feature size",
+          "native_options": {},
+          "source_settings": {},
           "targets": [
             {
-              "kind": "shape_aspect",
-              "source_id": "#6"
+              "entity": {
+                "kind": "shape_aspect",
+                "source_id": "#6"
+              }
             }
           ]
         },
@@ -104,10 +166,14 @@
             "kind": "datum"
           },
           "id": "step:presentation:pmi#7",
+          "native_options": {},
+          "source_settings": {},
           "targets": [
             {
-              "kind": "shape_aspect",
-              "source_id": "#7"
+              "entity": {
+                "kind": "shape_aspect",
+                "source_id": "#7"
+              }
             }
           ]
         },
@@ -126,54 +192,82 @@
             ]
           },
           "id": "step:presentation:pmi#8",
-          "name": "primary system"
+          "name": "primary system",
+          "native_options": {},
+          "source_settings": {},
+          "targets": []
         }
       ],
-      "points": [],
+      "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
-      "product_definitions": [],
-      "regions": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "step:product:product#document",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
       "semantic_annotations": [],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {},
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
-        "bytes_named_opaque": "0",
-        "bytes_structural": "295",
-        "bytes_typed": "1421",
-        "bytes_unclassified": "0",
-        "data_sections": "1",
-        "entity_instances": "25",
         "schema": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
               "implementation_level": "2;1"
             },
             "dialect": "step:ap242"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -181,32 +275,47 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {
+      "bytes_named_opaque": 0,
+      "bytes_structural": 295,
+      "bytes_typed": 1421,
+      "bytes_unclassified": 0,
+      "data_sections": 1,
+      "entity_instances": 25
+    },
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
             "implementation_level": "2;1"
           },
           "dialect": "step:ap242"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "geometry.document-angle-unit-unresolved",
-          "kind": "geometry_not_transferred",
-          "namespace": "step",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.document-angle-unit-unresolved",
+            "kind": "geometry_not_transferred",
+            "namespace": "step",
+            "strict_floor": "warning"
+          }
         },
         "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
         "severity": "error"
@@ -217,10 +326,20 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "83ad710354ac1813014aae60add81ae479131f3d822c247d04ef81888b7beb09",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

@@ -259,7 +259,7 @@ fn decode_accepts_carriage_return_only_line_endings() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert!(
         result.report().losses.is_empty(),
         "{:#?}",

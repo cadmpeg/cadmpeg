@@ -560,10 +560,7 @@ fn a_pmark_xmt_with_remainder_word_0x8000_is_refused() {
             cadmpeg_parasolid::records::deltas::StopReason::InvalidPmark
         ))
     );
-    assert_eq!(
-        stop(&changed, "stop_offset"),
-        Some(row["inflated_offset"].as_u64().unwrap().to_string())
-    );
+    assert_eq!(stop(&changed, "stop_offset"), None);
 }
 
 #[test]

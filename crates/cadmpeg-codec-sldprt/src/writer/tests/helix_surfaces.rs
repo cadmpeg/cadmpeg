@@ -586,7 +586,7 @@ fn semantic_writer_round_trips_wrap() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let face = base.ir().model.faces[0].id.as_str().to_owned();
+    let face = base.ir().geometry.faces[0].id.as_str().to_owned();
     let xml = format!(
         r#"<Keywords><Wrap Name="Mark" Type="Wrap" id="31" Profile="{face}" Face="{face}" Mode="Emboss" Method="Spline"><Dimension Name="Depth">2mm</Dimension></Wrap></Keywords>"#
     );
@@ -596,7 +596,7 @@ fn semantic_writer_round_trips_wrap() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let face_id = decoded.ir().model.faces[0].id.clone();
+    let face_id = decoded.ir().geometry.faces[0].id.clone();
     assert!(matches!(
     decoded.ir().model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Wrap {
         profile,
@@ -705,7 +705,7 @@ fn semantic_writer_round_trips_move_copy_body() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let body = base.ir().model.bodies[0].id.as_str().to_owned();
+    let body = base.ir().geometry.bodies[0].id.as_str().to_owned();
     let xml = format!(
         r#"<Keywords><MoveBody Name="Copy" Type="MoveCopyBody" id="32" Bodies="{body}" Translation="1mm,2mm,3mm" RotationOrigin="4mm,5mm,6mm" RotationAxis="0,0,1" Copies="2" Frame="model"><Dimension Name="Rotation">90deg</Dimension></MoveBody></Keywords>"#
     );
@@ -715,7 +715,7 @@ fn semantic_writer_round_trips_move_copy_body() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let body_id = decoded.ir().model.bodies[0].id.clone();
+    let body_id = decoded.ir().geometry.bodies[0].id.clone();
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::MoveBody {
@@ -838,7 +838,7 @@ fn semantic_writer_round_trips_offset_surface() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let face = base.ir().model.faces[0].id.as_str().to_owned();
+    let face = base.ir().geometry.faces[0].id.as_str().to_owned();
     let xml = format!(
         r#"<Keywords><OffsetSurface Name="Offset" Type="OffsetSurface" id="33" Faces="{face}" Knit="true"><Dimension Name="Distance">2mm</Dimension></OffsetSurface></Keywords>"#
     );
@@ -848,7 +848,7 @@ fn semantic_writer_round_trips_offset_surface() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let face_id = decoded.ir().model.faces[0].id.clone();
+    let face_id = decoded.ir().geometry.faces[0].id.clone();
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::OffsetSurface {
@@ -904,7 +904,7 @@ fn semantic_writer_round_trips_knit_surface() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let face = base.ir().model.faces[0].id.as_str().to_owned();
+    let face = base.ir().geometry.faces[0].id.as_str().to_owned();
     let xml = format!(
         r#"<Keywords><KnitSurface Name="Knit" Type="Knit" id="34" Faces="{face}" MergeEntities="false" CreateSolid="false" CheckGeometry="true"><Dimension Name="GapTolerance">0.01mm</Dimension></KnitSurface></Keywords>"#
     );
@@ -914,7 +914,7 @@ fn semantic_writer_round_trips_knit_surface() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let face_id = decoded.ir().model.faces[0].id.clone();
+    let face_id = decoded.ir().geometry.faces[0].id.clone();
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::KnitSurface {
@@ -982,8 +982,8 @@ fn semantic_writer_round_trips_cut_with_surface() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let body = base.ir().model.bodies[0].id.as_str().to_owned();
-    let face = base.ir().model.faces[0].id.as_str().to_owned();
+    let body = base.ir().geometry.bodies[0].id.as_str().to_owned();
+    let face = base.ir().geometry.faces[0].id.as_str().to_owned();
     let xml = format!(
         r#"<Keywords><CutWithSurface Name="Cut" Type="SurfaceCut" id="35" Targets="{body}" Tools="{face}" Reverse="false" ConsumeTool="false"/></Keywords>"#
     );
@@ -993,8 +993,8 @@ fn semantic_writer_round_trips_cut_with_surface() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let body_id = decoded.ir().model.bodies[0].id.clone();
-    let face_id = decoded.ir().model.faces[0].id.clone();
+    let body_id = decoded.ir().geometry.bodies[0].id.clone();
+    let face_id = decoded.ir().geometry.faces[0].id.clone();
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
@@ -1060,8 +1060,8 @@ fn semantic_writer_preserves_missing_cut_with_surface_side_flag() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let body = base.ir().model.bodies[0].id.as_str().to_owned();
-    let face = base.ir().model.faces[0].id.as_str().to_owned();
+    let body = base.ir().geometry.bodies[0].id.as_str().to_owned();
+    let face = base.ir().geometry.faces[0].id.as_str().to_owned();
     let xml = format!(
         r#"<Keywords><CutWithSurface Name="Cut" Type="SurfaceCut" id="35" Targets="{body}" Tools="{face}" ConsumeTool="false"/></Keywords>"#
     );
@@ -1137,8 +1137,8 @@ fn filled_surface_round_trip(
             &DecodeOptions::default(),
         )
         .unwrap();
-    let edge = base.ir().model.edges[0].id.as_str().to_owned();
-    let face = base.ir().model.faces[0].id.as_str().to_owned();
+    let edge = base.ir().geometry.edges[0].id.as_str().to_owned();
+    let face = base.ir().geometry.faces[0].id.as_str().to_owned();
     let xml = format!(
         r#"<Keywords><FilledSurface Name="Fill" Type="FillSurface" id="36" Boundary="{edge}" SupportFaces="{face}" Continuity="Tangent" MergeResult="false" Optimize="true"/></Keywords>"#
     );
@@ -1148,8 +1148,8 @@ fn filled_surface_round_trip(
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let edge_id = decoded.ir().model.edges[0].id.clone();
-    let face_id = decoded.ir().model.faces[0].id.clone();
+    let edge_id = decoded.ir().geometry.edges[0].id.clone();
+    let face_id = decoded.ir().geometry.faces[0].id.clone();
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::FilledSurface {
@@ -1223,8 +1223,8 @@ fn semantic_writer_refuses_filled_surface_weight_loss() {
     let base = SldprtCodec
         .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
-    let edge = base.ir().model.edges[0].id.as_str();
-    let face = base.ir().model.faces[0].id.as_str();
+    let edge = base.ir().geometry.edges[0].id.as_str();
+    let face = base.ir().geometry.faces[0].id.as_str();
     let xml = format!(
         r#"<Keywords><FilledSurface Name="Fill" Type="FillSurface" id="36" Boundary="{edge}" SupportFaces="{face}" Continuity="Tangent" MergeResult="false"/></Keywords>"#
     );
@@ -1269,8 +1269,8 @@ fn semantic_writer_refuses_filled_surface_interior_constraints_and_reversed_norm
     let base = SldprtCodec
         .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
-    let edge = base.ir().model.edges[0].id.as_str();
-    let face = base.ir().model.faces[0].id.as_str();
+    let edge = base.ir().geometry.edges[0].id.as_str();
+    let face = base.ir().geometry.faces[0].id.as_str();
     let xml = format!(
         r#"<Keywords><FilledSurface Name="Fill" Type="FillSurface" id="36" Boundary="{edge}" SupportFaces="{face}" Continuity="Contact" MergeResult="false"/></Keywords>"#
     );
@@ -1325,8 +1325,8 @@ fn semantic_writer_round_trips_trim_surface() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let edge = base.ir().model.edges[0].id.as_str().to_owned();
-    let face = base.ir().model.faces[0].id.as_str().to_owned();
+    let edge = base.ir().geometry.edges[0].id.as_str().to_owned();
+    let face = base.ir().geometry.faces[0].id.as_str().to_owned();
     let xml = format!(
         r#"<Keywords><TrimSurface Name="Trim" Type="SurfaceTrim" id="37" Faces="{face}" Tool="{edge}" Keep="Inside" Split="false"/></Keywords>"#
     );
@@ -1336,8 +1336,8 @@ fn semantic_writer_round_trips_trim_surface() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let edge_id = decoded.ir().model.edges[0].id.clone();
-    let face_id = decoded.ir().model.faces[0].id.clone();
+    let edge_id = decoded.ir().geometry.edges[0].id.clone();
+    let face_id = decoded.ir().geometry.faces[0].id.clone();
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
@@ -1403,7 +1403,7 @@ fn semantic_writer_round_trips_extend_surface() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let face = base.ir().model.faces[0].id.as_str().to_owned();
+    let face = base.ir().geometry.faces[0].id.as_str().to_owned();
     let xml = format!(
         r#"<Keywords><ExtendSurface Name="Extend" Type="SurfaceExtend" id="38" Faces="{face}" Method="Natural" CornerMode="Merge"><Dimension Name="Distance">2mm</Dimension></ExtendSurface></Keywords>"#
     );
@@ -1413,7 +1413,7 @@ fn semantic_writer_round_trips_extend_surface() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let face_id = decoded.ir().model.faces[0].id.clone();
+    let face_id = decoded.ir().geometry.faces[0].id.clone();
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::ExtendSurface {
@@ -1479,8 +1479,8 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let edge = base.ir().model.edges[0].id.as_str().to_owned();
-    let face = base.ir().model.faces[0].id.as_str().to_owned();
+    let edge = base.ir().geometry.edges[0].id.as_str().to_owned();
+    let face = base.ir().geometry.faces[0].id.as_str().to_owned();
     let xml = format!(
         r#"<Keywords><RuledSurface Name="Ruled" Type="SurfaceRuled" id="39" Edges="{edge}" SupportFaces="{face}" Mode="Direction" Direction="0,0,1" Trim="true"><Dimension Name="Distance">2mm</Dimension></RuledSurface></Keywords>"#
     );
@@ -1490,8 +1490,8 @@ fn semantic_writer_round_trips_all_ruled_surface_modes() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let edge_id = decoded.ir().model.edges[0].id.clone();
-    let face_id = decoded.ir().model.faces[0].id.clone();
+    let edge_id = decoded.ir().geometry.edges[0].id.clone();
+    let face_id = decoded.ir().geometry.faces[0].id.clone();
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::RuledSurface {
@@ -1591,8 +1591,8 @@ fn semantic_writer_round_trips_projected_curve() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let edge = base.ir().model.edges[0].id.as_str().to_owned();
-    let face = base.ir().model.faces[0].id.as_str().to_owned();
+    let edge = base.ir().geometry.edges[0].id.as_str().to_owned();
+    let face = base.ir().geometry.faces[0].id.as_str().to_owned();
     let xml = format!(
         r#"<Keywords><ProjectedCurve Name="Projection" Type="ProjectionCurve" id="40" Source="{edge}" TargetFaces="{face}" Direction="0,0,1" Bidirectional="false" Simplify="true"/></Keywords>"#
     );
@@ -1602,8 +1602,8 @@ fn semantic_writer_round_trips_projected_curve() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let edge_id = decoded.ir().model.edges[0].id.clone();
-    let face_id = decoded.ir().model.faces[0].id.clone();
+    let edge_id = decoded.ir().geometry.edges[0].id.clone();
+    let face_id = decoded.ir().geometry.faces[0].id.clone();
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::ProjectedCurve {
@@ -1679,8 +1679,8 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let first = base.ir().model.edges[0].id.as_str().to_owned();
-    let second = base.ir().model.edges[1].id.as_str().to_owned();
+    let first = base.ir().geometry.edges[0].id.as_str().to_owned();
+    let second = base.ir().geometry.edges[1].id.as_str().to_owned();
     let xml = format!(
         r#"<Keywords><CompositeCurve Name="Chain" Type="CompositeCurve" id="41" Segments="{first};{second}" Closed="false" Simplify="true"/></Keywords>"#
     );
@@ -1690,8 +1690,8 @@ fn semantic_writer_round_trips_ordered_composite_curve() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let first_id = decoded.ir().model.edges[0].id.clone();
-    let second_id = decoded.ir().model.edges[1].id.clone();
+    let first_id = decoded.ir().geometry.edges[0].id.clone();
+    let second_id = decoded.ir().geometry.edges[1].id.clone();
     assert!(matches!(
         decoded.ir().model.features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::CompositeCurve { segments, closed: false })

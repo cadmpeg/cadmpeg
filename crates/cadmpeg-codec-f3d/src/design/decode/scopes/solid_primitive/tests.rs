@@ -591,12 +591,16 @@ mod typed_reference_box {
     }
 
     #[test]
-    fn refuses_scope_and_owner_deviations() {
+    fn retains_offsets_and_refuses_scope_and_owner_deviations() {
         let valid = form(4, FRAME);
         let good_owners = owners(0.0, 0.0);
-        // A nonzero offset owner leaves the composition with the frame undecoded.
         for (offset_x, offset_y) in [(0.5, 0.0), (0.0, -0.5)] {
-            assert!(decode(&valid, &scope(&MEMBERS), &owners(offset_x, offset_y)).is_none());
+            assert!(
+                matches!(decode(&valid, &scope(&MEMBERS), &owners(offset_x, offset_y)),
+                    Some(DesignSolidPrimitive::Box(value))
+                    if value.offset_x.get() == offset_x && value.offset_y.get() == offset_y
+                )
+            );
         }
         // Reference count and reference order.
         assert!(decode(&valid, &scope(&MEMBERS[..7]), &good_owners).is_none());
@@ -613,5 +617,196 @@ mod typed_reference_box {
         assert!(decode(&valid, &scope(&MEMBERS), &swapped).is_none());
         // A missing owner.
         assert!(decode(&valid, &scope(&MEMBERS), &good_owners[..4]).is_none());
+    }
+}
+
+#[test]
+fn marked_reference_boxes_project_both_selection_cardinalities() {
+    use crate::records::feature::scope::DesignFeatureKind;
+    use crate::records::parameters::DesignParameterOwnerWire;
+    for (prefix_shift, tail_shift, count) in [
+        (0usize, 0usize, 8usize),
+        (0, 0, 10),
+        (4, 4, 8),
+        (4, 4, 10),
+        (4, 8, 8),
+        (4, 8, 10),
+    ] {
+        let mut bytes = vec![0; 600];
+        if prefix_shift != 0 {
+            bytes[20..24].copy_from_slice(&1u32.to_le_bytes());
+        }
+        bytes[21 + prefix_shift] = 1;
+        bytes[22 + prefix_shift..26 + prefix_shift].copy_from_slice(&4u32.to_le_bytes());
+        bytes[26 + prefix_shift] = 1;
+        let references: Vec<u32> = (0..count)
+            .map(|ordinal| 100 + 10 * u32::try_from(ordinal).unwrap())
+            .collect();
+        for (ordinal, distance) in [1, 6, 5, 4, 7, 3, 2].into_iter().enumerate() {
+            let at = 27 + prefix_shift + ordinal * 11;
+            bytes[at] = 1;
+            bytes[at + 1..at + 5].copy_from_slice(&references[count - distance].to_le_bytes());
+        }
+        bytes[335 + tail_shift..339 + tail_shift]
+            .copy_from_slice(&u32::try_from(count).unwrap().to_le_bytes());
+        for (ordinal, target) in references.iter().enumerate() {
+            let at = 339 + tail_shift + ordinal * 11;
+            bytes[at] = 1;
+            bytes[at + 1..at + 5].copy_from_slice(&target.to_le_bytes());
+        }
+        let matrix = [
+            0.0f64, -1.0, 0.0, 2.0, 1.0, 0.0, 0.0, -3.0, 0.0, 0.0, 1.0, 4.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        for (ordinal, value) in matrix.into_iter().enumerate() {
+            let at = 105 + prefix_shift + ordinal * 8;
+            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes[256 + tail_shift..260 + tail_shift].copy_from_slice(&36u32.to_le_bytes());
+        for (ordinal, unit) in "00000000-0000-0000-0000-000000000000"
+            .encode_utf16()
+            .enumerate()
+        {
+            let at = 260 + tail_shift + ordinal * 2;
+            bytes[at..at + 2].copy_from_slice(&unit.to_le_bytes());
+        }
+        let mut scope = DesignParameterScope::empty(
+            "f3d:Design/BulkStream.dat:scope#50",
+            DesignFeatureKind::BoxPrimitive,
+            50,
+        );
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = 600;
+                draft.paired_byte_offset = 600;
+                draft.reference_count_offset = u64_from_index(335 + tail_shift);
+                draft.reference_members =
+                    crate::records::identity::ReferenceRun::unlocated(references.clone());
+                draft.layout_fixture_references();
+                draft.layout_fixture_tail();
+            })
+            .unwrap();
+        let owners: Vec<_> = [2.0, 3.0, 4.0, 0.5, -0.25]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, value)| {
+                let record_index = references[count - 6 + ordinal];
+                DesignParameterOwner::try_from(DesignParameterOwnerWire {
+                    id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
+                    byte_offset: u64::from(record_index),
+                    frame_length: 104,
+                    class_tag: crate::records::references::DesignClassTag::try_from(
+                        "999".to_owned(),
+                    )
+                    .unwrap(),
+                    record_index,
+                    scope_record_index: 50,
+                    local_ordinal: u32::try_from(ordinal).unwrap(),
+                    evaluated_value: value,
+                    evaluated_value_offset: u64::from(record_index) + 40,
+                    parameter_record_index: record_index + 1,
+                    owned_ordinal: u32::try_from(ordinal).unwrap(),
+                    variant: Some(0),
+                    companion_record_index: record_index + 2,
+                })
+                .unwrap()
+            })
+            .collect();
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let Some(DesignSolidPrimitive::Box(value)) =
+            exact_solid_primitive(&bytes, &records, &scope, &owners)
+        else {
+            panic!("marked box");
+        };
+        assert_eq!(
+            [value.length.get(), value.width.get(), value.height.get()],
+            [2.0, 3.0, 4.0]
+        );
+        assert_eq!(
+            value.transform.unwrap().rows(),
+            [
+                [0.0, -1.0, 0.0, 2.0],
+                [1.0, 0.0, 0.0, -3.0],
+                [0.0, 0.0, 1.0, 4.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        );
+        assert_eq!(value.operation, DesignExtrudeOperation::NewBody);
+        assert_eq!([value.offset_x.get(), value.offset_y.get()], [0.5, -0.25]);
+        assert_eq!(
+            value.transform_offset,
+            Some(u64_from_index(105 + prefix_shift))
+        );
+        assert_eq!(value.operation_offset, u64_from_index(22 + prefix_shift));
+        for at in [
+            11, 21, 26, 27, 28, 32, 38, 49, 60, 71, 82, 93, 104, 256, 260, 332, 335, 339, 340, 344,
+        ] {
+            let at = match at {
+                11 => 11,
+                0..=104 => at + prefix_shift,
+                _ => at + tail_shift,
+            };
+            let saved = bytes[at];
+            bytes[at] ^= 2;
+            assert!(
+                exact_solid_primitive(&bytes, &records, &scope, &owners).is_none(),
+                "offset {at}"
+            );
+            bytes[at] = saved;
+        }
+        if prefix_shift != 0 {
+            for at in [20, 24] {
+                let saved = bytes[at];
+                bytes[at] ^= 2;
+                assert!(exact_solid_primitive(&bytes, &records, &scope, &owners).is_none());
+                bytes[at] = saved;
+            }
+        }
+        for end in 0..339 + tail_shift + count * 11 {
+            assert!(exact_solid_primitive(&bytes[..end], &records, &scope, &owners).is_none());
+        }
+        assert!(exact_solid_primitive(&bytes, &records, &scope, &owners[..4]).is_none());
+        let mut duplicate = owners.clone();
+        duplicate.push(owners[0].clone());
+        assert!(exact_solid_primitive(&bytes, &records, &scope, &duplicate).is_none());
+        for edit in 0..5 {
+            let mut invalid_owners = owners.clone();
+            let mut wire: DesignParameterOwnerWire = invalid_owners[0].clone().into();
+            match edit {
+                0 => wire.id = format!("f3d:Other/BulkStream.dat:owner#{}", wire.record_index),
+                1 => wire.scope_record_index += 1,
+                2 => wire.local_ordinal = 5,
+                3 => wire.evaluated_value = 0.0,
+                _ => wire.evaluated_value = -1.0,
+            }
+            invalid_owners[0] = DesignParameterOwner::try_from(wire).unwrap();
+            assert!(exact_solid_primitive(&bytes, &records, &scope, &invalid_owners).is_none());
+        }
+        for operation in 0u32..=5 {
+            bytes[22 + prefix_shift..26 + prefix_shift].copy_from_slice(&operation.to_le_bytes());
+            let value = exact_solid_primitive(&bytes, &records, &scope, &owners);
+            match operation {
+                1 => assert!(
+                    matches!(value, Some(DesignSolidPrimitive::Box(value)) if value.operation == DesignExtrudeOperation::Join)
+                ),
+                2 => assert!(
+                    matches!(value, Some(DesignSolidPrimitive::Box(value)) if value.operation == DesignExtrudeOperation::Cut)
+                ),
+                3 => assert!(
+                    matches!(value, Some(DesignSolidPrimitive::Box(value)) if value.operation == DesignExtrudeOperation::Intersect)
+                ),
+                4 => assert!(
+                    matches!(value, Some(DesignSolidPrimitive::Box(value)) if value.operation == DesignExtrudeOperation::NewBody)
+                ),
+                _ => assert!(value.is_none()),
+            }
+        }
+        bytes[22 + prefix_shift..26 + prefix_shift].copy_from_slice(&4u32.to_le_bytes());
+        for (ordinal, invalid) in [(0, -1.0f64), (0, 2.0), (3, f64::NAN), (10, -1.0), (15, 0.0)] {
+            let at = 105 + prefix_shift + ordinal * 8;
+            let saved: [u8; 8] = bytes[at..at + 8].try_into().unwrap();
+            bytes[at..at + 8].copy_from_slice(&invalid.to_le_bytes());
+            assert!(exact_solid_primitive(&bytes, &records, &scope, &owners).is_none());
+            bytes[at..at + 8].copy_from_slice(&saved);
+        }
     }
 }

@@ -60,6 +60,21 @@ pub(super) fn is_physical_material_token(value: &str) -> bool {
     value.starts_with("PrismMaterial") && !value.contains("_physmat_aspects")
 }
 
+pub(crate) fn physical_material_envelope_end(bytes: &[u8], at: usize) -> Option<usize> {
+    use crate::bytes::lp_utf16_bounded_view;
+    let (asset, after_asset) = lp_utf16_bounded_view(bytes, at, 36..=36)?;
+    if !asset.is_guid_hyphenated() {
+        return None;
+    }
+    let (library, after_library) = lp_utf16_bounded_view(bytes, after_asset, 0..=36)?;
+    if !(library.is_empty() || library.is_guid_hyphenated()) {
+        return None;
+    }
+    let (_, after_label) = lp_utf16_bounded_view(bytes, after_library, 0..=256)?;
+    let (_, end) = lp_utf16_bounded_view(bytes, after_label, 1..=256)?;
+    Some(end)
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

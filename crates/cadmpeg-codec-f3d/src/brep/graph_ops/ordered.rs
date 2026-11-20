@@ -28,6 +28,7 @@ fn target_selected(target: &AttributeTarget, reachable: &HashSet<String>) -> boo
         AttributeTarget::Coedge(id) => id.as_str(),
         AttributeTarget::Edge(id) => id.as_str(),
         AttributeTarget::Vertex(id) => id.as_str(),
+        AttributeTarget::Configuration(id) => id.as_str(),
     };
     reachable.contains(id)
 }

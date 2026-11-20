@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{bind, Inputs};
-use crate::history_records::{AsmDeltaState, AsmHistoricalTransition, AsmHistory};
+use crate::history_records::{
+    AsmDeltaState, AsmHistoricalCarrierBinding, AsmHistoricalTransition, AsmHistory,
+};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use cadmpeg_ir::features::{
     FaceSelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureInputTopology,
@@ -123,6 +125,7 @@ impl Fixture {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         };
         Self {
             features: vec![feature],
@@ -212,17 +215,68 @@ fn thread_missing_live_slot_keeps_historical_selection_and_loss() {
     fixture.refuses(Some(MEMBER));
 }
 
+impl Fixture {
+    /// A later join that extends the threaded face: the face is updated, an
+    /// end face is replaced, and the threaded face keeps its surface.
+    fn later_join(&mut self) -> &mut AsmHistoricalTransition {
+        self.later();
+        let transition = self.histories[0].states_mut()[0]
+            .transition
+            .as_mut()
+            .unwrap();
+        transition.topology.bodies.updated = vec![1];
+        transition.topology.faces.updated = vec![10];
+        transition.topology.faces.inserted = vec![11];
+        transition.topology.faces.deleted = vec![12];
+        transition.topology.loops.inserted = vec![13];
+        transition.topology.loops.deleted = vec![14];
+        transition.topology.surfaces.inserted = vec![15];
+        transition.topology.surfaces.deleted = vec![16];
+        transition.rows.face_loops.set = vec![crate::history_records::AsmHistoricalRelation {
+            owner_ref: 10,
+            member_refs: vec![13, 17],
+        }];
+        transition.rows.face_loops.removed = vec![12];
+        transition.rows.face_surfaces.set = vec![AsmHistoricalCarrierBinding {
+            entity: 11,
+            carrier: 15,
+        }];
+        transition.rows.face_surfaces.removed = vec![12];
+        transition
+    }
+}
+
+#[test]
+fn thread_later_face_extension_with_kept_surface_resolves_live() {
+    let mut fixture = Fixture::new();
+    fixture.later_join();
+    assert!(fixture.run(Some(MEMBER)).is_empty());
+    assert_eq!(
+        fixture.selection(),
+        &FaceSelection::Resolved {
+            faces: vec!["f3d:brep:entity#10".try_into().unwrap()],
+            native: "f3d:Design/BulkStream.dat:group#8".into(),
+        }
+    );
+}
+
 #[test]
 fn thread_later_face_rewrite_keeps_historical_selection_and_loss() {
     let mut fixture = Fixture::new();
-    fixture.later();
-    fixture.histories[0].states_mut()[0]
-        .transition
-        .as_mut()
-        .unwrap()
-        .topology
-        .faces
-        .updated = vec![10];
+    fixture.later_join().rows.face_surfaces.set = vec![AsmHistoricalCarrierBinding {
+        entity: 10,
+        carrier: 15,
+    }];
+    fixture.refuses(Some(MEMBER));
+    let mut fixture = Fixture::new();
+    fixture.later_join().topology.faces.deleted = vec![10, 12];
+    fixture.refuses(Some(MEMBER));
+    let mut fixture = Fixture::new();
+    fixture.later_join().rows.surface_cylinders.removed = vec![77];
+    fixture.refuses(Some(MEMBER));
+    let mut fixture = Fixture::new();
+    fixture.later_join();
+    fixture.faces[0].surface = "f3d:brep/other.smbh/brep:entity#77".try_into().unwrap();
     fixture.refuses(Some(MEMBER));
 }
 

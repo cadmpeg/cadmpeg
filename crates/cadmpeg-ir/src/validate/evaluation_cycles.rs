@@ -161,12 +161,12 @@ impl<'ir> CycleIndex<'ir> {
         // The general index selects the first construction with an exact ID.
         // BorrowedIdentities selects the last insertion, so reverse these rows.
         let curves_by_id = BorrowedIdentities::build(|add| {
-            for row in ir.model.procedural_curves.iter().rev() {
+            for row in ir.geometry.procedural_curves.iter().rev() {
                 add(row.id.as_str(), row);
             }
         });
         let curves = BorrowedIdentities::<&ProceduralCurve>::build(|add| {
-            for carrier in ir.model.curves.iter().rev() {
+            for carrier in ir.geometry.curves.iter().rev() {
                 if let Some(construction) = carrier.geometry.procedural_construction() {
                     if let Some(row) = curves_by_id.get(construction.as_str()) {
                         add(carrier.id.as_str(), row);
@@ -176,12 +176,12 @@ impl<'ir> CycleIndex<'ir> {
         });
         drop(curves_by_id);
         let surfaces_by_id = BorrowedIdentities::build(|add| {
-            for row in ir.model.procedural_surfaces.iter().rev() {
+            for row in ir.geometry.procedural_surfaces.iter().rev() {
                 add(row.id.as_str(), row);
             }
         });
         let surfaces = BorrowedIdentities::<&ProceduralSurface>::build(|add| {
-            for carrier in &ir.model.surfaces {
+            for carrier in &ir.geometry.surfaces {
                 if let Some(construction) = carrier.geometry.procedural_construction() {
                     if let Some(row) = surfaces_by_id.get(construction.as_str()) {
                         add(carrier.id.as_str(), row);
@@ -210,7 +210,7 @@ fn walk_cycles<'ir>(
     mut emit: impl FnMut(Finding) -> Result<bool, CodecError>,
 ) -> Result<(), CodecError> {
     let mut graph = BorrowedIdentities::build(|add| {
-        for curve in &ir.model.curves {
+        for curve in &ir.geometry.curves {
             if let Some(procedural) = index.curve(curve.id.as_str()) {
                 let dependencies = curve_dependencies(procedural.definition());
                 if !dependencies.is_empty() {
@@ -224,7 +224,7 @@ fn walk_cycles<'ir>(
                 }
             }
         }
-        for surface in &ir.model.surfaces {
+        for surface in &ir.geometry.surfaces {
             if let Some(procedural) = index.surface(surface.id.as_str()) {
                 let dependencies = surface_dependencies(procedural.definition());
                 if !dependencies.is_empty() {
@@ -331,7 +331,7 @@ pub(crate) fn admit_evaluation_cycles(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<(), CodecError> {
-    if ir.model.procedural_curves.is_empty() && ir.model.procedural_surfaces.is_empty() {
+    if ir.geometry.procedural_curves.is_empty() && ir.geometry.procedural_surfaces.is_empty() {
         return Ok(());
     }
     let index = CycleIndex::build(ir);

@@ -1,17 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Stable type identities of parameter-scope families.
 
+use crate::design::assembly::AS_BUILT_SCOPE_TYPE_GUID;
 use crate::records::feature::scope::DesignFeatureKind;
 
 const FAMILIES: &[(&str, DesignFeatureKind)] = &[
     (
+        "EC187027-FF97-48A3-8031-F923807E630B",
+        DesignFeatureKind::Unfold,
+    ),
+    (
+        "483D584F-29AA-46DA-ABA2-F139B0ED8100",
+        DesignFeatureKind::Refold,
+    ),
+    (
+        "1CF7B9E3-5DB6-4F9D-A131-6DE7535BFF52",
+        DesignFeatureKind::Bend,
+    ),
+    (
         "359F7902-43B0-445C-8F4B-FED1D15B2680",
         DesignFeatureKind::Align,
     ),
-    (
-        "AA8B3D40-B67D-4AF1-B3CF-E1E00279B5F0",
-        DesignFeatureKind::AsBuilt,
-    ),
+    (AS_BUILT_SCOPE_TYPE_GUID, DesignFeatureKind::AsBuilt),
     (
         "8DFDD543-F823-43AA-BDAF-C638E023F0A0",
         DesignFeatureKind::Assemble,
@@ -177,6 +187,14 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
         DesignFeatureKind::SpherePrimitive,
     ),
     (
+        super::super::silhouette_split::TYPE_GUID,
+        DesignFeatureKind::SilhouetteSplit,
+    ),
+    (
+        crate::records::feature::motion_link::SCOPE_TYPE,
+        DesignFeatureKind::MotionLink,
+    ),
+    (
         "65CA3206-E33A-471E-8E40-2C72B57C6181",
         DesignFeatureKind::Split,
     ),
@@ -187,6 +205,10 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
     (
         "2C122D9F-4F8A-6383-D14C-E00CE77B2226",
         DesignFeatureKind::SurfaceDeleteFace,
+    ),
+    (
+        "8DA2F4A9-C420-419B-AD5D-9CC901DF0B78",
+        DesignFeatureKind::UnStitch,
     ),
     (
         "D2BCAE08-CF42-4316-865F-8ED1DFD548E4",
@@ -207,6 +229,10 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
     (
         "FF1741AE-E78B-4A5F-8418-751899E12F66",
         DesignFeatureKind::SurfaceTrim,
+    ),
+    (
+        "4082E43B-D693-40D7-B44B-26800C9148DB",
+        DesignFeatureKind::SurfaceUntrim,
     ),
     (
         "FCBB1707-4450-46B3-9E65-0F61682EA8CA",
@@ -261,9 +287,18 @@ pub(super) fn paste_scope_prefix(
     }
 }
 
-pub(super) fn from_type_guid(guid: &str) -> Option<DesignFeatureKind> {
+pub(crate) fn from_type_guid(guid: &str) -> Option<DesignFeatureKind> {
+    if guid.eq_ignore_ascii_case(super::super::position::TYPE_GUID) {
+        return Some(DesignFeatureKind::native("Position"));
+    }
     FAMILIES
         .iter()
         .find(|(registered, _)| registered.eq_ignore_ascii_case(guid))
         .map(|(_, kind)| kind.clone())
+        .or_else(|| {
+            crate::records::feature::mesh_face_groups::SCOPE_TYPES
+                .iter()
+                .find(|(registered, _, _)| registered.eq_ignore_ascii_case(guid))
+                .map(|(_, _, kind)| kind.clone())
+        })
 }

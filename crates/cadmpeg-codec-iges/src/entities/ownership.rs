@@ -30,18 +30,18 @@ pub(crate) fn mark_supports(
         });
     }
     for source in ir
-        .model
+        .geometry
         .surfaces
         .iter_mut()
         .filter_map(|surface| surface.source_object.as_mut())
         .chain(
-            ir.model
+            ir.geometry
                 .curves
                 .iter_mut()
                 .filter_map(|curve| curve.source_object.as_mut()),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .points
                 .iter_mut()
                 .filter_map(|point| point.source_object.as_mut()),

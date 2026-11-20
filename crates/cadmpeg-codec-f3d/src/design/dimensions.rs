@@ -24,6 +24,21 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::NativeOperandField;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+/// Kind stem of an angular dimension.
+const ANGULAR_DIMENSION_KIND: &str = "Angular Dimension";
+
+/// Native property that holds a dimension's instance name.
+const DIMENSION_INSTANCE_NAME: &str = "instance_name";
+
+/// The instance name of a dimension whose `source_kind` carries an instance number.
+fn dimension_instance_properties(parameter: &DesignParameter) -> BTreeMap<String, String> {
+    let instance_name = parameter.source_kind_str();
+    if parameter.dimension_kind().as_str() == instance_name {
+        return BTreeMap::new();
+    }
+    BTreeMap::from([(DIMENSION_INSTANCE_NAME.to_owned(), instance_name.to_owned())])
+}
+
 /// A sketch constraint governed by a dimension parameter.
 fn dimension_constraint(
     id: cadmpeg_ir::sketches::SketchConstraintId,
@@ -427,7 +442,7 @@ fn project_all_dimension_constraints(
     };
     let native_definition =
         |scope: &str,
-         source_kind: cadmpeg_core::text::NonBlankString,
+         source: &DesignParameter,
          state: Option<u64>,
          operands: &[(cadmpeg_core::text::NonBlankString, Option<u32>, u32)],
          parameter|
@@ -442,10 +457,10 @@ fn project_all_dimension_constraints(
                 native_operands.push(operand);
             }
             Definition::Native {
-                native_kind: source_kind,
+                native_kind: source.dimension_kind(),
                 native_state: state,
                 native_flags: None,
-                native_properties: std::collections::BTreeMap::new(),
+                native_properties: dimension_instance_properties(source),
                 entities: entity_ids,
                 parameter: Some(parameter),
                 operands: native_operands,
@@ -813,7 +828,7 @@ fn project_all_dimension_constraints(
                 }
                 native_definition(
                     scope,
-                    parameter.source_kind().clone(),
+                    parameter,
                     Some(u64::from(group.state)),
                     &operands,
                     parameter_id,
@@ -871,7 +886,7 @@ fn project_all_dimension_constraints(
         } else {
             native_definition(
                 scope,
-                parameter.source_kind().clone(),
+                parameter,
                 None,
                 &[
                     (
@@ -973,10 +988,10 @@ fn project_all_dimension_constraints(
                     }
                 }
                 Definition::Native {
-                    native_kind: parameter.source_kind().clone(),
+                    native_kind: parameter.dimension_kind(),
                     native_state: None,
                     native_flags: None,
-                    native_properties: std::collections::BTreeMap::new(),
+                    native_properties: dimension_instance_properties(parameter),
                     entities: entity_ids,
                     parameter: Some(parameter_id),
                     operands,
@@ -1059,10 +1074,10 @@ fn project_all_dimension_constraints(
             }
             let Ok(definition) =
                 cadmpeg_ir::sketches::SketchConstraintDefinition::try_from(Definition::Native {
-                    native_kind: parameter.source_kind().clone(),
+                    native_kind: parameter.dimension_kind(),
                     native_state: None,
                     native_flags: None,
-                    native_properties: std::collections::BTreeMap::new(),
+                    native_properties: dimension_instance_properties(parameter),
                     entities: entity_ids,
                     parameter: Some(parameter_id),
                     operands,
@@ -1185,10 +1200,10 @@ fn project_all_dimension_constraints(
                 });
             }
             Definition::Native {
-                native_kind: parameter.source_kind().clone(),
+                native_kind: parameter.dimension_kind(),
                 native_state: None,
                 native_flags: None,
-                native_properties: std::collections::BTreeMap::new(),
+                native_properties: dimension_instance_properties(parameter),
                 entities: recipe_dimension_candidate_entities(&linear_candidates),
                 parameter: Some(parameter_id),
                 operands,
@@ -1376,10 +1391,10 @@ fn project_all_dimension_constraints(
                 let copied = parameter_id.clone();
                 let native_ref = companion.id().to_owned();
                 Definition::Native {
-                    native_kind: parameter.source_kind().clone(),
+                    native_kind: parameter.dimension_kind(),
                     native_state: None,
                     native_flags: None,
-                    native_properties: std::collections::BTreeMap::new(),
+                    native_properties: dimension_instance_properties(parameter),
                     entities: Vec::new(),
                     parameter: Some(copied),
                     operands: vec![SketchNativeOperand {
@@ -1860,7 +1875,7 @@ fn parallel_group_axis_angle_definition(
     let [first, second] = entities else {
         return None;
     };
-    if parameter.source_kind() != "Angular Dimension-2"
+    if parameter.dimension_kind().as_str() != ANGULAR_DIMENSION_KIND
         || !design_dimension_unit(parameter)
         || parallel_line_distance(first, second).is_none()
     {
@@ -2930,7 +2945,7 @@ pub(crate) fn project_spatial_dimension_constraints(
         let constraint_native_ref = companion.id().to_owned();
         let definition = cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::try_from(
             SpatialSketchConstraintDefinitionInput::Native {
-                native_kind: parameter.source_kind().clone(),
+                native_kind: parameter.dimension_kind(),
                 native_state: None,
                 parameter: Some(parameter_id.clone()),
                 operands: vec![SketchNativeOperand {
@@ -3725,7 +3740,7 @@ pub(super) fn null_locus_dimension_definition(
     ) {
         return Some(definition);
     }
-    if source_kind != "Angular Dimension-2"
+    if crate::records::parameters::dimension_kind_stem(source_kind) != ANGULAR_DIMENSION_KIND
         || pair.loci()[0].role != 14
         || pair.loci()[1].role != 3
         || !matches!(

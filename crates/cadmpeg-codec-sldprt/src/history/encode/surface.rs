@@ -303,9 +303,16 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         faces: &FaceSelection,
         thickness: Option<&cadmpeg_ir::scalar::PositiveLength>,
         side: Option<&ThickenSide>,
+        has_result_or_chain: bool,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
         let feature = self.feature;
         let existing = self.existing;
+        if has_result_or_chain {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT feature {} has unsupported thicken result or tangent-chain settings",
+                feature.id
+            )));
+        }
         Ok({
             use cadmpeg_ir::features::ThickenSide;
 
