@@ -1769,7 +1769,8 @@ a rectangular parameter subset surface (written as a
 `RECTANGULAR_TRIMMED_SURFACE`), or has a curve-bounded surface whose boundary
 curves pair one to one with its loops, each loop holding one coedge per segment
 of its boundary, on that segment's curve, in the segments' order or its
-reverse, and that no PMI annotation targets, through the face, an edge of its
+reverse, with no face name and no coedge pcurve (a set member writes neither),
+and that no PMI annotation targets, through the face, an edge of its
 loops, a vertex of those edges, or the point of such a vertex. A set member
 states its own boundaries and no edge, and each member reads back in its own
 shell, so a region in which two faces share an edge, or the curve of an edge,

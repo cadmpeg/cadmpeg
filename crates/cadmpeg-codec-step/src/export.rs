@@ -2267,6 +2267,7 @@ impl<'a> Builder<'a> {
         };
         let curve_bounded = |face: &&Face| {
             face.sense == Sense::Forward
+                && face.name.is_none()
                 && self.bounded_by_its_boundaries(face)
                 && !self.pmi_targets_topology_of(face)
         };
@@ -2331,7 +2332,8 @@ impl<'a> Builder<'a> {
     /// Whether `face` has a curve-bounded surface whose boundary curves
     /// pair one to one with its loops: each loop has one coedge per segment
     /// of its boundary, on that segment's curve, in the segments'
-    /// order or its reverse.
+    /// order or its reverse. A coedge with a pcurve keeps the face out, as a
+    /// set member writes no coedge and so no pcurve.
     fn bounded_by_its_boundaries(&self, face: &Face) -> bool {
         let Some(ProceduralSurfaceDefinition::CurveBounded { boundaries, .. }) = self
             .procedural_surfaces
@@ -2350,10 +2352,15 @@ impl<'a> Builder<'a> {
             };
             let mut curves = Vec::new();
             for coedge in face_loop.coedges() {
+                let Some(coedge) = self.coedges.get(coedge.as_str()) else {
+                    return false;
+                };
+                if !coedge.pcurves.is_empty() {
+                    return false;
+                }
                 let Some(curve) = self
-                    .coedges
-                    .get(coedge.as_str())
-                    .and_then(|coedge| self.edges.get(coedge.edge.as_str()))
+                    .edges
+                    .get(coedge.edge.as_str())
                     .and_then(|edge| edge.curve())
                 else {
                     return false;

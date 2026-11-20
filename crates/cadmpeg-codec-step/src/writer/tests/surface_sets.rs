@@ -478,6 +478,87 @@ fn a_pmi_target_on_a_vertex_point_of_a_curve_bounded_face_keeps_the_sheet_a_shel
     );
 }
 
+/// A set member writes neither a face name nor a coedge pcurve, so a named
+/// curve-bounded face, or one with a pcurve on a coedge, keeps the sheet a
+/// shell of faces, and the name reads back.
+#[test]
+fn a_named_or_pcurve_bearing_curve_bounded_face_keeps_the_sheet_a_shell() {
+    use cadmpeg_ir::geometry::pcurve::{
+        Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs, PcurveNurbsPoles,
+    };
+    use cadmpeg_ir::geometry::DirectedParameterRange;
+    use cadmpeg_ir::ids::PcurveId;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::topology::PcurveUse;
+    let source = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../tests/fixtures/ap242_geometric_set.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let write = |ir: &CadIr| {
+        let mut output = Vec::new();
+        write_step(
+            ir,
+            &mut output,
+            StepSchema::Ap214,
+            &StepWriteOptions::default(),
+        )
+        .unwrap();
+        String::from_utf8(output).unwrap()
+    };
+    let text = write(source.ir());
+    assert_eq!(text.matches("= GEOMETRIC_SET(").count(), 1, "{text}");
+
+    let mut named = source.ir().clone();
+    let [face] = named.geometry.faces.as_mut_slice() else {
+        panic!("one face: {:#?}", named.geometry.faces);
+    };
+    face.name = Some("named".into());
+    let text = write(&named);
+    assert_eq!(text.matches("= GEOMETRIC_SET(").count(), 0, "{text}");
+    assert_eq!(text.matches("= OPEN_SHELL(").count(), 1, "{text}");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(text), &DecodeOptions::default())
+        .unwrap();
+    let [face] = decoded.ir().geometry.faces.as_slice() else {
+        panic!("one face: {:#?}", decoded.ir().geometry.faces);
+    };
+    assert_eq!(face.name.as_deref(), Some("named"));
+
+    let mut with_pcurve = source.ir().clone();
+    let pcurve = PcurveId::mint("test:surface-set:pcurve#line").unwrap();
+    with_pcurve.geometry.pcurves.push(Pcurve {
+        id: pcurve.clone(),
+        geometry: PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::new(
+                1,
+                vec![0.0, 0.0, 1.0, 1.0],
+                PcurveNurbsPoles::Polynomial {
+                    points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                },
+                false,
+            )
+            .unwrap(),
+        },
+        metadata: PcurveMetadata::default(),
+        native_ref: None,
+    });
+    let [coedge] = with_pcurve.geometry.coedges.as_mut_slice() else {
+        panic!("one coedge: {:#?}", with_pcurve.geometry.coedges);
+    };
+    coedge.pcurves.push(PcurveUse {
+        pcurve,
+        isoparametric: None,
+        parameter_range: Some(DirectedParameterRange::new([0.0, 1.0]).unwrap()),
+    });
+    let text = write(&with_pcurve);
+    assert_eq!(text.matches("= GEOMETRIC_SET(").count(), 0, "{text}");
+    assert_eq!(text.matches("= OPEN_SHELL(").count(), 1, "{text}");
+}
+
 /// The disc of `ap242_geometric_set.p21`, its loop split into two
 /// half-circle edges on the one boundary circle.
 fn disc_split_into_two_edges() -> CadIr {
