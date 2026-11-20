@@ -2399,6 +2399,20 @@ profile-derived axes.
 
 ---
 
+### 3.4 Partition marks and the rollback position
+
+A `Contents/Config-<N>-Partition` section holds two Parasolid transmits in order: the partition (`TRANSMIT FILE (partition)`) and its deltas (`TRANSMIT FILE (deltas)`), each in its own zlib member. The deltas transmit opens with a PARTITION node (type 3) and the PMARK node (type 4) its `current_pmark` names, both with the base schema fields (`parasolid.md`). That PMARK's `id` is the current mark: the mark the stored partition is at. Following `preceding` through the PMARK nodes of the transmit from the current mark gives the main line back to the initial mark, whose `preceding` is null.
+
+The first twelve bytes of a `moPMarkRecord_c` body (§2.3) are its head: the mark, a little-endian u32 at +0; the form, a little-endian u32 at +4; and the form word, a little-endian u32 at +8. The form is `0` or `1`, or a feature identifier in the id-range form, whose form word is `1`. The mark is the `id` of the PMARK set after the feature that holds the record. `Contents/Config-<N>` declares `moPMarkRecord_c`, so each record in `Config-<N>-ResolvedFeatures` opens with that class's token: u16 `8000|index`, or `7fff` and u32 `80000000|index` for an index of `7fff` and above.
+
+The records follow the order of their features. A record's feature is the innermost named object (`moNodeName_c` header) that holds it. The rollback position of the feature tree joins the current mark of the active configuration to these records:
+
+- The current mark is the mark of the last record: the bar stands after the feature of that record.
+- The current mark is the mark of record k and every later record's mark lies off the main line: the features of the later records are not built. The bar stands after the feature of record k and before the first of them that is not suppressed; where each of them is suppressed, the tree is built through its end.
+- Otherwise the marks do not fix the position: the current mark follows the last record's mark on the main line (a later feature holds no tagged record), or it is the mark of no record.
+
+A feature that holds no record sets no mark. Where such a feature lies after the feature at the current mark and before the first unbuilt feature that is not suppressed (or the end of the tree), the marks do not place the bar before or after it.
+
 ## 4. Typed topology records
 
 Primary ownership chain:
@@ -2509,7 +2523,7 @@ A record key is the decoded stream-local `attr` in the pointer domain.
 A wide record key and a wide reference use the same encoding. The complete
 record fields determine the framing. Complete analytic carriers, bounded-curve records, spline wrapper headers, curve and surface descriptors, and their referenced value arrays form enclosing node scopes. Their node IDs, references, and scalar payloads belong to that node. A byte pair equal to a node tag inside a field retains its field meaning.
 
-The loss `geometry.carrier-approximated` counts intersection chart curves, fitted surface-parameter curves, fitted blend surfaces, inverse NURBS boundary caches, and charts with absent tolerance per decoded stream and kind, and reports the largest fit tolerance or sampled distance in millimetres for each kind, with an unavailable size for charts with absent tolerance.
+The loss `geometry.carrier-approximated` counts intersection chart curves, fitted surface-parameter curves, fitted blend surfaces, inverse NURBS boundary caches, and charts with absent tolerance per decoded stream and kind, and reports the largest fit tolerance or sampled distance in millimetres for each kind, with an unavailable size for charts with absent tolerance. A rolling-ball blend face (§7.4) whose kept cache is approximate adds one `geometry.carrier-approximated` note that names the face, the cache's largest miss, and whether that miss is at a face vertex or at a point sampled along the face's edges. A rolling-ball blend face (§7.4) whose cache does not solve is the loss `geometry.blend-cache-unsolved`, one per face, naming what each of the two fits did.
 
 A framed FACE record with no decoded loop is the loss `topology.face-withheld`.
 A vertex loop decodes to a vertex boundary on its vertex-use. A FACE with a vertex loop whose vertex-use does not resolve is the loss `topology.vertex-loop-withheld`.
@@ -2978,9 +2992,17 @@ existing partition node.
 A cylindrical face spanning a complete angular period stores two loops. Each
 loop contains one coedge whose edge is closed and whose carrier is a circle
 coaxial with the cylinder. The stored topology omits the longitudinal seam.
-Its endpoints are the two circle points
-`center - ref_direction * radius`, where `ref_direction` is the cylinder
-carrier's reference direction. The neutral topology joins these endpoints
+A circle vertex is fixed when the file stores its point or another edge also
+ends at it. A hole circle that touches a straight edge of its face shares the
+touching vertex with that edge. A fixed vertex keeps its position. The seam's
+endpoints are the two circle points `center - ref_direction * radius`, where
+`ref_direction` is the cylinder carrier's reference direction. When a fixed
+vertex lies off its circle point by more than the linear resolution, the seam
+is the cylinder ruling through that vertex, and its endpoints are the two
+circle points on that ruling. Each vertex that is not fixed moves to its
+endpoint. When a fixed vertex lies off its endpoint by more than the linear
+resolution, the neutral topology keeps the two loops and adds no seam. The
+neutral topology joins the seam endpoints
 with one line edge, inserts two oppositely oriented radial coedges for that
 edge, and combines the two circular coedges and two seam coedges into one
 loop.
@@ -3143,7 +3165,9 @@ For a blend record, `spine` names the center/spine curve that selects the blend 
 
 The side a direct support's offset and `side` value select is stated against that carrier's ORIENTED normal (§7.1), not the neutral surface's natural normal: a `0x2d` compact support carrier reverses the stated side once more, exactly as it reverses a face's sense. A `0x2b` carrier under a `0x2d` bridge keeps the stated side, so the carrier's marker decides. For a support-pair reference, the stated side is the pair's.
 
-The record stores no surface. The blend surface is the envelope of the ball along the spine: at each spine station, the circular arc of the ball radius about the centre between the two contact points, the closest points of the two supports to the centre. Its natural normal points away from the ball centre, and a face's sense is stated against that normal. A spine that is a chart (§7.3) of the centre locus lies near the locus, not on it. The exact centre at a chart point is the point of the chart's normal plane at the ball radius from both supports. Where the two contacts meet, the section is one point. A fitted cache's fit tolerance covers its largest distance from the face's vertices, and a cache further than a quarter of the radius from a vertex lies on another branch of the ball. A support that is a `00 43` or `00 44` construction states its surface through the face that carries it. A support construction that no face carries states no ruling extent, so the blend has no cache.
+The record stores no surface. The blend surface is the envelope of the ball along the spine: at each spine station, the circular arc of the ball radius about the centre between the two contact points, the closest points of the two supports to the centre. Its natural normal points away from the ball centre, and a face's sense is stated against that normal. A spine that is a chart (§7.3) of the centre locus lies near the locus, not on it. The exact centre at a chart point is the point of the chart's normal plane at the ball radius from both supports. Where the two contacts meet, the section is one point. A fitted cache's fit tolerance covers its largest distance from the face's vertices, and a cache further than a quarter of the radius from a vertex lies on another branch of the ball. A cache further from a face vertex or from a point sampled along the face's edges than the largest tolerance the face's edges state (or `1e-3` mm where that is larger) plus the fit tolerance it was fitted to, or further than a quarter of the radius, is approximate: a ring face's seam vertices alone do not show that a cache spans the whole ring. The face keeps an approximate cache, and the loss `geometry.carrier-approximated` names it. A support that is a `00 43` or `00 44` construction states its surface through the face that carries it. A support construction that no face carries states no ruling extent, so the blend has no cache.
+
+A blend whose cache solves by neither the sections along the spine nor the rolling-ball fit keeps its construction alone, without a cache, and the loss `geometry.blend-cache-unsolved` names the face, the radius, and what each fit did: not run, and for which support; or which section or spine station failed; or by how much its cache misses a face vertex beyond a quarter of the radius.
 
 A `00 3b` blend-boundary record names one side of a rolling-ball blend:
 

@@ -4175,11 +4175,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 crate::tree::own_once(ctx, &mut decoded.ir, &std::collections::BTreeMap::new())?;
             decoded.body.losses.extend(owned);
             crate::design::owners::release_unbound(&mut decoded.ir.model);
-            decoded.ir.state_root_definition(
-                ctx,
-                crate::tree::file_root_id(),
-                cadmpeg_ir::products::ExternalDocument::default(),
-            )?;
+            crate::tree::state_root_definition(ctx, &mut decoded.ir)?;
             crate::design_v11::project(ctx, &mut decoded.ir, &mut decoded.body.losses)?;
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
@@ -4649,6 +4645,11 @@ fn project_mesh_bodies(
     report
         .losses
         .extend(crate::design::decode::mesh::mesh_split_stream_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_component_flag_losses(
             &native.design_mesh_features,
         ));
     report
@@ -5381,6 +5382,9 @@ fn decode_result(
     }
     if !retained.untyped.is_empty() {
         source_fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, retained.untyped)?;
+    }
+    if matches!(report_scope, crate::report::ReportScope::ArchiveMember(_)) {
+        crate::tree::state_root_definition(ctx, &mut ir)?;
     }
     let mut source = crate::report::classify_document(
         scan,
