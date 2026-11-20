@@ -4,14 +4,13 @@
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_usize};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::{CadIr, Topology};
+use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
     pcurve::{PcurveGeometry, PcurveInlineForm, PcurveNurbs, PcurveNurbsPoles},
     BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry,
     SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{PcurveId, SurfaceId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::IncreasingParameterInterval;
 use std::borrow::Cow;
@@ -6217,90 +6216,6 @@ mod pcurve_chart_tests {
             }
         }
     }
-}
-
-pub(in crate::writer) fn pcurve_support_geometry<'a>(
-    geometry: &'a Topology,
-    pcurve_id: &PcurveId,
-) -> Result<&'a SurfaceGeometry, CodecError> {
-    let surface_id = pcurve_support_surface(geometry, pcurve_id)?;
-    geometry
-        .surfaces
-        .iter()
-        .find(|surface| surface.id == *surface_id)
-        .map(|surface| &surface.geometry)
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "F3D pcurve {pcurve_id} references missing support {surface_id}"
-            ))
-        })
-}
-
-/// The surface of the faces that use a pcurve.
-pub(in crate::writer) fn pcurve_support_surface<'a>(
-    geometry: &'a Topology,
-    pcurve_id: &PcurveId,
-) -> Result<&'a SurfaceId, CodecError> {
-    fn surface_for_loop<'a>(
-        geometry: &'a Topology,
-        loop_: &cadmpeg_ir::topology::Loop,
-        pcurve_id: &PcurveId,
-    ) -> Result<&'a SurfaceId, CodecError> {
-        let face = geometry
-            .faces
-            .iter()
-            .find(|face| face.id == loop_.face)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "pcurve {pcurve_id} is used by loop {} with missing face {}",
-                    loop_.id, loop_.face
-                ))
-            })?;
-        Ok(&face.surface)
-    }
-
-    fn record_surface<'a>(
-        selected: &mut Option<&'a SurfaceId>,
-        surface: &'a SurfaceId,
-        pcurve_id: &PcurveId,
-    ) -> Result<(), CodecError> {
-        if selected.is_some_and(|selected| selected != surface) {
-            return Err(CodecError::NotImplemented(format!(
-                "F3D pcurve {pcurve_id} is shared by faces with different support surfaces"
-            )));
-        }
-        selected.get_or_insert(surface);
-        Ok(())
-    }
-
-    let mut surface_id = None;
-    for coedge in &geometry.coedges {
-        if coedge.pcurves.iter().any(|use_| use_.pcurve == *pcurve_id) {
-            let loop_ = geometry
-                .loops
-                .iter()
-                .find(|loop_| loop_.id == coedge.owner_loop)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "pcurve {pcurve_id} is used by missing loop {}",
-                        coedge.owner_loop
-                    ))
-                })?;
-            let surface = surface_for_loop(geometry, loop_, pcurve_id)?;
-            record_surface(&mut surface_id, surface, pcurve_id)?;
-        }
-    }
-    for loop_ in &geometry.loops {
-        if loop_.vertex_pcurves().any(|use_| use_.pcurve == *pcurve_id) {
-            let surface = surface_for_loop(geometry, loop_, pcurve_id)?;
-            record_surface(&mut surface_id, surface, pcurve_id)?;
-        }
-    }
-    surface_id.ok_or_else(|| {
-        CodecError::malformed(format_args!(
-            "F3D pcurve {pcurve_id} is not used by a coedge or pole vertex"
-        ))
-    })
 }
 
 fn native_intcurve_support_context(
