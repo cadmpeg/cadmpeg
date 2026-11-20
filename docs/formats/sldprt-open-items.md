@@ -1054,7 +1054,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** Can a sketch curve record with `0xffff` at +80 and `0xffff` at +82 be a partial ellipse?
 
-**Known.** `sldprt.md` §2.3 defines the `0xffff` pair followed by a u16 centre index at +84 and four little-endian i32 (`-2`) at +86 as a minor arc between the two endpoint indices (or a full circle when they coincide). A 104-byte `0xffff` pair whose centre index precedes four u16 axis-point indices is documented as a partial ellipse.
+**Known.** `sldprt.md` §2.3 defines the `0xffff` pair followed by a u16 centre index at +84 and four little-endian i32 (`-2`) at +86 as a minor arc between the two endpoint indices (or a full circle when they coincide). A 104-byte `0xffff` pair with a u16 centre index at +84 and four u16 axis-point indices (in a list ending with 20, 22, or 24 zero bytes) is a candidate partial-ellipse layout.
 
 **Need.** Confirm whether a `0xffff` pair with four u16 axis-point indices occurs as a partial ellipse in a stored solid, and define its trim and sense rules.
 
