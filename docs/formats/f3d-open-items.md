@@ -852,7 +852,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What do the byte at offset 27 of the `Extrude` scope, the u32 at offset 22 of the parameter record (type `7A6A3D31-BE74-4E19-9115-20642944C2E4`), and the body key at offset 25 of the body map (type `74CA4562-59F8-4C97-8AD1-F8297C21F9AA`) of a sketch-driven `Extrude` encode?
 
-**Known.** `f3d.md` §3.1 "**Sketch-driven Extrude scope frame.**", "**Extrude parameter owners.**", and "**Result body.**" give the three records. The scope byte is `0` or `1`, and both values occur in one design. It does not follow the sign of the `AlongDistance` value. The parameter word is `6`, `4`, or `0`. The body key is `0` or `6`.
+**Known.** `f3d.md` §3.1 "**Sketch-driven Extrude scope frame.**", "**Extrude parameter owners.**", and "**Result body.**" give the three records. The scope byte is `0` or `1`, and both values occur in one design. It does not follow the sign of the `AlongDistance` value. The parameter word is `6`, `4`, or `0`. The body key is `0` or `6`. The `Body` owner of an Extrude's result body is 103 bytes in its common form; a 107-byte form also occurs, with a different zero run and different words at offsets 22, 41 and 64.
 
 **Need.** A writer must fill the three fields. A design that stores both values of the scope byte, compared item by item against its edit history, would settle the first.
 

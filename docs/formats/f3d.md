@@ -3397,7 +3397,7 @@ The local identities of the two records are consecutive integers.
 | 115 | 8 × u8 | zero |
 | 123 | reference | the owner collection |
 
-The parameter record stores ten zero bytes after its indexed header, u32 `6` at offset 22, five zero bytes, the parameter number `n` at offset 31, a reference to its owner at offset 35, and from offset 46 the LP-UTF16 expression, ten zero bytes, the LP-UTF16 source kind, u32 `0`, the LP-UTF16 display unit, the LP-UTF16 name `d<n>`, the f64 value, a zero byte, and a reference to the parameter collection. The f64 value equals the owner's value at offset 40. The parameter numbers of a Design stream are unique. One counter numbers the sketch dimension parameters and the `Extrude` parameters, and the `TaperAngle` parameter has the number after the `AlongDistance` parameter.
+The parameter record stores ten zero bytes after its indexed header, a u32 word at offset 22 (`6`, `4` or `0`, with no rule established, DR-890), five zero bytes, the parameter number `n` at offset 31, a reference to its owner at offset 35, and from offset 46 the LP-UTF16 expression, ten zero bytes, the LP-UTF16 source kind, u32 `0`, the LP-UTF16 display unit, the LP-UTF16 name `d<n>`, the f64 value, a zero byte, and a reference to the parameter collection. The f64 value equals the owner's value at offset 40. The parameter numbers of a Design stream are unique. One counter numbers the sketch dimension parameters and the `Extrude` parameters, and the `TaperAngle` parameter has the number after the `AlongDistance` parameter.
 
 **Record-timestamp tables.** Each table uses the prefix `01 01` and the layout of the scope's record-timestamp table:
 
@@ -3408,7 +3408,7 @@ The parameter record stores ten zero bytes after its indexed header, u32 `6` at 
 | the profile group | the profile selection |
 | the profile selection | the `Sketch` scope |
 
-**Result body.** The browser-node member that the scope names at offset 170 is the 151-byte form of the previous subsection. It references the body-presentation owner of the result body at offset 99 and the `Extrude` scope at offset 110, and stores hidden flag `0`. The body-presentation owner (type `D3937028-C20C-4E65-B010-94AD418A5C20`, type version `19`) is the only presentation record of the body. It stores the LP-UTF16 name `0_` followed by its own decimal record index at offset 21 and the body's node GUID, and it references the `Body` owner. The `Body` owner of type `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA` is 103 bytes:
+**Result body.** The browser-node member that the scope names at offset 170 is the 151-byte form of the previous subsection. It references the body-presentation owner of the result body at offset 99 and the `Extrude` scope at offset 110, and stores hidden flag `0`. The body-presentation owner (type `D3937028-C20C-4E65-B010-94AD418A5C20`, type version `19`) is the only presentation record of the body. It stores the LP-UTF16 name `0_` followed by its own decimal record index at offset 21 and the body's node GUID, and it references the `Body` owner. The `Body` owner of type `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA` is 103 bytes in its common form, below. A 107-byte form also occurs, and its fields are not established (DR-890):
 
 | Offset | Type | Field |
 |---|---|---|
