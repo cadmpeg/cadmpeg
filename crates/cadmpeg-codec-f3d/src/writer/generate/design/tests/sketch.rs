@@ -722,3 +722,262 @@ fn a_sketch_of_lines_only_is_written_with_its_base_feature() {
         )
     )));
 }
+
+/// A sketch on `plane` with source axes `x` and `y`: a line along each axis
+/// and a point pair along each, with a horizontal and a vertical relation on
+/// each line and pair.
+fn oriented(
+    name: &'static str,
+    plane: PrincipalEntity,
+    x_axis: [f64; 3],
+    y_axis: [f64; 3],
+) -> Source {
+    let origin = [0.0, 0.0, 0.0];
+    let mut sketch = Source::new(
+        name,
+        picked(principal(plane)),
+        frame(origin, x_axis, y_axis),
+    );
+    sketch
+        .entity(
+            "h",
+            PlanarCurve::Line {
+                start: point2(1.0, 2.0),
+                end: point2(11.0, 2.0),
+            },
+            &[],
+        )
+        .entity(
+            "v",
+            PlanarCurve::Line {
+                start: point2(1.0, 2.0),
+                end: point2(1.0, 9.0),
+            },
+            &[],
+        )
+        .entity("p", PlanarCurve::Point(point2(3.0, 5.0)), &[])
+        .entity("q", PlanarCurve::Point(point2(8.0, 5.0)), &[])
+        .entity("r", PlanarCurve::Point(point2(3.0, 12.0)), &[]);
+    let (along_x, along_y) = (sketch.operand("h"), sketch.operand("v"));
+    let (point, beside, above) = (
+        sketch.operand("p"),
+        sketch.operand("q"),
+        sketch.operand("r"),
+    );
+    sketch
+        .constraint(
+            "h",
+            SketchRelation::Horizontal {
+                a: along_x,
+                b: None,
+            },
+        )
+        .constraint(
+            "v",
+            SketchRelation::Vertical {
+                a: along_y,
+                b: None,
+            },
+        )
+        .constraint(
+            "pq",
+            SketchRelation::Horizontal {
+                a: point.clone(),
+                b: Some(beside),
+            },
+        )
+        .constraint(
+            "pr",
+            SketchRelation::Vertical {
+                a: point,
+                b: Some(above),
+            },
+        );
+    sketch
+}
+
+/// Whether the decoded orientation relation `definition` holds on the
+/// decoded geometry: a horizontal line has no v extent, a vertical line no
+/// u extent, and a point pair shares its stated coordinate. `None` for
+/// another kind.
+fn orientation_holds(
+    decoded: &CadIr,
+    definition: &cadmpeg_ir::sketches::SketchConstraintDefinitionInput,
+) -> Option<bool> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinitionInput as Definition, SketchCoordinateAxis,
+        SketchGeometryDefinition as Geometry, SketchLocus,
+    };
+    let geometry = |id: &SketchEntityId| {
+        decoded
+            .model
+            .sketch_entities
+            .iter()
+            .find(|entity| entity.id() == id)
+            .map(|entity| entity.geometry.definition().clone())
+    };
+    let line = |id: &SketchEntityId| match geometry(id) {
+        Some(Geometry::Line { start, end }) => {
+            let (start, end) = (start.get(), end.get());
+            Some((end.u - start.u, end.v - start.v))
+        }
+        _ => None,
+    };
+    let point = |locus: &SketchLocus| match locus {
+        SketchLocus::Entity(id) => match geometry(id) {
+            Some(Geometry::Point { position }) => Some(position.get()),
+            _ => None,
+        },
+        _ => None,
+    };
+    Some(match definition {
+        Definition::Horizontal { entity } => {
+            line(entity).is_some_and(|(du, dv)| dv.abs() <= TOLERANCE * du.hypot(dv))
+        }
+        Definition::Vertical { entity } => {
+            line(entity).is_some_and(|(du, dv)| du.abs() <= TOLERANCE * du.hypot(dv))
+        }
+        Definition::SameCoordinate { relation } => {
+            match (point(relation.first()), point(relation.second())) {
+                (Some(a), Some(b)) => match relation.axis() {
+                    SketchCoordinateAxis::U => (a.u - b.u).abs() <= TOLERANCE,
+                    SketchCoordinateAxis::V => (a.v - b.v).abs() <= TOLERANCE,
+                },
+                _ => false,
+            }
+        }
+        _ => return None,
+    })
+}
+
+#[test]
+fn orientation_relations_follow_each_plane_frame() {
+    let mut ir = scoped_cube();
+    let (cos, sin) = (3f64.sqrt() / 2.0, 0.5);
+    let sources = [
+        // Quarter turns from Fusion's frame on each plane.
+        oriented(
+            "xy",
+            PrincipalEntity::XyPlane,
+            [0.0, 1.0, 0.0],
+            [-1.0, 0.0, 0.0],
+        ),
+        oriented(
+            "xz",
+            PrincipalEntity::XzPlane,
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+        ),
+        oriented(
+            "yz",
+            PrincipalEntity::YzPlane,
+            [0.0, 0.0, 1.0],
+            [0.0, -1.0, 0.0],
+        ),
+        // Normals opposite the plane's: a reflection, and a reflection with
+        // a quarter turn.
+        oriented(
+            "mirror",
+            PrincipalEntity::XzPlane,
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ),
+        oriented(
+            "mirror-turn",
+            PrincipalEntity::XyPlane,
+            [0.0, 1.0, 0.0],
+            [1.0, 0.0, 0.0],
+        ),
+        oriented(
+            "oblique",
+            PrincipalEntity::XyPlane,
+            [cos, sin, 0.0],
+            [-sin, cos, 0.0],
+        ),
+    ];
+    let mut ids = Vec::new();
+    for source in sources {
+        ids.push(source.add_to(&mut ir));
+    }
+    let Some(Container::Ordered { members, .. }) = ir.design.containers.first_mut() else {
+        panic!("the cube's timeline");
+    };
+    for (at, id) in ids.into_iter().enumerate() {
+        members.insert(at, Member::Feature(id));
+    }
+    let (report, decoded) = write(&ir);
+    assert_eq!(decoded.model.sketches.len(), 6, "{:#?}", report.losses);
+    let checked = decoded
+        .model
+        .sketch_constraints
+        .iter()
+        .filter_map(|constraint| {
+            orientation_holds(&decoded, constraint.definition.kind())
+                .map(|holds| (holds, constraint.definition.kind()))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(checked.len(), 20, "{checked:#?}");
+    assert!(checked.iter().all(|(holds, _)| *holds), "{checked:#?}");
+    let omitted = loss(
+        &report,
+        &F3dLossCode::WriterSketchContentOmitted.kind().to_string(),
+    )
+    .join("\n");
+    for name in ["h", "v", "pq", "pr"] {
+        assert!(
+            omitted.contains(constraint_id("oblique", name).as_str()),
+            "{omitted}"
+        );
+        for written in ["xy", "xz", "yz", "mirror", "mirror-turn"] {
+            assert!(
+                !omitted.contains(constraint_id(written, name).as_str()),
+                "{omitted}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_failure_in_the_sketch_records_keeps_the_design() {
+    super::super::FAIL_NEXT_SKETCHES.with(|fail| fail.set(true));
+    let (ir, _) = scoped_sketches();
+    let (report, decoded) = write(&ir);
+    assert!(decoded.model.sketches.is_empty(), "{:#?}", report.losses);
+    assert!(decoded.model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::BaseFeature { .. }
+        )
+    )));
+    assert!(
+        !report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("stores no design")
+                || loss.message.contains("writes no design")),
+        "{:#?}",
+        report.losses
+    );
+    let missing = loss(&report, "export/evaluation.missing").join("\n");
+    for dropped in ["sketch1", "sketch2", "sketch3", "sketch5"] {
+        assert!(
+            missing.contains(&format!(
+                "{} (its sketch is dropped because the writer failed with the design's sketches (not implemented yet: a test failure of the sketch records))",
+                feature_id(dropped)
+            )),
+            "{missing}"
+        );
+    }
+    assert!(
+        missing.contains(&format!(
+            "{} (its sketch lies on no origin plane)",
+            feature_id("sketch4")
+        )),
+        "{missing}"
+    );
+    assert!(loss(
+        &report,
+        &F3dLossCode::WriterSketchContentOmitted.kind().to_string()
+    )
+    .is_empty());
+}
