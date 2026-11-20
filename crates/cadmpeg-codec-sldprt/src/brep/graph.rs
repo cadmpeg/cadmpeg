@@ -8999,6 +8999,16 @@ fn synthesize_cylinder_seams(
             }
         }
     }
+    let mut point_indices = HashMap::new();
+    for (index, point) in out.points.iter().enumerate() {
+        point_indices.entry(&point.id).or_insert(index);
+    }
+    let mut vertex_points = HashMap::<VertexId, usize>::new();
+    for vertex in &out.vertices {
+        if let Some(&index) = point_indices.get(&vertex.point) {
+            vertex_points.entry(vertex.id.clone()).or_insert(index);
+        }
+    }
     let mut removed = HashSet::new();
     let mut coedge_indices = HashMap::new();
     for (index, coedge) in out.coedges.iter().enumerate() {
@@ -9007,15 +9017,9 @@ fn synthesize_cylinder_seams(
     }
     for candidate in candidates {
         let vertex_position = |vertex_id: &VertexId| {
-            let point_id = &out
-                .vertices
-                .iter()
-                .find(|vertex| vertex.id == *vertex_id)?
-                .point;
-            out.points
-                .iter()
-                .find(|point| point.id == *point_id)
-                .map(|point| point.position().get())
+            vertex_points
+                .get(vertex_id)
+                .map(|&index| out.points[index].position().get())
         };
         let Some((seam, kept)) = seam_endpoints(&candidate, &vertex_edges, vertex_position) else {
             continue;
@@ -9035,16 +9039,8 @@ fn synthesize_cylinder_seams(
             if kept {
                 continue;
             }
-            let Some(point_id) = out
-                .vertices
-                .iter()
-                .find(|vertex| vertex.id == *vertex_id)
-                .map(|vertex| &vertex.point)
-            else {
-                continue;
-            };
-            if let Some(point) = out.points.iter_mut().find(|point| point.id == *point_id) {
-                point.set_position(
+            if let Some(&index) = vertex_points.get(vertex_id) {
+                out.points[index].set_position(
                     cadmpeg_ir::features::FinitePoint3::new(position).ok_or_else(|| {
                         cadmpeg_core::CodecError::Malformed(Point::NON_FINITE_POSITION.into())
                     })?,
