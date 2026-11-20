@@ -1,5 +1,5 @@
 use super::*;
-use std::f64::consts::FRAC_PI_2;
+use std::f64::consts::{FRAC_PI_2, PI};
 
 /// Agreement of computed lengths and angles.
 const EPS_TEST: f64 = 1.0e-12;
@@ -36,23 +36,28 @@ fn point(out: &mut Vec<u8>, u: f64, v: f64) -> usize {
     at
 }
 
-fn curve(out: &mut Vec<u8>, start: u16, end: u16, kind: u16, center: Option<u16>) -> usize {
+/// A curve record: endpoint indices, a u32, f64 `-1`, the sense word, and for
+/// an arc the centre index and four i32 `-2`.
+fn curve(out: &mut Vec<u8>, start: u16, end: u16, sense: i32, center: Option<u16>) -> usize {
     let at = out.len();
     head(out);
+    write_curve_fields(out, start, end, sense, center);
+    at
+}
+
+fn write_curve_fields(out: &mut Vec<u8>, start: u16, end: u16, sense: i32, center: Option<u16>) {
     out.extend_from_slice(&start.to_le_bytes());
     out.extend_from_slice(&end.to_le_bytes());
     out.extend_from_slice(&1u32.to_le_bytes());
     out.extend_from_slice(&F64_MINUS_ONE);
-    out.extend_from_slice(&kind.to_le_bytes());
+    out.extend_from_slice(&sense.to_le_bytes());
     if let Some(center) = center {
-        out.extend_from_slice(&0u16.to_le_bytes());
         out.extend_from_slice(&center.to_le_bytes());
         for _ in 0..4 {
             out.extend_from_slice(&I32_MINUS_TWO);
         }
     }
     out.extend_from_slice(&[0; 10]);
-    at
 }
 
 fn header(out: &mut Vec<u8>, count: u32) {
@@ -220,7 +225,7 @@ fn an_unread_curve_type_and_an_index_past_the_points_stay_unresolved() {
     point(&mut payload, 0.0, 0.0);
     point(&mut payload, 0.01, 0.0);
     payload.extend_from_slice(&0u32.to_le_bytes());
-    let reversed = curve(&mut payload, 1, 1, 0xffff, Some(0));
+    let reversed = curve(&mut payload, 1, 1, 0x40, Some(0));
     let past = curve(&mut payload, 0, 5, 0, None);
     let lists = SketchRecordLists::new(&payload);
     assert!(matches!(
@@ -237,27 +242,62 @@ fn an_unread_curve_type_and_an_index_past_the_points_stay_unresolved() {
     );
 }
 
-/// `docs/formats/sldprt.md` §2: distinct endpoint indices define the minor
-/// arc, so endpoints 270 degrees apart counterclockwise from the first index
-/// give the 90 degree arc from the second index to the first.
-#[test]
-fn distinct_endpoint_indices_select_the_minor_arc() {
+/// Points 0 (the centre), 1 at 0 degrees and 2 at 90 degrees, then `arc`
+/// joining endpoint indices `start` and `end` about point 0 in `sense`.
+fn quarter_points_arc(start: u16, end: u16, sense: i32) -> (Vec<u8>, usize) {
     let mut payload = vec![0; 7];
     header(&mut payload, 3);
     point(&mut payload, 0.0, 0.0);
     point(&mut payload, 0.01, 0.0);
     point(&mut payload, 0.0, 0.01);
     payload.extend_from_slice(&0u32.to_le_bytes());
-    let arc = curve(&mut payload, 2, 1, 1, Some(0));
+    let arc = curve(&mut payload, start, end, sense, Some(0));
+    (payload, arc)
+}
+
+/// Sense `1` sweeps counterclockwise from the first index to the second, also
+/// past half a turn: from 90 degrees to 0 degrees is three quarters of a turn.
+#[test]
+fn a_counterclockwise_arc_can_sweep_past_half_a_turn() {
+    let (payload, arc) = quarter_points_arc(2, 1, 1);
     let lists = SketchRecordLists::new(&payload);
     for project in [millimetres, mirrored] {
         let (_, _, start_angle, end_angle) =
             arc_parts(listed_record_geometry(&payload, &lists, arc, &project));
-        assert!((end_angle - start_angle - FRAC_PI_2).abs() < EPS_TEST);
+        assert!((end_angle - start_angle - 3.0 * FRAC_PI_2).abs() < EPS_TEST);
     }
     let (_, _, start_angle, _) =
         arc_parts(listed_record_geometry(&payload, &lists, arc, &millimetres));
+    assert!((start_angle - FRAC_PI_2).abs() < EPS_TEST);
+}
+
+/// Sense `-1` sweeps clockwise from the first index to the second.
+#[test]
+fn a_clockwise_arc_runs_from_its_second_index_counterclockwise() {
+    let (payload, arc) = quarter_points_arc(2, 1, -1);
+    let lists = SketchRecordLists::new(&payload);
+    let (center, radius, start_angle, end_angle) =
+        arc_parts(listed_record_geometry(&payload, &lists, arc, &millimetres));
+    assert_eq!(center, Point2::new(0.0, 0.0));
+    assert!((radius - 10.0).abs() < EPS_TEST);
     assert!(start_angle.abs() < EPS_TEST);
+    assert!((end_angle - FRAC_PI_2).abs() < EPS_TEST);
+    let (payload, arc) = quarter_points_arc(1, 2, -1);
+    let lists = SketchRecordLists::new(&payload);
+    let (_, _, start_angle, end_angle) =
+        arc_parts(listed_record_geometry(&payload, &lists, arc, &millimetres));
+    assert!((start_angle - FRAC_PI_2).abs() < EPS_TEST);
+    assert!((end_angle - 2.0 * PI).abs() < EPS_TEST);
+}
+
+/// A sense word `-1` whose centre index is not followed by i32 `-2` is not an
+/// arc record.
+#[test]
+fn a_clockwise_word_without_the_minus_two_cells_stays_unresolved() {
+    let (mut payload, arc) = quarter_points_arc(2, 1, -1);
+    let cells = arc + CURRENT_FIELDS + CENTER + 2;
+    payload[cells..cells + 4].copy_from_slice(&3u32.to_le_bytes());
+    assert!(curve_stays_unresolved(&payload, arc));
 }
 
 #[test]
@@ -289,78 +329,70 @@ fn curve_stays_unresolved(payload: &[u8], offset: usize) -> bool {
         && listed_record_geometry(payload, &lists, offset, &millimetres).is_none()
 }
 
-/// `docs/formats/sldprt.md` §2: the 92-byte direct profile line stores u32
-/// `1` at +84 and point-object identifiers at +64 and +66.
+/// Where a current-layout line record stores its trailer u32.
+const LINE_TRAILER: usize = 84;
+/// Where a current-layout line record stores its identity.
+const LINE_IDENTITY: usize = 88;
+
+/// A line's indices select point records whatever its trailer and identity.
 #[test]
-fn a_line_with_the_direct_identifier_trailer_stays_unresolved() {
-    let mut sample = sample();
-    put_u32(&mut sample.payload, sample.line + LINE_TRAILER, 1);
-    put_u32(&mut sample.payload, sample.line + LINE_IDENTITY, 7);
-    assert!(curve_stays_unresolved(&sample.payload, sample.line));
+fn a_line_reads_point_positions_whatever_its_trailer_and_identity() {
+    for (trailer, identity) in [(1, 7), (0, 7), (0, u32::MAX)] {
+        let mut sample = sample();
+        put_u32(&mut sample.payload, sample.line + LINE_TRAILER, trailer);
+        put_u32(&mut sample.payload, sample.line + LINE_IDENTITY, identity);
+        assert_eq!(
+            geometry(&sample, sample.line),
+            expected(SketchGeometryDefinition::Line {
+                start: Point2::new(10.0, 0.0),
+                end: Point2::new(0.0, 10.0),
+            })
+        );
+    }
 }
 
-/// `docs/formats/sldprt.md` §2: a profile-locus 92-byte record with a
-/// nonzero, non-null identity at +88 and no trailer `1` at +84 uses one-based
-/// ordinals; a null identity selects no such reading.
+/// Selectors `68` and `132` have bit 0 clear: their indices select point
+/// records.
 #[test]
-fn a_line_with_an_ordinal_identity_stays_unresolved() {
-    let mut sample = sample();
-    put_u32(&mut sample.payload, sample.line + LINE_IDENTITY, 7);
-    assert!(curve_stays_unresolved(&sample.payload, sample.line));
-    put_u32(&mut sample.payload, sample.line + LINE_IDENTITY, u32::MAX);
-    assert_eq!(
-        geometry(&sample, sample.line),
-        expected(SketchGeometryDefinition::Line {
-            start: Point2::new(10.0, 0.0),
-            end: Point2::new(0.0, 10.0),
-        })
-    );
-}
-
-/// `docs/formats/sldprt.md` §2: selectors `68` and `132` mark the compact
-/// legacy link-bearing forms, whose endpoint values are not point-record
-/// positions.
-#[test]
-fn a_link_bearing_selector_leaves_the_curve_unresolved() {
+fn a_link_bearing_selector_reads_point_positions() {
     for selector in [0x44, 0x84] {
         let mut sample = sample();
+        let plain =
+            [sample.line, sample.arc, sample.circle].map(|offset| geometry(&sample, offset));
         for offset in [sample.line, sample.arc, sample.circle] {
             sample.payload[offset + SELECTOR] = selector;
         }
-        for offset in [sample.line, sample.arc, sample.circle] {
-            assert!(curve_stays_unresolved(&sample.payload, offset));
+        for (offset, plain) in [sample.line, sample.arc, sample.circle]
+            .into_iter()
+            .zip(plain)
+        {
+            assert!(plain.is_some());
+            assert_eq!(geometry(&sample, offset), plain);
         }
     }
 }
 
 /// A curve record in the layout before `swVersion` 11000: the head without
 /// its eight zero bytes, so the endpoint indices stand at +56, f64 `-1` at
-/// +64 and the curve type at +72.
-fn compact_curve(out: &mut Vec<u8>, start: u16, end: u16, kind: u16, center: Option<u16>) -> usize {
+/// +64 and the sense at +72.
+fn compact_curve(
+    out: &mut Vec<u8>,
+    start: u16,
+    end: u16,
+    sense: i32,
+    center: Option<u16>,
+) -> usize {
     let at = out.len();
     head(out);
     out.truncate(out.len() - 8);
-    out.extend_from_slice(&start.to_le_bytes());
-    out.extend_from_slice(&end.to_le_bytes());
-    out.extend_from_slice(&1u32.to_le_bytes());
-    out.extend_from_slice(&F64_MINUS_ONE);
-    out.extend_from_slice(&kind.to_le_bytes());
-    if let Some(center) = center {
-        out.extend_from_slice(&0u16.to_le_bytes());
-        out.extend_from_slice(&center.to_le_bytes());
-        for _ in 0..4 {
-            out.extend_from_slice(&I32_MINUS_TWO);
-        }
-    }
-    out.extend_from_slice(&[0; 10]);
+    write_curve_fields(out, start, end, sense, center);
     at
 }
 
-/// `docs/formats/sldprt.md` §2: in the layout before `swVersion` 11000 the
-/// endpoint and centre values follow the coordinate-roster, object-index and
-/// minor-arc rules of the compact indexed forms, not point-record positions.
+/// In the layout before `swVersion` 11000 the endpoint and centre indices
+/// also select point records.
 #[test]
-fn a_curve_without_the_eight_zero_bytes_stays_unresolved() {
+fn a_curve_without_the_eight_zero_bytes_reads_point_positions() {
     let mut payload = vec![0; 7];
     header(&mut payload, 3);
     point(&mut payload, 0.0, 0.0);
@@ -368,9 +400,52 @@ fn a_curve_without_the_eight_zero_bytes_stays_unresolved() {
     point(&mut payload, 0.0, 0.01);
     payload.extend_from_slice(&0u32.to_le_bytes());
     let line = compact_curve(&mut payload, 1, 2, 0, None);
-    let arc = compact_curve(&mut payload, 2, 1, 1, Some(0));
+    let arc = compact_curve(&mut payload, 1, 2, 1, Some(0));
     let circle = compact_curve(&mut payload, 1, 1, 1, Some(0));
-    for offset in [line, arc, circle] {
-        assert!(curve_stays_unresolved(&payload, offset));
-    }
+    let lists = SketchRecordLists::new(&payload);
+    assert_eq!(
+        listed_record_geometry(&payload, &lists, line, &millimetres),
+        expected(SketchGeometryDefinition::Line {
+            start: Point2::new(10.0, 0.0),
+            end: Point2::new(0.0, 10.0),
+        })
+    );
+    let (center, radius, start_angle, end_angle) =
+        arc_parts(listed_record_geometry(&payload, &lists, arc, &millimetres));
+    assert_eq!(center, Point2::new(0.0, 0.0));
+    assert!((radius - 10.0).abs() < EPS_TEST);
+    assert!(start_angle.abs() < EPS_TEST);
+    assert!((end_angle - FRAC_PI_2).abs() < EPS_TEST);
+    let circle = listed_record_geometry(&payload, &lists, circle, &millimetres)
+        .expect("circle record did not read");
+    assert!(matches!(
+        circle.definition(),
+        SketchGeometryDefinition::Circle { .. }
+    ));
+}
+
+/// A record projected from outside the sketch ends a curve list; the curve
+/// records after it still index the sketch's point records.
+#[test]
+fn a_curve_after_a_projected_record_belongs_to_the_preceding_sketch() {
+    let mut payload = vec![0; 7];
+    header(&mut payload, 2);
+    point(&mut payload, 0.0, 0.0);
+    point(&mut payload, 0.01, 0.0);
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    curve(&mut payload, 0, 1, 0, None);
+    let projected = payload.len();
+    head(&mut payload);
+    payload[projected + 35] = 1;
+    payload.extend_from_slice(&[0; 24]);
+    let later = curve(&mut payload, 1, 0, 0, None);
+    let lists = SketchRecordLists::new(&payload);
+    assert_eq!(lists.record(projected), None);
+    assert_eq!(
+        listed_record_geometry(&payload, &lists, later, &millimetres),
+        expected(SketchGeometryDefinition::Line {
+            start: Point2::new(10.0, 0.0),
+            end: Point2::new(0.0, 0.0),
+        })
+    );
 }
