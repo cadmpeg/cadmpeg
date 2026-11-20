@@ -29,9 +29,13 @@ jobs:
         shell: bash
         env:
           RUSTC_WRAPPER: ${{ github.workspace }}/.github/measure/rustc_wrapper.py
-          RUSTC_LOG: ${{ github.workspace }}/measure/rustc.tsv
+          MEASURE_LOG: ${{ github.workspace }}/measure/rustc.tsv
+          CARGO_BUILD_JOBS: 2
         run: |
           chmod +x .github/measure/rustc_wrapper.py
+          touch measure/rustc.tsv
+          tail -F measure/rustc.tsv | sed -u 's/^/rustc /' &
+          (while sleep 20; do if [ "$(uname)" = Darwin ]; then echo "mem $(sysctl -n vm.swapusage)"; else free -m | awk 'NR==2 {print "mem used " $3 " of " $2 " MiB"}'; fi; done) &
           sysctl -n hw.memsize 2>/dev/null || free -b | sed -n 2p
           time cargo test -q --workspace --bins --tests --no-run --timings
       - name: Keep results
