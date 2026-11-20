@@ -39,7 +39,7 @@ fn cube_nest() -> BodyTopology {
 }
 
 fn scoped(nest: BodyTopology) -> BodyTopology {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut map = IdentityMap::new(|id: &str| Ok(nest_scope(id)));
     let rewritten =
         crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(nest, &ctx, &mut map)
@@ -83,7 +83,7 @@ fn feature(id: &str) -> Feature {
 }
 
 fn findings(ir: &CadIr) -> Vec<Finding> {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let index = crate::index::ModelIndex::build(ir);
     let mut findings = Vec::new();
     super::check_history_bodies(&ctx, ir, &index, &mut findings).expect("validation runs");

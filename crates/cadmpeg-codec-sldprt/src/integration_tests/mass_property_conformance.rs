@@ -13,7 +13,7 @@ use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
 use crate::test_support::nist::{ftc_06, ftc_08};
 
 fn findings(ir: &CadIr) -> Vec<Finding> {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let findings = cadmpeg_measure::declared_findings(&ctx, ir, MeasureOptions::default())
         .expect("measure declarations");
     ctx.finish_session().expect("measurement session");
