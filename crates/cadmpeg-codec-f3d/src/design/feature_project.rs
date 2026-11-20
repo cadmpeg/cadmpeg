@@ -7687,6 +7687,14 @@ fn project_rectangular_pattern_scalars(
             } else {
                 direction_records.next()
             };
+        if let (false, Some(record)) = (axis_active, record) {
+            losses.push(
+                crate::loss::F3dLossCode::FeatureRectangularPatternDirectionOneRecordAssumed.note(format!(
+                    "RectangularPattern scope {} reads direction record {} as the record of its inactive direction one: the pattern payload names it as the U-direction record.",
+                    scope.id, record.record_index
+                )),
+            );
+        }
         let Some(intervals) = PatternIntervals::new(count) else {
             continue;
         };

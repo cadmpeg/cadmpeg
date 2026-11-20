@@ -1402,6 +1402,8 @@ fn an_inactive_symmetric_direction_one_keeps_direction_two_and_drops_the_flag() 
     let placement =
         crate::loss::F3dLossCode::FeatureRectangularPatternPlacementNotTransferred.kind();
     let unresolved = crate::loss::F3dLossCode::FeatureRectangularPatternDirectionUnresolved.kind();
+    let assumed =
+        crate::loss::F3dLossCode::FeatureRectangularPatternDirectionOneRecordAssumed.kind();
     let codes = |losses: &[cadmpeg_ir::report::loss::LossNote]| {
         losses
             .iter()
@@ -1426,8 +1428,11 @@ fn an_inactive_symmetric_direction_one_keeps_direction_two_and_drops_the_flag() 
     assert!((spacing - 15.0).abs() < EPS_SPACING);
     assert_eq!(count, 2);
     assert!(!symmetric);
-    assert_eq!(codes(&losses), [dropped.clone(), placement.clone()]);
-    assert!(losses[1]
+    assert_eq!(
+        codes(&losses),
+        [dropped.clone(), assumed.clone(), placement.clone()]
+    );
+    assert!(losses[2]
         .message
         .contains("the 3 coincident instances of direction one"));
 
@@ -1446,7 +1451,10 @@ fn an_inactive_symmetric_direction_one_keeps_direction_two_and_drops_the_flag() 
     assert!((spacing - 15.0).abs() < EPS_SPACING);
     assert_eq!(count, 2);
     assert!(!symmetric);
-    assert_eq!(codes(&losses), [dropped, unresolved, placement.clone()]);
+    assert_eq!(
+        codes(&losses),
+        [dropped, assumed, unresolved, placement.clone()]
+    );
 
     let mut losses = Vec::new();
     let definition = project_rectangular_pattern_scalars(

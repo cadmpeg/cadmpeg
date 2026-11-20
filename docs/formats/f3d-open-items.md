@@ -3729,3 +3729,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Known.** In the three-opaque-byte tail the u32 after the tail marker is `1`, and the byte after it is the construction flag. In the two-opaque-byte tail the byte after the u32 lane is always `1`, and the lane is `0` or `1`. The decoder reads a lane of `1` as construction geometry and charges `sketch.curve-tail-construction-assumed` for every two-opaque-byte tail.
 
 **Need.** Two-opaque-byte tails of curves with a known construction status, for lane `0` and for lane `1`.
+
+### DR-895. Direction record of an inactive rectangular-pattern direction one
+
+**Question.** Does a rectangular-pattern scope whose direction one has zero distance or count one, and whose pattern payload is bound, store a direction record for direction one, and does the payload's U-direction reference at offset 122 name that record?
+
+**Known.** `f3d.md` §3.1 states that a direction with count greater than one and zero distance has no direction record, that a scope can store both records when one direction has count one, and that the payload names the U-direction record at offset 122 and stores the V displacement at offset 63.
+
+**Need.** A save with a zero-distance direction one beside a pattern payload, with its direction records and instance positions.
+
+**Note.** The decoder reads the record that the payload names as the direction-one record, takes direction two from the payload V displacement, and charges `feature.rectangular-pattern-direction-one-record-assumed`.
