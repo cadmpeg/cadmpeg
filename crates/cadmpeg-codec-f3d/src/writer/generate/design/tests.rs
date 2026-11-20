@@ -771,5 +771,6 @@ fn an_integer_parameter_is_written_as_a_real_with_a_note() {
     assert!(!notes[0].message.contains(parameter_id("width").as_str()));
 }
 
+mod extrude;
 mod roster;
 mod sketch;

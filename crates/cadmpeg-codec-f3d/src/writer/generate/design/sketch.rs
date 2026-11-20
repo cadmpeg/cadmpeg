@@ -161,6 +161,9 @@ pub(super) struct PlannedRelation {
 pub(super) struct PlannedSketch<'a> {
     pub(super) feature: &'a FeatureId,
     pub(super) plane: OriginPlane,
+    /// Whether the source normal is opposite the plane's, so that the
+    /// sketch is written as its reflection.
+    pub(super) mirrored: bool,
     /// The points in sketch coordinates in cm, without the origin point.
     pub(super) points: Vec<[f64; 2]>,
     pub(super) curves: Vec<PlannedCurve>,
@@ -406,6 +409,7 @@ impl<'a> PlannedSketch<'a> {
         let mut planned = Self {
             feature,
             plane: frame.plane,
+            mirrored: frame.sense < 0.0,
             points: Vec::new(),
             curves: Vec::new(),
             relations: Vec::new(),

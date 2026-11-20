@@ -34,15 +34,15 @@ use crate::loss::F3dLossCode;
 
 const TOLERANCE: f64 = 1e-9;
 
-fn feature_id(name: &str) -> FeatureId {
+pub(super) fn feature_id(name: &str) -> FeatureId {
     FeatureId::mint(format!("test:design:feature#{name}")).expect("identity grammar")
 }
 
-fn sketch_id(name: &str) -> SketchId {
+pub(super) fn sketch_id(name: &str) -> SketchId {
     SketchId::mint(format!("test:design:sketch#{name}")).expect("identity grammar")
 }
 
-fn entity_id(sketch: &str, name: &str) -> SketchEntityId {
+pub(super) fn entity_id(sketch: &str, name: &str) -> SketchEntityId {
     SketchEntityId::mint(format!("test:design:entity#{sketch}-{name}")).expect("identity grammar")
 }
 
@@ -51,7 +51,7 @@ fn constraint_id(sketch: &str, name: &str) -> SketchConstraintId {
         .expect("identity grammar")
 }
 
-fn feature(name: &str, operation: FeatureOperation) -> Feature {
+pub(super) fn feature(name: &str, operation: FeatureOperation) -> Feature {
     Feature {
         id: feature_id(name),
         name: None,
@@ -72,12 +72,12 @@ fn unit(x: f64, y: f64, z: f64) -> UnitVector3 {
     UnitVector3::new(Vector3::new(x, y, z)).expect("a unit vector")
 }
 
-fn point2(u: f64, v: f64) -> FinitePoint2 {
+pub(super) fn point2(u: f64, v: f64) -> FinitePoint2 {
     FinitePoint2::new(Point2 { u, v }).expect("a finite point")
 }
 
 /// A frame from its origin and its x and y axes.
-fn frame(origin: [f64; 3], x: [f64; 3], y: [f64; 3]) -> FrameValue {
+pub(super) fn frame(origin: [f64; 3], x: [f64; 3], y: [f64; 3]) -> FrameValue {
     let z = Vector3::from(x).cross(Vector3::from(y));
     FrameValue {
         origin: FinitePoint3::new(Point3 {
@@ -92,7 +92,7 @@ fn frame(origin: [f64; 3], x: [f64; 3], y: [f64; 3]) -> FrameValue {
     }
 }
 
-fn picked(target: PickTarget) -> ConstructionInput {
+pub(super) fn picked(target: PickTarget) -> ConstructionInput {
     ConstructionInput {
         role: Some(InputRole {
             subject: Subject::Whole,
@@ -131,14 +131,14 @@ fn unread() -> ConstructionInput {
     }
 }
 
-fn principal(entity: PrincipalEntity) -> PickTarget {
+pub(super) fn principal(entity: PrincipalEntity) -> PickTarget {
     PickTarget::Principal {
         entity,
         container: None,
     }
 }
 
-fn datum(name: &str, plane: PrincipalEntity) -> Feature {
+pub(super) fn datum(name: &str, plane: PrincipalEntity) -> Feature {
     feature(
         name,
         FeatureOperation::Datum(Box::new(Datum {
@@ -154,7 +154,7 @@ fn datum(name: &str, plane: PrincipalEntity) -> Feature {
 }
 
 /// One source sketch: its feature, record, entities and constraints.
-struct Source {
+pub(super) struct Source {
     name: &'static str,
     input: ConstructionInput,
     frame: FrameValue,
@@ -163,7 +163,7 @@ struct Source {
 }
 
 impl Source {
-    fn new(name: &'static str, input: ConstructionInput, frame: FrameValue) -> Self {
+    pub(super) fn new(name: &'static str, input: ConstructionInput, frame: FrameValue) -> Self {
         Self {
             name,
             input,
@@ -173,7 +173,7 @@ impl Source {
         }
     }
 
-    fn entity(
+    pub(super) fn entity(
         &mut self,
         name: &str,
         curve: PlanarCurve,
@@ -214,11 +214,11 @@ impl Source {
         self
     }
 
-    fn operand(&self, name: &str) -> Operand<Planar> {
+    pub(super) fn operand(&self, name: &str) -> Operand<Planar> {
         Operand::Entity(entity_id(self.name, name))
     }
 
-    fn add_to(self, ir: &mut CadIr) -> FeatureId {
+    pub(super) fn add_to(self, ir: &mut CadIr) -> FeatureId {
         let id = feature_id(self.name);
         ir.design.features.push(feature(
             self.name,
