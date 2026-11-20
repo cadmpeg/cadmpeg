@@ -1774,9 +1774,21 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Need.** Modeled threads on four or more faces, and the entity that carries a second value as its identity.
 
+**Conflict.** An extended standard Thread scope of a saved design, with modeled flag `1`, a result state, and helical result faces, stores entry count `0`.
+
+**Note.** The decoder admits an entry count of `0` or one entry for each face-selection pair. It reads an extended standard Thread with modeled flag `1` and entry count `0` as modeled and charges `feature.thread-modeled-entries-absent`. It reads the thread class after the entries and keeps the entry bytes only in the retained source image.
+
+### DR-897. Diameter of a fractional Thread nominal size
+
+**Question.** Which diameter does a fractional Thread nominal size state?
+
+**Known.** `f3d.md` §3.1 "The three LP-UTF16 fields are the designation, nominal-size text, and profile name" gives the fraction grammar and states the size in the units of the profile. A pipe thread with nominal size `1/8` stores major diameter `0.9728` cm; the fraction in inches is `0.3175` cm.
+
+**Need.** Pipe threads of several fractional sizes and profiles, compared against the diameter the source application reports for each.
+
 **Conflict.** None.
 
-**Note.** The decoder requires one entry for each face-selection pair of a modeled thread, reads the thread class after the entries, and keeps the entry bytes only in the retained source image.
+**Note.** The decoder projects the stored major diameter as the thread diameter and charges `feature.thread-fractional-size-diameter-assumed`.
 
 ### DR-206. Sides of a two-sided to-object Revolve
 
