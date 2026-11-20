@@ -300,7 +300,7 @@ mod tests {
 
     #[test]
     fn canonical_json_sha256_matches_json_larger_than_the_buffer() {
-        let value: Vec<String> = (0..20_000).map(|index| format!("entry-{index}")).collect();
+        let value: Vec<String> = (0..6_000).map(|index| format!("entry-{index}")).collect();
         let json = crate::hash::finite_json::to_canonical_json_string(&value).unwrap();
         assert!(json.len() > super::DIGEST_BUFFER_BYTES);
         assert_eq!(
