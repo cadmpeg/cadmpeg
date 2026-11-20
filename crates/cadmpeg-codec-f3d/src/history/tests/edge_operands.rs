@@ -238,7 +238,7 @@ fn primary_reference_edges_bind_in_the_named_input_topology() {
                     "next_byte_offset": 160
                 })).unwrap();
             operand.recipe_structure = crate::design::decode::operands::edge_recipe_structure(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &program,
             )
             .unwrap();
@@ -421,7 +421,7 @@ fn revolve_axis_edge_is_shared_by_the_first_recipe_side_faces() {
             }))
             .unwrap();
         operand.recipe_structure = crate::design::decode::operands::edge_recipe_structure(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &program,
         )
         .unwrap();
@@ -577,7 +577,7 @@ fn side_one_support_faces_prove_an_edge_on_the_candidate_face_boundaries_and_inf
         0, 0, -1,
     ];
     let structure = crate::design::decode::operands::edge_recipe_structure(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &program,
     )
     .unwrap()

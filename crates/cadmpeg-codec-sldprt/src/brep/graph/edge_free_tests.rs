@@ -433,7 +433,7 @@ fn spun_circle_with_one_stored_bound_revolves_the_whole_profile() {
     ] {
         body.extend(value.to_be_bytes());
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let carriers = index::scan_carriers(&ctx, &body).unwrap();
     let face = super::WalkedFace {
         bridge_attr: 20,

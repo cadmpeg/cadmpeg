@@ -492,7 +492,7 @@ pub const ELIDED_DIGEST: &str = "<elided: digest over tolerantly compared geomet
 
 /// Key a snapshot writes in place of a native arena tree.
 ///
-/// The `FreeCAD` decode snapshot writes it; the `cadmpeg-ir` golden sweep reads
+/// The `FreeCAD` decode snapshot writes it; this crate's golden sweep reads
 /// it to tell an elided native subtree apart from a document that fails to read
 /// back. The sweep recognises the key carrying any string.
 pub const NATIVE_ELISION_KEY: &str = "__elided";

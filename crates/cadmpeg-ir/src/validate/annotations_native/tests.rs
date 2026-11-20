@@ -21,7 +21,7 @@ fn model_entity_wins_when_native_id_collides() {
         .expect("valid native identity")],
     );
     ir.native.0.insert("collision".into(), namespace);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let all_ids = super::BorrowedIdentities::build(|add| add(id.as_str(), ()));
     let mut builder = crate::AnnotationBuilder::new();
     builder.derived(&id, "position").unwrap();
@@ -139,7 +139,7 @@ fn parameter_native_ref_must_resolve() {
 fn unresolved_unknown_record_link_is_reported_once() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "test",
         &[crate::NativeUnknownRecord {
             id: crate::ids::UnknownId::mint("test:model:unknown#0").expect("valid identity"),

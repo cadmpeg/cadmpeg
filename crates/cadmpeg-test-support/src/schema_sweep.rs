@@ -387,7 +387,7 @@ fn probe(
             value_at(document, &sample.path),
             value_at(&written, &sample.path),
         ) {
-            (Some(stated), Some(written)) => first_difference(stated, written, String::new()),
+            (Some(stated), Some(written)) => first_difference(stated, written),
             _ => Some(String::new()),
         }
     };

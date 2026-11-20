@@ -16,7 +16,7 @@ fn replacement_face_bytes() -> Vec<u8> {
 fn legacy_font_face_replacement_decodes_the_replacement_character() {
     let bytes = replacement_face_bytes();
     let parsed = parse_text_style(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         TextStyleParseInput {
             range: 0..bytes.len(),

@@ -37,7 +37,7 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
     let parameters = [Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)];
     let chord = [Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 1.0, 1.0)];
     let bound = nurbs_surface_parameter_segment_chord_bound(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         parameters,
         chord,
@@ -48,7 +48,7 @@ fn nurbs_surface_parameter_segment_bound_contains_curved_diagonal() {
     assert!(bound >= 1.0 / 3.0);
     assert!(bound < 1.0 / 3.0 + 1.0e-12);
     let reverse_bound = nurbs_surface_parameter_segment_chord_bound(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         [parameters[1], parameters[0]],
         [chord[1], chord[0]],
@@ -94,7 +94,7 @@ fn surface_segment_bound_refuses_zero_depth_and_keeps_slice_exhaustion_local() {
         error.to_string()
     );
 
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let budget = WorkBudget::new(0);
     let bound = crate::eval::nurbs_surface_parameter_segment_chord_bound_with_budget(
         &ctx, &surface, parameters, chord, &budget,
@@ -108,7 +108,7 @@ fn surface_segment_bound_refuses_zero_depth_and_keeps_slice_exhaustion_local() {
 #[test]
 fn surface_patches_extract_split_and_bound_the_bilinear_net() {
     let surface = bilinear_surface();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let budget = WorkBudget::new(1_000_000);
     let patches =
         crate::eval::rational_surface_patches_with_budget(&surface, &budget).expect("active patch");
@@ -158,7 +158,7 @@ fn surface_patches_extract_split_and_bound_the_bilinear_net() {
 #[test]
 fn surface_start_search_lands_on_the_projected_parameter_for_both_contracts() {
     let surface = bilinear_surface();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for tolerance in [None, Some(0.0)] {
         let budget = WorkBudget::new(1_000_000);
         let point = Point3::new(0.3, 0.7, if tolerance.is_some() { 0.0 } else { 0.2 });

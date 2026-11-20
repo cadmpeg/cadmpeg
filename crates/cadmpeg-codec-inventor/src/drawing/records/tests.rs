@@ -68,7 +68,7 @@ fn record(
     type_id: [u8; 16],
     payload: Vec<u8>,
 ) -> Result<Record, cadmpeg_core::CodecError> {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let fields = parse(&ctx, family, 19, type_id, View::over_retained(&payload))?;
     let token = cadmpeg_ir::identity_key!("generated");
     Ok(Record {
@@ -85,7 +85,7 @@ fn record(
 
 #[test]
 fn sheet_prefix_keeps_both_lists_and_its_opaque_tail() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let record = record(Family::Sheet, SHEET, sheet(6))?;
     let Fields::Sheet {
         properties,
@@ -114,7 +114,7 @@ fn sheet_prefix_keeps_both_lists_and_its_opaque_tail() -> TestResult {
 
 #[test]
 fn both_view_forms_keep_every_operand_and_the_extension() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for type_id in [VIEW, ALTERNATE_VIEW] {
         let record = record(Family::Sheet, type_id, view(type_id, 19))?;
         let Fields::View {
@@ -141,7 +141,7 @@ fn both_view_forms_keep_every_operand_and_the_extension() -> TestResult {
 
 #[test]
 fn modeled_document_reference_keeps_each_path_form() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for path in ["generated.ipt", "generated.iam", "C:\\generated\\part.ipt"] {
         let record = record(Family::Browser, MODEL_REFERENCE, model_reference(path))?;
         let Fields::ModelReference {
@@ -171,7 +171,7 @@ fn modeled_document_reference_keeps_each_path_form() -> TestResult {
 
 #[test]
 fn decoder_and_validator_refuse_adjacent_counts_families_and_versions() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (type_id, count) in [
         (VIEW, 18),
         (VIEW, 20),
@@ -245,7 +245,7 @@ fn decoder_and_validator_refuse_adjacent_counts_families_and_versions() -> TestR
 
 #[test]
 fn short_prefixes_and_impossible_counts_are_located_refusals() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (family, type_id, bytes, prefix_len) in [
         (Family::Sheet, SHEET, sheet(6), 30),
         (Family::Sheet, VIEW, view(VIEW, 19), 30),
@@ -276,7 +276,7 @@ fn short_prefixes_and_impossible_counts_are_located_refusals() {
 
 #[test]
 fn cached_view_requires_a_nonnull_external_reference() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let valid = record(Family::SheetCache, CACHED_VIEW, cached_view())?;
     assert!(valid.valid(&ctx)?);
     let Fields::CachedView { view, tail, .. } = &valid.fields else {
@@ -298,7 +298,7 @@ fn cached_view_requires_a_nonnull_external_reference() -> TestResult {
 
 #[test]
 fn sheet_form_requires_segment_major_version_nineteen() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut record = record(Family::Sheet, SHEET, sheet(6))?;
     assert!(record.valid(&ctx)?);
     for version in [18, 20, 23] {
