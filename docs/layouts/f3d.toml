@@ -37605,7 +37605,7 @@ source = "spec"
 anchor = "The compact Reverse Normal prefix"
 
 [[record.field]]
-name = "null_guid"
+name = "link_guid"
 offset = 36
 type = "bytes[76]"
 source = "spec"
@@ -37673,7 +37673,7 @@ note = "Compact-prefix offset plus the four-byte forward shift that the specific
 anchor = "The shifted Reverse Normal prefix"
 
 [[record.field]]
-name = "null_guid"
+name = "link_guid"
 offset = 40
 type = "bytes[76]"
 source = "derived"
