@@ -602,7 +602,24 @@ Object-stream `05 08 01` coordinate rows are unframed allocations outside the co
 
 ### 6.1 `a5 03 34` freeform surface (consolidated class)
 
-Payload: `degU` and `K_U` (`4n+1` codes), array marker (`0x0c`, `0x08 0x05`, `0x08 0x09`, `0x08 0x0d`, `0x08 0x11`, or `0x08 0x15`), `K_U` distinct finite U knots (f64le), then `degV`/`K_V`/marker/V-knots, a mode byte (`0x01` non-rational / `0x05` rational), the pole grid (nu×nv×3 f64le, 24-byte stride), an optional weight payload, and a limit/parameterization tail. **Only strictly increasing distinct knots are stored.** A direction with exactly two distinct knots is a single Bézier span for every positive stored degree: both endpoint multiplicities are `degree+1`, and the pole count is `degree+1`. Degree-1 and degree-3 directions use clamped multiplicities `[degree+1,1,…,1,degree+1]`. Degree 5 uses the clamped C2 policy `[6,3,…,3,6]`, so `n_control = Σmult − degree − 1 = 3·K`. Poles and `05 08 01` vertex coordinates share the identity world frame. Rational weights (mode `0x05`) are either `00` followed by a complete `nu×nv` f64le grid or a row program. A row begins `01 03 00` or `01 07 00`, followed by `ceil(nv/2)` f64le values reflected around the row center; `02` copies the preceding expanded row. The tail carries current-limits + original parameterization (`param_after = coef·param_before + shift`) and extrapolation flags/data.
+Payload: `degU` and `K_U` (`4n+1` codes), array marker (`0x0c`, `0x08 0x05`, `0x08 0x09`, `0x08 0x0d`, `0x08 0x11`, or `0x08 0x15`), `K_U` distinct finite U knots (f64le), then `degV`/`K_V`/marker/V-knots, a mode byte (`0x01` non-rational / `0x05` rational), the pole grid (nu×nv×3 f64le, 24-byte stride), an optional weight payload, and a limit/parameterization tail. **Only strictly increasing distinct knots are stored.** A direction with exactly two distinct knots is a single Bézier span for every positive stored degree: both endpoint multiplicities are `degree+1`, and the pole count is `degree+1`. Degree-1 and degree-3 directions use clamped multiplicities `[degree+1,1,…,1,degree+1]`. Degree 5 uses the clamped C2 policy `[6,3,…,3,6]`, so `n_control = Σmult − degree − 1 = 3·K`. Poles and `05 08 01` vertex coordinates share the identity world frame. Rational weights (mode `0x05`) are either `00` followed by a complete `nu×nv` f64le grid or a row program. A row command is `01` or `05` followed by a row control; `05` also stores a count. Command `02` copies the preceding expanded row. The tail carries current-limits + original parameterization (`param_after = coef·param_before + shift`) and extrapolation flags/data.
+
+The three-byte weight-row prefix stores its command and row control:
+
+| Weight-row offset | Type | Meaning |
+| --- | --- | --- |
+| `+0` | `u8` | row command `01` or `05` |
+| `+1` | `u16le` | row control |
+
+The five-byte repeated weight-row prefix adds one field:
+
+| Weight-row offset | Type | Meaning |
+| --- | --- | --- |
+| `+3` | `u16le` | leading-repeat count for command `05` |
+
+Command `01` with row control `0003` or `0007` stores `ceil(nv/2)` finite nonzero f64le seeds. Append the first `floor(nv/2)` seeds in reverse order to complete the row.
+
+
 
 The frame carries no inline persistent object id. Its byte offset in the object stream identifies the consolidated surface carrier.
 
@@ -929,6 +946,19 @@ the owned loop and its endpoint incidences. Control `0e` on a cylinder
 stores a constant V value and uses the cylinder's U limits. A line record
 defines the locus through its stored origin. An exact incidence can select
 a station beyond its stored interval.
+A consolidated class-`5d` vertex selects its class-`05` incidence roster with
+one allocation reference followed by terminal `00`. Its wide forward-reference
+production is five bytes:
+
+| Offset | Type | Meaning |
+| --- | --- | --- |
+| `+0` | `u8` | wide roster-reference marker `0e` |
+| `+1` | `u24le` | forward allocation ordinal |
+| `+4` | `u8` | roster-reference terminal `00` |
+
+The ordinal starts at the allocation end of the vertex record. The selected
+class-`05` record belongs to the same bounded source.
+
 The owned vertex's class-`05` incidence roster supplies the active endpoint
 when a class-`06` member names the occurrence curve. A two-reference
 incidence with tail `80 <t:f64le>` assigns `t` to the second reference.
