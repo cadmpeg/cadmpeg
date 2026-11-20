@@ -4107,12 +4107,23 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 crate::scene::collect(ctx, &scan, &mut decoded.ir, &mut decoded.body.losses)?;
             if has_scene {
                 let sources = crate::scene::sources(ctx, &scan, &decoded.ir)?;
-                crate::scene::bind(ctx, &mut decoded.ir, &sources, &mut decoded.body.losses)?;
+                crate::scene::bind(
+                    ctx,
+                    &mut decoded.ir,
+                    &sources,
+                    &std::collections::BTreeMap::new(),
+                    &mut decoded.body.losses,
+                )?;
             }
             let owned =
                 crate::tree::own_once(ctx, &mut decoded.ir, &std::collections::BTreeMap::new())?;
             decoded.body.losses.extend(owned);
             crate::design::owners::release_unbound(&mut decoded.ir.model);
+            decoded.ir.state_root_definition(
+                ctx,
+                crate::tree::file_root_id(),
+                cadmpeg_ir::products::ExternalDocument::default(),
+            )?;
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
                 ctx,
@@ -4697,10 +4708,10 @@ fn project_mesh_bodies(
         )?;
         let mut triangle_groups = Vec::new();
         for group in std::mem::take(&mut body.triangle_groups) {
-            triangle_groups.push(cadmpeg_ir::tessellation::TessellationTriangleGroup {
-                source_id: Some(group.source_id),
-                triangles: group.triangles,
-            });
+            triangle_groups.push(cadmpeg_ir::tessellation::TessellationTriangleGroup::new(
+                Some(group.source_id),
+                group.triangles,
+            ));
         }
         let channels = mesh_attribute_channels(
             &body.attributes,

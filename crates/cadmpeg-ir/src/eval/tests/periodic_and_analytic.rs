@@ -1,5 +1,5 @@
 use crate::math::portable::Portable;
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 use crate::examples::unit_cube;
 use crate::geometry::sampled::PolylineSamples;
@@ -199,7 +199,7 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
     ];
     let weights = [1.0, weight, 1.0];
     let interior = crate::eval::nurbs_pcurve_uv(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         2,
         &knots,
         &controls,

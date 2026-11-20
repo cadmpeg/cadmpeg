@@ -1249,17 +1249,20 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     }
                 }
-                Some(DesignFeatureFamily::Thread) => scope
-                    .thread_construction()
-                    .and_then(|construction| {
-                        construction
-                            .nominal_size
-                            .value()
-                            .ok()
-                            .and_then(cadmpeg_ir::scalar::PositiveLength::new)
+                Some(DesignFeatureFamily::Thread) => {
+                    let resolved = scope.thread_construction().and_then(|construction| {
+                        thread_nominal_diameter(&scope.id, construction, &mut projection_losses)
                             .map(|size| (construction, size))
-                    })
-                    .map_or_else(
+                    });
+                    if resolved.is_none() {
+                        projection_losses.push(
+                            crate::loss::F3dLossCode::ThreadConstructionUnresolved.note(format!(
+                                "Thread {} has no admitted Thread construction; it stays an unresolved Thread.",
+                                scope.id
+                            )),
+                        );
+                    }
+                    resolved.map_or_else(
                         || {
                             Ok::<_, CodecError>(FeatureDefinition::Operation(
                                 FeatureOperation::Unresolved {
@@ -1354,7 +1357,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 },
                             ))
                         },
-                    )?,
+                    )?
+                }
                 Some(DesignFeatureFamily::SheetMetalBaseFace) => {
                     base_face::project(scope, inputs, &mut projection_losses)
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
@@ -7772,6 +7776,36 @@ fn project_rectangular_pattern_scalars(
     }))
 }
 
+/// The nominal diameter of a Thread construction in millimetres, with the
+/// losses of the values the neutral thread does not carry.
+fn thread_nominal_diameter(
+    scope_id: &str,
+    construction: &crate::records::feature::thread::DesignThreadConstruction,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Option<cadmpeg_ir::scalar::PositiveLength> {
+    let size = if construction.nominal_size.is_decimal() {
+        cadmpeg_ir::scalar::PositiveLength::new(construction.nominal_size.value()?)?
+    } else {
+        let size = cadmpeg_ir::scalar::PositiveLength::new(
+            construction.diameters.major() * DESIGN_LENGTH_TO_MILLIMETRE,
+        )?;
+        losses.push(
+            crate::loss::F3dLossCode::ThreadFractionalSizeDiameterAssumed.note(format!(
+                "Thread {scope_id} reads the diameter of its fractional nominal size as its stored major diameter, {} mm.",
+                size.get()
+            )),
+        );
+        size
+    };
+    if !construction.angle.is_sixty() {
+        losses.push(crate::loss::F3dLossCode::ThreadAngleNative.note(format!(
+            "Thread {scope_id} retains its {}-degree profile angle in its native construction.",
+            construction.angle.degrees()
+        )));
+    }
+    Some(size)
+}
+
 /// Tap type of a simple Hole.
 const HOLE_TAP_SIMPLE: u32 = 0;
 /// Tap type of a clearance Hole.
@@ -9291,7 +9325,17 @@ fn spatial_sketch_entity_endpoints(
 /// Each chain step scans every unused open edge, so the search is quadratic
 /// in the sketch's open edges. An exhausted cap leaves the sketch with no
 /// derived profiles.
-pub(super) const SPATIAL_PROFILE_SEARCH_WORK: usize = 1 << 24;
+pub(crate) const SPATIAL_PROFILE_SEARCH_WORK: usize = 1 << 24;
+
+/// The closed-profile chain search of each spatial sketch.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SpatialProfileSearch {
+    /// Distance within which two chain ends join.
+    pub(crate) linear_tolerance: f64,
+    /// Work cap of one sketch's search; Design decode passes
+    /// [`SPATIAL_PROFILE_SEARCH_WORK`].
+    pub(crate) work: usize,
+}
 
 /// Closed profiles of one spatial sketch, or `None` when the chain search
 /// exhausts `budget`.

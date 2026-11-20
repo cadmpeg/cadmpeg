@@ -502,7 +502,10 @@ jobs:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # macos-latest is sometimes a 5-core runner and sometimes a 3-core one.
+    # On 5 cores the full test build took 18 minutes and the tests 6. On 3
+    # cores the build was still compiling at 60 minutes, and Windows took 57.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:

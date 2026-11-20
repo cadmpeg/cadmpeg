@@ -259,8 +259,13 @@ fn writer_checks_the_insertion_selected_by_a_shared_occurrence_path() {
     target.model.occurrences = vec![insertion.clone(), second.clone(), child];
     crate::tree::place_top_level(&mut target.model, insertion.id.clone());
     crate::tree::place_top_level(&mut target.model, second.id.clone());
-    let expanded =
-        crate::tree::expand(&target.model.product_definitions, &target.model.occurrences).unwrap();
+    let expanded = crate::tree::expand(
+        &cadmpeg_core::decode::ResourceLimits::default(),
+        &target.model.product_definitions,
+        &target.model.occurrences,
+        &std::collections::BTreeMap::new(),
+    )
+    .unwrap();
     let mut inserts = crate::design::components::ComponentInserts::decide(
         &native.design_parameter_scopes,
         &[],

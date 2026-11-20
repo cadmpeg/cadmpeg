@@ -5,11 +5,12 @@ use std::fmt::Write as _;
 
 use cadmpeg_core::decode::DecodePolicy;
 
+use super::super::MAX_OCCURRENCES;
 use crate::loss::StepLossCode;
 
-/// Decodes `source` once, pads the occurrences to `existing`, and decodes it
-/// again into the same model.
-fn occurrence_output_truncates(source: &[u8], existing: usize) {
+/// Decodes `source` once, then again into the same model with a limit of
+/// the occurrences that the first decode placed.
+fn occurrence_output_truncates(source: &[u8]) {
     crate::test_support::with_service_context(source, |source, ctx| {
         let (exchange, _) = crate::parse::parse_inner(source, ctx).expect("valid product source");
         let mut ir = cadmpeg_ir::CadIr::empty();
@@ -24,30 +25,28 @@ fn occurrence_output_truncates(source: &[u8], existing: usize) {
             &mut ir,
             ctx,
             &mut admitted,
+            MAX_OCCURRENCES,
         )
         .expect("initial assembly fits");
-        ir.model
-            .occurrences
-            .resize(existing, ir.model.occurrences[0].clone());
-        let model_input =
-            serde_json::to_vec(&ir).expect("synthetic existing assembly budget envelope");
-        crate::test_support::with_service_context(&model_input, |_, ctx| {
-            let outcome = super::super::decode(
-                &exchange,
-                &geometry.value,
-                &topology.value,
-                &mut ir,
-                ctx,
-                &mut admitted,
-            )
-            .expect("the occurrence limit truncates instead of refusing");
-            assert!(outcome.losses.iter().any(|loss| {
-                loss.code == StepLossCode::OccurrenceExpansionOutputTruncated.kind()
-                    && loss.message.contains("100000 occurrences")
-            }));
-            assert_eq!(ctx.resource_refusal(), None);
-        });
-        assert_eq!(ir.model.occurrences.len(), 100_000);
+        let limit = ir.model.occurrences.len();
+        let outcome = super::super::decode(
+            &exchange,
+            &geometry.value,
+            &topology.value,
+            &mut ir,
+            ctx,
+            &mut admitted,
+            limit,
+        )
+        .expect("the occurrence limit truncates instead of refusing");
+        assert!(outcome.losses.iter().any(|loss| {
+            loss.code == StepLossCode::OccurrenceExpansionOutputTruncated.kind()
+                && loss
+                    .message
+                    .contains(&format!("limit of {limit} occurrences"))
+        }));
+        assert_eq!(ctx.resource_refusal(), None);
+        assert_eq!(ir.model.occurrences.len(), limit);
     });
 }
 
@@ -61,12 +60,12 @@ fn document_root_occurrence_output_limit_truncates_with_a_loss() {
             "#10=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u','Child instance','',#6,#9,$);",
             "",
         );
-    occurrence_output_truncates(source.as_bytes(), 100_000);
+    occurrence_output_truncates(source.as_bytes());
 }
 
 #[test]
 fn child_occurrence_output_limit_truncates_with_a_loss() {
-    occurrence_output_truncates(super::PRODUCT_STRING_LIMIT_SOURCE, 100_000);
+    occurrence_output_truncates(super::PRODUCT_STRING_LIMIT_SOURCE);
 }
 
 /// A chain of `levels` products, each the single child of the previous one.
@@ -157,6 +156,7 @@ fn deep_occurrence_paths_keep_depth_and_cycle_checks() {
             &mut ir,
             ctx,
             &mut admitted,
+            MAX_OCCURRENCES,
         )
         .expect("the assembly expands");
         // One occurrence per usage: a definition's children are stated once,
@@ -196,6 +196,7 @@ fn occurrence_paths_stop_at_the_session_depth_with_a_loss() {
             &mut ir,
             ctx,
             &mut admitted,
+            MAX_OCCURRENCES,
         )
         .expect("a deep assembly truncates instead of refusing");
         assert_eq!(ir.model.occurrences.len(), 3);
