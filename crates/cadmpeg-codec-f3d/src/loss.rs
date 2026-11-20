@@ -627,6 +627,9 @@ pub(crate) enum F3dLossCode {
     HistoricalOutputBlobHistoryInferred,
     /// A scope takes the unique history whose blob agrees with its edge recipe faces.
     HistoricalEdgeRecipeHistoryInferred,
+    /// A body-recipe operand whose state pair several histories hold takes the
+    /// unique history whose BREP holds every candidate face of the operand.
+    HistoricalBodyRecipeHistoryInferred,
     /// A `Fillet` edge is the best-ranked deleted one of several geometric candidates.
     HistoricalFilletEdgeAmbiguous,
     /// A `Fillet` edge is the one of several shared support edges along the
@@ -791,6 +794,15 @@ pub(crate) enum F3dLossCode {
     /// history, the model bodies of its slots in that history's BREP source,
     /// or the generating features of absent slots are unresolved.
     FeatureReverseNormalBodyProducerUnresolved,
+    /// A linked Reverse Normal scope takes no timeline position: no timeline
+    /// item carries its link GUID.
+    FeatureReverseNormalLinkUnplaced,
+    /// A linked Reverse Normal scope takes no timeline position: several
+    /// timeline items carry its link GUID.
+    FeatureReverseNormalLinkShared,
+    /// A linked Reverse Normal scope takes its timeline position by record
+    /// order among the other linked scopes of its timeline item.
+    FeatureReverseNormalLinkOrderAssumed,
     FeatureSilhouetteSplitPrefixUnparsed,
     FeatureSilhouetteSplitModeUnresolved,
     FeatureSilhouetteSplitDirectionUnresolved,
@@ -1581,6 +1593,7 @@ impl F3dLossCode {
         Self::HistoricalEdgeHistoryInferred,
         Self::HistoricalOutputBlobHistoryInferred,
         Self::HistoricalEdgeRecipeHistoryInferred,
+        Self::HistoricalBodyRecipeHistoryInferred,
         Self::HistoricalFilletEdgeAmbiguous,
         Self::HistoricalFilletEdgeCovering,
         Self::HistoricalBodyBoundsUnresolved,
@@ -1680,6 +1693,9 @@ impl F3dLossCode {
         Self::FeatureBodySelectionNative,
         Self::FeatureReverseNormalBodyUnverified,
         Self::FeatureReverseNormalBodyProducerUnresolved,
+        Self::FeatureReverseNormalLinkUnplaced,
+        Self::FeatureReverseNormalLinkShared,
+        Self::FeatureReverseNormalLinkOrderAssumed,
         Self::FeatureSilhouetteSplitPrefixUnparsed,
         Self::FeatureSilhouetteSplitModeUnresolved,
         Self::FeatureSilhouetteSplitDirectionUnresolved,
@@ -2502,6 +2518,7 @@ impl F3dLossCode {
             Self::HistoricalEdgeHistoryInferred => "history.edge-history-inferred",
             Self::HistoricalOutputBlobHistoryInferred => "history.output-blob-history-inferred",
             Self::HistoricalEdgeRecipeHistoryInferred => "history.edge-recipe-history-inferred",
+            Self::HistoricalBodyRecipeHistoryInferred => "history.body-recipe-history-inferred",
             Self::HistoricalFilletEdgeAmbiguous => "history.fillet-edge-ambiguous",
             Self::HistoricalFilletEdgeCovering => "history.fillet-edge-covering",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
@@ -2661,6 +2678,11 @@ impl F3dLossCode {
             Self::FeatureReverseNormalBodyUnverified => "feature.reverse-normal-body-unverified",
             Self::FeatureReverseNormalBodyProducerUnresolved => {
                 "feature.reverse-normal-body-producer-unresolved"
+            }
+            Self::FeatureReverseNormalLinkUnplaced => "feature.reverse-normal-link-unplaced",
+            Self::FeatureReverseNormalLinkShared => "feature.reverse-normal-link-shared",
+            Self::FeatureReverseNormalLinkOrderAssumed => {
+                "feature.reverse-normal-link-order-assumed"
             }
             Self::FeatureSilhouetteSplitPrefixUnparsed => {
                 "feature.silhouette-split-prefix-unparsed"
@@ -3428,6 +3450,7 @@ impl F3dLossCode {
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
             | Self::HistoricalEdgeRecipeHistoryInferred
+            | Self::HistoricalBodyRecipeHistoryInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalFilletEdgeCovering
@@ -3526,6 +3549,9 @@ impl F3dLossCode {
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureReverseNormalBodyProducerUnresolved
+            | Self::FeatureReverseNormalLinkUnplaced
+            | Self::FeatureReverseNormalLinkShared
+            | Self::FeatureReverseNormalLinkOrderAssumed
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -4111,6 +4137,7 @@ impl F3dLossCode {
             | Self::HistoricalEdgeHistoryInferred
             | Self::HistoricalOutputBlobHistoryInferred
             | Self::HistoricalEdgeRecipeHistoryInferred
+            | Self::HistoricalBodyRecipeHistoryInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalFilletEdgeCovering
@@ -4208,6 +4235,9 @@ impl F3dLossCode {
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureReverseNormalBodyProducerUnresolved
+            | Self::FeatureReverseNormalLinkUnplaced
+            | Self::FeatureReverseNormalLinkShared
+            | Self::FeatureReverseNormalLinkOrderAssumed
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -4915,6 +4945,7 @@ mod tests {
                 "history.edge-history-inferred",
                 "history.output-blob-history-inferred",
                 "history.edge-recipe-history-inferred",
+                "history.body-recipe-history-inferred",
                 "history.fillet-edge-ambiguous",
                 "history.fillet-edge-covering",
                 "history.body-bounds-unresolved",
@@ -5014,6 +5045,9 @@ mod tests {
                 "feature.body-selection-native",
                 "feature.reverse-normal-body-unverified",
                 "feature.reverse-normal-body-producer-unresolved",
+                "feature.reverse-normal-link-unplaced",
+                "feature.reverse-normal-link-shared",
+                "feature.reverse-normal-link-order-assumed",
                 "feature.silhouette-split-prefix-unparsed",
                 "feature.silhouette-split-mode-unresolved",
                 "feature.silhouette-split-direction-unresolved",

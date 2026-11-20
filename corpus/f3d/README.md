@@ -140,3 +140,25 @@ face count after each feature, and the bodies that the Reverse Normal selects.
 - `reverse_normal_two_revolves.f3d`: rectangles at x 5–10 mm and x 15–20 mm,
   z 0–10 mm, each revolved by its own Revolve, and one Reverse Normal of both
   bodies. 2 surface bodies, 8 faces.
+
+# Fusion fixtures: Reverse Normal of several bodies and components
+
+These files are CC0, written in Autodesk Fusion 2706.1.17 from new designs.
+Each surface body is a 20 mm line extruded 10 mm as a surface.
+
+- `reverse_normal_two_bodies.f3d`: API-built. One Reverse Normal of two surface
+  bodies of one component. 2 bodies, 2 faces.
+- `reverse_normal_two_components.f3d`: the API built two components, each with
+  one surface body, the second occurrence at y + 30 mm; a person made one
+  Reverse Normal in the root that selects both surfaces in the Fusion UI.
+  Fusion stores it as `Reverse Normal1` in each component, linked, as one
+  timeline item.
+
+Reverse Normal across components, made in the Fusion UI with the root component
+active: the surfaces preselected, then Surface > Reverse Normal. Each is one
+timeline item, `Reverse Normal1`, and the API reports one linked Reverse Normal in
+each component. Every normal turns from (0, −1, 0) to (0, +1, 0).
+
+- `reverse_normal_three_components.f3d`: one surface body in each of the
+  components C1, C2 and C3, at y = 0, 30 and 60 mm.
+- `reverse_normal_two_plus_one.f3d`: two surface bodies in C1 and one in C2.

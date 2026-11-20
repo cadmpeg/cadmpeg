@@ -753,27 +753,40 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 ### DR-302. Word before the body-group reference of a Reverse Normal scope
 
-**Question.** Is the u32 before the marked body-group reference of a `Reverse Normal` scope the count of the marked references that follow it?
+**Question.** What does the u32 before the marked body-group reference of a `Reverse Normal` scope encode when it is not `1`?
 
-**Known.** `f3d.md` §3.1 "A `Reverse Normal` scope reverses" gives u32 `1` at offset 21 of the compact prefix and offset 25 of the shifted prefix, followed by one marked reference to the body group. The body group carries every selected body. The decoder keeps a scope with another value as a native feature.
+**Known.** `f3d.md` §3.1 "A `Reverse Normal` scope reverses" gives u32 `1` at offset 21 of the compact prefix and offset 25 of the shifted prefix, for any number of body-group members and for the linked scopes of a Reverse Normal of several components. One marked reference to the body group follows it. The decoder keeps a scope with another value as a native feature.
 
-**Need.** A `Reverse Normal` scope with a value other than `1`, or a controlled save that selects bodies from more than one component.
-
-**Conflict.** None.
-
-**Note.** None.
-
-### DR-303. GUID field of a Reverse Normal scope
-
-**Question.** What does the LP-UTF16 GUID after the body-group reference of a `Reverse Normal` scope identify?
-
-**Known.** `f3d.md` §3.1 "A `Reverse Normal` scope reverses" gives the null GUID at offset 36 of the compact prefix and offset 40 of the shifted prefix. The `CopyPaste` prefix stores the null GUID at the occurrence-key position when it has no removal operand. The decoder keeps a scope with another GUID as a native feature.
-
-**Need.** A `Reverse Normal` scope with a GUID other than the null GUID, and the selected bodies and their component occurrence as the application shows them.
+**Need.** A `Reverse Normal` scope with a value other than `1`, and the selected bodies as the application shows them.
 
 **Conflict.** None.
 
 **Note.** None.
+
+### DR-303. Link GUID shared by several Reverse Normal timeline items
+
+**Question.** Can one non-null link GUID occur in the linked scopes of more than one `Reverse Normal` timeline item, and how does a reader then assign the linked scopes that are not timeline items?
+
+**Known.** `f3d.md` §3.1 "A `Reverse Normal` scope reverses" gives one shared non-null link GUID for the linked scopes of one item, with the scopes that the timeline does not name taking the positions directly after the named scope.
+
+**Need.** A save with two Reverse Normal items of several components each, and the link GUIDs of their linked scopes.
+
+**Conflict.** None.
+
+**Note.** When several timeline items carry one link GUID, the decoder leaves the linked scopes that are not timeline items without a timeline position and reports `feature.reverse-normal-link-shared` for each. A linked scope whose link GUID no timeline item carries takes no position and is reported as `feature.reverse-normal-link-unplaced`.
+
+### DR-894. Order of the linked Reverse Normal scopes after their timeline item
+
+**Question.** In what order do the linked scopes of a `Reverse Normal` timeline item that the timeline does not name follow the named scope?
+
+**Known.** `f3d.md` §3.1 "A `Reverse Normal` scope reverses" gives the timeline positions directly after the named scope to the other linked scopes of the item. Each linked scope selects the bodies of its own component.
+
+**Need.** A save with a Reverse Normal of three or more components, and the order of the linked scopes that Fusion applies or shows.
+
+**Conflict.** None.
+
+**Note.** The decoder places these scopes in record order and reports `feature.reverse-normal-link-order-assumed` for each scope when an item has two or more of them.
+
 ### DR-308. Canvas flag byte before the second boundary
 
 **Question.** What does the flag byte before the second boundary segment of a Canvas geometry record select, and does a zero value change the image placement or display?

@@ -57,7 +57,7 @@ mod move_owners;
 mod paste_copy;
 mod path_pattern;
 mod pattern_seeds;
-mod reverse_normal;
+pub(crate) mod reverse_normal;
 mod revolve_target;
 pub(crate) mod shell_fallback;
 mod silhouette_split;
@@ -324,11 +324,24 @@ fn authored_scope_ordinals_for_stream<'a>(
             "multiple nonempty Design timelines have no shared authored order".into(),
         ));
     }
+    let mut items = Vec::new();
+    for timeline in stream_timelines {
+        items.extend(timeline.frame().items().iter().map(|item| item.value));
+    }
+    let mut linked_scopes = reverse_normal::linked_scopes_outside(scopes, &items);
+    let shared_links = reverse_normal::shared_timeline_links(&scopes_by_record, &items);
     let mut item_ordinals = HashMap::<u64, u64>::new();
     let mut next_ordinal = 0_u64;
-    for timeline in stream_timelines {
-        for item in timeline.frame().items().iter().map(|item| item.value) {
-            if item_ordinals.insert(item, next_ordinal).is_some() {
+    for item in items {
+        let followers = u32::try_from(item)
+            .ok()
+            .and_then(|record| scopes_by_record.get(&record))
+            .and_then(|scope| reverse_normal::timeline_link(scope))
+            .filter(|link| !shared_links.contains(link))
+            .and_then(|link| linked_scopes.remove(link))
+            .unwrap_or_default();
+        for record in std::iter::once(item).chain(followers) {
+            if item_ordinals.insert(record, next_ordinal).is_some() {
                 return Err(CodecError::Malformed(
                     "Design timeline item identity is not unique".into(),
                 ));
