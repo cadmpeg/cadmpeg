@@ -101,7 +101,7 @@ fn pair4_arcs_cw_ccw_decodes_ffff_arc_ev26() {
             entity.geometry.definition(),
             SketchGeometryDefinition::Arc { center, radius, .. }
                 if (center.u - 5.0).abs() < 1e-4
-                    && (center.v - 18.660254).abs() < 1e-4
+                    && (center.v - 18.660_254).abs() < 1e-4
                     && (radius.get() - 10.0).abs() < 1e-4
         )
     });
