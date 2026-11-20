@@ -1001,6 +1001,8 @@ The sum of `trimCurve:counts` is the number of trim curves. `trimCurve:orders`, 
 
 A trim-curve point `(x, y, w)` is homogeneous: its parameter-space position is `(x / w, y / w)` and its weight is `w`.
 
+The trim loops bound the surface. A point of the `(u, v)` domain is inside the trim loops when a ray from it crosses the loops an odd number of times. The loops are also directed: the inside is to the left of each curve as the curve is traced, so a loop at an even nesting depth runs counterclockwise in `(u, v)` and a loop at an odd depth runs clockwise. The surface is the part of the domain inside the trim loops.
+
 ## 15. Shading
 
 ### 15.1 Material binding
