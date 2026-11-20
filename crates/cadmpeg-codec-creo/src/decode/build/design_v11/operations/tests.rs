@@ -10,7 +10,7 @@ use cadmpeg_ir::design::selection::{PickTarget, Picks};
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::scalar::{Angle, Length, PositiveLength};
 use cadmpeg_ir::units::UnitVector3;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use super::*;
 
@@ -168,7 +168,7 @@ fn a_second_side_is_measured_against_the_travel() {
     assert_eq!(
         extrude.span,
         Some(Span::Between {
-            start: Box::new(Limit::Amount(length(3.0))),
+            start: Box::new(Limit::Amount(length(-3.0))),
             end: Box::new(Limit::Amount(length(8.0))),
         })
     );
@@ -177,6 +177,51 @@ fn a_second_side_is_measured_against_the_travel() {
         Some(ExtrudeDirection::ProfileNormal {
             reversed: Some(Dimension::Literal(false))
         })
+    );
+}
+
+#[test]
+fn a_two_sided_revolve_negates_its_second_side() {
+    let operation = legacy(
+        "revolve",
+        json!({
+            "construction": {
+                "kind": "resolved",
+                "value": {
+                    "profile": {"kind": "sketch", "value": "creo:model:sketch#40"},
+                    "axis": {"origin": [0.0, 0.0, 0.0], "direction": [0.0, 1.0, 0.0]},
+                    "extent": {
+                        "kind": "two_sided",
+                        "first": {"kind": "angle", "angle": 2.0},
+                        "second": {"kind": "angle", "angle": 1.0},
+                    },
+                    "solid": true,
+                },
+            },
+            "op": "new_body",
+        }),
+    );
+    let Some(FeatureOperation::Revolve(revolve)) = project(&operation) else {
+        panic!("revolve");
+    };
+    assert_eq!(
+        revolve.span,
+        Some(Span::Between {
+            start: Box::new(Limit::Amount(Dimension::Literal(
+                Angle::new(-1.0).expect("angle")
+            ))),
+            end: Box::new(Limit::Amount(Dimension::Literal(
+                Angle::new(2.0).expect("angle")
+            ))),
+        })
+    );
+    assert!(
+        revolve
+            .axis
+            .as_ref()
+            .is_some_and(|axis| !axis.inputs.is_empty()),
+        "{:?}",
+        revolve.axis
     );
 }
 
@@ -438,7 +483,12 @@ fn a_datum_plane_states_its_frame() {
     let cadmpeg_ir::design::ops::datum::DatumElement::Plane(plane) = &datum.element else {
         panic!("plane");
     };
-    assert!(plane.inputs.is_empty());
+    assert_eq!(plane.inputs.len(), 1);
+    assert!(matches!(
+        plane.inputs[0].reference,
+        Some(cadmpeg_ir::design::construction::InputReference::Picks(ref sel))
+            if matches!(sel.picks, Picks::Unread)
+    ));
     assert_eq!(
         plane.resolved.as_ref().map(|plane| plane.normal),
         Some(unit([0.0, 0.0, 1.0]))

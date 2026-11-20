@@ -8,7 +8,9 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_ir::design::construction::{kinds, AxisValue, Construction};
+use cadmpeg_ir::design::construction::{
+    AxisValue, Construction, ConstructionInput, InputReference, kinds,
+};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
 use cadmpeg_ir::design::ops::shared::{Limit, Span};
@@ -23,7 +25,7 @@ use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::units::UnitVector3;
 
-use super::{selections, Stated};
+use super::{Stated, selections};
 
 /// The largest departure from ±1 of the cosine between the travel and the
 /// section normal at which the travel is the section normal.
@@ -77,6 +79,31 @@ fn angular(value: &AngularTermination) -> Option<Limit<Angle>> {
     })
 }
 
+fn opposite<Q>(limit: Limit<Q>, negate: impl FnOnce(Q) -> Option<Q>) -> Option<Limit<Q>> {
+    Some(match limit {
+        Limit::Amount(Dimension::Literal(value)) => {
+            Limit::Amount(Dimension::Literal(negate(value)?))
+        }
+        Limit::Amount(_) => return None,
+        value => value,
+    })
+}
+
+/// An unread construction input for a resolved element whose defining
+/// constraints the Creo decoder does not read yet (§5.9).
+pub(super) fn unread_input() -> ConstructionInput {
+    ConstructionInput {
+        role: None,
+        reference: Some(InputReference::Picks(Selection {
+            at: Anchor::Input,
+            picks: Picks::Unread,
+            native: None,
+        })),
+        value: None,
+        reversed: None,
+    }
+}
+
 /// A drafted side states a taper whose sign the decoder does not set against
 /// §6.3's, so a drafted extent is not stated.
 fn span(value: &ExtrudeExtent) -> Option<Span<Length>> {
@@ -89,7 +116,9 @@ fn span(value: &ExtrudeExtent) -> Option<Span<Length>> {
             if first.draft.is_none() && second.draft.is_none() =>
         {
             Some(Span::Between {
-                start: Box::new(linear(&second.termination)?),
+                start: Box::new(opposite(linear(&second.termination)?, |value| {
+                    Length::new(-value.get())
+                })?),
                 end: Box::new(linear(&first.termination)?),
             })
         }
@@ -113,7 +142,9 @@ fn revolve_span(value: &RevolveExtent) -> Option<Span<Angle>> {
             end: Box::new(angular(termination)?),
         }),
         RevolveExtent::TwoSided { first, second } => Some(Span::Between {
-            start: Box::new(angular(second)?),
+            start: Box::new(opposite(angular(second)?, |value| {
+                Angle::new(-value.get())
+            })?),
             end: Box::new(angular(first)?),
         }),
         RevolveExtent::Symmetric { termination } => match angular(termination)? {
@@ -253,6 +284,7 @@ pub(super) fn revolve(value: &LegacyOperation, stated: &Stated<'_>) -> Option<Fe
         .filter(|axis| axis.reference.is_none())
         .and_then(|axis| {
             Some(Construction::<kinds::Axis> {
+                inputs: vec![unread_input()],
                 resolved: Some(AxisValue {
                     origin: axis.origin,
                     direction: UnitVector3::normalized_nonzero(axis.direction.into())?,
