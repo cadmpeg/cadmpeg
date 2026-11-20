@@ -93,18 +93,16 @@ fn assert_round_trip(ir: &CadIr) {
     assert_eq!(layout(decoded.ir()), layout(ir));
 }
 
-fn assert_refused(ir: &CadIr) {
-    let sentinel = b"existing output".to_vec();
-    let mut output = sentinel.clone();
-    let result = F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut output));
-    assert!(
-        result.is_err(),
-        "unrepresentable law was written: {:?}",
-        layout(ir)
+/// An unrepresentable law is reduced to its carrier's solved cache.
+fn assert_reduced(ir: &CadIr) {
+    crate::test_support::assert_written_with_loss(
+        ir,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "",
     );
-    assert_eq!(output, sentinel, "refusal must precede output mutation");
 }
 
 #[test]
@@ -161,7 +159,7 @@ fn formula_variables_refuse_text_including_nested_text() {
                         variables: vec![expression],
                     };
                 });
-                assert_refused(&ir);
+                assert_reduced(&ir);
             }
         }
     }
@@ -226,7 +224,7 @@ fn sweep_slots_refuse_recursive_string_operators() {
                         **second_law = expression.clone();
                     }
                 });
-                assert_refused(&ir);
+                assert_reduced(&ir);
             }
         }
     }
@@ -264,7 +262,7 @@ fn sweep_primitive_laws_follow_layout_discriminators() {
                     }
                 });
                 if first && (revision || matches!(expression, LawExpression::Integer { .. })) {
-                    assert_refused(&ir);
+                    assert_reduced(&ir);
                 } else {
                     assert_round_trip(&ir);
                 }
