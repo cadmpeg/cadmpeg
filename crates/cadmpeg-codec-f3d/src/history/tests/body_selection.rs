@@ -580,6 +580,22 @@ fn generated_case_in(
     cadmpeg_ir::features::Feature,
     Vec<cadmpeg_ir::features::FeatureResultTopology>,
 ) {
+    let (feature, results, losses) =
+        generated_case_with_bindings(live, remove, histories, &std::collections::HashMap::new());
+    assert!(losses.is_empty(), "{losses:?}");
+    (feature, results)
+}
+
+fn generated_case_with_bindings(
+    live: &[cadmpeg_ir::topology::Body],
+    remove: bool,
+    histories: &[crate::history_records::AsmHistory],
+    scope_histories: &std::collections::HashMap<String, String>,
+) -> (
+    cadmpeg_ir::features::Feature,
+    Vec<cadmpeg_ir::features::FeatureResultTopology>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternSeed},
         BodyRetentionMode, BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
@@ -665,14 +681,15 @@ fn generated_case_in(
         shells: &[],
         faces: &[],
     };
+    let mut losses = Vec::new();
     let results = crate::history::bind_generated_body_selections(
         &mut features,
         &inputs,
-        &std::collections::HashMap::new(),
+        scope_histories,
         None,
-        &mut Vec::new(),
+        &mut losses,
     );
-    (features.remove(1), results)
+    (features.remove(1), results, losses)
 }
 
 #[test]
@@ -835,4 +852,155 @@ fn a_colliding_slot_is_generated_in_the_selecting_scopes_own_history() {
         panic!("one result state");
     };
     assert_eq!(result.output_of.as_str(), "f3d:test:feature#extrude");
+}
+
+fn shared_pair_histories(indirect: Option<&str>) -> [crate::history_records::AsmHistory; 2] {
+    let mut own = vec![history_state(80, vec![1])];
+    if indirect == Some("own") {
+        own.push(history_state(78, vec![1]));
+    }
+    own.extend([
+        history_state(79, vec![1]),
+        history_state(77, vec![1]),
+        history_state(2, Vec::new()),
+    ]);
+    let mut other = vec![history_state(80, Vec::new())];
+    if indirect == Some("other") {
+        other.push(history_state(78, Vec::new()));
+    }
+    other.push(history_state(79, Vec::new()));
+    [named_history("other", other), named_history("own", own)]
+}
+
+#[test]
+fn a_shared_state_pair_uses_the_selecting_scopes_bound_history() {
+    use cadmpeg_ir::features::{
+        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
+    };
+
+    let bindings = std::collections::HashMap::from([(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#8".into(),
+        "own".into(),
+    )]);
+    for indirect in [None, Some("own")] {
+        let histories = shared_pair_histories(indirect);
+        for remove in [false, true] {
+            let (feature, results, losses) =
+                generated_case_with_bindings(&[], remove, &histories, &bindings);
+            let selection = match feature.evaluation.definition() {
+                FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => {
+                    let [PatternSeed::Bodies(selection)] = seeds.as_slice() else {
+                        panic!("body seed");
+                    };
+                    selection
+                }
+                FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, .. }) => bodies,
+                _ => panic!("body selection"),
+            };
+            let BodySelection::Generated { bodies, .. } = selection else {
+                panic!("generated body: {selection:?}");
+            };
+            assert_eq!(bodies.len(), 1);
+            assert_eq!(bodies[0].feature.as_str(), "f3d:test:feature#extrude");
+            assert_eq!(bodies[0].local_id.as_str(), "1");
+            assert_eq!(feature.dependencies.as_slice(), [bodies[0].feature.clone()]);
+            let [result] = results.as_slice() else {
+                panic!("one result state");
+            };
+            assert_eq!(result.output_of, bodies[0].feature);
+            assert_eq!(result.bodies()[0].as_str(), "1");
+            assert!(losses.is_empty(), "{losses:?}");
+        }
+    }
+}
+
+#[test]
+fn an_unbound_shared_state_pair_keeps_the_selection_with_a_history_loss() {
+    use cadmpeg_ir::features::{
+        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
+    };
+
+    let histories = shared_pair_histories(None);
+    for remove in [false, true] {
+        let (feature, results, losses) = generated_case_with_bindings(
+            &[],
+            remove,
+            &histories,
+            &std::collections::HashMap::new(),
+        );
+        match feature.evaluation.definition() {
+            FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => {
+                assert!(matches!(
+                    seeds.as_slice(),
+                    [PatternSeed::Bodies(BodySelection::Historical { bodies, .. })]
+                        if bodies.len() == 1 && super::super::historical_body_slot(bodies[0].as_str()) == Some(1)
+                ));
+            }
+            FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, .. }) => {
+                assert!(matches!(bodies, BodySelection::Native(_)));
+            }
+            _ => panic!("body selection"),
+        }
+        assert!(results.is_empty());
+        assert!(feature.dependencies.is_empty());
+        let [loss] = losses.as_slice() else {
+            panic!("one unresolved history loss: {losses:?}");
+        };
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::FeatureGeneratedBodyHistoryUnresolved
+                .note("")
+                .code
+        );
+        assert!(loss.message.contains(feature.id.as_str()));
+        assert!(loss.message.contains("body slots [1]"));
+    }
+}
+
+#[test]
+fn a_shared_state_pair_uses_the_unique_direct_history() {
+    use cadmpeg_ir::features::{
+        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
+    };
+
+    let histories = shared_pair_histories(Some("other"));
+    let (pattern, results) = generated_case_in(&[], false, &histories);
+    assert!(matches!(
+        pattern.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. })
+            if matches!(seeds.as_slice(), [PatternSeed::Bodies(BodySelection::Generated { bodies, .. })]
+                if bodies.len() == 1 && bodies[0].feature.as_str() == "f3d:test:feature#extrude"
+                    && bodies[0].local_id.as_str() == "1")
+    ));
+    assert_eq!(pattern.dependencies.len(), 1);
+    assert_eq!(results.len(), 1);
+}
+
+#[test]
+fn a_partly_stored_state_pair_uses_the_unique_endpoint_history() {
+    use cadmpeg_ir::features::{
+        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
+    };
+
+    let histories = [
+        named_history(
+            "own",
+            vec![
+                history_state(80, vec![1]),
+                history_state(77, vec![1]),
+                history_state(2, Vec::new()),
+            ],
+        ),
+        named_history("other", vec![history_state(99, Vec::new())]),
+    ];
+    let (pattern, results) = generated_case_in(&[], false, &histories);
+    assert!(matches!(
+        pattern.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. })
+            if matches!(seeds.as_slice(), [PatternSeed::Bodies(BodySelection::Generated { bodies, .. })]
+                if bodies.len() == 1 && bodies[0].feature.as_str() == "f3d:test:feature#extrude"
+                    && bodies[0].local_id.as_str() == "1")
+    ));
+    assert_eq!(pattern.dependencies.len(), 1);
+    assert_eq!(results.len(), 1);
 }

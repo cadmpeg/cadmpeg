@@ -749,6 +749,7 @@ pub(crate) enum F3dLossCode {
     FeatureWorkAxisCandidatesUnresolved,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
+    FeatureGeneratedBodyHistoryUnresolved,
     /// Reverse Normal body-group members lack the whole-body record type.
     FeatureReverseNormalBodyUnverified,
     /// A Reverse Normal selection stays in its input state: its bound
@@ -1627,6 +1628,7 @@ impl F3dLossCode {
         Self::FeatureWorkAxisLegacyLayoutAssumed,
         Self::FeatureWorkAxisCandidatesUnresolved,
         Self::FeatureBodySelectionNative,
+        Self::FeatureGeneratedBodyHistoryUnresolved,
         Self::FeatureReverseNormalBodyUnverified,
         Self::FeatureReverseNormalBodyProducerUnresolved,
         Self::FeatureSilhouetteSplitPrefixUnparsed,
@@ -2588,6 +2590,9 @@ impl F3dLossCode {
                 "feature.work-axis-endpoint-tolerance-assumed"
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
+            Self::FeatureGeneratedBodyHistoryUnresolved => {
+                "feature.generated-body-history-unresolved"
+            }
             Self::FeatureReverseNormalBodyUnverified => "feature.reverse-normal-body-unverified",
             Self::FeatureReverseNormalBodyProducerUnresolved => {
                 "feature.reverse-normal-body-producer-unresolved"
@@ -3439,6 +3444,7 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisLegacyLayoutAssumed
             | Self::FeatureWorkAxisCandidatesUnresolved
             | Self::FeatureBodySelectionNative
+            | Self::FeatureGeneratedBodyHistoryUnresolved
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureReverseNormalBodyProducerUnresolved
             | Self::FeatureSilhouetteSplitPrefixUnparsed
@@ -4106,6 +4112,7 @@ impl F3dLossCode {
             | Self::FeatureWorkAxisLegacyLayoutAssumed
             | Self::FeatureWorkAxisCandidatesUnresolved
             | Self::FeatureBodySelectionNative
+            | Self::FeatureGeneratedBodyHistoryUnresolved
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureReverseNormalBodyProducerUnresolved
             | Self::FeatureSilhouetteSplitPrefixUnparsed
@@ -4897,6 +4904,7 @@ mod tests {
                 "feature.work-axis-legacy-layout-assumed",
                 "feature.work-axis-candidates-unresolved",
                 "feature.body-selection-native",
+                "feature.generated-body-history-unresolved",
                 "feature.reverse-normal-body-unverified",
                 "feature.reverse-normal-body-producer-unresolved",
                 "feature.silhouette-split-prefix-unparsed",

@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 /// operands resolved through their recipe identity, and a Reverse Normal
 /// resolved in its input state name ASM body slots. Body slots are local to
 /// one ASM history. A pattern seed or body deletion reads its slots in the
-/// history of the selecting scope (see [`own_history`]). When every selected
+/// history bound to the selecting scope (see [`scope_history`]). When every selected
 /// slot is absent from the model bodies, the one projected feature of the same
 /// Design stream whose transition in that history inserts the slot generates
 /// the body, and the selection names it there.
@@ -165,10 +165,14 @@ pub(crate) fn bind_generated_body_selections(
             if slots.iter().any(|slot| live.contains(slot)) {
                 continue;
             }
-            let Some(scope) = scope else {
-                continue;
-            };
-            let Some(history) = own_history(inputs.histories, scope) else {
+            let history = scope
+                .and_then(|scope| scope_history(scope, scope_histories, inputs.histories))
+                .or_else(|| scope.and_then(|scope| own_history(inputs.histories, scope)));
+            let Some((scope, history)) = scope.zip(history) else {
+                losses.push(F3dLossCode::FeatureGeneratedBodyHistoryUnresolved.note(format!(
+                    "Feature {} keeps body slots {slots:?} of {native}: its selecting scope has an unresolved ASM history.",
+                    feature.id
+                )));
                 continue;
             };
             let stream = crate::ids::native_stream(&scope.id);
@@ -246,10 +250,7 @@ pub(crate) fn bind_generated_body_selections(
         .collect()
 }
 
-/// The ASM history whose body slots the selections of `scope` name: the one
-/// history that holds both the scope's state and its preceding state, else
-/// the one history that holds either of them. A file with one history uses
-/// it. `None` when no history or more than one history qualifies.
+/// Retain slot decoding as a last fallback for partly stored selecting states.
 fn own_history<'a>(
     histories: &'a [AsmHistory],
     scope: &crate::records::feature::scope::DesignParameterScope,
