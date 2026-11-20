@@ -2,7 +2,8 @@
 use crate::geometry::surface_payloads::ExtrusionSurfaceConstruction;
 use crate::geometry::{
     nurbs::NurbsCurve, CacheContract, Curve, CurveGeometry, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, Surface, SurfaceGeometry,
+    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    SurfaceGeometry,
 };
 use crate::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use crate::math::{Point3, Vector3};
@@ -92,7 +93,7 @@ fn extrusion_partials_preserve_zero_acceleration_at_large_parameter_scale() {
 }
 
 #[test]
-fn extrusion_breaks_lie_at_the_directrix_knots_inside_the_domain() {
+fn extrusion_breaks_lie_at_the_directrix_knots_inside_the_domain_past_an_unknown_cache() {
     let directrix = CurveId::mint("test:model:curve#square").unwrap();
     let square = NurbsCurve::from_lanes(
         2,
@@ -122,7 +123,7 @@ fn extrusion_breaks_lie_at_the_directrix_knots_inside_the_domain() {
         id: surface.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: construction.clone(),
-            cache: None,
+            cache: Some(SolvedSurfaceGeometry::Unknown { record: None }),
         },
         source_object: None,
         native_ref: None,

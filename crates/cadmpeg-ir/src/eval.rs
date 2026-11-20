@@ -4627,8 +4627,7 @@ fn native_revolution_carrier(
 
 /// The surface parameters strictly inside `ranges` at which the procedural
 /// construction of `surface` meets a knot of its NURBS directrix, rail or
-/// summand curve, along each surface parameter, in increasing order. A
-/// surface that evaluates a solved cache has none.
+/// summand curve, along each surface parameter, in increasing order.
 pub(crate) fn procedural_surface_breaks(
     index: &crate::index::ModelIndex<'_>,
     surface: &crate::ids::SurfaceId,
@@ -4636,18 +4635,9 @@ pub(crate) fn procedural_surface_breaks(
 ) -> Result<[Vec<f64>; 2], ResourceLimit> {
     let admission = admission::EvaluationAdmission::Standard;
     let mut breaks = [Vec::new(), Vec::new()];
-    let Some(geometry) = index
-        .surfaces(surface.as_str(), crate::index::StandardIndex)
-        .map(|surface| &surface.geometry)
+    let Some(procedural) =
+        index.procedural_surface_for_surface(surface.as_str(), crate::index::StandardIndex)
     else {
-        return Ok(breaks);
-    };
-    if geometry.solved_cache().is_some() {
-        return Ok(breaks);
-    }
-    let Some(procedural) = geometry.procedural_construction().and_then(|construction| {
-        index.procedural_surface_construction(construction.as_str(), crate::index::StandardIndex)
-    }) else {
         return Ok(breaks);
     };
     let carrier_interval = record_u_interval(procedural.record_bounds());
