@@ -27779,6 +27779,40 @@ source = "spec"
 anchor = "The chain record at the selection's record index plus one stores fourteen zero bytes"
 
 [[record]]
+name = "typed_reference_sketchless_profile_chain_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A sketchless chain record stores fourteen zero bytes"
+size = 82
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_14"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "A sketchless chain record stores fourteen zero bytes"
+
+[[record.field]]
+name = "chain_marker"
+offset = 25
+type = "bytes[6]"
+source = "spec"
+anchor = "A sketchless chain record stores fourteen zero bytes"
+
+[[record.field]]
+name = "selection_reference"
+offset = 31
+type = "bytes[51]"
+source = "spec"
+anchor = "A sketchless chain record stores fourteen zero bytes"
+
+[[record]]
 name = "typed_reference_profile_identity_record"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
 kind = "byte"
