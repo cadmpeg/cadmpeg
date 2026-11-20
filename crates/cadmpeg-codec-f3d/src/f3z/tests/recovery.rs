@@ -25,7 +25,7 @@ fn damage_local_frame(bytes: &mut [u8], name: &str) {
 #[test]
 fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
-    let preview = vec![0; 2_000_000];
+    let preview = b"unrelated preview".to_vec();
     for name in [
         "preview.bin",
         "FusionAssetName[Active]/Previews/preview.png",

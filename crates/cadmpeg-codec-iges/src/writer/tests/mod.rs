@@ -911,7 +911,8 @@ fn generated_parameter_field_wider_than_a_card_is_refused() {
 
 #[test]
 fn generated_parameter_layout_uses_its_own_input_allowance() {
-    let payload_len = 20 * 1024 * 1024;
+    // Just over the 16 MiB retained allowance of a context with no input bytes.
+    let payload_len = 16 * 1024 * 1024 + 1;
     let mut parameter_body = format!("{payload_len}H").into_bytes();
     parameter_body.extend(std::iter::repeat_n(b'A', payload_len));
     parameter_body.push(b';');
