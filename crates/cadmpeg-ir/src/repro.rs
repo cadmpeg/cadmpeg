@@ -365,7 +365,8 @@ impl Bundle {
 
     /// Recalculate the inventory after row removal.
     pub fn refresh_manifest(&mut self) -> Result<(), CodecError> {
-        let value = serde_json::to_value(&self.document).map_err(CodecError::malformed)?;
+        let value = crate::hash::finite_json::to_json_value(&self.document)
+            .map_err(CodecError::malformed)?;
         let arenas: BTreeSet<String> = rows(&value).into_iter().map(|row| row.arena).collect();
         self.manifest = arenas
             .into_iter()
