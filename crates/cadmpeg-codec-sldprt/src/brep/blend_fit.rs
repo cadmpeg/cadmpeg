@@ -74,6 +74,8 @@ pub(super) enum FitFailure {
     HalfTurn { s: f64 },
     /// No fit within the split depth or the span count.
     SpanLimit,
+    /// The fit ran out of NURBS feet ([`MAX_NURBS_FEET`]).
+    WorkCapped,
     /// The fitted sections form no surface.
     Surface,
 }
@@ -88,6 +90,10 @@ impl std::fmt::Display for FitFailure {
             Self::Contact { side, s } => write!(f, "the ball at spine parameter {s} does not touch support {side} at its radius"),
             Self::HalfTurn { s } => write!(f, "the section at spine parameter {s} is a half turn"),
             Self::SpanLimit => f.write_str("no fit within the span limit"),
+            Self::WorkCapped => write!(
+                f,
+                "the fit ran out of its {MAX_NURBS_FEET} feet on NURBS surfaces"
+            ),
             Self::Surface => f.write_str("the fitted sections form no surface"),
         }
     }
@@ -111,6 +117,10 @@ pub(super) struct BlendGeometry<'a, 'ctx> {
     refusal: RefCell<Option<CodecError>>,
     /// Centre solves spent, against [`MAX_CENTER_SOLVES`].
     center_solves: Cell<usize>,
+    /// NURBS feet solved, against [`MAX_NURBS_FEET`].
+    nurbs_feet: Cell<usize>,
+    /// Whether this use, or a ball it rolls on, ran out of NURBS feet.
+    capped: Cell<bool>,
     /// The spine parameter of the last point inverted, which seeds the next.
     last_parameter: RefCell<Option<f64>>,
     /// The exact spine of each choice of side candidates, once solved over a
@@ -427,9 +437,13 @@ pub(super) fn fit(
     let [first, second] = supports;
     let fitter =
         BlendGeometry::with_sides(ctx, spine, [vec![first], vec![second]], signed_radius.abs());
-    let fitted = fitter
-        .fit(vertices)
-        .ok_or_else(|| fitter.failure.get().unwrap_or(FitFailure::Surface));
+    let fitted = fitter.fit(vertices).ok_or_else(|| {
+        if fitter.capped.get() {
+            FitFailure::WorkCapped
+        } else {
+            fitter.failure.get().unwrap_or(FitFailure::Surface)
+        }
+    });
     fitter.finish(fitted)
 }
 
@@ -440,6 +454,9 @@ const CENTER_STEP_TOLERANCE_MM: f64 = 1.0e-11;
 const MAX_CENTER_STEPS: usize = 32;
 /// Centre solves one use of a blend may spend.
 const MAX_CENTER_SOLVES: usize = 1 << 20;
+/// Feet on NURBS surfaces one use of a blend may solve. Each foot costs tens
+/// to hundreds of surface evaluations, where an analytic foot is closed form.
+const MAX_NURBS_FEET: usize = 1 << 14;
 /// Smallest `|n1 × n2|²` of two transversal support offsets.
 const MIN_CENTER_TRANSVERSALITY: f64 = 1.0e-8;
 /// Separation of two parallel support offsets at which they coincide, so a
@@ -526,6 +543,8 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
             radius,
             refusal: RefCell::new(None),
             center_solves: Cell::new(0),
+            nurbs_feet: Cell::new(0),
+            capped: Cell::new(false),
             last_parameter: RefCell::new(None),
             exact_spines: RefCell::new(Vec::new()),
             polyline: SpinePolyline::of(spine),
@@ -547,6 +566,8 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
     pub(super) fn reset_seed(&self) {
         *self.last_parameter.borrow_mut() = None;
         self.center_solves.set(0);
+        self.nurbs_feet.set(0);
+        self.capped.set(false);
         for candidate in self.sides.iter().flatten() {
             match candidate {
                 Side::Surface(support) => support.seed.set(None),
@@ -595,12 +616,21 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
         }
     }
 
-    /// The foot of `support`, keeping a resource refusal.
+    /// The foot of `support`, keeping a resource refusal; `None` once this
+    /// use has solved [`MAX_NURBS_FEET`] feet on NURBS surfaces.
     fn foot(
         &self,
         support: &Support<'_>,
         point: Point3,
     ) -> Option<(Point3, cadmpeg_ir::math::Vector3)> {
+        if !analytic(support.geometry) {
+            let feet = self.nurbs_feet.get() + 1;
+            self.nurbs_feet.set(feet);
+            if feet > MAX_NURBS_FEET {
+                self.capped.set(true);
+                return None;
+            }
+        }
         match support_foot(self.ctx, support, point) {
             Ok(foot) => foot,
             Err(error) => {
@@ -906,6 +936,9 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
                 let foot = blend.pipe_foot(point);
                 if let Some(limit) = blend.take_refusal() {
                     self.refusal.borrow_mut().get_or_insert(limit);
+                }
+                if blend.capped.get() {
+                    self.capped.set(true);
                 }
                 foot
             }
