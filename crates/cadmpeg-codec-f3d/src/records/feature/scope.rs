@@ -548,7 +548,7 @@ pub(crate) struct DesignScopeTailFlags {
     /// The feature stands after the saved rollback marker of its timeline.
     pub(crate) rolled_back: bool,
     /// Byte offset of the suppressed flag; the rolled-back flag follows it.
-    pub(crate) offset: u64,
+    pub(crate) suppressed_offset: u64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -2753,8 +2753,8 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             }
         }
         if wire.tail_flags.is_some_and(|flags| {
-            flags.offset < admitted.feature_ordinal_offset
-                || flags.offset.checked_add(1) >= Some(admitted.paired_byte_offset)
+            flags.suppressed_offset < admitted.feature_ordinal_offset
+                || flags.suppressed_offset.checked_add(1) >= Some(admitted.paired_byte_offset)
         }) {
             return Err(DesignParameterScopePayloadError(
                 "tail_flags outside the scope tail".into(),

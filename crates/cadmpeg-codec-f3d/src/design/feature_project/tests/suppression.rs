@@ -20,7 +20,7 @@ fn suppressed(active: bool, flag: Option<bool>) -> Option<bool> {
     scope.tail_flags = flag.map(|suppressed| DesignScopeTailFlags {
         suppressed,
         rolled_back: false,
-        offset: scope.feature_ordinal_offset(),
+        suppressed_offset: scope.feature_ordinal_offset(),
     });
     let id = scope.id.clone();
     let crate::design::feature_project::ProjectedParameterDesign { features, .. } =

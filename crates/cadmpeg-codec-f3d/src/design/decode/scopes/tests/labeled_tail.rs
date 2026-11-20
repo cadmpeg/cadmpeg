@@ -206,7 +206,7 @@ fn tail_flags(
     crate::records::feature::scope::DesignScopeTailFlags {
         suppressed,
         rolled_back,
-        offset: u64_from_index(offset),
+        suppressed_offset: u64_from_index(offset),
     }
 }
 
@@ -319,7 +319,7 @@ fn scope_wire_refuses_tail_flags_outside_the_tail() {
         scope.paired_byte_offset() - 1,
     ] {
         let mut moved = wire.clone();
-        moved["tail_flags"]["offset"] = offset.into();
+        moved["tail_flags"]["suppressed_offset"] = offset.into();
         assert!(
             serde_json::from_value::<crate::records::feature::scope::DesignParameterScope>(moved)
                 .is_err(),

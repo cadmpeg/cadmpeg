@@ -302,6 +302,43 @@ fn scope_variants_that_differ_in_a_payload_float_are_not_equivalent() {
     .is_err());
 }
 
+/// Two Thicken envelopes as `thicken_variants` builds them, whose tails store
+/// the suppressed flags `suppressed`, each at its own byte location.
+fn flagged_thicken_variants(suppressed: [bool; 2]) -> Vec<DesignParameterScope> {
+    let mut scopes = thicken_variants(-1.0, -1.0);
+    for (scope, suppressed) in scopes.iter_mut().zip(suppressed) {
+        scope.tail_flags = Some(crate::records::feature::scope::DesignScopeTailFlags {
+            suppressed,
+            rolled_back: true,
+            suppressed_offset: scope.feature_ordinal_offset() + 1,
+        });
+    }
+    scopes
+}
+
+/// The tail flags are payload and their byte location is provenance: the
+/// later of two envelopes with equal flags is retained, and two envelopes
+/// whose flags differ stay unresolved.
+#[test]
+fn scope_variants_compare_tail_flags_without_their_location() {
+    let mut equivalent = flagged_thicken_variants([true, true]);
+    with_test_ctx(|ctx| {
+        admit_history_bound_scope_variants(ctx, &mut equivalent, &[], &Default::default())
+    })
+    .expect("equivalent envelopes");
+    assert_eq!(equivalent.len(), 1);
+    assert_eq!(equivalent[0].byte_offset(), 200);
+
+    let mut different = flagged_thicken_variants([true, false]);
+    assert!(with_test_ctx(|ctx| admit_history_bound_scope_variants(
+        ctx,
+        &mut different,
+        &[],
+        &Default::default()
+    ))
+    .is_err());
+}
+
 #[test]
 fn duplicate_scope_selection_follows_header_link_when_transition_disagrees() {
     let mut bound = history(vec![

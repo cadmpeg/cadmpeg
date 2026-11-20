@@ -2054,7 +2054,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             Some(scope::DesignScopeTailFlags {
                 suppressed: *bytes.get(at)? == 1,
                 rolled_back: *bytes.get(at.checked_add(1)?)? == 1,
-                offset: u64_from_index(at),
+                suppressed_offset: u64_from_index(at),
             })
         });
         let named_references = named

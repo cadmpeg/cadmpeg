@@ -237,7 +237,7 @@ fn tail_flags(suppressed: bool, rolled_back: bool) -> DesignScopeTailFlags {
     DesignScopeTailFlags {
         suppressed,
         rolled_back,
-        offset: 0,
+        suppressed_offset: 0,
     }
 }
 
