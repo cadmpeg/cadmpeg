@@ -878,11 +878,11 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer must decide whether to store the display scene and, if so, its bytes.
 
-### DR-898. Records and snapshot stream of a design with several result bodies
+### DR-898. Records and snapshot stream of a design with several or sheet result bodies
 
-**Question.** How does a `Base Feature` design with several result bodies allocate the record indices of its further body-reference records and Scene records, and how does its snapshot stream differ from the solved part of its history stream?
+**Question.** How does a `Base Feature` design with several result bodies allocate the record indices of its further body-reference records and Scene records, and how does its snapshot stream differ from the solved part of its history stream? What sets the first value of the design snapshot body-map companion of a sheet body?
 
-**Known.** `f3d.md` §3.1 "**Record roster.**" gives the ten records that each further solid body adds. In a design with three solid bodies, the further design body-reference records and their Scene records follow record 192, the further parameter body-reference records and Scene records follow record 222 with unused indices between them, and the further tracking entries and browser-node members follow. Its snapshot stream has the same topology counts as the history stream, and geometry records of the two streams differ.
+**Known.** `f3d.md` §3.1 "**Record roster.**" gives the ten records that each further solid body adds. In a design with three solid bodies, the further design body-reference records and their Scene records follow record 192, the further parameter body-reference records and Scene records follow record 222 with unused indices between them, and the further tracking entries and browser-node members follow. Its snapshot stream has the same topology counts as the history stream, and geometry records of the two streams differ. In a design with one sheet body, whose faces, edges, and vertices carry generic-tag attributes, the design companion's values start 4 above the parameter companion's next value.
 
 **Need.** A writer of several bodies must allocate the indices and write the snapshot stream. Designs with two and with more than three result bodies would settle the allocation and the geometry difference.
 
