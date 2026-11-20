@@ -29,6 +29,7 @@ fn selection(
         scope_sketch_containers: Vec::new(),
         identity_record_offset,
         identity_end_offset: 629,
+        lost_reference_records: Vec::new(),
         groups: vec![
             crate::records::topology::entity_selection::DesignProfileRegionGroup {
                 region: vec![DesignProfileCurveLoop {
@@ -379,4 +380,113 @@ fn compact_profile_loops_select_exact_subsets_and_the_full_profile_table() {
     selections[0].identity_end_offset = selections[0].lists_end().unwrap();
     assert!(selections[0].valid_layout());
     assert!(resolve(&selections).is_none());
+}
+
+#[test]
+fn typed_profile_regions_omit_members_whose_profile_reference_is_lost() {
+    let mut group = group();
+    group.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::PROFILE,
+        );
+    let placements = [placement()];
+    let sketch_id = neutral_sketch_id(&placements[0]);
+    let curves = [curve(31, 11, 0), curve(32, 12, 0)];
+    let entities: Vec<_> = [(11, 2.0), (12, 1.0)]
+        .into_iter()
+        .map(|(id, x)| {
+            SketchEntity::new(
+                neutral_sketch_curve_id(&sketch_id, id, 0),
+                sketch_id.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                    center: Point2::new(x * 10.0, 0.0),
+                    radius: Length::new(1.0).unwrap(),
+                })
+                .unwrap(),
+            )
+        })
+        .collect();
+    let sketches = [Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(
+            entities
+                .iter()
+                .map(|entity| {
+                    vec![SketchEntityUse {
+                        entity: entity.id().clone(),
+                        reversed: false,
+                    }]
+                })
+                .collect::<Vec<_>>(),
+        )
+        .unwrap(),
+        native_ref: None,
+    }];
+    // Member 11 names curve 99, which no curve record of the Sketch carries.
+    let mut selections = [selection(10, 0, 11, true), selection(11, 1, 99, true)];
+    let resolve = |group: &DesignConstructionOperandGroup,
+                   selections: &[DesignProfileCurveSelection]| {
+        let mut resolution =
+            planar_resolution(&[], &placements, &curves, &sketches, &entities).path_resolution();
+        resolution.profile_curves = selections;
+        resolve_entity_selection_profile(group, &resolution)
+    };
+    assert!(resolve(&group, &selections).is_none());
+    assert!(super::super::live_profile_members(&group, &selections).is_none());
+
+    selections[1].lost_reference_records = vec![120];
+    let live = super::super::live_profile_members(&group, &selections).expect("lost member");
+    assert_eq!(live.lost_members, [11]);
+    assert_eq!(
+        live.group
+            .members()
+            .iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>(),
+        [10]
+    );
+    assert_eq!(
+        resolve(&live.group, &live.profile_curves),
+        Some(cadmpeg_ir::features::ProfileRef::Planar(
+            cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
+                sketch_id.clone(),
+                vec![SketchProfileRegion::loops(0, vec![]).unwrap()],
+            )
+            .unwrap()
+        ))
+    );
+
+    // A lost first member renumbers the remaining member to ordinal zero.
+    let mut reordered = [selection(10, 0, 99, true), selection(11, 1, 12, true)];
+    reordered[0].lost_reference_records = vec![120];
+    let live = super::super::live_profile_members(&group, &reordered).expect("lost member");
+    assert_eq!(live.lost_members, [10]);
+    assert_eq!(live.profile_curves.len(), 1);
+    assert_eq!(live.profile_curves[0].group_member_ordinal, 0);
+    assert_eq!(
+        resolve(&live.group, &live.profile_curves),
+        Some(cadmpeg_ir::features::ProfileRef::Planar(
+            cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
+                sketch_id,
+                vec![SketchProfileRegion::loops(1, vec![]).unwrap()],
+            )
+            .unwrap()
+        ))
+    );
+
+    // A group whose members are all lost keeps no member.
+    let mut all_lost = selections.clone();
+    all_lost[0].lost_reference_records = vec![121];
+    let live = super::super::live_profile_members(&group, &all_lost).expect("lost members");
+    assert!(live.group.members().is_empty());
+    assert_eq!(live.lost_members, [10, 11]);
 }

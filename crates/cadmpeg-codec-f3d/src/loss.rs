@@ -737,6 +737,9 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCutRegionsAssumed,
     /// A stored Cut transition certifies regions with stale curve identities.
     FeatureProfileRegionIdentitiesStale,
+    /// A typed profile member whose status record lists a
+    /// `PROFILE_REFERENCE_LOST` record contributes no region.
+    FeatureProfileMemberReferenceLost,
     /// Extrude profile selections assumed that a curve outside the
     /// arrangement makes no island in a selected face.
     FeatureProfileIslandAbsenceAssumed,
@@ -1696,6 +1699,7 @@ impl F3dLossCode {
         Self::FeatureProfileLoopFlagsAssumed,
         Self::FeatureProfileCutRegionsAssumed,
         Self::FeatureProfileRegionIdentitiesStale,
+        Self::FeatureProfileMemberReferenceLost,
         Self::FeatureProfileIslandAbsenceAssumed,
         Self::FeatureProfilePolylineSideAssumed,
         Self::FeatureProfileCapOutlineAssumed,
@@ -2671,6 +2675,7 @@ impl F3dLossCode {
                 "feature.profile-coincident-direction-assumed"
             }
             Self::FeatureProfileRegionIdentitiesStale => "feature.profile-region-identities-stale",
+            Self::FeatureProfileMemberReferenceLost => "feature.profile-member-reference-lost",
             Self::FeatureProfileCutRegionsAssumed => "feature.profile-cut-regions-assumed",
             Self::FeatureProfileIslandAbsenceAssumed => "feature.profile-island-absence-assumed",
             Self::FeatureProfilePolylineSideAssumed => "feature.profile-polyline-side-assumed",
@@ -3616,6 +3621,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCoincidentDirectionAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
+            | Self::FeatureProfileMemberReferenceLost
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
             | Self::FeatureProfilePolylineSideAssumed
@@ -4321,6 +4327,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCoincidentDirectionAssumed
             | Self::FeatureProfileLoopFlagsAssumed
             | Self::FeatureProfileRegionIdentitiesStale
+            | Self::FeatureProfileMemberReferenceLost
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileIslandAbsenceAssumed
             | Self::FeatureProfilePolylineSideAssumed
@@ -5138,6 +5145,7 @@ mod tests {
                 "feature.profile-loop-flags-assumed",
                 "feature.profile-cut-regions-assumed",
                 "feature.profile-region-identities-stale",
+                "feature.profile-member-reference-lost",
                 "feature.profile-island-absence-assumed",
                 "feature.profile-polyline-side-assumed",
                 "feature.profile-cap-outline-assumed",

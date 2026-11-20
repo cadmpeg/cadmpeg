@@ -7875,6 +7875,26 @@ pub(crate) mod typed_reference_profile_identity_record {
     pub(crate) const REGION_GROUP_COUNT: usize = 72;
 }
 
+/// Byte offsets for the `typed_reference_profile_status_record` record.
+///
+/// Spec §3.1. Record length 29 B.
+///
+/// ```text
+/// Offsets are relative to the status record indexed header; the counted typed references begin at offset 29.
+/// ```
+pub(crate) mod typed_reference_profile_status_record {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 29;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `constant_one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CONSTANT_ONE: usize = 20;
+    /// Offset of `zero_byte` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BYTE: usize = 24;
+    /// Offset of `lost_reference_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const LOST_REFERENCE_COUNT: usize = 25;
+}
+
 /// Byte offsets for the `typed_reference_companion_prefix` record.
 ///
 /// Spec §3.1. Record length 98 B.

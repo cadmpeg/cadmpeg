@@ -61,6 +61,7 @@ use crate::layout::typed_reference_extrude_selection_group_prefix as typed_group
 use crate::layout::typed_reference_profile_chain_record as typed_chain;
 use crate::layout::typed_reference_profile_identity_record as typed_identity;
 use crate::layout::typed_reference_profile_selection_prefix as typed_selection;
+use crate::layout::typed_reference_profile_status_record as typed_status;
 use crate::layout::work_point_sketch_point_compact_identity as compact_identity;
 use crate::layout::work_point_sketch_point_identity as sketch_point_identity;
 use crate::records::{
@@ -7809,6 +7810,15 @@ fn parse_profile_curve_selection_prefix(
     if !typed && indexed_record_header_at(bytes, identity_end)?.record_index != identity_index {
         return None;
     }
+    let lost_reference_records = if typed {
+        record_index
+            .checked_add(2)
+            .and_then(|status_index| records.offsets(status_index).first().copied())
+            .map(|status_at| lost_profile_references(bytes, records, status_at))
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     Some((
         DesignProfileCurveSelection {
             id: String::new(),
@@ -7826,12 +7836,82 @@ fn parse_profile_curve_selection_prefix(
             scope_sketch_containers,
             identity_record_offset: cadmpeg_core::decode::u64_from_index(identity_at),
             identity_end_offset: cadmpeg_core::decode::u64_from_index(identity_end),
+            lost_reference_records,
             groups: Vec::new(),
         },
         identity_end,
         groups_start,
         if typed { 2 } else { 3 },
     ))
+}
+
+/// Type GUID of the typed references that a profile status record counts.
+const PROFILE_STATUS_REFERENCE_TYPE_GUID: &str = "1ABFB679-C79B-4F24-AD6C-215A7DCE1AC4";
+/// ASCII marker of a lost profile-reference record.
+const PROFILE_REFERENCE_LOST: &[u8] = b"PROFILE_REFERENCE_LOST";
+/// Zero bytes between a lost-reference record's indexed header and its
+/// marker length.
+const LOST_REFERENCE_ZERO_RUN: usize = 14;
+
+/// The lost profile-reference records that the typed profile status record at
+/// `status_at` references, in stored order. A status record whose fixed
+/// fields or counted references do not decode references none.
+fn lost_profile_references(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    status_at: usize,
+) -> Vec<u32> {
+    use crate::bytes::{typed_local_reference, TYPED_LOCAL_REFERENCE_LEN};
+    let mut lost = Vec::new();
+    if bytes.get(status_at + typed_status::ZERO_RUN_9..status_at + typed_status::CONSTANT_ONE)
+        != Some(&[0; 9][..])
+        || View::u32_le_at(bytes, status_at + typed_status::CONSTANT_ONE) != Some(1)
+        || bytes.get(status_at + typed_status::ZERO_BYTE) != Some(&0)
+    {
+        return lost;
+    }
+    let Some(count) = View::u32_le_at(bytes, status_at + typed_status::LOST_REFERENCE_COUNT) else {
+        return lost;
+    };
+    let first = status_at + typed_status::LEN;
+    let Some(available) = bytes.len().checked_sub(first) else {
+        return lost;
+    };
+    let available = available / TYPED_LOCAL_REFERENCE_LEN;
+    let Ok(count) = usize::try_from(count) else {
+        return lost;
+    };
+    if count > available {
+        return lost;
+    }
+    for at in (0..count).map(|ordinal| first + ordinal * TYPED_LOCAL_REFERENCE_LEN) {
+        let Some((target, guid)) = typed_local_reference(bytes, at) else {
+            return Vec::new();
+        };
+        if guid.eq_ignore_ascii_case(PROFILE_STATUS_REFERENCE_TYPE_GUID)
+            && records
+                .offsets(target)
+                .first()
+                .is_some_and(|&record_at| lost_profile_reference_record(bytes, record_at))
+            && !lost.contains(&target)
+        {
+            lost.push(target);
+        }
+    }
+    lost
+}
+
+/// Whether the record at `record_at` is a lost profile-reference record:
+/// its indexed header, fourteen zero bytes, the marker length, and the marker.
+fn lost_profile_reference_record(bytes: &[u8], record_at: usize) -> bool {
+    let zero_at = record_at + indexed_header::LEN;
+    let length_at = zero_at + LOST_REFERENCE_ZERO_RUN;
+    let marker_at = length_at + 4;
+    bytes.get(zero_at..length_at) == Some(&[0; LOST_REFERENCE_ZERO_RUN][..])
+        && View::u32_le_at(bytes, length_at).and_then(|length| usize::try_from(length).ok())
+            == Some(PROFILE_REFERENCE_LOST.len())
+        && bytes.get(marker_at..marker_at + PROFILE_REFERENCE_LOST.len())
+            == Some(PROFILE_REFERENCE_LOST)
 }
 
 /// The record indices that typed local references of type
