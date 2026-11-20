@@ -1391,75 +1391,76 @@ fn primitive_sizes_are_fixed_arrays() {
 
 #[cfg(feature = "schema")]
 mod schema {
-    use schemars::{schema_for, JsonSchema};
+    use schemars::{JsonSchema, SchemaGenerator};
 
     use super::super::*;
 
-    fn generates<T: JsonSchema>() {
-        let schema = serde_json::to_value(schema_for!(T)).unwrap();
-        assert!(schema.is_object(), "{}", T::schema_name());
+    fn generates<T: JsonSchema>(generator: &mut SchemaGenerator) {
+        let schema = T::json_schema(generator);
+        assert!(schema.as_object().is_some(), "{}", T::schema_name());
     }
 
     #[test]
     fn every_swept_type_has_a_schema() {
-        generates::<Extrude>();
-        generates::<ExtrudeDirection>();
-        generates::<ExtrudeOrigin>();
-        generates::<ExtrudeDraft>();
-        generates::<DraftNeutral>();
-        generates::<HoleDraft>();
-        generates::<ProfileFit>();
-        generates::<Revolve>();
-        generates::<Sweep>();
-        generates::<CornerTransition>();
-        generates::<SweepSection>();
-        generates::<SectionTurn>();
-        generates::<SectionShape>();
-        generates::<Apex>();
-        generates::<SweepControls>();
-        generates::<SweepOrientation>();
-        generates::<GuideFrame>();
-        generates::<Twist>();
-        generates::<ScalingLaw>();
-        generates::<SweepGuide>();
-        generates::<PathExtent>();
-        generates::<ProfilePlacement>();
-        generates::<ProfilePosition>();
-        generates::<SpineLimits>();
-        generates::<HelicalSweep>();
-        generates::<HelicalSection>();
-        generates::<SectionPlacement>();
-        generates::<Helix>();
-        generates::<HelixStart>();
-        generates::<HelixShape>();
-        generates::<HelixLaw>();
-        generates::<HelixTaper>();
-        generates::<SpiralLaw>();
-        generates::<Rib>();
-        generates::<RibGrowth>();
-        generates::<RibEnd>();
-        generates::<Primitive>();
-        generates::<PrimitiveShape>();
-        generates::<Loft>();
-        generates::<Section>();
-        generates::<SectionForm>();
-        generates::<Seam>();
-        generates::<PointSection>();
-        generates::<PointCondition>();
-        generates::<Guide>();
-        generates::<GuideInfluence>();
-        generates::<Spine>();
-        generates::<AreaStation>();
-        generates::<CenterlineAt>();
-        generates::<Correspondence>();
-        generates::<CouplingMode>();
-        generates::<Connector>();
-        generates::<LoftShape>();
-        generates::<LoftSmoothing>();
-        generates::<LoftStyle>();
-        generates::<Rebuild>();
-        generates::<Interpolation>();
-        generates::<OffsetJoin>();
-        generates::<SheetCutNormal>();
+        let mut generator = SchemaGenerator::default();
+        generates::<Extrude>(&mut generator);
+        generates::<ExtrudeDirection>(&mut generator);
+        generates::<ExtrudeOrigin>(&mut generator);
+        generates::<ExtrudeDraft>(&mut generator);
+        generates::<DraftNeutral>(&mut generator);
+        generates::<HoleDraft>(&mut generator);
+        generates::<ProfileFit>(&mut generator);
+        generates::<Revolve>(&mut generator);
+        generates::<Sweep>(&mut generator);
+        generates::<CornerTransition>(&mut generator);
+        generates::<SweepSection>(&mut generator);
+        generates::<SectionTurn>(&mut generator);
+        generates::<SectionShape>(&mut generator);
+        generates::<Apex>(&mut generator);
+        generates::<SweepControls>(&mut generator);
+        generates::<SweepOrientation>(&mut generator);
+        generates::<GuideFrame>(&mut generator);
+        generates::<Twist>(&mut generator);
+        generates::<ScalingLaw>(&mut generator);
+        generates::<SweepGuide>(&mut generator);
+        generates::<PathExtent>(&mut generator);
+        generates::<ProfilePlacement>(&mut generator);
+        generates::<ProfilePosition>(&mut generator);
+        generates::<SpineLimits>(&mut generator);
+        generates::<HelicalSweep>(&mut generator);
+        generates::<HelicalSection>(&mut generator);
+        generates::<SectionPlacement>(&mut generator);
+        generates::<Helix>(&mut generator);
+        generates::<HelixStart>(&mut generator);
+        generates::<HelixShape>(&mut generator);
+        generates::<HelixLaw>(&mut generator);
+        generates::<HelixTaper>(&mut generator);
+        generates::<SpiralLaw>(&mut generator);
+        generates::<Rib>(&mut generator);
+        generates::<RibGrowth>(&mut generator);
+        generates::<RibEnd>(&mut generator);
+        generates::<Primitive>(&mut generator);
+        generates::<PrimitiveShape>(&mut generator);
+        generates::<Loft>(&mut generator);
+        generates::<Section>(&mut generator);
+        generates::<SectionForm>(&mut generator);
+        generates::<Seam>(&mut generator);
+        generates::<PointSection>(&mut generator);
+        generates::<PointCondition>(&mut generator);
+        generates::<Guide>(&mut generator);
+        generates::<GuideInfluence>(&mut generator);
+        generates::<Spine>(&mut generator);
+        generates::<AreaStation>(&mut generator);
+        generates::<CenterlineAt>(&mut generator);
+        generates::<Correspondence>(&mut generator);
+        generates::<CouplingMode>(&mut generator);
+        generates::<Connector>(&mut generator);
+        generates::<LoftShape>(&mut generator);
+        generates::<LoftSmoothing>(&mut generator);
+        generates::<LoftStyle>(&mut generator);
+        generates::<Rebuild>(&mut generator);
+        generates::<Interpolation>(&mut generator);
+        generates::<OffsetJoin>(&mut generator);
+        generates::<SheetCutNormal>(&mut generator);
     }
 }

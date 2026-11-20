@@ -13,10 +13,15 @@ use crate::text::syntax::{Layer, MetaItem, MetaValue, PrimBody, PrimSpec};
 use crate::usdz::Package;
 
 /// Where a resource that a layer names is.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Resource {
-    /// A package member, with its identity and bytes.
-    Embedded { id: String, bytes: Vec<u8> },
+#[derive(Debug)]
+pub(crate) enum Resource<'l, 'a> {
+    /// A package member: its identity, and the package and member name that
+    /// hold it.
+    Embedded {
+        id: String,
+        package: &'l Package<'a>,
+        name: String,
+    },
     /// A companion file, by identity.
     Located(String),
     /// Neither: the path is kept as written.
@@ -50,7 +55,7 @@ pub(crate) struct Layers<'a> {
     pub(crate) losses: Vec<LossNote>,
 }
 
-impl Layers<'_> {
+impl<'a> Layers<'a> {
     /// The root layer alone.
     pub(crate) fn single(layer: Layer) -> Self {
         Self {
@@ -71,40 +76,29 @@ impl Layers<'_> {
         &self.all[0].layer
     }
 
-    /// The content of the image that `path` names from layer `from`: the
-    /// bytes of a member of the package that holds the layer, or the
-    /// identity of a companion file. A path that neither names is kept as
-    /// written.
+    /// Where the image that `path` names from layer `from` is: a member of
+    /// the package that holds the layer, or a companion file. A path that
+    /// neither names is kept as written.
     pub(crate) fn texture(
         &self,
         ctx: &DecodeContext<'_>,
         from: Option<usize>,
         path: &str,
-    ) -> Result<Resource, CodecError> {
+    ) -> Resource<'_, 'a> {
         let Some(loaded) = from.and_then(|from| self.all.get(from)) else {
-            return Ok(Resource::Unlocated);
+            return Resource::Unlocated;
         };
-        if let Some((index, member)) = &loaded.member {
-            let name = crate::usdz::member_name(member, path);
-            if let (Some(package), Some(name)) = (self.packages.get(*index), name) {
-                if package
-                    .snapshot
-                    .entries()
-                    .iter()
-                    .any(|entry| entry.name == name)
-                {
-                    let view = package.snapshot.open(ctx, &name)?;
-                    return Ok(Resource::Embedded {
-                        id: format!("{}[{name}]", loaded.file.as_deref().unwrap_or("")),
-                        bytes: view.window().to_vec(),
-                    });
-                }
-            }
+        if let Some((_, package, name)) = member(&self.packages, loaded, path) {
+            return Resource::Embedded {
+                id: member_id(loaded, &name),
+                package,
+                name,
+            };
         }
-        Ok(match ctx.locate_companion(loaded.file.as_deref(), path) {
+        match ctx.locate_companion(loaded.file.as_deref(), path) {
             Ok(id) => Resource::Located(id),
             Err(_) => Resource::Unlocated,
-        })
+        }
     }
 
     /// The layer that `asset` names from layer `from`.
@@ -190,6 +184,44 @@ struct Named<'a> {
     view: View<'a>,
 }
 
+/// The member of the package that holds `from` that `path` names: the
+/// index of the package, the package, and the member name.
+fn member<'p, 'a>(
+    packages: &'p [Package<'a>],
+    from: &Loaded,
+    path: &str,
+) -> Option<(usize, &'p Package<'a>, String)> {
+    let (index, root) = from.member.as_ref()?;
+    let package = packages.get(*index)?;
+    let name = crate::usdz::member_name(root, path)?;
+    package
+        .snapshot
+        .entries()
+        .iter()
+        .any(|entry| entry.name == name)
+        .then_some((*index, package, name))
+}
+
+/// The identity of member `name` of the package that holds `from`.
+fn member_id(from: &Loaded, name: &str) -> String {
+    format!("{}[{name}]", from.file.as_deref().unwrap_or(""))
+}
+
+/// The identity that [`open`] gives the layer that `asset` names from
+/// `from`, without reading the layer, or `None` when the companion source
+/// does not locate the file.
+fn identity(
+    ctx: &DecodeContext<'_>,
+    packages: &[Package<'_>],
+    from: &Loaded,
+    asset: &str,
+) -> Option<String> {
+    match member(packages, from, asset) {
+        Some((_, _, name)) => Some(member_id(from, &name)),
+        None => ctx.locate_companion(from.file.as_deref(), asset).ok(),
+    }
+}
+
 /// Opens the layer that `asset` names from `from`: a member of the package
 /// that holds `from`, or a companion file.
 fn open<'a>(
@@ -198,24 +230,14 @@ fn open<'a>(
     from: &Loaded,
     asset: &str,
 ) -> Result<Result<Named<'a>, String>, CodecError> {
-    if let Some((index, member)) = &from.member {
-        let name = crate::usdz::member_name(member, asset);
-        if let (Some(package), Some(name)) = (packages.get(*index), name) {
-            if package
-                .snapshot
-                .entries()
-                .iter()
-                .any(|entry| entry.name == name)
-            {
-                let view = package.snapshot.open(ctx, &name)?;
-                return Ok(Ok(Named {
-                    id: format!("{}[{name}]", from.file.as_deref().unwrap_or("")),
-                    file: from.file.clone(),
-                    member: Some((*index, name)),
-                    view,
-                }));
-            }
-        }
+    if let Some((index, package, name)) = member(packages, from, asset) {
+        let view = package.snapshot.open(ctx, &name)?;
+        return Ok(Ok(Named {
+            id: member_id(from, &name),
+            file: from.file.clone(),
+            member: Some((index, name)),
+            view,
+        }));
     }
     Ok(match ctx.open_companion(from.file.as_deref(), asset)? {
         CompanionLoad::Loaded { id, view } => Ok(Named {
@@ -253,6 +275,12 @@ pub(crate) fn load<'a>(
             let Some(loaded) = layers.all.get(next) else {
                 break;
             };
+            if let Some(index) =
+                identity(ctx, &packages, loaded, &asset).and_then(|id| by_id.get(&id).copied())
+            {
+                resolved.insert(asset, index);
+                continue;
+            }
             let named = match open(ctx, &packages, loaded, &asset)? {
                 Ok(named) => named,
                 Err(reason) => {

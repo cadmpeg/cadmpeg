@@ -73,7 +73,7 @@ fn revolve_recipe_sides_agree_with_stored_solid_end_faces() {
                 assert!((angle(termination) - first.to_radians()).abs() < EPS_RECIPE_ANGLE);
             }
         }
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let measured = Measurer::new(
             MeasureInput {
                 ir,

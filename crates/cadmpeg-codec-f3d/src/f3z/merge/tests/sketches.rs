@@ -35,7 +35,7 @@ fn member_definition_owns_root_sketches_and_preserves_component_owners() {
     let mut ir = CadIr::empty();
     ir.model.sketches = vec![root.clone(), local];
     ir.model.product_definitions = vec![definition.clone()];
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
 
     let owner = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
 
@@ -51,7 +51,7 @@ fn member_definition_extends_existing_root_sketches_once() {
     let later = sketch("later");
     let mut ir = CadIr::empty();
     ir.model.sketches = vec![root.clone()];
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let owner = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
     ir.model.sketches.push(later.clone());
 

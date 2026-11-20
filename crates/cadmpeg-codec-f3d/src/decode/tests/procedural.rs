@@ -94,7 +94,11 @@ fn generated_procedural_curve_optional_tolerance_absence_round_trips() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         source_less.geometry.procedural_curves[0]
             .set_cache_fit_tolerance(None)
@@ -163,24 +167,23 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut missing_tolerance = source_less.clone();
     missing_tolerance.geometry.procedural_surfaces[0]
         .set_cache_fit_tolerance(None)
         .unwrap();
-    let error = F3dCodec
-        .plan(
-            EncodeInput::new(&missing_tolerance, None),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("compound loft without its required tolerance must be rejected");
-    assert!(
-        error
-            .to_string()
-            .contains("compound-loft surface requires a native cache-fit tolerance"),
-        "unexpected error: {error}"
+    crate::test_support::assert_written_with_loss(
+        &missing_tolerance,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "compound-loft surface requires a native cache-fit tolerance",
     );
     source_less
         .geometry
@@ -291,7 +294,11 @@ fn generated_compound_loft_writes_every_tail_shape_source_less() {
         let mut source_less = decoded.ir().clone();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         source_less
             .geometry
@@ -438,21 +445,24 @@ fn generated_scaled_compound_loft_decodes_full_direct_branch() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut missing_tolerance = source_less.clone();
     missing_tolerance.geometry.procedural_surfaces[0]
         .set_cache_fit_tolerance(None)
         .unwrap();
-    assert!(F3dCodec
-        .plan(
-            EncodeInput::new(&missing_tolerance, None),
-            TargetRequest::Inherit
-        )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("full scaled compound loft without tolerance must fail")
-        .to_string()
-        .contains("full shape requires a native cache-fit tolerance"));
+    crate::test_support::assert_written_with_loss(
+        &missing_tolerance,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "full shape requires a native cache-fit tolerance",
+    );
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -525,7 +535,11 @@ fn generated_scaled_compound_loft_writes_all_middle_branches_source_less() {
         let mut source_less = decoded.ir().clone();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         source_less.geometry.procedural_surfaces[0].edit_definition(|definition| {
             let ProceduralSurfaceDefinition::ScaledCompoundLoft(definition_payload) = definition
@@ -630,21 +644,24 @@ fn generated_scaled_compound_loft_none_shape_round_trips_as_procedural_face() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut unexpected_tolerance = source_less.clone();
     unexpected_tolerance.geometry.procedural_surfaces[0]
         .set_cache_fit_tolerance(Some(0.04))
         .unwrap();
-    assert!(F3dCodec
-        .plan(
-            EncodeInput::new(&unexpected_tolerance, None),
-            TargetRequest::Inherit
-        )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("none-shape scaled compound loft with tolerance must fail")
-        .to_string()
-        .contains("none shape cannot carry a cache-fit tolerance"));
+    crate::test_support::assert_written_with_loss(
+        &unexpected_tolerance,
+        None,
+        &crate::loss::F3dLossCode::WriterBodyOmitted
+            .kind()
+            .to_string(),
+        "none shape cannot carry a cache-fit tolerance",
+    );
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -706,7 +723,11 @@ fn generated_skin_surface_decodes_recursive_spline_law() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -784,7 +805,11 @@ fn generated_law_surfaces_decode_and_round_trip_modern_and_legacy_layouts() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
@@ -864,7 +889,11 @@ fn generated_sub_surfaces_decode_and_write_exact_support_graphs() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
@@ -956,7 +985,11 @@ fn generated_law_surfaces_round_trip_every_standard_tail_mode() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
@@ -1016,7 +1049,11 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     source_less
         .geometry
@@ -1097,7 +1134,11 @@ fn generated_skin_surface_round_trips_expanded_profiles() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     source_less
         .geometry
@@ -1189,7 +1230,11 @@ fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -1210,7 +1255,7 @@ fn generated_skin_surface_round_trips_fixed_arity_algebraic_laws() {
 }
 
 #[test]
-fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
+fn source_less_writer_reduces_invalid_and_unframed_law_arities_to_their_cache() {
     use cadmpeg_ir::geometry::{LawExpression, LawFormula, ProceduralSurfaceDefinition};
 
     let decoded = F3dCodec
@@ -1222,7 +1267,11 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     source_less.geometry.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {
@@ -1248,11 +1297,14 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
             .set_legacy_cache(restored_cache)
             .expect("the rebuilt construction states the same legacy cache slot");
     });
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(error.to_string().contains("requires 1 operands, got 0"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "requires 1 operands, got 0",
+    );
 
     source_less.geometry.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {
@@ -1278,11 +1330,14 @@ fn source_less_writer_rejects_invalid_and_unframed_law_arities() {
             .set_legacy_cache(restored_cache)
             .expect("the rebuilt construction states the same legacy cache slot");
     });
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .unwrap_err();
-    assert!(error.to_string().contains("unresolved variable arity"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "unresolved variable arity",
+    );
 }
 
 #[test]
@@ -1299,7 +1354,11 @@ fn generated_skin_surface_round_trips_set_compose_rotate_and_term_laws() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     source_less.geometry.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Skin(definition_payload) = definition else {

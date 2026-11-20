@@ -9,7 +9,7 @@ use std::path::Path;
 
 use cadmpeg_core::decode::ResourceLimits;
 #[cfg(feature = "schema")]
-use schemars::{schema_for, JsonSchema};
+use schemars::{JsonSchema, SchemaGenerator};
 use serde::de::DeserializeOwned;
 use serde_json::json;
 
@@ -1437,62 +1437,63 @@ fn a_native_option_key_stated_twice_is_refused() {
 }
 
 #[cfg(feature = "schema")]
-fn generates<T: JsonSchema>() {
-    let schema = serde_json::to_value(schema_for!(T)).unwrap();
-    assert!(schema.is_object(), "{}", T::schema_name());
+fn generates<T: JsonSchema>(generator: &mut SchemaGenerator) {
+    let schema = T::json_schema(generator);
+    assert!(schema.as_object().is_some(), "{}", T::schema_name());
 }
 
 #[cfg(feature = "schema")]
 #[test]
 fn every_assembly_and_shared_layout_type_has_a_schema() {
-    generates::<Place>();
-    generates::<PlacementBase>();
-    generates::<PlaceSet>();
-    generates::<Joint>();
-    generates::<JointConnector>();
-    generates::<Alignment>();
-    generates::<JointKind>();
-    generates::<JointMotion>();
-    generates::<JointOffset>();
-    generates::<AxisLimits>();
-    generates::<Bounds<Length>>();
-    generates::<Bounds<Angle>>();
-    generates::<Coupling>();
-    generates::<JointDrive>();
-    generates::<DriveAxis>();
-    generates::<DriveMode>();
-    generates::<TangentContact>();
-    generates::<WidthMode>();
-    generates::<SlotPosition>();
-    generates::<PathPosition>();
-    generates::<PathAxisControl>();
-    generates::<PathRollControl>();
-    generates::<RigidGroup>();
-    generates::<ComponentPattern>();
-    generates::<ComponentInstance>();
-    generates::<MirrorComponents>();
-    generates::<MirrorResult>();
-    generates::<MirrorOrientation>();
-    generates::<MirrorReversal>();
-    generates::<MirrorPivot>();
-    generates::<AssemblyFeature>();
-    generates::<ContextEffect>();
-    generates::<PairElement>();
-    generates::<PatternLayout>();
-    generates::<ChainLayout>();
-    generates::<ChainLinks>();
-    generates::<ChainLink>();
-    generates::<LinearRun>();
-    generates::<PatternRun<Length>>();
-    generates::<PatternRun<Angle>>();
-    generates::<RunSides<Length>>();
-    generates::<Spacing<Angle>>();
-    generates::<UpToFill<Length>>();
-    generates::<Locus>();
-    generates::<InstanceOrientation>();
-    generates::<PathReference>();
-    generates::<Increment>();
-    generates::<DimensionRun>();
-    generates::<DimensionTable>();
-    generates::<TableRow>();
+    let mut generator = SchemaGenerator::default();
+    generates::<Place>(&mut generator);
+    generates::<PlacementBase>(&mut generator);
+    generates::<PlaceSet>(&mut generator);
+    generates::<Joint>(&mut generator);
+    generates::<JointConnector>(&mut generator);
+    generates::<Alignment>(&mut generator);
+    generates::<JointKind>(&mut generator);
+    generates::<JointMotion>(&mut generator);
+    generates::<JointOffset>(&mut generator);
+    generates::<AxisLimits>(&mut generator);
+    generates::<Bounds<Length>>(&mut generator);
+    generates::<Bounds<Angle>>(&mut generator);
+    generates::<Coupling>(&mut generator);
+    generates::<JointDrive>(&mut generator);
+    generates::<DriveAxis>(&mut generator);
+    generates::<DriveMode>(&mut generator);
+    generates::<TangentContact>(&mut generator);
+    generates::<WidthMode>(&mut generator);
+    generates::<SlotPosition>(&mut generator);
+    generates::<PathPosition>(&mut generator);
+    generates::<PathAxisControl>(&mut generator);
+    generates::<PathRollControl>(&mut generator);
+    generates::<RigidGroup>(&mut generator);
+    generates::<ComponentPattern>(&mut generator);
+    generates::<ComponentInstance>(&mut generator);
+    generates::<MirrorComponents>(&mut generator);
+    generates::<MirrorResult>(&mut generator);
+    generates::<MirrorOrientation>(&mut generator);
+    generates::<MirrorReversal>(&mut generator);
+    generates::<MirrorPivot>(&mut generator);
+    generates::<AssemblyFeature>(&mut generator);
+    generates::<ContextEffect>(&mut generator);
+    generates::<PairElement>(&mut generator);
+    generates::<PatternLayout>(&mut generator);
+    generates::<ChainLayout>(&mut generator);
+    generates::<ChainLinks>(&mut generator);
+    generates::<ChainLink>(&mut generator);
+    generates::<LinearRun>(&mut generator);
+    generates::<PatternRun<Length>>(&mut generator);
+    generates::<PatternRun<Angle>>(&mut generator);
+    generates::<RunSides<Length>>(&mut generator);
+    generates::<Spacing<Angle>>(&mut generator);
+    generates::<UpToFill<Length>>(&mut generator);
+    generates::<Locus>(&mut generator);
+    generates::<InstanceOrientation>(&mut generator);
+    generates::<PathReference>(&mut generator);
+    generates::<Increment>(&mut generator);
+    generates::<DimensionRun>(&mut generator);
+    generates::<DimensionTable>(&mut generator);
+    generates::<TableRow>(&mut generator);
 }

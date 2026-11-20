@@ -579,6 +579,14 @@ fn decode_with_occurrence_limits(
             native::store_physical_cards(&mut ir, &parse.scan, ctx)?
         }
     };
+    ir.state_root_definition(
+        ctx,
+        cadmpeg_ir::ids::ProductDefinitionId::compose(
+            &cadmpeg_ir::identity_namespace!("iges", "model", "product-definition"),
+            cadmpeg_ir::identity_key!("root"),
+        ),
+        cadmpeg_ir::products::ExternalDocument::default(),
+    )?;
     // The transfer ledger is verified before DecodeResult construction, so its
     // identity checks require the same canonical arena order as the result.
     ir.finalize();

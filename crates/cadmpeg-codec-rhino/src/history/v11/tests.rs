@@ -164,7 +164,11 @@ fn a_document_without_history_states_no_design() {
     assert!(ir.design.scopes.is_empty());
     assert!(ir.design.containers.is_empty());
     assert!(ir.design.features.is_empty());
-    assert!(ir.model.product_definitions.is_empty());
+    let [root] = ir.model.product_definitions.as_slice() else {
+        panic!("one root definition");
+    };
+    assert!(root.is_root());
+    assert_eq!(root.bodies, bodies_of(ir, id(0x40)));
 }
 
 #[test]
@@ -298,7 +302,7 @@ fn an_object_two_records_list_is_in_neither_current_state() {
     let records = [record(1, &[0x40, 0x41, 0x41]), record(2, &[0x40])];
     let mut ir = CadIr::empty();
     project(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &records,
         &objects,
         None,
@@ -358,7 +362,7 @@ fn antecedents_are_picks_anchored_after_their_producer_or_current() {
     ];
     let mut ir = CadIr::empty();
     project(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &records,
         &objects,
         None,
@@ -413,7 +417,7 @@ fn antecedents_are_picks_anchored_after_their_producer_or_current() {
 fn options_skip_values_no_option_can_hold() {
     let mut ir = CadIr::empty();
     project(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &[record(1, &[])],
         &ObjectBodies::new(),
         None,
@@ -440,7 +444,7 @@ fn every_option_key_is_rhino_codec_name() {
     ];
     let mut ir = CadIr::empty();
     project(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &records,
         &ObjectBodies::from([(id(0x40), vec![body(0x40)])]),
         None,
