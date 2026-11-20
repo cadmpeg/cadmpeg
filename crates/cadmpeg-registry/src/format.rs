@@ -34,6 +34,9 @@ pub enum Format {
     /// `OpenUSD` `.usda` text layer, or a `.usdz` package.
     #[cfg(feature = "usd")]
     Usd,
+    /// `SolidCraft` `.sc` or `.solidcraft`. Also spelled `sc`.
+    #[cfg(feature = "solidcraft")]
+    Solidcraft,
 }
 
 impl Format {
@@ -61,6 +64,8 @@ impl Format {
             Self::Iges,
             #[cfg(feature = "usd")]
             Self::Usd,
+            #[cfg(feature = "solidcraft")]
+            Self::Solidcraft,
         ]
         .into_iter()
     }
@@ -158,6 +163,8 @@ mod tests {
             "parasolid",
             "pvz",
             "usd",
+            "solidcraft",
+            "sc",
         ] {
             assert!(
                 Format::is_known_name(name).expect("embedded registry loads"),

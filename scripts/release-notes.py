@@ -55,6 +55,7 @@ AREAS = {
     "iges": "IGES",
     "creo": "Creo",
     "pvz": "Creo View",
+    "solidcraft": "SolidCraft",
     "nx": "NX",
     "rhino": "Rhino",
     "catia": "CATIA",

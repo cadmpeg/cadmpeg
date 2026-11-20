@@ -154,6 +154,10 @@ scored = ["pvz:pvs-0301", "pvz:pvs-0302", "pvz:pvs-0303", "pvz:pvs-0304", "pvz:p
 level = 2
 scored = ["usd:usda-1.0"]
 
+[format.solidcraft]
+level = 5
+scored = ["solidcraft:container-1-v57", "solidcraft:json-v57"]
+
 
 # --------------------------------------------------------------------------
 # iges
@@ -1214,3 +1218,102 @@ the sldprt and nx readers emit this residual layer for every other schema token
 extracted from a framed Parasolid stream. The source token names no classified
 row, so recovery is admitted without claiming a verified dialect. Both hosts
 charge source.kernel-dialect-unverified from this layer"""
+
+# --------------------------------------------------------------------------
+# solidcraft
+# --------------------------------------------------------------------------
+
+[[support]]
+dialect = "solidcraft:container-1-v57"
+read = "L5"
+write = "verified"
+reason = """
+the final state of the model cache decodes into connected neutral B-rep:
+SCBREP05 bodies with typed analytic and NURBS carriers, pcurves, oriented
+loops, radial coedge order, shells, and regions, and SCMESH01 bodies as
+tessellations, coloured by the document's body and face looks. The
+timeline decodes with sketches, extrudes, revolves, and primitives carrying
+their operation semantics. design-container-v57-cached.sc pins it. A
+container with no cache carries no geometry and is charged
+solidcraft/cache.model-absent. The builder generates this dialect from the neutral model and
+`scripts/verify-solidcraft-cli.py` opens the generated file in `solidcraft-cli`,
+which rebuilds the model from the history: the independent-application
+acceptance gate"""
+
+[[support]]
+dialect = "solidcraft:container-1-v1-56"
+read = "L5"
+write = "preserved"
+reason = """
+L2, L3, and the geometry criteria of L5 are inapplicable: a container of an
+earlier format carries no model cache, so its geometry is the evaluation of
+its feature history. The document upgrades to the current format before its
+history decodes, as on the json-v1-56 row. design-container-v20.sc pins the
+row"""
+
+[[support]]
+dialect = "solidcraft:json-v57"
+read = "L5"
+write = "verified"
+reason = """
+L2, L3, and the geometry criteria of L5 are inapplicable: a plain JSON
+design holds no model cache and no geometry record, only the feature
+history whose evaluation is the geometry. Decode charges
+solidcraft/cache.model-absent. The timeline decodes as on the container
+row. design-json-v57.sc pins the row. The builder generates this dialect from the neutral model and
+`scripts/verify-solidcraft-cli.py` opens the generated file in `solidcraft-cli`,
+which rebuilds the model from the history: the independent-application
+acceptance gate"""
+
+[[support]]
+dialect = "solidcraft:json-v1-56"
+read = "L5"
+write = "preserved"
+reason = """
+L2, L3, and the geometry criteria of L5 are inapplicable: a plain JSON
+design holds no model cache and no geometry record. The document upgrades to
+the current format before its history decodes: the appearance records, the
+joint flip, the XZ frame, the direction and the second side of a two-sided
+extrude, and the feature ids of pattern seeds and construction planes. The
+steps that only mark stored names are not applied.
+design-json-v13-legacy-tag.sc pins the row"""
+
+[[support]]
+dialect = "solidcraft:container-1-v58-pending"
+read = "L4"
+write = "preserved"
+reason = """
+the next design format, which lists only changes this decoder knows by name.
+Features decode with their operation semantics and their history, and the
+bodies of the cache decode with their carriers. The pending changes that
+change no decoded field are charged by name. Three are not decoded: the 3D
+sketch constraints and dimensions, and the STEP solid items of an import, so
+the geometry and sketch relations are not complete (L5 and L6 do not hold).
+design-container-v58-pending.sc pins the row"""
+
+[[support]]
+dialect = "solidcraft:json-v58-pending"
+read = "L4"
+write = "preserved"
+reason = """
+the next design format as a plain JSON document, read as the container row is.
+The geometry is the evaluation of the history, which this codec does not
+compute, so L2 and L3 are inapplicable, as for json-v57. design-json-v58-pending.sc
+pins the row"""
+
+[[support]]
+dialect = "solidcraft:drawing-container-1"
+read = "detected"
+write = "preserved"
+reason = """
+the container layer is read and every member is retained; the drawing
+document is not decoded"""
+
+[[support]]
+dialect = "solidcraft:unknown"
+read = "unclassified-recovered"
+write = "preserved"
+reason = """
+a container with any other marker, a design format past 57, or a nonempty
+format_pending list is read on the residual path, and decode charges
+solidcraft/source.dialect-unverified"""

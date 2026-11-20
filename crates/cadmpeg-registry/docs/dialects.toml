@@ -1425,6 +1425,83 @@ discriminants = { header = "#usda or #sdf with any other version", version = "an
 witness = "code:crates/cadmpeg-codec-usd/src/dialect.rs:87"
 
 # --------------------------------------------------------------------------
+# SolidCraft designs (.sc, .solidcraft)
+# --------------------------------------------------------------------------
+# A design is a plain JSON document or a ZIP container whose `container.json`
+# marker declares `solidcraft-container/1`; the first bytes select the
+# encoding, never the extension (docs/formats/solidcraft.md section 1). The
+# document discriminant is the format number of its `format` tag,
+# `solidcraft/N` or `solvecraft/N`, with format 1 for an untagged document,
+# and the `format_pending` list (section 3). `dialect::classify`
+# (crates/cadmpeg-codec-solidcraft/src/dialect.rs) is the codec's single
+# construction path for a `DialectMatch`.
+#
+# Formats 1 to 56 share one row per encoding: each later format is a set of
+# additive changes on the earlier one, and the reader takes every one of them
+# through the same document grammar.
+#
+# `complete = false`: each SolidCraft release can add a format number.
+[format.solidcraft]
+complete = false
+aliases = ["sc"]
+
+[[dialect]]
+id = "solidcraft:container-1-v57"
+title = "SolidCraft design container 1, design format 57"
+discriminants = { encoding = "zip", container_format = "solidcraft-container/1 or solvecraft-container/1", document_format = "57", format_pending = "absent or empty" }
+witness = "spec:docs/formats/solidcraft.md sections 2 and 3"
+
+[[dialect]]
+id = "solidcraft:container-1-v1-56"
+title = "SolidCraft design container 1, design formats 1 to 56"
+discriminants = { encoding = "zip", container_format = "solidcraft-container/1 or solvecraft-container/1", document_format = "1 to 56", format_pending = "absent or empty" }
+witness = "spec:docs/formats/solidcraft.md sections 2 and 3"
+
+[[dialect]]
+id = "solidcraft:json-v57"
+title = "SolidCraft plain JSON design, design format 57"
+discriminants = { encoding = "json", document_format = "57", format_pending = "absent or empty" }
+witness = "spec:docs/formats/solidcraft.md section 3"
+
+[[dialect]]
+id = "solidcraft:container-1-v58-pending"
+title = "SolidCraft design container 1, design format 58 with pending changes"
+discriminants = { encoding = "zip", container_format = "solidcraft-container/1 or solvecraft-container/1", document_format = "58", format_pending = "listed, every name a known pending change" }
+witness = "spec:docs/formats/solidcraft.md section 3.14"
+
+[[dialect]]
+id = "solidcraft:json-v58-pending"
+title = "SolidCraft plain JSON design, design format 58 with pending changes"
+discriminants = { encoding = "json", document_format = "58", format_pending = "listed, every name a known pending change" }
+witness = "spec:docs/formats/solidcraft.md section 3.14"
+
+[[dialect]]
+id = "solidcraft:json-v1-56"
+title = "SolidCraft plain JSON design, design formats 1 to 56"
+discriminants = { encoding = "json", document_format = "1 to 56", format_pending = "absent or empty" }
+witness = "spec:docs/formats/solidcraft.md section 3"
+
+[[dialect]]
+# A drawing container holds `drawing.json`, a `solidcraft-drawing/N`
+# document, in place of a design document.
+id = "solidcraft:drawing-container-1"
+title = "SolidCraft drawing container 1"
+discriminants = { encoding = "zip", container_format = "solidcraft-container/1", content = "drawing" }
+witness = "spec:docs/formats/solidcraft.md section 2"
+
+[[dialect]]
+# Mandatory `unknown` row (B4). A file with any other container marker, a
+# design format past 57, a nonempty `format_pending`, or no readable design
+# document is admitted on the residual path: decode charges
+# `solidcraft/source.dialect-unverified` and reads the document with the
+# format 57 grammar.
+id = "solidcraft:unknown"
+unknown_kind = "recovered-residual"
+title = "SolidCraft design with an undeclared container marker or design format"
+discriminants = { container_format = "any other marker", document_format = "past 57 or not a design tag", format_pending = "nonempty" }
+witness = "code:crates/cadmpeg-codec-solidcraft/src/dialect.rs:72"
+
+# --------------------------------------------------------------------------
 # ACIS / ASM kernel namespace (embedded layer)
 # --------------------------------------------------------------------------
 # Owned by `cadmpeg-asm`, cited by `sat`, `f3d`, and `inventor`. These ids are

@@ -258,6 +258,15 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-usd`      | `src/brep/convert.rs`                              | `MAX_TRACE_DEPTH`                         | `12`                                                   | N    | Encoder: the deepest bisection of a traced trim curve; a span at this depth is written as it is. Not a decode path. |
 | `cadmpeg-codec-usd`      | `src/usdc/compression.rs`                          | `MAX_CHUNK_OUTPUT`                        | `0x7E00_0000`                                         | 1    | Bytes one chunk of the USDC compressed-buffer framing expands to (spec §9.3). A chunk that yields more is refused as malformed. |
 | `cadmpeg-codec-usd`      | `src/usdc/compression.rs`                          | `MAX_RATIO`                               | `255`                                                 | 1    | Output bytes one input byte of an LZ4 block yields at most. A buffer of unknown expanded size is charged against the expansion allowance at this ratio before it is decoded. |
+| `cadmpeg-codec-solidcraft` | `src/cache/carrier.rs` | `MAX_DEGREE` | `16` | 1 | The highest spline degree the evaluator takes, the record schema's own cap. A higher degree has no knot span, so that NURBS form is not evaluated. No loss at this site. |
+| `cadmpeg-codec-solidcraft` | `src/cache/mesh.rs` | `MAX_HEADER` | `16 << 20` | 2 | Bytes of a `SCMESH01` header, checked against the slice before it is read as JSON. Excess refuses that mesh slice as malformed. |
+| `cadmpeg-codec-solidcraft` | `src/cache/value.rs` | `MAX_DEPTH` | `48` | 2 | Nesting depth of one `SCBREP05` slice. Excess refuses that slice as malformed. |
+| `cadmpeg-codec-solidcraft` | `src/cache/value.rs` | `MAX_VALUES` | `20_000_000` | 2 | Values in one `SCBREP05` slice. Excess refuses that slice as malformed. |
+| `cadmpeg-codec-solidcraft` | `src/cache/value.rs` | `MAX_ITEMS` | `1_000_000` | 2 | Entries in one collection of a `SCBREP05` slice, checked against the remaining bytes. Excess refuses that slice as malformed. |
+| `cadmpeg-codec-solidcraft` | `src/cache/value.rs` | `MAX_STRING` | `1 << 20` | 2 | Bytes in one string of a `SCBREP05` slice, checked against the remaining bytes. Excess refuses that slice as malformed. |
+| `cadmpeg-codec-solidcraft` | `src/history/expr.rs` | `MAX_DEPTH` | `64` | 2 | Operator nesting of one expression. Excess leaves the expression without a value. No loss at this site. |
+| `cadmpeg-codec-solidcraft` | `src/history/expr.rs` | `MAX_REFERENCES` | `64` | 2 | Parameter references chained in one evaluation. Excess leaves the parameter without a value. No loss at this site. |
+| `cadmpeg-codec-solidcraft` | `src/points.rs` | `MAX_POINTS` | `20_000_000` | 2 | Points in one point cloud, checked against the blob length before any point is read. Excess leaves the cloud in the retained section and charges `solidcraft/document.section-undecoded`. |
 | `cadmpeg-tessellate`     | `src/boundary.rs`                                  | `MAX_SEEDS`                               | `256`                                                   | N    | Seed segments of one edge when the export tessellator samples a face boundary. A larger count is clamped to the bound. |
 | `cadmpeg-tessellate`     | `src/boundary.rs`                                  | `MAX_DEPTH`                               | `18`                                                    | N    | Bisection depth of one edge segment while the export tessellator refines a face boundary to its chord tolerance. |
 | `cadmpeg-tessellate`     | `src/boundary.rs`                                  | `MAX_EDGE_SAMPLES`                        | `1 << 17`                                               | N    | Samples of one edge. At the bound the face is refused with a reason, and the writer reports `export.proxy-not-written`. |
@@ -567,16 +576,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 345.
+Production `MAX_*` constants: 354.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
-| 1    | Format or reader invariant | 42    |
-| 2    | Per-input bound            | 77    |
+| 1    | Format or reader invariant | 43    |
+| 2    | Per-input bound            | 85    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 172   |
 | N    | Not a decode bound         | 54    |
-|      | Total                      | 345   |
+|      | Total                      | 354   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -586,8 +595,8 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-mea
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 8,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 28,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 38,
-`cadmpeg-codec-catia` 79, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
-`cadmpeg-tessellate` 4.
+`cadmpeg-codec-catia` 79, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11,
+`cadmpeg-codec-solidcraft` 9, and `cadmpeg-tessellate` 4.
 
 ## Routing
 

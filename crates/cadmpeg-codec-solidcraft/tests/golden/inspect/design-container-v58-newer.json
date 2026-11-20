@@ -1,0 +1,73 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "428",
+        "crc32": "85d3f129",
+        "data_offset": "43",
+        "features": "1",
+        "format": "58",
+        "header_offset": "0",
+        "name": "Block",
+        "params": "1"
+      },
+      "kind": "stored",
+      "name": "document.json",
+      "role": "document",
+      "size": {
+        "kind": "exact",
+        "size": 306
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "487",
+        "crc32": "0af5c4ec",
+        "data_offset": "393",
+        "header_offset": "349"
+      },
+      "kind": "stored",
+      "name": "container.json",
+      "role": "manifest",
+      "size": {
+        "kind": "exact",
+        "size": 35
+      }
+    }
+  ],
+  "identity": {
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "kind": "residual"
+        },
+        "declared": {
+          "container_format": "solidcraft-container/1",
+          "document_format": "solidcraft/58"
+        },
+        "dialect": "solidcraft:unknown"
+      }
+    },
+    "kind": "classified"
+  },
+  "losses": [
+    {
+      "code": {
+        "kind": "namespaced",
+        "value": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "solidcraft",
+          "strict_floor": "warning"
+        }
+      },
+      "message": "the document declares format 58, past the newest released format 57; the file was read without a declared document grammar",
+      "severity": "warning"
+    }
+  ],
+  "notes": [
+    "design document with 1 features and 1 parameters"
+  ]
+}

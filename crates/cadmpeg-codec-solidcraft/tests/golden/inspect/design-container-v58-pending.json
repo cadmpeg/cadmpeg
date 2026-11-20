@@ -1,0 +1,60 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "742",
+        "crc32": "7a8135a1",
+        "data_offset": "43",
+        "features": "1",
+        "format": "58",
+        "header_offset": "0",
+        "name": "Block",
+        "params": "1"
+      },
+      "kind": "stored",
+      "name": "document.json",
+      "role": "document",
+      "size": {
+        "kind": "exact",
+        "size": 620
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "801",
+        "crc32": "0af5c4ec",
+        "data_offset": "707",
+        "header_offset": "663"
+      },
+      "kind": "stored",
+      "name": "container.json",
+      "role": "manifest",
+      "size": {
+        "kind": "exact",
+        "size": 35
+      }
+    }
+  ],
+  "identity": {
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {
+          "container_format": "solidcraft-container/1",
+          "document_format": "solidcraft/58",
+          "format_pending": "bounding-solid-side-margins,joint-lateral-offsets,move-rotate-about-edge,render-coat-flakes,sketch-3d-constraints,sketch-3d-dimensions,sketch-3d-relations,sketch-reference-placements,step-import-solid-items,surface-sweep-exact-spline-path,whole-profile-holes-share-a-curve"
+        },
+        "dialect": "solidcraft:container-1-v58-pending"
+      }
+    },
+    "kind": "classified"
+  },
+  "losses": [],
+  "notes": [
+    "design document with 1 features and 1 parameters"
+  ]
+}

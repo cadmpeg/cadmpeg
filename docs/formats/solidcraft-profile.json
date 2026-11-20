@@ -1,0 +1,266 @@
+{
+  "profile_version": 1,
+  "format": "solidcraft",
+  "fixtures": [
+    {
+      "filename": "design-container-v20.sc",
+      "sha256": "691078d130d5dc6a0dc26d317326fa817a536805dc4f1eb9c3f245f6797243a1",
+      "dialect": "solidcraft:container-1-v1-56",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "loss_codes": [
+        "solidcraft/cache.model-absent"
+      ],
+      "features": 1,
+      "native_features": [],
+      "bodies": 0,
+      "parameters": 1,
+      "replay_identical": true,
+      "parameter_edit_round_trip": true,
+      "source_less_generation": true
+    },
+    {
+      "filename": "design-container-v57-cached.sc",
+      "sha256": "1e5276868fd608f6f70c24729d22e979d41cb3cadfe70eae55673ea7f907d068",
+      "dialect": "solidcraft:container-1-v57",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "loss_codes": [
+        "solidcraft/cache.model-undecoded",
+        "solidcraft/document.section-undecoded",
+        "solidcraft/geometry.pcurve-omitted"
+      ],
+      "features": 3,
+      "native_features": [],
+      "bodies": 1,
+      "parameters": 0,
+      "replay_identical": true,
+      "parameter_edit_round_trip": null,
+      "source_less_generation": null
+    },
+    {
+      "filename": "design-container-v57-import.sc",
+      "sha256": "e8ef4d72a8fdbf86f68c765a1ac48c88798308c3721299277da6cc469ad64aad",
+      "dialect": "solidcraft:container-1-v57",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "loss_codes": [
+        "solidcraft/blob.payload-undecoded",
+        "solidcraft/cache.model-absent",
+        "solidcraft/history.features-undecoded"
+      ],
+      "features": 1,
+      "native_features": [
+        "import"
+      ],
+      "bodies": 0,
+      "parameters": 0,
+      "replay_identical": true,
+      "parameter_edit_round_trip": null,
+      "source_less_generation": null
+    },
+    {
+      "filename": "design-container-v57-linked.sc",
+      "sha256": "f0bc696f2a240a2204d715e016c00879232a1e91e94e2f9609a2a68be94fae7c",
+      "dialect": "solidcraft:container-1-v57",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "loss_codes": [
+        "solidcraft/cache.model-absent",
+        "solidcraft/document.section-undecoded"
+      ],
+      "features": 1,
+      "native_features": [],
+      "bodies": 0,
+      "parameters": 1,
+      "replay_identical": true,
+      "parameter_edit_round_trip": true,
+      "source_less_generation": true
+    },
+    {
+      "filename": "design-container-v57.sc",
+      "sha256": "8be201fb990b8e924e58ead03792d6903fb80ab25c21bd3c9c2658b3857225a5",
+      "dialect": "solidcraft:container-1-v57",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "loss_codes": [
+        "solidcraft/cache.model-absent"
+      ],
+      "features": 1,
+      "native_features": [],
+      "bodies": 0,
+      "parameters": 1,
+      "replay_identical": true,
+      "parameter_edit_round_trip": true,
+      "source_less_generation": true
+    },
+    {
+      "filename": "design-container-v58-newer.sc",
+      "sha256": "476a1e8ae38db28e1012cd8498a313946618a0999f93adf8205a3df5c361b527",
+      "dialect": "solidcraft:unknown",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "loss_codes": [
+        "solidcraft/cache.model-absent",
+        "solidcraft/source.dialect-unverified"
+      ],
+      "features": 1,
+      "native_features": [],
+      "bodies": 0,
+      "parameters": 1,
+      "replay_identical": true,
+      "parameter_edit_round_trip": true,
+      "source_less_generation": true
+    },
+    {
+      "filename": "design-container-v58-pending.sc",
+      "sha256": "b63e1b109ce9f4ec6574c8183e9775f8085768a45a6a8d4f17709ff453d83225",
+      "dialect": "solidcraft:container-1-v58-pending",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "loss_codes": [
+        "solidcraft/cache.model-absent",
+        "solidcraft/document.pending-change-unread"
+      ],
+      "features": 1,
+      "native_features": [],
+      "bodies": 0,
+      "parameters": 1,
+      "replay_identical": true,
+      "parameter_edit_round_trip": true,
+      "source_less_generation": true
+    },
+    {
+      "filename": "design-json-v13-legacy-tag.sc",
+      "sha256": "50eea0c7e5904d9d92ece3f54ee6bb46f5f4e20d28e253f81b023ec28325c7b4",
+      "dialect": "solidcraft:json-v1-56",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "loss_codes": [
+        "solidcraft/cache.model-absent"
+      ],
+      "features": 1,
+      "native_features": [],
+      "bodies": 0,
+      "parameters": 1,
+      "replay_identical": true,
+      "parameter_edit_round_trip": true,
+      "source_less_generation": true
+    },
+    {
+      "filename": "design-json-v57.sc",
+      "sha256": "45945139466fc49342682fe04b09fea134f3f08d9a5771bc639aa777f5c8a1f3",
+      "dialect": "solidcraft:json-v57",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "loss_codes": [
+        "solidcraft/cache.model-absent"
+      ],
+      "features": 1,
+      "native_features": [],
+      "bodies": 0,
+      "parameters": 1,
+      "replay_identical": true,
+      "parameter_edit_round_trip": true,
+      "source_less_generation": true
+    },
+    {
+      "filename": "design-json-v58-pending.sc",
+      "sha256": "a89c8fc96c5903ca4f2b62283d2b828a689c176d65762e2f3c993f231574eb4d",
+      "dialect": "solidcraft:json-v58-pending",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "loss_codes": [
+        "solidcraft/cache.model-absent",
+        "solidcraft/document.pending-change-unread"
+      ],
+      "features": 1,
+      "native_features": [],
+      "bodies": 0,
+      "parameters": 1,
+      "replay_identical": true,
+      "parameter_edit_round_trip": true,
+      "source_less_generation": true
+    }
+  ],
+  "write_assertions": {
+    "independent_native_acceptance": true,
+    "parameter_edit_round_trip": true,
+    "replay_identical": true,
+    "source_less_generated": true,
+    "unsupported_edit_rejected": true,
+    "unsupported_target_rejected": true
+  },
+  "gates": [
+    {
+      "level": "L0",
+      "passed": true,
+      "assertion": "every fixture is detected, inspected and decoded as a dialect row",
+      "blockers": []
+    },
+    {
+      "level": "L1",
+      "passed": true,
+      "assertion": "decode is deterministic and has no blocking loss",
+      "blockers": []
+    },
+    {
+      "level": "L2",
+      "passed": true,
+      "assertion": "a cached design decodes into bodies",
+      "blockers": []
+    },
+    {
+      "level": "L3",
+      "passed": true,
+      "assertion": "geometry decodes with no untyped or unconnected carrier loss",
+      "blockers": []
+    },
+    {
+      "level": "L4",
+      "passed": true,
+      "assertion": "the history decodes in order with operation semantics",
+      "blockers": []
+    },
+    {
+      "level": "L5",
+      "passed": true,
+      "assertion": "no fixture keeps a feature of an untyped family native",
+      "blockers": []
+    },
+    {
+      "level": "L6",
+      "passed": false,
+      "assertion": "constraints, expressions and every operation family are typed",
+      "blockers": [
+        "SC-02: sketch planes built from the model (midplane, two edges, axis and point, three points, tangent, along a path, perpendicular, through a point)",
+        "SC-03: variable and spline fillet radii",
+        "SC-04: operations the neutral pattern and sweep models cannot state (a mirror that joins its copies, a path pattern whose copies turn, a sweep held by a direction or by two rails, a loft whose rails stretch it, a coil on a sketch profile)",
+        "SC-05: periodic splines, fit splines with tangent handles, and the sketch pattern, slot, and arc-length relations"
+      ]
+    },
+    {
+      "level": "L7",
+      "passed": false,
+      "assertion": "components, joints and persistent names validate",
+      "blockers": [
+        "SC-07: joints snapped on geometry, joints of the pin-slot, planar, point-on-plane, point-on-line, and line-on-plane kinds, joint links, and motion studies"
+      ]
+    },
+    {
+      "level": "L8",
+      "passed": false,
+      "assertion": "appearances and application data are typed or retained with identity",
+      "blockers": [
+        "SC-06: the look of a whole component, the render setups, the metadata, the plugin data, the browser groups, and the canvas placement have no neutral record"
+      ]
+    },
+    {
+      "level": "L9",
+      "passed": false,
+      "assertion": "writes are deterministic, edits survive, targets are refused or generated, SolidCraft accepts the output",
+      "blockers": []
+    }
+  ],
+  "highest_passing_gate": "L5"
+}

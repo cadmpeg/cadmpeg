@@ -81,6 +81,11 @@ fuzz = "absent"
 fuzz_reason = "focused targets call SatCodec"
 
 [[crate]]
+id = "solidcraft"
+names = ["SolidcraftCodec"]
+fuzz = "required"
+
+[[crate]]
 id = "sldprt"
 names = ["SldprtCodec", "exact_ledger"]
 fuzz = "required"

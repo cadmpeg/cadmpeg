@@ -1,0 +1,59 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "428",
+        "crc32": "bbd02bf1",
+        "data_offset": "43",
+        "features": "1",
+        "format": "57",
+        "header_offset": "0",
+        "name": "Block",
+        "params": "1"
+      },
+      "kind": "stored",
+      "name": "document.json",
+      "role": "document",
+      "size": {
+        "kind": "exact",
+        "size": 306
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "487",
+        "crc32": "0af5c4ec",
+        "data_offset": "393",
+        "header_offset": "349"
+      },
+      "kind": "stored",
+      "name": "container.json",
+      "role": "manifest",
+      "size": {
+        "kind": "exact",
+        "size": 35
+      }
+    }
+  ],
+  "identity": {
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {
+          "container_format": "solidcraft-container/1",
+          "document_format": "solidcraft/57"
+        },
+        "dialect": "solidcraft:container-1-v57"
+      }
+    },
+    "kind": "classified"
+  },
+  "losses": [],
+  "notes": [
+    "design document with 1 features and 1 parameters"
+  ]
+}

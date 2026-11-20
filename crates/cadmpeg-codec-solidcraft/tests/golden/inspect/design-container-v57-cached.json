@@ -1,0 +1,83 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "5959",
+        "crc32": "fab7b6bd",
+        "data_offset": "43",
+        "features": "3",
+        "format": "57",
+        "header_offset": "0",
+        "name": "Probe",
+        "params": "0"
+      },
+      "expanded": 749,
+      "kind": "deflate",
+      "name": "document.json",
+      "role": "document",
+      "stored": 356
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6018",
+        "crc32": "0af5c4ec",
+        "data_offset": "443",
+        "header_offset": "399"
+      },
+      "kind": "stored",
+      "name": "container.json",
+      "role": "manifest",
+      "size": {
+        "kind": "exact",
+        "size": 35
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6078",
+        "crc32": "3ec4cb94",
+        "data_offset": "524",
+        "header_offset": "478"
+      },
+      "expanded": 3293,
+      "kind": "deflate",
+      "name": "cache/model.json",
+      "role": "cache-cell",
+      "stored": 922
+    },
+    {
+      "attributes": {
+        "central_header_offset": "6140",
+        "crc32": "78248c0d",
+        "data_offset": "1492",
+        "header_offset": "1446"
+      },
+      "expanded": 60657,
+      "kind": "deflate",
+      "name": "cache/bodies.bin",
+      "role": "brep",
+      "stored": 4467
+    }
+  ],
+  "identity": {
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {
+          "container_format": "solidcraft-container/1",
+          "document_format": "solidcraft/57"
+        },
+        "dialect": "solidcraft:container-1-v57"
+      }
+    },
+    "kind": "classified"
+  },
+  "losses": [],
+  "notes": [
+    "design document with 3 features and 0 parameters"
+  ]
+}

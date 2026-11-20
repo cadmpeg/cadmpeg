@@ -1,0 +1,40 @@
+{
+  "container_kind": "flat",
+  "entries": [
+    {
+      "attributes": {
+        "features": "1",
+        "format": "58",
+        "name": "Block",
+        "params": "1"
+      },
+      "kind": "stored",
+      "name": "document",
+      "role": "document",
+      "size": {
+        "kind": "exact",
+        "size": 881
+      }
+    }
+  ],
+  "identity": {
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {
+          "document_format": "solidcraft/58",
+          "format_pending": "bounding-solid-side-margins,joint-lateral-offsets,move-rotate-about-edge,render-coat-flakes,sketch-3d-constraints,sketch-3d-dimensions,sketch-3d-relations,sketch-reference-placements,step-import-solid-items,surface-sweep-exact-spline-path,whole-profile-holes-share-a-curve"
+        },
+        "dialect": "solidcraft:json-v58-pending"
+      }
+    },
+    "kind": "classified"
+  },
+  "losses": [],
+  "notes": [
+    "design document with 1 features and 1 parameters"
+  ]
+}

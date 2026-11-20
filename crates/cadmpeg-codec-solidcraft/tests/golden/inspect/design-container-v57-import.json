@@ -1,0 +1,76 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "551",
+        "crc32": "cde345ff",
+        "data_offset": "105",
+        "header_offset": "0",
+        "referenced_by": "step_blob",
+        "sha256": "verified"
+      },
+      "kind": "stored",
+      "name": "blobs/26bc00aab228090c3200c04badb0b00620df848f2fef515cd61dff8a07e85a7c.step",
+      "role": "model-data",
+      "size": {
+        "kind": "exact",
+        "size": 62
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "672",
+        "crc32": "faf48ba2",
+        "data_offset": "210",
+        "features": "1",
+        "format": "57",
+        "header_offset": "167",
+        "name": "Imported",
+        "params": "0"
+      },
+      "kind": "stored",
+      "name": "document.json",
+      "role": "document",
+      "size": {
+        "kind": "exact",
+        "size": 262
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "731",
+        "crc32": "0af5c4ec",
+        "data_offset": "516",
+        "header_offset": "472"
+      },
+      "kind": "stored",
+      "name": "container.json",
+      "role": "manifest",
+      "size": {
+        "kind": "exact",
+        "size": 35
+      }
+    }
+  ],
+  "identity": {
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {
+          "container_format": "solidcraft-container/1",
+          "document_format": "solidcraft/57"
+        },
+        "dialect": "solidcraft:container-1-v57"
+      }
+    },
+    "kind": "classified"
+  },
+  "losses": [],
+  "notes": [
+    "design document with 1 features and 0 parameters"
+  ]
+}

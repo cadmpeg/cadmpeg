@@ -34,6 +34,7 @@ default = [
   "sat",
   "pvz",
   "usd",
+  "solidcraft",
 ]
 #
 # Each id forwards to the same feature of `cadmpeg-registry`, which owns the
@@ -52,6 +53,7 @@ iges = ["cadmpeg-registry/iges", "dep:cadmpeg-codec-iges"]
 sat = ["cadmpeg-registry/sat"]
 pvz = ["cadmpeg-registry/pvz"]
 usd = ["cadmpeg-registry/usd"]
+solidcraft = ["cadmpeg-registry/solidcraft"]
 
 [dependencies]
 cadmpeg-core.workspace = true

@@ -48,7 +48,8 @@ pub(crate) enum FormatKind {
         feature = "iges",
         feature = "sat",
         feature = "pvz",
-        feature = "usd"
+        feature = "usd",
+        feature = "solidcraft"
     ))]
     Native(NativeDescriptor),
 }
@@ -63,7 +64,8 @@ pub(crate) enum OutputPhysics {
         feature = "fcstd",
         feature = "f3d",
         feature = "sldprt",
-        feature = "rhino"
+        feature = "rhino",
+        feature = "solidcraft"
     ))]
     Binary,
 }
@@ -118,7 +120,8 @@ impl FormatDescriptor {
                 feature = "iges",
                 feature = "sat",
                 feature = "pvz",
-                feature = "usd"
+                feature = "usd",
+                feature = "solidcraft"
             ))]
             FormatKind::Native(native) => native.id,
         }
@@ -143,7 +146,8 @@ impl FormatDescriptor {
                 feature = "iges",
                 feature = "sat",
                 feature = "pvz",
-                feature = "usd"
+                feature = "usd",
+                feature = "solidcraft"
             ))]
             FormatKind::Native(native) => native.input_extensions,
         }
@@ -165,7 +169,8 @@ impl FormatDescriptor {
                 feature = "iges",
                 feature = "sat",
                 feature = "pvz",
-                feature = "usd"
+                feature = "usd",
+                feature = "solidcraft"
             ))]
             FormatKind::Native(native) => ForcedInput::Codec(native),
         }
@@ -178,7 +183,8 @@ impl FormatDescriptor {
     feature = "creo",
     feature = "nx",
     feature = "sat",
-    feature = "pvz"
+    feature = "pvz",
+    feature = "solidcraft"
 ))]
 macro_rules! reader {
     ($name:ident, $id:expr, $input_exts:expr, $decoder:expr) => {
@@ -199,7 +205,8 @@ macro_rules! reader {
     feature = "rhino",
     feature = "step",
     feature = "iges",
-    feature = "usd"
+    feature = "usd",
+    feature = "solidcraft"
 ))]
 macro_rules! writable {
     ($name:ident, $output:ident, $id:expr, $input_exts:expr, $decoder:expr, $output_exts:expr, $physics:expr, $encoder:expr) => {
@@ -337,6 +344,17 @@ writable!(
     || Box::new(cadmpeg_codec_usd::UsdCodec),
     &[("usdz", "usdz"), ("usdc", "usdc")]
 );
+#[cfg(feature = "solidcraft")]
+writable!(
+    SOLIDCRAFT,
+    SOLIDCRAFT_OUTPUT,
+    FormatId::new("solidcraft"),
+    &["sc", "solidcraft"],
+    || Box::new(cadmpeg_codec_solidcraft::SolidcraftCodec),
+    &["solidcraft", "sc"],
+    OutputPhysics::Binary,
+    || Box::new(cadmpeg_codec_solidcraft::SolidcraftCodec)
+);
 static CADIR_OUTPUT: OutputDescriptor = OutputDescriptor {
     extensions: &["cadir", "json"],
     extension_dialects: &[],
@@ -376,6 +394,8 @@ pub(crate) static FORMAT_DESCRIPTORS: &[&FormatDescriptor] = &[
     &PVZ,
     #[cfg(feature = "usd")]
     &USD,
+    #[cfg(feature = "solidcraft")]
+    &SOLIDCRAFT,
     &CADIR,
 ];
 
@@ -399,6 +419,8 @@ impl Format {
             Self::Iges => (&IGES, &IGES_OUTPUT),
             #[cfg(feature = "usd")]
             Self::Usd => (&USD, &USD_OUTPUT),
+            #[cfg(feature = "solidcraft")]
+            Self::Solidcraft => (&SOLIDCRAFT, &SOLIDCRAFT_OUTPUT),
         }
     }
 }

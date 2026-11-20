@@ -1,0 +1,70 @@
+{
+  "container_kind": "zip",
+  "entries": [
+    {
+      "attributes": {
+        "central_header_offset": "526",
+        "crc32": "bdf76a3c",
+        "data_offset": "43",
+        "features": "1",
+        "format": "57",
+        "header_offset": "0",
+        "name": "Block",
+        "params": "1"
+      },
+      "kind": "stored",
+      "name": "document.json",
+      "role": "document",
+      "size": {
+        "kind": "exact",
+        "size": 404
+      }
+    },
+    {
+      "attributes": {
+        "central_header_offset": "585",
+        "crc32": "0af5c4ec",
+        "data_offset": "491",
+        "header_offset": "447"
+      },
+      "kind": "stored",
+      "name": "container.json",
+      "role": "manifest",
+      "size": {
+        "kind": "exact",
+        "size": 35
+      }
+    },
+    {
+      "attributes": {
+        "component": "3"
+      },
+      "kind": "none",
+      "name": "parts/arm.sc",
+      "role": "external-reference",
+      "size": {
+        "kind": "unreported"
+      }
+    }
+  ],
+  "identity": {
+    "dialects": {
+      "extra": [],
+      "primary": {
+        "admission": {
+          "kind": "admitted"
+        },
+        "declared": {
+          "container_format": "solidcraft-container/1",
+          "document_format": "solidcraft/57"
+        },
+        "dialect": "solidcraft:container-1-v57"
+      }
+    },
+    "kind": "classified"
+  },
+  "losses": [],
+  "notes": [
+    "design document with 1 features and 1 parameters"
+  ]
+}

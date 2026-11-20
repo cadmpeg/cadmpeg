@@ -91,6 +91,7 @@ Each format carries one support level from the ladder; `cadmpeg inspect <file>` 
 - **Creo Parametric `.prt`** — L1 ([profile](docs/format-support.md#creo-parametric-prt))
 - **Creo View `.pvz`** — L3 ([profile](docs/format-support.md#creo-view-pvz))
 - **OpenUSD layers** — L2 ([profile](docs/format-support.md#openusd-layers))
+- **SolidCraft `.sc` and `.solidcraft`** — L5 ([profile](docs/format-support.md#solidcraft-sc-and-solidcraft))
 - **STEP Part 21** — L8 ([profile](docs/format-support.md#step-part-21))
 
 <!-- /generated: capability-lines -->
