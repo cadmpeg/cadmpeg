@@ -1052,7 +1052,8 @@ pub(crate) fn consolidated_compact_edge_endpoints_from_records(
                 }
                 AllocationReferenceEncoding::Selector2
                 | AllocationReferenceEncoding::TaggedU8
-                | AllocationReferenceEncoding::TaggedU16 => return None,
+                | AllocationReferenceEncoding::TaggedU16
+                | AllocationReferenceEncoding::TaggedU24 => return None,
             };
             let target_record = self.records.get(target)?;
             if target_record.family() != ConsolidatedFamily::B {

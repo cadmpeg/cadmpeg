@@ -401,6 +401,10 @@ struct DesignProjectionGaps {
     partially_resolved_edge_members: usize,
     unresolved_edge_selections: usize,
     unrepaired_lost_edge_references: usize,
+    unplaced_linked_scopes:
+        Vec<crate::design::feature_project::reverse_normal::UnplacedLinkedScope>,
+    record_ordered_linked_scopes:
+        Vec<crate::design::feature_project::reverse_normal::RecordOrderedLinkedScope>,
 }
 
 /// Returns whether a face selection supplies the operation's neutral faces.
@@ -1469,7 +1473,28 @@ fn design_projection_gaps(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => None,
     };
+    let unplaced_linked_scopes = authored_scopes
+        .as_ref()
+        .map(|ordinals| {
+            crate::design::feature_project::reverse_normal::unplaced_linked_scopes(
+                &native.design_parameter_scopes,
+                ordinals,
+            )
+        })
+        .unwrap_or_default();
+    let record_ordered_linked_scopes = authored_scopes
+        .as_ref()
+        .map(|ordinals| {
+            crate::design::feature_project::reverse_normal::record_ordered_linked_scopes(
+                &native.design_parameter_scopes,
+                &native.design_feature_timelines,
+                ordinals,
+            )
+        })
+        .unwrap_or_default();
     let mut gaps = DesignProjectionGaps {
+        unplaced_linked_scopes,
+        record_ordered_linked_scopes,
         assumed_reference_image_flags: native
             .design_canvas_images
             .iter()
@@ -2713,6 +2738,37 @@ fn report_design_projection_gaps(
             "{uninterpreted_scopes} native feature scope(s) retain their source envelope without interpreted specialized operation data."
         ),
     )?;
+    for unplaced in &gaps.unplaced_linked_scopes {
+        let (code, reason) = if unplaced.shared {
+            (
+                F3dLossCode::FeatureReverseNormalLinkShared,
+                "several timeline items carry that link",
+            )
+        } else {
+            (
+                F3dLossCode::FeatureReverseNormalLinkUnplaced,
+                "no timeline item carries that link",
+            )
+        };
+        push(
+            code,
+            1,
+            format_args!(
+                "Reverse Normal scope {} with link {} takes no timeline position: {reason}.",
+                unplaced.scope_id, unplaced.link
+            ),
+        )?;
+    }
+    for ordered in &gaps.record_ordered_linked_scopes {
+        push(
+            F3dLossCode::FeatureReverseNormalLinkOrderAssumed,
+            1,
+            format_args!(
+                "Reverse Normal scope {} with link {} takes its timeline position by record order among the linked scopes of its timeline item.",
+                ordered.scope_id, ordered.link
+            ),
+        )?;
+    }
     push(
         F3dLossCode::FeatureScopeUnprojected,
         gaps.unprojected_feature_scopes,
@@ -4124,6 +4180,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 crate::tree::file_root_id(),
                 cadmpeg_ir::products::ExternalDocument::default(),
             )?;
+            crate::design_v11::project(ctx, &mut decoded.ir, &mut decoded.body.losses)?;
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
                 ctx,
@@ -4592,6 +4649,11 @@ fn project_mesh_bodies(
     report
         .losses
         .extend(crate::design::decode::mesh::mesh_split_stream_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
+        .extend(crate::design::decode::mesh::mesh_component_flag_losses(
             &native.design_mesh_features,
         ));
     report

@@ -29,9 +29,8 @@ use super::{
     records::native_stream,
 };
 use crate::native::F3dNative;
-use crate::writer::generate::native_geometry::{
-    native_support_pcurve, pcurve_support_geometry, pcurve_support_surface,
-};
+use crate::writer::generate::native_geometry::native_support_pcurve;
+use crate::writer::generate::pcurve_supports::PcurveSupports;
 use crate::writer::primitives::normalized_face_sense_to_native;
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 
@@ -3130,17 +3129,15 @@ pub(super) fn validate_pcurve_edits(
             "F3D pcurve regeneration requires the unchanged pcurve-id set".into(),
         ));
     }
+    let baseline_supports = PcurveSupports::new(baseline_geometry);
+    let target_supports = PcurveSupports::new(target_geometry);
     let mut edits = BTreeMap::new();
     for (id, before) in baseline {
         let after = target[id];
-        let before_native = native_support_pcurve(
-            pcurve_support_geometry(baseline_geometry, &before.id)?,
-            &before.geometry,
-        )?;
-        let after_native = native_support_pcurve(
-            pcurve_support_geometry(target_geometry, &after.id)?,
-            &after.geometry,
-        )?;
+        let before_native =
+            native_support_pcurve(baseline_supports.geometry(&before.id)?, &before.geometry)?;
+        let after_native =
+            native_support_pcurve(target_supports.geometry(&after.id)?, &after.geometry)?;
         if before == after && before_native == after_native {
             continue;
         }
@@ -3181,9 +3178,7 @@ pub(super) fn validate_pcurve_edits(
         let uv_offset = (before.uv_offset() != after.uv_offset())
             .then_some(after.uv_offset())
             .flatten();
-        let support = pcurve_support_surface(target_geometry, &after.id)?
-            .as_str()
-            .to_owned();
+        let support = target_supports.surface(&after.id)?.as_str().to_owned();
         let edit = match &before.metadata {
             cadmpeg_ir::geometry::pcurve::PcurveMetadata::General { form: metadata }
                 if metadata.wrapper_reversed.is_none() && metadata.fit_tolerance().is_none() =>
