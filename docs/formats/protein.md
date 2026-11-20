@@ -140,7 +140,7 @@ Open item DR-905 in [`f3d-open-items.md`](f3d-open-items.md) holds the text of t
 
 ## 9. Package of a Fusion Base Feature design
 
-The Protein package of a Fusion Base Feature design holds one physical material, its two aspects, and one appearance pair per appearance that the design assigns. With one appearance, the package has five instance records:
+The Protein package of a Fusion Base Feature design holds one physical material, its two aspects, and one appearance pair per appearance that the design assigns. The tables of this section give the first form of the appearance pair, whose twin has base asset identifier `PrismOpaque` and whose colour is a field. The second form, in which the twin is a copy of the appearance aspect, and what selects it are DR-906. With one appearance, the package has five instance records:
 
 | Instance | Schema | Category | Base asset identifier | `AssetLibID` | Definition asset identifier |
 |---|---|---|---|---|---|
@@ -154,7 +154,7 @@ The instance identifier of each instance except the twin is an uppercase GUID of
 
 The Design stream joins to the package through instance identifiers, written there as UTF-16 text. The Protein asset manager (Design record 1, [`f3d.md`](f3d.md) §3.1) stores the physical-material identifier and the identifier of each appearance, and names the package by its member basename `ProteinAsset.<uuid>.protein`, with `<uuid>` a lowercase GUID. The component aggregate stores the physical-material identifier. Each body-reference record stores the physical-material identifier, the identifier of the body's appearance, and the identifier of the appearance of each face that it assigns. The aspects and the twins occur only in the package. The basename GUID, the folder GUID `{F}`, and the package identifier `{P}` are three distinct GUIDs.
 
-An appearance and its twin carry one colour `(r, g, b, 1)`: `generic_diffuse` of the appearance and `opaque_albedo` of the twin. Each channel is a value `n / 255` rounded to binary32 and widened to binary64. The definition of the twin has the asset identifier `Opaque(R,G,B)`, the decimal 8-bit channel values. The appearance of the body has the colour `(246, 246, 243)`. In a package whose body appearance has the second form of open item DR-906, an appearance that a per-face assignment adds, and its twin, have the colour of that face. Their other values are the values in the tables of the body's appearance and twin below.
+An appearance and its twin carry one colour `(r, g, b, 1)`: `generic_diffuse` of the appearance and `opaque_albedo` of the twin. Each channel is a value `n / 255` rounded to binary32 and widened to binary64. The definition of the twin has the asset identifier `Opaque(R,G,B)`, the decimal 8-bit channel values. In the first form, the appearance of the body has the colour `(246, 246, 243)`. In a package whose body appearance has the second form of open item DR-906, an appearance that a per-face assignment adds, and its twin, have the colour of that face. Their other values are the values in the tables of the body's appearance and twin below.
 
 The table-of-contents entry of each instance names one definition record, with these values. Format version `2` stores category, group, and description; version `1` stores group and description (§5).
 
