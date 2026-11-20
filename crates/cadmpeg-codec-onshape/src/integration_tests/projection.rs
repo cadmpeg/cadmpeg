@@ -1919,6 +1919,39 @@ fn stored_open_thin_side_follows_the_stored_line_direction_and_flip() {
 }
 
 #[test]
+fn reversed_open_thin_interval_keeps_its_side_and_reports_the_open_convention() {
+    for reversed_interval in [false, true] {
+        let bytes = crate::test_support::review::edit(
+            &stored_thin(true, false, false),
+            |path, response| {
+                if path.ends_with("features.json") && reversed_interval {
+                    let line = &mut response["features"][0]["entities"][0];
+                    let start = line["startParam"].clone();
+                    line["startParam"] = line["endParam"].clone();
+                    line["endParam"] = start;
+                }
+            },
+        );
+        let result = crate::test_support::review::decode(&bytes);
+        let wire = crate::test_support::review::wire(&result);
+        assert_eq!(
+            wire["design"]["features"][1]["definition"]["operation"]["value"]["output"]["body"]
+                ["thickness"]["value"]["side"]["kind"],
+            "right",
+            "{:?}",
+            result.report().losses
+        );
+        let named = result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| format!("{loss:?}").contains("ONSHAPE-007"));
+        assert_eq!(named, reversed_interval, "{:?}", result.report().losses);
+        crate::test_support::review::validate(result);
+    }
+}
+
+#[test]
 fn absent_stored_thin_side_or_direction_refuses_the_wall() {
     for missing in [
         "midplane",

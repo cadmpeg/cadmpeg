@@ -590,7 +590,7 @@ pub(super) fn read(
                     && feature.get("featureType").and_then(Value::as_str) == Some("extrude")
                 {
                     thin::owner(&model.ir)?;
-                    let design = thin::feature(
+                    let (design, assumed) = thin::feature(
                         feature,
                         &definition,
                         &model.ir.model,
@@ -599,6 +599,9 @@ pub(super) fn read(
                         &unresolved_variables,
                     )?;
                     push(&mut model.ir.design.features, design)?;
+                    if let Some(assumed) = assumed {
+                        report.push_coded(name, OnshapeLossCode::ThinNotSupported, assumed);
+                    }
                     report.push_coded(name, OnshapeLossCode::ThinModelNotSupported,
                         "model construction retains the native thin operation; design construction carries the proved wall operands");
                     return Ok(self::definition("native", json!({"kind":"Onshape thin extrusion", "parameters":{}})));
@@ -730,7 +733,10 @@ pub(super) fn read(
         if let Err(reason) = push(&mut model.ir.model.features, row) {
             model.ir.design.features.truncate(design_length);
             let mut tail = report.notes.split_off(note_start);
-            tail.retain(|note| !OnshapeLossCode::ThinModelNotSupported.matches(note));
+            tail.retain(|note| {
+                !OnshapeLossCode::ThinModelNotSupported.matches(note)
+                    && !OnshapeLossCode::ThinNotSupported.matches(note)
+            });
             report.notes.extend(tail);
             report.push_coded(
                 name,

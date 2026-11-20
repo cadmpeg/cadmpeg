@@ -70,4 +70,4 @@ Need: A stored one-sided thin extrude over a line with `endParam < startParam`, 
 
 Conflict: Reversing the parameter interval reverses the profile tangent relative to the stored carrier direction.
 
-Note: The decoder retains its current side mapping until stored wall geometry establishes the source convention.
+Note: The decoder retains its current side mapping until stored wall geometry establishes the source convention. A one-sided thin wall over a line with `endParam < startParam` reports `extrude.thin-not-supported` naming ONSHAPE-007 and the side assumed.

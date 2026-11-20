@@ -53,7 +53,7 @@ pub(super) fn feature(
     inputs: &topology::Inputs<'_>,
     ordinal: usize,
     unresolved: &BTreeSet<String>,
-) -> Mapping<Value> {
+) -> Mapping<(Value, Option<String>)> {
     if features::value(source, "domain") != Some("MODEL") {
         return Err("thin construction has no stored MODEL domain".into());
     }
@@ -80,6 +80,7 @@ pub(super) fn feature(
     }
     let mut closed = false;
     let mut clockwise = false;
+    let mut reversed_interval = false;
     let mut directed = BTreeMap::new();
     for source_query in features::queries(source, "wallShape")? {
         if source_query
@@ -127,12 +128,12 @@ pub(super) fn feature(
             "BTCurveGeometryLine-117" => {
                 let dx = super::coordinate(geometry, "dirX")?;
                 let dy = super::coordinate(geometry, "dirY")?;
-                if dx.hypot(dy) == 0.0
-                    || super::coordinate(entity, "startParam")?
-                        == super::coordinate(entity, "endParam")?
-                {
+                let start = super::coordinate(entity, "startParam")?;
+                let end = super::coordinate(entity, "endParam")?;
+                if dx.hypot(dy) == 0.0 || start == end {
                     return Err("stored thin line direction is degenerate".into());
                 }
+                reversed_interval |= end < start;
             }
             "BTCurveGeometryCircle-115" | "BTCurveGeometryEllipse-1189"
                 if entity.get("btType").and_then(Value::as_str) == Some("BTMSketchCurve-4") =>
@@ -155,6 +156,7 @@ pub(super) fn feature(
         Ok(value)
     };
     let literal = |value| json!({"kind":"literal","value":value});
+    let mut assumed = None;
     let thickness = if midplane {
         let value = length("thickness")?;
         if value == 0.0 {
@@ -188,6 +190,11 @@ pub(super) fn feature(
                 (false, false) => "right",
                 (false, true) => "left",
             };
+            if !closed && reversed_interval {
+                assumed = Some(format!(
+                    "the thin wall's {side} side over a line with endParam < startParam follows the stored line direction; the source convention for a reversed interval is unresolved (ONSHAPE-007)"
+                ));
+            }
             json!({"kind":"one_side","value":{"value":literal(value),"side":{"kind":side}}})
         } else if closed {
             let (outside, inside) = if flip {
@@ -224,12 +231,13 @@ pub(super) fn feature(
         .iter()
         .map(|entity| json!({"target":{"kind":"sketch_entity","value":entity}}))
         .collect();
-    Ok(
+    Ok((
         json!({"id":id("feature",text(source,"featureId")?),"suppressed":{"kind":"literal","value":false},"definition":{"operation":{"kind":"extrude","value":{
         "profile":{"at":{"kind":"input"},"picks":{"kind":"named","value":picks}},
         "direction":{"kind":"profile_normal","reversed":{"kind":"literal","value":reversed}},"origin":{"kind":"profile_plane"},"span":span,
         "output":{"body":{"kind":"thin","thickness":thickness},"boolean":boolean},"native_options":{},"source_settings":{}}}}}),
-    )
+        assumed,
+    ))
 }
 
 pub(super) fn install_scope(ir: &mut CadIr, report: &mut super::Report) -> Mapping<()> {
