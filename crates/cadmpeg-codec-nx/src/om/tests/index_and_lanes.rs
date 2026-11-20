@@ -72,7 +72,11 @@ const EPS_SHIFTED_SCALAR_ROUNDING: f64 = 2.0e-12;
 
 fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<crate::om::OperationLabel<'_>> {
     {
-        crate::om::operation_labels(bytes, base_offset)
+        crate::om::operation_labels(
+            bytes,
+            base_offset,
+            &crate::om::validated_operation_headers(bytes, base_offset),
+        )
     }
 }
 
@@ -82,7 +86,12 @@ fn operation_records_with_labels_and_ordinals<'a>(
     labels: &[crate::om::OperationLabel<'a>],
 ) -> Vec<(usize, crate::om::operation_record::OperationRecord<'a>)> {
     {
-        crate::om::operation_records_with_labels_and_ordinals(bytes, base_offset, labels)
+        crate::om::operation_records_with_labels_and_ordinals(
+            bytes,
+            base_offset,
+            &crate::om::validated_operation_headers(bytes, base_offset),
+            labels,
+        )
     }
 }
 

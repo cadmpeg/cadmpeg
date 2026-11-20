@@ -17,8 +17,8 @@ use super::{collect_documents, golden_files, hand_written_documents, states_nati
 
 #[test]
 fn every_schema_position_has_one_spelling() {
-    let schema =
-        serde_json::to_value(cadmpeg_ir::cadir_json_schema()).expect("the schema serializes");
+    let schema: Value =
+        serde_json::from_str(cadmpeg_ir::CADIR_JSON_SCHEMA).expect("the schema is JSON");
     let report = cadmpeg_test_support::schema_sweep::sweep(&schema, &documents())
         .expect("the empty document serializes");
     println!(

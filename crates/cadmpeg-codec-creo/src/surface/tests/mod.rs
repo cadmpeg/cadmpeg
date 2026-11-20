@@ -79,7 +79,10 @@ fn positional_spline_replay_prototype(
     row: &super::SurfaceRow,
 ) -> Option<super::SurfacePrototypeRecord> {
     with_decode_ctx(payload, |ctx| {
-        super::positional_spline_replay_prototype(ctx, payload, rows, row)
+        let mut replays = super::SplineReplayPrototypes::default();
+        let prototype =
+            super::positional_spline_replay_prototype(ctx, payload, rows, row, &mut replays)?;
+        Ok(prototype.cloned())
     })
 }
 
@@ -91,9 +94,7 @@ fn positional_spline_replay_body_end(
     body_limit: usize,
     cache: &crate::scalar::ScalarCache,
 ) -> Option<usize> {
-    with_decode_ctx(payload, |ctx| {
-        super::positional_spline_replay_body_end(
-            ctx, payload, rows, row, body_start, body_limit, cache,
-        )
-    })
+    let prototype = positional_spline_replay_prototype(payload, rows, row)?;
+    super::positional_spline_replay_body_end(payload, &prototype, body_start, body_limit, cache)
+        .expect("run the surface fixture")
 }

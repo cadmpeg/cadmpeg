@@ -7,9 +7,12 @@ relation, such as a gear ratio. The check simulates the scene as authored and
 as cadmpeg writes it, verifies the relation in both runs, and verifies that
 the two runs agree. It is a manual check: it needs a simulator, not CI.
 
-Run it with an interpreter that has the engine installed, on the CPU:
+Run it with an interpreter that has the engine installed, on the CPU. The
+PhysX engine runs with these versions; ovphysx 0.8 and ovstage 0.4 changed the
+stage population API that the script calls:
 
-    pip install ovphysx physx-usd-schemas   # --engine physx
+    pip install ovphysx==0.7.0.74035321 ovstage==0.3.0.1791986420 \
+        physx-usd-schemas==25.11.2.72696984   # --engine physx
     pip install "newton[importers]"         # --engine newton
 
     python scripts/check-usd-simulation.py --engine physx
@@ -189,7 +192,7 @@ def main():
             source = SCENES / scene
             written = pathlib.Path(scratch) / scene
             subprocess.run(
-                [args.cadmpeg, "convert", str(source), "--force", "--allow-empty", "-o", str(written)],
+                [args.cadmpeg, "convert", str(source), "--force", "-o", str(written)],
                 check=True,
                 capture_output=True,
             )

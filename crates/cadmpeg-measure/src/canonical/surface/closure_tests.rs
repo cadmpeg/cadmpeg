@@ -42,3 +42,23 @@ fn an_open_seam_or_an_open_cap_keeps_the_domain_open() {
         assert!(!chart.closed_domain(1.0e-6));
     }
 }
+
+#[test]
+fn a_clamped_seam_makes_its_parameter_periodic() {
+    let chart_of = |gap| {
+        let surface = bipyramid(gap, false);
+        NurbsChart::new(&surface, Placement::identity())
+            .unwrap()
+            .periods
+    };
+    assert_eq!(chart_of(0.0), [None, Some(3.0)]);
+    assert_eq!(chart_of(0.125), [None, None]);
+}
+
+#[test]
+fn a_parameter_past_a_seam_moves_into_the_knot_domain() {
+    let surface = bipyramid(0.0, false);
+    let chart = NurbsChart::new(&surface, Placement::identity()).unwrap();
+    assert_eq!(chart.in_domain([1.0, 3.5]), [1.0, 0.5]);
+    assert_eq!(chart.in_domain([1.0, -0.5]), [1.0, 2.5]);
+}

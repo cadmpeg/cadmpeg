@@ -491,7 +491,7 @@ fn encode_type_186_uses_ordered_region_shell_roles() {
         &cadmpeg_core::decode::test_support::service_decode_context(),
         crate::writer::validate_brep_topology(
             &cadmpeg_core::decode::test_support::service_decode_context(),
-            &ir,
+            &crate::writer::records::TopologyIndex::new(&ir),
             crate::IgesVersion::V5_3,
         )
         .unwrap(),

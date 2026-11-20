@@ -128,6 +128,7 @@ mod parasolid;
 mod pmi;
 mod records;
 mod resolved_features;
+mod rollback;
 mod swift;
 mod tessellation;
 mod writer;

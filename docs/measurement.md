@@ -258,7 +258,8 @@ each other. Winding numbers use each loop's parameter-plane polyline,
 sampled until the deviation of each chord midpoint is at most `1e-3` of the
 loop's parameter-plane box diagonal.
 
-On a cylinder, cone, or extrusion with a periodic directrix, a loop with zero
+On a cylinder, cone, extrusion with a periodic directrix, or NURBS carrier
+periodic in `u` alone, a loop with zero
 net shift in `u` is contractible, and a loop that goes around the period once
 is not. With `m` loops that go around the period:
 
@@ -284,7 +285,15 @@ On a NURBS carrier's finite parameter domain:
 | `FaceLoops::Classified` | `nesting` by the planar rule in the parameter plane. |
 | `FaceLoops::Unspecified` | `declared_orientation`: the region lies on the left of every loop, after each loop is reversed when the declared normal is reversed. The region reaches the domain's natural edges when a point just left of a loop has a total winding number of zero. |
 
-Loops on a periodic NURBS domain are `region.domain-unsupported`.
+A NURBS parameter is periodic when the surface states it periodic, or when
+its knots are clamped and its first and last pole columns are one boundary
+curve: their corresponding weights are equal and their paired control points
+lie within `1e-6` of the control net's diagonal of each other. A periodic
+parameter repeats with the period of its knot domain, and a parameter outside
+that domain is evaluated at its value moved by whole periods into it. Loops
+on a NURBS carrier periodic in `u` alone, and not curve-bounded with an
+implicit outer boundary, follow the cylinder rule above. Loops on another
+periodic NURBS domain are `region.domain-unsupported`.
 
 On a sphere, a ring torus or a selected spindle-torus sheet both regions
 that the loops bound are bounded, so the loops do not choose a side:

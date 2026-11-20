@@ -34,6 +34,8 @@ pub(crate) struct Owners<'ir> {
     edge_coedges: HashMap<&'ir str, Vec<&'ir Coedge>>,
     /// Edges of each body, sorted.
     body_edges: BTreeMap<&'ir str, BTreeSet<&'ir str>>,
+    /// The first body in ID order that owns each edge.
+    edge_owner: HashMap<&'ir str, &'ir str>,
     /// Vertices of each body, sorted.
     body_vertices: BTreeMap<&'ir str, BTreeSet<&'ir str>>,
     /// Faces of each body, sorted.
@@ -65,6 +67,7 @@ impl<'ir> Owners<'ir> {
             children: geometry.child_lists(),
             edge_coedges: HashMap::new(),
             body_edges: BTreeMap::new(),
+            edge_owner: HashMap::new(),
             body_vertices: BTreeMap::new(),
             body_faces: BTreeMap::new(),
         };
@@ -118,6 +121,11 @@ impl<'ir> Owners<'ir> {
             }
             if let Some(set) = owners.body_vertices.get_mut(body) {
                 set.extend(vertices);
+            }
+        }
+        for (body, edges) in &owners.body_edges {
+            for edge in edges {
+                owners.edge_owner.entry(*edge).or_insert(*body);
             }
         }
         owners
@@ -239,10 +247,7 @@ impl<'ir> Owners<'ir> {
 
     /// The body an edge belongs to, the first in ID order.
     pub(crate) fn edge_body(&self, edge: &str) -> Option<&'ir str> {
-        self.body_edges
-            .iter()
-            .find(|(_, edges)| edges.contains(edge))
-            .map(|(body, _)| *body)
+        self.edge_owner.get(edge).copied()
     }
 
     pub(crate) fn body_faces(&self, body: &str) -> impl Iterator<Item = &'ir str> + '_ {
@@ -276,5 +281,57 @@ impl<'ir> Owners<'ir> {
             .flatten()
             .filter_map(|vertex| self.vertex_position(vertex))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::ids::{BodyId, EdgeId, RegionId, ShellId};
+    use cadmpeg_ir::topology::Shell;
+
+    use super::Owners;
+    use crate::test_support::builders::cuboid;
+
+    /// An edge that two bodies own belongs to the body with the smaller ID,
+    /// also when that body comes later in the arena.
+    #[test]
+    fn shared_edge_belongs_to_first_body_in_id_order() {
+        let mut ir = cuboid([0.0; 3], [1.0; 3]);
+        let later = BodyId::mint("test:model:body#0002").expect("body id");
+        let first = BodyId::mint("test:model:body#0001").expect("body id");
+        ir.geometry.bodies[0].id = later.clone();
+        ir.geometry.regions[0].body = later.clone();
+
+        let shell = ShellId::mint("test:model:shell#0001").expect("shell id");
+        let region = RegionId::mint("test:model:region#0001").expect("region id");
+        let edges: Vec<EdgeId> = ir
+            .geometry
+            .edges
+            .iter()
+            .map(|edge| edge.id.clone())
+            .collect();
+        ir.geometry.shells.push(Shell::with_members(
+            shell.clone(),
+            region.clone(),
+            edges.clone(),
+            Vec::new(),
+        ));
+        let mut first_region = ir.geometry.regions[0].clone();
+        first_region.id = region;
+        first_region.body = first.clone();
+        first_region.shells = vec![shell];
+        ir.geometry.regions.push(first_region);
+        let mut first_body = ir.geometry.bodies[0].clone();
+        first_body.id = first.clone();
+        ir.geometry.bodies.push(first_body);
+
+        let owners = Owners::new(&ir);
+
+        assert_eq!(owners.body_edges(later.as_str()).count(), edges.len());
+        assert_eq!(owners.body_edges(first.as_str()).count(), edges.len());
+        for edge in &edges {
+            assert_eq!(owners.edge_body(edge.as_str()), Some(first.as_str()));
+        }
+        assert_eq!(owners.edge_body("test:model:edge#9999"), None);
     }
 }

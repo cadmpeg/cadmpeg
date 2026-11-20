@@ -65,6 +65,7 @@ use crate::records::{
         historical_context::AsmFaceBoundary,
     },
 };
+use std::collections::HashMap;
 
 /// Everything phase 2 reads.
 pub(super) struct DesignInputs<'a> {
@@ -451,8 +452,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         scan,
         &prereqs.design_record_headers,
     )?;
-    let (untyped_tracking_paths, profile_losses) =
-        extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
+    let RelatedDesignOutcome {
+        untyped_tracking_paths,
+        losses: profile_losses,
+        owner_sources,
+    } = extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
     losses.extend(profile_losses);
     losses.extend(
         crate::design::decode::operands::body_recipe_serialization_form_losses(
@@ -680,6 +684,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &design.design_construction_operand_groups,
         ),
     );
+    losses.extend(
+        crate::design::decode::operands::sketchless_profile_selection_losses(
+            scan,
+            &design.design_parameter_scopes,
+            &design.design_construction_operand_groups,
+            &design.design_record_headers,
+        )?,
+    );
     losses.extend(projected.unruled_flange_thickness_loss());
     losses.extend(projected.projection_losses);
     losses.extend(
@@ -784,12 +796,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.asm_histories,
         &mut losses,
     );
-    let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(
-        scan,
-        &design.design_construction_operand_groups,
-        &design.design_construction_operand_identities,
-        &prereqs.design_body_bindings,
-    )?;
     let _lineage_scopes = crate::history::compact_lineage::bind(
         crate::history::compact_lineage::Inputs {
             scopes: &design.design_parameter_scopes,
@@ -1559,6 +1565,18 @@ pub(super) fn owner_related_indices(
     }))
 }
 
+/// Counts, losses and owner sources that `extend_related_design_records`
+/// returns beside the records it adds.
+struct RelatedDesignOutcome {
+    /// Construction tracking path references that stay source-only.
+    untyped_tracking_paths: usize,
+    /// Profile and edge-selection loss notes.
+    losses: Vec<LossNote>,
+    /// Source namespaces that compact construction owners select, by operand
+    /// group id.
+    owner_sources: HashMap<String, Vec<String>>,
+}
+
 fn extend_related_design_records(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
@@ -1566,7 +1584,7 @@ fn extend_related_design_records(
     timelines: &[DesignFeatureTimeline],
     geometry: &DesignGeometry<'_>,
     design: &mut DesignNative,
-) -> Result<(usize, Vec<LossNote>), CodecError> {
+) -> Result<RelatedDesignOutcome, CodecError> {
     let indices = collect_related_indices(design.sketch_relations.iter().flat_map(|relation| {
         let scope = crate::ids::native_stream(&relation.id).unwrap_or(crate::ids::DEFAULT_STREAM);
         relation
@@ -2176,5 +2194,9 @@ fn extend_related_design_records(
         &design.design_edge_operands,
     );
     profile_losses.extend(edge_selection_notes);
-    Ok((untyped_tracking_paths, profile_losses))
+    Ok(RelatedDesignOutcome {
+        untyped_tracking_paths,
+        losses: profile_losses,
+        owner_sources,
+    })
 }

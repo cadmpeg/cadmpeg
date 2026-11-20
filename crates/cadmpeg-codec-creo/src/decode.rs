@@ -13,7 +13,7 @@ use cadmpeg_ir::codec::Decoded;
 
 use crate::container;
 
-mod analytic;
+pub(crate) mod analytic;
 mod assembly;
 mod build;
 mod coverage;
@@ -59,6 +59,7 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
     let mut scan = container::scan_bytes(ctx, root.window())?;
     surfaces::cap_envelopes::withhold_unresolved_cap_envelopes(ctx, &mut scan)?;
     surfaces::cone_origins::withhold_unresolved_cone_origins(ctx, &mut scan)?;
+    scan.plane_candidates = analytic::planes::PlaneCandidateMemo::on();
     let classification = crate::dialect::classify(&scan)?;
     // Admit section identities before model construction.
     ctx.charge_entities(

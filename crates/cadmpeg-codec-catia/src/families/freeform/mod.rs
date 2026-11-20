@@ -2537,7 +2537,9 @@ fn append_resolved_consolidated_surface_curves(
         face_tolerances.insert(face_id, face.tolerance);
     }
     let mut loop_surfaces = HashMap::new();
+    let mut loop_faces = HashMap::new();
     for loop_ in &ir.geometry.loops {
+        loop_faces.entry(&loop_.id).or_insert(&loop_.face);
         let Some(surface_id) = face_surfaces.get(&loop_.face) else {
             continue;
         };
@@ -2550,12 +2552,9 @@ fn append_resolved_consolidated_surface_curves(
     for coedge in &ir.geometry.coedges {
         let surface = loop_surfaces.get(&coedge.owner_loop).cloned();
         coedge_surfaces.push(surface);
-        let tolerance = ir
-            .geometry
-            .loops
-            .iter()
-            .find(|value| value.id == coedge.owner_loop)
-            .and_then(|loop_| face_tolerances.get(&loop_.face).copied().flatten());
+        let tolerance = loop_faces
+            .get(&coedge.owner_loop)
+            .and_then(|face| face_tolerances.get(*face).copied().flatten());
         coedge_face_tolerances.push(tolerance);
     }
     let mut attachable_edges = Vec::new();

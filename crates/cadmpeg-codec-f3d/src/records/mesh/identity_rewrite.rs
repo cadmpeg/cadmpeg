@@ -17,7 +17,7 @@ rewrite_native_record!(DesignGuidText, []; (field0));
 rewrite_native_record!(DesignOccurrenceKey, []; (field0));
 rewrite_native_record!(DesignMeshFaceGroup, []; {guid});
 rewrite_native_record!(DesignMeshFaceGroups, []; {entries});
-rewrite_native_record!(DesignMeshSplitStream, []; {name, descriptor});
+rewrite_native_record!(DesignMeshSplitStream, []; {name, descriptor, component_flag});
 rewrite_native_record!(DesignMeshHistoryStream, []; {name, encoding, decoded_length});
 rewrite_native_record!(DesignMeshSourceRecord, []; {record, type_guid, bytes});
 rewrite_native_record!(DesignMeshOperationInput, []; {guid, entry});

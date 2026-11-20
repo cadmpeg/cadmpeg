@@ -3,6 +3,7 @@
 
 use std::{ops::Range, sync::Arc};
 
+use super::header_references::OperationHeader;
 use super::{
     EntityRecord, FieldDefinition, FixedEntityRecord, IndexedSection, IndexedStore, OperationLabel,
     RecordArea, Section, TypeDefinition,
@@ -221,6 +222,7 @@ pub(crate) struct SectionLayout {
     types: Vec<CachedDefinition>,
     fields: Vec<CachedDefinition>,
     record_area: Option<CachedRange>,
+    operation_headers: Arc<[OperationHeader]>,
     operation_labels: Vec<CachedOperationLabel>,
 }
 
@@ -259,6 +261,7 @@ impl SectionLayout {
             types,
             fields,
             record_area,
+            operation_headers: Arc::clone(&section.operation_headers),
             operation_labels,
         })
     }
@@ -285,6 +288,7 @@ impl SectionLayout {
                 offset: range.offset(),
                 bytes: range.bytes(),
             }),
+            operation_headers: Arc::clone(&self.operation_headers),
             cached_operation_labels: cached_operation_labels.into(),
         }
     }
@@ -292,7 +296,7 @@ impl SectionLayout {
 
 #[derive(Debug, Clone)]
 struct CachedOperationLabel {
-    header: super::header_references::OperationHeader,
+    header: OperationHeader,
     value: String,
 }
 

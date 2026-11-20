@@ -22,7 +22,8 @@ bound the selected closure. The source document can exceed these limits. A cut
 that exceeds its bound carries `incomplete_reason` and a bounded header document.
 A finding with global context carries the same explicit incomplete-cut marker.
 The defaults admit 1,000,000 rows and 64 MiB of compact
-JSON. The registry enables the IR schema feature used by the privacy projection.
+JSON. The privacy projection reads the CADIR JSON Schema from
+`cadmpeg_ir::CADIR_JSON_SCHEMA`.
 
 The registry composes neutral validation, source-fidelity validation when a
 sidecar is supplied, registered native validation, and measurement findings.

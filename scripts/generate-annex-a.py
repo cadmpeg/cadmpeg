@@ -16,9 +16,9 @@ type their schemas reference that is not stated either. A named type that is
 neither stated, nor in ``PROSE``, nor in the schema is an error: the
 specification names a type nothing defines.
 
-The schema is ``cadmpeg_ir::cadir_json_schema()``, printed by the
-``emit_schema`` example of ``cadmpeg-ir``. ``--schema FILE`` reads it from a
-file instead of building the example.
+The schema is ``crates/cadmpeg-ir/schema/cadir.schema.json``, the committed
+output of ``cadmpeg_ir::cadir_json_schema()``. ``--schema FILE`` reads it from
+another file.
 
 Usage:
     scripts/generate-annex-a.py [--schema FILE] --write   rewrite the annex
@@ -34,14 +34,13 @@ import argparse
 import difflib
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SPEC = ROOT / "docs" / "cadir-v11.md"
 HEADING = "## Annex A. Record types stated by schema"
-EMIT_SCHEMA = ["cargo", "run", "-q", "-p", "cadmpeg-ir", "--features", "schema", "--example", "emit_schema"]
+SCHEMA = ROOT / "crates" / "cadmpeg-ir" / "schema" / "cadir.schema.json"
 REF = "#/$defs/"
 
 # Types the specification defines in a sentence rather than a sketch, with the
@@ -183,17 +182,12 @@ def generate(spec: str, schema: dict) -> str:
 
 
 def load_schema(path: str | None) -> dict:
-    if path:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    process = subprocess.run(EMIT_SCHEMA, cwd=ROOT, capture_output=True, text=True)
-    if process.returncode != 0:
-        raise ShapeError(f"`{' '.join(EMIT_SCHEMA)}` failed:\n{process.stderr}")
-    return json.loads(process.stdout)
+    return json.loads((Path(path) if path else SCHEMA).read_text(encoding="utf-8"))
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--schema", help="read the schema from FILE instead of building `emit_schema`")
+    parser.add_argument("--schema", help=f"read the schema from FILE instead of {SCHEMA.relative_to(ROOT)}")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="compare the annex with the schema (the default)")
     mode.add_argument("--write", action="store_true", help="rewrite the annex from the schema")

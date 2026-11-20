@@ -1448,12 +1448,16 @@ fn extended_geometry_json(
     archive: ArchiveVersion,
     writer_version: Option<i64>,
     scale: MillimeterScale,
-    warnings: &mut Diagnostics,
-    refusal: &mut Option<cadmpeg_core::CodecError>,
+    sink: &mut GeometrySink<'_>,
 ) -> Option<String> {
+    let GeometrySink {
+        warnings,
+        refusal,
+        mesh_budget,
+        ..
+    } = sink;
     let data = expand.data();
     if crate::mesh::supported_class(value.class_id) {
-        let mut budget = crate::mesh::MeshBudget::new();
         let mesh = optional_geometry(
             crate::mesh::decode(
                 expand,
@@ -1472,7 +1476,7 @@ fn extended_geometry_json(
                     scale,
                     userdata: &value.userdata,
                 },
-                &mut budget,
+                mesh_budget,
             ),
             refusal,
         )?;
@@ -1515,7 +1519,6 @@ fn extended_geometry_json(
             .ok(),
         }
     } else if crate::extrusion::supported_class(value.class_id) {
-        let mut budget = crate::mesh::MeshBudget::new();
         let extrusion = optional_geometry(
             crate::extrusion::decode(
                 expand,
@@ -1527,7 +1530,7 @@ fn extended_geometry_json(
                     scale,
                 },
                 &value.userdata,
-                &mut budget,
+                mesh_budget,
             ),
             refusal,
         )?;
@@ -1547,11 +1550,11 @@ fn extended_geometry_json(
     } else if crate::brep::supported_class(value.class_id) {
         crate::decode::embedded_brep_json(
             expand,
-            data,
             value.class_data_range.clone(),
             archive,
             writer_version,
             scale,
+            mesh_budget,
             refusal,
         )
     } else if value.class_id == crate::hatch::CLASS {
@@ -1688,6 +1691,7 @@ fn extended_geometry_json(
 /// in `geometry.curves`/`surfaces` fails `Check::CarrierReachability`.
 struct GeometrySink<'a> {
     warnings: &'a mut Diagnostics,
+    mesh_budget: &'a mut crate::mesh::MeshBudget,
     untyped: usize,
     failed: usize,
     redundant_repairs: usize,
@@ -1807,8 +1811,7 @@ fn structured_value_properties(
                             archive,
                             writer_version,
                             scale,
-                            sink.warnings,
-                            &mut sink.refusal,
+                            sink,
                         );
                         if sink.refusal.is_some() {
                             return Ok(());
@@ -1966,6 +1969,7 @@ pub(crate) fn project(
         Option<i64>,
         MillimeterScale,
     )>,
+    mesh_budget: &mut crate::mesh::MeshBudget,
     ir: &mut cadmpeg_ir::document::CadIr,
     warnings: &mut Diagnostics,
 ) -> Result<(usize, usize, usize, usize), ProjectionError> {
@@ -1973,6 +1977,7 @@ pub(crate) fn project(
 
     let mut sink = GeometrySink {
         warnings,
+        mesh_budget,
         untyped: 0,
         failed: 0,
         redundant_repairs: 0,

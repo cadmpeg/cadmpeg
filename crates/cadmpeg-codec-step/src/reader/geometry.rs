@@ -2,6 +2,7 @@
 //! STEP representation units, placements, and geometry carriers.
 
 use crate::ids::{key_word, kind};
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use super::{named_parameter, record_values, step_instance_id, RecordExt, ValueExt};
@@ -2273,12 +2274,13 @@ pub(super) fn decode(
         }
     }
     let mut surface_parameter_scales = BTreeMap::new();
+    let lookup = SurfaceScaleLookup::new(ir);
     for surface in &ir.geometry.surfaces {
         let Some(id) = step_instance_id(surface.id.as_str()) else {
             continue;
         };
-        if let Some(scales) = surface_parameter_scales_for_step(
-            ir,
+        if let Some(scales) = procedural_surface_parameter_scales(
+            &lookup,
             &surface.id,
             &surface.geometry,
             unit_scales.length([id]).get(),
@@ -5398,7 +5400,7 @@ fn surface_parameter_scales_for_step(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<[f64; 2]>, CodecError> {
     procedural_surface_parameter_scales(
-        ir,
+        &SurfaceScaleLookup::new(ir),
         surface_id,
         geometry,
         length_scale,
@@ -5408,8 +5410,54 @@ fn surface_parameter_scales_for_step(
     )
 }
 
+struct SurfaceScaleLookup<'a> {
+    ir: &'a CadIr,
+    index: OnceCell<SurfaceScaleIndex<'a>>,
+}
+
+struct SurfaceScaleIndex<'a> {
+    first_surfaces: HashMap<&'a SurfaceId, &'a Surface>,
+    uniquely_owned_constructions: HashMap<&'a SurfaceId, Vec<&'a ProceduralSurface>>,
+}
+
+impl<'a> SurfaceScaleLookup<'a> {
+    fn new(ir: &'a CadIr) -> Self {
+        Self {
+            ir,
+            index: OnceCell::new(),
+        }
+    }
+
+    fn index(&self) -> &SurfaceScaleIndex<'a> {
+        let ir: &'a CadIr = self.ir;
+        self.index.get_or_init(|| {
+            let mut first_surfaces = HashMap::new();
+            let mut carriers = HashMap::<&ProceduralSurfaceId, (&SurfaceId, usize)>::new();
+            for surface in &ir.geometry.surfaces {
+                first_surfaces.entry(&surface.id).or_insert(surface);
+                if let Some(construction) = surface.geometry.procedural_construction() {
+                    carriers.entry(construction).or_insert((&surface.id, 0)).1 += 1;
+                }
+            }
+            let mut uniquely_owned_constructions = HashMap::<_, Vec<_>>::new();
+            for procedural in &ir.geometry.procedural_surfaces {
+                if let Some(&(owner, 1)) = carriers.get(&procedural.id) {
+                    uniquely_owned_constructions
+                        .entry(owner)
+                        .or_default()
+                        .push(procedural);
+                }
+            }
+            SurfaceScaleIndex {
+                first_surfaces,
+                uniquely_owned_constructions,
+            }
+        })
+    }
+}
+
 fn procedural_surface_parameter_scales(
-    ir: &CadIr,
+    lookup: &SurfaceScaleLookup<'_>,
     surface_id: &SurfaceId,
     geometry: &SurfaceGeometry,
     length_scale: f64,
@@ -5433,7 +5481,7 @@ fn procedural_surface_parameter_scales(
             return Ok(None);
         };
         match surface_geometry_parameter_scales(
-            ir,
+            lookup,
             surface_id,
             solved,
             length_scale,
@@ -5443,12 +5491,7 @@ fn procedural_surface_parameter_scales(
         )? {
             SurfaceScaleStep::Value(scales) => return Ok(scales),
             SurfaceScaleStep::Support(support) => {
-                let Some(carrier) = ir
-                    .geometry
-                    .surfaces
-                    .iter()
-                    .find(|surface| surface.id == *support)
-                else {
+                let Some(carrier) = lookup.index().first_surfaces.get(support).copied() else {
                     return Ok(None);
                 };
                 surface_id = support;
@@ -5464,7 +5507,7 @@ enum SurfaceScaleStep<'a> {
 }
 
 fn surface_geometry_parameter_scales<'a>(
-    ir: &'a CadIr,
+    lookup: &SurfaceScaleLookup<'a>,
     surface_id: &SurfaceId,
     geometry: &SolvedSurfaceGeometry,
     length_scale: f64,
@@ -5488,28 +5531,19 @@ fn surface_geometry_parameter_scales<'a>(
         SolvedSurfaceGeometry::Nurbs(_) => Some([1.0, 1.0]),
         SolvedSurfaceGeometry::Transformed(_) => None,
         SolvedSurfaceGeometry::Unknown { .. } => {
-            let constructions: Vec<_> = ir
-                .geometry
-                .surfaces
-                .iter()
-                .filter(|surface| surface.id == *surface_id)
-                .filter_map(|surface| surface.geometry.procedural_construction())
-                .collect();
-            let mut candidates = ir.geometry.procedural_surfaces.iter().filter(|procedural| {
-                constructions.contains(&&procedural.id)
-                    && ir.geometry.procedural_surface_owner(&procedural.id) == Some(surface_id)
-            });
-            let Some(procedural) = candidates.next() else {
+            let Some(&[procedural]) = lookup
+                .index()
+                .uniquely_owned_constructions
+                .get(surface_id)
+                .map(Vec::as_slice)
+            else {
                 return Ok(SurfaceScaleStep::Value(None));
             };
-            if candidates.next().is_some() {
-                return Ok(SurfaceScaleStep::Value(None));
-            }
             if let Some(support) = procedural_surface_support(procedural.definition()) {
                 return Ok(SurfaceScaleStep::Support(support));
             }
             return procedural_definition_parameter_scales(
-                ir,
+                lookup.ir,
                 procedural.definition(),
                 length_scale,
                 angle_scale,

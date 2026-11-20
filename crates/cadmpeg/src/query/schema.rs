@@ -61,8 +61,8 @@ pub(super) fn run(args: &SchemaArgs) -> Result<()> {
 }
 
 fn compile_run(spec: Option<&str>, json: bool) -> Result<()> {
-    let root =
-        serde_json::to_value(cadmpeg_ir::cadir_json_schema()).context("serializing the schema")?;
+    let root: Value =
+        serde_json::from_str(cadmpeg_ir::CADIR_JSON_SCHEMA).context("reading the schema")?;
     let defs = root
         .get("$defs")
         .and_then(Value::as_object)
@@ -192,8 +192,8 @@ fn arena_table(
 }
 
 fn sidecar(json: bool) -> Result<()> {
-    let root = serde_json::to_value(cadmpeg_ir::decode_sidecar_json_schema())
-        .context("serializing the sidecar schema")?;
+    let root: Value = serde_json::from_str(cadmpeg_ir::DECODE_SIDECAR_JSON_SCHEMA)
+        .context("reading the sidecar schema")?;
     let empty = Map::new();
     let defs = root
         .get("$defs")

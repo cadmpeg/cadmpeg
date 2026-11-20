@@ -1115,6 +1115,9 @@ pub(crate) struct DesignMeshHistoryStream {
 pub(crate) struct DesignMeshSplitStream {
     pub(crate) name: String,
     pub(crate) descriptor: NativeBytes<Vec<u8>>,
+    /// Whether the nested components store the `Z: true` descriptor flag.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) component_flag: bool,
 }
 
 /// One mesh body and its complete Design identity graph.

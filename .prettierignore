@@ -13,3 +13,7 @@ crates/*/tests/golden/
 # Rendered layout pages are byte-compared to the table emitter. A formatter
 # rewrite fails `layout_tables`.
 docs/layouts/*.md
+
+# The committed JSON Schemas are byte-compared with the schemas the derives
+# generate.
+crates/cadmpeg-ir/schema/

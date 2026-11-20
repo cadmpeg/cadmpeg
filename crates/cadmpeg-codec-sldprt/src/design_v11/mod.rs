@@ -5,11 +5,12 @@
 //!
 //! The part is one design scope over its root definition, which owns the
 //! bodies of the current geometry. The feature tree is one ordered timeline
-//! whose current state, at its end, holds those bodies; the scope holds the
-//! part's parameters and configurations, and an evaluation of each other
-//! configuration's stored state. The name tables of those states come from
-//! the persistent ids of their faces and bodies. A part whose history holds
-//! no feature, or that has no history the decoder reads, states no design.
+//! whose current state, at its rollback position (`docs/formats/sldprt.md`
+//! §3.4), holds those bodies; the scope holds the part's parameters and
+//! configurations, and an evaluation of each other configuration's stored
+//! state. The name tables of those states come from the persistent ids of
+//! their faces and bodies. A part whose history holds no feature, or that has
+//! no history the decoder reads, states no design.
 
 mod configurations;
 mod names;
@@ -25,37 +26,56 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
+use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
+use cadmpeg_ir::design::feature::Feature;
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::names::NameTable;
-use cadmpeg_ir::design::refs::Position;
+use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, ProductDefinitionId};
 use cadmpeg_ir::products::{ExternalDocument, ProductDefinition, ProductDefinitionKind};
 use cadmpeg_ir::report::loss::LossNote;
 
+use crate::loss::SldprtLossCode;
 use crate::records::{FeatureHistory, FeatureInputLane};
+use crate::rollback::{Reading, Unread};
 
 pub(crate) use names::Persistent;
 
+/// What a part's design is projected from.
+pub(crate) struct Part<'a> {
+    pub(crate) histories: &'a [FeatureHistory],
+    /// The `ResolvedFeatures` lanes whose scalars type the v10 parameters.
+    pub(crate) lanes: &'a [FeatureInputLane],
+    /// The bodies of the current geometry: those of the active
+    /// configuration.
+    pub(crate) bodies: Vec<BodyId>,
+    /// The persistent ids of every decoded face and body.
+    pub(crate) persistent: Persistent<'a>,
+    /// What the stored marks state of the rollback position.
+    pub(crate) rollback: Reading,
+}
+
 /// Project the design of a part document into `ir.design`, beside its v10
-/// records, and state the part's root definition.
-///
-/// `lanes` are the `ResolvedFeatures` lanes whose scalars type the v10
-/// parameters. `bodies` are the bodies of the current geometry: those of the
-/// active configuration. `persistent` holds the persistent ids of every
-/// decoded face and body. A configuration whose state cannot be stated
-/// charges a note to `losses`. Returns the number of records added.
+/// records, and state the part's root definition. A rollback reading that
+/// does not fix the position, and a configuration whose state cannot be
+/// stated, add their reasons to `losses`. Returns the number of records
+/// added.
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
-    histories: &[FeatureHistory],
-    lanes: &[FeatureInputLane],
-    bodies: Vec<BodyId>,
-    persistent: Persistent<'_>,
+    part: Part<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<usize, CodecError> {
+    let Part {
+        histories,
+        lanes,
+        bodies,
+        persistent,
+        rollback,
+    } = part;
     let timeline = tree::timeline(histories)?;
     if timeline.features.is_empty() {
         return Ok(0);
@@ -67,10 +87,20 @@ pub(crate) fn project(
         configurations::configurations(histories, ir.source.as_ref(), &definition)?;
     let id = container_id(cadmpeg_ir::identity_key!("timeline"));
     let members = timeline.members();
-    let at = members
-        .last()
-        .cloned()
-        .map_or_else(|| Position::Start(id.clone()), Position::After);
+    let (built, unread) =
+        stated(&timeline.features, rollback).unwrap_or_else(|unread| (members.len(), Some(unread)));
+    if let Some(unread) = unread {
+        let through = if built == members.len() {
+            "its last member".to_owned()
+        } else {
+            format!("its first {built} members")
+        };
+        losses.push(SldprtLossCode::HistoryRollbackUnread.note(format!(
+            "The rollback position of the feature tree is not read ({unread}); the timeline is \
+             stated built through {through}."
+        )));
+    }
+    let (rollback, at) = built_through(&id, &members, built);
     let current = (!bodies.is_empty())
         .then(|| current_state(at, bodies.clone()))
         .into_iter()
@@ -96,7 +126,7 @@ pub(crate) fn project(
         kind: OrderedKind::Timeline,
         members,
         folders: timeline.folders,
-        rollback: Rollback::End,
+        rollback,
         placement: None,
     };
     let features = timeline.features;
@@ -126,6 +156,85 @@ pub(crate) fn project(
     ir.design.evaluations.extend(evaluations);
     ir.design.names = NameTable::from(table);
     Ok(added)
+}
+
+/// The number of leading timeline features the stored marks state built:
+/// through the feature at the current mark where a later feature is unbuilt
+/// and unsuppressed, else all of them. A feature between the feature at the
+/// current mark and the first such feature that holds no mark record leaves
+/// the position unread: the count stands, with that reason.
+fn stated(features: &[Feature], reading: Reading) -> Result<(usize, Option<Unread>), Unread> {
+    let (holder, later, recorded) = match reading {
+        Reading::End { last, recorded } => (last, Vec::new(), recorded),
+        Reading::RolledBack {
+            after,
+            later,
+            recorded,
+        } => (after, later, recorded),
+        Reading::Unread(unread) => return Err(unread),
+    };
+    let index = |name: String| {
+        let found = {
+            let mut named = features
+                .iter()
+                .enumerate()
+                .filter(|(_, feature)| feature.name.as_deref() == Some(name.as_str()));
+            match (named.next(), named.next()) {
+                (Some((index, _)), None) => Some(index),
+                _ => None,
+            }
+        };
+        found.ok_or(Unread::FeatureUnresolved { name })
+    };
+    let at = index(holder)?;
+    let mut bar = features.len();
+    for name in later {
+        let position = index(name.clone())?;
+        if position <= at {
+            return Err(Unread::FeatureOutOfOrder { name });
+        }
+        if !matches!(
+            features[position].suppressed,
+            Some(Dimension::Literal(true))
+        ) {
+            bar = bar.min(position);
+        }
+    }
+    let built = if bar < features.len() {
+        at + 1
+    } else {
+        features.len()
+    };
+    let unrecorded = features[at + 1..bar]
+        .iter()
+        .find(|feature| {
+            feature
+                .name
+                .as_ref()
+                .is_none_or(|name| !recorded.contains(name))
+        })
+        .map(|feature| Unread::UnrecordedFeature {
+            name: feature
+                .name
+                .clone()
+                .unwrap_or_else(|| feature.id.to_string()),
+        });
+    Ok((built, unrecorded))
+}
+
+/// The rollback of a timeline `id` whose first `built` members are built, and
+/// the position of its current state.
+fn built_through(id: &ContainerId, members: &[Member], built: usize) -> (Rollback, Position) {
+    let at = built
+        .checked_sub(1)
+        .and_then(|last| members.get(last))
+        .cloned()
+        .map_or_else(|| Position::Start(id.clone()), Position::After);
+    let rollback = members
+        .get(built)
+        .cloned()
+        .map_or(Rollback::End, Rollback::Before);
+    (rollback, at)
 }
 
 /// The root definition: the part file itself, which no occurrence places.

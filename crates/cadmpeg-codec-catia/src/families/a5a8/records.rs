@@ -1795,13 +1795,13 @@ fn a5_surface(
         control_points.push(point);
         at += 24;
     }
-    let weights = match mode {
-        0x01 => None,
+    let (weights, inferred_weights) = match mode {
+        0x01 => (None, false),
         0x05 => {
             let Some(weights) = a5_weights(data, &mut at, u_count, v_count, end) else {
                 return Ok(None);
             };
-            Some(weights)
+            (Some(weights.values), weights.inferred)
         }
         _ => return Ok(None),
     };
@@ -1812,7 +1812,7 @@ fn a5_surface(
     let weights = weights
         .map(|values| grid_rows(values, v_count))
         .transpose()?;
-    Ok(crate::nurbs::note_refusal(
+    let geometry = crate::nurbs::note_refusal(
         NurbsSurface::from_checked_lanes(
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(u_degree, u_knots, false),
             cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(v_degree, v_knots, false),
@@ -1821,8 +1821,11 @@ fn a5_surface(
         ),
         refusal,
         format_args!("a5 NURBS surface record at byte {pos}"),
-    )
-    .map(|geometry| FreeformSurface {
+    );
+    if geometry.is_some() && inferred_weights {
+        refusal.push_surface_weights_inferred(pos);
+    }
+    Ok(geometry.map(|geometry| FreeformSurface {
         pos,
         identity: None,
         geometry,
@@ -2197,76 +2200,103 @@ fn a5_knots(distinct: &[f64], degree: u32) -> Option<(Vec<f64>, u32)> {
     Some((knots, count))
 }
 
+struct WeightProgram {
+    values: Vec<NonZeroReal>,
+    inferred: bool,
+}
+
 fn a5_weights(
     bytes: &[u8],
     at: &mut usize,
     rows: usize,
     cols: usize,
     end: usize,
-) -> Option<Vec<NonZeroReal>> {
+) -> Option<WeightProgram> {
+    use crate::layout::{
+        surface_weight_repeat_row_prefix as repeat_row, surface_weight_row_prefix as row_prefix,
+        surface_weight_symmetric_03_prefix as symmetric_03,
+        surface_weight_symmetric_07_prefix as symmetric_07,
+    };
+
     let count = rows.checked_mul(cols)?;
-    if bytes.get(*at) == Some(&0x00) {
-        *at += 1;
-        if count
-            .checked_mul(8)
-            .and_then(|width| at.checked_add(width))
-            .is_none_or(|last| last > end)
-        {
+    let mut view = View::over_retained(bytes.get(*at..end)?);
+    let mut peek = view;
+    let first = peek.u8()?;
+    let mut weights = Vec::new();
+    let mut inferred = false;
+    if first == 0x00 {
+        view.u8()?;
+        if count.checked_mul(8)? > view.remaining() {
             return None;
         }
-        let mut weights = Vec::new();
-
         for _ in 0..count {
-            let weight = f64_le(bytes, *at).and_then(|value| NonZeroReal::new(value.get()))?;
-            weights.push(weight);
-            *at += 8;
+            weights.push(NonZeroReal::new(view.f64_le()?)?);
         }
-        return Some(weights);
-    }
-    if bytes.get(*at) != Some(&0x01) {
-        return None;
-    }
-    let seed_count = cols.div_ceil(2);
-    let mut weights = Vec::new();
-
-    for _ in 0..rows {
-        if bytes.get(*at) == Some(&0x02) {
-            *at += 1;
-            let previous_start = weights.len().checked_sub(cols)?;
-
-            for index in 0..cols {
-                let value = weights[previous_start + index];
+    } else {
+        for _ in 0..rows {
+            let mut prefix = View::over_retained(view.unread());
+            prefix.seek(row_prefix::COMMAND)?;
+            let command = prefix.u8()?;
+            let row_start = weights.len();
+            if command == 0x02 {
+                view.u8()?;
+                let previous_start = row_start.checked_sub(cols)?;
+                for column in 0..cols {
+                    weights.push(weights[previous_start + column]);
+                }
+                continue;
+            }
+            if !matches!(
+                command,
+                symmetric_03::COMMAND_VALUE | repeat_row::COMMAND_VALUE
+            ) {
+                return None;
+            }
+            prefix.seek(row_prefix::MIRROR)?;
+            let mirror = prefix.u16_le()?;
+            let repeat = if command == repeat_row::COMMAND_VALUE {
+                prefix.seek(repeat_row::LEADING_REPEATS)?;
+                let repeat = usize::from(prefix.u16_le()?);
+                view.take(repeat_row::LEN)?;
+                repeat
+            } else {
+                view.take(row_prefix::LEN)?;
+                0
+            };
+            if repeat >= cols {
+                return None;
+            }
+            let symmetric = command == symmetric_03::COMMAND_VALUE
+                && matches!(
+                    mirror,
+                    symmetric_03::CONTROL_VALUE | symmetric_07::CONTROL_VALUE
+                );
+            inferred |= !symmetric;
+            for column in 0..cols {
+                let reflected = cols - 1 - column;
+                let mirrored = reflected < column
+                    && (symmetric
+                        || mirror
+                            .checked_shr(u32::try_from(reflected).ok()?)
+                            .unwrap_or(0)
+                            & 1
+                            != 0);
+                let value = if column > 0 && column <= repeat {
+                    weights[row_start]
+                } else if mirrored {
+                    weights[row_start + reflected]
+                } else {
+                    NonZeroReal::new(view.f64_le()?)?
+                };
                 weights.push(value);
             }
-            continue;
-        }
-        if !matches!(bytes.get(*at..*at + 3), Some([0x01, 0x03 | 0x07, 0x00])) {
-            return None;
-        }
-        *at += 3;
-        if seed_count
-            .checked_mul(8)
-            .and_then(|width| at.checked_add(width))
-            .is_none_or(|last| last > end)
-        {
-            return None;
-        }
-        let row_start = weights.len();
-
-        for _ in 0..seed_count {
-            let weight = f64_le(bytes, *at).and_then(|value| NonZeroReal::new(value.get()))?;
-            weights.push(weight);
-            *at += 8;
-        }
-
-        for offset in (0..cols / 2).rev() {
-            weights.push(weights[row_start + offset]);
-        }
-        if weights.len() != row_start + cols {
-            return None;
         }
     }
-    Some(weights)
+    *at = end.checked_sub(view.remaining())?;
+    Some(WeightProgram {
+        values: weights,
+        inferred,
+    })
 }
 
 #[cfg(test)]

@@ -150,6 +150,9 @@ pub(crate) enum F3dLossCode {
     SketchCurveTailConstructionAssumed,
     /// A Chamfer's non-face group is read as its edge group despite its role.
     ChamferEdgeRoleAssumed,
+    /// A fixed Chamfer scalar is applied to the face-role groups beside the
+    /// scope's one edge-role group (DR-891).
+    ChamferFixedFaceGroupAssumed,
     ChamferDefinitionUnresolved,
     ChamferSelectionUnresolved,
     ChamferReferenceFaceAssumed,
@@ -1034,6 +1037,8 @@ pub(crate) enum F3dLossCode {
     MeshAttributeNotTransferred,
     MeshGuidBytesUninterpreted,
     MeshSplitStreamAssumed,
+    /// A packed-direction split component flag is read as payload-neutral.
+    MeshComponentFlagAssumed,
     MeshHistoryWindowAssumed,
     MeshOperationRecordsNative,
     MeshFaceGroupsAssumed,
@@ -1205,6 +1210,9 @@ pub(crate) enum F3dLossCode {
     WriterSourceAssociationOmitted,
     /// A body was not written, with the topology and geometry only it uses.
     WriterBodyOmitted,
+    /// A face on a carrier F3D has no form for was not written; its body was
+    /// written open, without it.
+    WriterFaceOmitted,
     /// Geometry no written body uses was not written.
     WriterGeometryOmitted,
     /// An appearance was not written.
@@ -1348,6 +1356,7 @@ impl F3dLossCode {
         Self::SketchCurveTailMarkerAssumed,
         Self::SketchCurveTailConstructionAssumed,
         Self::ChamferEdgeRoleAssumed,
+        Self::ChamferFixedFaceGroupAssumed,
         Self::ChamferDefinitionUnresolved,
         Self::ChamferSelectionUnresolved,
         Self::ChamferReferenceFaceAssumed,
@@ -1913,6 +1922,7 @@ impl F3dLossCode {
         Self::MeshAttributeNotTransferred,
         Self::MeshGuidBytesUninterpreted,
         Self::MeshSplitStreamAssumed,
+        Self::MeshComponentFlagAssumed,
         Self::MeshHistoryWindowAssumed,
         Self::MeshOperationRecordsNative,
         Self::MeshFaceGroupsAssumed,
@@ -1993,6 +2003,7 @@ impl F3dLossCode {
         Self::WriterTessellationOmitted,
         Self::WriterSourceAssociationOmitted,
         Self::WriterBodyOmitted,
+        Self::WriterFaceOmitted,
         Self::WriterGeometryOmitted,
         Self::WriterAppearanceOmitted,
         Self::WriterPatchDeclined,
@@ -2151,6 +2162,7 @@ impl F3dLossCode {
             Self::SketchCurveTailMarkerAssumed => "sketch.curve-tail-marker-assumed",
             Self::SketchCurveTailConstructionAssumed => "sketch.curve-tail-construction-assumed",
             Self::ChamferEdgeRoleAssumed => "feature.chamfer-edge-role-assumed",
+            Self::ChamferFixedFaceGroupAssumed => "feature.chamfer-fixed-face-group-assumed",
             Self::ChamferDefinitionUnresolved => "feature.chamfer-definition-unresolved",
             Self::ChamferSelectionUnresolved => "feature.chamfer-selection-unresolved",
             Self::ChamferReferenceFaceAssumed => "feature.chamfer-reference-face-assumed",
@@ -3026,6 +3038,7 @@ impl F3dLossCode {
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::MeshGuidBytesUninterpreted => "mesh.guid-bytes-uninterpreted",
             Self::MeshSplitStreamAssumed => "mesh.split-stream-assumed",
+            Self::MeshComponentFlagAssumed => "mesh.component-flag-assumed",
             Self::MeshHistoryWindowAssumed => "mesh.history-window-assumed",
             Self::MeshOperationRecordsNative => "mesh.operation-records-native",
             Self::MeshFaceGroupsAssumed => "mesh.face-groups-assumed",
@@ -3116,6 +3129,7 @@ impl F3dLossCode {
             Self::WriterTessellationOmitted => "writer.tessellation-omitted",
             Self::WriterSourceAssociationOmitted => "writer.source-association-omitted",
             Self::WriterBodyOmitted => "writer.body-omitted",
+            Self::WriterFaceOmitted => "writer.face-omitted",
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
             Self::WriterPatchDeclined => "writer.patch-declined",
@@ -3227,6 +3241,7 @@ impl F3dLossCode {
             Self::WriterTessellationOmitted => Severity::Warning,
             Self::WriterSourceAssociationOmitted => Severity::Info,
             Self::WriterBodyOmitted => Severity::Error,
+            Self::WriterFaceOmitted => Severity::Error,
             Self::WriterGeometryOmitted => Severity::Warning,
             Self::WriterAppearanceOmitted => Severity::Warning,
             Self::WriterPatchDeclined => Severity::Warning,
@@ -3297,6 +3312,7 @@ impl F3dLossCode {
             | Self::SketchCurveTailMarkerAssumed
             | Self::SketchCurveTailConstructionAssumed
             | Self::ChamferEdgeRoleAssumed
+            | Self::ChamferFixedFaceGroupAssumed
             | Self::ChamferDefinitionUnresolved
             | Self::ChamferSelectionUnresolved
             | Self::ChamferReferenceFaceAssumed
@@ -3850,6 +3866,7 @@ impl F3dLossCode {
             | Self::MeshContainerMissing
             | Self::MeshAttributeNotTransferred
             | Self::MeshSplitStreamAssumed
+            | Self::MeshComponentFlagAssumed
             | Self::MeshHistoryWindowAssumed
             | Self::MeshOperationRecordsNative
             | Self::MeshFaceGroupsAssumed
@@ -3998,6 +4015,7 @@ impl F3dLossCode {
             Self::WriterTessellationOmitted => LossTaxonomy::TessellationOmitted,
             Self::WriterSourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
             Self::WriterBodyOmitted => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterFaceOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
@@ -4017,6 +4035,7 @@ impl F3dLossCode {
             | Self::SketchCurveTailMarkerAssumed
             | Self::SketchCurveTailConstructionAssumed
             | Self::ChamferEdgeRoleAssumed
+            | Self::ChamferFixedFaceGroupAssumed
             | Self::ChamferDefinitionUnresolved
             | Self::ChamferSelectionUnresolved
             | Self::ChamferReferenceFaceAssumed
@@ -4061,6 +4080,7 @@ impl F3dLossCode {
             | Self::XrefOwnedPoseNative
             | Self::MeshGuidBytesUninterpreted
             | Self::MeshSplitStreamAssumed
+            | Self::MeshComponentFlagAssumed
             | Self::MeshHistoryWindowAssumed
             | Self::MeshOperationRecordsNative
             | Self::MeshFaceGroupsAssumed
@@ -4826,6 +4846,7 @@ mod tests {
                 "sketch.curve-tail-marker-assumed",
                 "sketch.curve-tail-construction-assumed",
                 "feature.chamfer-edge-role-assumed",
+                "feature.chamfer-fixed-face-group-assumed",
                 "feature.chamfer-definition-unresolved",
                 "feature.chamfer-selection-unresolved",
                 "feature.chamfer-reference-face-assumed",
@@ -5391,6 +5412,7 @@ mod tests {
                 "mesh.attribute-not-transferred",
                 "mesh.guid-bytes-uninterpreted",
                 "mesh.split-stream-assumed",
+                "mesh.component-flag-assumed",
                 "mesh.history-window-assumed",
                 "mesh.operation-records-native",
                 "mesh.face-groups-assumed",
@@ -5471,6 +5493,7 @@ mod tests {
                 "writer.tessellation-omitted",
                 "writer.source-association-omitted",
                 "writer.body-omitted",
+                "writer.face-omitted",
                 "writer.geometry-omitted",
                 "writer.appearance-omitted",
                 "writer.patch-declined",

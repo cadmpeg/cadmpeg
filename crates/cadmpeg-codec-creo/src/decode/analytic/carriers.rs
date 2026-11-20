@@ -23,7 +23,7 @@ use super::super::native::annotate;
 use super::super::sketch_transfer::recipe::FeatureSchemaClasses;
 use super::super::surfaces::NativeSurfaceNamespaces;
 
-use super::super::uniqueness::{exactly_one, UniqueById};
+use super::super::uniqueness::{exactly_one, ExactIdPositions, UniqueById};
 use super::equations::{
     CarrierEquation, ConeEquation, CylinderEquation, PlaneEquation, SphereEquation, TorusEquation,
 };
@@ -237,6 +237,12 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
     annotations: &mut AnnotationBuilder,
     source_carriers: &mut SourceUnitCarriers,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut surface_ids = ExactIdPositions::new(
+        ir.geometry
+            .surfaces
+            .iter()
+            .map(|surface| surface.id.as_str()),
+    );
     for (rows, namespace) in [
         (&scan.surfaces.rows, LegacySurfaceNamespace::Visible),
         (
@@ -250,7 +256,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 LegacySurfaceNamespace::NonVisible => &crate::identity::NOVISGEOM_SURFACE,
             };
             let id = crate::identity::compose_checked::<SurfaceId>(identity_namespace, row.id)?;
-            if ir.geometry.surfaces.iter().any(|surface| surface.id == id) {
+            if surface_ids.contains(id.as_str()) {
                 continue;
             }
             annotate(
@@ -270,6 +276,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
                 Exactness::Unknown,
             )?;
             ctx.charge_entities(1, "admit Creo model surfaces")?;
+            surface_ids.admit(id.as_str(), ir.geometry.surfaces.len());
             source_carriers.admit_surface(
                 ctx,
                 ir,
@@ -301,10 +308,12 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             )?;
         }
     }
+    let mut curve_ids =
+        ExactIdPositions::new(ir.geometry.curves.iter().map(|curve| curve.id.as_str()));
     for row in crate::identity::uniquely_identified_rows(&scan.curves.topology_rows, |row| row.id) {
         let id =
             crate::identity::compose_checked::<CurveId>(&crate::identity::VISIBGEOM_CURVE, row.id)?;
-        if ir.geometry.curves.iter().any(|curve| curve.id == id) {
+        if curve_ids.contains(id.as_str()) {
             continue;
         }
         annotate(
@@ -316,6 +325,7 @@ pub(in crate::decode) fn retain_unresolved_surface_carriers(
             Exactness::Unknown,
         )?;
         ctx.charge_entities(1, "admit Creo model curves")?;
+        curve_ids.admit(id.as_str(), ir.geometry.curves.len());
         source_carriers.admit_curve(
             ctx,
             ir,

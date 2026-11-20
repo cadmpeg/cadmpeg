@@ -853,8 +853,13 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
     .is_none());
 }
 
-#[test]
-fn companion_interval_ends_before_a_foreign_scope_member() {
+/// A companion at offset 0 with payload at 58, owner record 10, a scope 12 at
+/// offset 80 that lists record 55, and the header of record 55 at offset 70.
+fn scope_member_fixture() -> (
+    crate::records::parameters::DesignParameterCompanion,
+    crate::records::feature::scope::DesignParameterScope,
+    crate::records::decal::DesignRecordHeader,
+) {
     let companion = crate::records::parameters::DesignParameterCompanion::unbound(
         "f3d:native:parameter-companion#11".into(),
         0,
@@ -906,15 +911,58 @@ fn companion_interval_ends_before_a_foreign_scope_member() {
         class_tag: crate::records::references::DesignClassTag::try_from("302".to_owned()).unwrap(),
         byte_offset: 70,
     };
-    let admitted = super::companion_owned_interval(
-        &companion,
-        std::iter::empty(),
-        &[],
-        &[scope],
-        &[header],
-        100,
-    );
+    (companion, scope, header)
+}
+
+#[test]
+fn companion_interval_ends_before_a_foreign_scope_member() {
+    let (companion, scope, header) = scope_member_fixture();
+    let scopes = [scope];
+    let headers = [header];
+    let admitted = super::CompanionBounds::new(std::iter::empty(), &[], &scopes, &headers)
+        .interval(&companion, 100);
     assert_eq!(admitted, Some((58, 70)));
+}
+
+#[test]
+fn companion_interval_ends_only_at_members_another_scope_lists() {
+    let (companion, scope, header) = scope_member_fixture();
+    let owner = crate::records::parameters::DesignParameterOwner::try_from(
+        crate::records::parameters::DesignParameterOwnerWire {
+            id: "f3d:native:design-parameter-owner#10".into(),
+            byte_offset: 0,
+            frame_length: 104,
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
+                .unwrap(),
+            record_index: 10,
+            scope_record_index: 12,
+            local_ordinal: 0,
+            evaluated_value: 1.0,
+            evaluated_value_offset: 40,
+            parameter_record_index: 12,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 11,
+        },
+    )
+    .unwrap();
+    let owners = [owner];
+    let headers = [header];
+    let mut other = scope.clone();
+    other.id = "f3d:native:parameter-scope#13".into();
+    other.record_index = 13;
+    let shared = [scope.clone(), other];
+    let owned = [scope];
+    assert_eq!(
+        super::CompanionBounds::new(std::iter::empty(), &owners, &owned, &headers)
+            .interval(&companion, 100),
+        Some((58, 80))
+    );
+    assert_eq!(
+        super::CompanionBounds::new(std::iter::empty(), &owners, &shared, &headers)
+            .interval(&companion, 100),
+        Some((58, 70))
+    );
 }
 
 #[test]

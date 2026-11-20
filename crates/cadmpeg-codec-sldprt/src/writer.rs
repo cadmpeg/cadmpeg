@@ -3197,14 +3197,24 @@ pub(crate) fn brep_body(
         }
         be16(&mut out, *owner);
     }
+    let mut edges_by_id = HashMap::new();
+    for edge in &ir.geometry.edges {
+        edges_by_id.entry(&edge.id).or_insert(edge);
+    }
+    let mut loops_by_id = HashMap::<_, Vec<_>>::new();
+    for lp in &ir.geometry.loops {
+        loops_by_id.entry(&lp.id).or_default().push(lp);
+    }
+    let mut faces_by_id = HashMap::new();
+    for face in &ir.geometry.faces {
+        faces_by_id.entry(&face.id).or_insert(face);
+    }
     for coedge in &ir.geometry.coedges {
         tag(&mut out, 0x11);
         be16(&mut out, coedges[&coedge.id]);
-        let edge = ir
-            .geometry
-            .edges
-            .iter()
-            .find(|edge| edge.id == coedge.edge)
+        let edge = edges_by_id
+            .get(&coedge.edge)
+            .copied()
             .ok_or_else(|| CodecError::Malformed("coedge references missing edge".into()))?;
         let ends = edge_ends(edge)?;
         let forward_vertex = if coedge.sense == Sense::Forward {
@@ -3212,15 +3222,17 @@ pub(crate) fn brep_body(
         } else {
             &ends.start
         };
-        let (next, previous) =
-            cadmpeg_ir::topology::coedge_ring_neighbors(&ir.geometry.loops, coedge).ok_or_else(
-                || {
-                    CodecError::malformed(format_args!(
-                        "coedge {} is absent from its owning loop ring",
-                        coedge.id
-                    ))
-                },
-            )?;
+        let (next, previous) = loops_by_id
+            .get(&coedge.owner_loop)
+            .into_iter()
+            .flatten()
+            .find_map(|lp| lp.ring_neighbors_of(coedge))
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!(
+                    "coedge {} is absent from its owning loop ring",
+                    coedge.id
+                ))
+            })?;
         for value in [
             0,
             loops[&coedge.owner_loop],
@@ -3243,11 +3255,9 @@ pub(crate) fn brep_body(
         );
     }
     for lp in &ir.geometry.loops {
-        let face = ir
-            .geometry
-            .faces
-            .iter()
-            .find(|face| face.id == lp.face)
+        let face = faces_by_id
+            .get(&lp.face)
+            .copied()
             .ok_or_else(|| CodecError::Malformed("loop references missing face".into()))?;
         let position = face
             .loops

@@ -706,6 +706,17 @@ where
                     } else {
                         mapped_station(&mut primary_stations[endpoint], true, refusal)
                     }
+                })
+                .or_else(|| {
+                    stations::wide_parameter(
+                        self.bytes,
+                        self.records,
+                        index,
+                        p,
+                        domain,
+                        &self.resolve,
+                        refusal,
+                    )
                 })?;
             if matches!(pcurve, PcurveGeometry::Line(_)) {
                 Some((t - source_range[0]) / (source_range[1] - source_range[0]))
@@ -2008,6 +2019,7 @@ fn fit_ring(
         sides,
         inner_starts: Vec::new(),
         recovery: super::SheetBoundaryRecovery {
+            untransferred_plane_bounds: carrier.untransferred_plane_bounds(),
             rolling_extension_mm,
             ..super::SheetBoundaryRecovery::default()
         },
@@ -2019,6 +2031,7 @@ mod tests {
     use super::{line_at, ring_tail, RingBounds, RingTail};
 
     mod recovery;
+    mod roster_priority;
 
     #[test]
     fn trim_retains_existing_affine_station_before_companion_fallback() {

@@ -143,7 +143,8 @@ fn design_folder_uses_root_fusion_asset_not_active_guid_or_run_order() {
         entries.get(name).map(Vec::as_slice)
     })
     .unwrap();
-    assert_eq!(folder, "Design Base[Active]");
+    assert_eq!(folder.folder, "Design Base[Active]");
+    assert_eq!(folder.asset_guid, DESIGN_GUID);
 }
 
 #[test]
@@ -172,7 +173,8 @@ fn active_guid_can_be_shared_by_a_non_design_asset() {
         entries.get(name).map(Vec::as_slice)
     })
     .unwrap();
-    assert_eq!(folder, "Design Base");
+    assert_eq!(folder.folder, "Design Base");
+    assert_eq!(folder.asset_guid, DESIGN_GUID);
 }
 
 /// Replace the leading version field, keeping every later byte.

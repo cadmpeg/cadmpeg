@@ -16,6 +16,7 @@ use super::isoparametric_flag;
 use super::number;
 use super::oriented_curve_entity;
 use super::orthonormal_pair;
+use super::records::TopologyIndex;
 use super::surface_entities;
 use super::validate_arc_sweep;
 use super::CurveSpan;
@@ -300,7 +301,8 @@ fn generated_resolution_covers_large_coordinate_endpoint_admission() {
 
     let expected = 2_000_001.0 * WRITER_ENDPOINT_RELATIVE_TOLERANCE;
     assert!(
-        (generated_minimum_resolution(&ir).expect("compute the generated minimum resolution")
+        (generated_minimum_resolution(&TopologyIndex::new(&ir))
+            .expect("compute the generated minimum resolution")
             - expected)
             .abs()
             <= f64::EPSILON * 64.0
@@ -1081,7 +1083,8 @@ fn face_loop_order_places_the_explicit_outer_loop_first() {
         },
     ];
 
-    let ordered = face_loop_order(&ir, &face).expect("both face loops resolve");
+    let ordered =
+        face_loop_order(&TopologyIndex::new(&ir), &face).expect("both face loops resolve");
     assert_eq!(ordered[0].id, outer_id);
 }
 
@@ -1137,7 +1140,8 @@ fn face_loop_order_does_not_promote_an_unclassified_loop() {
         },
     ];
 
-    let ordered = face_loop_order(&ir, &face).expect("both face loops resolve");
+    let ordered =
+        face_loop_order(&TopologyIndex::new(&ir), &face).expect("both face loops resolve");
     assert_eq!(ordered[0].id, unclassified_id);
     assert!(face_outer_loop(&face, &ordered).is_none());
 }

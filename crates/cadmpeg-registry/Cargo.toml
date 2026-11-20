@@ -44,7 +44,7 @@ usd = ["dep:cadmpeg-codec-usd"]
 [dependencies]
 cadmpeg-core.workspace = true
 cadmpeg-container.workspace = true
-cadmpeg-ir = { workspace = true, features = ["schema"] }
+cadmpeg-ir.workspace = true
 cadmpeg-measure.workspace = true
 serde_json.workspace = true
 cadmpeg-codec-f3d = { workspace = true, optional = true }

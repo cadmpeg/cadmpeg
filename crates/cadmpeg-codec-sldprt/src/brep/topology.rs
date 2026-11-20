@@ -1989,11 +1989,27 @@ pub(crate) fn patch_point_values(
 
 /// Replace one world-point record while preserving its framing.
 pub(crate) fn patch_point(buf: &mut [u8], attr: u32, xyz_m: [f64; 3]) -> bool {
-    let mut tables = scan_records(buf, false, false, None, None, None, None);
-    let Some(record) = tables.points.remove(&attr) else {
-        return false;
-    };
-    patch_point_values(buf, record.xyz_offset, record.xyz_m, xyz_m)
+    patch_points(buf, &[(attr, xyz_m)]).is_ok()
+}
+
+/// Replace the world-point records of distinct attributes in one scan while
+/// preserving their framing. The error is the first attribute that has no
+/// record to patch.
+pub(crate) fn patch_points(buf: &mut [u8], points: &[(u32, [f64; 3])]) -> Result<(), u32> {
+    if points.is_empty() {
+        return Ok(());
+    }
+    let tables = scan_records(buf, false, false, None, None, None, None);
+    for &(attr, xyz_m) in points {
+        let patched = tables
+            .points
+            .get(&attr)
+            .is_some_and(|record| patch_point_values(buf, record.xyz_offset, record.xyz_m, xyz_m));
+        if !patched {
+            return Err(attr);
+        }
+    }
+    Ok(())
 }
 
 /// Scan stream-local topology records.

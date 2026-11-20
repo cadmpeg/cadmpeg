@@ -263,19 +263,17 @@ fn first_instance_surface_row(
         .min_by_key(|row| row.offset)
 }
 
-/// Bounds of the complete surface array that holds one prototype record.
+/// Bounds of the complete counted surface arrays in one section payload,
+/// relative to the section, or `None` when the scan holds no bytes.
 ///
 /// A section whose declared extent runs past the scanned buffer is a refusal
-/// naming the section, its declared end, and the buffer length. `Ok(None)`
-/// states that no single complete surface array holds the prototype.
-pub(in crate::decode) fn surface_prototype_frame_bounds(
+/// naming the section, its declared end, and the buffer length.
+fn section_complete_surface_arrays(
     scan: &ContainerScan<'_>,
     section: &crate::container::Section,
-    prototype_offset: usize,
-) -> Result<Option<(usize, usize)>, cadmpeg_core::CodecError> {
-    let section_end = section.end();
+) -> Result<Option<Vec<(usize, usize)>>, cadmpeg_core::CodecError> {
     if scan.framing.data.is_empty() {
-        return Ok(Some((section.offset(), section_end)));
+        return Ok(None);
     }
     let Some(payload) = crate::container::section_region(&scan.framing.data, section) else {
         return Err(cadmpeg_core::CodecError::malformed(format!(
@@ -286,14 +284,29 @@ pub(in crate::decode) fn surface_prototype_frame_bounds(
             scan.framing.data.len(),
         )));
     };
+    Ok(Some(crate::surface::complete_surface_array_bounds(payload)))
+}
+
+/// Bounds of the complete surface array that holds one prototype record.
+///
+/// `complete_bounds` is what [`section_complete_surface_arrays`] returns for
+/// `section`; `None` gives the whole section. `Ok(None)` states that no single
+/// complete surface array holds the prototype.
+fn surface_prototype_frame_bounds(
+    section: &crate::container::Section,
+    complete_bounds: Option<&[(usize, usize)]>,
+    prototype_offset: usize,
+) -> Result<Option<(usize, usize)>, cadmpeg_core::CodecError> {
+    let Some(complete_bounds) = complete_bounds else {
+        return Ok(Some((section.offset(), section.end())));
+    };
     let Some(relative_prototype_offset) = prototype_offset.checked_sub(section.offset()) else {
         return Ok(None);
     };
-    let complete_bounds = crate::surface::complete_surface_array_bounds(payload);
-    let mut matches = complete_bounds.into_iter().filter(|(start, end)| {
+    let mut matches = complete_bounds.iter().filter(|(start, end)| {
         relative_prototype_offset >= *start && relative_prototype_offset < *end
     });
-    let Some((start, end)) = matches.next() else {
+    let Some(&(start, end)) = matches.next() else {
         return Ok(None);
     };
     if matches.next().is_some() {
@@ -342,21 +355,24 @@ impl<'a> SupportedPrototype<'a> {
     }
 }
 
+/// A prototype record, its first-instance row, and the section and absolute
+/// bounds of the surface array that hold it.
+pub(in super::super) type PrototypeAssociation<'a> = (
+    SupportedPrototype<'a>,
+    &'a crate::surface::SurfaceRow,
+    &'a crate::container::Section,
+    (usize, usize),
+);
+
 /// Every surface prototype record that binds to exactly one first-instance row.
 ///
 /// A section whose declared extent runs past the scanned buffer is a refusal,
 /// because the prototype frame it states cannot be read.
 pub(in super::super) fn unique_surface_prototype_associations<'a>(
     scan: &'a ContainerScan<'_>,
-) -> Result<
-    Vec<(
-        SupportedPrototype<'a>,
-        &'a crate::surface::SurfaceRow,
-        &'a crate::container::Section,
-    )>,
-    cadmpeg_core::CodecError,
-> {
+) -> Result<Vec<PrototypeAssociation<'a>>, cadmpeg_core::CodecError> {
     let mut associations = Vec::new();
+    let mut section_arrays = BTreeMap::<usize, Option<Vec<(usize, usize)>>>::new();
     for record in &scan.surfaces.prototype_records {
         let (prototype, row_kind) = match record.family {
             crate::surface::SurfacePrototypeFamily::Plane => (
@@ -381,16 +397,23 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
             ),
             _ => continue,
         };
-        let Some(section) = scan
+        let Some((section_index, section)) = scan
             .framing
             .sections
             .iter()
-            .find(|section| section.contains(record.offset))
+            .enumerate()
+            .find(|(_, section)| section.contains(record.offset))
         else {
             continue;
         };
+        let complete_bounds = match section_arrays.entry(section_index) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(section_complete_surface_arrays(scan, section)?)
+            }
+        };
         let Some((adjacent_start, adjacent_end)) =
-            surface_prototype_frame_bounds(scan, section, record.offset)?
+            surface_prototype_frame_bounds(section, complete_bounds.as_deref(), record.offset)?
         else {
             continue;
         };
@@ -415,17 +438,17 @@ pub(in super::super) fn unique_surface_prototype_associations<'a>(
         {
             continue;
         }
-        associations.push((prototype, row, section));
+        associations.push((prototype, row, section, (adjacent_start, adjacent_end)));
     }
     let mut association_counts = BTreeMap::<usize, usize>::new();
-    for (_, row, _) in &associations {
+    for (_, row, _, _) in &associations {
         let count = match association_counts.entry(row.offset) {
             std::collections::btree_map::Entry::Vacant(entry) => entry.insert(0),
             std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
         };
         *count += 1;
     }
-    associations.retain(|(_, row, _)| association_counts.get(&row.offset) == Some(&1));
+    associations.retain(|(_, row, _, _)| association_counts.get(&row.offset) == Some(&1));
     Ok(associations)
 }
 
@@ -439,7 +462,7 @@ pub(in super::super) fn first_instance_plane_frames(
         return Ok(frames);
     }
     let mut losses_reported_at_transfer = Vec::new();
-    for (prototype, row, _) in unique_surface_prototype_associations(scan)? {
+    for (prototype, row, _, _) in unique_surface_prototype_associations(scan)? {
         let SupportedPrototype::Plane(record) = prototype else {
             continue;
         };
@@ -489,7 +512,7 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
         return Ok(0);
     }
     let mut transferred = 0;
-    for (prototype, row, section) in unique_surface_prototype_associations(scan)? {
+    for (prototype, row, section, _) in unique_surface_prototype_associations(scan)? {
         let record = prototype.record();
         let geometry = match prototype {
             SupportedPrototype::Plane(_) => {
@@ -689,6 +712,14 @@ pub(in super::super) fn transfer_first_instance_prototype_surfaces(
     Ok(transferred)
 }
 
+/// The section-relative rows, spline prototypes, and scalar cache of one
+/// section, read once for every positional spline replay in it.
+struct SectionSplineReplays {
+    relative_rows: Vec<crate::surface::SurfaceRow>,
+    prototypes: crate::surface::SplineReplayPrototypes,
+    cache: Option<crate::scalar::ScalarCache>,
+}
+
 /// Copy the surface rows inside `section` with section-relative offsets.
 fn relative_surface_rows(
     rows: &[crate::surface::SurfaceRow],
@@ -724,6 +755,7 @@ pub(in super::super) fn transfer_positional_spline_replays(
         return Ok(0);
     }
     let mut transferred = 0;
+    let mut section_replays = BTreeMap::<usize, SectionSplineReplays>::new();
     for parameter in &scan.surfaces.parameters {
         if parameter.boundary != crate::surface::SurfaceBodyBoundary::CompoundClose {
             continue;
@@ -740,8 +772,9 @@ pub(in super::super) fn transfer_positional_spline_replays(
             .framing
             .sections
             .iter()
-            .filter(|section| section.contains(row.offset));
-        let Some(section) = sections.next() else {
+            .enumerate()
+            .filter(|(_, section)| section.contains(row.offset));
+        let Some((section_index, section)) = sections.next() else {
             continue;
         };
         if sections.next().is_some() {
@@ -758,19 +791,31 @@ pub(in super::super) fn transfer_positional_spline_replays(
             row.offset = relative_row_offset;
             row
         };
-        let relative_rows = relative_surface_rows(&scan.surfaces.rows, section);
+        let SectionSplineReplays {
+            relative_rows,
+            prototypes,
+            cache,
+        } = section_replays
+            .entry(section_index)
+            .or_insert_with(|| SectionSplineReplays {
+                relative_rows: relative_surface_rows(&scan.surfaces.rows, section),
+                prototypes: crate::surface::SplineReplayPrototypes::default(),
+                cache: None,
+            });
         let Some(prototype) = crate::surface::positional_spline_replay_prototype(
             ctx,
             payload,
-            &relative_rows,
+            relative_rows,
             &relative_row,
+            prototypes,
         )?
         else {
             continue;
         };
-        let cache = crate::scalar::ScalarCache::from_section_checked(payload);
+        let cache =
+            cache.get_or_insert_with(|| crate::scalar::ScalarCache::from_section_checked(payload));
         let Some(replay) =
-            crate::surface::decode_positional_spline_replay(&parameter.body, &prototype, &cache)?
+            crate::surface::decode_positional_spline_replay(&parameter.body, prototype, cache)?
         else {
             continue;
         };

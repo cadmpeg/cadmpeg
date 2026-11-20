@@ -71,7 +71,15 @@ enum MetadataString {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct AssetManifestHeader<'a> {
     base_name: Utf16View<'a>,
+    primary_guid: Utf16View<'a>,
     kind: AssetKind<'a>,
+}
+
+/// The manifest-selected Design asset folder and the asset's primary GUID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DesignAssetFolder {
+    pub(crate) folder: String,
+    pub(crate) asset_guid: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -536,7 +544,7 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
     manifest: &TopLevelManifest,
     entry_names: impl IntoIterator<Item = &'n str>,
     mut entry_bytes: impl FnMut(&str) -> Option<&'a [u8]>,
-) -> Result<String, CodecError> {
+) -> Result<DesignAssetFolder, CodecError> {
     let mut names = Vec::new();
     for name in entry_names {
         names.push(name);
@@ -599,7 +607,10 @@ pub(crate) fn resolve_design_folder<'a, 'n>(
                 fusion_subtype: None
             }
         ) {
-            design_folders.push(folder.to_string());
+            design_folders.push(DesignAssetFolder {
+                folder: folder.to_string(),
+                asset_guid: header.primary_guid.to_string(),
+            });
         }
     }
 
@@ -626,7 +637,7 @@ fn parse_asset_header(bytes: &[u8]) -> Result<AssetManifestHeader<'_>, CodecErro
         let mut cursor = Cursor::new(bytes);
         let base_name = cursor.utf16("asset manifest base name")?;
         validate_asset_base_view(base_name)?;
-        let _primary_guid = cursor.guid("asset manifest primary GUID")?;
+        let primary_guid = cursor.guid("asset manifest primary GUID")?;
         let _secondary_guid = cursor.guid("asset manifest secondary GUID")?;
         let asset_type = cursor.ascii("asset manifest asset type")?;
         if !asset_type.ends_with("AssetType") {
@@ -664,7 +675,11 @@ fn parse_asset_header(bytes: &[u8]) -> Result<AssetManifestHeader<'_>, CodecErro
         } else {
             AssetKind::Other
         };
-        Ok(AssetManifestHeader { base_name, kind })
+        Ok(AssetManifestHeader {
+            base_name,
+            primary_guid,
+            kind,
+        })
     })();
     parsed
 }

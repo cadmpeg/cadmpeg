@@ -81,6 +81,8 @@ pub(crate) enum AllocationReferenceEncoding {
     TaggedU8,
     /// `0a <u16le>`.
     TaggedU16,
+    /// `0e <u24le>`.
+    TaggedU24,
 }
 
 /// One allocation reference with its addressing form retained.

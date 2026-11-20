@@ -440,7 +440,7 @@ Readers accept exactly `ir_version: "11"` ([`cadir-v11.md`](cadir-v11.md) §3.6)
 
 `Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
-JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`, which requires the crate's `schema` feature.
+JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`, which requires the crate's `schema` feature. `crates/cadmpeg-ir/schema/cadir.schema.json` is its committed output, and `cadmpeg_ir::CADIR_JSON_SCHEMA` embeds that file.
 
 ## Worked cube
 

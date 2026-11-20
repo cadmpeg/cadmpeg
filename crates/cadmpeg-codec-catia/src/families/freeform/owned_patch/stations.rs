@@ -4,8 +4,11 @@
 use cadmpeg_core::decode::View;
 
 use crate::families::consolidated::records::class25::{self, Class25SourceRelation};
+use crate::layout::consolidated_vertex_wide_roster as wide_roster;
 use crate::nurbs::LaneRefusals;
-use crate::wire::bytes::{allocation_reference, compact_int, AllocationReference};
+use crate::wire::bytes::{
+    allocation_reference, compact_int, AllocationReference, AllocationReferenceEncoding,
+};
 use crate::wire::records::{
     owned_pcurve_from_record, ConsolidatedFamily as Family, ConsolidatedRecord,
 };
@@ -21,6 +24,21 @@ pub(super) struct Domain<'a> {
     pub(super) line: bool,
 }
 
+fn vertex_roster_reference(bytes: &[u8]) -> Option<AllocationReference> {
+    if bytes.len() == wide_roster::LEN
+        && bytes[wide_roster::MARKER] == wide_roster::MARKER_VALUE
+        && bytes[wide_roster::TERMINAL] == wide_roster::TERMINAL_VALUE
+    {
+        return Some(AllocationReference {
+            value: View::u24_le_at(bytes, wide_roster::ORDINAL)?,
+            encoding: AllocationReferenceEncoding::TaggedU24,
+        });
+    }
+    let mut at = 0;
+    let reference = allocation_reference(bytes, &mut at)?;
+    (bytes.get(at..)? == [0]).then_some(reference)
+}
+
 pub(super) fn parameter(
     bytes: &[u8],
     records: &[ConsolidatedRecord],
@@ -30,16 +48,72 @@ pub(super) fn parameter(
     resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
     refusal: &mut LaneRefusals,
 ) -> Option<f64> {
+    let record = records.get(vertex)?;
+    if record.family() != Family::B || record.class() != 0x5d {
+        return None;
+    }
+    let vertex_bytes = payload(bytes, record)?;
+    let mut at = 0;
+    let reference = allocation_reference(vertex_bytes, &mut at)?;
+    if vertex_bytes.get(at..)? != [0] {
+        return None;
+    }
+    roster_parameter(
+        bytes,
+        records,
+        [vertex, curve],
+        domain,
+        reference,
+        resolve,
+        refusal,
+    )
+}
+
+pub(super) fn wide_parameter(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+    vertex: usize,
+    curve: usize,
+    domain: Domain<'_>,
+    resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
+    refusal: &mut LaneRefusals,
+) -> Option<f64> {
+    let record = records.get(vertex)?;
+    if record.family() != Family::B || record.class() != 0x5d {
+        return None;
+    }
+    let reference = vertex_roster_reference(payload(bytes, record)?)?;
+    if reference.encoding != AllocationReferenceEncoding::TaggedU24 {
+        return None;
+    }
+    roster_parameter(
+        bytes,
+        records,
+        [vertex, curve],
+        domain,
+        reference,
+        resolve,
+        refusal,
+    )
+    .filter(|t| {
+        domain.range[0].min(domain.range[1]) <= *t && *t <= domain.range[0].max(domain.range[1])
+    })
+}
+
+fn roster_parameter(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+    [vertex, curve]: [usize; 2],
+    domain: Domain<'_>,
+    reference: AllocationReference,
+    resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
+    refusal: &mut LaneRefusals,
+) -> Option<f64> {
     let typed = |index: usize, class: u8| {
         let record = records.get(index)?;
         (record.family() == Family::B && record.class() == class).then_some(record)
     };
-    let vertex_bytes = payload(bytes, typed(vertex, 0x5d)?)?;
-    let mut at = 0;
-    let roster = resolve(vertex, allocation_reference(vertex_bytes, &mut at)?)?;
-    if vertex_bytes.get(at..)? != [0] {
-        return None;
-    }
+    let roster = resolve(vertex, reference)?;
     let roster_bytes = payload(bytes, typed(roster, 0x05)?)?;
     let count = roster_bytes.first()?.checked_sub(0x80)?;
     let mut at = 1;
@@ -596,6 +670,7 @@ mod tests {
     use super::*;
 
     mod fixtures;
+    mod roster_reference;
 
     fn station_value(
         bytes: &[u8],

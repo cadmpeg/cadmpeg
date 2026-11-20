@@ -597,6 +597,8 @@ pub(crate) struct Section<'a> {
     pub(crate) fields: Arc<[FieldDefinition<'a>]>,
     /// Internally pointed record area, when the section carries one.
     pub(crate) record_area: Option<RecordArea<'a>>,
+    /// Operation headers validated while the section's record area is framed.
+    operation_headers: Arc<[OperationHeader]>,
     /// Operation labels decoded while the section's record area is framed.
     cached_operation_labels: Arc<[OperationLabel<'a>]>,
 }
@@ -1136,6 +1138,7 @@ impl<'a> Section<'a> {
         operation_records_with_labels_and_ordinals(
             bytes,
             base_offset,
+            &self.operation_headers,
             &self.cached_operation_labels,
         )
     }
@@ -1147,7 +1150,12 @@ impl<'a> Section<'a> {
         let Some((base_offset, bytes)) = self.record_area_parts() else {
             return Vec::new();
         };
-        unlabeled_operation_records_with_ordinals(bytes, base_offset, &self.cached_operation_labels)
+        unlabeled_operation_records_with_ordinals(
+            bytes,
+            base_offset,
+            &self.operation_headers,
+            &self.cached_operation_labels,
+        )
     }
 
     /// Decode the bounded state-counter map of a feature-history record area.
@@ -1345,9 +1353,13 @@ impl<'a> Section<'a> {
 }
 
 /// Decode complete feature-operation headers and their label frames.
-fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<'_>> {
+fn operation_labels<'a>(
+    bytes: &'a [u8],
+    base_offset: usize,
+    headers: &[OperationHeader],
+) -> Vec<OperationLabel<'a>> {
     let mut labels = Vec::new();
-    for header in validated_operation_headers(bytes, base_offset) {
+    for &header in headers {
         if let Some(label) = operation_label_at(bytes, base_offset, header) {
             labels.push(label);
         }
@@ -1421,9 +1433,9 @@ fn operation_label_at(
 fn operation_records_with_labels_and_ordinals<'a>(
     bytes: &'a [u8],
     base_offset: usize,
+    headers: &[OperationHeader],
     labels: &[OperationLabel<'a>],
 ) -> Vec<(usize, OperationRecord<'a>)> {
-    let headers = validated_operation_headers(bytes, base_offset);
     let mut records = Vec::new();
     for (ordinal, header) in headers.iter().enumerate() {
         let record = (|| {
@@ -1446,9 +1458,9 @@ fn operation_records_with_labels_and_ordinals<'a>(
 fn unlabeled_operation_records_with_ordinals<'a>(
     bytes: &'a [u8],
     base_offset: usize,
+    headers: &[OperationHeader],
     labels: &[OperationLabel<'a>],
 ) -> Vec<(usize, UnlabeledOperationRecord<'a>)> {
-    let headers = validated_operation_headers(bytes, base_offset);
     let mut records = Vec::new();
     for (ordinal, header) in headers.iter().enumerate() {
         let record = (|| {
@@ -3738,9 +3750,13 @@ pub(crate) fn sections(bytes: &[u8]) -> Result<Vec<Section<'_>>, CodecError> {
             offset: start,
             bytes: &bytes[start..end],
         });
-        let cached_operation_labels = match record_area {
-            Some(area) => operation_labels(area.bytes, area.offset),
-            None => Vec::new(),
+        let (operation_headers, cached_operation_labels) = match record_area {
+            Some(area) => {
+                let headers = validated_operation_headers(area.bytes, area.offset);
+                let labels = operation_labels(area.bytes, area.offset, &headers);
+                (headers, labels)
+            }
+            None => (Vec::new(), Vec::new()),
         };
         out.push(Section {
             offset,
@@ -3748,6 +3764,7 @@ pub(crate) fn sections(bytes: &[u8]) -> Result<Vec<Section<'_>>, CodecError> {
             types: types.into(),
             fields: fields.into(),
             record_area,
+            operation_headers: operation_headers.into(),
             cached_operation_labels: cached_operation_labels.into(),
         });
     }

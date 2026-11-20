@@ -30,9 +30,7 @@ use crate::decode::analytic::pcurves::{
 use crate::decode::sketch_transfer::identity::semantic_saved_section_entities;
 use crate::decode::source_carriers::SourceUnitCarriers;
 use crate::decode::surfaces::intersection_resolve::curve_contains_points;
-use crate::decode::surfaces::prototypes::{
-    surface_prototype_frame_bounds, unique_surface_prototype_associations,
-};
+use crate::decode::surfaces::prototypes::unique_surface_prototype_associations;
 use crate::lane_refusal::JoinedLaneRecords;
 use crate::loss::CreoLossCode;
 use crate::scalar;
@@ -1110,7 +1108,7 @@ pub(in crate::decode) fn transfer_envelope_replay_surfaces(
             continue;
         }
         let mut candidates = Vec::new();
-        for (prototype, first, section) in &associations {
+        for (prototype, first, section, (start, end)) in &associations {
             if first.feature_id != row.feature_id
                 || first.kind != row.kind
                 || first.offset >= row.offset
@@ -1118,12 +1116,7 @@ pub(in crate::decode) fn transfer_envelope_replay_surfaces(
             {
                 continue;
             }
-            let Some((start, end)) =
-                surface_prototype_frame_bounds(scan, section, prototype.record().offset)?
-            else {
-                continue;
-            };
-            if !(start..end).contains(&row.offset) {
+            if !(*start..*end).contains(&row.offset) {
                 continue;
             }
             candidates.push((first, section));

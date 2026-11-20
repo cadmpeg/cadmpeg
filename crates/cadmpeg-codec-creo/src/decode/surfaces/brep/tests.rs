@@ -75,13 +75,29 @@ fn brep_edge_indexes_preserve_model_curve_multiplicity() {
         source_object: None,
         native_ref: None,
     };
+    let model_curves = |ir: &CadIr| {
+        crate::decode::uniqueness::NumberedIdentityPositions::new(
+            ir.geometry.curves.iter().map(|curve| curve.id.as_str()),
+            "creo:visibgeom:curve#",
+        )
+    };
     ir.geometry.curves.push(curve.clone());
-    let one = { BrepEdgeIndexes::from_rows(&rows, &native_vertices, &solved_vertices, &ir) };
+    let one = BrepEdgeIndexes::from_rows(
+        &rows,
+        &native_vertices,
+        &solved_vertices,
+        &model_curves(&ir),
+    );
     assert_eq!(one.edge_vertices[&10], [1, 2]);
     assert_eq!(one.model_curve_counts[&10], 1);
     assert_eq!(one.admitted_edge_curves, BTreeSet::from([10]));
     ir.geometry.curves.push(curve);
-    let duplicate = { BrepEdgeIndexes::from_rows(&rows, &native_vertices, &solved_vertices, &ir) };
+    let duplicate = BrepEdgeIndexes::from_rows(
+        &rows,
+        &native_vertices,
+        &solved_vertices,
+        &model_curves(&ir),
+    );
     assert_eq!(duplicate.model_curve_counts[&10], 2);
     assert!(duplicate.admitted_edge_curves.is_empty());
 }
