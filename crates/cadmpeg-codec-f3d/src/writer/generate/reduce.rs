@@ -554,7 +554,9 @@ impl<'a> Reduction<'a> {
     /// against. A vertex farther from its carrier than its own allowance
     /// (f3d.md §2: the edge's, its own and the cache-fit tolerances) is raised
     /// to that distance, with `geometry.vertex-tolerance-widened` naming it.
-    /// An edge that runs against its line is written with its ends exchanged.
+    /// An edge that runs against its line, or against a NURBS curve that is not
+    /// periodic, is written with its ends exchanged; on a periodic curve an end
+    /// before the start may instead cross the seam, so that edge keeps no range.
     /// A line or conic carrier that a vertex lies beyond the edge's allowance
     /// from is ranged between the vertices' feet on it, with a loss naming the
     /// distance and, because the output's validation finds the vertex off its
@@ -652,6 +654,8 @@ impl<'a> Reduction<'a> {
             };
             let solved = carrier.geometry.solved();
             let line = matches!(solved, Some(SolvedCurveGeometry::Line(_)));
+            let aperiodic_nurbs =
+                matches!(solved, Some(SolvedCurveGeometry::Nurbs(nurbs)) if !nurbs.periodic());
             let conic = matches!(
                 solved,
                 Some(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_))
@@ -672,7 +676,7 @@ impl<'a> Reduction<'a> {
             if last <= first && conic {
                 range[1] += std::f64::consts::TAU;
             }
-            let exchange = line && last < first;
+            let exchange = (line || aperiodic_nurbs) && last < first;
             if exchange {
                 if self.names_edge_uses(edge) {
                     continue;
