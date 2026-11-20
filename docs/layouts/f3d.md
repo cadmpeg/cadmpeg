@@ -8669,6 +8669,25 @@ Unstated regions:
 
 - `0..11` (11 B): The indexed header precedes this field run.
 
+## `typed_reference_profile_lost_record`
+
+Spec §3.1 · layout: byte offsets · size: 51 B
+
+Offsets are relative to the lost profile-reference record indexed header.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 14 | `zero_run_14` | `bytes[14]` | little | spec | A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`. |
+| 25 | 4 | `marker_length` | `u32` | little | spec | A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`. |
+| 29 | 22 | `marker` | `bytes[22]` | little | spec | A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`. |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
 ## `typed_reference_companion_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 98 B

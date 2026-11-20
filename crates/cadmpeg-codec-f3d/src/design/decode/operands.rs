@@ -60,6 +60,7 @@ use crate::layout::split_body_compact_group_prefix as split_group;
 use crate::layout::typed_reference_extrude_selection_group_prefix as typed_group;
 use crate::layout::typed_reference_profile_chain_record as typed_chain;
 use crate::layout::typed_reference_profile_identity_record as typed_identity;
+use crate::layout::typed_reference_profile_lost_record as lost_record;
 use crate::layout::typed_reference_profile_selection_prefix as typed_selection;
 use crate::layout::typed_reference_profile_status_record as typed_status;
 use crate::layout::work_point_sketch_point_compact_identity as compact_identity;
@@ -7849,9 +7850,6 @@ fn parse_profile_curve_selection_prefix(
 const PROFILE_STATUS_REFERENCE_TYPE_GUID: &str = "1ABFB679-C79B-4F24-AD6C-215A7DCE1AC4";
 /// ASCII marker of a lost profile-reference record.
 const PROFILE_REFERENCE_LOST: &[u8] = b"PROFILE_REFERENCE_LOST";
-/// Zero bytes between a lost-reference record's indexed header and its
-/// marker length.
-const LOST_REFERENCE_ZERO_RUN: usize = 14;
 
 /// The lost profile-reference records that the typed profile status record at
 /// `status_at` references, in stored order. A status record whose fixed
@@ -7904,14 +7902,13 @@ fn lost_profile_references(
 /// Whether the record at `record_at` is a lost profile-reference record:
 /// its indexed header, fourteen zero bytes, the marker length, and the marker.
 fn lost_profile_reference_record(bytes: &[u8], record_at: usize) -> bool {
-    let zero_at = record_at + indexed_header::LEN;
-    let length_at = zero_at + LOST_REFERENCE_ZERO_RUN;
-    let marker_at = length_at + 4;
-    bytes.get(zero_at..length_at) == Some(&[0; LOST_REFERENCE_ZERO_RUN][..])
+    let zero_at = record_at + lost_record::ZERO_RUN_14;
+    let length_at = record_at + lost_record::MARKER_LENGTH;
+    let marker_at = record_at + lost_record::MARKER;
+    bytes.get(zero_at..length_at) == Some(&[0; 14][..])
         && View::u32_le_at(bytes, length_at).and_then(|length| usize::try_from(length).ok())
             == Some(PROFILE_REFERENCE_LOST.len())
-        && bytes.get(marker_at..marker_at + PROFILE_REFERENCE_LOST.len())
-            == Some(PROFILE_REFERENCE_LOST)
+        && bytes.get(marker_at..record_at + lost_record::LEN) == Some(PROFILE_REFERENCE_LOST)
 }
 
 /// The record indices that typed local references of type

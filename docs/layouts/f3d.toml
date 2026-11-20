@@ -27890,6 +27890,41 @@ source = "spec"
 anchor = "The status record at the typed-reference profile selection's record index plus two stores nine zero bytes"
 
 [[record]]
+name = "typed_reference_profile_lost_record"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/operands.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`."
+size = 51
+note = "Offsets are relative to the lost profile-reference record indexed header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header precedes this field run."
+
+[[record.field]]
+name = "zero_run_14"
+offset = 11
+type = "bytes[14]"
+source = "spec"
+anchor = "A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`."
+
+[[record.field]]
+name = "marker_length"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`."
+
+[[record.field]]
+name = "marker"
+offset = 29
+type = "bytes[22]"
+source = "spec"
+anchor = "A lost profile-reference record consists of its eleven-byte indexed header, fourteen zero bytes, `u32 22`, and ASCII `PROFILE_REFERENCE_LOST`."
+
+[[record]]
 name = "typed_reference_companion_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs"
 kind = "byte"

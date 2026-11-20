@@ -7895,6 +7895,24 @@ pub(crate) mod typed_reference_profile_status_record {
     pub(crate) const LOST_REFERENCE_COUNT: usize = 25;
 }
 
+/// Byte offsets for the `typed_reference_profile_lost_record` record.
+///
+/// Spec §3.1. Record length 51 B.
+///
+/// ```text
+/// Offsets are relative to the lost profile-reference record indexed header.
+/// ```
+pub(crate) mod typed_reference_profile_lost_record {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 51;
+    /// Offset of `zero_run_14` (`bytes[14]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_14: usize = 11;
+    /// Offset of `marker_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MARKER_LENGTH: usize = 25;
+    /// Offset of `marker` (`bytes[22]`). Spec §3.1.
+    pub(crate) const MARKER: usize = 29;
+}
+
 /// Byte offsets for the `typed_reference_companion_prefix` record.
 ///
 /// Spec §3.1. Record length 98 B.
