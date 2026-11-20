@@ -599,6 +599,7 @@ fn transfer_schema_one(
             base_color: Some(decode_color(packed_color, transparency)?),
             textures: Vec::new(),
             properties: material_properties,
+            native_ref: None,
         });
         for (index, body) in body_ids.into_iter().enumerate() {
             plan.bindings.push(AppearanceBinding {
@@ -611,6 +612,7 @@ fn transfer_schema_one(
                 object_type: Some("ViewProvider".into()),
                 visible: None,
                 channels: BTreeMap::new(),
+                native_ref: None,
             });
         }
     }
@@ -1200,6 +1202,7 @@ fn transfer_primitive_appearance(
         properties: admitted_size
             .map(|width| [(property, width)].into())
             .unwrap_or_default(),
+        native_ref: None,
     });
     for (index, target) in targets.into_iter().enumerate() {
         plan.bindings.push(AppearanceBinding {
@@ -1216,6 +1219,7 @@ fn transfer_primitive_appearance(
                 precedence.into(),
             )]
             .into(),
+            native_ref: None,
         });
     }
     Ok(())
@@ -3899,6 +3903,7 @@ fn transfer_shape_appearances(
                         object_type: Some("ViewProvider ShapeAppearance".into()),
                         visible: None,
                         channels: BTreeMap::new(),
+                        native_ref: None,
                     });
                 }
             } else {
@@ -4153,6 +4158,7 @@ fn material_appearance(
             ),
         ]
         .into(),
+        native_ref: None,
     })
 }
 
@@ -4189,6 +4195,7 @@ fn bind_material_faces(
                 "face_over_object".into(),
             )]
             .into(),
+            native_ref: None,
         });
     }
     Ok(())
@@ -4370,6 +4377,7 @@ fn transfer_topology_colors(
                     )),
                     textures: Vec::new(),
                     properties: inherited_properties.clone(),
+                    native_ref: None,
                 });
                 emitted_appearance = true;
             }
@@ -4390,6 +4398,7 @@ fn transfer_topology_colors(
                     kind.precedence().into(),
                 )]
                 .into(),
+                native_ref: None,
             });
         }
     }

@@ -6482,7 +6482,7 @@ pub(crate) fn resolve_face_appearance_bindings(
         };
         let strings = || {
             attribute.values.iter().filter_map(|value| match value {
-                AttributeValue::String(value) => Some(value.as_str()),
+                Some(AttributeValue::String(value)) => Some(value.as_str()),
                 _ => None,
             })
         };
@@ -6608,6 +6608,7 @@ pub(crate) fn resolve_face_appearance_bindings(
                 object_type: None,
                 visible: None,
                 channels: std::collections::BTreeMap::new(),
+                native_ref: None,
             });
         }
     }
