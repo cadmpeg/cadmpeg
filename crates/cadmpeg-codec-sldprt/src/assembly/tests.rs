@@ -54,7 +54,7 @@ fn tree() -> String {
 }
 
 fn ctx() -> cadmpeg_core::decode::DecodeContext<'static> {
-    cadmpeg_test_support::service_decode_context()
+    cadmpeg_core::decode::test_support::service_decode_context()
 }
 
 fn named_block(section: &str, payload: Vec<u8>) -> Block {

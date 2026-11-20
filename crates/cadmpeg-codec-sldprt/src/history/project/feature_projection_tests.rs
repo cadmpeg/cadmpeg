@@ -1235,11 +1235,12 @@ fn native_attribute_records_are_metadata_not_model_features() {
     let projected = project_features(std::slice::from_ref(&history)).unwrap();
     assert_eq!(projected.len(), 1);
     assert_eq!(projected[0].native_ref.as_deref(), Some("model"));
-    assert!(
-        project_parameters(&cadmpeg_test_support::service_decode_context(), &[history])
-            .unwrap()
-            .is_empty()
-    );
+    assert!(project_parameters(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &[history]
+    )
+    .unwrap()
+    .is_empty());
 }
 
 #[test]
@@ -1263,11 +1264,12 @@ fn native_attribute_definition_type_is_metadata_without_an_instance_name_match()
     assert!(project_features(std::slice::from_ref(&history))
         .unwrap()
         .is_empty());
-    assert!(
-        project_parameters(&cadmpeg_test_support::service_decode_context(), &[history])
-            .unwrap()
-            .is_empty()
-    );
+    assert!(project_parameters(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &[history]
+    )
+    .unwrap()
+    .is_empty());
 }
 
 #[test]

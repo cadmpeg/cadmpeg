@@ -13,7 +13,7 @@ use crate::schema::rewrite::typed::{IdentityMap, RewriteIdentities, TextReplacem
 
 #[test]
 fn state_references_visit_and_rewrite_each_v11_evaluated_form() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (source, expected, target) in [
         (
             serde_json::json!({"kind":"state","value":{"kind":"start","value":"test:model:container#one"}}),
@@ -116,7 +116,7 @@ fn construction_graph_walks_nested_selections_bindings_and_configuration_keys() 
         )),
         reversed: None,
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut seen = std::collections::BTreeSet::new();
     input
         .visit_identity_references(&ctx, &mut |id| {

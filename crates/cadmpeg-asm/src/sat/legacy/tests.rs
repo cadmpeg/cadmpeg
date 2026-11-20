@@ -444,7 +444,7 @@ End-of-ACIS-data\n",
 
 #[test]
 fn legacy_cone_pcurves_use_the_major_radius_as_u_scale() {
-    let eval_ctx = cadmpeg_test_support::service_decode_context();
+    let eval_ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for version in [106, 300, 400] {
         let source = legacy_cone_band_stream(version);
         crate::test_support::with_service_context(source.as_bytes(), |ctx| {

@@ -272,7 +272,7 @@ mod tests {
             -1, 0, 0, -1,
         ];
         operand.recipe_structure = crate::design::decode::operands::edge_recipe_structure(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &program,
         )
         .unwrap();
@@ -333,7 +333,7 @@ mod tests {
             -1, 0, 0, -1,
         ];
         let structure = crate::design::decode::operands::edge_recipe_structure(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &program,
         )
         .unwrap()

@@ -32,8 +32,8 @@ fn capped_spatial_profile_search_reports_a_loss() {
             .unwrap(),
     };
     // Disjoint open segments: each search start scans every unused segment
-    // twice and every segment once, about 2 * 3200^2 work units in total.
-    let curves = (0..3200_u32)
+    // twice and every segment once, so the first start alone charges 23 units.
+    let curves = (0..8_u32)
         .map(|index| {
             let x = f64::from(index) * 10.0;
             let record_index = 1000 + index;
@@ -75,7 +75,10 @@ fn capped_spatial_profile_search_reports_a_loss() {
             &curves,
             &[],
             &[],
-            EPS_POINT_PROJECTION,
+            SpatialProfileSearch {
+                linear_tolerance: EPS_POINT_PROJECTION,
+                work: 16,
+            },
         )
     })
     .expect("spatial sketch projects");
@@ -91,6 +94,6 @@ fn capped_spatial_profile_search_reports_a_loss() {
     );
     assert_eq!(
         loss.message,
-        "1 spatial sketch(es) have no closed profiles because their profile search exceeded the local work cap SPATIAL_PROFILE_SEARCH_WORK (16777216)."
+        "1 spatial sketch(es) have no closed profiles because their profile search exceeded the local work cap SPATIAL_PROFILE_SEARCH_WORK (16)."
     );
 }

@@ -70,7 +70,7 @@ fn generated_copy_paste_bodies_decode_parameter_scopes() {
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         assert!(
             !crate::design::decode::scopes::parameter_scope::decode_parameter_scopes(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 &crate::design::decode::scopes::parameter_scope::ParameterScopeSources::default(),
             )
