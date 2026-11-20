@@ -5,45 +5,26 @@ on:
 permissions:
   contents: read
 jobs:
-  measure:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 170
+  ir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/pinned-rust
-      - uses: ./.github/actions/cargo-job-count
-      - name: Sample memory
-        shell: bash
-        run: |
-          mkdir -p measure
-          ( while true; do
-              date -u +%T
-              if [ "$(uname)" = Darwin ]; then sysctl vm.swapusage; memory_pressure | tail -1; else free -m | sed -n 2,3p; fi
-              sleep 30
-            done ) > measure/memory.log 2>&1 &
-      - name: Build every test target
-        shell: bash
-        env:
-          RUSTC_WRAPPER: ${{ github.workspace }}/.github/measure/rustc_wrapper.py
-          MEASURE_LOG: ${{ github.workspace }}/measure/rustc.tsv
-          CARGO_BUILD_JOBS: 2
-        run: |
-          chmod +x .github/measure/rustc_wrapper.py
-          touch measure/rustc.tsv
-          tail -F measure/rustc.tsv | sed -u 's/^/rustc /' &
-          (while sleep 20; do if [ "$(uname)" = Darwin ]; then echo "mem $(sysctl -n vm.swapusage)"; else free -m | awk 'NR==2 {print "mem used " $3 " of " $2 " MiB"}'; fi; done) &
-          sysctl -n hw.memsize 2>/dev/null || free -b | sed -n 2p
-          time cargo test -q --workspace --bins --tests --no-run --timings
-      - name: Keep results
-        if: always()
-        shell: bash
-        run: cp -r target/cargo-timings measure/ 2>/dev/null || true
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - name: Build dependencies of cadmpeg-ir
+        run: CARGO_BUILD_JOBS=4 cargo build -q -p cadmpeg-core -p cadmpeg-derive --features cadmpeg-core/schema,cadmpeg-core/test-support
+      - name: Install rustfilt
+        uses: taiki-e/install-action@v2.90.3
         with:
-          name: measure-${{ matrix.os }}
-          path: measure
+          tool: rustfilt
+      - name: Compile cadmpeg-ir with time-passes and LLVM IR
+        env:
+          RUSTC_BOOTSTRAP: "1"
+          CARGO_BUILD_JOBS: "1"
+        run: |
+          (while sleep 15; do free -m | awk 'NR==2 {print "mem used " $3 " MiB"}'; done) &
+          /usr/bin/time -v cargo rustc -p cadmpeg-ir --lib --features schema,examples -- -Z time-passes --emit=llvm-ir,link 2>&1 | grep -v '^\s*$' | awk '{ if ($0 ~ /time:/) { split($0,a," "); } print }' | grep -E 'time:|Maximum resident|Elapsed|error' | sort -t: -k2 | tail -80
+      - name: Largest functions in cadmpeg-ir LLVM IR
+        run: |
+          ll=$(ls -S target/debug/deps/cadmpeg_ir-*.ll | head -1); ls -la $ll
+          python3 .github/measure/llvm_lines.py "$ll"
