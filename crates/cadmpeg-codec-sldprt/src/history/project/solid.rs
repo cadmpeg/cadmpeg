@@ -189,7 +189,17 @@ pub(super) fn project_extrude(
                 source: None,
             }
         }
-        None => cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+        None => {
+            if feature
+                .properties
+                .get("DirectionSense")
+                .is_some_and(|sense| sense == "Reversed")
+            {
+                cadmpeg_ir::features::ExtrudeDirection::ReversedProfileNormal {}
+            } else {
+                cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {}
+            }
+        }
     };
     if matches!(direction, cadmpeg_ir::features::ExtrudeDirection::Explicit { vector, .. } if !valid_direction(vector.get()))
     {

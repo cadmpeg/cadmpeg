@@ -76,11 +76,15 @@ fn deferred_principal_component_preserves_scoped_and_lane_front_fallbacks() {
             2,
             SketchPlaneFrame::from_frame(front, SketchPlaneUAxisSource::Native),
         )]);
-        let expected = (
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, -1.0, 0.0),
-            Vector3::new(0.0, 0.0, -1.0),
-        );
+        let expected = if source == 4 {
+            principal_sketch_frame(PrincipalPlane::Right)
+        } else {
+            (
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, -1.0, 0.0),
+                Vector3::new(0.0, 0.0, -1.0),
+            )
+        };
         for context in [0, start] {
             let expected_top = (source == 3 && context == 0).then(principal_top_component_frame);
             assert_eq!(

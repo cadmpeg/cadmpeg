@@ -200,6 +200,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
         features_by_id.entry(feature.id.as_str()).or_insert(feature);
     }
     let mut terminations = HashMap::<String, Vec<Option<TerminationVote>>>::new();
+    let mut direction_senses = HashMap::<String, Vec<Option<bool>>>::new();
     let mut start_conditions =
         HashMap::<String, Vec<super::extrusion_start::StartCondition>>::new();
     for lane in lanes {
@@ -318,6 +319,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 .rsplit_once('#')
                 .map_or(lane.id.as_str(), |(_, key)| key);
             let mut candidates = Vec::new();
+            let mut candidate_reversed = Vec::new();
             let scan_end = (103..end_spec_end).len();
             for offset in start..scan_end {
                 if !compact_end_spec_identity_at(&lane.native_payload, offset)
@@ -423,16 +425,27 @@ pub(crate) fn enrich_history_extrusion_terminations(
                     })()?;
                 if let Some(candidate) = candidate {
                     candidates.push(candidate);
+                    candidate_reversed.push(compact_extrusion_direction_flag(
+                        &lane.native_payload,
+                        offset,
+                    ));
                 }
             }
             let grouped = (grouped_blind.get(feature_id.as_str()) == Some(&1))
                 .then_some(TerminationVote::Blind { depth_m: None });
+            let reversed = (candidates.len() == 1)
+                .then(|| candidate_reversed.pop().flatten())
+                .flatten();
             let vote = if candidates.len() == 1 {
                 candidates.pop()
             } else {
                 None
             }
             .or(grouped);
+            direction_senses
+                .entry(feature_id.clone())
+                .or_default()
+                .push(reversed);
             terminations
                 .entry(feature_id.clone())
                 .or_default()
@@ -450,6 +463,18 @@ pub(crate) fn enrich_history_extrusion_terminations(
             {
                 let condition = super::extrusion_start::common_condition(conditions);
                 super::extrusion_start::insert_condition(&mut feature.properties, condition)?;
+            }
+        }
+        if let Some(senses) = direction_senses.get(&feature.id) {
+            if !feature.properties.contains_key("DirectionSense")
+                && !senses.is_empty()
+                && senses.iter().all(|sense| *sense == Some(true))
+            {
+                insert_termination_field(
+                    &mut feature.properties,
+                    "DirectionSense",
+                    "Reversed".to_owned(),
+                )?;
             }
         }
         if feature.properties.contains_key("EndCondition") {
@@ -1903,6 +1928,21 @@ enum EndSpecDirections {
 
 fn compact_extrusion_end_spec_header(payload: &[u8], offset: usize, code: u32) -> bool {
     compact_extrusion_end_spec_directions(payload, offset, code) == Some(EndSpecDirections::One)
+}
+
+fn compact_extrusion_direction_flag(payload: &[u8], offset: usize) -> Option<bool> {
+    if !compact_end_spec_identity_at(payload, offset)
+        || payload.get(offset + 2..offset + 4) != Some(&[0, 0])
+        || View::u32_le_at(payload, offset + 8).is_none_or(|word| word > 1)
+        || payload.get(offset + 16..offset + 18) != Some(&[0, 0])
+    {
+        return None;
+    }
+    match View::u32_le_at(payload, offset + 12)? {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
 }
 
 fn compact_extrusion_end_spec_directions(

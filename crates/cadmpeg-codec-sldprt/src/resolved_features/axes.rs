@@ -430,6 +430,33 @@ pub(super) fn compact_line_reference_directions(
     unique_directions
 }
 
+fn revolve_turn_reversed(payload: &[u8], object_start: usize, object_end: usize) -> bool {
+    const LINE_REF: &[u8] = b"\xff\xff\x01\x00\x0b\x00moLineRef_w";
+    let Some(slice) = payload.get(object_start..object_end) else {
+        return false;
+    };
+    let Some(rel) = slice
+        .windows(LINE_REF.len())
+        .position(|window| window == LINE_REF)
+    else {
+        return false;
+    };
+    let Some(block_start) = rel.checked_sub(21) else {
+        return false;
+    };
+    let Some(block) = slice.get(block_start..block_start + 9) else {
+        return false;
+    };
+    let Some(su_ob_list_token) = View::u16_le_at(slice, block_start + 9) else {
+        return false;
+    };
+    is_class_token(su_ob_list_token)
+        && slice.get(block_start + 11..block_start + 13) == Some(&[0, 0])
+        && block[..2] == [0, 0]
+        && block[2..6] == 1u32.to_le_bytes()
+        && block[6..9] == [0, 0, 0]
+}
+
 fn revolution_line_reference_inputs(
     payload: &[u8],
     object_start: usize,
@@ -974,7 +1001,12 @@ pub(crate) fn enrich_history_revolution_inputs(
                     known_profiles,
                 );
                 let placed_axis = line_reference
-                    .map(|(_, origin, direction)| (origin, direction))
+                    .map(|(_, origin, mut direction)| {
+                        if revolve_turn_reversed(&lane.native_payload, start, end) {
+                            direction = direction.reversed();
+                        }
+                        (origin, direction)
+                    })
                     .or_else(|| temporary_axis_reference(&lane.native_payload, start, end));
                 profiles
                     .entry(feature.id.clone())

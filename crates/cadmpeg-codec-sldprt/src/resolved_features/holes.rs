@@ -4314,7 +4314,10 @@ pub(super) fn feature_input_sketch_frame(
                             cadmpeg_ir::features::PrincipalPlane::Front,
                         )
                 {
-                    if let Some(frame) = plane_index.preserved_principal_fallback(start, end) {
+                    if let Some(frame) = plane_index
+                        .principal_right_profile_frame(start, end)
+                        .or_else(|| plane_index.preserved_principal_fallback(start, end))
+                    {
                         return SketchPlaneFrame::from_frame(frame, reference.u_axis_source);
                     }
                 }
