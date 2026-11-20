@@ -601,11 +601,11 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 ### DR-891. Fixed Chamfer face groups
 
-**Question.** Does the fixed scalar of a Chamfer scope apply to each role-`0x0000001000000000` face group beside the scope's one role-`0x0000000800000000` edge group?
+**Question.** Does the fixed specification of a Chamfer scope apply to each role-`0x0000001000000000` face group beside the scope's one role-`0x0000000800000000` edge group, and in a two-distance scope, which distance applies to each side of a chamfer face that the transition inserts along a face-group edge?
 
-**Known.** The `f3d.md` paragraph "A fixed equal-distance `Chamfer` has no indexed parameter owner" gives the fixed scalar to the edge-role group and to each face-role group of the scope. In a two-distance fixed scope with one face group and one edge group, every chamfer face that the transition inserts along an edge of either group has its vertices 0.5 mm from that edge, which is the stored setback. Groups and the fixed scalar store no assignment cross-reference. The decoder charges `feature.chamfer-fixed-face-group-assumed` for this pairing.
+**Known.** Groups and the fixed scalars store no assignment cross-reference. The decoder applies the fixed specification of the edge-role group to each face-role group of the scope, and charges `feature.chamfer-fixed-face-group-assumed` for this assumption. In a user design, a fixed two-distance Chamfer with distances 0.5 mm and 0.5 mm, one edge-role group, and one face-role group puts every chamfer face along a face-group edge 0.500 mm from that edge, which is the stored setback. Equal distances give the same face for both orientations.
 
-**Need.** A fixed Chamfer whose face-group edges have a setback different from the stored scalar would replace the rule; a stored assignment would confirm it.
+**Need.** A fixed two-distance Chamfer with unequal distances, one edge-role group, and one face-role group shows which distance applies to each side of a face-group chamfer face.
 
 ### DR-101. Fixed typed occurrence path discriminator
 
