@@ -45,7 +45,7 @@ fn root_id() -> ProductDefinitionId {
 
 #[test]
 fn a_geometry_document_gains_a_root_that_owns_its_top() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = CadIr::empty();
     ir.geometry
         .bodies
@@ -90,7 +90,7 @@ fn a_geometry_document_gains_a_root_that_owns_its_top() {
 
 #[test]
 fn a_stated_root_is_kept_and_owns_only_what_no_definition_holds() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = CadIr::empty();
     ir.geometry.bodies.extend([
         body("test:model:body#part"),

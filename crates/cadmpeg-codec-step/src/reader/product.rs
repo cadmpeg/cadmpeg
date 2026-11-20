@@ -28,7 +28,7 @@ mod bodies;
 
 /// Occurrences that product expansion may add to the model. Expansion stops
 /// at the limit and reports one loss.
-const MAX_OCCURRENCES: usize = 100_000;
+pub(super) const MAX_OCCURRENCES: usize = 100_000;
 const PRODUCT_DEFINITION_FORMATION_TYPES: &[&str] = &[
     "PRODUCT_DEFINITION_FORMATION",
     "PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE",
@@ -79,6 +79,7 @@ pub(super) fn decode(
     ir: &mut CadIr,
     ctx: &DecodeContext<'_>,
     admitted_ir_entities: &mut u64,
+    max_occurrences: usize,
 ) -> Result<StageOutcome<ProductData>, CodecError> {
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
@@ -401,7 +402,7 @@ pub(super) fn decode(
             let document = document_definition_id();
             let mut root = ProductDefinition::root(document.clone(), ExternalDocument::default());
             for (definition, prototype) in &roots {
-                if ir.model.occurrences.len() >= MAX_OCCURRENCES {
+                if ir.model.occurrences.len() >= max_occurrences {
                     output_truncated_at = Some(format!("root PRODUCT_DEFINITION #{definition}"));
                     break;
                 }
@@ -538,7 +539,7 @@ pub(super) fn decode(
                 kind!("occurrence"),
                 IdentityKey::from(usage_id),
             ));
-            if ir.model.occurrences.len() >= MAX_OCCURRENCES {
+            if ir.model.occurrences.len() >= max_occurrences {
                 output_truncated_at = Some(format!("NAUO #{usage_id}"));
                 break 'roots;
             }
@@ -576,7 +577,7 @@ pub(super) fn decode(
     if let Some(start) = output_truncated_at {
         losses.push(
             StepLossCode::OccurrenceExpansionOutputTruncated.note(format!(
-            "product occurrence decoding stopped at its limit of {MAX_OCCURRENCES} occurrences; \
+            "product occurrence decoding stopped at its limit of {max_occurrences} occurrences; \
              {start} and the usages after it are not decoded"
         )),
         );
