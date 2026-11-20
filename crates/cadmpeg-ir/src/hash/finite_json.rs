@@ -11,15 +11,17 @@
 //! value is recorded in a `FiniteGuard` the whole walk shares, so the caller
 //! reads back which float was refused.
 //!
-//! [`to_json_value`] runs the same walk with floats passed through, so a
-//! `serde_json::Value` of an IR type reuses this serializer's code instead of
-//! compiling every IR type against `serde_json`'s value serializer too.
+//! Readers of a whole IR value that need `serde_json`'s own float spelling
+//! take the same walk through [`write_serde_json`], so each IR type compiles one
+//! JSON serializer. [`to_json_value`] takes it too, so a `serde_json::Value`
+//! of an IR type reuses this serializer's code instead of compiling every IR
+//! type against `serde_json`'s value serializer as well.
 
 use std::cell::{Cell, RefCell};
 
 use cadmpeg_core::decode::ResourceLimit;
 
-pub(super) mod admission;
+pub(crate) mod admission;
 #[cfg(test)]
 mod tests;
 use admission::{Admission, CanonicalAdmission};
@@ -52,31 +54,52 @@ pub enum CanonicalJsonError {
 /// The bytes are the ones `serde_json::to_writer_pretty` produces. The float
 /// refusal is the adapter's, not `serde_json`'s: `serde_json` writes a
 /// non-finite float as `null`.
+///
+/// The guard is consulted on both arms. A `Serialize` implementation that
+/// catches the adapter's refusal and completes would otherwise outrun it and
+/// produce canonical JSON for a value the adapter had already refused.
 pub(super) fn write_canonical_json<T: Serialize + ?Sized>(
     admission: CanonicalAdmission<'_, '_>,
     writer: &mut dyn std::io::Write,
     value: &T,
 ) -> Result<(), CanonicalJsonError> {
-    write_json(
-        &FiniteGuard::new(admission, Floats::Canonical),
-        writer,
-        value,
-    )
+    write_json(admission, Floats::Canonical, writer, value)
 }
 
-/// Writes `value` as pretty JSON through the adapter that `guard` drives.
+/// Writes `value` as the pretty JSON `serde_json::to_writer_pretty` produces,
+/// admitting each value through `admission`.
 ///
-/// Every caller shares this one serializer type, so each `Serialize`
-/// implementation is compiled for it once. The code compiled for each `T` is
-/// only this call; the guard states the result.
-fn write_json<T: Serialize + ?Sized>(
-    guard: &FiniteGuard<CanonicalAdmission<'_, '_>>,
+/// Floats are spelled as `serde_json` spells them: negative zero keeps its
+/// sign and a non-finite float is `null`.
+///
+/// # Errors
+///
+/// [`CanonicalJsonError::Resource`] when `admission` refuses a value, and
+/// [`CanonicalJsonError::Serialize`] when the value or the writer fails.
+pub(crate) fn write_serde_json<T: Serialize + ?Sized>(
+    admission: CanonicalAdmission<'_, '_>,
     writer: &mut dyn std::io::Write,
     value: &T,
 ) -> Result<(), CanonicalJsonError> {
+    write_json(admission, Floats::SerdeJson, writer, value)
+}
+
+fn write_json<T: Serialize + ?Sized>(
+    admission: CanonicalAdmission<'_, '_>,
+    floats: Floats,
+    writer: &mut dyn std::io::Write,
+    value: &T,
+) -> Result<(), CanonicalJsonError> {
+    let guard = FiniteGuard::new(admission, floats);
     let mut json = serde_json::Serializer::pretty(writer);
-    let outcome = value.serialize(FiniteSerializer::new(&mut json, guard));
-    guard.verdict(outcome)
+    let outcome = value.serialize(FiniteSerializer::new(&mut json, &guard));
+    if let Some(limit) = guard.resource.borrow_mut().take() {
+        return Err(CanonicalJsonError::Resource(limit.into()));
+    }
+    if let Some(value) = guard.refused() {
+        return Err(CanonicalJsonError::NonFinite { value });
+    }
+    outcome.map_err(CanonicalJsonError::Serialize)
 }
 
 /// Renders `value` as canonical pretty JSON text, refusing a non-finite float.
@@ -97,10 +120,10 @@ pub fn to_canonical_json_string<T: Serialize + ?Sized>(
 /// `value`.
 ///
 /// The value is written as JSON text through the canonical writer's
-/// serializer and read back. Floats pass unchanged: a non-finite float
-/// becomes `null`, negative zero stays negative, and an `f32` widens to
-/// `f64`, as `serde_json::to_value` stores them. An object key is plain text,
-/// also a key that spells `serde_json`'s `RawValue` token.
+/// serializer and read back. Floats pass as `serde_json::to_value` stores
+/// them: a non-finite float becomes `null`, negative zero stays negative, and
+/// an `f32` widens to `f64`. An object key is plain text, also a key that
+/// spells `serde_json`'s `RawValue` token.
 ///
 /// # Errors
 ///
@@ -110,17 +133,13 @@ pub fn to_json_value<T: Serialize + ?Sized>(
     value: &T,
 ) -> Result<serde_json::Value, serde_json::Error> {
     let mut bytes = Vec::new();
-    let guard = FiniteGuard::new(CanonicalAdmission::unlimited(), Floats::Value);
-    let written = write_json(&guard, &mut bytes, value);
-    read_json_value(written, bytes)
-}
-
-/// Reads back the text that a [`Floats::Value`] walk wrote.
-fn read_json_value(
-    written: Result<(), CanonicalJsonError>,
-    bytes: Vec<u8>,
-) -> Result<serde_json::Value, serde_json::Error> {
-    written.map_err(|error| match error {
+    write_json(
+        CanonicalAdmission::unlimited(),
+        Floats::Value,
+        &mut bytes,
+        value,
+    )
+    .map_err(|error| match error {
         CanonicalJsonError::Serialize(error) => error,
         error => serde_json::Error::custom(error),
     })?;
@@ -128,22 +147,24 @@ fn read_json_value(
     crate::native::replay::value(&text)
 }
 
-/// How a [`FiniteSerializer`] walk writes a float.
+/// How a walk writes a float.
+#[derive(Clone, Copy)]
 enum Floats {
     /// Refuse a non-finite float and write negative zero as zero.
     Canonical,
-    /// Write each float as `serde_json::to_value` stores it: an `f32` as the
-    /// `f64` it widens to, and a non-finite float as `null`.
+    /// Write every float as `serde_json` writes it.
+    SerdeJson,
+    /// Write every float as `serde_json::to_value` stores it: an `f32` as the
+    /// `f64` it widens to.
     Value,
 }
 
-/// What one [`FiniteSerializer`] walk shares: its float mode, its admission,
-/// and the float or resource limit it refused.
+/// Records the float that a [`FiniteSerializer`] walk refused.
 struct FiniteGuard<A: Admission> {
     refused: Cell<Option<f64>>,
     admission: A,
-    resource: RefCell<Option<ResourceLimit>>,
     floats: Floats,
+    resource: RefCell<Option<ResourceLimit>>,
 }
 
 impl<A: Admission> FiniteGuard<A> {
@@ -168,29 +189,14 @@ impl<A: Admission> FiniteGuard<A> {
         Self {
             refused: Cell::new(None),
             admission,
-            resource: RefCell::new(None),
             floats,
+            resource: RefCell::new(None),
         }
     }
 
     /// Returns the refused float, if this walk refused one.
     fn refused(&self) -> Option<f64> {
         self.refused.get()
-    }
-
-    /// States the result of a walk that ended with `outcome`.
-    ///
-    /// The guard is consulted on both arms. A `Serialize` implementation that
-    /// catches the adapter's refusal and completes would otherwise outrun it
-    /// and produce canonical JSON for a value the adapter had already refused.
-    fn verdict(&self, outcome: serde_json::Result<()>) -> Result<(), CanonicalJsonError> {
-        if let Some(limit) = self.resource.borrow_mut().take() {
-            return Err(CanonicalJsonError::Resource(limit.into()));
-        }
-        if let Some(value) = self.refused() {
-            return Err(CanonicalJsonError::NonFinite { value });
-        }
-        outcome.map_err(CanonicalJsonError::Serialize)
     }
 
     /// Records `value` as refused and returns the error the walk carries.
@@ -200,7 +206,7 @@ impl<A: Admission> FiniteGuard<A> {
     }
 }
 
-/// Serializes a value through `inner`, writing floats in the guard's mode.
+/// Serializes a value through `inner`, refusing every non-finite float.
 struct FiniteSerializer<'guard, S, A: Admission> {
     inner: S,
     guard: &'guard FiniteGuard<A>,
@@ -271,7 +277,7 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
     fn serialize_f64(self, value: f64) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
         match self.guard.floats {
-            Floats::Value => self.inner.serialize_f64(value),
+            Floats::SerdeJson | Floats::Value => self.inner.serialize_f64(value),
             // `-0.0 + 0.0` is `0.0`, so a writer never writes negative zero.
             Floats::Canonical if value.is_finite() => self.inner.serialize_f64(value + 0.0),
             Floats::Canonical => Err(self.guard.refuse(value)),
@@ -281,6 +287,7 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
     fn serialize_f32(self, value: f32) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
         match self.guard.floats {
+            Floats::SerdeJson => self.inner.serialize_f32(value),
             Floats::Value => self.inner.serialize_f64(f64::from(value)),
             Floats::Canonical if value.is_finite() => self.inner.serialize_f32(value + 0.0),
             Floats::Canonical => Err(self.guard.refuse(f64::from(value))),
