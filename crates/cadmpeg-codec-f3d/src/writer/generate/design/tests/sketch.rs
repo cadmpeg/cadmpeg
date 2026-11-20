@@ -683,3 +683,42 @@ fn the_id_table_lists_sketches_then_the_base_feature() {
         .iter()
         .all(|tag| tag.design_references == [-304]));
 }
+
+#[test]
+fn a_sketch_of_lines_only_is_written_with_its_base_feature() {
+    let mut ir = scoped_cube();
+    let front = frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    let mut sketch = Source::new(
+        "lines",
+        picked(principal(PrincipalEntity::XyPlane)),
+        front.clone(),
+    );
+    sketch.entity(
+        "line",
+        PlanarCurve::Line {
+            start: point2(0.0, 0.0),
+            end: point2(3.0, 4.0),
+        },
+        &[],
+    );
+    let id = sketch.add_to(&mut ir);
+    let Some(Container::Ordered { members, .. }) = ir.design.containers.first_mut() else {
+        panic!("the cube's timeline");
+    };
+    members.insert(0, Member::Feature(id));
+    let (report, decoded) = write(&ir);
+    assert_eq!(decoded.model.sketches.len(), 1, "{:#?}", report.losses);
+    let points = decoded_points(&decoded);
+    for at in [world(&front, 0.0, 0.0), world(&front, 3.0, 4.0)] {
+        assert!(
+            points.iter().any(|point| near(*point, at)),
+            "{at:?} among {points:?}"
+        );
+    }
+    assert!(decoded.model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::BaseFeature { .. }
+        )
+    )));
+}
