@@ -10,6 +10,7 @@ mod cc0_controller;
 mod configuration_parameters;
 mod design_containment;
 mod design_parameters;
+mod design_v11;
 mod emboss_operands;
 mod external_placement;
 mod f30_placements;

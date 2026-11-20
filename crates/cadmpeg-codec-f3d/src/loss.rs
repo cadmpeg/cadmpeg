@@ -582,6 +582,26 @@ pub(crate) enum F3dLossCode {
     FaceAppearanceAmbiguous,
     /// Parameter expression symbols name same-stream parameters without an edge.
     ParameterExpressionUnbound,
+    /// Parameters of a document without a design scope of its own stay v10 parameters.
+    ParameterReferencedDesignUnscoped,
+    /// Model parameters whose owner feature has no timeline item stay v10 parameters.
+    ParameterOwnerOutsideTimeline,
+    /// Model parameters whose owner is unresolved stay v10 parameters.
+    ParameterOwnerUnresolvedOmitted,
+    /// Parameters with a blank name stay v10 parameters.
+    ParameterNameBlank,
+    /// Configuration rows of a document without a design scope of its own stay v10 configurations.
+    ConfigurationReferencedDesignUnscoped,
+    /// Configuration cells that set a parameter or feature the design does not state.
+    ConfigurationOverrideUnstated,
+    /// Configuration parameter cells whose cached value the design does not state.
+    ConfigurationOverrideValueUnprojected,
+    /// Configuration rows of a scope whose active row does not resolve stay v10 configurations.
+    ConfigurationScopeWithoutActiveRow,
+    /// Configuration properties the design does not state.
+    ConfigurationPropertyUnprojected,
+    /// The rollback marker of a timeline is not read; the timeline is stated built through its last item.
+    HistoryRollbackUnread,
     /// Feature history-state dependency links were not projected.
     HistoryDependencyUnprojected,
     /// Feature history-state dependency links have multiple source scopes.
@@ -1540,6 +1560,16 @@ impl F3dLossCode {
         Self::MaterialDistanceUnitUntyped,
         Self::FaceAppearanceAmbiguous,
         Self::ParameterExpressionUnbound,
+        Self::ParameterReferencedDesignUnscoped,
+        Self::ParameterOwnerOutsideTimeline,
+        Self::ParameterOwnerUnresolvedOmitted,
+        Self::ParameterNameBlank,
+        Self::ConfigurationReferencedDesignUnscoped,
+        Self::ConfigurationOverrideUnstated,
+        Self::ConfigurationOverrideValueUnprojected,
+        Self::ConfigurationScopeWithoutActiveRow,
+        Self::ConfigurationPropertyUnprojected,
+        Self::HistoryRollbackUnread,
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
         Self::HistoricalFaceSelectionUnbound,
@@ -2446,6 +2476,20 @@ impl F3dLossCode {
             Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
             Self::FaceAppearanceAmbiguous => "material.face-appearance-ambiguous",
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
+            Self::ParameterReferencedDesignUnscoped => "parameter.referenced-design-unscoped",
+            Self::ParameterOwnerOutsideTimeline => "parameter.owner-outside-timeline",
+            Self::ParameterOwnerUnresolvedOmitted => "parameter.owner-unresolved-omitted",
+            Self::ParameterNameBlank => "parameter.name-blank",
+            Self::ConfigurationReferencedDesignUnscoped => {
+                "configuration.referenced-design-unscoped"
+            }
+            Self::ConfigurationOverrideUnstated => "configuration.override-unstated",
+            Self::ConfigurationOverrideValueUnprojected => {
+                "configuration.override-value-unprojected"
+            }
+            Self::ConfigurationScopeWithoutActiveRow => "configuration.scope-without-active-row",
+            Self::ConfigurationPropertyUnprojected => "configuration.property-unprojected",
+            Self::HistoryRollbackUnread => "history.rollback-unread",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoryDeleteFaceMemberOrderAssumed => "history.delete-face-member-order-assumed",
@@ -3363,6 +3407,16 @@ impl F3dLossCode {
             | Self::MaterialDistanceUnitUntyped
             | Self::FaceAppearanceAmbiguous
             | Self::ParameterExpressionUnbound
+            | Self::ParameterReferencedDesignUnscoped
+            | Self::ParameterOwnerOutsideTimeline
+            | Self::ParameterOwnerUnresolvedOmitted
+            | Self::ParameterNameBlank
+            | Self::ConfigurationReferencedDesignUnscoped
+            | Self::ConfigurationOverrideUnstated
+            | Self::ConfigurationOverrideValueUnprojected
+            | Self::ConfigurationScopeWithoutActiveRow
+            | Self::ConfigurationPropertyUnprojected
+            | Self::HistoryRollbackUnread
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
@@ -4036,6 +4090,16 @@ impl F3dLossCode {
             | Self::ParameterOwnerUnstored
             | Self::ParameterUnitUntyped
             | Self::ParameterExpressionUnbound
+            | Self::ParameterReferencedDesignUnscoped
+            | Self::ParameterOwnerOutsideTimeline
+            | Self::ParameterOwnerUnresolvedOmitted
+            | Self::ParameterNameBlank
+            | Self::ConfigurationReferencedDesignUnscoped
+            | Self::ConfigurationOverrideUnstated
+            | Self::ConfigurationOverrideValueUnprojected
+            | Self::ConfigurationScopeWithoutActiveRow
+            | Self::ConfigurationPropertyUnprojected
+            | Self::HistoryRollbackUnread
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
@@ -4830,6 +4894,16 @@ mod tests {
                 "material.distance-unit-untyped",
                 "material.face-appearance-ambiguous",
                 "parameter.expression-unbound",
+                "parameter.referenced-design-unscoped",
+                "parameter.owner-outside-timeline",
+                "parameter.owner-unresolved-omitted",
+                "parameter.name-blank",
+                "configuration.referenced-design-unscoped",
+                "configuration.override-unstated",
+                "configuration.override-value-unprojected",
+                "configuration.scope-without-active-row",
+                "configuration.property-unprojected",
+                "history.rollback-unread",
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
                 "history.face-selection-unbound",
