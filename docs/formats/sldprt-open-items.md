@@ -1100,6 +1100,14 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Conflict.** For one record, the §2 reading and the point-record positions can select different point pairs.
 
+### EV-30. Sketch curve records of curve type 2
+
+**Question.** What does curve type `2` select in an `sgSketch` curve record, and how does the decoder type its geometry?
+
+**Known.** `sldprt.md` §2.3 states the curve types `0`, `0x40`, `1` and `0xffff`. Records of curve type `2` occur, and each uses the legacy record layout. The decoder keeps the line another pass drew on such a marker, and charges `sketch.arc-record-conflict` with the reason that names the unknown sense word.
+
+**Need.** For each curve-type-2 record, its point records and fields against the B-rep edges of the feature that consumes the sketch.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?
