@@ -108,7 +108,7 @@ fn terminal_owner_refusal_survives_native_store_projection_and_loss_reporting() 
             );
         }
         let validation = crate::resolved_features::validate::validate_native(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             result.ir(),
         )
         .unwrap();

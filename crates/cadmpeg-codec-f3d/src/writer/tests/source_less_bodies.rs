@@ -561,7 +561,11 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let expected = f3d_native(&source_less).asm_histories[0].clone();
 
@@ -632,7 +636,11 @@ fn generated_source_less_drops_lossy_asm_history_graphs() {
     let mut orphaned = decoded.ir().clone();
     orphaned.source = None;
     orphaned
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let orphan = &mut orphaned
         .native
@@ -657,7 +665,11 @@ fn generated_source_less_drops_lossy_asm_history_graphs() {
     let mut duplicate = decoded.ir().clone();
     duplicate.source = None;
     duplicate
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let states = duplicate
         .native
@@ -676,7 +688,11 @@ fn generated_source_less_drops_lossy_asm_history_graphs() {
     let (mut broken_chain, _, _) = decoded.into_parts();
     broken_chain.source = None;
     broken_chain
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     f3d_native_mut(&mut broken_chain).asm_histories[0].states_mut()[0].next_ref = Some(99);
     crate::test_support::assert_written_with_loss(
@@ -696,7 +712,11 @@ fn generated_source_less_drops_a_history_skipped_under_the_retained_allowance() 
     let (mut skipped, _, _) = decoded.into_parts();
     skipped.source = None;
     skipped
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     f3d_native_mut(&mut skipped).asm_histories[0].binding_budget_exceeded = true;
     crate::test_support::assert_written_with_loss(

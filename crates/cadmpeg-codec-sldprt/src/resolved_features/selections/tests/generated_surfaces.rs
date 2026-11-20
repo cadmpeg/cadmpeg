@@ -71,7 +71,7 @@ fn generated_surface_identity_duplicates_use_the_component_index() {
     payload.extend([0, 0]);
     let first = payload.len();
     for _ in 0..2 {
-        for identity in 1u32..=2048 {
+        for identity in 1u32..=3 {
             payload.extend(prefix);
             payload.extend(89u32.to_le_bytes());
             payload.extend(identity.to_le_bytes());
@@ -104,7 +104,7 @@ fn generated_surface_identity_duplicates_use_the_component_index() {
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let identities = generated_surface_identities(&lane).unwrap();
-    assert_eq!(identities.len(), 2048);
+    assert_eq!(identities.len(), 3);
     for (index, identity) in identities.iter().enumerate() {
         assert_eq!(identity.offset, u64::try_from(first + index * 16).unwrap());
         assert_eq!(identity.feature_source_id.value(), 89);

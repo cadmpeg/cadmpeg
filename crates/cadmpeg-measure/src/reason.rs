@@ -396,7 +396,8 @@ impl Serialize for CaveatCode {
 /// Why an ID-free comparison is inconclusive or a row is not compared.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CompareCause {
-    /// A document's occurrences place bodies non-trivially.
+    /// A document's occurrences place bodies non-trivially, and its
+    /// instances do not enumerate.
     OccurrencePlacement,
     /// A quantity is unavailable for a `budget`, `unsupported` or
     /// `placement` reason on at least one side and has no comparable
