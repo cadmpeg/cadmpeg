@@ -75,6 +75,8 @@ pub(crate) enum CatiaLossCode {
     GeometrySurfaceParametersNotTransferred,
     /// Native surface extrapolation controls remain outside the neutral carrier.
     GeometrySurfaceExtrapolationNotTransferred,
+    /// Bounded native plane charts emit neutral plane supports without their intervals.
+    GeometryPlaneBoundsNotTransferred,
     /// Extended rational weight-row controls use an inferred expansion.
     GeometrySurfaceWeightsInferred,
     /// A model-space curve supplies a bounded plane projection.
@@ -192,6 +194,7 @@ impl CatiaLossCode {
         Self::GeometryParameterMapAccuracyInferred,
         Self::GeometrySurfaceParametersNotTransferred,
         Self::GeometrySurfaceExtrapolationNotTransferred,
+        Self::GeometryPlaneBoundsNotTransferred,
         Self::GeometrySurfaceWeightsInferred,
         Self::GeometryPlanePcurveProjected,
         Self::GeometryConicBranchBoundsInferred,
@@ -267,6 +270,7 @@ impl CatiaLossCode {
             Self::GeometrySurfaceExtrapolationNotTransferred => {
                 "geometry.surface-extrapolation-not-transferred"
             }
+            Self::GeometryPlaneBoundsNotTransferred => "geometry.plane-bounds-not-transferred",
             Self::GeometrySurfaceWeightsInferred => "geometry.surface-weights-inferred",
             Self::GeometryPlanePcurveProjected => "geometry.plane-pcurve-projected",
             Self::GeometrySheetSurfaceFitted => "geometry.sheet-surface-fitted",
@@ -369,6 +373,7 @@ impl CatiaLossCode {
             | Self::GeometryRollingBallRailsAdjusted => LossTaxonomy::GeometryAgreementSampled,
             Self::GeometrySurfaceParametersNotTransferred
             | Self::GeometrySurfaceExtrapolationNotTransferred
+            | Self::GeometryPlaneBoundsNotTransferred
             | Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
             | Self::GeometryPlaneParametersInvalid
@@ -462,6 +467,7 @@ mod tests {
                 "geometry.parameter-map-accuracy-inferred",
                 "geometry.surface-parameters-not-transferred",
                 "geometry.surface-extrapolation-not-transferred",
+                "geometry.plane-bounds-not-transferred",
                 "geometry.surface-weights-inferred",
                 "geometry.plane-pcurve-projected",
                 "geometry.conic-branch-bounds-inferred",

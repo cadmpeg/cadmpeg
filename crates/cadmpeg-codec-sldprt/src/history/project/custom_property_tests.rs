@@ -37,7 +37,7 @@ fn custom_properties_are_document_attributes_not_model_features() {
     assert_eq!(attributes[0].name, "PartNumber");
     assert_eq!(
         attributes[0].values,
-        vec![AttributeValue::String("A-123".into())]
+        vec![Some(AttributeValue::String("A-123".into()))]
     );
 
     let mut native = Some(crate::native::SldprtNative {

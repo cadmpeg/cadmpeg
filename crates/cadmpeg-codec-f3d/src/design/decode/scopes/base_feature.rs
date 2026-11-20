@@ -714,7 +714,7 @@ fn marked_null_reference_flag(bytes: &[u8], at: usize) -> Option<bool> {
     if bytes.get(at + null_count::NULL_REFERENCE_MARKER) != Some(&1)
         || bytes.get(at + null_count::NULL_REFERENCE..at + null_count::NULL_REFERENCE_FLAG)
             != Some(&[0; 8])
-        || bytes.get(at + null_count::NULL_REFERENCE_ZERO) != Some(&0)
+        || bytes.get(at + null_count::NULL_REFERENCE_TERMINAL) != Some(&0)
     {
         return None;
     }

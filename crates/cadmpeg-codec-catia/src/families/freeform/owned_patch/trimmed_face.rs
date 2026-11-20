@@ -2019,6 +2019,7 @@ fn fit_ring(
         sides,
         inner_starts: Vec::new(),
         recovery: super::SheetBoundaryRecovery {
+            untransferred_plane_bounds: carrier.untransferred_plane_bounds(),
             rolling_extension_mm,
             ..super::SheetBoundaryRecovery::default()
         },

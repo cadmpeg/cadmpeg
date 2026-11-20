@@ -191,6 +191,12 @@ impl LaneRefusals {
         )));
     }
 
+    pub(crate) fn push_plane_bounds_not_transferred(&mut self, face: usize, bounds: [[f64; 2]; 2]) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometryPlaneBoundsNotTransferred.note(format!(
+            "The plane carrier for emitted native face {face} retains its origin and axes; native chart bounds {bounds:?} are omitted from the neutral plane support."
+        )));
+    }
+
     pub(crate) fn push_surface_weights_inferred(&mut self, source: usize) {
         self.notes.push(crate::loss::CatiaLossCode::GeometrySurfaceWeightsInferred.note(format!(
             "For the rational A5 surface at offset {source}, interpreted extended row controls as reflected-column masks and command-05 leading repeats; these control meanings are inferred."
