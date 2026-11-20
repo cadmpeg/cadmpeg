@@ -883,13 +883,13 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer must choose the form of each reference it writes. The field that holds each fifteen-byte reference, and the segment it names against the segments of the design, would settle it.
 
-### DR-893. Layouts of the remaining records of a Base Feature design
+### DR-918. Varying bytes of the serializer-trigger, Scene and settings records of a Base Feature design
 
-**Question.** What are the field layouts of the records of a `Base Feature` design's Design stream that `f3d.md` §3.1 "**Record roster.**" lists without a layout, and of its Browser segment?
+**Question.** Which bytes of roster records 185 (`49B2AA69`, configuration-table serializer trigger) and 186 (`3185B924`, configuration-rule serializer trigger), and of the roster's Scene and settings records, differ between one-body `Base Feature` designs, and what selects each value?
 
-**Known.** `f3d.md` §3.1 "**Record roster.**" gives each record's type, version, length, and order. "**Component aggregate.**", "**Origin records.**", "**Body-reference records.**", "**ACT segment of a Base Feature design.**", and the records that the timeline context names have stated layouts. The other records have fixed lengths except the Protein asset manager, the parameter collection (61 + 11n bytes), the root instance (252 or 384 bytes), the records of the six unit-system groups (records 47 to 160, 95 to 356 bytes), records 164 to 171 (153 bytes, and 54 to 58 bytes), the snapshot body-map companions, and the `Body` owners. Apart from their record indices, class tags, GUIDs, names, and the Protein asset list, most of their bytes are the same in every one-body design. Records of types `49B2AA69` and `3185B924`, and some Scene and settings records, also vary in other bytes, at offsets not yet located. The Browser segment (segment ID `2`, segment type code `6`) holds 31 records for one body; each references Design records across segments.
+**Known.** `f3d.md` §3.1 "**Record roster.**" gives the type, version and length of each of these records. Apart from record indices, class tags, GUIDs and names, they differ between one-body designs at offsets not yet located.
 
-**Need.** A writer of a design that Fusion opens writes every record of the roster and the Browser segment. The offsets at which the varying records differ, and field tables for these records, in particular the Protein asset manager, the `AssetSettings` record, the unit-system groups, the `Body` owners, the root instance, and the Browser records.
+**Need.** The offsets at which they differ and what each value holds, so that a writer states them instead of taking the bytes of one design.
 
 ### DR-912. Count before the parameter-collection companion
 
@@ -914,6 +914,42 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 **Known.** `f3d.md` §3.1 "**Record timestamps and evaluation values.**" gives epoch `252` for every item of a stream with MetaStream generation words `1234, 8, 36`, and a positive duration for a `Base Feature` item. Streams with other generation words store other epochs. The streams with generation words `1234, 8, 20`, `1234, 8, 23`, and `1234, 8, 27` each store more than one epoch value.
 
 **Need.** A writer must choose both values. The relation between the epoch and the generation words in the other streams.
+
+### DR-896. Fitted extents of the `HOME` camera
+
+**Question.** What rule gives the view extents `w0`, `w1` of the `HOME` camera and the scene radius at offset 426 of the `AssetSettings` record, and what centre does the camera use in a design with more than one result body?
+
+**Known.** `f3d.md` §3.1 "**Named views.**" and "**`AssetSettings`.**" give the camera layout, the target, the view direction `(1, -1, 1)`, the up direction, the field of view `2 atan(0.2)`, and the eye distance `2.5 max(w0, w1)`. `w0` is between 1.08 and 1.11 times the height, and `w1` between 1.07 and 1.09 times the width, of the body's bounding box projected on the view plane. The scene radius is between 1.0002 and 1.0044 times half the diagonal of that box. In a design with three result bodies, the target is not the centre of the union of the body boxes.
+
+**Need.** A writer must store the extents, the radius, and the target. The displayed tessellation of the body, projected on the view plane, against the extents would settle the rule.
+
+### DR-914. Layout of the OGS display scene
+
+**Question.** What is the layout of the members of `OGS.BlobFolder/OGS/DefaultScene/` (`world`, `stream_mesh_<n>`, `Fusion_mesh_<n>`), and what selects the numbers `<n>` in their names?
+
+**Known.** `f3d.md` §3.1 "**Archive members of a Base Feature design.**" lists the members. `world` is a serialized scene graph of UTF-16 type names (`ARenderList`, `GroupNode`, `GeometryNode`, `OgsSimpleMesh`, `VertexFormat`, `AIndexBuffer`, and the attribute types) with origin, edge, face, and body nodes; it stores pointer-like hexadecimal node names and the Protein instance GUIDs of the body. `stream_mesh_<n>` is 860 bytes with the same bytes in every one-body solid design. `Fusion_mesh_<n>` members store f32 vertex data.
+
+**Need.** A writer must decide whether to store the display scene and, if so, its bytes.
+
+### DR-915. Records and snapshot stream of a design with several or sheet result bodies
+
+**Question.** How does a `Base Feature` design with several result bodies, or with a sheet result body, allocate the record indices of its roster, and what values do its snapshot body-map companions list? How does the snapshot stream of a design with several result bodies differ from the solved part of its history stream? What sets the first value of the design snapshot body-map companion of a sheet body?
+
+**Known.** `f3d.md` §3.1 "**Record roster.**" gives the ten records that each further solid body adds. In a design with three solid bodies, the further design body-reference records and their Scene records follow record 192, the further parameter body-reference records and Scene records follow record 222 with unused indices between them, and the further tracking entries and browser-node members follow. Its snapshot stream has the same topology counts as the history stream, and geometry records of the two streams differ. In a design with one sheet body, whose faces, edges, and vertices carry generic-tag attributes, the design companion's values start 4 above the parameter companion's next value.
+
+Record indices below are the indices of the roster of a design with one solid result body. In a design with one sheet body, the alternate `Body` owner is record 193 and every later record moves up one index. Records 194 and 196 are records 195 and 197, with the same bytes apart from their indexed headers. The bodies root names records 187 and 216. Browser record 16, and the browser root's entry-map pair for it, name the parameter `Body` owner, record 194.
+
+In the design with three solid bodies, records 193 to 200 are the further design body-reference records and their Scene records, and records 193 to 222 move up eight indices. Records 194 and 196 are records 202 and 204, with the same bytes apart from their indexed headers. The bodies root is 116 bytes and names records 187, 193, 197, 223, 231, and 238. Browser record 16, and the browser root's entry-map pair for it, name the parameter `Body` owner, record 201. The parameter companion lists one run of `F + E` consecutive values for each body, in body order, from `0`, with one unused value after each run; its next value is the value after the last unused value. The design companion lists the `n` values that follow, from that next value.
+
+**Need.** A writer of several bodies or of a sheet body must allocate the indices, list the companion values, and write the snapshot stream. Designs with two and with more than three result bodies, and with several sheet bodies, would settle the allocation, the companion runs, and the geometry difference.
+
+### DR-900. Alternate forms of Base Feature roster records
+
+**Question.** What selects the alternate forms of the design `Body` owner and the root instance, and what sets the next value of the parameter snapshot body-map companion?
+
+**Known.** `f3d.md` §3.1 "**`Body` owners.**", "**Root instance.**", and "**Snapshot body-map companions.**" give the common forms. A design `Body` owner can store byte `1` after its ten zero bytes, followed by u32 `0`; its later fields then start four bytes later, and in a design with a sheet result body its first reference run names the alternate `Body` owner. A root instance can store a property list of count `3` with the properties `GatedByParent` (`IntrinsicMetaTypebool`), `ResolutionTime` (`IntrinsicMetaTypeHString`), and `SelfGated` (`IntrinsicMetaTypebool`), each an LP-ASCII name, an LP-ASCII value type, and the value; that form is 384 bytes. The parameter companion's next value is `n + 1`, `n`, or `n + 3` for `n` listed values.
+
+**Need.** A writer stores the common forms and the next value `n + 1`. The save conditions that produce each form would settle the selection.
 
 ### DR-888. Nonzero one-byte ordinal prefix of an attributed local occurrence
 

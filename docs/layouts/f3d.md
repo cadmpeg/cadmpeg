@@ -13959,6 +13959,977 @@ Offsets are relative to the owner's indexed header, for the 104-byte form; the p
 | 115 | 8 | `paired_zero_run` | `bytes[8]` | little | spec | The paired indexed header, eight zero bytes, and the owner collection reference follow |
 | 123 | 11 | `owner_collection` | `bytes[11]` | little | spec | The paired indexed header, eight zero bytes, and the owner collection reference follow |
 
+## `base_feature_zero_record`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 22 B
+
+Record 2, type `3B9288E7-E1DE-414D-90BD-1C0CDAC77EB1`.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_zero_record` |
+| 11 | 11 | `zero` | `bytes[11]` | little | spec | `base_feature_zero_record` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+
+## `base_feature_components_root`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 77 B
+
+Record 4, the components root.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_components_root` |
+| 11 | 4 | `zero_a` | `bytes[4]` | little | spec | `base_feature_components_root` · value `[0, 0, 0, 0]` |
+| 15 | 18 | `key` | `bytes[18]` | little | spec | `base_feature_components_root` · value `[14, 0, 0, 0, 67, 111, 109, 112, 111, 110, 101, 110, 116, 115, 82, 111, 111, 116]` |
+| 33 | 10 | `zero_b` | `bytes[10]` | little | spec | `base_feature_components_root` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 43 | 18 | `key_repeat` | `bytes[18]` | little | spec | `base_feature_components_root` · value `[14, 0, 0, 0, 67, 111, 109, 112, 111, 110, 101, 110, 116, 115, 82, 111, 111, 116]` |
+| 61 | 4 | `root_count` | `u32` | little | spec | `base_feature_components_root` · value `1` |
+| 65 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_components_root` |
+| 76 | 1 | `terminator` | `u8` | little | spec | `base_feature_components_root` · value `0` |
+
+## `base_feature_aggregate_link_25`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 36 B
+
+Record 5, type `F9CB8717-EB86-47F2-AAA7-39E142C57A09`.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_aggregate_link_25` |
+| 11 | 14 | `zero` | `bytes[14]` | little | spec | `base_feature_aggregate_link_25` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 25 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_aggregate_link_25` |
+
+## `base_feature_component_naming_space`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 52 B
+
+Record 6, the component naming space.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_component_naming_space` |
+| 11 | 10 | `zero_a` | `bytes[10]` | little | spec | `base_feature_component_naming_space` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 15 | `act_naming_space_link` | `bytes[15]` | little | spec | `base_feature_component_naming_space` |
+| 36 | 5 | `zero_b` | `bytes[5]` | little | spec | `base_feature_component_naming_space` · value `[0, 0, 0, 0, 0]` |
+| 41 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_component_naming_space` |
+
+## `base_feature_sketch_collection`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 115 B
+
+Record 10, the sketch collection.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_sketch_collection` |
+| 11 | 9 | `zero_a` | `bytes[9]` | little | spec | `base_feature_sketch_collection` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `property_marker` | `u8` | little | spec | `base_feature_sketch_collection` · value `1` |
+| 21 | 4 | `property_count` | `u32` | little | spec | `base_feature_sketch_collection` · value `1` |
+| 25 | 18 | `property_name` | `bytes[18]` | little | spec | `base_feature_sketch_collection` · value `[14, 0, 0, 0, 99, 114, 118, 95, 116, 97, 103, 95, 105, 100, 95, 105, 100, 120]` |
+| 43 | 27 | `property_type` | `bytes[27]` | little | spec | `base_feature_sketch_collection` · value `[23, 0, 0, 0, 73, 110, 116, 114, 105, 110, 115, 105, 99, 77, 101, 116, 97, 84, 121, 112, 101, 117, 105, 110, 116, 54, 52]` |
+| 70 | 8 | `property_value` | `u64` | little | spec | `base_feature_sketch_collection` · value `100` |
+| 78 | 8 | `zero_b` | `bytes[8]` | little | spec | `base_feature_sketch_collection` · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 86 | 1 | `flag_a` | `u8` | little | spec | `base_feature_sketch_collection` · value `1` |
+| 87 | 1 | `flag_b` | `u8` | little | spec | `base_feature_sketch_collection` · value `1` |
+| 88 | 11 | `curve_collection` | `bytes[11]` | little | spec | `base_feature_sketch_collection` |
+| 99 | 5 | `zero_c` | `bytes[5]` | little | spec | `base_feature_sketch_collection` · value `[0, 0, 0, 0, 0]` |
+| 104 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_sketch_collection` |
+
+## `base_feature_record_11`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 70 B
+
+Record 11, type `A8635B5F-1E2C-45FD-8BA9-0173B0FEB75E`.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_record_11` |
+| 11 | 30 | `zero_a` | `bytes[30]` | little | spec | `base_feature_record_11` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 41 | 1 | `flag_a` | `u8` | little | spec | `base_feature_record_11` · value `1` |
+| 42 | 1 | `flag_b` | `u8` | little | spec | `base_feature_record_11` · value `1` |
+| 43 | 11 | `record_21` | `bytes[11]` | little | spec | `base_feature_record_11` |
+| 54 | 5 | `zero_b` | `bytes[5]` | little | spec | `base_feature_record_11` · value `[0, 0, 0, 0, 0]` |
+| 59 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_record_11` |
+
+## `base_feature_flagged_aggregate_link_42`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 42 B
+
+Records 12 and 37.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_flagged_aggregate_link_42` |
+| 11 | 14 | `zero_a` | `bytes[14]` | little | spec | `base_feature_flagged_aggregate_link_42` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 25 | 1 | `flag` | `u8` | little | spec | `base_feature_flagged_aggregate_link_42` · value `1` |
+| 26 | 5 | `zero_b` | `bytes[5]` | little | spec | `base_feature_flagged_aggregate_link_42` · value `[0, 0, 0, 0, 0]` |
+| 31 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_flagged_aggregate_link_42` |
+
+## `base_feature_flagged_aggregate_link_46`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 46 B
+
+Record 13.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_flagged_aggregate_link_46` |
+| 11 | 18 | `zero_a` | `bytes[18]` | little | spec | `base_feature_flagged_aggregate_link_46` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 29 | 1 | `flag` | `u8` | little | spec | `base_feature_flagged_aggregate_link_46` · value `1` |
+| 30 | 5 | `zero_b` | `bytes[5]` | little | spec | `base_feature_flagged_aggregate_link_46` · value `[0, 0, 0, 0, 0]` |
+| 35 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_flagged_aggregate_link_46` |
+
+## `base_feature_aggregate_link_41`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 41 B
+
+Records 14, 16, 20, 21, and 22.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_aggregate_link_41` |
+| 11 | 19 | `zero` | `bytes[19]` | little | spec | `base_feature_aggregate_link_41` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 30 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_aggregate_link_41` |
+
+## `base_feature_aggregate_link_45`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 45 B
+
+Record 15.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_aggregate_link_45` |
+| 11 | 23 | `zero` | `bytes[23]` | little | spec | `base_feature_aggregate_link_45` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 34 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_aggregate_link_45` |
+
+## `base_feature_alternate_owner_list_empty`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 42 B
+
+Record 19 with no sheet body.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_alternate_owner_list_empty` |
+| 11 | 10 | `zero` | `bytes[10]` | little | spec | `base_feature_alternate_owner_list_empty` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 1 | `owner_slot` | `u8` | little | spec | `base_feature_alternate_owner_list_empty` · value `0` |
+| 22 | 4 | `set_count` | `u32` | little | spec | `base_feature_alternate_owner_list_empty` · value `0` |
+| 26 | 1 | `separator` | `u8` | little | spec | `base_feature_alternate_owner_list_empty` · value `0` |
+| 27 | 4 | `run_count` | `u32` | little | spec | `base_feature_alternate_owner_list_empty` · value `0` |
+| 31 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_alternate_owner_list_empty` |
+
+## `base_feature_paired_record_23`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 59 B
+
+Record 23.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_paired_record_23` |
+| 11 | 10 | `zero_a` | `bytes[10]` | little | spec | `base_feature_paired_record_23` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `count` | `u32` | little | spec | `base_feature_paired_record_23` · value `1` |
+| 25 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_paired_record_23` |
+| 36 | 12 | `zero_b` | `bytes[12]` | little | spec | `base_feature_paired_record_23` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 48 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_paired_record_23` |
+
+## `base_feature_paired_aggregate_link_55`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 55 B
+
+Records 32 and 33.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_paired_aggregate_link_55` |
+| 11 | 10 | `zero_a` | `bytes[10]` | little | spec | `base_feature_paired_aggregate_link_55` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_paired_aggregate_link_55` |
+| 32 | 12 | `zero_b` | `bytes[12]` | little | spec | `base_feature_paired_aggregate_link_55` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 44 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_paired_aggregate_link_55` |
+
+## `base_feature_record_34`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 80 B
+
+Record 34.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_record_34` |
+| 11 | 10 | `zero_a` | `bytes[10]` | little | spec | `base_feature_record_34` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 11 | `record_39` | `bytes[11]` | little | spec | `base_feature_record_34` |
+| 32 | 8 | `zero_b` | `bytes[8]` | little | spec | `base_feature_record_34` · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 40 | 1 | `flag_a` | `u8` | little | spec | `base_feature_record_34` · value `1` |
+| 41 | 1 | `flag_b` | `u8` | little | spec | `base_feature_record_34` · value `1` |
+| 42 | 4 | `scale` | `f32` | little | spec | `base_feature_record_34` |
+| 46 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_record_34` |
+| 57 | 12 | `zero_c` | `bytes[12]` | little | spec | `base_feature_record_34` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 69 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_record_34` |
+
+## `base_feature_record_36`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 60 B
+
+Record 36.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_record_36` |
+| 11 | 10 | `zero_a` | `bytes[10]` | little | spec | `base_feature_record_36` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 1 | `flag` | `u8` | little | spec | `base_feature_record_36` · value `1` |
+| 22 | 4 | `scale` | `f32` | little | spec | `base_feature_record_36` |
+| 26 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_record_36` |
+| 37 | 12 | `zero_b` | `bytes[12]` | little | spec | `base_feature_record_36` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 49 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_record_36` |
+
+## `base_feature_record_38`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 62 B
+
+Record 38.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_record_38` |
+| 11 | 14 | `zero_a` | `bytes[14]` | little | spec | `base_feature_record_38` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 25 | 1 | `flag_a` | `u8` | little | spec | `base_feature_record_38` · value `1` |
+| 26 | 1 | `flag_b` | `u8` | little | spec | `base_feature_record_38` · value `1` |
+| 27 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_record_38` |
+| 38 | 13 | `zero_b` | `bytes[13]` | little | spec | `base_feature_record_38` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 51 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_record_38` |
+
+## `base_feature_record_39`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 60 B
+
+Record 39.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_record_39` |
+| 11 | 10 | `zero_a` | `bytes[10]` | little | spec | `base_feature_record_39` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_record_39` |
+| 32 | 17 | `zero_b` | `bytes[17]` | little | spec | `base_feature_record_39` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 49 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_record_39` |
+
+## `base_feature_record_40`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 61 B
+
+Record 40.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_record_40` |
+| 11 | 10 | `zero_a` | `bytes[10]` | little | spec | `base_feature_record_40` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 1 | `flag_a` | `u8` | little | spec | `base_feature_record_40` · value `1` |
+| 22 | 1 | `flag_b` | `u8` | little | spec | `base_feature_record_40` · value `1` |
+| 23 | 4 | `zero_b` | `bytes[4]` | little | spec | `base_feature_record_40` · value `[0, 0, 0, 0]` |
+| 27 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_record_40` |
+| 38 | 12 | `zero_c` | `bytes[12]` | little | spec | `base_feature_record_40` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 50 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_record_40` |
+
+## `base_feature_record_41`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 72 B
+
+Record 41.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_record_41` |
+| 11 | 10 | `zero_a` | `bytes[10]` | little | spec | `base_feature_record_41` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 1 | `flag` | `u8` | little | spec | `base_feature_record_41` · value `1` |
+| 22 | 4 | `zero_b` | `bytes[4]` | little | spec | `base_feature_record_41` · value `[0, 0, 0, 0]` |
+| 26 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_record_41` |
+| 37 | 9 | `zero_c` | `bytes[9]` | little | spec | `base_feature_record_41` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 46 | 4 | `count` | `u32` | little | spec | `base_feature_record_41` · value `1` |
+| 50 | 11 | `record_42` | `bytes[11]` | little | spec | `base_feature_record_41` |
+| 61 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_record_41` |
+
+## `base_feature_record_42`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 67 B
+
+Record 42.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_record_42` |
+| 11 | 10 | `zero_a` | `bytes[10]` | little | spec | `base_feature_record_42` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 11 | `asset_manager` | `bytes[11]` | little | spec | `base_feature_record_42` |
+| 32 | 4 | `zero_b` | `bytes[4]` | little | spec | `base_feature_record_42` · value `[0, 0, 0, 0]` |
+| 36 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_record_42` |
+| 47 | 9 | `zero_c` | `bytes[9]` | little | spec | `base_feature_record_42` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 56 | 11 | `record_41` | `bytes[11]` | little | spec | `base_feature_record_42` |
+
+## `base_feature_component_instances_root`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 85 B
+
+Record 44.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_component_instances_root` |
+| 11 | 4 | `zero_a` | `bytes[4]` | little | spec | `base_feature_component_instances_root` · value `[0, 0, 0, 0]` |
+| 15 | 26 | `key` | `bytes[26]` | little | spec | `base_feature_component_instances_root` · value `[22, 0, 0, 0, 67, 111, 109, 112, 111, 110, 101, 110, 116, 73, 110, 115, 116, 97, 110, 99, 101, 115, 82, 111, 111, 116]` |
+| 41 | 2 | `zero_b` | `bytes[2]` | little | spec | `base_feature_component_instances_root` · value `[0, 0]` |
+| 43 | 26 | `key_repeat` | `bytes[26]` | little | spec | `base_feature_component_instances_root` · value `[22, 0, 0, 0, 67, 111, 109, 112, 111, 110, 101, 110, 116, 73, 110, 115, 116, 97, 110, 99, 101, 115, 82, 111, 111, 116]` |
+| 69 | 4 | `root_count` | `u32` | little | spec | `base_feature_component_instances_root` · value `1` |
+| 73 | 11 | `root_instance` | `bytes[11]` | little | spec | `base_feature_component_instances_root` |
+| 84 | 1 | `terminator` | `u8` | little | spec | `base_feature_component_instances_root` · value `0` |
+
+## `base_feature_visual_analyses`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 114 B
+
+Record 45.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_visual_analyses` |
+| 11 | 4 | `zero_a` | `bytes[4]` | little | spec | `base_feature_visual_analyses` · value `[0, 0, 0, 0]` |
+| 15 | 18 | `key` | `bytes[18]` | little | spec | `base_feature_visual_analyses` · value `[14, 0, 0, 0, 86, 105, 115, 117, 97, 108, 65, 110, 97, 108, 121, 115, 101, 115]` |
+| 33 | 2 | `zero_b` | `bytes[2]` | little | spec | `base_feature_visual_analyses` · value `[0, 0]` |
+| 35 | 11 | `record_0_a` | `bytes[11]` | little | spec | `base_feature_visual_analyses` |
+| 46 | 10 | `zero_c` | `bytes[10]` | little | spec | `base_feature_visual_analyses` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 56 | 11 | `record_0_b` | `bytes[11]` | little | spec | `base_feature_visual_analyses` |
+| 67 | 9 | `zero_d` | `bytes[9]` | little | spec | `base_feature_visual_analyses` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 76 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_visual_analyses` |
+| 87 | 4 | `zero_e` | `bytes[4]` | little | spec | `base_feature_visual_analyses` · value `[0, 0, 0, 0]` |
+| 91 | 18 | `key_repeat` | `bytes[18]` | little | spec | `base_feature_visual_analyses` · value `[14, 0, 0, 0, 86, 105, 115, 117, 97, 108, 65, 110, 97, 108, 121, 115, 101, 115]` |
+| 109 | 5 | `zero_f` | `bytes[5]` | little | spec | `base_feature_visual_analyses` · value `[0, 0, 0, 0, 0]` |
+
+## `base_feature_unit_system_root`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 103 B
+
+Record 46.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_unit_system_root` |
+| 11 | 4 | `zero_a` | `bytes[4]` | little | spec | `base_feature_unit_system_root` · value `[0, 0, 0, 0]` |
+| 15 | 15 | `key` | `bytes[15]` | little | spec | `base_feature_unit_system_root` · value `[11, 0, 0, 0, 85, 110, 105, 116, 83, 121, 115, 116, 101, 109, 115]` |
+| 30 | 2 | `zero_b` | `bytes[2]` | little | spec | `base_feature_unit_system_root` · value `[0, 0]` |
+| 32 | 4 | `system_count` | `u32` | little | spec | `base_feature_unit_system_root` · value `6` |
+| 36 | 11 | `cm_mks` | `bytes[11]` | little | spec | `base_feature_unit_system_root` |
+| 47 | 11 | `mm_mks` | `bytes[11]` | little | spec | `base_feature_unit_system_root` |
+| 58 | 11 | `m_mks` | `bytes[11]` | little | spec | `base_feature_unit_system_root` |
+| 69 | 11 | `inch_imperial` | `bytes[11]` | little | spec | `base_feature_unit_system_root` |
+| 80 | 11 | `imperial` | `bytes[11]` | little | spec | `base_feature_unit_system_root` |
+| 91 | 11 | `custom` | `bytes[11]` | little | spec | `base_feature_unit_system_root` |
+| 102 | 1 | `terminator` | `u8` | little | spec | `base_feature_unit_system_root` · value `0` |
+
+## `base_feature_named_tracked_entity_set`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 48 B
+
+Record 161.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_named_tracked_entity_set` |
+| 11 | 4 | `zero_a` | `bytes[4]` | little | spec | `base_feature_named_tracked_entity_set` · value `[0, 0, 0, 0]` |
+| 15 | 25 | `key` | `bytes[25]` | little | spec | `base_feature_named_tracked_entity_set` · value `[21, 0, 0, 0, 78, 97, 109, 101, 100, 84, 114, 97, 99, 107, 101, 100, 69, 110, 116, 105, 116, 121, 83, 101, 116]` |
+| 40 | 8 | `zero_b` | `bytes[8]` | little | spec | `base_feature_named_tracked_entity_set` · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+
+## `base_feature_record_162`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 51 B
+
+Record 162.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_record_162` |
+| 11 | 10 | `zero_a` | `bytes[10]` | little | spec | `base_feature_record_162` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_record_162` |
+| 32 | 8 | `zero_b` | `bytes[8]` | little | spec | `base_feature_record_162` · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 40 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_record_162` |
+
+## `base_feature_named_view_list`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 70 B
+
+Record 163.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_named_view_list` |
+| 11 | 10 | `zero` | `bytes[10]` | little | spec | `base_feature_named_view_list` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `view_count` | `u32` | little | spec | `base_feature_named_view_list` · value `4` |
+| 25 | 11 | `top` | `bytes[11]` | little | spec | `base_feature_named_view_list` |
+| 36 | 11 | `front` | `bytes[11]` | little | spec | `base_feature_named_view_list` |
+| 47 | 11 | `right` | `bytes[11]` | little | spec | `base_feature_named_view_list` |
+| 58 | 11 | `home` | `bytes[11]` | little | spec | `base_feature_named_view_list` |
+| 69 | 1 | `terminator` | `u8` | little | spec | `base_feature_named_view_list` · value `0` |
+
+## `base_feature_camera`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 153 B
+
+Records 164, 166, 168, and 170. Values are stated where every camera of every design agrees; the `HOME` camera fields depend on the body.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_camera` |
+| 11 | 10 | `zero_a` | `bytes[10]` | little | spec | `base_feature_camera` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `word_a` | `u32` | little | spec | `base_feature_camera` · value `1` |
+| 25 | 4 | `word_b` | `u32` | little | spec | `base_feature_camera` · value `0` |
+| 29 | 4 | `word_c` | `u32` | little | spec | `base_feature_camera` · value `64` |
+| 33 | 4 | `word_d` | `u32` | little | spec | `base_feature_camera` · value `0` |
+| 37 | 2 | `zero_b` | `bytes[2]` | little | spec | `base_feature_camera` · value `[0, 0]` |
+| 39 | 4 | `scale` | `f32` | little | spec | `base_feature_camera` |
+| 43 | 8 | `extent_0` | `f64` | little | spec | `base_feature_camera` |
+| 51 | 8 | `extent_1` | `f64` | little | spec | `base_feature_camera` |
+| 59 | 4 | `unit_scale` | `f32` | little | spec | `base_feature_camera` |
+| 63 | 4 | `word_e` | `u32` | little | spec | `base_feature_camera` · value `0` |
+| 67 | 2 | `zero_c` | `bytes[2]` | little | spec | `base_feature_camera` · value `[0, 0]` |
+| 69 | 8 | `field_of_view` | `f64` | little | spec | `base_feature_camera` |
+| 77 | 24 | `eye` | `f64[3]` | little | spec | `base_feature_camera` |
+| 101 | 4 | `marker` | `u32` | little | spec | `base_feature_camera` · value `1` |
+| 105 | 24 | `target` | `f64[3]` | little | spec | `base_feature_camera` |
+| 129 | 24 | `up` | `f64[3]` | little | spec | `base_feature_camera` |
+
+## `base_feature_view_name_prefix`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 22 B
+
+Records 165, 167, 169, and 171; the LP-UTF16 view name, the camera, and the named-view list follow.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_view_name_prefix` |
+| 11 | 11 | `zero` | `bytes[11]` | little | spec | `base_feature_view_name_prefix` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+
+## `base_feature_lighting_environment`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 261 B
+
+Record 172.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_lighting_environment` |
+| 11 | 10 | `zero_a` | `bytes[10]` | little | spec | `base_feature_lighting_environment` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 36 | `name` | `bytes[36]` | little | spec | `base_feature_lighting_environment` |
+| 57 | 12 | `zero_b` | `bytes[12]` | little | spec | `base_feature_lighting_environment` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 69 | 12 | `colour` | `f32[3]` | little | spec | `base_feature_lighting_environment` |
+| 81 | 4 | `alpha` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 85 | 4 | `word_a` | `u32` | little | spec | `base_feature_lighting_environment` · value `0` |
+| 89 | 4 | `range` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 93 | 4 | `word_b` | `u32` | little | spec | `base_feature_lighting_environment` · value `2` |
+| 97 | 25 | `zero_c` | `bytes[25]` | little | spec | `base_feature_lighting_environment` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 122 | 4 | `angle` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 126 | 4 | `height` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 130 | 4 | `intensity` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 134 | 1 | `slot` | `u8` | little | spec | `base_feature_lighting_environment` · value `0` |
+| 135 | 11 | `record_0` | `bytes[11]` | little | spec | `base_feature_lighting_environment` |
+| 146 | 2 | `zero_d` | `bytes[2]` | little | spec | `base_feature_lighting_environment` · value `[0, 0]` |
+| 148 | 18 | `environment` | `bytes[18]` | little | spec | `base_feature_lighting_environment` |
+| 166 | 5 | `zero_e` | `bytes[5]` | little | spec | `base_feature_lighting_environment` · value `[0, 0, 0, 0, 0]` |
+| 171 | 4 | `exposure` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 175 | 11 | `entry_175` | `bytes[11]` | little | spec | `base_feature_lighting_environment` |
+| 186 | 11 | `entry_176` | `bytes[11]` | little | spec | `base_feature_lighting_environment` |
+| 197 | 11 | `entry_173` | `bytes[11]` | little | spec | `base_feature_lighting_environment` |
+| 208 | 11 | `entry_174` | `bytes[11]` | little | spec | `base_feature_lighting_environment` |
+| 219 | 21 | `zero_f` | `bytes[21]` | little | spec | `base_feature_lighting_environment` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 240 | 8 | `distance` | `f64` | little | spec | `base_feature_lighting_environment` |
+| 248 | 4 | `scale` | `f32` | little | spec | `base_feature_lighting_environment` |
+| 252 | 9 | `zero_g` | `bytes[9]` | little | spec | `base_feature_lighting_environment` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+
+## `base_feature_archive_entry_name`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 25 B
+
+Records 173 to 176.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_archive_entry_name` |
+| 11 | 14 | `zero` | `bytes[14]` | little | spec | `base_feature_archive_entry_name` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+
+## `base_feature_working_model_placeholder_root`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 99 B
+
+Record 177.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_working_model_placeholder_root` |
+| 11 | 4 | `zero_a` | `bytes[4]` | little | spec | `base_feature_working_model_placeholder_root` · value `[0, 0, 0, 0]` |
+| 15 | 31 | `key` | `bytes[31]` | little | spec | `base_feature_working_model_placeholder_root` · value `[27, 0, 0, 0, 87, 111, 114, 107, 105, 110, 103, 77, 111, 100, 101, 108, 80, 108, 97, 99, 101, 104, 111, 108, 100, 101, 114, 82, 111, 111, 116]` |
+| 46 | 2 | `zero_b` | `bytes[2]` | little | spec | `base_feature_working_model_placeholder_root` · value `[0, 0]` |
+| 48 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_working_model_placeholder_root` |
+| 59 | 4 | `zero_c` | `bytes[4]` | little | spec | `base_feature_working_model_placeholder_root` · value `[0, 0, 0, 0]` |
+| 63 | 31 | `key_repeat` | `bytes[31]` | little | spec | `base_feature_working_model_placeholder_root` · value `[27, 0, 0, 0, 87, 111, 114, 107, 105, 110, 103, 77, 111, 100, 101, 108, 80, 108, 97, 99, 101, 104, 111, 108, 100, 101, 114, 82, 111, 111, 116]` |
+| 94 | 5 | `zero_d` | `bytes[5]` | little | spec | `base_feature_working_model_placeholder_root` · value `[0, 0, 0, 0, 0]` |
+
+## `base_feature_record_178`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 57 B
+
+Record 178.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_record_178` |
+| 11 | 10 | `zero_a` | `bytes[10]` | little | spec | `base_feature_record_178` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 1 | `flag` | `u8` | little | spec | `base_feature_record_178` · value `1` |
+| 22 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_record_178` |
+| 33 | 13 | `zero_b` | `bytes[13]` | little | spec | `base_feature_record_178` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 46 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_record_178` |
+
+## `base_feature_ogs_serializer`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 38 B
+
+Record 184.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_ogs_serializer` |
+| 11 | 4 | `zero_a` | `bytes[4]` | little | spec | `base_feature_ogs_serializer` · value `[0, 0, 0, 0]` |
+| 15 | 17 | `key` | `bytes[17]` | little | spec | `base_feature_ogs_serializer` · value `[13, 0, 0, 0, 79, 71, 83, 83, 101, 114, 105, 97, 108, 105, 122, 101, 114]` |
+| 32 | 6 | `zero_b` | `bytes[6]` | little | spec | `base_feature_ogs_serializer` · value `[0, 0, 0, 0, 0, 0]` |
+
+## `base_feature_configuration_table_trigger`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 202 B
+
+Record 185; the basename holds a 36-character UUID.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_configuration_table_trigger` |
+| 11 | 4 | `zero_a` | `bytes[4]` | little | spec | `base_feature_configuration_table_trigger` · value `[0, 0, 0, 0]` |
+| 15 | 45 | `key` | `bytes[45]` | little | spec | `base_feature_configuration_table_trigger` · value `[41, 0, 0, 0, 68, 101, 115, 105, 103, 110, 67, 111, 110, 102, 105, 103, 117, 114, 97, 116, 105, 111, 110, 84, 97, 98, 108, 101, 83, 101, 114, 105, 97, 108, 105, 122, 101, 114, 84, 114, 105, 103, 103, 101, 114]` |
+| 60 | 2 | `zero_b` | `bytes[2]` | little | spec | `base_feature_configuration_table_trigger` · value `[0, 0]` |
+| 62 | 4 | `basename_length` | `u32` | little | spec | `base_feature_configuration_table_trigger` · value `68` |
+| 66 | 136 | `basename` | `bytes[136]` | little | spec | `base_feature_configuration_table_trigger` |
+
+## `base_feature_configuration_rule_trigger`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 207 B
+
+Record 186; the basename holds a 36-character UUID.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_configuration_rule_trigger` |
+| 11 | 4 | `zero_a` | `bytes[4]` | little | spec | `base_feature_configuration_rule_trigger` · value `[0, 0, 0, 0]` |
+| 15 | 44 | `key` | `bytes[44]` | little | spec | `base_feature_configuration_rule_trigger` · value `[40, 0, 0, 0, 68, 101, 115, 105, 103, 110, 67, 111, 110, 102, 105, 103, 117, 114, 97, 116, 105, 111, 110, 82, 117, 108, 101, 83, 101, 114, 105, 97, 108, 105, 122, 101, 114, 84, 114, 105, 103, 103, 101, 114]` |
+| 59 | 2 | `zero_b` | `bytes[2]` | little | spec | `base_feature_configuration_rule_trigger` · value `[0, 0]` |
+| 61 | 4 | `basename_length` | `u32` | little | spec | `base_feature_configuration_rule_trigger` · value `71` |
+| 65 | 142 | `basename` | `bytes[142]` | little | spec | `base_feature_configuration_rule_trigger` |
+
+## `base_feature_bodies_root`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 72 B
+
+Record 191 for one result body.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_bodies_root` |
+| 11 | 4 | `zero_a` | `bytes[4]` | little | spec | `base_feature_bodies_root` · value `[0, 0, 0, 0]` |
+| 15 | 14 | `key` | `bytes[14]` | little | spec | `base_feature_bodies_root` · value `[10, 0, 0, 0, 66, 111, 100, 105, 101, 115, 82, 111, 111, 116]` |
+| 29 | 2 | `zero_b` | `bytes[2]` | little | spec | `base_feature_bodies_root` · value `[0, 0]` |
+| 31 | 14 | `key_repeat` | `bytes[14]` | little | spec | `base_feature_bodies_root` · value `[10, 0, 0, 0, 66, 111, 100, 105, 101, 115, 82, 111, 111, 116]` |
+| 45 | 4 | `reference_count` | `u32` | little | spec | `base_feature_bodies_root` · value `2` |
+| 49 | 11 | `design_body_reference` | `bytes[11]` | little | spec | `base_feature_bodies_root` |
+| 60 | 11 | `parameter_body_reference` | `bytes[11]` | little | spec | `base_feature_bodies_root` |
+| 71 | 1 | `terminator` | `u8` | little | spec | `base_feature_bodies_root` · value `0` |
+
+## `base_feature_record_194`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 60 B
+
+Record 194.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_record_194` |
+| 11 | 14 | `zero_a` | `bytes[14]` | little | spec | `base_feature_record_194` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 25 | 11 | `paired_header` | `bytes[11]` | little | spec | `base_feature_record_194` |
+| 36 | 13 | `zero_b` | `bytes[13]` | little | spec | `base_feature_record_194` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 49 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_record_194` |
+
+## `base_feature_snapshot_map_companion`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 39 B
+
+Record 196.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_snapshot_map_companion` |
+| 11 | 28 | `zero` | `bytes[28]` | little | spec | `base_feature_snapshot_map_companion` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+
+## `base_feature_design_body_owner`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 103 B
+
+Record 7 for one result body (`N = 1`).
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_design_body_owner` |
+| 11 | 10 | `zero` | `bytes[10]` | little | spec | `base_feature_design_body_owner` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 1 | `flag` | `u8` | little | spec | `base_feature_design_body_owner` · value `0` |
+| 22 | 4 | `set_count` | `u32` | little | spec | `base_feature_design_body_owner` · value `1` |
+| 26 | 4 | `run_count` | `u32` | little | spec | `base_feature_design_body_owner` · value `1` |
+| 30 | 11 | `body_reference` | `bytes[11]` | little | spec | `base_feature_design_body_owner` |
+| 41 | 1 | `marker_a` | `u8` | little | spec | `base_feature_design_body_owner` · value `1` |
+| 42 | 11 | `companion` | `bytes[11]` | little | spec | `base_feature_design_body_owner` |
+| 53 | 11 | `body_map` | `bytes[11]` | little | spec | `base_feature_design_body_owner` |
+| 64 | 1 | `marker_b` | `u8` | little | spec | `base_feature_design_body_owner` · value `1` |
+| 65 | 11 | `alternate_owner_list` | `bytes[11]` | little | spec | `base_feature_design_body_owner` |
+| 76 | 1 | `separator` | `u8` | little | spec | `base_feature_design_body_owner` · value `0` |
+| 77 | 4 | `run_count_repeat` | `u32` | little | spec | `base_feature_design_body_owner` · value `1` |
+| 81 | 11 | `body_reference_repeat` | `bytes[11]` | little | spec | `base_feature_design_body_owner` |
+| 92 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_design_body_owner` |
+
+## `base_feature_parameter_body_owner`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 93 B
+
+Record 193 for one result body (`N = 1`).
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_parameter_body_owner` |
+| 11 | 10 | `zero` | `bytes[10]` | little | spec | `base_feature_parameter_body_owner` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 1 | `flag` | `u8` | little | spec | `base_feature_parameter_body_owner` · value `0` |
+| 22 | 4 | `set_count` | `u32` | little | spec | `base_feature_parameter_body_owner` · value `1` |
+| 26 | 4 | `run_count` | `u32` | little | spec | `base_feature_parameter_body_owner` · value `1` |
+| 30 | 11 | `body_reference` | `bytes[11]` | little | spec | `base_feature_parameter_body_owner` |
+| 41 | 1 | `marker_a` | `u8` | little | spec | `base_feature_parameter_body_owner` · value `1` |
+| 42 | 11 | `companion` | `bytes[11]` | little | spec | `base_feature_parameter_body_owner` |
+| 53 | 11 | `snapshot_body_map` | `bytes[11]` | little | spec | `base_feature_parameter_body_owner` |
+| 64 | 1 | `marker_b` | `u8` | little | spec | `base_feature_parameter_body_owner` · value `1` |
+| 65 | 1 | `null_slot` | `u8` | little | spec | `base_feature_parameter_body_owner` · value `0` |
+| 66 | 1 | `separator` | `u8` | little | spec | `base_feature_parameter_body_owner` · value `0` |
+| 67 | 4 | `run_count_repeat` | `u32` | little | spec | `base_feature_parameter_body_owner` · value `1` |
+| 71 | 11 | `body_reference_repeat` | `bytes[11]` | little | spec | `base_feature_parameter_body_owner` |
+| 82 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_parameter_body_owner` |
+
+## `base_feature_body_map_companion_prefix`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 49 B
+
+Records 192 and 219; `n` u64 values follow.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_body_map_companion_prefix` |
+| 11 | 14 | `zero_a` | `bytes[14]` | little | spec | `base_feature_body_map_companion_prefix` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 25 | 8 | `next_value` | `u64` | little | spec | `base_feature_body_map_companion_prefix` |
+| 33 | 11 | `body_owner` | `bytes[11]` | little | spec | `base_feature_body_map_companion_prefix` |
+| 44 | 1 | `separator` | `u8` | little | spec | `base_feature_body_map_companion_prefix` · value `0` |
+| 45 | 4 | `value_count` | `u32` | little | spec | `base_feature_body_map_companion_prefix` |
+
+## `base_feature_body_map`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 149 B
+
+Record 197 for one result body (`N = 1`); the basename holds a 36-character UUID.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_body_map` |
+| 11 | 10 | `zero` | `bytes[10]` | little | spec | `base_feature_body_map` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `body_count` | `u32` | little | spec | `base_feature_body_map` · value `1` |
+| 25 | 8 | `body_position` | `u64` | little | spec | `base_feature_body_map` · value `0` |
+| 33 | 8 | `body_reference_index` | `u64` | little | spec | `base_feature_body_map` · value `187` |
+| 41 | 11 | `body_owner` | `bytes[11]` | little | spec | `base_feature_body_map` |
+| 52 | 1 | `separator` | `u8` | little | spec | `base_feature_body_map` · value `0` |
+| 53 | 4 | `basename_length` | `u32` | little | spec | `base_feature_body_map` · value `46` |
+| 57 | 92 | `basename` | `bytes[92]` | little | spec | `base_feature_body_map` |
+
+## `base_feature_snapshot_body_map`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 158 B
+
+Record 195 for one result body (`N = 1`); the basename holds a 36-character UUID.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_snapshot_body_map` |
+| 11 | 10 | `zero` | `bytes[10]` | little | spec | `base_feature_snapshot_body_map` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 11 | `companion` | `bytes[11]` | little | spec | `base_feature_snapshot_body_map` |
+| 32 | 4 | `body_count` | `u32` | little | spec | `base_feature_snapshot_body_map` · value `1` |
+| 36 | 8 | `body_position` | `u64` | little | spec | `base_feature_snapshot_body_map` · value `0` |
+| 44 | 8 | `body_reference_index` | `u64` | little | spec | `base_feature_snapshot_body_map` |
+| 52 | 11 | `body_owner` | `bytes[11]` | little | spec | `base_feature_snapshot_body_map` |
+| 63 | 1 | `separator` | `u8` | little | spec | `base_feature_snapshot_body_map` · value `0` |
+| 64 | 4 | `basename_length` | `u32` | little | spec | `base_feature_snapshot_body_map` · value `45` |
+| 68 | 90 | `basename` | `bytes[90]` | little | spec | `base_feature_snapshot_body_map` |
+
+## `base_feature_scene_node`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 133 B
+
+Records 188 and 220.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_scene_node` |
+| 11 | 14 | `zero_a` | `bytes[14]` | little | spec | `base_feature_scene_node` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 25 | 4 | `word_a` | `u32` | little | spec | `base_feature_scene_node` · value `2` |
+| 29 | 4 | `word_b` | `u32` | little | spec | `base_feature_scene_node` · value `2` |
+| 33 | 11 | `box_record` | `bytes[11]` | little | spec | `base_feature_scene_node` |
+| 44 | 4 | `word_c` | `u32` | little | spec | `base_feature_scene_node` · value `3` |
+| 48 | 11 | `auxiliary` | `bytes[11]` | little | spec | `base_feature_scene_node` |
+| 59 | 24 | `zero_b` | `bytes[24]` | little | spec | `base_feature_scene_node` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 83 | 1 | `marker_a` | `u8` | little | spec | `base_feature_scene_node` · value `1` |
+| 84 | 48 | `box` | `f64[6]` | little | spec | `base_feature_scene_node` |
+| 132 | 1 | `marker_b` | `u8` | little | spec | `base_feature_scene_node` · value `1` |
+
+## `base_feature_scene_box`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 95 B
+
+Records 189 and 221.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_scene_box` |
+| 11 | 34 | `zero` | `bytes[34]` | little | spec | `base_feature_scene_box` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 45 | 1 | `marker_a` | `u8` | little | spec | `base_feature_scene_box` · value `1` |
+| 46 | 48 | `box` | `f64[6]` | little | spec | `base_feature_scene_box` |
+| 94 | 1 | `marker_b` | `u8` | little | spec | `base_feature_scene_box` · value `1` |
+
+## `base_feature_scene_auxiliary`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 144 B
+
+Records 190 and 222.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_scene_auxiliary` |
+| 11 | 58 | `zero_a` | `bytes[58]` | little | spec | `base_feature_scene_auxiliary` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 69 | 11 | `record_0` | `bytes[11]` | little | spec | `base_feature_scene_auxiliary` |
+| 80 | 14 | `zero_b` | `bytes[14]` | little | spec | `base_feature_scene_auxiliary` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 94 | 1 | `marker_a` | `u8` | little | spec | `base_feature_scene_auxiliary` · value `1` |
+| 95 | 48 | `box` | `f64[6]` | little | spec | `base_feature_scene_auxiliary` |
+| 143 | 1 | `marker_b` | `u8` | little | spec | `base_feature_scene_auxiliary` · value `1` |
+
+## `base_feature_root_instance`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 252 B
+
+Record 43 with no properties.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_root_instance` |
+| 11 | 4 | `zero_a` | `bytes[4]` | little | spec | `base_feature_root_instance` · value `[0, 0, 0, 0]` |
+| 15 | 16 | `key` | `bytes[16]` | little | spec | `base_feature_root_instance` · value `[12, 0, 0, 0, 114, 111, 111, 116, 73, 110, 115, 116, 97, 110, 99, 101]` |
+| 31 | 1 | `flag_a` | `u8` | little | spec | `base_feature_root_instance` · value `1` |
+| 32 | 1 | `flag_b` | `u8` | little | spec | `base_feature_root_instance` · value `1` |
+| 33 | 3 | `zero_b` | `bytes[3]` | little | spec | `base_feature_root_instance` · value `[0, 0, 0]` |
+| 36 | 11 | `aggregate` | `bytes[11]` | little | spec | `base_feature_root_instance` |
+| 47 | 4 | `zero_c` | `bytes[4]` | little | spec | `base_feature_root_instance` · value `[0, 0, 0, 0]` |
+| 51 | 1 | `property_marker` | `u8` | little | spec | `base_feature_root_instance` · value `1` |
+| 52 | 4 | `property_count` | `u32` | little | spec | `base_feature_root_instance` · value `0` |
+| 56 | 6 | `zero_d` | `bytes[6]` | little | spec | `base_feature_root_instance` · value `[0, 0, 0, 0, 0, 0]` |
+| 62 | 76 | `guid_a` | `bytes[76]` | little | spec | `base_feature_root_instance` |
+| 138 | 76 | `guid_b` | `bytes[76]` | little | spec | `base_feature_root_instance` |
+| 214 | 15 | `act_instance_root` | `bytes[15]` | little | spec | `base_feature_root_instance` |
+| 229 | 1 | `separator` | `u8` | little | spec | `base_feature_root_instance` · value `0` |
+| 230 | 11 | `aggregate_repeat` | `bytes[11]` | little | spec | `base_feature_root_instance` |
+| 241 | 11 | `record_0` | `bytes[11]` | little | spec | `base_feature_root_instance` |
+
+## `base_feature_protein_asset_manager`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 334 B
+
+Record 1 with one appearance (`a = 1`) and a basename of 57 code units.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_protein_asset_manager` |
+| 11 | 4 | `zero_a` | `bytes[4]` | little | spec | `base_feature_protein_asset_manager` · value `[0, 0, 0, 0]` |
+| 15 | 23 | `key` | `bytes[23]` | little | spec | `base_feature_protein_asset_manager` · value `[19, 0, 0, 0, 80, 114, 111, 116, 101, 105, 110, 65, 115, 115, 101, 116, 77, 97, 110, 97, 103, 101, 114]` |
+| 38 | 2 | `zero_b` | `bytes[2]` | little | spec | `base_feature_protein_asset_manager` · value `[0, 0]` |
+| 40 | 4 | `material_count` | `u32` | little | spec | `base_feature_protein_asset_manager` · value `1` |
+| 44 | 76 | `material_guid` | `bytes[76]` | little | spec | `base_feature_protein_asset_manager` |
+| 120 | 4 | `word` | `u32` | little | spec | `base_feature_protein_asset_manager` · value `1` |
+| 124 | 4 | `material_references` | `u32` | little | spec | `base_feature_protein_asset_manager` |
+| 128 | 4 | `appearance_count` | `u32` | little | spec | `base_feature_protein_asset_manager` · value `1` |
+| 132 | 76 | `appearance_guid` | `bytes[76]` | little | spec | `base_feature_protein_asset_manager` |
+| 208 | 4 | `appearance_count_repeat` | `u32` | little | spec | `base_feature_protein_asset_manager` · value `1` |
+| 212 | 4 | `appearance_references` | `u32` | little | spec | `base_feature_protein_asset_manager` |
+| 216 | 4 | `basename_length` | `u32` | little | spec | `base_feature_protein_asset_manager` · value `57` |
+| 220 | 114 | `basename` | `bytes[114]` | little | spec | `base_feature_protein_asset_manager` |
+
+## `base_feature_asset_settings`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 494 B
+
+Record 0. Values are stated where every design agrees; the view block and the scene fields depend on the body.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_asset_settings` |
+| 11 | 4 | `zero_a` | `bytes[4]` | little | spec | `base_feature_asset_settings` · value `[0, 0, 0, 0]` |
+| 15 | 17 | `key` | `bytes[17]` | little | spec | `base_feature_asset_settings` · value `[13, 0, 0, 0, 65, 115, 115, 101, 116, 83, 101, 116, 116, 105, 110, 103, 115]` |
+| 32 | 6 | `zero_b` | `bytes[6]` | little | spec | `base_feature_asset_settings` · value `[0, 0, 0, 0, 0, 0]` |
+| 38 | 11 | `unit_system` | `bytes[11]` | little | spec | `base_feature_asset_settings` |
+| 49 | 4 | `word_a` | `u32` | little | spec | `base_feature_asset_settings` · value `2` |
+| 53 | 5 | `zero_c` | `bytes[5]` | little | spec | `base_feature_asset_settings` · value `[0, 0, 0, 0, 0]` |
+| 58 | 8 | `view_a_extent_0` | `f64` | little | spec | `base_feature_asset_settings` |
+| 66 | 8 | `view_a_extent_1` | `f64` | little | spec | `base_feature_asset_settings` |
+| 74 | 24 | `view_a_eye` | `f64[3]` | little | spec | `base_feature_asset_settings` |
+| 98 | 4 | `view_a_marker` | `u32` | little | spec | `base_feature_asset_settings` · value `1` |
+| 102 | 24 | `view_a_target` | `f64[3]` | little | spec | `base_feature_asset_settings` |
+| 126 | 24 | `view_a_up` | `f64[3]` | little | spec | `base_feature_asset_settings` |
+| 150 | 4 | `view_count` | `u32` | little | spec | `base_feature_asset_settings` · value `1` |
+| 154 | 8 | `view_b_extent_0` | `f64` | little | spec | `base_feature_asset_settings` |
+| 162 | 8 | `view_b_extent_1` | `f64` | little | spec | `base_feature_asset_settings` |
+| 170 | 24 | `view_b_eye` | `f64[3]` | little | spec | `base_feature_asset_settings` |
+| 194 | 4 | `view_b_marker` | `u32` | little | spec | `base_feature_asset_settings` · value `1` |
+| 198 | 24 | `view_b_target` | `f64[3]` | little | spec | `base_feature_asset_settings` |
+| 222 | 24 | `view_b_up` | `f64[3]` | little | spec | `base_feature_asset_settings` |
+| 246 | 24 | `front_a` | `f64[3]` | little | spec | `base_feature_asset_settings` |
+| 270 | 24 | `up_a` | `f64[3]` | little | spec | `base_feature_asset_settings` |
+| 294 | 1 | `flag_a` | `u8` | little | spec | `base_feature_asset_settings` · value `0` |
+| 295 | 1 | `flag_b` | `u8` | little | spec | `base_feature_asset_settings` · value `1` |
+| 296 | 8 | `grid` | `f64` | little | spec | `base_feature_asset_settings` |
+| 304 | 37 | `zero_d` | `bytes[37]` | little | spec | `base_feature_asset_settings` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 341 | 8 | `grid_scale` | `f64` | little | spec | `base_feature_asset_settings` |
+| 349 | 1 | `null_slot` | `u8` | little | spec | `base_feature_asset_settings` · value `0` |
+| 350 | 11 | `named_views` | `bytes[11]` | little | spec | `base_feature_asset_settings` |
+| 361 | 6 | `zero_e` | `bytes[6]` | little | spec | `base_feature_asset_settings` · value `[0, 0, 0, 0, 0, 0]` |
+| 367 | 11 | `lighting` | `bytes[11]` | little | spec | `base_feature_asset_settings` |
+| 378 | 24 | `scene_centre` | `f64[3]` | little | spec | `base_feature_asset_settings` |
+| 402 | 24 | `scene_scale` | `f64[3]` | little | spec | `base_feature_asset_settings` |
+| 426 | 8 | `scene_radius` | `f64` | little | spec | `base_feature_asset_settings` |
+| 434 | 24 | `front_b` | `f64[3]` | little | spec | `base_feature_asset_settings` |
+| 458 | 24 | `up_b` | `f64[3]` | little | spec | `base_feature_asset_settings` |
+| 482 | 1 | `marker` | `u8` | little | spec | `base_feature_asset_settings` · value `1` |
+| 483 | 11 | `record_2` | `bytes[11]` | little | spec | `base_feature_asset_settings` |
+
+## `base_feature_browser_entry`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 115 B
+
+Browser records with no children and no kind name; the counts shift later fields by eleven bytes per child and by the kind-name length.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_browser_entry` |
+| 11 | 8 | `zero` | `bytes[8]` | little | spec | `base_feature_browser_entry` · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 19 | 1 | `marker` | `u8` | little | spec | `base_feature_browser_entry` · value `1` |
+| 20 | 4 | `target_count` | `u32` | little | spec | `base_feature_browser_entry` · value `1` |
+| 24 | 15 | `design_record` | `bytes[15]` | little | spec | `base_feature_browser_entry` |
+| 39 | 4 | `position` | `u32` | little | spec | `base_feature_browser_entry` · value `0` |
+| 43 | 1 | `flag_a` | `u8` | little | spec | `base_feature_browser_entry` · value `0` |
+| 44 | 1 | `flag_b` | `u8` | little | spec | `base_feature_browser_entry` · value `1` |
+| 45 | 4 | `extra_count` | `u32` | little | spec | `base_feature_browser_entry` · value `0` |
+| 49 | 1 | `marker_b` | `u8` | little | spec | `base_feature_browser_entry` · value `2` |
+| 50 | 4 | `word_a` | `u32` | little | spec | `base_feature_browser_entry` · value `0` |
+| 54 | 4 | `child_count` | `u32` | little | spec | `base_feature_browser_entry` · value `0` |
+| 58 | 15 | `design_record_repeat` | `bytes[15]` | little | spec | `base_feature_browser_entry` |
+| 73 | 4 | `word_b` | `u32` | little | spec | `base_feature_browser_entry` · value `1` |
+| 77 | 4 | `word_c` | `u32` | little | spec | `base_feature_browser_entry` · value `0` |
+| 81 | 4 | `word_d` | `u32` | little | spec | `base_feature_browser_entry` · value `1` |
+| 85 | 11 | `parent` | `bytes[11]` | little | spec | `base_feature_browser_entry` |
+| 96 | 11 | `browser_root` | `bytes[11]` | little | spec | `base_feature_browser_entry` |
+| 107 | 4 | `kind_length` | `u32` | little | spec | `base_feature_browser_entry` · value `0` |
+| 111 | 4 | `terminator` | `u32` | little | spec | `base_feature_browser_entry` · value `0` |
+
+## `base_feature_browser_document_structure_entry`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 153 B
+
+Browser record 29.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_browser_document_structure_entry` |
+| 11 | 8 | `zero` | `bytes[8]` | little | spec | `base_feature_browser_document_structure_entry` · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 19 | 1 | `marker` | `u8` | little | spec | `base_feature_browser_document_structure_entry` · value `1` |
+| 20 | 4 | `target_count` | `u32` | little | spec | `base_feature_browser_document_structure_entry` · value `1` |
+| 24 | 15 | `design_record` | `bytes[15]` | little | spec | `base_feature_browser_document_structure_entry` |
+| 39 | 4 | `position` | `u32` | little | spec | `base_feature_browser_document_structure_entry` · value `2` |
+| 43 | 1 | `flag_a` | `u8` | little | spec | `base_feature_browser_document_structure_entry` · value `0` |
+| 44 | 1 | `flag_b` | `u8` | little | spec | `base_feature_browser_document_structure_entry` · value `1` |
+| 45 | 4 | `extra_count` | `u32` | little | spec | `base_feature_browser_document_structure_entry` · value `1` |
+| 49 | 15 | `extra_design_record` | `bytes[15]` | little | spec | `base_feature_browser_document_structure_entry` |
+| 64 | 1 | `marker_b` | `u8` | little | spec | `base_feature_browser_document_structure_entry` · value `2` |
+| 65 | 4 | `word_a` | `u32` | little | spec | `base_feature_browser_document_structure_entry` · value `0` |
+| 69 | 4 | `child_count` | `u32` | little | spec | `base_feature_browser_document_structure_entry` · value `0` |
+| 73 | 1 | `null_slot` | `u8` | little | spec | `base_feature_browser_document_structure_entry` · value `0` |
+| 74 | 4 | `word_b` | `u32` | little | spec | `base_feature_browser_document_structure_entry` · value `1` |
+| 78 | 4 | `word_c` | `u32` | little | spec | `base_feature_browser_document_structure_entry` · value `0` |
+| 82 | 4 | `word_d` | `u32` | little | spec | `base_feature_browser_document_structure_entry` · value `1` |
+| 86 | 11 | `parent` | `bytes[11]` | little | spec | `base_feature_browser_document_structure_entry` |
+| 97 | 11 | `browser_root` | `bytes[11]` | little | spec | `base_feature_browser_document_structure_entry` |
+| 108 | 41 | `kind` | `bytes[41]` | little | spec | `base_feature_browser_document_structure_entry` · value `[37, 0, 0, 0, 78, 97, 58, 58, 68, 111, 99, 117, 109, 101, 110, 116, 83, 116, 114, 117, 99, 116, 117, 114, 101, 84, 121, 112, 101, 66, 114, 111, 119, 115, 101, 114, 69, 110, 116, 114, 121]` |
+| 149 | 4 | `terminator` | `u32` | little | spec | `base_feature_browser_document_structure_entry` · value `0` |
+
+## `base_feature_browser_component_node`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 464 B
+
+Browser record 1.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_browser_component_node` |
+| 11 | 8 | `zero_a` | `bytes[8]` | little | spec | `base_feature_browser_component_node` · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 19 | 1 | `marker` | `u8` | little | spec | `base_feature_browser_component_node` · value `1` |
+| 20 | 4 | `pair_count` | `u32` | little | spec | `base_feature_browser_component_node` · value `4` |
+| 24 | 15 | `aggregate` | `bytes[15]` | little | spec | `base_feature_browser_component_node` |
+| 39 | 4 | `aggregate_word` | `u32` | little | spec | `base_feature_browser_component_node` · value `1` |
+| 43 | 15 | `naming_space` | `bytes[15]` | little | spec | `base_feature_browser_component_node` |
+| 58 | 4 | `naming_space_word` | `u32` | little | spec | `base_feature_browser_component_node` · value `0` |
+| 62 | 15 | `record_23` | `bytes[15]` | little | spec | `base_feature_browser_component_node` |
+| 77 | 4 | `record_23_word` | `u32` | little | spec | `base_feature_browser_component_node` · value `0` |
+| 81 | 15 | `root_instance` | `bytes[15]` | little | spec | `base_feature_browser_component_node` |
+| 96 | 4 | `root_instance_word` | `u32` | little | spec | `base_feature_browser_component_node` · value `0` |
+| 100 | 2 | `zero_b` | `bytes[2]` | little | spec | `base_feature_browser_component_node` · value `[0, 0]` |
+| 102 | 15 | `act_instance_root` | `bytes[15]` | little | spec | `base_feature_browser_component_node` |
+| 117 | 1 | `marker_b` | `u8` | little | spec | `base_feature_browser_component_node` · value `1` |
+| 118 | 4 | `design_count` | `u32` | little | spec | `base_feature_browser_component_node` · value `3` |
+| 122 | 15 | `design_aggregate` | `bytes[15]` | little | spec | `base_feature_browser_component_node` |
+| 137 | 15 | `design_naming_space` | `bytes[15]` | little | spec | `base_feature_browser_component_node` |
+| 152 | 15 | `design_record_23` | `bytes[15]` | little | spec | `base_feature_browser_component_node` |
+| 167 | 4 | `word` | `u32` | little | spec | `base_feature_browser_component_node` · value `2` |
+| 171 | 1 | `separator` | `u8` | little | spec | `base_feature_browser_component_node` · value `0` |
+| 172 | 4 | `child_count` | `u32` | little | spec | `base_feature_browser_component_node` · value `22` |
+| 176 | 242 | `children` | `bytes[242]` | little | spec | `base_feature_browser_component_node` |
+| 418 | 15 | `root_instance_repeat` | `bytes[15]` | little | spec | `base_feature_browser_component_node` |
+| 433 | 11 | `browser_root` | `bytes[11]` | little | spec | `base_feature_browser_component_node` |
+| 444 | 1 | `null_slot` | `u8` | little | spec | `base_feature_browser_component_node` · value `0` |
+| 445 | 11 | `browser_root_repeat` | `bytes[11]` | little | spec | `base_feature_browser_component_node` |
+| 456 | 8 | `zero_c` | `bytes[8]` | little | spec | `base_feature_browser_component_node` · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+
+## `base_feature_browser_root_prefix`
+
+Spec §Records of a Base Feature design · layout: byte offsets · size: 696 B
+
+Browser record 0 through the component-node reference; the entry-map pairs are in any order, and the named-entry map follows.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | `base_feature_browser_root_prefix` |
+| 11 | 4 | `zero_a` | `bytes[4]` | little | spec | `base_feature_browser_root_prefix` · value `[0, 0, 0, 0]` |
+| 15 | 24 | `key` | `bytes[24]` | little | spec | `base_feature_browser_root_prefix` · value `[20, 0, 0, 0, 80, 101, 114, 115, 105, 115, 116, 66, 114, 111, 119, 115, 101, 114, 82, 111, 111, 116, 73, 100]` |
+| 39 | 2 | `zero_b` | `bytes[2]` | little | spec | `base_feature_browser_root_prefix` · value `[0, 0]` |
+| 41 | 15 | `root_instance` | `bytes[15]` | little | spec | `base_feature_browser_root_prefix` |
+| 56 | 1 | `marker` | `u8` | little | spec | `base_feature_browser_root_prefix` · value `1` |
+| 57 | 4 | `entry_count` | `u32` | little | spec | `base_feature_browser_root_prefix` · value `24` |
+| 61 | 624 | `entry_pairs` | `bytes[624]` | little | spec | `base_feature_browser_root_prefix` |
+| 685 | 11 | `component_node` | `bytes[11]` | little | spec | `base_feature_browser_root_prefix` |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
