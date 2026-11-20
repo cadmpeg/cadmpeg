@@ -6,13 +6,13 @@
 
 use cadmpeg_core::CodecError;
 
-use super::super::base_feature::{DURATION, EPOCH, timestamp_table};
+use super::super::base_feature::{timestamp_table, DURATION, EPOCH};
 use super::super::frames::DesignRecords;
 use super::super::sketch::{
     CurveGeometry, Entity, OriginPlane, PlannedSketch, RelationKind, TangencyEnds,
 };
 use super::super::types;
-use super::{AGGREGATE, Context, count};
+use super::{count, Context, AGGREGATE};
 use crate::writer::generate::presentation::TypeRow;
 use cadmpeg_ir::math::portable::Portable;
 
