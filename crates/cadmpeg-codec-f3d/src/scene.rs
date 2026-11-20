@@ -358,6 +358,7 @@ pub(crate) fn bind(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     sources: &Sources,
+    instance_scopes: &BTreeMap<OccurrenceId, String>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let Some(native) = ir.native.namespace("f3d") else {
@@ -374,6 +375,7 @@ pub(crate) fn bind(
         &ctx.policy().limits,
         &ir.model.product_definitions,
         &ir.model.occurrences,
+        instance_scopes,
     ) {
         Ok(expanded) => expanded,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),

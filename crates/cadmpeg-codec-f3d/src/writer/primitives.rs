@@ -60,6 +60,7 @@ pub(crate) fn validate_assembly_projection(
         &cadmpeg_core::decode::ResourceLimits::default(),
         &target.model.product_definitions,
         &target.model.occurrences,
+        &std::collections::BTreeMap::new(),
     )?;
     let mut inserts = crate::design::components::ComponentInserts::decide(
         &native.design_parameter_scopes,

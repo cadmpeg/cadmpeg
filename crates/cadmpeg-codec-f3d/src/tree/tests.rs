@@ -288,6 +288,7 @@ fn expanding_restates_the_decoder_instances() {
         &cadmpeg_core::decode::ResourceLimits::default(),
         &ir.model.product_definitions,
         &ir.model.occurrences,
+        &std::collections::BTreeMap::new(),
     )
     .unwrap();
     let instances = expanded

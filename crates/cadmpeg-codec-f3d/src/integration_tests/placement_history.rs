@@ -179,6 +179,7 @@ fn attributed_local_children_repeat_under_each_containing_instance() {
         &cadmpeg_core::decode::ResourceLimits::default(),
         &model.product_definitions,
         &model.occurrences,
+        &std::collections::BTreeMap::new(),
     )
     .unwrap();
     let poses = crate::tree::world_poses(model);

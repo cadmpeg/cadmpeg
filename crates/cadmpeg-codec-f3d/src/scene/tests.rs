@@ -167,7 +167,7 @@ fn scene_binding_is_exact_and_preserves_all_three_states() {
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     let unchanged = ir.model.occurrences.clone();
-    bind(&ctx, &mut ir, &sources, &mut losses).unwrap();
+    bind(&ctx, &mut ir, &sources, &BTreeMap::new(), &mut losses).unwrap();
     let rows: Vec<DisplayPose> = ir
         .native
         .namespace("f3d")
@@ -323,7 +323,7 @@ fn scene_inserted_synthetic_root_leaves_placement_path_to_holder_and_child_uses_
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     let mut losses = Vec::new();
-    bind(&ctx, &mut ir, &sources, &mut losses).unwrap();
+    bind(&ctx, &mut ir, &sources, &BTreeMap::new(), &mut losses).unwrap();
     let rows: Vec<DisplayPose> = ir
         .native
         .namespace("f3d")
@@ -459,7 +459,7 @@ fn scene_fully_tagged_paths_bind_through_complete_occurrence_chains() {
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     let unchanged = ir.model.occurrences.clone();
-    bind(&ctx, &mut ir, &sources, &mut losses).unwrap();
+    bind(&ctx, &mut ir, &sources, &BTreeMap::new(), &mut losses).unwrap();
     let rows: Vec<DisplayPose> = ir
         .native
         .namespace("f3d")
@@ -516,7 +516,7 @@ fn scene_shared_definition_paths_keep_each_insertion_and_original_occurrence() {
             .namespace_mut("f3d")
             .set_arena(&ctx, "display_poses", &rows)
             .unwrap();
-        bind(&ctx, &mut ir, &sources, &mut losses).unwrap();
+        bind(&ctx, &mut ir, &sources, &BTreeMap::new(), &mut losses).unwrap();
         let rows: Vec<DisplayPose> = ir
             .native
             .namespace("f3d")
@@ -574,7 +574,7 @@ fn scene_carrierless_children_leave_their_insertion_path_to_the_insertion() {
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     let unchanged = ir.model.occurrences.clone();
-    bind(&ctx, &mut ir, &sources, &mut losses).unwrap();
+    bind(&ctx, &mut ir, &sources, &BTreeMap::new(), &mut losses).unwrap();
     let rows: Vec<DisplayPose> = ir
         .native
         .namespace("f3d")
@@ -610,7 +610,7 @@ fn scene_expansion_refusal_binds_on_the_unexpanded_tree() {
     let occurrences = ir.model.occurrences.clone();
     let definitions = ir.model.product_definitions.clone();
     assert!(matches!(
-        crate::tree::expand(&policy.limits, &definitions, &occurrences),
+        crate::tree::expand(&policy.limits, &definitions, &occurrences, &BTreeMap::new()),
         Err(CodecError::Malformed(_))
     ));
     let sources = Sources::from([
@@ -636,7 +636,7 @@ fn scene_expansion_refusal_binds_on_the_unexpanded_tree() {
         .namespace_mut("f3d")
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
-    bind(&ctx, &mut ir, &sources, &mut losses).unwrap();
+    bind(&ctx, &mut ir, &sources, &BTreeMap::new(), &mut losses).unwrap();
     let rows: Vec<DisplayPose> = ir
         .native
         .namespace("f3d")
@@ -692,7 +692,8 @@ fn scene_expansion_refusal_binds_children_listed_per_placement() {
     assert!(crate::tree::expand(
         &policy.limits,
         &ir.model.product_definitions,
-        &ir.model.occurrences
+        &ir.model.occurrences,
+        &std::collections::BTreeMap::new(),
     )
     .is_err());
     let sources = Sources::from([
@@ -708,7 +709,7 @@ fn scene_expansion_refusal_binds_children_listed_per_placement() {
         .namespace_mut("f3d")
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
-    bind(&ctx, &mut ir, &sources, &mut losses).unwrap();
+    bind(&ctx, &mut ir, &sources, &BTreeMap::new(), &mut losses).unwrap();
     let rows: Vec<DisplayPose> = ir
         .native
         .namespace("f3d")
@@ -785,6 +786,7 @@ fn scene_expansion_keeps_each_placements_child_and_binds_every_row() {
         &policy.limits,
         &ir.model.product_definitions,
         &ir.model.occurrences,
+        &std::collections::BTreeMap::new(),
     )
     .unwrap();
     assert_eq!(expanded.occurrences.len(), 2 * PLACEMENTS);
@@ -807,7 +809,7 @@ fn scene_expansion_keeps_each_placements_child_and_binds_every_row() {
         .set_arena(&ctx, "display_poses", &rows)
         .unwrap();
     let mut losses = Vec::new();
-    bind(&ctx, &mut ir, &sources, &mut losses).unwrap();
+    bind(&ctx, &mut ir, &sources, &BTreeMap::new(), &mut losses).unwrap();
     let rows: Vec<DisplayPose> = ir
         .native
         .namespace("f3d")
