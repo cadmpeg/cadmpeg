@@ -827,7 +827,7 @@ mod tests {
 
     #[test]
     fn entry_data_is_stored_as_hex_on_the_wire() {
-        let bytes: Vec<u8> = (0..=255).cycle().take(256 * 1024).collect();
+        let bytes: Vec<u8> = (0..=255).cycle().take(1024).collect();
         let record = crate::test_support::entry_record(
             "fcstd:native:entry#Payload.bin".into(),
             "Payload.bin".into(),

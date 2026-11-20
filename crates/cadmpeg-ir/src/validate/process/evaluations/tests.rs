@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 use crate::design::dimension::{Dimension, ParamRef};
 use crate::design::evaluation::{EvaluationStatus, StateBase};
 use crate::design::feature::FeatureOperation;
+use crate::document::CadIr;
 use crate::process::state::{ProcessBase, ProcessStateOf};
+use crate::report::check::{Check, Finding};
 use crate::validate::design::fixture as design;
 use crate::validate::process::fixture::{
     assert_error, assert_no_process_finding, document, id, state,
@@ -137,6 +139,19 @@ fn process_bases_resolve_to_states_with_content() {
     assert_error(&ir, "is an evaluation with no content");
 }
 
+/// The process findings of `ir` under `policy`.
+fn findings_under(ir: &CadIr, policy: &DecodePolicy) -> Vec<Finding> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
+    let report = crate::validate::validate_neutral_for_decode(&ctx, ir, Vec::new()).unwrap();
+    ctx.finish_session().unwrap();
+    report
+        .findings
+        .into_iter()
+        .filter(|finding| finding.check == Check::Process)
+        .collect()
+}
+
 #[test]
 fn process_bases_form_a_forest_within_the_reader_ceiling() {
     let mut ir = document();
@@ -148,7 +163,9 @@ fn process_bases_form_a_forest_within_the_reader_ceiling() {
         "process state is its own ancestor through its state bases",
     );
 
-    let ceiling = ResourceLimits::default().max_state_chain_depth;
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_state_chain_depth = 8;
+    let ceiling = policy.limits.max_state_chain_depth;
     let mut ir = document();
     ir.process.states.clear();
     let key = |at: u64| format!("{at:05}");
@@ -162,7 +179,7 @@ fn process_bases_form_a_forest_within_the_reader_ceiling() {
         chained.configuration = Some(design::id("configuration", &key(at)));
         ir.process.states.push(chained);
     }
-    let findings = crate::validate::process::fixture::process_findings(&ir);
+    let findings = findings_under(&ir, &policy);
     assert!(
         findings
             .iter()

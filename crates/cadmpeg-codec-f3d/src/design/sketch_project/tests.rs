@@ -10,6 +10,7 @@ use super::{project_sketch_design, SketchProjectInputs};
 use crate::design::constraints::project_sketch_constraints;
 use crate::design::dimensions::exact_atomic_constraint;
 use crate::design::dimensions::point_lies_on_sketch_geometry;
+use crate::design::feature_project::{SpatialProfileSearch, SPATIAL_PROFILE_SEARCH_WORK};
 use crate::design::geometry::point_on_sketch_entity;
 use crate::design::geometry::sketch_entity_endpoints;
 use crate::ids::neutral_sketch_curve_id;
@@ -1299,7 +1300,10 @@ fn nonplanar_sketch_curves_project_in_model_space() {
             &curves,
             &surfaces,
             &relations,
-            1.0e-6,
+            SpatialProfileSearch {
+                linear_tolerance: 1.0e-6,
+                work: SPATIAL_PROFILE_SEARCH_WORK,
+            },
         )
     })
     .unwrap();
@@ -1445,7 +1449,10 @@ fn surface_only_owner_preserves_planar_and_spatial_projection_policies() {
             &[],
             &[surface],
             &[],
-            EPS_POINT_PROJECTION,
+            SpatialProfileSearch {
+                linear_tolerance: EPS_POINT_PROJECTION,
+                work: SPATIAL_PROFILE_SEARCH_WORK,
+            },
         )
     })
     .expect("valid spatial surface fixture");
@@ -1574,7 +1581,10 @@ fn shared_curve_identity_pairs_project_distinct_entities() {
             &spatial_curves,
             &[],
             &[],
-            EPS_POINT_PROJECTION,
+            SpatialProfileSearch {
+                linear_tolerance: EPS_POINT_PROJECTION,
+                work: SPATIAL_PROFILE_SEARCH_WORK,
+            },
         )
     })
     .expect("spatial sketch projects");
