@@ -9,7 +9,7 @@ use std::num::NonZeroI8;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
+use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
 use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
 use cadmpeg_ir::design::expr::{
@@ -26,7 +26,7 @@ use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{FeatureId, ParameterId};
-use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::report::export::ExportReport;
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::scalar::NonNegativeReal;
@@ -759,4 +759,128 @@ fn an_integer_parameter_is_written_as_a_real_with_a_note() {
     assert_eq!(notes[0].severity, Severity::Info);
     assert!(notes[0].message.contains(parameter_id("count").as_str()));
     assert!(!notes[0].message.contains(parameter_id("width").as_str()));
+}
+
+#[test]
+fn the_timeline_is_written_without_its_folders_and_rollback() {
+    let mut ir = scoped_cube();
+    let timeline = ContainerId::mint("test:design:container#timeline").expect("identity grammar");
+    let Container::Ordered {
+        folders, rollback, ..
+    } = &mut ir.design.containers[0]
+    else {
+        panic!("the fixture's timeline is ordered");
+    };
+    folders.push(Folder {
+        name: Some("Setup".into()),
+        first: 0,
+        last: 1,
+    });
+    *rollback = Rollback::Before(Member::Feature(
+        FeatureId::mint(EXTRUDE).expect("identity grammar"),
+    ));
+    let (report, _) = write(&ir);
+    let omitted = loss(
+        &report,
+        &F3dLossCode::WriterDesignRecordOmitted.kind().to_string(),
+    );
+    assert_eq!(omitted.len(), 1, "{:#?}", report.losses);
+    assert!(
+        omitted[0].contains(&format!("{timeline} folder `Setup` (members 0..=1)")),
+        "{}",
+        omitted[0]
+    );
+    assert!(
+        omitted[0].contains(&format!("{timeline} rollback (before {EXTRUDE})")),
+        "{}",
+        omitted[0]
+    );
+}
+
+#[test]
+fn a_placed_design_scope_is_charged_with_its_containers_features_and_parameters() {
+    const HOLE: &str = "test:design:feature#hole";
+    let mut ir = scoped_cube();
+    let part = ProductDefinitionId::mint("test:design:product#part").expect("identity grammar");
+    let history =
+        ContainerId::mint("test:design:container#part-timeline").expect("identity grammar");
+    ir.design
+        .features
+        .push(feature(HOLE, OperationFamily::Hole));
+    ir.design.containers.push(Container::Ordered {
+        id: history.clone(),
+        kind: OrderedKind::Timeline,
+        members: vec![Member::Feature(
+            FeatureId::mint(HOLE).expect("identity grammar"),
+        )],
+        folders: Vec::new(),
+        rollback: Rollback::End,
+        placement: None,
+    });
+    ir.design.scopes.push(DesignScope {
+        definition: part.clone(),
+        roots: vec![history.clone()],
+        active_configuration: None,
+        active_arrangements: BTreeSet::new(),
+        occurrences: BTreeMap::new(),
+        current: Vec::new(),
+    });
+    let mut depth = parameter(
+        "depth",
+        "Depth",
+        neutral(number(8.0, Some(UnitSymbol::Mm))),
+        Some(8.0),
+    );
+    depth.scope = part.clone();
+    ir.design.parameters.push(depth);
+    ir.model
+        .occurrences
+        .push(cadmpeg_ir::products::Occurrence::new(
+            OccurrenceId::mint("test:model:occurrence#part").expect("identity grammar"),
+            part.clone(),
+            None,
+        ));
+    let (report, decoded_ir) = write(&ir);
+    assert_length(&decoded_ir, "Width", "60 mm", 60.0);
+    assert!(decoded(&decoded_ir, "Depth").is_none());
+    let omitted = loss(
+        &report,
+        &F3dLossCode::WriterDesignRecordOmitted.kind().to_string(),
+    );
+    assert!(
+        omitted
+            .iter()
+            .any(|message| message.contains("design scope") && message.contains(part.as_str())),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        omitted
+            .iter()
+            .any(|message| message.contains("design container")
+                && message.contains(history.as_str())
+                && !message.contains("container#timeline")),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        loss(&report, "export/evaluation.missing")
+            .iter()
+            .any(|message| message.contains(&format!("{HOLE} (design scope of {part})"))),
+        "{:#?}",
+        report.losses
+    );
+    let depth = parameter_id("depth");
+    let parameters = loss(
+        &report,
+        &F3dLossCode::WriterParameterOmitted.kind().to_string(),
+    );
+    assert!(
+        parameters.iter().any(
+            |message| message.contains(&format!("{depth} (definition {part})"))
+                && !message.contains(parameter_id("width").as_str())
+        ),
+        "{:#?}",
+        report.losses
+    );
 }
