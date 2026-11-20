@@ -317,6 +317,7 @@ pub(super) const IMAGES: &str = "Images.BlobParts/";
 /// open.
 fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
     let mut notes = Vec::new();
+    notes.extend(super::base_feature::item_tail_loss(SCOPE));
     notes.extend(record_residual_unavailable(
         "F3D",
         "fits the HOME camera, the AssetSettings view blocks and the scene radius to the body boxes by a rule f3d-open-items.md DR-896 leaves open",
