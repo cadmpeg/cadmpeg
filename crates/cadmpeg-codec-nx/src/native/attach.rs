@@ -8,7 +8,7 @@ use crate::loss::NxLossCode;
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_ir::annotations::StreamHandle;
 use cadmpeg_ir::report::loss::LossNote;
-use std::collections::{btree_map::Entry, BTreeMap, BTreeSet};
+use std::collections::{btree_map::Entry, BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::DecodeContext;
@@ -1199,7 +1199,13 @@ fn attach_feature_operations(
     let features = &model.features;
     let mut symbolic_threads =
         symbolic_thread::definitions(ctx, ir, &features.feature_symbolic_threads)?;
-    let parasolid_group_members = model.parasolid.group_members.as_slice();
+    let parasolid_group_members = cadmpeg_core::decode::unique_index(
+        model
+            .parasolid
+            .group_members
+            .iter()
+            .map(|member| (member.id.as_str(), member)),
+    );
     let data_blocks = model.om.data_blocks.as_slice();
     let expressions_by_id = expressions_by_id(&model.om.expressions);
     let body_bindings = model.segments.body_bindings.as_slice();
@@ -4061,7 +4067,7 @@ fn attach_feature_operations(
                     write.id.as_str(),
                     operation_body_partition_uses,
                     body_write_group_partition_uses,
-                    parasolid_group_members,
+                    &parasolid_group_members,
                 )?;
                 let _body_len = BODY_PREFIX.len() + 10;
 
@@ -4270,7 +4276,7 @@ fn operation_body_write_result_group_members(
     body_write: &str,
     image_partition_uses: &[crate::native::features::FeatureOperationBodyPartitionUse],
     group_partition_uses: &[crate::native::features::FeatureBodyWriteGroupPartitionUse],
-    members: &[crate::native::parasolid::ParasolidGroupMember],
+    members: &HashMap<&str, Option<&crate::native::parasolid::ParasolidGroupMember>>,
 ) -> Result<FeatureResultGroupMembers, CodecError> {
     let mut matching_image_uses = image_partition_uses
         .iter()
@@ -4316,18 +4322,14 @@ fn operation_body_write_result_group_members(
 fn feature_result_group_members(
     partition_stream_ordinal: u32,
     member_ids: &[String],
-    members: &[crate::native::parasolid::ParasolidGroupMember],
+    members: &HashMap<&str, Option<&crate::native::parasolid::ParasolidGroupMember>>,
 ) -> Result<FeatureResultGroupMembers, CodecError> {
     use crate::native::parasolid::group_member::{GroupMemberTarget, GroupNodeFamily};
     let mut result = FeatureResultGroupMembers::default();
     for member_id in member_ids {
-        let mut matches = members.iter().filter(|member| member.id == *member_id);
-        let Some(member) = matches.next() else {
+        let Some(Some(member)) = members.get(member_id.as_str()).copied() else {
             continue;
         };
-        if matches.next().is_some() {
-            continue;
-        }
         if member.primary_stream_ordinal != partition_stream_ordinal {
             continue;
         }
