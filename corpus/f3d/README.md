@@ -182,3 +182,21 @@ translation, and the body count, volume and face count after the pattern.
   1 body, 9546 mm³, 51 faces.
 - `sym_q4_dir2only.f3d`: 2 × 4, direction two symmetric. x = 0, 5;
   y = −10, 0, 10, 20. 1 body, 9558 mm³, 44 faces.
+
+# Fusion API fixtures: symmetric extent pattern directions
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design. A 100 × 100 × 4 mm plate at x, y = −50..50 mm has
+a 1 × 6 mm slot cut 1 mm deep at x = −0.5..0.5 mm, y = −3..3 mm. One
+rectangular pattern of the cut feature uses distance type Extent 20 mm and
+Symmetric. Direction one is the X construction axis and direction two the Y
+construction axis; an unused direction has quantity 1. The API reported each
+copy's translation and the face count after the pattern.
+
+- `sym_extent_q4.f3d`: quantity 4 along x. x = −10, 0, 10, 20. 26 faces.
+- `sym_extent_q6.f3d`: quantity 6 along x. x = −40/3, −20/3, 0, 20/3, 40/3,
+  20. 36 faces.
+- `sym_extent_q5_dir2only.f3d`: quantity 5 along y in direction two; direction
+  one has quantity 1. y = −20, −10, 0, 10, 20. 31 faces.
+- `sym_extent_q4x5.f3d`: 4 along x by 5 along y, both symmetric.
+  x = −10, 0, 10, 20; y = −20, −10, 0, 10, 20. 106 faces.

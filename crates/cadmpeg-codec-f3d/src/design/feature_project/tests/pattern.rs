@@ -1105,23 +1105,6 @@ fn an_odd_symmetric_extent_direction_reads_the_extent_from_the_seed_to_either_fi
 }
 
 #[test]
-fn a_symmetric_spacing_direction_charges_no_extent_reading() {
-    let assumed =
-        crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricTotalExtentAssumed.kind();
-    let mut losses = Vec::new();
-    project_rectangular_pattern_scalars(
-        &coincident_direction_scope(true, false),
-        &[],
-        &[],
-        &[],
-        &[],
-        &mut losses,
-    )
-    .expect("symmetric spacing direction");
-    assert!(losses.iter().all(|loss| loss.code != assumed));
-}
-
-#[test]
 fn a_payload_seed_kind_or_body_reference_that_disagrees_with_the_seed_group_is_charged() {
     use crate::design::feature_project::pattern_seeds::distribution_seed_conflict;
     use crate::records::{
@@ -1613,13 +1596,7 @@ fn a_symmetric_extent_direction_keeps_the_other_direction() {
         direction_record(20, [2.0, 0.0, 0.0]),
         direction_record(30, [0.0, 2.5, 0.0]),
     ]);
-    let assumed =
-        crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricTotalExtentAssumed.kind();
-    for (flags, named) in [
-        ([true, false], "symmetric direction one "),
-        ([false, true], "symmetric direction two "),
-        ([true, true], "symmetric direction one and two "),
-    ] {
+    for flags in [[true, false], [false, true], [true, true], [false, false]] {
         let mut losses = Vec::new();
         let definition = project_rectangular_pattern_scalars(
             &with_distribution(&scope, flags, true, None),
@@ -1637,21 +1614,8 @@ fn a_symmetric_extent_direction_keeps_the_other_direction() {
         assert!((spacing - expected).abs() < EPS_SPACING, "{flags:?}");
         assert_eq!((second_count, second_symmetric), (2, flags[1]), "{flags:?}");
         assert!((second_spacing - 12.0).abs() < EPS_SPACING, "{flags:?}");
-        assert_eq!(codes(&losses), [assumed.clone()], "{flags:?}");
-        assert!(losses[0].message.contains(named), "{}", losses[0].message);
+        assert!(losses.is_empty(), "{flags:?} {losses:?}");
     }
-    // A one-sided extent pattern charges nothing.
-    let mut losses = Vec::new();
-    project_rectangular_pattern_scalars(
-        &with_distribution(&scope, [false, false], true, None),
-        &[],
-        &[],
-        &[],
-        &[],
-        &mut losses,
-    )
-    .expect("one-sided extent pattern");
-    assert!(losses.is_empty(), "{losses:?}");
 }
 
 #[test]

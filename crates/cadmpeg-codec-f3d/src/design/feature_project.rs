@@ -7741,7 +7741,6 @@ fn project_rectangular_pattern_scalars(
         ]
     });
     let payload_names_direction_one = construction.secondary_direction().is_some();
-    let mut symmetric_extents = Vec::new();
     for (axis, ((count, extent), stored_symmetric)) in [
         (construction.u_count(), construction.u_extent()),
         (construction.v_count(), construction.v_extent()),
@@ -7811,14 +7810,11 @@ fn project_rectangular_pattern_scalars(
         let divisor = match (axis_adjacent, symmetric) {
             (true, _) => 1.0,
             // The extent runs from the seed to the final instance along the
-            // direction, which holds half of the count.
+            // direction, which holds `count / 2` instances.
             (false, true) => f64::from(count / 2),
             (false, false) => f64::from(intervals.get()),
         };
         let spacing = PositiveLength::new(extent.abs() * 10.0 / divisor)?;
-        if symmetric && !axis_adjacent && count % 2 == 0 {
-            symmetric_extents.push(["one", "two"][axis]);
-        }
         active.push((count, spacing, direction, symmetric));
     }
     let instance_direction = construction.instances().and_then(|instances| {
@@ -7892,17 +7888,6 @@ fn project_rectangular_pattern_scalars(
             "RectangularPattern scope {} reads its distances as seed-to-final-instance extents: direction record {} stores distance type 10 without a readable distribution block.",
             scope.id, record.record_index
         )));
-    }
-    if !symmetric_extents.is_empty() {
-        losses.push(
-            crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricTotalExtentAssumed.note(
-                format!(
-                    "RectangularPattern scope {} reads the extent of even-count symmetric direction {} as the distance from the seed to the final instance along the direction (DR-344).",
-                    scope.id,
-                    symmetric_extents.join(" and ")
-                ),
-            ),
-        );
     }
     if direction.is_none() {
         losses.push(

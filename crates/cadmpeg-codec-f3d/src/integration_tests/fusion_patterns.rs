@@ -131,16 +131,6 @@ fn an_optimized_pattern_reads_its_extent_and_symmetric_distribution() {
 #[test]
 fn a_symmetric_extent_direction_spaces_its_copies_by_the_extent_on_each_side() {
     // Fusion translates the symmetric Extent copies by -20, 0 and +20 mm.
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(include_bytes!(
-                "../../../../corpus/f3d/optimized_symmetric_extent_pattern.f3d"
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("decode the corpus file");
-    assert!(!result.report().losses.iter().any(|loss| loss.code
-        == crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricTotalExtentAssumed.kind()));
     let ir = decoded(include_bytes!(
         "../../../../corpus/f3d/optimized_symmetric_extent_pattern.f3d"
     ));
@@ -287,5 +277,86 @@ fn the_payload_stores_the_symmetric_byte_of_direction_two_after_that_of_directio
         );
         // Distance type 0: each distance owner is the adjacent spacing.
         assert_eq!(stream[offset("total_extent")], 0);
+    }
+}
+
+/// The offsets along one direction of a linear pattern, in grid order: the
+/// original, then for a symmetric direction an odd coordinate `k` at
+/// `(k + 1) / 2` spacings along the direction and an even `k` at `k / 2`
+/// spacings against it.
+fn direction_offsets(direction: &serde_json::Value) -> Vec<[f64; 3]> {
+    let spacing = direction["spacing"].as_f64().expect("spacing");
+    let unit = ["x", "y", "z"].map(|axis| direction["direction"][axis].as_f64().expect("axis"));
+    let count = u32::try_from(direction["count"].as_u64().expect("count")).expect("u32 count");
+    let symmetric = direction["symmetric"] == true;
+    (0..count)
+        .map(|k| {
+            let steps = match (symmetric, k % 2) {
+                (false, _) => f64::from(k),
+                (true, 1) => f64::from(k.div_ceil(2)),
+                (true, _) => -f64::from(k / 2),
+            };
+            unit.map(|component| component * spacing * steps)
+        })
+        .collect()
+}
+
+#[test]
+fn a_symmetric_extent_direction_places_its_copies_where_fusion_does() {
+    // Fusion API readback of each copy's translation, in mm. The plate slot is
+    // patterned with distance type Extent 20 mm along +x, +y, or both.
+    const EPS_POSITION_MM: f64 = 1.0e-9;
+    let third = 20.0 / 3.0;
+    let files: [(&[u8], Vec<f64>, Vec<f64>); 4] = [
+        (
+            include_bytes!("../../../../corpus/f3d/sym_extent_q4.f3d"),
+            vec![-10.0, 0.0, 10.0, 20.0],
+            vec![0.0],
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/sym_extent_q6.f3d"),
+            vec![-2.0 * third, -third, 0.0, third, 2.0 * third, 20.0],
+            vec![0.0],
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/sym_extent_q5_dir2only.f3d"),
+            vec![0.0],
+            vec![-20.0, -10.0, 0.0, 10.0, 20.0],
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/sym_extent_q4x5.f3d"),
+            vec![-10.0, 0.0, 10.0, 20.0],
+            vec![-20.0, -10.0, 0.0, 10.0, 20.0],
+        ),
+    ];
+    for (bytes, xs, ys) in files {
+        let ir = decoded(bytes);
+        let pattern = &definition(&ir, "R-Pattern 1")["value"]["value"]["pattern"];
+        assert_eq!(pattern["kind"], "linear", "{pattern}");
+        let first = direction_offsets(pattern);
+        let second = if pattern["second"].is_null() {
+            vec![[0.0; 3]]
+        } else {
+            direction_offsets(&pattern["second"])
+        };
+        let mut positions = first
+            .iter()
+            .flat_map(|u| second.iter().map(move |v| [u[0] + v[0], u[1] + v[1]]))
+            .collect::<Vec<_>>();
+        let mut expected = xs
+            .iter()
+            .flat_map(|x| ys.iter().map(move |y| [*x, *y]))
+            .collect::<Vec<_>>();
+        for list in [&mut positions, &mut expected] {
+            list.sort_by(|a, b| a[0].total_cmp(&b[0]).then(a[1].total_cmp(&b[1])));
+        }
+        assert_eq!(positions.len(), expected.len(), "{pattern}");
+        for (position, expected) in positions.iter().zip(&expected) {
+            assert!(
+                (position[0] - expected[0]).abs() < EPS_POSITION_MM
+                    && (position[1] - expected[1]).abs() < EPS_POSITION_MM,
+                "{position:?} {expected:?} {pattern}"
+            );
+        }
     }
 }
