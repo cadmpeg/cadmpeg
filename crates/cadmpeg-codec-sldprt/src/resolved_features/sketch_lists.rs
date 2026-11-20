@@ -479,6 +479,20 @@ pub(super) fn chord_record(
     )
 }
 
+/// Whether the record at `offset` is a current-layout line with an
+/// identifier trailer, which [`ListedReading::Roster`] leaves to the marker
+/// readings of `sldprt.md` §2: whether its indices are point-record
+/// positions is open item EV-29.
+pub(super) fn identifier_trailer_line_record(payload: &[u8], offset: usize) -> bool {
+    curve_fields(payload, offset)
+        .is_some_and(|fields| Some(fields) == offset.checked_add(CURRENT_FIELDS))
+        && matches!(
+            curve_form(payload, offset, ListedReading::Complete),
+            Some(CurveForm::Line { .. })
+        )
+        && identifier_trailer_line(payload, offset) == Some(true)
+}
+
 /// The geometry of the listed record at `offset`, from the record and the
 /// point records of its own sketch: a point record's coordinates, a line
 /// between two point records, a full circle about a point record through
