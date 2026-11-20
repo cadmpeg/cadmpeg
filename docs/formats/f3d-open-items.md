@@ -1088,9 +1088,9 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Which rule joins an instance record to its definition record when the definition's asset identifier differs from the instance's base asset identifier?
 
-**Known.** `protein.md` §6 "`AssetData/AssetTableOfContents.bin` lists the instance records" pairs each instance record with one definition record by page index. In the package of `protein.md` §9 "The Protein package of a Fusion Base Feature design", the structural aspect has base asset identifier `PrismMaterial-022_physmat_aspects_1:StructuralPlastic-004` and definition asset identifier `StructuralPlastic-004`, and the twin has base asset identifier `PrismOpaque` and definition asset identifier `Opaque(R,G,B)`.
+**Known.** `protein.md` §6 "`AssetData/AssetTableOfContents.bin` lists the instance records" pairs each instance record with one definition record by page index. In the package of `protein.md` §9 "The Protein package of a Fusion Base Feature design", the structural aspect has base asset identifier `PrismMaterial-022_physmat_aspects_1:StructuralPlastic-004` and definition asset identifier `StructuralPlastic-004`, the appearance aspect has base asset identifier `PrismMaterial-022_physmat_aspects:Prism-374` and definition asset identifier `Prism-374`, and the twin has base asset identifier `PrismOpaque` and definition asset identifier `Opaque(R,G,B)`. The physical material and the appearance have a base asset identifier equal to the definition asset identifier. The decoder (`crates/cadmpeg-codec-f3d/src/materials.rs`) joins an instance record to a definition through an asset identifier equal to the instance's base asset identifier. A schema-bearing instance joins through the pair `(asset identifier, schema identifier)` of `protein.md` §5 "A definition stream can repeat one asset identifier", and a schema-less instance joins when its asset identifier has one catalog schema. The joined definition supplies the schema identifier and the category, and repeats with differing categories supply no category.
 
-**Conflict.** `protein.md` §5 "The Boolean flag does not select the metadata layout" joins a definition to an instance through equal asset and base asset identifiers. That join finds no definition for these two instances, and the table of contents finds one.
+**Conflict.** The equal-identifier join finds no definition for the two aspects and the twin, and the table of contents finds one for each.
 
 **Need.** A decision whether the decoder joins through the table of contents when the package has one.
 
@@ -1104,9 +1104,9 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-909. Separator of the `PrismMaterial-022` preview path
 
-**Question.** What selects the path separator in the preview path of the `PrismMaterial-022` definition record?
+**Question.** What selects the separator `<s>` in the preview path of the `PrismMaterial-022` definition record?
 
-**Known.** `protein.md` §9 "Each instance has one definition record" gives the preview path `Mats\PrismOpaque\Presets\t_Prism-374.png`, with backslashes. Some packages of the common form store `Mats/PrismOpaque/Presets/t_Prism-374.png`, with forward slashes, and equal the table in every other field of that definition record. The packages of the second form (DR-906) store the backslash path.
+**Known.** `protein.md` §9 "The table-of-contents entry of each instance names one definition record" gives the preview path `Mats<s>PrismOpaque<s>Presets<s>t_Prism-374.png`. The separator is `\` or `/`. Packages of the common form store either value. The packages of the second form (DR-906) store `\`.
 
 **Need.** The producer state, for example the Fusion version or the material library that saved the design, that selects the separator.
 

@@ -56,9 +56,9 @@ A `DefinitionIteratorProperties.bin` logical record is the concatenation of the 
 6. little-endian u32 tag count and that many length-prefixed UTF-8 tags;
 7. little-endian u32 preview-path count and that many length-prefixed UTF-8 paths.
 
-The Boolean flag does not select the metadata layout. Format version `0` stores description only. Version `1` stores group and description. Version `2` stores category, group, and description. Version `3` stores category, group, subgroup, and description. The record has no further typed members after the last preview path. If page framing contributes bytes through the end of a start or continuation page, the remaining bytes are zero padding. The asset identifier joins the definition to the base asset identifier of an instance record. The joined definition supplies the instance schema identifier and its category when present.
+The Boolean flag does not select the metadata layout. Format version `0` stores description only. Version `1` stores group and description. Version `2` stores category, group, and description. Version `3` stores category, group, subgroup, and description. The record has no further typed members after the last preview path. If page framing contributes bytes through the end of a start or continuation page, the remaining bytes are zero padding.
 
-A definition stream can repeat one asset identifier under multiple schema identifiers. The pair `(asset identifier, schema identifier)` identifies a catalog entry. Base asset identifier, category, group, subgroup, description, tags, and preview paths are descriptive metadata and can differ between repeats. Differing categories make the joined category absent. A schema-bearing instance joins through the exact pair. A schema-less record joins only when its asset identifier has one catalog schema.
+A definition stream can repeat one asset identifier under multiple schema identifiers. The pair `(asset identifier, schema identifier)` identifies a catalog entry. Base asset identifier, category, group, subgroup, description, tags, and preview paths are descriptive metadata and can differ between repeats. Open item DR-907 in [`f3d-open-items.md`](f3d-open-items.md) holds the join from an instance record to its definition record.
 
 ## 6. Table of contents
 
@@ -70,7 +70,7 @@ A definition stream can repeat one asset identifier under multiple schema identi
 4. little-endian u32 index of the first page of the entry's record in `InstanceProperties.bin`;
 5. u32-length-prefixed ASCII schema identifier.
 
-The instance identifier is the asset GUID of the instance record (§4), and the schema identifier is its schema identifier. The category is the `type` value of that schema (§8). The entries are in ascending byte order of the instance identifier. Each stream holds one record per entry, in entry order, so the page indices of the entries ascend. The definition record of an entry (§5) describes the library asset that its instance record derives from. The table of contents is the join from an instance to its definition: the definition's asset identifier can differ from the instance's base asset identifier.
+The instance identifier is the asset GUID of the instance record (§4), and the schema identifier is its schema identifier. The category is the `type` value of that schema (§8). The entries are in ascending byte order of the instance identifier. Each stream holds one record per entry, in entry order, so the page indices of the entries ascend.
 
 Entries have variable length and no fixed byte offsets.
 
@@ -156,11 +156,11 @@ The Design stream joins to the package through instance identifiers, written the
 
 An appearance and its twin carry one colour `(r, g, b, 1)`: `generic_diffuse` of the appearance and `opaque_albedo` of the twin. Each channel is a value `n / 255` rounded to binary32 and widened to binary64. The definition of the twin has the asset identifier `Opaque(R,G,B)`, the decimal 8-bit channel values. The appearance of the body has the colour `(246, 246, 243)`. In a package whose body appearance has the second form of open item DR-906, an appearance that a per-face assignment adds, and its twin, have the colour of that face. Their other values are the values in the tables of the body's appearance and twin below.
 
-Each instance has one definition record, with these values. Format version `2` stores category, group, and description; version `1` stores group and description (§5).
+The table-of-contents entry of each instance names one definition record, with these values. Format version `2` stores category, group, and description; version `1` stores group and description (§5).
 
 | Definition | Flag | Base asset identifier | Version | Metadata | Tags | Preview paths |
 |---|---|---|---|---|---|---|
-| `PrismMaterial-022` | `0` | `PrismMaterial-022` | `2` | `Plastic`; `advanced physical material`; `Acrylonitrile butadiene styrene` | `physical`, `Prism-374`, `ABS - white glossy`, `Plastic`, `Translucent`, `materials`, `opaque`, `StructuralPlastic-004`, `Acrylonitrile Butadiene Styrene, Molded`, `ABS`, `structural`, `CarbonBasic-003`, `Acrylonitrile Butadiene Styrene, Molded, Plastic and vinyl material`, `plastic`, `white`, `smooth`, `AppearancePlasticVinyl`, `StructuralPlastic`, `Carbon` | `Mats\PrismOpaque\Presets\t_Prism-374.png` |
+| `PrismMaterial-022` | `0` | `PrismMaterial-022` | `2` | `Plastic`; `advanced physical material`; `Acrylonitrile butadiene styrene` | `physical`, `Prism-374`, `ABS - white glossy`, `Plastic`, `Translucent`, `materials`, `opaque`, `StructuralPlastic-004`, `Acrylonitrile Butadiene Styrene, Molded`, `ABS`, `structural`, `CarbonBasic-003`, `Acrylonitrile Butadiene Styrene, Molded, Plastic and vinyl material`, `plastic`, `white`, `smooth`, `AppearancePlasticVinyl`, `StructuralPlastic`, `Carbon` | `Mats<s>PrismOpaque<s>Presets<s>t_Prism-374.png`, with the separator field `<s>` |
 | `StructuralPlastic-004` | `0` | `StructuralPlastic-004` | `2` | `Plastic/Thermoplastic`; `Default`; `Acrylonitrile Butadiene Styrene, Molded` | `ABS`, `structural`, `Plastic` | one empty path |
 | `Prism-374` | `0` | `Prism-374` | `2` | `Plastic`; `Default`; `ABS - white glossy` | `Plastic`, `Translucent`, `materials`, `opaque` | `Mats/PrismOpaque/Presets/t_Prism-374.png` |
 | `Generic` | `0` | `Generic` | `2` | `Default`; `Miscellaneous`; `Generic material.` | `materials`, `generic` | `Mats/Generic/generic.png` |
@@ -358,4 +358,4 @@ Appearance twin of the body (value block 288 bytes):
 | `swatch` | `PrismCommonSchema` | String | `Swatch-Torus` |
 | `version` | `CommonSchema` | Integer | 4 |
 
-A design with several bodies and one appearance has the same package; only the reference counts of the Protein asset manager change. The values that differ between packages are the GUIDs (basename, folder, package identifier, instance identifiers, and the base asset identifier of each `Opaque(R,G,B)` definition), the package time, and the colours of the per-face appearances. The table-of-contents order follows from the instance identifiers, and the page indices follow from that order and the record lengths. Open item DR-906 in [`f3d-open-items.md`](f3d-open-items.md) holds a second form of the body's appearance, and open item DR-909 a second spelling of the `PrismMaterial-022` preview path.
+A design with several bodies and one appearance has the same package; only the reference counts of the Protein asset manager change. The GUIDs (basename, folder, package identifier, instance identifiers, and the base asset identifier of each `Opaque(R,G,B)` definition), the package time, and the colours of the per-face appearances vary between packages. The table-of-contents order follows from the instance identifiers, and the page indices follow from that order and the record lengths. Open item DR-906 in [`f3d-open-items.md`](f3d-open-items.md) holds a second form of the body's appearance, and open item DR-909 the values of the separator `<s>` of the `PrismMaterial-022` preview path.
