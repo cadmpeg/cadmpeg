@@ -26,7 +26,7 @@ use crate::records::sketch_links::{
     DesignPersistentIdText, PersistentDesignLink, PersistentSubentityTag,
 };
 use crate::writer::generate::presentation::{
-    deterministic_guid, BrowserNodeTail, GeneratedDesignRegistry, TypeRow,
+    BrowserNodeTail, GeneratedDesignRegistry, TypeRow, deterministic_guid,
 };
 
 /// The persistent identity of the one `Base Feature`: the first value of the
@@ -59,7 +59,9 @@ pub(super) fn item_tail_loss(scope: u32) -> Option<LossNote> {
         &format!(
             "writes evaluation epoch {EPOCH} in both epoch fields of the Base Feature item tail, where f3d.md §3.1 states 252 for the generation words 1234, 8, 36 the Design stream stores, because the decoder reads an empty-label tail of epoch 252 beside these record indices as named (F3D-EPOCH); and writes evaluation duration {DURATION}, which f3d-open-items.md DR-913 leaves open"
         ),
-        [format!("record {scope} (Base Feature scope: its item tail)")],
+        [format!(
+            "record {scope} (Base Feature scope: its item tail)"
+        )],
     )
 }
 
@@ -1051,12 +1053,31 @@ fn residual_losses(indices: &Indices, bodies: &[BodyRecords]) -> Vec<LossNote> {
             format!("record {record} (body-reference record D3937028: its GUID and presentation members)")
         })
     }));
+    let mut stamp_records = vec![format!(
+        "record {} (component record-timestamp table)",
+        indices.component_stamps
+    )];
+    if let Some(item) = &indices.item {
+        stamp_records.push(format!(
+            "record {} (Base Feature scope record-timestamp table)",
+            item.scope_stamps
+        ));
+        stamp_records.push(format!(
+            "record {} (Base Feature result record-timestamp table)",
+            item.result_stamps
+        ));
+    }
     record_residual_unavailable(
         "F3D",
         "writes these Design records with zero bytes where the specification states no value",
         records,
     )
     .into_iter()
+    .chain(record_residual_unavailable(
+        "F3D",
+        "writes fixed-clock (2026-01-01 UTC) authoring timestamps in the record-timestamp tables: the document records no authoring clock",
+        stamp_records,
+    ))
     .chain(
         indices
             .item
