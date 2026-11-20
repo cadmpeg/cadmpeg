@@ -17770,6 +17770,137 @@ value = 0
 
 
 [[record]]
+name = "sketch_extrude_loop_curve_record"
+kind = "byte"
+section = "Records of a sketch-and-extrude design"
+anchor = "the curve record of each of their side faces has the layout"
+size = 97
+note = "Offsets are relative to the curve record's primary indexed header. The record ends at offset 97. The sense is `1` for an entry of an exterior loop and `0xffffffff` for an entry of a hole loop."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "one"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+value = 1
+
+[[record.field]]
+name = "zero_word"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+value = 0
+
+[[record.field]]
+name = "curve_count"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+value = 1
+
+[[record.field]]
+name = "entry_kind"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+value = 3
+
+[[record.field]]
+name = "primary_identity"
+offset = 37
+type = "u64"
+source = "spec"
+anchor = "after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve"
+
+[[record.field]]
+name = "secondary_identity"
+offset = 45
+type = "u64"
+source = "spec"
+anchor = "secondary identity `0`, the sense, operands `1` and `1`, and eight zero bytes"
+value = 0
+
+[[record.field]]
+name = "sense"
+offset = 53
+type = "u32"
+source = "spec"
+anchor = "The sense is `1` when the side face comes from an entry of an exterior loop of the profile, and `0xffffffff` when it comes from an entry of a hole loop"
+
+[[record.field]]
+name = "first_operand"
+offset = 57
+type = "u32"
+source = "spec"
+anchor = "secondary identity `0`, the sense, operands `1` and `1`, and eight zero bytes"
+value = 1
+
+[[record.field]]
+name = "second_operand"
+offset = 61
+type = "u32"
+source = "spec"
+anchor = "secondary identity `0`, the sense, operands `1` and `1`, and eight zero bytes"
+value = 1
+
+[[record.field]]
+name = "entry_zero_run_8"
+offset = 65
+type = "bytes[8]"
+source = "spec"
+anchor = "secondary identity `0`, the sense, operands `1` and `1`, and eight zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_list_count"
+offset = 73
+type = "u32"
+source = "spec"
+anchor = "then the count `1` and the primary identity of the loop curve that meets it at its first end"
+value = 1
+
+[[record.field]]
+name = "first_end_curve_identity"
+offset = 77
+type = "u64"
+source = "spec"
+anchor = "then the count `1` and the primary identity of the loop curve that meets it at its first end"
+
+[[record.field]]
+name = "second_list_count"
+offset = 85
+type = "u32"
+source = "spec"
+anchor = "then the count `1` and the primary identity of the loop curve that meets it at its second end"
+value = 1
+
+[[record.field]]
+name = "second_end_curve_identity"
+offset = 89
+type = "u64"
+source = "spec"
+anchor = "then the count `1` and the primary identity of the loop curve that meets it at its second end"
+
+[[record]]
 name = "early_distance_extrude_absent_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"

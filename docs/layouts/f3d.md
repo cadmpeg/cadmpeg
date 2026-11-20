@@ -5538,6 +5538,31 @@ Offsets are relative to the curve record's primary indexed header. The record en
 | 73 | 4 | `first_list_count` | `u32` | little | spec | then two empty curve-identity lists, each the u32 count `0` · value `0` |
 | 77 | 4 | `second_list_count` | `u32` | little | spec | then two empty curve-identity lists, each the u32 count `0` · value `0` |
 
+## `sketch_extrude_loop_curve_record`
+
+Spec §Records of a sketch-and-extrude design · layout: byte offsets · size: 97 B
+
+Offsets are relative to the curve record's primary indexed header. The record ends at offset 97. The sense is `1` for an entry of an exterior loop and `0xffffffff` for an entry of a hole loop.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `one` | `u32` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve · value `1` |
+| 25 | 4 | `zero_word` | `u32` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve · value `0` |
+| 29 | 4 | `curve_count` | `u32` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve · value `1` |
+| 33 | 4 | `entry_kind` | `u32` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve · value `3` |
+| 37 | 8 | `primary_identity` | `u64` | little | spec | after ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`, it stores one entry of kind `3` with the primary identity of the curve |
+| 45 | 8 | `secondary_identity` | `u64` | little | spec | secondary identity `0`, the sense, operands `1` and `1`, and eight zero bytes · value `0` |
+| 53 | 4 | `sense` | `u32` | little | spec | The sense is `1` when the side face comes from an entry of an exterior loop of the profile, and `0xffffffff` when it comes from an entry of a hole loop |
+| 57 | 4 | `first_operand` | `u32` | little | spec | secondary identity `0`, the sense, operands `1` and `1`, and eight zero bytes · value `1` |
+| 61 | 4 | `second_operand` | `u32` | little | spec | secondary identity `0`, the sense, operands `1` and `1`, and eight zero bytes · value `1` |
+| 65 | 8 | `entry_zero_run_8` | `bytes[8]` | little | spec | secondary identity `0`, the sense, operands `1` and `1`, and eight zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 73 | 4 | `first_list_count` | `u32` | little | spec | then the count `1` and the primary identity of the loop curve that meets it at its first end · value `1` |
+| 77 | 8 | `first_end_curve_identity` | `u64` | little | spec | then the count `1` and the primary identity of the loop curve that meets it at its first end |
+| 85 | 4 | `second_list_count` | `u32` | little | spec | then the count `1` and the primary identity of the loop curve that meets it at its second end · value `1` |
+| 89 | 8 | `second_end_curve_identity` | `u64` | little | spec | then the count `1` and the primary identity of the loop curve that meets it at its second end |
+
 ## `early_distance_extrude_absent_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 34 B
