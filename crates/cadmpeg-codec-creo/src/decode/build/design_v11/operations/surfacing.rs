@@ -14,13 +14,6 @@ use cadmpeg_ir::features::{self as old, FeatureOperation as LegacyOperation};
 
 use super::{selections, Stated};
 
-fn output() -> SheetOutput {
-    SheetOutput {
-        solid: None,
-        boolean: None,
-    }
-}
-
 pub(super) fn operation(value: &LegacyOperation, stated: &Stated<'_>) -> Option<FeatureOperation> {
     match value {
         LegacyOperation::FilledSurface {
@@ -36,7 +29,10 @@ pub(super) fn operation(value: &LegacyOperation, stated: &Stated<'_>) -> Option<
                 passing: None,
                 planar: None,
                 simplified: None,
-                output: output(),
+                output: SheetOutput {
+                    solid: None,
+                    boolean: None,
+                },
                 native_options: BTreeMap::new(),
                 source_settings: BTreeMap::new(),
             })))
