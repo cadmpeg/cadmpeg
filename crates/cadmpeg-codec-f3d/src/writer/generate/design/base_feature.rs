@@ -358,6 +358,9 @@ impl BaseFeaturePlan<'_> {
         writer.components(out)?;
         writer.origin_container(out);
         writer.parameter_collection(out, &ctx.roster.parameters)?;
+        if ctx.roster.parameters.is_empty() {
+            return Ok(());
+        }
         parameters.roster_records(
             &ctx.class(types::PARAMETER.guid)?,
             &ctx.roster.parameters,
