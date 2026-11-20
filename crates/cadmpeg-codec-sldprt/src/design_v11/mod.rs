@@ -103,6 +103,7 @@ pub(crate) fn project(
         &definition,
     );
     losses.extend(typed.loss);
+    losses.extend(typed.assumed);
     let readings = parameters::Readings {
         decoded: parameters::Decoded::new(&ir.model.parameters, lanes),
         length_unit: length,

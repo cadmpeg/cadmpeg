@@ -337,6 +337,9 @@ pub(crate) enum SldprtLossCode {
     /// Parameters whose literal and value are their dimension's displayed
     /// number, which Keywords rounds to the display precision.
     DesignParameterDisplayRounded,
+    /// Extrudes whose blind depth is bound to their record's only dimension,
+    /// whose name is neither `Depth` nor `D1`.
+    DesignExtrudeDepthAssumed,
 }
 
 impl SldprtLossCode {
@@ -478,6 +481,7 @@ impl SldprtLossCode {
         Self::DesignFeatureUnresolved,
         Self::DesignFolderDropped,
         Self::DesignParameterDisplayRounded,
+        Self::DesignExtrudeDepthAssumed,
     ];
 
     /// The stable string identifier. This is the gating contract.
@@ -641,6 +645,7 @@ impl SldprtLossCode {
             Self::DesignFeatureUnresolved => "design.feature-unresolved",
             Self::DesignFolderDropped => "design.folder-dropped",
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
+            Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
         }
     }
 
@@ -774,7 +779,8 @@ impl SldprtLossCode {
             | Self::AssemblyVirtualComponentsNotTransferred
             | Self::AssemblyEmbeddedDocumentsNotTransferred
             | Self::DesignFolderDropped
-            | Self::DesignParameterDisplayRounded => Severity::Warning,
+            | Self::DesignParameterDisplayRounded
+            | Self::DesignExtrudeDepthAssumed => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
             Self::AssemblyComponentsExternal
@@ -829,7 +835,9 @@ impl SldprtLossCode {
             }
             Self::DesignFeatureUnresolved => LossTaxonomy::RecordNotTyped,
             Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
-            Self::DesignParameterDisplayRounded => LossTaxonomy::DecodeDiagnostic,
+            Self::DesignParameterDisplayRounded | Self::DesignExtrudeDepthAssumed => {
+                LossTaxonomy::DecodeDiagnostic
+            }
             Self::TopologyBodyHierarchyDerived => LossTaxonomy::TopologyGaugeSubstituted,
             Self::TopologyFaceUnclaimed
             | Self::TopologyOwnershipWithheld
@@ -1230,6 +1238,7 @@ mod tests {
                 "design.feature-unresolved",
                 "design.folder-dropped",
                 "design.parameter-display-rounded",
+                "design.extrude-depth-assumed",
             ]
         );
     }

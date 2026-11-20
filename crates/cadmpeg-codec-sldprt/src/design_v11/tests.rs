@@ -1355,6 +1355,47 @@ fn timeline_feature<'a>(
 }
 
 #[test]
+fn a_one_sided_extrude_bound_to_its_only_dimension_names_it() {
+    let (ir, native) = sketch_and_extrude_from(
+        br#"<Keywords Name="Block">
+            <Feature Name="Front" id="2"/>
+            <Feature Name="Top" id="3"/>
+            <Feature Name="Right" id="4"/>
+            <Sketch Name="Origin" Type="OriginProfileFeature" id="106"/>
+            <Sketch Name="Sketch1" Type="ProfileFeature" id="8">
+                <Dimension Name="D1">50</Dimension>
+                <Dimension Name="D2">30</Dimension>
+                <Dimension Name="D3">&lt;MOD-DIAM&gt;10</Dimension>
+            </Sketch>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7">
+                <Dimension Name="D2">10</Dimension>
+            </Extrusion>
+        </Keywords>"#,
+    );
+    let (timeline, entries, typed) = typed_timeline(&ir, &native);
+    let boss = timeline_feature(&timeline, "Boss");
+    assert!(
+        matches!(boss.definition.operation, FeatureOperation::Extrude(_)),
+        "{:?}",
+        boss.definition.operation
+    );
+    let depth = entries.owned(&boss.id, "D2").unwrap();
+    let note = typed.assumed.expect("the assumed depth is named");
+    assert_eq!(
+        note.code,
+        crate::loss::SldprtLossCode::DesignExtrudeDepthAssumed.kind()
+    );
+    assert!(
+        note.message.contains(boss.id.as_str()) && note.message.contains(depth.as_str()),
+        "{}",
+        note.message
+    );
+    let (ir, native) = sketch_and_extrude();
+    let (_, _, typed) = typed_timeline(&ir, &native);
+    assert!(typed.assumed.is_none(), "a depth named D1 is not assumed");
+}
+
+#[test]
 fn a_two_sided_extrude_binds_only_the_depth_its_record_lists() {
     use cadmpeg_ir::design::ops::shared::{Limit, Span};
     use cadmpeg_ir::design::units::Quantity;

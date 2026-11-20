@@ -38,6 +38,9 @@ pub(super) struct Extrudes {
     pub(super) bound: HashMap<ParameterId, Quantity>,
     /// The extrude features left `Unresolved`, with the reason.
     pub(super) unprojected: Vec<(FeatureId, &'static str)>,
+    /// The typed extrudes whose blind depth is the record's only dimension,
+    /// named neither `Depth` nor `D1`, with that dimension.
+    pub(super) assumed: Vec<(FeatureId, ParameterId)>,
 }
 
 /// What the projection reads besides the feature.
@@ -79,6 +82,7 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Extrud
         match family {
             Some(OperationFamily::Extrude) => {
                 let mut bound = Vec::new();
+                let mut assumed = None;
                 let typed = extrude(
                     feature,
                     context,
@@ -86,11 +90,14 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Extrud
                     &preceding,
                     body_before,
                     &mut bound,
+                    &mut assumed,
                 );
                 out.bound.extend(bound);
                 match typed {
                     Ok(extrude) => {
                         feature.definition.operation = FeatureOperation::Extrude(Box::new(extrude));
+                        out.assumed
+                            .extend(assumed.map(|parameter| (feature.id.clone(), parameter)));
                     }
                     Err(reason) => out.unprojected.push((feature.id.clone(), reason)),
                 }
@@ -119,6 +126,7 @@ fn extrude(
     preceding: &HashSet<SketchId>,
     body_before: bool,
     bound: &mut Bound,
+    assumed: &mut Option<ParameterId>,
 ) -> Result<Extrude, &'static str> {
     let source = context
         .model
@@ -165,7 +173,13 @@ fn extrude(
     if !matches!(start, v10::ExtrudeStart::ProfilePlane {}) {
         return Err("the extrude starts off the profile plane");
     }
-    let span = span(extent, &Depths::new(feature, context), bound)?;
+    let depths = Depths::new(feature, context);
+    let span = span(extent, &depths, bound)?;
+    if let ExtrudeExtent::OneSided { side } | ExtrudeExtent::Symmetric { side } = extent {
+        if matches!(side.termination, LinearTermination::Blind { .. }) && depths.first.is_none() {
+            assumed.clone_from(&depths.sole);
+        }
+    }
     let sketch = sketch
         .filter(|sketch| context.sketches.contains(*sketch))
         .ok_or("the extrude's sketch is not stated")?;

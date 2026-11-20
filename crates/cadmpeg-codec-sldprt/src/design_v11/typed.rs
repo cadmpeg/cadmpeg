@@ -31,6 +31,9 @@ pub(super) struct Typed {
     /// The tree parameters a reference dimension binds.
     pub(super) references: HashSet<ParameterId>,
     pub(super) loss: Option<LossNote>,
+    /// The note of the extrudes whose depth is their record's only
+    /// dimension, whatever its name.
+    pub(super) assumed: Option<LossNote>,
 }
 
 /// Type the sketches, then the extrudes, of `timeline`.
@@ -78,6 +81,7 @@ pub(super) fn project(
             .or_insert(Some(*quantity));
     }
     let loss = loss(&sketches.unprojected, &extrudes.unprojected);
+    let assumed = assumed(&extrudes.assumed);
     let measured = std::mem::take(&mut sketches.measured);
     let references = std::mem::take(&mut sketches.references);
     Typed {
@@ -89,7 +93,34 @@ pub(super) fn project(
             .collect(),
         sketches,
         loss,
+        assumed,
     }
+}
+
+/// One note naming each typed extrude whose blind depth is bound to its
+/// record's only dimension, named neither `Depth` nor `D1` (sldprt.md §6:
+/// the sole dimension is the depth whatever its name).
+fn assumed(extrudes: &[(FeatureId, ParameterId)]) -> Option<LossNote> {
+    if extrudes.is_empty() {
+        return None;
+    }
+    let shown = extrudes.len().min(NAMED_INSTANCES_PER_NOTE);
+    let named = extrudes[..shown]
+        .iter()
+        .map(|(feature, parameter)| format!("{} ({})", feature.as_str(), parameter.as_str()))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let rest = extrudes.len() - shown;
+    let more = if rest == 0 {
+        String::new()
+    } else {
+        format!(", and {rest} more")
+    };
+    Some(SldprtLossCode::DesignExtrudeDepthAssumed.note(format!(
+        "{} extrudes bind their blind depth to their record's only dimension, which is named \
+         neither Depth nor D1: {named}{more}",
+        extrudes.len()
+    )))
 }
 
 /// The datum feature of the built-in plane each sketch feature's profile
