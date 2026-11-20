@@ -8036,9 +8036,9 @@ pub(crate) fn construction_closing_flag_losses(
 /// reference back to the selection record of a sketchless chain record.
 const SKETCHLESS_PROFILE_CHAIN_MARKER: [u8; 6] = [1, 1, 0, 0, 0, 0];
 
-/// The owner text of the typed-reference profile selection at `header` when
+/// The asset GUID of the typed-reference profile selection at `header` when
 /// its chain record is sketchless.
-fn sketchless_profile_selection_owner(
+fn sketchless_profile_selection_asset(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     header: &DesignRecordHeader,
@@ -8063,7 +8063,7 @@ fn sketchless_profile_selection_owner(
     {
         return None;
     }
-    let (_, after_asset) = lp_utf16_bounded(bytes, start + typed_selection::LEN, 36..=36)?;
+    let (asset_guid, after_asset) = lp_utf16_bounded(bytes, start + typed_selection::LEN, 36..=36)?;
     let (owner_text, _) = lp_utf16_bounded(bytes, after_asset, 1..=20)?;
     if !owner_text.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
@@ -8081,7 +8081,29 @@ fn sketchless_profile_selection_owner(
     {
         return None;
     }
-    Some(owner_text)
+    Some(asset_guid)
+}
+
+/// The `feature.extrude-profile-sketch-absent` note for selection record
+/// `selection_record` of Extrude scope record `scope_record`.
+fn sketchless_profile_selection_loss(
+    selection_record: u32,
+    scope_record: u32,
+    asset_guid: &str,
+    design_asset_guid: Option<&str>,
+) -> LossNote {
+    let foreign =
+        design_asset_guid.is_some_and(|design_guid| !design_guid.eq_ignore_ascii_case(asset_guid));
+    let message = if foreign {
+        format!(
+            "Profile selection record {selection_record} of Extrude scope record {scope_record} has a chain record that names no Sketch; its asset GUID {asset_guid} is not the Design's asset GUID, and the profile stays native."
+        )
+    } else {
+        format!(
+            "Profile selection record {selection_record} of Extrude scope record {scope_record} has a chain record that names no Sketch, and the profile stays native."
+        )
+    };
+    crate::loss::F3dLossCode::FeatureExtrudeProfileSketchAbsent.note(message)
 }
 
 /// One `feature.extrude-profile-sketch-absent` note for each Extrude profile
@@ -8119,14 +8141,16 @@ pub(crate) fn sketchless_profile_selection_losses(
             let records = records_by_stream
                 .entry(stream)
                 .or_insert_with(|| IndexedRecordOffsets::build(bytes));
-            let Some(owner_text) = sketchless_profile_selection_owner(bytes, records, header)
+            let Some(asset_guid) = sketchless_profile_selection_asset(bytes, records, header)
             else {
                 continue;
             };
-            losses.push(crate::loss::F3dLossCode::FeatureExtrudeProfileSketchAbsent.note(format!(
-                "Profile selection record {} of Extrude scope record {} has a sketchless chain record; its owner Sketch {owner_text} belongs to another design, and the profile stays native.",
-                header.record_index, group.scope_record_index,
-            )));
+            losses.push(sketchless_profile_selection_loss(
+                header.record_index,
+                group.scope_record_index,
+                &asset_guid,
+                scan.design_asset_guid(),
+            ));
         }
     }
     Ok(losses)

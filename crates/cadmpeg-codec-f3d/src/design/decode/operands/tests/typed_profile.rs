@@ -562,7 +562,7 @@ fn sketchless_chain() -> Vec<u8> {
     bytes
 }
 
-fn sketchless_owner(bytes: &[u8]) -> Option<String> {
+fn sketchless_asset(bytes: &[u8]) -> Option<String> {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:design-record-header#0".into(),
@@ -570,19 +570,22 @@ fn sketchless_owner(bytes: &[u8]) -> Option<String> {
         class_tag: DesignClassTag::try_from("264".to_owned()).unwrap(),
         byte_offset: 0,
     };
-    super::super::sketchless_profile_selection_owner(bytes, &records, &header)
+    super::super::sketchless_profile_selection_asset(bytes, &records, &header)
 }
 
 #[test]
 fn sketchless_chain_record_names_the_selection_and_no_sketch_scope() {
     let bytes = sketchless_chain();
-    assert_eq!(sketchless_owner(&bytes).as_deref(), Some("75"));
+    assert_eq!(
+        sketchless_asset(&bytes).as_deref(),
+        Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    );
     assert!(parse(&bytes).is_none());
 }
 
 #[test]
 fn chain_record_with_a_sketch_scope_is_not_sketchless() {
-    assert!(sketchless_owner(&chain(false)).is_none());
+    assert!(sketchless_asset(&chain(false)).is_none());
 }
 
 #[test]
@@ -593,5 +596,41 @@ fn sketchless_chain_record_must_name_its_own_selection() {
         .position(|window| window == [1, 1, 0, 0, 0, 0])
         .unwrap();
     bytes[marker_at + 7] = 99;
-    assert!(sketchless_owner(&bytes).is_none());
+    assert!(sketchless_asset(&bytes).is_none());
+}
+
+#[test]
+fn sketchless_selection_of_another_asset_names_its_asset_guid() {
+    let note = super::super::sketchless_profile_selection_loss(
+        100,
+        80,
+        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        Some("12345678-1234-1234-1234-123456789abc"),
+    );
+    assert_eq!(
+        note.code.local_code(),
+        "feature.extrude-profile-sketch-absent"
+    );
+    assert_eq!(
+        note.message,
+        "Profile selection record 100 of Extrude scope record 80 has a chain record that names no Sketch; its asset GUID aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee is not the Design's asset GUID, and the profile stays native."
+    );
+}
+
+#[test]
+fn sketchless_selection_of_the_design_asset_names_no_sketch() {
+    let note = super::super::sketchless_profile_selection_loss(
+        100,
+        80,
+        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        Some("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"),
+    );
+    assert_eq!(
+        note.code.local_code(),
+        "feature.extrude-profile-sketch-absent"
+    );
+    assert_eq!(
+        note.message,
+        "Profile selection record 100 of Extrude scope record 80 has a chain record that names no Sketch, and the profile stays native."
+    );
 }
