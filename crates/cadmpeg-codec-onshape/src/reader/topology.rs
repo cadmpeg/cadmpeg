@@ -76,6 +76,7 @@ pub(crate) struct Inputs<'a> {
     body_features: Vec<usize>,
     provenance: std::cell::RefCell<Provenance<'a>>,
     pub(super) regions: std::cell::RefCell<super::regions::Recovery>,
+    pub(super) sampling_report: std::cell::RefCell<super::Report>,
 }
 
 fn rollback_indices(bundle: &Bundle<'_>, prefix: &str) -> Mapping<BTreeSet<usize>> {
@@ -144,6 +145,7 @@ impl<'a> Inputs<'a> {
                 .collect(),
             provenance: std::cell::RefCell::default(),
             regions: std::cell::RefCell::default(),
+            sampling_report: std::cell::RefCell::default(),
         }
     }
 
@@ -169,7 +171,18 @@ impl<'a> Inputs<'a> {
                 "bodydetails for rollback index {ordinal} is missing"
             ));
         }
-        load(self.bundle, self.prefix, ordinal, self.mid, feature)
+        let mut report = self
+            .sampling_report
+            .try_borrow_mut()
+            .map_err(|_| "edge sampling report is already in use")?;
+        load(
+            self.bundle,
+            self.prefix,
+            ordinal,
+            self.mid,
+            feature,
+            &mut report,
+        )
     }
     pub(crate) fn producer(
         &self,
@@ -452,6 +465,7 @@ fn load(
     ordinal: usize,
     mid: &str,
     feature: &Value,
+    report: &mut super::Report,
 ) -> Mapping<State> {
     let response = bundle
         .json(&format!("{prefix}/bodydetails/{ordinal}.json"))
@@ -528,15 +542,22 @@ fn load(
         }
     }
     for (edge_id, edge) in &edges {
-        if let Ok(mut sample) = sample(edge) {
-            sample
-                .as_object_mut()
-                .ok_or("edge sample is missing")?
-                .insert(
-                    "faces".into(),
-                    json!(adjacency.get(edge_id).cloned().unwrap_or_default()),
-                );
-            samples.push(sample);
+        match sample(edge) {
+            Ok(mut sample) => {
+                sample
+                    .as_object_mut()
+                    .ok_or("edge sample is missing")?
+                    .insert(
+                        "faces".into(),
+                        json!(adjacency.get(edge_id).cloned().unwrap_or_default()),
+                    );
+                samples.push(sample);
+            }
+            Err(reason) => report.push_coded(
+                edge_id,
+                crate::loss::OnshapeLossCode::EdgeGeometryUnsampled,
+                format!("rollback index {ordinal}: {reason}; omitted the edge geometry sample"),
+            ),
         }
     }
     let row = json!({"id": id("input", text(feature, "featureId")?), "input_of": id("feature", text(feature, "featureId")?),

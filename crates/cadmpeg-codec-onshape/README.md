@@ -51,3 +51,7 @@ expansion, retained-byte and entity budgets remain decode errors. A bundle
 with empty history and unreadable final geometry remains a decode error.
 Each model decode states one root product definition, including a decode
 that retains history after a STEP member failure.
+
+Rollback edges with unsupported curves or incomplete geometric fields retain their
+ids and carry `onshape/topology.edge-geometry-unsampled`. The loss names the edge
+and the sampling failure. Stored-value proofs that need its geometry refuse.

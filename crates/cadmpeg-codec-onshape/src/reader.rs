@@ -742,6 +742,9 @@ pub(super) fn read(
     if model.ir.design.features.len() > original_design_features {
         install_thin_scope(ctx, &mut model.ir, report, original_design)?;
     }
+    report
+        .notes
+        .extend(inputs.sampling_report.into_inner().notes);
     annotate(&mut model, features)?;
     report
         .notes

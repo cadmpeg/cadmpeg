@@ -171,6 +171,73 @@ fn exact_input_edges_are_converted_from_metres_at_the_feature_rollback() {
 }
 
 #[test]
+fn rollback_edge_sampling_retains_ids_and_reports_each_failure() {
+    for failure in ["ELLIPSE", "midPoint", "direction"] {
+        let bytes = changed(&fixture("plate-fillet"), |path, value| {
+            if path.ends_with("bodydetails/2.json") {
+                let line = value["bodies"][0]["edges"][0].clone();
+                let mut circle = line.clone();
+                circle["id"] = json!("circle-edge");
+                circle["curve"] = json!({"type":"CIRCLE",
+                    "origin":{"x":0.001,"y":0.0,"z":0.001},
+                    "normal":{"x":0.0,"y":0.0,"z":1.0}});
+                let mut unsampled = line.clone();
+                unsampled["id"] = json!("unsampled-edge");
+                match failure {
+                    "ELLIPSE" => unsampled["curve"]["type"] = json!("ELLIPSE"),
+                    "midPoint" => {
+                        unsampled["geometry"]
+                            .as_object_mut()
+                            .unwrap()
+                            .remove("midPoint");
+                    }
+                    _ => {
+                        unsampled["curve"]
+                            .as_object_mut()
+                            .unwrap()
+                            .remove("direction");
+                    }
+                }
+                value["bodies"][0]["edges"] = json!([line, circle, unsampled]);
+            }
+        });
+        let (model, report) = read(&bytes).unwrap();
+        let wire = timeline(&model);
+        let state = &wire["model"]["feature_input_topologies"][0];
+        assert_eq!(
+            state["edges"],
+            json!(["circle-edge", "unsampled-edge", "upright"])
+        );
+        let samples = state["edge_geometry"].as_array().unwrap();
+        assert_eq!(samples.len(), 2);
+        assert_eq!(samples[0]["edge"], "circle-edge");
+        assert_eq!(samples[1]["edge"], "upright");
+        let losses: Vec<_> = report
+            .losses()
+            .iter()
+            .filter(|loss| {
+                loss.code
+                    .as_deref()
+                    .is_some_and(|code| code.starts_with("onshape/"))
+            })
+            .collect();
+        assert_eq!(losses.len(), 1, "{failure}: {losses:?}");
+        assert_eq!(
+            losses[0].code.as_deref(),
+            Some("onshape/topology.edge-geometry-unsampled")
+        );
+        assert!(losses[0].detail.contains("unsampled-edge"));
+        let reason = match failure {
+            "ELLIPSE" => "ELLIPSE input edges are not supported yet",
+            "midPoint" => "edge midpoint is missing",
+            _ => "line direction is missing",
+        };
+        assert!(losses[0].detail.contains(reason));
+        assert_eq!(kinds(&model), ["sketch", "extrude", "fillet"]);
+    }
+}
+
+#[test]
 fn unresolved_edges_never_fall_back_to_final_topology_or_another_rollback() {
     for failure in ["id", "index", "microversion", "curve", "duplicate"] {
         let bytes = changed(&fixture("plate-fillet"), |path, value| {

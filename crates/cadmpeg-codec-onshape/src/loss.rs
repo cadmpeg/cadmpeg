@@ -17,6 +17,7 @@ pub(super) enum OnshapeLossCode {
     MemberTooLarge,
     MemberUnreadable,
     TopologyTooLarge,
+    EdgeGeometryUnsampled,
     StepUnreadable,
 }
 impl OnshapeLossCode {
@@ -35,6 +36,7 @@ impl OnshapeLossCode {
             Self::MemberUnreadable => "member.unreadable",
             Self::MemberTooLarge => "member.too-large",
             Self::TopologyTooLarge => "topology.too-large",
+            Self::EdgeGeometryUnsampled => "topology.edge-geometry-unsampled",
             Self::StepUnreadable => "step.unreadable",
         }
     }
