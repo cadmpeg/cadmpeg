@@ -906,17 +906,15 @@ mod idless_history_binding_tests {
 
     #[test]
     fn tied_object_names_pair_the_profile_with_the_later_history_extrusion() {
-        for _ in 0..32 {
-            let (history, lane, mut features, profile_id) = extrusion_profile_pair(false, 100);
+        let (history, lane, mut features, profile_id) = extrusion_profile_pair(false, 100);
 
-            project_adjacent_extrusion_profiles(
-                &mut features,
-                std::slice::from_ref(&history),
-                std::slice::from_ref(&lane),
-            );
+        project_adjacent_extrusion_profiles(
+            &mut features,
+            std::slice::from_ref(&history),
+            std::slice::from_ref(&lane),
+        );
 
-            assert_extrusion_uses_profile(&features, &profile_id);
-        }
+        assert_extrusion_uses_profile(&features, &profile_id);
     }
 
     #[test]

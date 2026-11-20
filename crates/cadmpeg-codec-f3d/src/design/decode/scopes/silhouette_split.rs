@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::point_direction::{point_direction_carrier_at, POINT_DIRECTION_TYPE_GUID};
+use super::point_direction::{point_direction_carrier_at, PointDirectionBoundary};
 use crate::bytes::local_reference_target;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_guid_end;
@@ -10,7 +10,9 @@ use crate::layout::{
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::silhouette_split::{DesignSilhouetteDirection, DesignSilhouetteSplit};
-use cadmpeg_core::decode::{u64_from_index, View};
+use crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID;
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::HashMap;
 
@@ -19,17 +21,18 @@ pub(super) const TYPE_GUID: &str = "D1C361B7-FA73-4D59-9406-066780667135";
 const LOCAL_REFERENCE_LEN: usize = 11;
 
 pub(super) fn decode(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     types: &HashMap<u64, (&str, u32)>,
     losses: &mut Vec<LossNote>,
-) -> Option<DesignSilhouetteSplit> {
+) -> Result<Option<DesignSilhouetteSplit>, CodecError> {
     if !types
         .get(&u64::from(scope.record_index))
         .is_some_and(|(guid, version)| guid.eq_ignore_ascii_case(TYPE_GUID) && *version == 0)
     {
-        return None;
+        return Ok(None);
     }
     let Some((mode_word, carrier, selector)) = prefix(bytes, scope) else {
         losses.push(
@@ -38,12 +41,12 @@ pub(super) fn decode(
                 scope.id
             )),
         );
-        return None;
+        return Ok(None);
     };
-    Some(DesignSilhouetteSplit {
+    Ok(Some(DesignSilhouetteSplit {
         mode_word,
-        carrier: direction_carrier(bytes, records, types, carrier, selector),
-    })
+        carrier: direction_carrier(ctx, bytes, records, types, carrier, selector)?,
+    }))
 }
 
 fn prefix(bytes: &[u8], scope: &DesignParameterScope) -> Option<(u32, u32, u32)> {
@@ -107,34 +110,50 @@ fn prefix(bytes: &[u8], scope: &DesignParameterScope) -> Option<(u32, u32, u32)>
 }
 
 fn direction_carrier(
+    ctx: &DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     types: &HashMap<u64, (&str, u32)>,
     carrier: u32,
     selector: u32,
-) -> Option<DesignSilhouetteDirection> {
-    let (guid, version) = types.get(&u64::from(carrier))?;
+) -> Result<Option<DesignSilhouetteDirection>, CodecError> {
+    let Some((guid, version)) = types.get(&u64::from(carrier)) else {
+        return Ok(None);
+    };
     if !guid.eq_ignore_ascii_case(POINT_DIRECTION_TYPE_GUID) || *version != 4 {
-        return None;
+        return Ok(None);
     }
     let mut frames = records.frames(carrier);
-    let (start, end) = frames.next()?;
-    if frames.next().is_some() {
-        return None;
-    }
-    let decoded = point_direction_carrier_at(bytes, start, end, carrier, *version)?;
-    let [input] = decoded.input_records.as_slice() else {
-        return None;
+    let (Some((start, end)), None) = (frames.next(), frames.next()) else {
+        return Ok(None);
     };
-    let input_at = usize::try_from(input.offset.checked_sub(1)?).ok()?;
-    if local_reference_target(bytes.get(..end)?, input_at, false) != Some(selector) {
-        return None;
+    let Some(decoded) = point_direction_carrier_at(
+        ctx,
+        bytes,
+        start,
+        PointDirectionBoundary::Indexed(end),
+        carrier,
+        *version,
+    )?
+    else {
+        return Ok(None);
+    };
+    let [input] = decoded.inputs.as_slice() else {
+        return Ok(None);
+    };
+    if !decoded.inputs_complete || input.value.local() != Some((u64::from(selector), None)) {
+        return Ok(None);
     }
-    Some(DesignSilhouetteDirection {
-        position: decoded.position,
-        direction: decoded.direction,
-        reference_type: decoded.reference_type,
-    })
+    let (Some(position), Some(direction), Some(reference_type)) =
+        (decoded.position, decoded.direction, decoded.reference_type)
+    else {
+        return Ok(None);
+    };
+    Ok(Some(DesignSilhouetteDirection {
+        position,
+        direction,
+        reference_type,
+    }))
 }
 
 #[cfg(test)]

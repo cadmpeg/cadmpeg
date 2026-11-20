@@ -984,6 +984,9 @@ fn decode_container<'a>(
             &ir.model.features,
         ));
         losses.extend(composite_losses);
+        losses.extend(crate::feature::unrecognized_class_losses(
+            &ir.model.features,
+        ));
         losses.extend(crate::feature::sheet_metal::native_kind_losses(
             &feature_inventory,
             &ir.model.features,
@@ -1548,6 +1551,17 @@ fn decode_container<'a>(
         ir.geometry = Topology::default();
         ir.model = Model::default();
     }
+    if let Some(root) =
+        ir.state_root_definition(ctx, root_product_id(), ExternalDocument::default())?
+    {
+        if root.kind.is_none() {
+            root.kind = match document_kind {
+                DocumentKind::Part => Some(ProductDefinitionKind::Part),
+                DocumentKind::Assembly => Some(ProductDefinitionKind::Assembly),
+                _ => None,
+            };
+        }
+    }
     if document_kind == DocumentKind::Part && ctx.depth() >= DecodeDepth::Design {
         crate::design_v11::project(
             ctx,
@@ -1695,6 +1709,14 @@ fn project_design(
     })
 }
 
+/// The root definition: the part or assembly the document holds at its top.
+fn root_product_id() -> ProductDefinitionId {
+    ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("inventor", "document", "product"),
+        cadmpeg_ir::identity_key!("root"),
+    )
+}
+
 fn project_root_product(
     ctx: &DecodeContext<'_>,
     document_kind: &DocumentKind,
@@ -1711,13 +1733,7 @@ fn project_root_product(
     let label = metadata.title.as_deref().map(str::to_owned);
     let description = metadata.description.as_deref().map(str::to_owned);
     let part_number = metadata.part_number.as_deref().map(str::to_owned);
-    let mut definition = ProductDefinition::root(
-        ProductDefinitionId::compose(
-            &cadmpeg_ir::identity_namespace!("inventor", "document", "product"),
-            cadmpeg_ir::identity_key!("root"),
-        ),
-        ExternalDocument::default(),
-    );
+    let mut definition = ProductDefinition::root(root_product_id(), ExternalDocument::default());
     definition.kind = Some(if *document_kind == DocumentKind::Assembly {
         ProductDefinitionKind::Assembly
     } else {

@@ -13,10 +13,10 @@ use crate::design::face_resolve::resolved_extrude_profile_face_group;
 use crate::design::face_resolve::resolved_face_group;
 use crate::design::face_resolve::resolved_historical_face_group;
 use crate::ids::native_stream;
-use crate::records::feature::extrude::DesignExtrudeExtent;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::extrude::DesignExtrudePrologue;
 use crate::records::feature::extrude::DesignExtrudeStart;
+use crate::records::feature::extrude::{DesignExtrudeExtent, DesignExtrudeMeasurement};
 use crate::records::feature::fixed_parameters::DesignFixedExtrudeDistance;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameter;
@@ -283,7 +283,8 @@ pub(super) fn project_extrude(
     let parameter_along = match or_none!(unique("AlongDistance")) {
         Some(parameter) => Some(or_none!(design_length(parameter))),
         None => None,
-    };
+    }
+    .filter(|distance| distance.get() != 0.0 || !prologue.is_legacy_shifted_to_face());
     let fixed_along = scope
         .fixed_extrude_parameters()
         .as_ref()
@@ -303,10 +304,6 @@ pub(super) fn project_extrude(
         .transpose()
         .ok();
     let fixed_along = or_none!(fixed_along);
-    let assumed_fixed_symmetric = parameter_along.is_none()
-        && fixed_along.is_some()
-        && prologue.extent() == Some(DesignExtrudeExtent::SymmetricDistance)
-        && prologue.distance_tail().is_none();
     let along = match (parameter_along, fixed_along) {
         (Some(parameter), Some((fixed, AlongDirection::SignedDistance)))
             if (parameter.get() - fixed.get()).abs() <= EPS_FEATURE_PROJECT_PROJECT_EXTRUDE_E9 =>
@@ -531,12 +528,20 @@ pub(super) fn project_extrude(
             }
         }
         DesignExtrudeStart::FromFace => {
-            let [start] = start_groups.as_slice() else {
-                return Ok(None);
+            let face = match start_groups.as_slice() {
+                [start] => selected_face(start)?,
+                [] if face_groups.is_empty()
+                    && target_shape_groups.is_empty()
+                    && prologue.operation() == DesignExtrudeOperation::NewBody
+                    && prologue.extent() == Some(DesignExtrudeExtent::OneSidedDistance) =>
+                {
+                    FaceSelection::Unresolved
+                }
+                _ => return Ok(None),
             };
             let offset = or_none!(profile_offset);
             ExtrudeStart::FromFace {
-                face: selected_face(start)?,
+                face,
                 offset: (offset.get() != 0.0).then_some(offset),
             }
         }
@@ -743,14 +748,13 @@ pub(super) fn project_extrude(
             && termination_groups.is_empty()
             && effective_side_one_offset.is_none() =>
         {
-            let each_side = assumed_fixed_symmetric
-                || match prologue.distance_tail().map(|tail| tail.measurement) {
-                    Some(crate::records::feature::extrude::DesignExtrudeMeasurement::EachSide) => {
-                        true
-                    }
-                    Some(_) => false,
-                    None => prologue.side_extent_discriminators() == Some([1, 1]),
-                };
+            let each_side = match prologue.distance_tail() {
+                Some(tail) => tail.measurement == DesignExtrudeMeasurement::EachSide,
+                None => {
+                    scope.assumes_symmetric_distance_each_side(parameter_along.is_some())
+                        || prologue.side_extent_discriminators() == Some([1, 1])
+                }
+            };
             let length = if each_side {
                 or_none!(NonZeroLength::new(2.0 * along.get()))
             } else {

@@ -872,7 +872,22 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "step:product:product#document",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],
@@ -1025,7 +1040,13 @@
             "namespace": "step"
           }
         },
+        "count": 1,
         "message": "preserved 1 PRESENTATION_STYLE_ASSIGNMENT instance(s) as named opaque STEP records",
+        "provenance": {
+          "format": "step",
+          "offset": 2448,
+          "tag": "PRESENTATION_STYLE_ASSIGNMENT"
+        },
         "severity": "warning"
       },
       {
@@ -1037,7 +1058,13 @@
             "namespace": "step"
           }
         },
+        "count": 1,
         "message": "preserved 1 STYLED_ITEM instance(s) as named opaque STEP records",
+        "provenance": {
+          "format": "step",
+          "offset": 2505,
+          "tag": "STYLED_ITEM"
+        },
         "severity": "warning"
       }
     ],

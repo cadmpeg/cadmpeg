@@ -247,6 +247,38 @@ fn roots_count_toward_the_occurrence_limit() {
     );
 }
 
+#[test]
+fn the_document_root_over_several_leaf_tops_is_charged_once() {
+    let tops = structure(vec![definition("A", &[]), definition("B", &[])]);
+    // Two definitions, the two occurrences placing them, and the document.
+    let expand_within = |max_entities| {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::service();
+        policy.limits.max_entities = max_entities;
+        let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)
+            .expect("empty root fits the service input limit");
+        let mut ir = CadIr::empty();
+        let mut losses = Vec::new();
+        definitions(&ctx, &tops, &mut ir, &mut losses)?;
+        occurrences(&ctx, &tops, &mut ir, &mut losses)?;
+        Ok::<_, CodecError>(ir)
+    };
+    let error = expand_within(4).expect_err("five entities exceed four");
+    assert!(matches!(error, CodecError::ResourceLimit(limit)
+        if limit.dimension == ResourceDimension::Entities
+            && limit.operation == "pvz_document"));
+    let ir = expand_within(5).expect("five entities fit five");
+    assert_eq!(ir.entity_count(), 5);
+    let roots: Vec<_> = ir
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| definition.is_root())
+        .map(|definition| definition.id.to_string())
+        .collect();
+    assert_eq!(roots, ["pvz:model:document#0"]);
+}
+
 fn retained_refusal(result: &Result<(), CodecError>) -> bool {
     matches!(
         result,

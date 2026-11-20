@@ -25,12 +25,20 @@ const FLIP_PASSES: usize = 32;
 /// Angle, in radians, by which two opposite angles must pass a half turn
 /// before their edge flips.
 const FLIP_SLACK: f64 = 1e-9;
+/// Triangles one point-location walk crosses before it scans the mesh.
+const WALK_STEPS: usize = 4096;
 /// Flips one inserted vertex may cause.
 const LEGALIZE_STEPS: usize = 4096;
+/// Samples per parameter of the curvature that sets a face's anisotropy.
+const ANISOTROPY_SAMPLES: u8 = 4;
+/// Ratio of a partial derivative's smallest length on a face to its
+/// largest above which the face's parameterization is regular.
+const ANISOTROPY_REGULAR_RATIO: f64 = 1e-2;
 /// Smallest ratio of one metric scale to the other.
 const METRIC_FLOOR: f64 = 1e-6;
 
 /// A triangulated domain.
+#[derive(Clone)]
 pub(crate) struct Mesh {
     pub(crate) uv: Vec<Uv>,
     pub(crate) points: Vec<Point3>,
@@ -42,6 +50,12 @@ pub(crate) struct Mesh {
     pub(crate) triangles: Vec<Option<[usize; 3]>>,
     /// Face boundary segments, by ordered vertex pair.
     pub(crate) fixed: BTreeSet<(usize, usize)>,
+    /// The reciprocal of the length a triangle may span along each
+    /// parameter within the chord and angle limits, relative to the
+    /// shorter span. Flips judge angles in the surface metric stretched by
+    /// it, so a direction the surface does not bend along keeps long
+    /// triangles.
+    pub(crate) anisotropy: [f64; 2],
 }
 
 fn key(a: usize, b: usize) -> (usize, usize) {
@@ -135,7 +149,17 @@ impl Mesh {
             if cross2(self.uv[a], self.uv[b], self.uv[c]).abs() <= smallest {
                 continue;
             }
+            // A triangle with every side within the chord limit sags less
+            // than it on a smooth surface; an error past the limit comes
+            // from boundary samples off the surface, which no split removes.
+            if [(a, b), (b, c), (c, a)]
+                .into_iter()
+                .all(|(from, to)| distance(self.points[from], self.points[to]) <= limits.chord)
+            {
+                continue;
+            }
             let mut worst_edge: Option<f64> = None;
+            let mut missing = Vec::new();
             for (from, to) in [(a, b), (b, c), (c, a)] {
                 let uv = midpoint(self.uv[from], self.uv[to]);
                 let Some(on) = carrier.point(uv)? else {
@@ -147,6 +171,15 @@ impl Mesh {
                 }
                 if worst_edge.is_none_or(|worst| error > worst) {
                     worst_edge = Some(error);
+                }
+                let edge_turned = match (self.normals[from], self.normals[to]) {
+                    (Some(first), Some(second)) => {
+                        exceeds_limit(angle(first, second), limits.angle)
+                    }
+                    _ => false,
+                };
+                if exceeds_limit(error, limits.chord) || edge_turned {
+                    missing.push((from, to));
                 }
             }
             let centre = [
@@ -178,12 +211,22 @@ impl Mesh {
             {
                 continue;
             }
-            // The longest interior edge splits, which keeps triangles from
-            // thinning; a triangle bounded only by fixed edges gains a
-            // vertex at its centroid.
-            let longest = [(a, b), (b, c), (c, a)]
+            // In a stretched mesh the longest interior edge that misses a
+            // limit splits, which keeps an edge that already lies on the
+            // surface, as one along a ruling does. Otherwise the longest
+            // interior edge splits, which keeps triangles from thinning, and
+            // a triangle bounded only by fixed edges gains a vertex at its
+            // centroid.
+            let candidates = if missing.is_empty() || !self.stretched() {
+                [(a, b), (b, c), (c, a)]
+                    .into_iter()
+                    .filter(|(from, to)| !self.fixed.contains(&key(*from, *to)))
+                    .collect()
+            } else {
+                missing
+            };
+            let longest = candidates
                 .into_iter()
-                .filter(|(from, to)| !self.fixed.contains(&key(*from, *to)))
                 .max_by(|first, second| longer_edge(&self.points, *first, *second));
             match longest {
                 Some(edge) => {
@@ -201,11 +244,21 @@ impl Mesh {
     pub(crate) fn flip(&mut self) {
         let mut edges = self.edges();
         let mut ignored = Vec::new();
+        // An edge whose two triangles are unchanged since it last held keeps
+        // holding, so only an edge of a flipped quadrilateral is judged again.
+        let mut changed: BTreeSet<(usize, usize)> = edges.keys().copied().collect();
         for _ in 0..FLIP_PASSES {
             let mut flipped = false;
             let candidates: Vec<(usize, usize)> = edges.keys().copied().collect();
             for edge in candidates {
-                flipped |= self.try_flip(&mut edges, &mut ignored, edge).is_some();
+                if !changed.remove(&edge) {
+                    continue;
+                }
+                if let Some((c, d)) = self.try_flip(&mut edges, &mut ignored, edge) {
+                    flipped = true;
+                    let (a, b) = edge;
+                    changed.extend([key(a, c), key(c, b), key(b, d), key(d, a), key(c, d)]);
+                }
             }
             if !flipped {
                 break;
@@ -241,7 +294,7 @@ impl Mesh {
         let mut metric = [0.0; 2];
         for vertex in [a, b, c, d] {
             for (axis, value) in metric.iter_mut().enumerate() {
-                *value += self.scales[vertex][axis] / 4.0;
+                *value += self.scales[vertex][axis] * self.anisotropy[axis] / 4.0;
             }
         }
         let corner = |at: usize, from: usize, to: usize| {
@@ -329,10 +382,41 @@ impl Mesh {
         (from, to): (usize, usize),
         uv: Uv,
     ) -> Result<(), Refusal> {
+        let sharing = edges.get(&key(from, to)).cloned().unwrap_or_default();
+        let (Some(point), normal) = (carrier.point(uv)?, carrier.normal(uv)?) else {
+            return Ok(());
+        };
+        // A vertex that folds a triangle over its fixed boundary segment,
+        // where the surface bows past the segment's chord, stays out.
+        for at in &sharing {
+            let Some(corners) = self.triangles[*at] else {
+                continue;
+            };
+            if self.faces_away(corners) {
+                continue;
+            }
+            for k in 0..3 {
+                let (first, second) = (corners[k], corners[(k + 1) % 3]);
+                if key(first, second) == key(from, to) || !self.fixed.contains(&key(first, second))
+                {
+                    continue;
+                }
+                let facing = crate::plane::cross(
+                    crate::plane::sub(self.points[second], self.points[first]),
+                    crate::plane::sub(point, self.points[first]),
+                );
+                let away = [self.normals[first], self.normals[second], normal]
+                    .into_iter()
+                    .flatten()
+                    .any(|normal| crate::plane::dot(facing, normal) < 0.0);
+                if away {
+                    return Ok(());
+                }
+            }
+        }
         let Some(middle) = self.add_vertex(carrier, uv)? else {
             return Ok(());
         };
-        let sharing = edges.get(&key(from, to)).cloned().unwrap_or_default();
         let mut opposite = Vec::new();
         for at in sharing {
             let Some(corners) = self.triangles[at] else {
@@ -370,6 +454,7 @@ impl Mesh {
         &mut self,
         carrier: &Carrier<'_, '_>,
         limits: &Limits,
+        stretch: bool,
     ) -> Result<(), Refusal> {
         let mut lengths: Vec<f64> = self
             .fixed
@@ -395,19 +480,61 @@ impl Mesh {
             f64::midpoint(low[1], high[1]),
         ];
         let metric = scales(carrier, centre)?;
+        let span_within = |curvature: f64, extent: f64| {
+            if curvature > 0.0 {
+                (8.0 * limits.chord / curvature)
+                    .sqrt()
+                    .min(limits.angle / curvature)
+                    .min(extent)
+            } else {
+                extent
+            }
+        };
         let mut step = [0.0; 2];
         for axis in 0..2 {
             let extent = (high[axis] - low[axis]) * metric[axis];
             let curvature =
                 carrier.curvature(centre, axis, high[axis] - low[axis], metric[axis])?;
-            let allowed = if curvature > 0.0 {
-                (8.0 * limits.chord / curvature)
-                    .sqrt()
-                    .min(limits.angle / curvature)
-            } else {
-                extent
-            };
-            step[axis] = allowed.max(spacing) / metric[axis];
+            step[axis] = span_within(curvature, extent).max(spacing) / metric[axis];
+        }
+        // The anisotropy takes the largest curvature across the face, so it
+        // stretches only a direction the whole face does not bend along.
+        let mut bending = [0.0_f64; 2];
+        let mut extent = [0.0_f64; 2];
+        let mut speed = [[f64::INFINITY, 0.0_f64]; 2];
+        for i in 0..=ANISOTROPY_SAMPLES {
+            for j in 0..=ANISOTROPY_SAMPLES {
+                let fraction = |k: u8| f64::from(k) / f64::from(ANISOTROPY_SAMPLES);
+                let uv = [
+                    low[0] + (high[0] - low[0]) * fraction(i),
+                    low[1] + (high[1] - low[1]) * fraction(j),
+                ];
+                let scale = scales(carrier, uv)?;
+                for axis in 0..2 {
+                    let span = high[axis] - low[axis];
+                    bending[axis] =
+                        bending[axis].max(carrier.curvature(uv, axis, span, scale[axis])?.abs());
+                    extent[axis] = extent[axis].max(span * scale[axis]);
+                    speed[axis] = [
+                        speed[axis][0].min(scale[axis]),
+                        speed[axis][1].max(scale[axis]),
+                    ];
+                }
+            }
+        }
+        // A pole or apex collapses a partial derivative, and a face that
+        // reaches toward one keeps the surface metric.
+        let regular = speed
+            .iter()
+            .all(|[slowest, fastest]| *slowest > ANISOTROPY_REGULAR_RATIO * fastest);
+        let allowed = [0, 1].map(|axis| span_within(bending[axis], extent[axis]));
+        // Only a direction in which one triangle may span the whole face
+        // stretches: the face is straight along it, as a cylinder is along
+        // its rulings.
+        let straight = (0..2).any(|axis| allowed[axis] >= extent[axis]);
+        let shorter = allowed[0].min(allowed[1]);
+        if stretch && regular && straight && shorter > 0.0 && shorter.is_finite() {
+            self.anisotropy = allowed.map(|span| shorter / span);
         }
         let counts = [0, 1].map(|axis| floor_count((high[axis] - low[axis]) / step[axis]));
         let [Some(columns), Some(rows)] = counts else {
@@ -420,6 +547,12 @@ impl Mesh {
             return Ok(());
         }
         let mut edges = self.edges();
+        // Seeding splits interior triangles only, so the mesh boundary stays.
+        let boundary: Vec<(usize, usize)> = edges
+            .iter()
+            .filter(|(_, sharing)| sharing.len() == 1)
+            .map(|(edge, _)| *edge)
+            .collect();
         let mut queue = Vec::new();
         for column in 1..=columns {
             for row in 1..=rows {
@@ -433,13 +566,7 @@ impl Mesh {
                     low[0] + step[0] * (column - 0.5),
                     low[1] + step[1] * (row - 0.5),
                 ];
-                let Some(at) = self.triangles.iter().position(|triangle| {
-                    triangle.is_some_and(|[a, b, c]| {
-                        cross2(self.uv[a], self.uv[b], uv) > 0.0
-                            && cross2(self.uv[b], self.uv[c], uv) > 0.0
-                            && cross2(self.uv[c], self.uv[a], uv) > 0.0
-                    })
-                }) else {
+                let Some(at) = self.locate(&edges, &boundary, uv) else {
                     continue;
                 };
                 let Some([a, b, c]) = self.triangles[at] else {
@@ -457,6 +584,117 @@ impl Mesh {
             }
         }
         Ok(())
+    }
+
+    /// The triangle whose interior holds `uv`. The search walks from the
+    /// newest triangle toward `uv` across the side it lies beyond, and scans
+    /// every triangle when the walk leaves the mesh or runs long.
+    fn locate(
+        &self,
+        edges: &BTreeMap<(usize, usize), Vec<usize>>,
+        boundary: &[(usize, usize)],
+        uv: Uv,
+    ) -> Option<usize> {
+        let inside = |[a, b, c]: [usize; 3]| {
+            cross2(self.uv[a], self.uv[b], uv) > 0.0
+                && cross2(self.uv[b], self.uv[c], uv) > 0.0
+                && cross2(self.uv[c], self.uv[a], uv) > 0.0
+        };
+        let mut at = self.triangles.iter().rposition(Option::is_some)?;
+        for _ in 0..WALK_STEPS {
+            let Some([a, b, c]) = self.triangles[at] else {
+                break;
+            };
+            let mut exit: Option<((usize, usize), f64)> = None;
+            for (from, to) in [(a, b), (b, c), (c, a)] {
+                let side = cross2(self.uv[from], self.uv[to], uv);
+                if side <= 0.0 && exit.is_none_or(|(_, worst)| side < worst) {
+                    exit = Some(((from, to), side));
+                }
+            }
+            let Some((edge, _)) = exit else {
+                return Some(at);
+            };
+            let next = edges
+                .get(&key(edge.0, edge.1))
+                .and_then(|sharing| sharing.iter().copied().find(|other| *other != at));
+            match next {
+                Some(other) => at = other,
+                None if !self.encloses(boundary, uv) => return None,
+                None => break,
+            }
+        }
+        self.triangles
+            .iter()
+            .position(|triangle| triangle.is_some_and(inside))
+    }
+
+    /// Whether the mesh boundary `boundary` winds around `uv`: a ray from
+    /// `uv` along `+u` crosses it an odd number of times.
+    fn encloses(&self, boundary: &[(usize, usize)], uv: Uv) -> bool {
+        let mut inside = false;
+        for &(from, to) in boundary {
+            let (p, q) = (self.uv[from], self.uv[to]);
+            if (p[1] > uv[1]) != (q[1] > uv[1]) {
+                let crossing = p[0] + (uv[1] - p[1]) / (q[1] - p[1]) * (q[0] - p[0]);
+                if uv[0] < crossing {
+                    inside = !inside;
+                }
+            }
+        }
+        inside
+    }
+
+    /// Whether flips judge angles in a metric stretched along one
+    /// parameter.
+    pub(crate) fn stretched(&self) -> bool {
+        self.anisotropy != [1.0, 1.0]
+    }
+
+    /// Whether a triangle faces against the surface normal at one of its
+    /// corners: the mesh folds over itself there.
+    pub(crate) fn folded(&self) -> bool {
+        self.triangles
+            .iter()
+            .flatten()
+            .any(|corners| self.faces_away(*corners))
+    }
+
+    /// The share of the mesh's model area in triangles that face away from
+    /// the surface normal at one of their corners.
+    pub(crate) fn folded_share(&self) -> f64 {
+        let mut total = 0.0;
+        let mut away = 0.0;
+        for corners in self.triangles.iter().flatten() {
+            let [a, b, c] = *corners;
+            let facing = crate::plane::cross(
+                crate::plane::sub(self.points[b], self.points[a]),
+                crate::plane::sub(self.points[c], self.points[a]),
+            );
+            let area = crate::plane::length(facing) / 2.0;
+            total += area;
+            if self.faces_away(*corners) {
+                away += area;
+            }
+        }
+        if total > 0.0 {
+            away / total
+        } else {
+            0.0
+        }
+    }
+
+    /// Whether the triangle `corners` faces away from the surface normal at
+    /// one of its corners.
+    fn faces_away(&self, [a, b, c]: [usize; 3]) -> bool {
+        let facing = crate::plane::cross(
+            crate::plane::sub(self.points[b], self.points[a]),
+            crate::plane::sub(self.points[c], self.points[a]),
+        );
+        [a, b, c]
+            .into_iter()
+            .filter_map(|corner| self.normals[corner])
+            .any(|normal| crate::plane::dot(facing, normal) < 0.0)
     }
 
     fn split_centre(

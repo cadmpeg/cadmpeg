@@ -53,6 +53,21 @@ pub(super) fn project<'a>(
     native_scope: &str,
     losses: &mut Vec<LossNote>,
 ) -> Result<FilletProjection<'a>, CodecError> {
+    if scope.fillet_sets().is_some_and(|sets| {
+        sets.projects_short_sets(
+            inputs
+                .construction_groups
+                .iter()
+                .filter(|group| {
+                    native_stream(&group.id) == Some(native_scope)
+                        && group.scope_record_index == scope.record_index
+                        && !group.members().is_empty()
+                })
+                .map(|group| group.record_index),
+        )
+    }) {
+        return native_scope_definition(scope, parameters).map(FilletProjection::Existing);
+    }
     if parameters.is_empty()
         && crate::design::decode::operands::fixed_fillet_assignment_is_unresolved(
             scope,

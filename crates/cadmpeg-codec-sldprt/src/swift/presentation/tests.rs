@@ -5,8 +5,8 @@ use super::{annotations, parse, Archive, FeaturePath};
 use crate::brep::feature_source::FeatureSourceId;
 use crate::brep::PersistentFaceIdentity;
 use crate::swift::{project, Entity, Reference, ROOT_CLASS};
+use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::ids::{FaceId, PmiId};
-use cadmpeg_ir::pmi::zones::ToleranceConstraints;
 use cadmpeg_ir::pmi::{
     GeometricToleranceKind, PmiAnnotation, PmiDefinition, PmiMagnitude, PmiQuantity, PmiTarget,
 };
@@ -540,8 +540,13 @@ fn tolerance(id: &str, kind: GeometricToleranceKind, magnitude: f64, target: u32
             defined_area_second_unit: None,
             datum_system: None,
             modifiers: Vec::new(),
-            constraints: ToleranceConstraints::default(),
+            displacement: None,
+            maximum_upper: None,
+            zones: Vec::new(),
         },
+        native_ref: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
     }
 }
 
@@ -554,6 +559,9 @@ fn datum(id: &str, letter: &str) -> PmiAnnotation {
         definition: PmiDefinition::Datum {
             identification: letter.into(),
         },
+        native_ref: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
     }
 }
 
@@ -935,6 +943,9 @@ fn a_disagreeing_datum_system_withholds_the_display_datum_systems() {
             ])
             .expect("datum references"),
         },
+        native_ref: None,
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
     });
     let projected = composite_transfer(COMPOSITE_ROWS, projected);
     assert_eq!(transferred(&projected), (vec!["G".to_owned()], vec![]));

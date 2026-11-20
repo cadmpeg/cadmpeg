@@ -526,6 +526,33 @@ impl<'a> DecodeContext<'a> {
         self.session.unknowns().len()
     }
 
+    /// The bodies each object committed, for the objects whose UUID no other
+    /// object holds.
+    fn object_bodies(&self) -> crate::history::v11::ObjectBodies {
+        let document = self.session.document();
+        let bodies = document
+            .geometry
+            .bodies
+            .iter()
+            .map(|body| (body.id.as_str(), &body.id))
+            .collect::<HashMap<_, _>>();
+        let unknowns = self.session.unknowns();
+        self.object_candidates
+            .iter()
+            .filter_map(|(object, orders)| {
+                let [order] = orders.as_slice() else {
+                    return None;
+                };
+                let links = unknowns.get(*order)?.links();
+                let committed = links
+                    .iter()
+                    .filter_map(|link| bodies.get(link.as_str()).map(|id| (*id).clone()))
+                    .collect::<Vec<_>>();
+                (!committed.is_empty()).then_some((*object, committed))
+            })
+            .collect()
+    }
+
     /// Appends a later geometry-phase link to an object record.
     fn append_link(
         &mut self,
@@ -2630,7 +2657,13 @@ impl<'a> DecodeContext<'a> {
         for source in views.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        self.session.document_mut()?.finalize();
+        let document = self.session.document_mut()?;
+        document.state_root_definition(
+            ctx,
+            crate::product::root_definition_id(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )?;
+        document.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
         let outcomes = self.class_outcomes()?;
         let decoded = outcomes
@@ -6407,6 +6440,7 @@ pub(crate) fn decode(
         )
     });
     context.report.phase_warnings.append(&mut history_warnings);
+    let history_projected = untyped.is_ok();
     match untyped {
         Ok((0, 0, 0, 0)) => {}
         Ok((untyped, failed, dropped_dependencies, redundant_repairs)) => {
@@ -6442,7 +6476,19 @@ pub(crate) fn decode(
             format_args!("history projection rejected atomically by IR validation: {error}"),
         ),
     }
-    context.commit()
+    let objects = history_projected.then(|| context.object_bodies());
+    let mut decoded = context.commit()?;
+    if let Some(objects) = objects {
+        let root = decoded
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .find(|definition| definition.is_root())
+            .map(|definition| definition.id.clone());
+        crate::history::v11::project(expand.ctx(), &scan.history, &objects, root, &mut decoded.ir)?;
+    }
+    Ok(decoded)
 }
 
 #[cfg(test)]

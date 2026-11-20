@@ -88,7 +88,7 @@ pub(crate) struct DecodedParameters {
     pub(crate) parameters: Vec<DesignParameter>,
     /// Per-stream counts of parameter frames that match no grammar.
     pub(crate) unparsed: Vec<UnparsedParameterRecords>,
-    /// Per-stream counts of decoded parameters whose trailer byte 3 is set.
+    /// Per-stream counts of decoded parameters with a set opaque trailer flag.
     pub(crate) trailer_flags: Vec<StreamParameterCount>,
     /// Per-stream counts of decoded compact null-owner parameters.
     pub(crate) null_owners: Vec<StreamParameterCount>,
@@ -204,7 +204,7 @@ pub(in crate::design) struct ParsedDesignParameter {
     comment: Option<ParsedParameterUnit>,
     flags: crate::records::parameters::DesignParameterFlags,
     text_value: Option<ParsedParameterUnit>,
-    /// Whether byte 3 of the five-byte compact expression trailer is `1`.
+    /// Whether the compact expression trailer sets its opaque flag.
     compact_flag: bool,
     /// Whether the frame is the compact null-owner form.
     compact_null_owner: bool,
@@ -431,15 +431,16 @@ fn wide_expression_trailer_flags(bytes: &[u8]) -> Option<WideTrailerFlags> {
     })
 }
 
-/// Driven flag of a compact owned expression trailer.
-fn compact_trailer_driven(trailer: &[u8]) -> Option<bool> {
+fn compact_owned_trailer_flags(trailer: &[u8]) -> Option<(bool, bool)> {
     if trailer.len() != compact_trailer::LEN
-        || trailer.get(compact_trailer::RESERVED_0) != Some(&compact_trailer::RESERVED_0_VALUE)
         || trailer.get(compact_trailer::ZERO_RUN_3..) != Some(&[0; 3][..])
     {
         return None;
     }
-    trailer_flag(trailer, compact_trailer::DRIVEN)
+    Some((
+        trailer_flag(trailer, compact_trailer::DRIVEN)?,
+        trailer_flag(trailer, compact_trailer::OPAQUE_FLAG)?,
+    ))
 }
 
 /// Parse the discriminated or ordinary compact owned form. `shift` counts the
@@ -503,21 +504,21 @@ fn parse_header_form(
         && payload.get(expression_end..expression_end + 10)
             == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
     let wide_flags = (shift == WIDE_DISCRIMINATED_SHIFT
-        && family_discriminator.is_some_and(|value| matches!(value.code(), 0 | 5 | 6)))
+        && family_discriminator.is_some_and(|value| matches!(value.code(), 0 | 4 | 5 | 6)))
     .then(|| wide_expression_trailer_flags(payload.get(expression_end..)?))
     .flatten()
     .filter(|wide| wide.document == owner_record_index.is_none());
-    let compact_driven = if discriminated {
+    let compact_flags = if discriminated {
         None
     } else {
-        compact_trailer_driven(expression_trailer)
+        compact_owned_trailer_flags(expression_trailer)
     };
     let valid_expression_trailer = if discriminated {
         long_document_trailer
             || wide_flags.is_some()
             || is_flagged_expression_trailer(expression_trailer)
     } else {
-        compact_driven.is_some()
+        compact_flags.is_some()
     };
     if !valid_expression_trailer {
         return None;
@@ -548,6 +549,10 @@ fn parse_header_form(
         Some(value) => value,
         None => parameter_text!(payload, source_kind_at, 1..=256),
     };
+    let compact_flag = compact_flags.is_some_and(|(_, opaque)| opaque);
+    if compact_flag && source_kind != "Side1Offset" {
+        return None;
+    }
     let document_flag = match wide_flags {
         Some(wide) => wide.document,
         None => expression_trailer.get(DOCUMENT_TRAILER_FLAG) == Some(&1),
@@ -558,9 +563,9 @@ fn parse_header_form(
     {
         return None;
     }
-    let flags = match (wide_flags, compact_driven) {
+    let flags = match (wide_flags, compact_flags) {
         (Some(wide), _) => wide.record,
-        (None, Some(driven)) => crate::records::parameters::DesignParameterFlags {
+        (None, Some((driven, _))) => crate::records::parameters::DesignParameterFlags {
             driven,
             favorite: false,
         },
@@ -632,7 +637,7 @@ fn parse_header_form(
             value: text_value,
             offset: FrameRelative(i128::from(u64_from_index(source_kind_end + 4))),
         }),
-        compact_flag: false,
+        compact_flag,
         compact_null_owner: false,
     }))
 }

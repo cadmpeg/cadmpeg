@@ -665,7 +665,13 @@ fn generated_case_in(
         shells: &[],
         faces: &[],
     };
-    let results = crate::history::bind_generated_body_selections(&mut features, &inputs);
+    let results = crate::history::bind_generated_body_selections(
+        &mut features,
+        &inputs,
+        &std::collections::HashMap::new(),
+        None,
+        &mut Vec::new(),
+    );
     (features.remove(1), results)
 }
 

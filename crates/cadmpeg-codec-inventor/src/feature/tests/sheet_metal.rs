@@ -305,3 +305,71 @@ fn bend_result_slot_follows_the_bend_property_count() {
     assert_eq!(family.output_slot(&test_feature(200, 9, &[])), 5);
     assert_eq!(family.output_slot(&test_feature(200, 11, &[])), 9);
 }
+
+#[test]
+fn an_unrecognized_label_class_charges_one_note_per_class() {
+    use cadmpeg_ir::features::{FeatureEvaluation, NativeFeatureKind};
+    let native = |id: &str, kind: &str| -> Feature {
+        let mut feature: Feature = serde_json::from_value(serde_json::json!({
+            "id": id, "ordinal": 1,
+            "definition": {"kind": "operation", "value": {"kind": "native", "value": {"kind": "Plate", "parameters": {}}}},
+            "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []}))
+        .expect("synthetic feature");
+        feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+            FeatureOperation::Native {
+                kind: NativeFeatureKind::Other(kind.to_owned()),
+                parameters: BTreeMap::new(),
+            },
+        ));
+        feature
+    };
+    let unknown = "InventorClass:00112233445566778899aabbccddeeff";
+    let derived = format!("InventorClass:{}", crate::feature::derived::CLASS_ID);
+    let features = [
+        native("test:model:feature#a", unknown),
+        native("test:model:feature#b", unknown),
+        native("test:model:feature#c", "Plate"),
+        native("test:model:feature#d", &derived),
+    ];
+    let losses = crate::feature::unrecognized_class_losses(&features);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.native-class-unrecognized"
+    );
+    assert!(losses[0].message.contains(
+        "2 feature(s) of unrecognized feature-label class 00112233445566778899aabbccddeeff"
+    ));
+}
+
+#[test]
+fn the_unresolved_profile_cut_class_keeps_its_native_identity_and_loss() {
+    use cadmpeg_ir::features::NativeFeatureKind;
+
+    let class = ClassId::try_from("55dbdf16d3118c9b6000f2b21d6eefb0".to_owned())
+        .expect("unresolved profile-cut class");
+    assert!(FeatureFamily::from_class_id(class).is_none());
+    let source = test_feature(100, 34, &[(0, 7), (6, 8)]);
+    let label = test_label(100, 1, class, &[42]);
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("projection context");
+    let feature = crate::feature::native_feature(&ctx, &source.identity, Some(&label), source.id())
+        .expect("native feature");
+
+    assert_eq!(feature.native_ref.as_deref(), Some(source.id().as_str()));
+    assert!(matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: NativeFeatureKind::Other(kind),
+            ..
+        }) if kind == "InventorClass:55dbdf16d3118c9b6000f2b21d6eefb0"
+    ));
+    let losses = crate::feature::unrecognized_class_losses(&[feature]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.namespace(), "inventor");
+    assert_eq!(
+        losses[0].code.local_code(),
+        "feature.native-class-unrecognized"
+    );
+}

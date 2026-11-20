@@ -655,3 +655,349 @@ fn writer_reports_a_placed_external_occurrence_only_as_external() {
     assert!(!reported(StepLossCode::OccurrenceNoLocalProduct));
     assert!(!reported(StepLossCode::OccurrencePlacementNotRigid));
 }
+
+fn translation(x: f64, y: f64, z: f64) -> Transform {
+    Transform::affine([[1.0, 0.0, 0.0, x], [0.0, 1.0, 0.0, y], [0.0, 0.0, 1.0, z]])
+        .expect("finite translation")
+}
+
+fn path(occurrences: &[&str]) -> cadmpeg_ir::design::selection::OccurrencePath {
+    cadmpeg_ir::design::selection::OccurrencePath(
+        occurrences
+            .iter()
+            .map(|id| cadmpeg_ir::design::selection::PathStep {
+                occurrence: cadmpeg_ir::design::selection::StepRef::Occurrence(
+                    OccurrenceId::mint(*id).expect("identity grammar"),
+                ),
+                configuration: None,
+            })
+            .collect(),
+    )
+}
+
+/// The reused sub-assembly with the assemblies at `(10, 0, 0)` and
+/// `(0, 20, 0)` and the component at `(1, 2, 3)` in its assembly.
+fn placed_subassembly() -> CadIr {
+    let mut ir = reused_subassembly(Some(translation(1.0, 2.0, 3.0)));
+    for (occurrence, transform) in [
+        (
+            "test:model:occurrence#first-assembly",
+            translation(10.0, 0.0, 0.0),
+        ),
+        (
+            "test:model:occurrence#second-assembly",
+            translation(0.0, 20.0, 0.0),
+        ),
+    ] {
+        ir.model
+            .occurrences
+            .iter_mut()
+            .find(|row| row.id.as_str() == occurrence)
+            .expect("assembly occurrence")
+            .transform = Some(transform);
+    }
+    ir
+}
+
+/// Writes `ir`, decodes the file, and returns the export report with the
+/// world translation of every occurrence whose prototype owns bodies.
+fn written_body_translations(
+    ir: &CadIr,
+) -> (cadmpeg_ir::report::export::ExportReport, Vec<[f64; 3]>) {
+    let options = StepWriteOptions {
+        product_name: "Assembly model".into(),
+        ..StepWriteOptions::default()
+    };
+    let mut output = Vec::new();
+    let report =
+        write_step(ir, &mut output, StepSchema::Ap242Edition3, &options).expect("write instances");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode instances");
+    let decoded = decoded.ir();
+    let mut translations = decoded
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| {
+            decoded
+                .model
+                .product_definitions
+                .iter()
+                .any(|product| product.id == occurrence.prototype && !product.bodies.is_empty())
+        })
+        .map(|occurrence| {
+            let rows = resolved_transform(decoded, &occurrence.id)
+                .expect("placement composes to the root")
+                .rows();
+            [rows[0][3], rows[1][3], rows[2][3]]
+        })
+        .collect::<Vec<_>>();
+    translations.sort_by(|left, right| left.partial_cmp(right).expect("finite"));
+    (report, translations)
+}
+
+fn losses(report: &cadmpeg_ir::report::export::ExportReport, code: StepLossCode) -> usize {
+    report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == code.kind())
+        .count()
+}
+
+/// The root states the component's body for the component inside the
+/// second assembly alone, so that body appears once, at
+/// `(0, 20, 0) + (1, 2, 3)`.
+#[test]
+fn writer_places_instance_bodies_in_a_definition_of_their_own() {
+    let mut ir = placed_subassembly();
+    let body = ir.geometry.bodies[0].id.clone();
+    for product in &mut ir.model.product_definitions {
+        if product.id.as_str() == "test:model:product-definition#component" {
+            product.bodies.clear();
+        }
+        if product.id.as_str() == "test:model:product-definition#model" {
+            product
+                .instance_bodies
+                .push(cadmpeg_ir::products::InstanceBodies {
+                    occurrence: path(&[
+                        "test:model:occurrence#second-assembly",
+                        "test:model:occurrence#component",
+                    ]),
+                    bodies: vec![body.clone()],
+                });
+        }
+    }
+    let (report, translations) = written_body_translations(&ir);
+    assert_eq!(translations, [[1.0, 22.0, 3.0]]);
+    assert_eq!(losses(&report, StepLossCode::InstanceDefinitionSplit), 2);
+    assert_eq!(
+        losses(&report, StepLossCode::BodyWithoutProductRepresentation),
+        0
+    );
+}
+
+/// The second assembly moves its component to `(5, 0, 0)`; the first keeps
+/// it at `(1, 2, 3)`.
+#[test]
+fn writer_places_a_nested_override_in_a_definition_of_its_own() {
+    let mut ir = placed_subassembly();
+    ir.model
+        .occurrences
+        .iter_mut()
+        .find(|row| row.id.as_str() == "test:model:occurrence#second-assembly")
+        .expect("second assembly")
+        .overrides
+        .push(cadmpeg_ir::products::NestedOverride {
+            path: path(&["test:model:occurrence#component"]),
+            transform: Some(translation(5.0, 0.0, 0.0)),
+            suppressed: None,
+            visible: None,
+            representation: None,
+        });
+    let (report, translations) = written_body_translations(&ir);
+    assert_eq!(translations, [[5.0, 20.0, 0.0], [11.0, 2.0, 3.0]]);
+    assert_eq!(losses(&report, StepLossCode::InstanceDefinitionSplit), 1);
+    assert_eq!(losses(&report, StepLossCode::OccurrenceMetadataOmitted), 0);
+}
+
+/// The path names the component below the other product, which owns no
+/// occurrence.
+#[test]
+fn writer_reports_an_instance_path_that_names_no_owned_occurrence() {
+    let mut ir = placed_subassembly();
+    let body = ir.geometry.bodies[0].id.clone();
+    ir.model
+        .product_definitions
+        .iter_mut()
+        .find(|product| product.id.as_str() == "test:model:product-definition#model")
+        .expect("root definition")
+        .instance_bodies
+        .push(cadmpeg_ir::products::InstanceBodies {
+            occurrence: path(&[
+                "test:model:occurrence#other-root",
+                "test:model:occurrence#component",
+            ]),
+            bodies: vec![body],
+        });
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write an unresolved instance path");
+    assert_eq!(losses(&report, StepLossCode::InstancePathUnresolved), 1);
+    assert_eq!(losses(&report, StepLossCode::InstanceDefinitionSplit), 0);
+}
+
+/// The root places a sub-assembly once at `(10, 0, 0)`; the sub-assembly
+/// places its component, which owns the cube, once at `(1, 2, 3)`.
+fn single_use_subassembly() -> CadIr {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let body = ir.geometry.bodies[0].id.clone();
+    let mut assembly = unnamed_definition("test:model:product-definition#assembly", Vec::new());
+    assembly.label = Some("Assembly".into());
+    assembly.occurrences =
+        vec![OccurrenceId::mint("test:model:occurrence#component").expect("identity grammar")];
+    let mut component = unnamed_definition("test:model:product-definition#component", vec![body]);
+    component.label = Some("Component".into());
+    let root = root_definition(
+        "test:model:product-definition#model",
+        &["test:model:occurrence#assembly"],
+    );
+    ir.model.product_definitions = vec![assembly, component, root];
+    let mut assembly = named_occurrence(
+        "test:model:occurrence#assembly",
+        "test:model:product-definition#assembly",
+        "assembly",
+    );
+    assembly.transform = Some(translation(10.0, 0.0, 0.0));
+    let mut component = named_occurrence(
+        "test:model:occurrence#component",
+        "test:model:product-definition#component",
+        "component",
+    );
+    component.transform = Some(translation(1.0, 2.0, 3.0));
+    ir.model.occurrences = vec![assembly, component];
+    ir
+}
+
+fn with_instance_bodies(mut ir: CadIr, bodies: Vec<cadmpeg_ir::ids::BodyId>) -> CadIr {
+    ir.model
+        .product_definitions
+        .iter_mut()
+        .find(|product| product.id.as_str() == "test:model:product-definition#model")
+        .expect("root definition")
+        .instance_bodies
+        .push(cadmpeg_ir::products::InstanceBodies {
+            occurrence: path(&[
+                "test:model:occurrence#assembly",
+                "test:model:occurrence#component",
+            ]),
+            bodies,
+        });
+    ir
+}
+
+/// Writes `ir` and decodes the file.
+fn written_and_read(ir: &CadIr) -> (cadmpeg_ir::report::export::ExportReport, CadIr) {
+    let mut output = Vec::new();
+    let report = write_step(
+        ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write instances");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode instances");
+    (report, decoded.ir().clone())
+}
+
+/// The decoded document has one root, the model, and places the
+/// sub-assembly and its component once each.
+fn assert_single_use_structure(decoded: &CadIr) {
+    let roots = decoded
+        .model
+        .product_definitions
+        .iter()
+        .filter(|product| {
+            !decoded
+                .model
+                .occurrences
+                .iter()
+                .any(|occurrence| occurrence.prototype == product.id)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(roots.len(), 1, "one root: {roots:#?}");
+    assert!(
+        roots[0].occurrences.len() == 1,
+        "the root places only the sub-assembly: {:#?}",
+        roots[0]
+    );
+    assert_eq!(decoded.model.occurrences.len(), 2);
+    assert_eq!(decoded.model.product_definitions.len(), 3);
+}
+
+/// The component's only instance shows the component's own body, stated by
+/// the root two steps down; nothing else places the sub-assembly or the
+/// component, so neither is written beside its split instance.
+#[test]
+fn writer_does_not_leave_a_once_placed_prototype_beside_its_split_instance() {
+    let ir = single_use_subassembly();
+    let body = ir.geometry.bodies[0].id.clone();
+    let ir = with_instance_bodies(ir, vec![body]);
+    let (report, translations) = written_body_translations(&ir);
+    assert_eq!(translations, [[11.0, 2.0, 3.0]]);
+    assert_eq!(losses(&report, StepLossCode::InstanceDefinitionSplit), 2);
+    assert_eq!(
+        losses(&report, StepLossCode::InstancePrototypeBodiesOmitted),
+        0
+    );
+    assert_eq!(
+        losses(&report, StepLossCode::BodyWithoutProductRepresentation),
+        0
+    );
+    let (_, decoded) = written_and_read(&ir);
+    assert_single_use_structure(&decoded);
+    assert_eq!(decoded.geometry.bodies.len(), 1);
+}
+
+/// The component's only instance shows no body, so the component's body is
+/// shown nowhere: it is charged, and not written at the origin.
+#[test]
+fn writer_charges_the_body_of_a_prototype_no_instance_shows() {
+    let ir = with_instance_bodies(single_use_subassembly(), Vec::new());
+    let (report, decoded) = written_and_read(&ir);
+    assert_eq!(
+        losses(&report, StepLossCode::InstancePrototypeBodiesOmitted),
+        1
+    );
+    assert_eq!(
+        losses(&report, StepLossCode::BodyWithoutProductRepresentation),
+        0
+    );
+    assert_single_use_structure(&decoded);
+    assert!(
+        decoded
+            .model
+            .product_definitions
+            .iter()
+            .all(|product| product.bodies.is_empty()),
+        "no definition shows a body: {:#?}",
+        decoded.model.product_definitions
+    );
+    assert!(decoded.geometry.bodies.is_empty());
+}
+
+/// The root moves the component of its only sub-assembly to `(5, 0, 0)`.
+#[test]
+fn writer_does_not_leave_a_once_placed_prototype_beside_its_nested_override() {
+    let mut ir = single_use_subassembly();
+    ir.model
+        .occurrences
+        .iter_mut()
+        .find(|row| row.id.as_str() == "test:model:occurrence#assembly")
+        .expect("assembly occurrence")
+        .overrides
+        .push(cadmpeg_ir::products::NestedOverride {
+            path: path(&["test:model:occurrence#component"]),
+            transform: Some(translation(5.0, 0.0, 0.0)),
+            suppressed: None,
+            visible: None,
+            representation: None,
+        });
+    let (report, translations) = written_body_translations(&ir);
+    assert_eq!(translations, [[15.0, 0.0, 0.0]]);
+    assert_eq!(losses(&report, StepLossCode::InstanceDefinitionSplit), 1);
+    assert_eq!(
+        losses(&report, StepLossCode::InstancePrototypeBodiesOmitted),
+        0
+    );
+    let (_, decoded) = written_and_read(&ir);
+    assert_single_use_structure(&decoded);
+    assert_eq!(decoded.geometry.bodies.len(), 1);
+}

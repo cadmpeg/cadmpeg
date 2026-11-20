@@ -2,7 +2,9 @@
 //! Exact hole constructions and hole face selections.
 
 use super::point_data::{exact_point_data_construction, POINT_DATA_TYPE_GUID};
-use super::point_direction::{point_direction_carrier_at, POINT_DIRECTION_TYPE_GUID};
+use super::point_direction::{
+    point_direction_carrier_at, point_direction_input_loss, PointDirectionBoundary,
+};
 use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::lp_utf16_bounded;
 use crate::design::decode::operands::parse_entity_selection_frame;
@@ -15,8 +17,10 @@ use crate::records::feature::hole::DesignHolePlane;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::work_geometry::DesignWorkPointRuleForm;
+use crate::records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::HashMap;
 
 /// Type GUID of the direct persistent face selection carried by a `Hole`.
@@ -39,6 +43,11 @@ const EPS_HOLE_DIRECTION_NORM: f64 = 1.0e-12;
 /// block admits.
 const MAX_HOLE_STANDARD_NAME: usize = 256;
 
+pub(in crate::design::decode) struct ExactHole {
+    pub(in crate::design::decode) construction: DesignHoleConstruction,
+    pub(in crate::design::decode) input_loss: Option<LossNote>,
+}
+
 /// Decode the exact point-and-direction carrier owned by a `Hole` scope.
 ///
 /// The carrier's versioned base level is distinct from the `WorkPoint` level:
@@ -48,72 +57,111 @@ const MAX_HOLE_STANDARD_NAME: usize = 256;
 /// before the paired header. The type GUID and version select the layout; the
 /// dynamic class tag does not.
 pub(in crate::design::decode) fn exact_hole_construction(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
     required_scope_kind: &scope::DesignFeatureKind,
-) -> Result<Option<DesignHoleConstruction>, CodecError> {
-    (|| {
-        if &scope.kind() != required_scope_kind {
-            return None;
+) -> Result<Option<ExactHole>, CodecError> {
+    if &scope.kind() != required_scope_kind {
+        return Ok(None);
+    }
+    let face_selection = exact_hole_face_selection(bytes, records, scope, stream_types);
+    let mut candidate = None;
+    for record_index in scope.reference_members().values() {
+        let Some((type_guid, version)) = stream_types.get(&u64::from(*record_index)) else {
+            continue;
+        };
+        if *type_guid != POINT_DIRECTION_TYPE_GUID || !matches!(*version, 1 | 2 | 4) {
+            continue;
         }
-        let face_selection = exact_hole_face_selection(bytes, records, scope, stream_types);
-        let mut candidate = None;
-        for record_index in scope.reference_members().values() {
-            let Some((type_guid, version)) = stream_types.get(&u64::from(*record_index)) else {
+        for (start, paired_at) in records.frames(*record_index) {
+            let Some(carrier) = point_direction_carrier_at(
+                ctx,
+                bytes,
+                start,
+                PointDirectionBoundary::Indexed(paired_at),
+                *record_index,
+                *version,
+            )?
+            else {
                 continue;
             };
-            if *type_guid != POINT_DIRECTION_TYPE_GUID || !matches!(*version, 1 | 2 | 4) {
+            let (Some(position), Some(direction), Some(point_parameters), Some(reference_type)) = (
+                carrier.position,
+                carrier.direction,
+                carrier.point_parameters,
+                carrier.reference_type,
+            ) else {
+                continue;
+            };
+            let direction_norm = direction
+                .iter()
+                .map(|component| component.get() * component.get())
+                .sum::<f64>();
+            if (direction_norm - 1.0).abs() > EPS_HOLE_DIRECTION_NORM {
                 continue;
             }
-            for (start, paired_at) in records.frames(*record_index) {
-                let Some(carrier) =
-                    point_direction_carrier_at(bytes, start, paired_at, *record_index, *version)
-                else {
-                    continue;
-                };
-                let direction_norm = carrier
-                    .direction
-                    .iter()
-                    .map(|component| component.get() * component.get())
-                    .sum::<f64>();
-                if (direction_norm - 1.0).abs() > EPS_HOLE_DIRECTION_NORM {
-                    continue;
-                }
-                let next = DesignHoleConstruction {
-                    point_record_index: *record_index,
-                    point_record_byte_offset: u64::try_from(start).ok()?,
-                    position: carrier.position,
-                    position_offset: u64::try_from(carrier.position_at).ok()?,
-                    direction: carrier.direction,
-                    direction_offset: u64::try_from(carrier.direction_at).ok()?,
-                    point_parameters: carrier.point_parameters,
-                    point_parameter_offsets: [
-                        u64::try_from(carrier.point_parameters_at).ok()?,
-                        u64::try_from(carrier.point_parameters_at.checked_add(8)?).ok()?,
-                    ],
-                    reference_type: carrier.reference_type,
-                    reference_type_offset: u64::try_from(carrier.reference_type_at).ok()?,
-                    tangent_point_data: carrier.tangent_point_data,
-                    input_records: carrier.input_records,
-                    face_selection: None,
-                    locations: Vec::new(),
-                };
-                if candidate.replace(next).is_some() {
-                    return None;
-                }
+            if !carrier.inputs_complete || carrier.inputs.is_empty() {
+                continue;
+            }
+            let local_input_count = carrier.local_inputs().count();
+            let mut input_records = ctx.alloc_filled(
+                local_input_count,
+                crate::records::identity::Located {
+                    value: 0,
+                    offset: 0,
+                },
+                "Hole carrier inputs",
+            )?;
+            for (slot, input) in input_records.iter_mut().zip(carrier.local_inputs()) {
+                *slot = input;
+            }
+            let next = DesignHoleConstruction {
+                point_record_index: *record_index,
+                point_record_byte_offset: cadmpeg_core::decode::u64_from_index(start),
+                position,
+                position_offset: cadmpeg_core::decode::u64_from_index(carrier.position_at),
+                direction,
+                direction_offset: cadmpeg_core::decode::u64_from_index(carrier.direction_at),
+                point_parameters,
+                point_parameter_offsets: [
+                    cadmpeg_core::decode::u64_from_index(carrier.point_parameters_at),
+                    cadmpeg_core::decode::u64_from_index(carrier.point_parameters_at + 8),
+                ],
+                reference_type,
+                reference_type_offset: cadmpeg_core::decode::u64_from_index(
+                    carrier.reference_type_at,
+                ),
+                tangent_point_data: carrier.tangent_point_data,
+                input_records,
+                face_selection: None,
+                locations: Vec::new(),
+            };
+            let input_loss = point_direction_input_loss(
+                scope,
+                *record_index,
+                carrier.inputs.len() - local_input_count,
+            );
+            if candidate
+                .replace(ExactHole {
+                    construction: next,
+                    input_loss,
+                })
+                .is_some()
+            {
+                return Ok(None);
             }
         }
-        candidate.map(|mut candidate| {
-            candidate.face_selection = face_selection;
-            if *required_scope_kind == scope::DesignFeatureKind::Hole {
-                candidate.locations = hole_locations(bytes, records, scope, stream_types);
-            }
-            Ok(candidate)
-        })
-    })()
-    .transpose()
+    }
+    Ok(candidate.map(|mut candidate| {
+        candidate.construction.face_selection = face_selection;
+        if *required_scope_kind == scope::DesignFeatureKind::Hole {
+            candidate.construction.locations = hole_locations(bytes, records, scope, stream_types);
+        }
+        candidate
+    }))
 }
 
 /// Read every point-data record that `scope` references, in reference order.

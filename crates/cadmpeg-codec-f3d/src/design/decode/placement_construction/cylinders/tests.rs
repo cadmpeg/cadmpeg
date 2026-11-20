@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+use crate::loss::F3dLossCode;
+use crate::records::feature::scope::{
+    DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
+};
 use crate::records::placement_construction::DesignPlacementConstruction;
 
 fn placement() -> DesignPlacementConstruction {
@@ -180,4 +183,155 @@ fn named_cylinder_version_eight_reflection_keeps_dimensions_unplaced() {
     assert!(cylinder.transform.is_none());
     assert_eq!(cylinder.height.get(), 2.6);
     assert_eq!(cylinder.diameter.get(), 0.5);
+}
+
+#[test]
+fn compact_extended_cylinder_reports_the_support_frame_assumption() {
+    let support = placement();
+    let expected = support.fields.matrix;
+    let mut scope = scope();
+    let DesignScopePayloadMut::CylinderPrimitive(Some(cylinder)) = scope.payload_mut() else {
+        panic!("expected cylinder");
+    };
+    cylinder.construction = Some(
+        crate::records::feature::primitives::DesignCylinderConstruction {
+            placement_record_index: u32::try_from(support.record_index).unwrap(),
+            reference: crate::records::identity::Located {
+                value: 40,
+                offset: 80,
+            },
+            local_frame: None,
+        },
+    );
+
+    let losses = super::bind(std::slice::from_mut(&mut scope), &[support]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        F3dLossCode::CylinderLocalFrameAssumed.note("").code
+    );
+    let DesignScopePayloadMut::CylinderPrimitive(Some(cylinder)) = scope.payload_mut() else {
+        panic!("expected cylinder");
+    };
+    assert_eq!(cylinder.transform, expected);
+}
+
+#[test]
+fn extended_cylinder_composes_the_explicit_same_stream_support_on_the_left() {
+    let mut support = placement();
+    support.type_version = 6;
+    let selected = u32::try_from(support.record_index).unwrap();
+    let mut decoy = support.clone();
+    decoy.record_index = 251;
+    let mut foreign = support.clone();
+    foreign.id = "f3d:Other/BulkStream.dat:design-placement-construction#0".into();
+    let local = crate::records::identity::Located {
+        value: [
+            [0.0, -1.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, 2.0],
+            [0.0, 0.0, 1.0, 3.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+        .try_into()
+        .unwrap(),
+        offset: 76,
+    };
+    let mut scope = scope();
+    let DesignScopePayloadMut::CylinderPrimitive(Some(cylinder)) = scope.payload_mut() else {
+        panic!("expected cylinder");
+    };
+    cylinder.construction = Some(
+        crate::records::feature::primitives::DesignCylinderConstruction {
+            placement_record_index: selected,
+            reference: crate::records::identity::Located {
+                value: 40,
+                offset: 212,
+            },
+            local_frame: Some(local),
+        },
+    );
+    let mut ambiguous = scope.clone();
+    let losses = super::bind(
+        std::slice::from_mut(&mut ambiguous),
+        &[support.clone(), support.clone()],
+    );
+    assert_eq!(
+        losses[0].code,
+        F3dLossCode::CylinderPlacementUnbound.note("").code
+    );
+    let losses = super::bind(std::slice::from_mut(&mut scope), &[decoy, foreign, support]);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        F3dLossCode::CylinderLocalFrameAssumed.note("").code
+    );
+    let DesignScopePayloadMut::CylinderPrimitive(Some(cylinder)) = scope.payload_mut() else {
+        panic!("expected cylinder");
+    };
+    assert_eq!(cylinder.construction.unwrap().local_frame, Some(local));
+    assert_eq!(
+        cylinder.transform.unwrap().value.rows(),
+        [
+            [0.0, -1.0, 0.0, 1.1],
+            [0.0, 0.0, 1.0, 3.2],
+            [-1.0, 0.0, 0.0, -1.7],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    );
+    let restored: DesignParameterScope =
+        serde_json::from_value(serde_json::to_value(&scope).unwrap()).unwrap();
+    assert_eq!(restored, scope);
+}
+
+#[test]
+fn named_cylinder_binds_version_sixteen_frames() {
+    let placements = crate::test_support::placement_construction::modern_placements();
+    for mut placement in placements
+        .into_iter()
+        .filter(|placement| placement.type_version == 16)
+    {
+        placement.record_index = 255;
+        let expected = super::super::checked_solved_frame(&placement).unwrap();
+        let mut scope = scope();
+        assert!(super::bind(std::slice::from_mut(&mut scope), &[placement]).is_empty());
+        let crate::records::feature::scope::DesignScopePayload::CylinderPrimitive(Some(cylinder)) =
+            scope.payload()
+        else {
+            panic!("expected cylinder");
+        };
+        assert_eq!(cylinder.transform, Some(expected));
+    }
+}
+
+#[test]
+fn named_cylinder_binds_version_sixteen_identity_marker() {
+    let mut placement = crate::test_support::placement_construction::modern_placements()
+        .into_iter()
+        .find(|placement| {
+            placement.type_version == 16
+                && placement.fields.matrix.is_none()
+                && placement
+                    .fields
+                    .identity
+                    .as_ref()
+                    .is_some_and(|identity| identity.value)
+        })
+        .unwrap();
+    placement.record_index = 255;
+    let mut scope = scope();
+    assert!(super::bind(std::slice::from_mut(&mut scope), &[placement]).is_empty());
+    let crate::records::feature::scope::DesignScopePayload::CylinderPrimitive(Some(cylinder)) =
+        scope.payload()
+    else {
+        panic!("expected cylinder");
+    };
+    assert_eq!(
+        cylinder.transform.unwrap().value.rows(),
+        [
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+    );
 }

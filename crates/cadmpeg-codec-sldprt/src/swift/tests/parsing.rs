@@ -299,9 +299,9 @@ fn parses_and_projects_semantic_graph() {
     let PmiDefinition::Dimension(relation) = &angle.definition else {
         panic!("angular definition");
     };
-    let nominal = relation.nominal().expect("angular nominal");
+    let nominal = relation.literal_nominal().expect("angular nominal");
     assert_eq!(
-        *nominal,
+        nominal,
         PmiValue::new(0.0, PmiQuantity::Angle).expect("finite angle")
     );
 }
@@ -716,22 +716,25 @@ fn swift_spherical_zone_type_is_scoped_to_position() {
         .iter()
         .find(|annotation| annotation.id == pmi_id("A20").unwrap())
         .expect("position");
-    let PmiDefinition::GeometricTolerance { constraints, .. } = &position.definition else {
+    let PmiDefinition::GeometricTolerance { zones, .. } = &position.definition else {
         panic!("position tolerance")
     };
-    let [zone] = constraints.zones.as_slice() else {
+    let [zone] = zones.as_slice() else {
         panic!("one spherical zone")
     };
-    assert_eq!(zone.form.as_str(), "spherical");
+    assert_eq!(
+        zone.form,
+        cadmpeg_ir::pmi::zones::ToleranceZoneForm::Spherical
+    );
 
     let straightness = projected
         .iter()
         .find(|annotation| annotation.id == pmi_id("A50").unwrap())
         .expect("straightness");
-    let PmiDefinition::GeometricTolerance { constraints, .. } = &straightness.definition else {
+    let PmiDefinition::GeometricTolerance { zones, .. } = &straightness.definition else {
         panic!("straightness tolerance")
     };
-    assert!(constraints.zones.is_empty());
+    assert!(zones.is_empty());
 }
 
 fn class_declaration(class: &str) -> Vec<u8> {

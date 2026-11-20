@@ -220,8 +220,9 @@ impl Parser<'_, '_, '_> {
         // Each pending record carries the given-up statement it needs, if its
         // only missing references name one. A record that names a given-up
         // statement only as entries of unordered aggregates is not pending:
-        // it loses those entries. An entry of a positional aggregate is
-        // needed like a direct reference, since the later entries would shift.
+        // it loses those entries. An entry of a positional aggregate, or of
+        // a set whose classification carries meaning (a face's bounds, a
+        // solid's voids), is needed like a direct reference (§3.3).
         let mut pending = Vec::new();
         let mut listing = BTreeSet::new();
         for (&id, record) in records.iter() {
@@ -443,11 +444,10 @@ fn untyped(mut value: &Value) -> &Value {
     value
 }
 
-/// SET and BAG attributes in the external mapping of a simple instance.
+/// SET and BAG attributes in the external mapping of a simple instance
+/// whose entries carry no meaning by classification.
 const UNORDERED_SIMPLE: &[(&str, usize)] = &[
     ("ADVANCED_BREP_SHAPE_REPRESENTATION", 1),
-    ("ADVANCED_FACE", 1),
-    ("BREP_WITH_VOIDS", 2),
     ("CLOSED_SHELL", 1),
     ("CONNECTED_FACE_SET", 1),
     ("CONSTRUCTIVE_GEOMETRY_REPRESENTATION", 1),
@@ -455,10 +455,8 @@ const UNORDERED_SIMPLE: &[(&str, usize)] = &[
     ("DERIVED_UNIT", 0),
     ("DRAUGHTING_MODEL", 1),
     ("EDGE_BASED_WIREFRAME_SHAPE_REPRESENTATION", 1),
-    ("FACE", 1),
     ("FACETED_BREP_SHAPE_REPRESENTATION", 1),
     ("FACE_BASED_SURFACE_MODEL", 1),
-    ("FACE_SURFACE", 1),
     ("FILL_AREA_STYLE", 1),
     ("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION", 1),
     ("GEOMETRICALLY_BOUNDED_WIREFRAME_SHAPE_REPRESENTATION", 1),
@@ -479,19 +477,17 @@ const UNORDERED_SIMPLE: &[(&str, usize)] = &[
     ("SHELL_BASED_SURFACE_MODEL", 1),
     ("SHELL_BASED_WIREFRAME_SHAPE_REPRESENTATION", 1),
     ("STYLED_ITEM", 1),
-    ("SUBFACE", 1),
     ("SURFACE_SIDE_STYLE", 1),
     ("TESSELLATED_SHAPE_REPRESENTATION", 1),
     ("TESSELLATED_SHELL", 1),
     ("TESSELLATED_SOLID", 1),
 ];
 
-/// SET and BAG attributes among the own attributes of a complex partial.
+/// SET and BAG attributes among the own attributes of a complex partial
+/// whose entries carry no meaning by classification.
 const UNORDERED_PARTIAL: &[(&str, usize)] = &[
-    ("BREP_WITH_VOIDS", 0),
     ("CONNECTED_FACE_SET", 0),
     ("DERIVED_UNIT", 0),
-    ("FACE", 0),
     ("FACE_BASED_SURFACE_MODEL", 0),
     ("FILL_AREA_STYLE", 1),
     ("GEOMETRIC_SET", 0),
@@ -511,10 +507,12 @@ const UNORDERED_PARTIAL: &[(&str, usize)] = &[
 
 /// Whether parameter `index` of a partial record named `entity` is a SET or
 /// BAG attribute in the integrated resources of ISO 10303 (parts 41, 42, 43
-/// and 46). `simple` selects the external mapping of a simple instance,
-/// whose parameters include inherited attributes; a partial of a complex
-/// instance holds its entity's own attributes only. Every other aggregate is
-/// positional: removing one of its entries would shift the rest.
+/// and 46) whose entries carry no meaning by classification. `simple`
+/// selects the external mapping of a simple instance, whose parameters
+/// include inherited attributes; a partial of a complex instance holds its
+/// entity's own attributes only. Every other aggregate is needed whole: a
+/// positional one would shift its later entries, and a face without one of
+/// its bounds or a solid without one of its voids is another face or solid.
 fn unordered_attribute(entity: &str, index: usize, simple: bool) -> bool {
     let table = if simple {
         UNORDERED_SIMPLE
