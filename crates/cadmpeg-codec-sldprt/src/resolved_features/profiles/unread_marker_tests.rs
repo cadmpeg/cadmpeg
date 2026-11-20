@@ -557,7 +557,8 @@ fn held_geometry_of_a_trailer_line_or_a_degenerate_handle_charges_the_assumed_re
 
 /// A line that a later reading gives a marker whose curve record states
 /// another form charges one loss naming the entity and the form; a line whose
-/// marker has no such record charges none.
+/// marker has no such record, or that an earlier finalize pass charged,
+/// charges none.
 #[test]
 fn a_later_line_on_a_marker_whose_record_is_not_a_line_charges_the_conflict() {
     let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
@@ -565,16 +566,20 @@ fn a_later_line_on_a_marker_whose_record_is_not_a_line_charges_the_conflict() {
         end: Point2::new(1.0, 0.0),
     })
     .unwrap();
-    let mut entities = vec![entity("relation", line.clone()), entity("plain", line)];
-    let mut held = HeldMarkerGeometry::default();
-    held.unchecked
-        .insert("marker-relation".to_owned(), ChordConflict::Unchecked);
+    let earlier = vec![entity("earlier", line.clone())];
+    let mut entities = earlier.clone();
+    entities.extend([entity("relation", line.clone()), entity("plain", line)]);
+    let mut held = HeldMarkerGeometry::after_finalized(&earlier);
+    for marker in ["marker-earlier", "marker-relation"] {
+        held.unchecked
+            .insert(marker.to_owned(), ChordConflict::Unchecked);
+    }
     let mut losses = Vec::new();
     finalize_unread_marker_entities(&mut entities, held, &mut losses);
     let [loss] = losses.as_slice() else {
         panic!("one loss: {losses:?}");
     };
     assert_eq!(loss.code, SldprtLossCode::SketchArcRecordConflict.kind());
-    assert!(loss.message.contains(entities[0].id().as_str()));
+    assert!(loss.message.contains(entities[1].id().as_str()));
     assert!(loss.message.contains("does not compare the record"));
 }

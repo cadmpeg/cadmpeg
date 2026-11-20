@@ -1091,6 +1091,29 @@ pub(crate) struct HeldMarkerGeometry {
     /// The conflict of each marker's `sgSketch` curve record with a line
     /// that a later reading gives the marker, by marker reference.
     unchecked: HashMap<String, ChordConflict>,
+    /// The lines an earlier finalize pass examined.
+    finalized: HashSet<SketchEntityId>,
+}
+
+impl HeldMarkerGeometry {
+    /// Held geometry for a projection over `sketch_entities` after an
+    /// earlier finalize pass over them.
+    pub(crate) fn after_finalized(sketch_entities: &[SketchEntity]) -> Self {
+        Self {
+            finalized: sketch_entities
+                .iter()
+                .filter(|entity| {
+                    entity.native_ref.is_some()
+                        && matches!(
+                            entity.geometry.definition(),
+                            SketchGeometryDefinition::Line { .. }
+                        )
+                })
+                .map(|entity| entity.id().clone())
+                .collect(),
+            ..Self::default()
+        }
+    }
 }
 
 /// The geometry an `sgSketch` curve record gives a marker by point-record
@@ -1120,6 +1143,7 @@ pub(crate) fn finalize_unread_marker_entities(
         mut listed,
         chord_conflicts,
         unchecked,
+        finalized,
     } = held;
     sketch_entities.extend(handles);
     for entity in sketch_entities.iter_mut() {
@@ -1186,7 +1210,8 @@ pub(crate) fn finalize_unread_marker_entities(
         if !matches!(
             entity.geometry.definition(),
             SketchGeometryDefinition::Line { .. }
-        ) {
+        ) || finalized.contains(entity.id())
+        {
             continue;
         }
         let Some(marker) = entity.native_ref.as_deref() else {
