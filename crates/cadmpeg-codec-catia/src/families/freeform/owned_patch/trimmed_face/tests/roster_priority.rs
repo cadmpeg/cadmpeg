@@ -69,7 +69,7 @@ fn wide_roster_does_not_override_a_companion_station_or_expand_the_trim() {
         .carrier(&ir, 10, &carriers, &mut refusal)
         .expect("fixture plane");
     let trim = source
-        .trim(0, &[0x0b, 0x17], &mut 0, &carrier, &mut refusal)
+        .trim(0, &[0x0b, 0x17], &mut 0, &carrier, &mut refusal, None)
         .expect("mapped trim");
     assert_eq!(trim.stations, [Some(5.0), Some(6.0)]);
     assert_eq!(trim.primary_stations, [None, None]);
