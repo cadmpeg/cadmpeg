@@ -423,6 +423,61 @@ fn a_pmi_target_on_a_curve_bounded_face_keeps_the_sheet_a_shell() {
     }
 }
 
+/// A PMI annotation on the point of a vertex of a curve-bounded face's
+/// loop needs that vertex written, since its point is not a free point.
+/// The sheet is then written as a shell of faces, and the annotation names
+/// the point through a `GEOMETRIC_ITEM_SPECIFIC_USAGE`.
+#[test]
+fn a_pmi_target_on_a_vertex_point_of_a_curve_bounded_face_keeps_the_sheet_a_shell() {
+    use cadmpeg_ir::pmi::PmiTarget;
+    let source = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../tests/fixtures/ap242_geometric_set.p21"
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let write = |ir: &CadIr| {
+        let mut output = Vec::new();
+        let report = write_step(
+            ir,
+            &mut output,
+            StepSchema::Ap242Edition3,
+            &StepWriteOptions::default(),
+        )
+        .unwrap();
+        (String::from_utf8(output).unwrap(), report)
+    };
+    let (text, _) = write(source.ir());
+    assert_eq!(text.matches("= GEOMETRIC_SET(").count(), 1, "{text}");
+    let geometry = &source.ir().geometry;
+    let [edge] = geometry.edges.as_slice() else {
+        panic!("one edge: {:#?}", geometry.edges);
+    };
+    let vertex = edge.vertices().next().unwrap();
+    let point = geometry
+        .vertices
+        .iter()
+        .find(|candidate| &candidate.id == vertex)
+        .map(|vertex| vertex.point.clone())
+        .unwrap();
+    let mut ir = source.ir().clone();
+    ir.model.pmi = vec![profile_on(PmiTarget::Point { point })];
+    let (text, report) = write(&ir);
+    assert_eq!(text.matches("= GEOMETRIC_SET(").count(), 0, "{text}");
+    assert_eq!(text.matches("= SHELL_BASED_SURFACE_MODEL(").count(), 1);
+    assert!(text.contains("= GEOMETRIC_ITEM_SPECIFIC_USAGE("), "{text}");
+    assert!(
+        !report
+            .losses
+            .iter()
+            .any(|loss| loss.code == crate::loss::StepLossCode::PmiAnnotationNotWritten.kind()),
+        "{:#?}",
+        report.losses
+    );
+}
+
 /// The disc of `ap242_geometric_set.p21`, its loop split into two
 /// half-circle edges on the one boundary circle.
 fn disc_split_into_two_edges() -> CadIr {

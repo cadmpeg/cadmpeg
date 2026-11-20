@@ -2386,12 +2386,14 @@ impl<'a> Builder<'a> {
         true
     }
 
-    /// Whether a PMI annotation targets `face`, an edge of its loops, or a
-    /// vertex of those edges. A `CURVE_BOUNDED_SURFACE` member states none
-    /// of them as an item that the annotation can name.
+    /// Whether a PMI annotation targets `face`, an edge of its loops, a
+    /// vertex of those edges, or the point of such a vertex. A
+    /// `CURVE_BOUNDED_SURFACE` member states none of them as an item that
+    /// the annotation can name.
     fn pmi_targets_topology_of(&self, face: &Face) -> bool {
         let mut edges = BTreeSet::new();
         let mut vertices = BTreeSet::new();
+        let mut points = BTreeSet::new();
         for coedge in face
             .loops
             .iter()
@@ -2406,7 +2408,12 @@ impl<'a> Builder<'a> {
                 continue;
             };
             edges.insert(edge.id.as_str());
-            vertices.extend(edge.vertices().map(VertexId::as_str));
+            for vertex in edge.vertices() {
+                vertices.insert(vertex.as_str());
+                if let Some(vertex) = self.vertices.get(vertex.as_str()) {
+                    points.insert(vertex.point.as_str());
+                }
+            }
         }
         self.ir.model.pmi.iter().any(|annotation| {
             let zone_targets = match &annotation.definition {
@@ -2425,6 +2432,7 @@ impl<'a> Builder<'a> {
                     PmiTarget::Face { face: target } => target == &face.id,
                     PmiTarget::Edge { edge } => edges.contains(edge.as_str()),
                     PmiTarget::Vertex { vertex } => vertices.contains(vertex.as_str()),
+                    PmiTarget::Point { point } => points.contains(point.as_str()),
                     _ => false,
                 })
         })
