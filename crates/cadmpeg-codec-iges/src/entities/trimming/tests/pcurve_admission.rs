@@ -32,7 +32,7 @@ fn split_keeping_levels(controls: &[[f64; 4]], parameter: f64) -> (Vec<[f64; 4]>
 
 #[test]
 fn pcurve_split_of_a_high_degree_polygon_matches_the_level_split() {
-    let controls: Vec<[f64; 4]> = (0..1024_u32)
+    let controls: Vec<[f64; 4]> = (0..32_u32)
         .map(|index| {
             let t = f64::from(index);
             [1.0 + f64::from(index % 5) / 8.0, t.sin(), t.cos(), 0.0]

@@ -11,7 +11,7 @@ use cadmpeg_ir::sketches::{
     SketchPlacement,
 };
 
-use crate::design::geometry::AtomicSketchRegion;
+use crate::design::geometry::{AtomicSketchRegion, ProfileGeometryWork};
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCurveAxis,
     AsmHistoricalCylinder, AsmHistoricalEdge, AsmHistoricalEdgeSample,
@@ -1373,7 +1373,8 @@ fn region_sampler_finds_a_band_between_grid_points() {
     };
     // A frame one unit wide around a square: no grid point lies in the frame.
     let regions = [ring(square(0.0, 100.0)), ring(square(1.0, 99.0))];
-    let sampled = sample_regions(&regions, TOLERANCE).expect("each region has a point");
+    let sampled = sample_regions(&regions, TOLERANCE, &ProfileGeometryWork::new())
+        .expect("each region has a point");
     assert_eq!(sampled[0].nested, vec![1]);
     let point = sampled[0].point;
     let in_frame = |p: f64| (0.0..1.0).contains(&p) || (99.0..100.0).contains(&p);
@@ -1435,8 +1436,8 @@ fn a_narrow_region_with_a_clear_interior_point_keeps_its_certified_outline() {
     let mut atomic = region(&entities, &[[0.0, 1.0]; 4]);
     atomic.polyline = corners.iter().map(|&(u, v)| Point2::new(u, v)).collect();
     let regions = [atomic];
-    let samples =
-        sample_regions(&regions, TOLERANCE).expect("an interior point clear of the boundary");
+    let samples = sample_regions(&regions, TOLERANCE, &ProfileGeometryWork::new())
+        .expect("an interior point clear of the boundary");
     let point = samples[0].point;
     assert!(point.u > TOLERANCE && point.u < 1.0 - TOLERANCE);
     assert!(point.v > TOLERANCE && point.v < width - TOLERANCE);
@@ -1464,5 +1465,27 @@ fn a_region_without_a_point_clear_of_the_tolerance_stays_unsampled() {
         encloses_island: false,
         island_absence_assumed: false,
     };
-    assert!(sample_regions(&[atomic], TOLERANCE).is_none());
+    assert!(sample_regions(&[atomic], TOLERANCE, &ProfileGeometryWork::new()).is_none());
+}
+
+#[test]
+fn each_sketch_region_is_sampled_at_its_grid_point_farthest_from_its_boundary() {
+    let work = ProfileGeometryWork::new();
+    for side in [10.0, 20.0, 10.0] {
+        let regions = [AtomicSketchRegion {
+            boundary: Vec::new(),
+            polyline: vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(side, 0.0),
+                Point2::new(side, side),
+                Point2::new(0.0, side),
+            ],
+            encloses_island: false,
+            island_absence_assumed: false,
+        }];
+        let sampled = sample_regions(&regions, TOLERANCE, &work).unwrap();
+        assert_eq!(sampled.len(), 1);
+        assert_eq!(sampled[0].point, Point2::new(side / 2.0, side / 2.0));
+        assert!(sampled[0].nested.is_empty());
+    }
 }

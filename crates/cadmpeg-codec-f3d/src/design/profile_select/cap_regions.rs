@@ -397,7 +397,7 @@ pub(super) fn cap_profile_selection(
     let Some(regions) = atomic_sketch_regions(sketch, entities, tolerance, work, ctx)? else {
         return Ok(None);
     };
-    let Some(sampled) = sample_regions(&regions, tolerance) else {
+    let Some(sampled) = sample_regions(&regions, tolerance, work) else {
         return Ok(None);
     };
     let mut selected = Vec::new();
@@ -661,7 +661,7 @@ fn removed_regions(
     let Some(regions) = atomic_sketch_regions(sketch, entities, tolerance, work, ctx)? else {
         return Ok(None);
     };
-    let Some(sampled) = sample_regions(&regions, tolerance) else {
+    let Some(sampled) = sample_regions(&regions, tolerance, work) else {
         return Ok(None);
     };
     let mut selected = Vec::new();
@@ -1427,7 +1427,31 @@ fn polygon_area(ring: &[Point2]) -> f64 {
 
 /// Each region with a point well inside it, outside the regions nested in it.
 /// `None` when a region has no such point.
-fn sample_regions(regions: &[AtomicSketchRegion], tolerance: f64) -> Option<Vec<Sampled<'_>>> {
+fn sample_regions<'a>(
+    regions: &'a [AtomicSketchRegion],
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+) -> Option<Vec<Sampled<'a>>> {
+    let samples = work.region_samples(regions, tolerance, || sample_points(regions, tolerance))?;
+    Some(
+        regions
+            .iter()
+            .zip(samples)
+            .map(|(region, (point, nested))| Sampled {
+                region,
+                point,
+                nested,
+            })
+            .collect(),
+    )
+}
+
+/// The point of [`sample_regions`] for each region and the outermost regions
+/// nested in it.
+fn sample_points(
+    regions: &[AtomicSketchRegion],
+    tolerance: f64,
+) -> Option<Vec<(Point2, Vec<usize>)>> {
     let areas: Vec<f64> = regions
         .iter()
         .map(|region| polygon_area(&region.polyline).abs())
@@ -1485,19 +1509,32 @@ fn sample_regions(regions: &[AtomicSketchRegion], tolerance: f64) -> Option<Vec<
             )
             .collect();
         let mut best: Option<(Point2, f64)> = None;
-        let consider = |best: &mut Option<(Point2, f64)>, point: Point2| {
+        let mut nearest = 0;
+        let mut consider = |best: &mut Option<(Point2, f64)>, point: Point2| {
             if !point_in_polygon(point, rings[0])
                 || rings[1..].iter().any(|ring| point_in_polygon(point, ring))
             {
                 return;
             }
-            let room = rings
-                .iter()
-                .map(|ring| clearance(point, ring))
-                .fold(f64::INFINITY, f64::min);
-            if best.is_none_or(|(_, most)| room > most) {
-                *best = Some((point, room));
+            let floor = best.map(|(_, most)| most);
+            let mut room = f64::INFINITY;
+            for (order, ring) in rings.iter().enumerate() {
+                let start = if order == 0 { nearest } else { 0 };
+                for step in 0..ring.len() {
+                    let segment = (start + step) % ring.len();
+                    room = room.min(point_segment_distance(
+                        point,
+                        (ring[segment], ring[(segment + 1) % ring.len()]),
+                    ));
+                    if floor.is_some_and(|most| room <= most) {
+                        if order == 0 {
+                            nearest = segment;
+                        }
+                        return;
+                    }
+                }
             }
+            *best = Some((point, room));
         };
         for i in 1..SAMPLE_GRID {
             for j in 1..SAMPLE_GRID {
@@ -1519,11 +1556,7 @@ fn sample_regions(regions: &[AtomicSketchRegion], tolerance: f64) -> Option<Vec<
         if room <= tolerance || area <= tolerance * tolerance {
             return None;
         }
-        out.push(Sampled {
-            region,
-            point,
-            nested,
-        });
+        out.push((point, nested));
     }
     Some(out)
 }
