@@ -3228,7 +3228,7 @@ This subsection gives the records that a Design stream holds when its MetaStream
 | `493A89BA-E146-498D-9033-2783FE727AF4` | `D0D7E795-ECF7-48A8-A7A3-F983C5A29F8B` | 3 | `Fusion` | Base Feature result owner |
 | `5988EB6C-011B-4012-B500-089A713F57BF` | `5C069ACB-169F-4555-9792-815B4671DDA0` | 2 | `Fusion` | Base Feature body tracking entry |
 
-**Record roster.** The Design stream of a `Base Feature` design with one solid result body holds the records below, in ascending record index. Each type GUID of this subsection is spelled in the letter case that the type table stores, and a writer stores that spelling. Each further solid body adds ten records: its two body-reference records, two Scene nodes (type `702b9cd2-537c-429e-8cc4-22beeeb98c37`), their two records of type `a9dcf6c1-617c-4f65-8302-c6f3a9ebbc4c` and two auxiliary records (type `2343b7ab-a2e0-4c66-8b74-99a05e4c670b`), one body tracking entry, and one browser-node member. A sheet result body adds one record of the alternate `Body` owner type `3A8E00DC-E342-4C03-8521-846BD9F7513E`, type version `3`, which its design body-reference record names in place of the design `Body` owner.
+**Record roster.** The Design stream of a `Base Feature` design with one solid result body holds the records below, in ascending record index. Each type GUID of this subsection is spelled in the letter case that the type table stores. Each further solid body adds ten records: its two body-reference records, two Scene nodes (type `702b9cd2-537c-429e-8cc4-22beeeb98c37`), their two records of type `a9dcf6c1-617c-4f65-8302-c6f3a9ebbc4c` and two auxiliary records (type `2343b7ab-a2e0-4c66-8b74-99a05e4c670b`), one body tracking entry, and one browser-node member. A sheet result body adds one record of the alternate `Body` owner type `3A8E00DC-E342-4C03-8521-846BD9F7513E`, type version `3`, which its design body-reference record names in place of the design `Body` owner.
 
 | Index | Type GUID | Version | Length | Role |
 |---|---|---|---|---|
@@ -3282,8 +3282,8 @@ This subsection gives the records that a Design stream holds when its MetaStream
 | 177 | `C170F594-38B1-4C2A-B649-7FE0164C44E3` | 0 | 99 | `WorkingModelPlaceholderRoot` |
 | 178 | `60F93DE2-6329-4598-A6AF-096AC63E627C` | 0 | 57 | |
 | 184 | `AE9F7FB5-2798-4BE4-8905-F8FB42A07193` | 0 | 38 | `OGSSerializer` |
-| 185 | `49B2AA69-7655-4C36-A14E-9582CCF1283C` | 0 | 202 | configuration-table serializer trigger |
-| 186 | `3185B924-6C84-4804-BE77-9105B09209DA` | 0 | 207 | configuration-rule serializer trigger |
+| 185 | `49B2AA69-7655-4C36-A14E-9582CCF1283C` | 0 | 202 | configuration-table serializer trigger; varying bytes DR-918 |
+| 186 | `3185B924-6C84-4804-BE77-9105B09209DA` | 0 | 207 | configuration-rule serializer trigger; varying bytes DR-918 |
 | 187 | `D3937028-C20C-4E65-B010-94AD418A5C20` | 19 | 869 + 2a | design body-reference record |
 | 188 | `702b9cd2-537c-429e-8cc4-22beeeb98c37` | 1 | 133 | Scene node of the design body-reference record |
 | 189 | `a9dcf6c1-617c-4f65-8302-c6f3a9ebbc4c` | 0 | 95 | |

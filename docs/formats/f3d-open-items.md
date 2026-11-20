@@ -875,6 +875,14 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer must choose the form of each reference it writes. The field that holds each fifteen-byte reference, and the segment it names against the segments of the design, would settle it.
 
+### DR-918. Varying bytes of the serializer-trigger, Scene and settings records of a Base Feature design
+
+**Question.** Which bytes of roster records 185 (`49B2AA69`, configuration-table serializer trigger) and 186 (`3185B924`, configuration-rule serializer trigger), and of the roster's Scene and settings records, differ between one-body `Base Feature` designs, and what selects each value?
+
+**Known.** `f3d.md` §3.1 "**Record roster.**" gives the type, version and length of each of these records. Apart from record indices, class tags, GUIDs and names, they differ between one-body designs at offsets not yet located.
+
+**Need.** The offsets at which they differ and what each value holds, so that a writer states them instead of taking the bytes of one design.
+
 ### DR-912. Count before the parameter-collection companion
 
 **Question.** What does the u32 `c` at offset 30 of the parameter collection (type `B0556F58-EE09-46A7-B18F-E296F48E5B13`, type version `4`) count, and what is the layout of a collection that stores nonzero bytes in the run that the layout gives as zero?
