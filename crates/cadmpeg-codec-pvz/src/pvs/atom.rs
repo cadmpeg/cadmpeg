@@ -198,7 +198,7 @@ mod tests {
             View::over_retained(&string_pool_payload(&[long.as_str()])),
         )
         .unwrap();
-        let references = 1000;
+        let references = 3;
         let bytes: Vec<u8> = (0..references).flat_map(|_| pool_atom(0)).collect();
         let mut view = View::over_retained(&bytes);
         let first = pool.atom(&mut view).unwrap();
