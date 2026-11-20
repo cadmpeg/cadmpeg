@@ -1159,6 +1159,37 @@ pub(crate) enum F3dLossCode {
     WriterAppearancePropertiesOmitted,
     /// The selected write target differs from the same-format source dialect.
     SourceDialectDisplaced,
+    /// An explicitly requested row was written as another.
+    TargetRequestDisplaced,
+    /// A procedural carrier with no native encoding was written as its solved geometry.
+    WriterProceduralReduced,
+    /// A pcurve with no native encoding was omitted; the target recomputes it.
+    WriterPcurveOmitted,
+    /// A subdivision surface was not written.
+    WriterSubdOmitted,
+    /// A document asset was not written.
+    WriterAssetOmitted,
+    /// An assembly joint was not written.
+    WriterJointOmitted,
+    /// A parameter was not written.
+    WriterParameterOmitted,
+    /// A configuration was not written.
+    WriterConfigurationOmitted,
+    /// A tessellation was not written.
+    WriterTessellationOmitted,
+    /// A carrier's source-object association was not written.
+    WriterSourceAssociationOmitted,
+    /// A body was not written, with the topology and geometry only it uses.
+    WriterBodyOmitted,
+    /// Geometry no written body uses was not written.
+    WriterGeometryOmitted,
+    /// An appearance was not written.
+    WriterAppearanceOmitted,
+    /// The retained source could not carry an edit; the file was regenerated.
+    WriterPatchDeclined,
+    /// An appearance's Protein asset was written under a GUID the writer
+    /// allocated, in place of a missing or shared source GUID.
+    WriterAppearanceGuidAllocated,
     /// An embedded kernel carrier was read with an unverified ACIS grammar.
     KernelDialectUnverified,
     /// An embedded kernel carrier could not be framed for dialect inspection.
@@ -1913,6 +1944,21 @@ impl F3dLossCode {
         Self::SourceDialectUnverified,
         Self::WriterAppearancePropertiesOmitted,
         Self::SourceDialectDisplaced,
+        Self::TargetRequestDisplaced,
+        Self::WriterProceduralReduced,
+        Self::WriterPcurveOmitted,
+        Self::WriterSubdOmitted,
+        Self::WriterAssetOmitted,
+        Self::WriterJointOmitted,
+        Self::WriterParameterOmitted,
+        Self::WriterConfigurationOmitted,
+        Self::WriterTessellationOmitted,
+        Self::WriterSourceAssociationOmitted,
+        Self::WriterBodyOmitted,
+        Self::WriterGeometryOmitted,
+        Self::WriterAppearanceOmitted,
+        Self::WriterPatchDeclined,
+        Self::WriterAppearanceGuidAllocated,
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
         Self::DialectLayerCollision,
@@ -2997,6 +3043,21 @@ impl F3dLossCode {
             Self::SourceDialectUnverified => "source.dialect-unverified",
             Self::WriterAppearancePropertiesOmitted => "writer.appearance-properties-omitted",
             Self::SourceDialectDisplaced => "target.source-dialect-displaced",
+            Self::TargetRequestDisplaced => "target.request-displaced",
+            Self::WriterProceduralReduced => "writer.procedural-reduced",
+            Self::WriterPcurveOmitted => "writer.pcurve-omitted",
+            Self::WriterSubdOmitted => "writer.subd-omitted",
+            Self::WriterAssetOmitted => "writer.asset-omitted",
+            Self::WriterJointOmitted => "writer.joint-omitted",
+            Self::WriterParameterOmitted => "writer.parameter-omitted",
+            Self::WriterConfigurationOmitted => "writer.configuration-omitted",
+            Self::WriterTessellationOmitted => "writer.tessellation-omitted",
+            Self::WriterSourceAssociationOmitted => "writer.source-association-omitted",
+            Self::WriterBodyOmitted => "writer.body-omitted",
+            Self::WriterGeometryOmitted => "writer.geometry-omitted",
+            Self::WriterAppearanceOmitted => "writer.appearance-omitted",
+            Self::WriterPatchDeclined => "writer.patch-declined",
+            Self::WriterAppearanceGuidAllocated => "writer.appearance-guid-allocated",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
             Self::DialectLayerCollision => "source.dialect-layer-collision",
@@ -3084,6 +3145,21 @@ impl F3dLossCode {
             Self::SceneOverrideAmbiguous | Self::SceneOverrideUnbound => Severity::Info,
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterAppearancePropertiesOmitted => Severity::Warning,
+            Self::TargetRequestDisplaced => Severity::Warning,
+            Self::WriterProceduralReduced => Severity::Warning,
+            Self::WriterPcurveOmitted => Severity::Info,
+            Self::WriterSubdOmitted => Severity::Warning,
+            Self::WriterAssetOmitted => Severity::Warning,
+            Self::WriterJointOmitted => Severity::Warning,
+            Self::WriterParameterOmitted => Severity::Warning,
+            Self::WriterConfigurationOmitted => Severity::Warning,
+            Self::WriterTessellationOmitted => Severity::Warning,
+            Self::WriterSourceAssociationOmitted => Severity::Info,
+            Self::WriterBodyOmitted => Severity::Error,
+            Self::WriterGeometryOmitted => Severity::Warning,
+            Self::WriterAppearanceOmitted => Severity::Warning,
+            Self::WriterPatchDeclined => Severity::Warning,
+            Self::WriterAppearanceGuidAllocated => Severity::Warning,
             Self::ScopeOwnerUnresolved
             | Self::ScopeOutputOwnerUnresolved
             | Self::OperationPoseApplied
@@ -3827,6 +3903,20 @@ impl F3dLossCode {
             | Self::ScopeOutputOwnerUnresolved
             | Self::ScopeSketchOwnerMismatch => LossTaxonomy::FeatureHistoryRetained,
             Self::WriterAppearancePropertiesOmitted => LossTaxonomy::AppearanceReduced,
+            Self::WriterProceduralReduced => LossTaxonomy::ProceduralReduced,
+            Self::WriterPcurveOmitted => LossTaxonomy::PcurveOmitted,
+            Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
+            Self::WriterAssetOmitted => LossTaxonomy::AssetNotTransferred,
+            Self::WriterJointOmitted => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            Self::WriterParameterOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterConfigurationOmitted => LossTaxonomy::ParametricRecordOmitted,
+            Self::WriterTessellationOmitted => LossTaxonomy::TessellationOmitted,
+            Self::WriterSourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
+            Self::WriterBodyOmitted => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
+            Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
+            Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
+            Self::WriterAppearanceGuidAllocated => LossTaxonomy::MetadataNotTransferred,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
             | Self::PlacementConstructionUntyped
@@ -4488,6 +4578,7 @@ impl F3dLossCode {
                 LossTaxonomy::SourceDialectUnverified
             }
             Self::SourceDialectDisplaced => LossTaxonomy::SourceDialectDisplaced,
+            Self::TargetRequestDisplaced => LossTaxonomy::SourceDialectDisplaced,
             Self::TextHeaderNoncanonical => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::KernelHeaderMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
@@ -5265,6 +5356,21 @@ mod tests {
                 "source.dialect-unverified",
                 "writer.appearance-properties-omitted",
                 "target.source-dialect-displaced",
+                "target.request-displaced",
+                "writer.procedural-reduced",
+                "writer.pcurve-omitted",
+                "writer.subd-omitted",
+                "writer.asset-omitted",
+                "writer.joint-omitted",
+                "writer.parameter-omitted",
+                "writer.configuration-omitted",
+                "writer.tessellation-omitted",
+                "writer.source-association-omitted",
+                "writer.body-omitted",
+                "writer.geometry-omitted",
+                "writer.appearance-omitted",
+                "writer.patch-declined",
+                "writer.appearance-guid-allocated",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",
                 "source.dialect-layer-collision",

@@ -79,14 +79,14 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
 
     let mut edited = result.ir().clone();
     f3d_native_mut(&mut edited).mesh_surface_sentinels[0].record_index += 1;
-    let error = F3dCodec
-        .plan(
-            EncodeInput::new(&edited, Some(result.source_fidelity())),
-            TargetRequest::Inherit,
-        )
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("mesh-surface structural metadata is immutable");
-    assert!(error.to_string().contains("edits beyond supported"));
+    crate::test_support::assert_written_with_loss(
+        &edited,
+        Some(result.source_fidelity()),
+        &crate::loss::F3dLossCode::WriterPatchDeclined
+            .kind()
+            .to_string(),
+        "edits beyond supported",
+    );
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
@@ -99,13 +99,12 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
             &[],
         )
         .unwrap();
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("mesh-surface sentinel requires retained ASM bytes");
-    assert!(error
-        .to_string()
-        .contains("cannot serialize mesh-surface sentinel"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        "export/native.records-omitted",
+        "mesh-surface sentinels",
+    );
 }
 
 #[test]

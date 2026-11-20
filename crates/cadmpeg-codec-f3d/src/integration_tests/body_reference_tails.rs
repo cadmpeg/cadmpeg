@@ -4,7 +4,7 @@ use crate::test_support::body_reference_tail_test::{archive, frame, metadata};
 use crate::test_support::native_test::{f3d_native, update_f3d_native};
 
 #[test]
-fn body_reference_tail_replays_exactly_and_unsupported_edits_are_refused() {
+fn body_reference_tail_replays_exactly_and_unsupported_edits_regenerate() {
     let (bulk, frame) = frame(true, 9, 0);
     let source = archive(&bulk, &metadata(frame, 1));
     let decoded = decode(source.clone());
@@ -22,17 +22,12 @@ fn body_reference_tail_replays_exactly_and_unsupported_edits_are_refused() {
     update_f3d_native(&mut edited, |native| {
         native.design_body_reference_tails[0].trailing_form.value = 8;
     });
-    let mut refused_output = Vec::new();
-    let error = crate::test_support::plan_inherited_write(
+    crate::test_support::assert_written_with_loss(
         &edited,
-        decoded.source_fidelity(),
-        &mut refused_output,
-    )
-    .expect_err("unsupported native tail edit");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref message)
-        if message.contains("modified F3D IR contains edits beyond supported")),
-        "{error}"
+        Some(decoded.source_fidelity()),
+        &crate::loss::F3dLossCode::WriterPatchDeclined
+            .kind()
+            .to_string(),
+        "modified F3D IR contains edits beyond supported",
     );
-    assert!(refused_output.is_empty());
 }
