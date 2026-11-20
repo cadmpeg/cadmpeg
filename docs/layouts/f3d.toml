@@ -34443,6 +34443,7 @@ anchor = "| 4 \u00d7 f64 | `-1.0` |"
 name = "unit_scale"
 offset = 335
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "| 4 \u00d7 f64 | `-1.0` | | f32 | `1.0` |"
 
@@ -34645,6 +34646,7 @@ value = 0
 name = "tail_scale"
 offset = 871
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "appearance `PrismOpaque` | | u32 | `0` | | f32 | `1.0` |"
 
@@ -34844,6 +34846,7 @@ value = 1
 name = "scale"
 offset = 26
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "| u8 | `1` | | f32 | `1.0` |"
 
@@ -35482,6 +35485,7 @@ value = [0, 0]
 name = "scale_a"
 offset = 141
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "| 2 \u00d7 u8 | zero | | f32 | `1.0` |"
 
@@ -35489,6 +35493,7 @@ anchor = "| 2 \u00d7 u8 | zero | | f32 | `1.0` |"
 name = "scale_b"
 offset = 145
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "`1.0` for the point and the planes, `1.3` for the axes"
 
@@ -35604,6 +35609,7 @@ anchor = "f64 unit direction, f64 `0.175`"
 name = "scalar_a"
 offset = 125
 type = "f64"
+value = 0.175
 source = "spec"
 anchor = "f64 unit direction, f64 `0.175`, f64 `2.25`"
 
@@ -35611,6 +35617,7 @@ anchor = "f64 unit direction, f64 `0.175`, f64 `2.25`"
 name = "scalar_b"
 offset = 133
 type = "f64"
+value = 2.25
 source = "spec"
 anchor = "f64 `0.175`, f64 `2.25`"
 
@@ -35688,6 +35695,7 @@ value = [0, 0]
 name = "scale_a"
 offset = 181
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "| 2 \u00d7 u8 | zero | | f32 | `1.0` |"
 
@@ -35695,6 +35703,7 @@ anchor = "| 2 \u00d7 u8 | zero | | f32 | `1.0` |"
 name = "scale_b"
 offset = 185
 type = "f32"
+value = 1.3
 source = "spec"
 anchor = "`1.0` for the point and the planes, `1.3` for the axes"
 
@@ -35804,6 +35813,7 @@ value = 0
 name = "scalar_a"
 offset = 81
 type = "f64"
+value = 0.25
 source = "spec"
 anchor = "u32 `0`, f64 `0.25`, f64 `0.25`"
 
@@ -35811,6 +35821,7 @@ anchor = "u32 `0`, f64 `0.25`, f64 `0.25`"
 name = "scalar_b"
 offset = 89
 type = "f64"
+value = 0.25
 source = "spec"
 anchor = "u32 `0`, f64 `0.25`, f64 `0.25`"
 
@@ -35847,6 +35858,7 @@ anchor = "f64 unit v direction"
 name = "scalar_c"
 offset = 170
 type = "f64"
+value = 2.0
 source = "spec"
 anchor = "f64 unit v direction, f64 `2.0`, f64 `2.0`"
 
@@ -35854,6 +35866,7 @@ anchor = "f64 unit v direction, f64 `2.0`, f64 `2.0`"
 name = "scalar_d"
 offset = 178
 type = "f64"
+value = 2.0
 source = "spec"
 anchor = "f64 unit v direction, f64 `2.0`, f64 `2.0`"
 
@@ -35931,6 +35944,7 @@ value = [0, 0]
 name = "scale_a"
 offset = 228
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "| 2 \u00d7 u8 | zero | | f32 | `1.0` |"
 
@@ -35938,6 +35952,7 @@ anchor = "| 2 \u00d7 u8 | zero | | f32 | `1.0` |"
 name = "scale_b"
 offset = 232
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "`1.0` for the point and the planes, `1.3` for the axes"
 
@@ -45475,6 +45490,7 @@ anchor = "`base_feature_record_34`"
 name = "scale"
 offset = 42
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "`base_feature_record_34`"
 
@@ -45535,6 +45551,7 @@ anchor = "`base_feature_record_36`"
 name = "scale"
 offset = 22
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "`base_feature_record_36`"
 
@@ -46356,6 +46373,7 @@ anchor = "`base_feature_camera`"
 name = "scale"
 offset = 39
 type = "f32"
+value = 12.0
 source = "spec"
 anchor = "`base_feature_camera`"
 
@@ -46377,6 +46395,7 @@ anchor = "`base_feature_camera`"
 name = "unit_scale"
 offset = 59
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "`base_feature_camera`"
 
@@ -46400,6 +46419,7 @@ anchor = "`base_feature_camera`"
 name = "field_of_view"
 offset = 69
 type = "f64"
+value = 0.39479111969976155
 source = "spec"
 anchor = "`base_feature_camera`"
 
@@ -46504,6 +46524,7 @@ anchor = "`base_feature_lighting_environment`"
 name = "alpha"
 offset = 81
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "`base_feature_lighting_environment`"
 
@@ -46519,6 +46540,7 @@ anchor = "`base_feature_lighting_environment`"
 name = "range"
 offset = 89
 type = "f32"
+value = 1000.0
 source = "spec"
 anchor = "`base_feature_lighting_environment`"
 
@@ -46542,6 +46564,7 @@ anchor = "`base_feature_lighting_environment`"
 name = "angle"
 offset = 122
 type = "f32"
+value = -2.3561945
 source = "spec"
 anchor = "`base_feature_lighting_environment`"
 
@@ -46549,6 +46572,7 @@ anchor = "`base_feature_lighting_environment`"
 name = "height"
 offset = 126
 type = "f32"
+value = 9.5
 source = "spec"
 anchor = "`base_feature_lighting_environment`"
 
@@ -46556,6 +46580,7 @@ anchor = "`base_feature_lighting_environment`"
 name = "intensity"
 offset = 130
 type = "f32"
+value = 1.0
 source = "spec"
 anchor = "`base_feature_lighting_environment`"
 
@@ -46601,6 +46626,7 @@ anchor = "`base_feature_lighting_environment`"
 name = "exposure"
 offset = 171
 type = "f32"
+value = 1.6973956
 source = "spec"
 anchor = "`base_feature_lighting_environment`"
 
@@ -46644,6 +46670,7 @@ anchor = "`base_feature_lighting_environment`"
 name = "distance"
 offset = 240
 type = "f64"
+value = 150.0
 source = "spec"
 anchor = "`base_feature_lighting_environment`"
 
@@ -46651,6 +46678,7 @@ anchor = "`base_feature_lighting_environment`"
 name = "scale"
 offset = 248
 type = "f32"
+value = 0.1
 source = "spec"
 anchor = "`base_feature_lighting_environment`"
 
@@ -48195,6 +48223,7 @@ anchor = "`base_feature_asset_settings`"
 name = "grid"
 offset = 296
 type = "f64"
+value = 1.8
 source = "spec"
 anchor = "`base_feature_asset_settings`"
 
@@ -48210,6 +48239,7 @@ anchor = "`base_feature_asset_settings`"
 name = "grid_scale"
 offset = 341
 type = "f64"
+value = 1.0
 source = "spec"
 anchor = "`base_feature_asset_settings`"
 
