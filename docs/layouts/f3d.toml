@@ -52346,28 +52346,28 @@ name = "work_axis_counter"
 offset = 0
 type = "u32"
 source = "spec"
-anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, `u8 1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
+anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
 
 [[record.field]]
 name = "work_plane_counter"
 offset = 4
 type = "u32"
 source = "spec"
-anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, `u8 1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
+anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
 
 [[record.field]]
 name = "work_point_counter"
 offset = 8
 type = "u32"
 source = "spec"
-anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, `u8 1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
+anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
 
 [[record.field]]
 name = "zero_word"
 offset = 12
 type = "u32"
 source = "spec"
-anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, `u8 1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
+anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
 value = 0
 
 [[record.field]]
@@ -52375,15 +52375,14 @@ name = "marker_a"
 offset = 16
 type = "u8"
 source = "spec"
-anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, `u8 1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
-value = 1
+anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
 
 [[record.field]]
 name = "marker_b"
 offset = 17
 type = "u8"
 source = "spec"
-anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, `u8 1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
+anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
 value = 1
 
 [[record.field]]
@@ -52391,14 +52390,14 @@ name = "record_47c245a2"
 offset = 18
 type = "bytes[11]"
 source = "spec"
-anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, `u8 1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
+anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
 
 [[record.field]]
 name = "zero_byte"
 offset = 29
 type = "u8"
 source = "spec"
-anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, `u8 1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
+anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
 value = 0
 
 [[record.field]]
@@ -52406,7 +52405,7 @@ name = "entity_count"
 offset = 30
 type = "u32"
 source = "spec"
-anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, `u8 1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
+anchor = "the three u32 counters of the `WorkAxis`, `WorkPlane`, and `WorkPoint` items, u32 `0`, a byte `0` or `1`, `u8 1`, the reference to the record of type `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, a zero byte, the u32 `N`"
 
 [[record]]
 name = "sketch_item_sketches_root_head"
