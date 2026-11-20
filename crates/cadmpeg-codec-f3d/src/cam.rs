@@ -19,6 +19,23 @@ use crate::loss::F3dLossCode;
 
 type XmlNode<'a> = Node<'a, 'a>;
 
+mod tools;
+
+fn document_member(name: &str) -> bool {
+    let mut parts = name.split('/');
+    while let Some(part) = parts.next() {
+        if (part == "Toolpath"
+            || part
+                .strip_prefix("Toolpath[")
+                .is_some_and(|suffix| suffix.ends_with(']')))
+            && parts.next() == Some("Iron.Document")
+        {
+            return name.ends_with(".irondoc");
+        }
+    }
+    false
+}
+
 pub(crate) fn read(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -33,10 +50,7 @@ pub(crate) fn read(
         return Ok(());
     }
     for entry in &scan.entries {
-        if !(entry.name.starts_with("Toolpath/Iron.Document/")
-            || entry.name.contains("/Toolpath/Iron.Document/"))
-            || !entry.name.ends_with(".irondoc")
-        {
+        if !document_member(&entry.name) {
             continue;
         }
         let Some(view) = scan.entry_view(&entry.name) else {
@@ -84,7 +98,7 @@ fn source(
 fn record(node: XmlNode<'_>) -> bool {
     matches!(
         node.tag_name().name(),
-        "section" | "tool" | "toolpath" | "operation" | "setup" | "job"
+        "object" | "section" | "tool" | "toolpath" | "operation" | "setup" | "job"
     )
 }
 
@@ -243,6 +257,7 @@ fn identity(member: &str, node: XmlNode<'_>, kind: &str) -> String {
 
 fn family(strategy: &str) -> ManufacturingStrategy {
     match strategy.to_ascii_lowercase().as_str() {
+        "face" | "face2d" | "2dface" => ManufacturingStrategy::Face,
         "adaptive2d" | "2dadaptive" => ManufacturingStrategy::Adaptive2d,
         "pocket2d" | "2dpocket" => ManufacturingStrategy::Pocket2d,
         "contour2d" | "2dcontour" => ManufacturingStrategy::Contour2d,
@@ -257,6 +272,7 @@ fn family(strategy: &str) -> ManufacturingStrategy {
 fn is_setup(node: XmlNode<'_>) -> bool {
     node.has_tag_name("setup")
         || node.has_tag_name("job")
+        || (node.has_tag_name("object") && node.attribute("strategy") == Some("setup"))
         || (node.has_tag_name("section")
             && (matches!(node.attribute("type"), Some("setup" | "job"))
                 || local_nodes(node).any(|child| {
@@ -269,6 +285,12 @@ fn is_setup(node: XmlNode<'_>) -> bool {
 
 fn is_operation(node: XmlNode<'_>) -> bool {
     node.has_tag_name("operation")
+        || (node.has_tag_name("object")
+            && !is_setup(node)
+            && node.attribute("parent").is_some()
+            && node
+                .attribute("strategy")
+                .is_some_and(|strategy| !strategy.is_empty() && strategy != "folder"))
         || (node.has_tag_name("section")
             && !is_setup(node)
             && (node.attribute("strategy").is_some()
@@ -278,6 +300,22 @@ fn is_operation(node: XmlNode<'_>) -> bool {
                 parent.has_tag_name("operation")
                     || (parent.has_tag_name("section") && !is_setup(parent))
             }))
+}
+
+fn object_setup(
+    node: XmlNode<'_>,
+    objects: &BTreeMap<&str, XmlNode<'_>>,
+    setups: &BTreeMap<usize, SetupId>,
+) -> Option<SetupId> {
+    let mut parent = node.attribute("parent");
+    for _ in 0..objects.len() {
+        let object = objects.get(parent?)?;
+        if let Some(setup) = setups.get(&object.range().start) {
+            return Some(setup.clone());
+        }
+        parent = object.attribute("parent");
+    }
+    None
 }
 
 fn parse(
@@ -309,6 +347,11 @@ fn parse(
         losses.push(F3dLossCode::CamStructureAssumed.note("CAM section nesting, strategy and tool attributes, and named parameter metadata use the source-definition reading; native XML retains all source fields"));
     }
     let mut setups = BTreeMap::new();
+    let objects: BTreeMap<_, _> = document
+        .descendants()
+        .filter(|node| node.has_tag_name("object"))
+        .filter_map(|node| node.attribute("id").map(|id| (id, node)))
+        .collect();
     let mut tools = BTreeMap::new();
     let mut tool_nodes = BTreeMap::new();
     for node in document.descendants().filter(|node| is_setup(*node)) {
@@ -326,6 +369,7 @@ fn parse(
             id,
             name: node
                 .attribute("name")
+                .or_else(|| node.attribute("displayName"))
                 .map(|text| owned(ctx, text))
                 .transpose()?,
             stock: stock(&parameters),
@@ -339,7 +383,7 @@ fn parse(
         .descendants()
         .filter(|node| node.has_tag_name("tool"))
     {
-        let parameters = parameters(ctx, node)?;
+        let parameters = tools::parameters(ctx, node)?;
         let id = ToolId::mint(identity(member, node, "cam_tool"))
             .map_err(|error| CodecError::malformed(format_args!("CAM tool identity: {error}")))?;
         tool_nodes.insert(node.range().start, id.clone());
@@ -367,13 +411,17 @@ fn parse(
             .chain(
                 parameters
                     .iter()
-                    .filter(|parameter| parameter.name.starts_with("holder_"))
+                    .filter(|parameter| {
+                        parameter.name.starts_with("holder_")
+                            || parameter.name.starts_with("holder.")
+                    })
                     .cloned(),
             )
             .collect();
         target.tools.push(ManufacturingTool {
             id,
             number: value(&parameters, "tool_number")
+                .or_else(|| value(&parameters, "nc.number"))
                 .or_else(|| node.attribute("number"))
                 .map(str::to_owned),
             tool_type: value(&parameters, "tool_type")
@@ -393,6 +441,7 @@ fn parse(
             .skip(1)
             .find_map(|parent| setups.get(&parent.range().start))
             .cloned()
+            .or_else(|| object_setup(node, &objects, &setups))
         {
             setup
         } else {
@@ -426,7 +475,9 @@ fn parse(
         let path = if node.has_tag_name("toolpath") {
             Some(node)
         } else {
-            node.children().find(|child| child.has_tag_name("toolpath"))
+            node.children().find(|child| {
+                child.has_tag_name("toolpath") || child.has_tag_name("toolpathToolView")
+            })
         };
         if let Some(path) = path.filter(|path| *path != node) {
             parameters.extend(self::parameters(ctx, path)?);
@@ -451,7 +502,9 @@ fn parse(
             losses.push(F3dLossCode::CamOperationUnreadable.note("CAM operation strategy is absent; the operation retains its parameters and source XML"));
         }
         let strategy = owned(ctx, strategy)?;
-        let valid = path.and_then(|path| path.attribute("valid"));
+        let valid = path
+            .and_then(|path| path.attribute("valid"))
+            .or_else(|| node.attribute("valid"));
         let computed_path_valid = match valid {
             Some("true" | "1") => Some(true),
             Some("false" | "0") => Some(false),
@@ -466,6 +519,7 @@ fn parse(
         };
         let tool_key = node
             .attribute("tool")
+            .or_else(|| node.attribute("toolId").filter(|key| !key.is_empty()))
             .or_else(|| path.and_then(|path| path.attribute("tool")))
             .or_else(|| value(&parameters, "tool_id"));
         let mut tool = if let Some(key) = tool_key {
@@ -519,6 +573,7 @@ fn parse(
             order: *order,
             name: node
                 .attribute("name")
+                .or_else(|| node.attribute("displayName"))
                 .map(|text| owned(ctx, text))
                 .transpose()?,
             family: family(&strategy),

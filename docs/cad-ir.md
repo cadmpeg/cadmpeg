@@ -585,12 +585,13 @@ retain the corresponding named parameters with units. A WCS definition holds
 `orientation` retains frame and axis parameters; `origin` retains point and
 placement parameters with units. Each
 parameter holds `name`, `value`, `unit`, `kind`, and `native_xml`. `value`
-preserves the stored text, including expressions. Source unit symbols apply
+preserves the stored value text, including expressions used as values.
+`native_xml` retains the source element and its expression attributes. Source unit symbols apply
 to these values. Tool records retain number and type text, geometry and
 cutting parameters, holder parameters, vendor, and product identifier.
 
 Operations retain their stored `strategy` and a normalized `family`:
-`adaptive2d`, `pocket2d`, `contour2d`, `drilling`, `adaptive3d`, `parallel`,
+`face`, `adaptive2d`, `pocket2d`, `contour2d`, `drilling`, `adaptive3d`, `parallel`,
 `scallop`, or `other`. Their parameters retain source order and repeated
 names. Geometry selections hold a native element kind and exact XML.
 `computed_path_present` states descriptor presence; `computed_path_valid`

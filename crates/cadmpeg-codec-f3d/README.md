@@ -208,11 +208,21 @@ Binding runs after archive composition. Synthetic member roots can share the pla
 
 ## Manufacture definitions
 
-The reader locates `Toolpath/Iron.Document/*.irondoc` in a document and in
-F3Z members. `CadIr.manufacturing` holds setups, stock and WCS parameters,
+The reader locates `Toolpath/Iron.Document/*.irondoc` and bracketed
+`Toolpath[IDENTIFIER]` workspace paths in a document and in F3Z members.
+Flat `object` records link operations and folders to setups through parent
+identifiers. `CadIr.manufacturing` holds setups, stock and WCS parameters,
 tools and holders, operations in setup order, and stored parameter text with
 units. Strategy names retain their source text and have a normalized family.
-Computed-path descriptors supply presence and validity flags.
+Computed-path descriptors supply presence flags. Operation and path validity
+attributes supply Boolean validity flags.
+
+Tool attributes use parameter names of the form `ELEMENT.ATTRIBUTE`.
+Their values retain the source text; `native_xml` retains the carrying
+element. The tool number comes from `nc.number`; cutter dimensions and flute
+count come from `body` attributes. Face operations have the `face` family.
+Use `cadmpeg inspect container` and `inspect extract` to read the JSON member
+of an exported `.tools` library.
 
 Native geometry selections retain XML and produce `f3d/cam.selection-unresolved`.
 Record XML, member paths, and byte ranges preserve source provenance. The

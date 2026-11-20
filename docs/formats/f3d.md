@@ -3001,16 +3001,40 @@ A preset reference is library-qualified: a library identifier paired with the na
 
 ## Manufacture XML
 
-`Toolpath/Iron.Document/*.irondoc` contains XML with a `document` root and a
-`model` tree. `section` elements group setups and machining operations.
-`Parameters/Parameter` elements hold named values.
+`Toolpath/Iron.Document/*.irondoc` and
+`Toolpath[IDENTIFIER]/Iron.Document/*.irondoc` contain XML with a `document`
+root and a `model` tree. `model/docObjects/object` records form a flat tree.
+An object's `id` identifies it within the document; `parent` refers to its
+parent object's `id`. `strategy="setup"` identifies a setup.
+`strategy="folder"` identifies an operation group. An operation's parent
+chain identifies its setup. `displayName` holds the record name.
+`Parameters/Parameter` elements hold named values. The `value` attribute
+holds the evaluated value text. `expression` holds the source expression;
+its spelling can differ from the evaluated value text.
 
 Setup parameters use the `job_` prefix. Stock parameters use `job_stock`;
 WCS orientation and origin parameters use `wcs_orientation_` and
 `wcs_origin_`. Tool parameters use `tool_`, and holder parameters use
-`holder_`. `toolpath` descriptors carry a `valid` Boolean. Strategy names
-identify machining families. `CadRef`, `CadChain`, and `CadContours2D`
-contain native model and geometry selections.
+`holder_`. `job_stockMode="default"` selects a relative stock box.
+`job_stockOffsetMode="simple"` applies `job_stockOffsetSides` to both X
+sides and both Y sides, `job_stockOffsetTop` to high Z, and
+`job_stockOffsetBottom` to low Z. `wcs_orientation_mode="modelOrientation"`
+uses the model axes. `wcs_origin_mode="stockPoint"` selects the stock box
+point named by `wcs_origin_boxPoint`.
+
+The tool table uses the `http://www.hsmworks.com/xml/2004/cnc/tool-library`
+namespace. A `tool` record's `id` is the operation's `toolId` reference.
+The tool's `type` and `unit` attributes identify its cutter type and units.
+`nc` attributes hold the tool number and post settings. `body` attributes
+hold cutter dimensions and flute count. `motion` attributes hold feed and
+spindle settings.
+
+An operation object's `valid` Boolean states computed-path validity.
+`toolpathToolView` describes the toolpath frame. `toolpath` descriptors carry
+a `valid` Boolean.
+Strategy names identify machining families; `face` identifies planar face
+milling. `CadRef`, `CadChain`, and `CadContours2D` contain native model and
+geometry selections.
 
 Computed toolpaths, NC code, slice data, simulation results, and machine
 definitions occupy separate `Iron.Toolpath`, `Iron.NcCode`,

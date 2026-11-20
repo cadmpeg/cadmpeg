@@ -4,6 +4,40 @@ use crate::test_support::{with_decode_context, with_decode_policy};
 use cadmpeg_core::decode::DecodePolicy;
 
 #[test]
+fn cam_document_member_requires_a_workspace_and_document_directory() {
+    assert!(document_member("Toolpath/Iron.Document/a.irondoc"));
+    assert!(document_member(
+        "part/Toolpath[synthetic]/Iron.Document/a.irondoc"
+    ));
+    assert!(!document_member("ToolpathOther/Iron.Document/a.irondoc"));
+    assert!(!document_member("Toolpath[synthetic]/Iron.Other/a.irondoc"));
+    assert!(!document_member("Toolpath[synthetic]/Iron.Document/a.bin"));
+}
+
+#[test]
+fn cam_cyclic_object_parent_keeps_operation_with_assumed_setup() {
+    let text = br#"<document><object id="cut" parent="folder" strategy="face"/><object id="folder" parent="cut" strategy="folder"/></document>"#;
+    with_decode_context(|ctx| {
+        let mut target = Manufacturing::default();
+        let mut losses = Vec::new();
+        parse(
+            ctx,
+            View::over_retained(text),
+            "synthetic",
+            &mut target,
+            &mut losses,
+        )
+        .unwrap();
+        assert_eq!(target.operations.len(), 1);
+        assert_eq!(target.setups.len(), 1);
+        assert_eq!(target.operations[0].setup, target.setups[0].id);
+        assert!(losses
+            .iter()
+            .any(|loss| loss.code == F3dLossCode::CamSetupAssumed.kind()));
+    });
+}
+
+#[test]
 fn cam_preserves_parameters_and_all_strategy_families() {
     let text = r#"<document><model>
       <tool id="t1"><Parameters><Parameter name="tool_number" value="1"/><Parameter name="tool_diameter" value="6.00" unit="mm" type="float"/><Parameter name="tool_vendor" value="Example"/></Parameters><holder><Parameters><Parameter name="holder_diameter" value="12" unit="mm"/></Parameters></holder></tool>

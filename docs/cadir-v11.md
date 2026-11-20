@@ -9828,7 +9828,7 @@ Each type below is given by the JSON Schema of its wire form, generated from the
       "type": "string"
     },
     "native_xml": {
-      "description": "Complete XML for this parameter, including additional attributes.",
+      "description": "Source XML element that carries this value, including additional attributes.",
       "type": "string"
     },
     "unit": {
@@ -10027,6 +10027,11 @@ Each type below is given by the JSON Schema of its wire form, generated from the
 {
   "description": "Normalized machining strategy.",
   "oneOf": [
+    {
+      "description": "Planar face milling.",
+      "type": "string",
+      "const": "face"
+    },
     {
       "description": "Planar adaptive clearing.",
       "type": "string",

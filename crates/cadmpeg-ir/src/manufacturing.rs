@@ -50,7 +50,7 @@ pub struct ManufacturingParameter {
         deserialize_with = "deserialize_kind"
     )]
     pub kind: Option<String>,
-    /// Complete XML for this parameter, including additional attributes.
+    /// Source XML element that carries this value, including additional attributes.
     pub native_xml: String,
 }
 
@@ -154,6 +154,8 @@ pub struct ManufacturingSetup {
 #[serde(rename_all = "lowercase")]
 #[serde(deny_unknown_fields)]
 pub enum ManufacturingStrategy {
+    /// Planar face milling.
+    Face,
     /// Planar adaptive clearing.
     Adaptive2d,
     /// Planar pocket milling.

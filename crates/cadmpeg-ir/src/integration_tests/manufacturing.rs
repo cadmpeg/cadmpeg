@@ -7,6 +7,16 @@ use crate::manufacturing::{
 use crate::CadIr;
 
 #[test]
+fn cam_face_strategy_wire_round_trip() {
+    let encoded = serde_json::to_string(&ManufacturingStrategy::Face).unwrap();
+    assert_eq!(encoded, "\"face\"");
+    assert_eq!(
+        serde_json::from_str::<ManufacturingStrategy>(&encoded).unwrap(),
+        ManufacturingStrategy::Face
+    );
+}
+
+#[test]
 fn cam_manufacturing_wire_keeps_exact_parameter_text() {
     let parameter = ManufacturingParameter {
         name: "tool_diameter".into(),

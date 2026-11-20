@@ -3642,12 +3642,12 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** The decoder retains positional pairing with `feature.owned-body-pairing-assumed` for the typed body runs.
 
-### CAM-1. Manufacture record associations and parameter metadata
+### CAM-2. Numbered stock-box origin selectors
 
-**Question.** How do Iron.Document versions encode section ownership, strategy metadata, tool links, and parameter value metadata?
+**Question.** Which stock-box corner does each numbered `wcs_origin_boxPoint` selector identify?
 
-**Known.** Manufacture XML contains `section`, `tool`, `holder`, `toolpath`, and named `Parameter` elements. The decoder reads setup ownership from section nesting, `setup` or `job` tags, setup type attributes, and `job_` parameter names. It reads strategies and tool links from attributes and named parameters. It reads parameter values from a `value` attribute or element text, units from `unit` or `units`, and kinds from `type` or `kind`. Complete record XML retains the source fields.
+**Known.** The decoder retains the selector text in the setup's WCS origin parameters. Relative stock offsets and model bounds define the stock-box extents.
 
-**Need.** Controlled saves from volunteer fixture recipes that vary setup ownership, strategy, tool reuse, expression values, and units independently.
+**Need.** A mapping from numbered selectors to the low or high coordinate on each box axis, checked against resolved setup frames.
 
-**Note.** This reading reports `cam.structure-assumed`. A tool number selects the nearest preceding tool definition, or the first following definition, with `cam.tool-number-reference-assumed`. Native geometry selections report `cam.selection-unresolved`.
+**Note.** Coordinate comparison for a numbered selector remains unresolved.
