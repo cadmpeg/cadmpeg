@@ -846,7 +846,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer of several result bodies must number the faces of each body. The edge and vertex tags of the earlier bodies against the start of the next run would settle it.
 
-### DR-894. Count before the parameter-collection companion
+### DR-912. Count before the parameter-collection companion
 
 **Question.** What does the u32 `c` at offset 30 of the parameter collection (type `B0556F58-EE09-46A7-B18F-E296F48E5B13`, type version `4`) count, and what is the layout of a collection that stores nonzero bytes in the run that the layout gives as zero?
 
@@ -862,7 +862,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer of a body with more than one appearance must write the entries. Bodies whose faces carry appearances against their entry GUIDs and colours would settle what an entry selects.
 
-### DR-895. Evaluation duration and epoch of an item tail
+### DR-913. Evaluation duration and epoch of an item tail
 
 **Question.** What unit does the evaluation duration of a feature item tail use, and what selects the evaluation epoch?
 
@@ -878,7 +878,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer must store the extents, the radius, and the target. The displayed tessellation of the body, projected on the view plane, against the extents would settle the rule.
 
-### DR-897. Layout of the OGS display scene
+### DR-914. Layout of the OGS display scene
 
 **Question.** What is the layout of the members of `OGS.BlobFolder/OGS/DefaultScene/` (`world`, `stream_mesh_<n>`, `Fusion_mesh_<n>`), and what selects the numbers `<n>` in their names?
 
@@ -886,7 +886,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer must decide whether to store the display scene and, if so, its bytes.
 
-### DR-898. Records and snapshot stream of a design with several or sheet result bodies
+### DR-915. Records and snapshot stream of a design with several or sheet result bodies
 
 **Question.** How does a `Base Feature` design with several result bodies, or with a sheet result body, allocate the record indices of its roster, and what values do its snapshot body-map companions list? How does the snapshot stream of a design with several result bodies differ from the solved part of its history stream? What sets the first value of the design snapshot body-map companion of a sheet body?
 
