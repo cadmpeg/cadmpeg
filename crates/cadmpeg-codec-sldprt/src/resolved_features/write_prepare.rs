@@ -28,11 +28,6 @@ use cadmpeg_ir::sketches::{
 use cadmpeg_ir::units::FinitePoint2;
 use std::collections::HashMap;
 
-/// Reject unsupported neutral sketch edits before native lane replay.
-///
-/// Bitwise comparison against the machine-local document baseline; see
-/// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
-/// the neutral side.
 /// A generated object or parameter name: 1 to 128 UTF-16 code units behind
 /// a u8 count.
 pub(crate) const GENERATED_NAME: cadmpeg_ir::codec::write::capacity::TextCapacity =
@@ -42,9 +37,12 @@ pub(crate) const GENERATED_NAME: cadmpeg_ir::codec::write::capacity::TextCapacit
         128,
     );
 
-/// Synchronize the sketch lanes with the document. `cut` receives an
-/// `export:value.unwritable` entry for each generated name cut to
-/// [`GENERATED_NAME`].
+/// Reject unsupported neutral sketch edits before native lane replay.
+///
+/// Bitwise comparison against the machine-local document baseline; see
+/// [`cadmpeg_ir::hash::document_local_sha256`]. Absent baseline: sync lanes from
+/// the neutral side. `cut` receives an `export:value.unwritable` entry for
+/// each generated name cut to [`GENERATED_NAME`].
 pub(crate) fn prepare_sketches_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
