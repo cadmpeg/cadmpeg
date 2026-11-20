@@ -88,7 +88,10 @@ fn candidate(feature: &Feature) -> Option<(&PlanarProfileRef, f64, f64)> {
         FeatureOperation::Extrude {
             profile: ProfileRef::Planar(profile),
             start: ExtrudeStart::ProfilePlane {},
-            direction: ExtrudeDirection::ProfileNormal {} | ExtrudeDirection::Unresolved {},
+            direction:
+                direction @ (ExtrudeDirection::ProfileNormal {}
+                | ExtrudeDirection::ReversedProfileNormal {}
+                | ExtrudeDirection::Unresolved {}),
             extent: ExtrudeExtent::OneSided { side },
             op,
             ..
@@ -96,12 +99,16 @@ fn candidate(feature: &Feature) -> Option<(&PlanarProfileRef, f64, f64)> {
             let LinearTermination::Blind { length } = side.termination else {
                 return None;
             };
-            let sign = match op {
+            let op_sign = match op {
                 BooleanOp::Cut => -1.0,
                 BooleanOp::NewBody | BooleanOp::Join => 1.0,
                 _ => return None,
             };
-            Some((profile, length.get(), sign))
+            let dir_sign = match direction {
+                ExtrudeDirection::ReversedProfileNormal {} => -1.0,
+                _ => 1.0,
+            };
+            Some((profile, length.get(), op_sign * dir_sign))
         }
         _ => None,
     }

@@ -429,18 +429,6 @@ Two omitted owner-qualified construction circles have separate current/extended 
 
 **Need.** We must know the selector values to terminate the extrusion at the correct edge endpoint.
 
-### DI-16. Extrusion travel sense relative to the profile frame
-
-**Question.** Which native fields set the signed extrusion travel relative to the profile frame?
-
-**Known.** The compact end-spec has Boolean words at anchor +8 and +12. Its direction-count word and termination codes define the extent form. A nested planar profile has a surface normal and a face sense.
-
-**Need.** Controlled opposite-travel definitions with the same owned profile, plane reference, end-spec form, and surviving end caps must establish each sense field and its composition with the profile frame.
-
-**Conflict.** The Boolean end-spec words and nested face senses each occur with both travel senses in final-cap witnesses.
-
-**Note.** Later features can consume an extrusion end cap. A missing final cap leaves the historical travel witness unresolved.
-
 ### DI-17. Second-direction codes without a defined second side
 
 **Question.** Does a nonzero second-direction code take effect when the direction count at anchor +4 is `1`? What second side does a second-direction code other than `0` or `1` define when anchor +4 is `0`, and what do first-direction codes `2` through `5` define with `0` at anchor +4?
@@ -1062,26 +1050,6 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** We must know their content to transfer it or to state that it is not model geometry. Without it, the document keeps the part losses that report an untransferred Parasolid model.
 
-### EV-25. Turn sense of a partial revolution
-
-**Question.** Which way does the travel of a partial `moRevolution_c` or `moRevCut_c` turn about the stored axis direction, and which stored field reverses it?
-
-**Known.** `sldprt.md` §2 "The revolution object interval may contain a declared or repeated" stores a point on the axis and a unit axis direction. `sldprt.md` §2 "An `moRevolution_c` or `moRevCut_c` history record" stores positive angles. Neither paragraph gives the turn sense.
-
-**Need.** A partial revolution with a stored solid whose end faces show the side of the travel, compared with the stored axis direction.
-
-**Conflict.** CADIR states a right-handed turn about `RevolutionAxis.direction`, and this codec writes the stored direction to that field unchanged. No partial revolution has shown that the two agree.
-
-**Note.** A full turn sweeps the same region in either sense, so it does not answer this question.
-
-### EV-26. Sketch curve type `0xffff`
-
-**Question.** What curve does a sketch curve record of type `0xffff` in the arc layout define?
-
-**Known.** `sldprt.md` §2.3 "A *text record* has a curve record's fields" gives the record the arc's layout: two endpoint indices, u16 `0`, a centre index and four i32 `-2`. A type-`1` arc with distinct endpoint indices is the minor arc about its centre between its endpoints.
-
-**Need.** Type-`0xffff` records whose curves bound faces of a stored solid, compared with the counterclockwise and clockwise readings.
-
 ### EV-27. Sketch curve records with selector bit 0 set
 
 **Question.** What do the endpoint and centre indices of a sketch curve record select when bit 0 of its selector (+37) is set?
@@ -1115,18 +1083,6 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Need.** Determine the byte fields that bind each remaining reference form to its profile coordinates and normal direction. Establish each complete rule with independent profile and mirrored-polarity controls.
 
 **Conflict.** The local component's N=+Y and the declared fallback's N=+Z select different normal axes.
-
-### SF-02. Right component ownership and profile coordinates
-
-**Question.** Which native role or operand field binds a Right component to the sketch support plane and selects the profile coordinate convention?
-
-**Known.** A complete profile-local `(4,1)` component occurs with a scoped Front declaration or a lane-default Front reference. The scoped declaration lies in the profile or its immediate context. The matrix identifies the referenced frame. The intrinsic component mapping can lose finite carrier support on the retained profile plane in both forms. The decoder retains the existing profile binding when the component source conflicts with it.
-
-**Need.** Establish the support-plane role and profile coordinate rule from explicit fields, including the enclosing reference and operand path. Distinguish finite support from intersections with carrier extensions. Establish each selected form with independent designs, mirrored-polarity controls, and per-sample carrier retention.
-
-**Conflict.** The Right matrix normal is +X. The retained Front component fallback normal is -Y.
-
-**Note.** Right component mappings retain their current interpretation and losses. The scoped and lane Front fallbacks retain their frames. Section 3.3 defines local Top component profile placement.
 
 ### DI-69. Extrusion Boolean carriers
 

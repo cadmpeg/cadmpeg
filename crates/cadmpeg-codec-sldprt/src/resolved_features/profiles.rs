@@ -1359,26 +1359,36 @@ pub(crate) fn project_marker_backed_sketches(
             };
             let mut markers = Vec::new();
             for marker in object_markers.iter().copied() {
-                if !matches!(
-                    marker.kind(),
-                    SketchInputKind::Point
-                        | SketchInputKind::ConstrainedPoint
-                        | SketchInputKind::LineOrCircle
-                        | SketchInputKind::Arc
-                ) {
+                let is_listed_curve = index_from_u64(marker.offset()).is_some_and(|offset| {
+                    matches!(
+                        record_lists.record(offset),
+                        Some(super::sketch_lists::ListedRecord::Curve { .. })
+                    )
+                });
+                if !is_listed_curve
+                    && !matches!(
+                        marker.kind(),
+                        SketchInputKind::Point
+                            | SketchInputKind::ConstrainedPoint
+                            | SketchInputKind::LineOrCircle
+                            | SketchInputKind::Arc
+                    )
+                {
                     continue;
                 }
-                if let Some(offset) = index_from_u64(marker.offset()) {
-                    if legacy_unlocated_geometry_handle(&lane.native_payload, offset)
-                        || auxiliary_profile_record(&lane.native_payload, offset)
-                        || relation_reference_curve_record(
-                            &lane.native_payload,
-                            marker,
-                            &object_markers,
-                        )
-                        || terminal_carriers.carries(marker)
-                    {
-                        continue;
+                if !is_listed_curve {
+                    if let Some(offset) = index_from_u64(marker.offset()) {
+                        if legacy_unlocated_geometry_handle(&lane.native_payload, offset)
+                            || auxiliary_profile_record(&lane.native_payload, offset)
+                            || relation_reference_curve_record(
+                                &lane.native_payload,
+                                marker,
+                                &object_markers,
+                            )
+                            || terminal_carriers.carries(marker)
+                        {
+                            continue;
+                        }
                     }
                 }
                 markers.push(marker);
@@ -1527,494 +1537,580 @@ pub(crate) fn project_marker_backed_sketches(
                                 .is_some()
                             })
                     };
-                    let geometry = match marker.kind() {
-                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
-                            let point = project(marker).ok_or(MarkerGeometryFailure::Absent)?;
-                            SketchGeometry::try_from(SketchGeometryDefinition::Point {
-                                position: point,
+                    let listed_curve_geometry = || {
+                        index_from_u64(marker.offset()).and_then(|offset| {
+                            matches!(
+                                record_lists.record(offset),
+                                Some(super::sketch_lists::ListedRecord::Curve { .. })
+                            )
+                            .then(|| {
+                                listed_record_geometry(
+                                    &lane.native_payload,
+                                    &record_lists,
+                                    offset,
+                                    &project_coordinates,
+                                )
                             })
-                            .ok()
-                            .ok_or(MarkerGeometryFailure::Absent)?
-                        }
-                        SketchInputKind::LineOrCircle => {
-                            let mut circle_geometry = legacy_profile_radial_circle(
-                                &lane.native_payload,
-                                marker,
-                                &object_markers,
-                            );
-                            if circle_geometry.is_none() {
-                                circle_geometry = compact_profile_full_circle(
+                            .flatten()
+                        })
+                    };
+                    let geometry = if let Some(geometry) = listed_curve_geometry() {
+                        geometry
+                    } else {
+                        match marker.kind() {
+                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
+                                if let Some(point) = project(marker) {
+                                    SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                                        position: point,
+                                    })
+                                    .ok()
+                                    .ok_or(MarkerGeometryFailure::Absent)?
+                                } else if let Some(geometry) = listed_curve_geometry() {
+                                    geometry
+                                } else {
+                                    return Err(MarkerGeometryFailure::Absent);
+                                }
+                            }
+                            SketchInputKind::LineOrCircle => {
+                                let mut circle_geometry = legacy_profile_radial_circle(
                                     &lane.native_payload,
                                     marker,
                                     &object_markers,
                                 );
-                            }
-                            if circle_geometry.is_none() {
-                                circle_geometry = current_profile_circle_dimension(
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                );
-                            }
-                            if circle_geometry.is_none() {
-                                circle_geometry = compact_legacy_terminal_diameter_circle(
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                );
-                            }
-                            if circle_geometry.is_none() {
-                                circle_geometry = compact_legacy_profile_full_circle(
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                );
-                            }
-                            if circle_geometry.is_none() {
-                                circle_geometry = extended_geometry_full_circle(
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                );
-                            }
-                            if circle_geometry.is_none() {
-                                circle_geometry = coordinate_roster_full_circle(
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                );
-                            }
-                            if circle_geometry.is_none() {
-                                circle_geometry = wide_coordinate_roster_full_circle(
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                );
-                            }
-                            if let Some((center, radius)) = circle_geometry {
-                                let point = transform
-                                    .apply(quantize(
-                                        Point2::new(
-                                            center[0] * NATIVE_TO_IR,
-                                            center[1] * NATIVE_TO_IR,
+                                if circle_geometry.is_none() {
+                                    circle_geometry = compact_profile_full_circle(
+                                        &lane.native_payload,
+                                        marker,
+                                        &object_markers,
+                                    );
+                                }
+                                if circle_geometry.is_none() {
+                                    circle_geometry = current_profile_circle_dimension(
+                                        &lane.native_payload,
+                                        marker,
+                                        &object_markers,
+                                    );
+                                }
+                                if circle_geometry.is_none() {
+                                    circle_geometry = compact_legacy_terminal_diameter_circle(
+                                        &lane.native_payload,
+                                        marker,
+                                        &object_markers,
+                                    );
+                                }
+                                if circle_geometry.is_none() {
+                                    circle_geometry = compact_legacy_profile_full_circle(
+                                        &lane.native_payload,
+                                        marker,
+                                        &object_markers,
+                                    );
+                                }
+                                if circle_geometry.is_none() {
+                                    circle_geometry = extended_geometry_full_circle(
+                                        &lane.native_payload,
+                                        marker,
+                                        &object_markers,
+                                    );
+                                }
+                                if circle_geometry.is_none() {
+                                    circle_geometry = coordinate_roster_full_circle(
+                                        &lane.native_payload,
+                                        marker,
+                                        &object_markers,
+                                    );
+                                }
+                                if circle_geometry.is_none() {
+                                    circle_geometry = wide_coordinate_roster_full_circle(
+                                        &lane.native_payload,
+                                        marker,
+                                        &object_markers,
+                                    );
+                                }
+                                if let Some((center, radius)) = circle_geometry {
+                                    let point = transform
+                                        .apply(quantize(
+                                            Point2::new(
+                                                center[0] * NATIVE_TO_IR,
+                                                center[1] * NATIVE_TO_IR,
+                                            ),
+                                            QUANTUM,
+                                        ))
+                                        .ok_or(MarkerGeometryFailure::Absent)?;
+                                    SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                                        center: Point2::new(
+                                            f64_from_i64(point.0)
+                                                .ok_or(MarkerGeometryFailure::Absent)?
+                                                * QUANTUM,
+                                            f64_from_i64(point.1)
+                                                .ok_or(MarkerGeometryFailure::Absent)?
+                                                * QUANTUM,
                                         ),
-                                        QUANTUM,
-                                    ))
-                                    .ok_or(MarkerGeometryFailure::Absent)?;
-                                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-                                    center: Point2::new(
-                                        f64_from_i64(point.0)
-                                            .ok_or(MarkerGeometryFailure::Absent)?
-                                            * QUANTUM,
-                                        f64_from_i64(point.1)
-                                            .ok_or(MarkerGeometryFailure::Absent)?
-                                            * QUANTUM,
-                                    ),
-                                    radius: Length::new(radius * NATIVE_TO_IR)
-                                        .ok_or(MarkerGeometryFailure::Absent)?,
-                                })
-                                .ok()
-                                .ok_or(MarkerGeometryFailure::Absent)?
-                            } else {
-                                let endpoints = output_curve_endpoint_markers(
-                                    &lane.native_payload,
-                                    marker,
-                                    &markers_by_id,
-                                    &object_markers,
-                                );
-                                if let [start_marker, end_marker] = endpoints.as_slice() {
-                                    let (Some(start), Some(end)) =
-                                        (project(start_marker), project(end_marker))
-                                    else {
-                                        return Err(MarkerGeometryFailure::Absent);
-                                    };
-                                    if start == end {
-                                        if is_recovered_legacy_profile_point(start_marker)
-                                            || is_recovered_legacy_profile_point(end_marker)
-                                        {
-                                            // A zero-length line is not valid IR geometry. Preserve
-                                            // the marker whose endpoint collapsed because a newly
-                                            // recognized profile point supplied its coordinates.
-                                            SketchGeometry::native(cadmpeg_core::nonblank_const!(
-                                                DEGENERATE_LINE_PLACEHOLDER
-                                            ))
+                                        radius: Length::new(radius * NATIVE_TO_IR)
+                                            .ok_or(MarkerGeometryFailure::Absent)?,
+                                    })
+                                    .ok()
+                                    .ok_or(MarkerGeometryFailure::Absent)?
+                                } else {
+                                    let endpoints = output_curve_endpoint_markers(
+                                        &lane.native_payload,
+                                        marker,
+                                        &markers_by_id,
+                                        &object_markers,
+                                    );
+                                    if let [start_marker, end_marker] = endpoints.as_slice() {
+                                        let (Some(start), Some(end)) =
+                                            (project(start_marker), project(end_marker))
+                                        else {
+                                            return Err(MarkerGeometryFailure::Absent);
+                                        };
+                                        if start == end {
+                                            if is_recovered_legacy_profile_point(start_marker)
+                                                || is_recovered_legacy_profile_point(end_marker)
+                                            {
+                                                // A zero-length line is not valid IR geometry. Preserve
+                                                // the marker whose endpoint collapsed because a newly
+                                                // recognized profile point supplied its coordinates.
+                                                SketchGeometry::native(
+                                                    cadmpeg_core::nonblank_const!(
+                                                        DEGENERATE_LINE_PLACEHOLDER
+                                                    ),
+                                                )
+                                            } else {
+                                                return Err(MarkerGeometryFailure::Absent);
+                                            }
                                         } else {
+                                            SketchGeometry::try_from(
+                                                SketchGeometryDefinition::Line { start, end },
+                                            )
+                                            .ok()
+                                            .ok_or(MarkerGeometryFailure::Absent)?
+                                        }
+                                    } else if let Some([start, end]) = {
+                                        let mut endpoints =
+                                            extended_declared_inline_line_endpoints(
+                                                &lane.native_payload,
+                                                marker,
+                                                &object_markers,
+                                            )
+                                            .map(|endpoints| {
+                                                endpoints.map(cadmpeg_ir::units::FiniteVector::get)
+                                            })
+                                            .or_else(|| {
+                                                extended_linked_inline_line_endpoints(
+                                                    &lane.native_payload,
+                                                    marker,
+                                                    &object_markers,
+                                                )
+                                                .map(|endpoints| {
+                                                    endpoints
+                                                        .map(cadmpeg_ir::units::FiniteVector::get)
+                                                })
+                                            })
+                                            .or_else(
+                                                || {
+                                                    extended_identity_inline_line_endpoints(
+                                                        &lane.native_payload,
+                                                        marker,
+                                                        &object_markers,
+                                                    )
+                                                    .map(|endpoints| {
+                                                        endpoints.map(
+                                                            cadmpeg_ir::units::FiniteVector::get,
+                                                        )
+                                                    })
+                                                },
+                                            );
+                                        if endpoints.is_none() {
+                                            let inferred = match inferred_points.get() {
+                                                Some(inferred) => inferred,
+                                                None => {
+                                                    let inferred =
+                                                        inferred_point_coordinates_by_index(
+                                                            ctx,
+                                                            lane,
+                                                            native_feature.id.as_str(),
+                                                        )?;
+                                                    inferred_points.get_or_init(|| inferred)
+                                                }
+                                            };
+                                            endpoints = implicit_coordinate_roster_curve_endpoints(
+                                                &lane.native_payload,
+                                                marker,
+                                                &object_markers,
+                                                inferred,
+                                            );
+                                        }
+                                        if endpoints.is_none() {
+                                            endpoints = implicit_profile_chain_closure_endpoints(
+                                                &lane.native_payload,
+                                                marker,
+                                                &object_markers,
+                                            );
+                                        }
+                                        endpoints.or_else(|| {
+                                            compact_legacy_142_profile_curve_endpoints(
+                                                &lane.native_payload,
+                                                index_from_u64(marker.offset())?,
+                                            )
+                                            .map(
+                                                |endpoints| {
+                                                    endpoints
+                                                        .map(cadmpeg_ir::units::FiniteVector::get)
+                                                },
+                                            )
+                                        })
+                                    } {
+                                        let (Some(start), Some(end)) =
+                                            (project_coordinates(start), project_coordinates(end))
+                                        else {
+                                            return Err(MarkerGeometryFailure::Absent);
+                                        };
+                                        if start == end {
                                             return Err(MarkerGeometryFailure::Absent);
                                         }
-                                    } else {
                                         SketchGeometry::try_from(SketchGeometryDefinition::Line {
                                             start,
                                             end,
                                         })
                                         .ok()
                                         .ok_or(MarkerGeometryFailure::Absent)?
+                                    } else {
+                                        SketchGeometry::native(native_kind)
                                     }
-                                } else if let Some([start, end]) = {
-                                    let mut endpoints = extended_declared_inline_line_endpoints(
+                                }
+                            }
+                            SketchInputKind::Arc => {
+                                let endpoints = marker_curve_endpoint_markers(
+                                    &lane.native_payload,
+                                    marker,
+                                    &markers_by_id,
+                                    &object_markers,
+                                );
+                                let mut circle_geometry = equal_index_coordinate_roster_full_circle(
+                                    &lane.native_payload,
+                                    marker,
+                                    &object_markers,
+                                );
+                                if circle_geometry.is_none() {
+                                    circle_geometry = compact_profile_full_circle(
                                         &lane.native_payload,
                                         marker,
                                         &object_markers,
-                                    )
-                                    .map(|endpoints| {
-                                        endpoints.map(cadmpeg_ir::units::FiniteVector::get)
-                                    })
-                                    .or_else(|| {
-                                        extended_linked_inline_line_endpoints(
-                                            &lane.native_payload,
-                                            marker,
-                                            &object_markers,
-                                        )
-                                        .map(|endpoints| {
-                                            endpoints.map(cadmpeg_ir::units::FiniteVector::get)
-                                        })
-                                    })
-                                    .or_else(|| {
-                                        extended_identity_inline_line_endpoints(
-                                            &lane.native_payload,
-                                            marker,
-                                            &object_markers,
-                                        )
-                                        .map(|endpoints| {
-                                            endpoints.map(cadmpeg_ir::units::FiniteVector::get)
-                                        })
-                                    });
-                                    if endpoints.is_none() {
-                                        let inferred = match inferred_points.get() {
-                                            Some(inferred) => inferred,
-                                            None => {
-                                                let inferred = inferred_point_coordinates_by_index(
-                                                    ctx,
-                                                    lane,
-                                                    native_feature.id.as_str(),
-                                                )?;
-                                                inferred_points.get_or_init(|| inferred)
-                                            }
-                                        };
-                                        endpoints = implicit_coordinate_roster_curve_endpoints(
-                                            &lane.native_payload,
-                                            marker,
-                                            &object_markers,
-                                            inferred,
-                                        );
-                                    }
-                                    if endpoints.is_none() {
-                                        endpoints = implicit_profile_chain_closure_endpoints(
-                                            &lane.native_payload,
-                                            marker,
-                                            &object_markers,
-                                        );
-                                    }
-                                    endpoints.or_else(|| {
-                                        compact_legacy_142_profile_curve_endpoints(
-                                            &lane.native_payload,
-                                            index_from_u64(marker.offset())?,
-                                        )
-                                        .map(|endpoints| {
-                                            endpoints.map(cadmpeg_ir::units::FiniteVector::get)
-                                        })
-                                    })
-                                } {
-                                    let (Some(start), Some(end)) =
-                                        (project_coordinates(start), project_coordinates(end))
-                                    else {
-                                        return Err(MarkerGeometryFailure::Absent);
-                                    };
-                                    if start == end {
-                                        return Err(MarkerGeometryFailure::Absent);
-                                    }
-                                    SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                                        start,
-                                        end,
+                                    );
+                                }
+                                if circle_geometry.is_none() {
+                                    circle_geometry = coordinate_roster_full_circle(
+                                        &lane.native_payload,
+                                        marker,
+                                        &object_markers,
+                                    );
+                                }
+                                if circle_geometry.is_none() {
+                                    circle_geometry = wide_coordinate_roster_full_circle(
+                                        &lane.native_payload,
+                                        marker,
+                                        &object_markers,
+                                    );
+                                }
+                                if let Some((center, radius)) = circle_geometry {
+                                    let point = transform
+                                        .apply(quantize(
+                                            Point2::new(
+                                                center[0] * NATIVE_TO_IR,
+                                                center[1] * NATIVE_TO_IR,
+                                            ),
+                                            QUANTUM,
+                                        ))
+                                        .ok_or(MarkerGeometryFailure::Absent)?;
+                                    SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                                        center: Point2::new(
+                                            f64_from_i64(point.0)
+                                                .ok_or(MarkerGeometryFailure::Absent)?
+                                                * QUANTUM,
+                                            f64_from_i64(point.1)
+                                                .ok_or(MarkerGeometryFailure::Absent)?
+                                                * QUANTUM,
+                                        ),
+                                        radius: Length::new(radius * NATIVE_TO_IR)
+                                            .ok_or(MarkerGeometryFailure::Absent)?,
                                     })
                                     .ok()
                                     .ok_or(MarkerGeometryFailure::Absent)?
-                                } else {
-                                    SketchGeometry::native(native_kind)
-                                }
-                            }
-                        }
-                        SketchInputKind::Arc => {
-                            let endpoints = marker_curve_endpoint_markers(
-                                &lane.native_payload,
-                                marker,
-                                &markers_by_id,
-                                &object_markers,
-                            );
-                            let mut circle_geometry = equal_index_coordinate_roster_full_circle(
-                                &lane.native_payload,
-                                marker,
-                                &object_markers,
-                            );
-                            if circle_geometry.is_none() {
-                                circle_geometry = compact_profile_full_circle(
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                );
-                            }
-                            if circle_geometry.is_none() {
-                                circle_geometry = coordinate_roster_full_circle(
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                );
-                            }
-                            if circle_geometry.is_none() {
-                                circle_geometry = wide_coordinate_roster_full_circle(
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                );
-                            }
-                            if let Some((center, radius)) = circle_geometry {
-                                let point = transform
-                                    .apply(quantize(
-                                        Point2::new(
-                                            center[0] * NATIVE_TO_IR,
-                                            center[1] * NATIVE_TO_IR,
-                                        ),
-                                        QUANTUM,
-                                    ))
-                                    .ok_or(MarkerGeometryFailure::Absent)?;
-                                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-                                    center: Point2::new(
-                                        f64_from_i64(point.0)
-                                            .ok_or(MarkerGeometryFailure::Absent)?
-                                            * QUANTUM,
-                                        f64_from_i64(point.1)
-                                            .ok_or(MarkerGeometryFailure::Absent)?
-                                            * QUANTUM,
-                                    ),
-                                    radius: Length::new(radius * NATIVE_TO_IR)
-                                        .ok_or(MarkerGeometryFailure::Absent)?,
-                                })
-                                .ok()
-                                .ok_or(MarkerGeometryFailure::Absent)?
-                            } else if let (Some(point), Some(radius)) =
-                                (marker.coordinates_m.and_then(|_| project(marker)), {
-                                    let radius = coordinate_circle_radius(
-                                        &lane.native_payload,
-                                        marker,
-                                        &object_markers,
-                                    );
-                                    if radius.is_some() {
-                                        radius
-                                    } else {
-                                        legacy_coordinate_circle_radius(
+                                } else if let (Some(point), Some(radius)) =
+                                    (marker.coordinates_m.and_then(|_| project(marker)), {
+                                        let radius = coordinate_circle_radius(
                                             &lane.native_payload,
                                             marker,
                                             &object_markers,
-                                        )
-                                    }
-                                })
-                            {
-                                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-                                    center: point,
-                                    radius: Length::new(radius * NATIVE_TO_IR)
-                                        .ok_or(MarkerGeometryFailure::Absent)?,
-                                })
-                                .ok()
-                                .ok_or(MarkerGeometryFailure::Absent)?
-                            } else if let (Some(center), Some((major_axis, major, minor))) = (
-                                marker.coordinates_m.and_then(|_| project(marker)),
-                                coordinate_ellipse_axes(
-                                    &lane.native_payload,
-                                    marker,
-                                    &object_markers,
-                                ),
-                            ) {
-                                let axis = transform
-                                    .apply_axes(quantize(
-                                        Point2::new(major_axis[0], major_axis[1]),
-                                        QUANTUM,
-                                    ))
-                                    .ok_or(MarkerGeometryFailure::Absent)?;
-                                SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
-                                    center,
-                                    major_angle: Angle::new(
-                                        (f64_from_i64(axis.1)
-                                            .ok_or(MarkerGeometryFailure::Absent)?)
-                                        .atan2(
-                                            f64_from_i64(axis.0)
-                                                .ok_or(MarkerGeometryFailure::Absent)?,
-                                        ),
-                                    )
-                                    .ok_or(MarkerGeometryFailure::Absent)?,
-                                    radii: cadmpeg_ir::sketches::EllipseRadii {
-                                        major_radius: Length::new(major * NATIVE_TO_IR)
+                                        );
+                                        if radius.is_some() {
+                                            radius
+                                        } else {
+                                            legacy_coordinate_circle_radius(
+                                                &lane.native_payload,
+                                                marker,
+                                                &object_markers,
+                                            )
+                                        }
+                                    })
+                                {
+                                    SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                                        center: point,
+                                        radius: Length::new(radius * NATIVE_TO_IR)
                                             .ok_or(MarkerGeometryFailure::Absent)?,
-                                        minor_radius: Length::new(minor * NATIVE_TO_IR)
-                                            .ok_or(MarkerGeometryFailure::Absent)?,
-                                    },
-                                    bounds: None,
-                                })
-                                .ok()
-                                .ok_or(MarkerGeometryFailure::Absent)?
-                            } else if let Some([center, start, end]) =
-                                index_from_u64(marker.offset()).and_then(|offset| {
-                                    inline_arc_coordinates(&lane.native_payload, offset)
-                                })
-                            {
-                                let (Some(center), Some(start), Some(end)) = (
-                                    project_coordinates(center.get()),
-                                    project_coordinates(start.get()),
-                                    project_coordinates(end.get()),
-                                ) else {
-                                    return Err(MarkerGeometryFailure::Absent);
-                                };
-                                minor_arc_geometry(start, end, center, QUANTUM).unwrap_or_else(
-                                    || {
-                                        SketchGeometry::native(cadmpeg_core::nonblank_const!(
-                                            ARC_POINTS_PLACEHOLDER
+                                    })
+                                    .ok()
+                                    .ok_or(MarkerGeometryFailure::Absent)?
+                                } else if let (Some(center), Some((major_axis, major, minor))) = (
+                                    marker.coordinates_m.and_then(|_| project(marker)),
+                                    coordinate_ellipse_axes(
+                                        &lane.native_payload,
+                                        marker,
+                                        &object_markers,
+                                    ),
+                                ) {
+                                    let axis = transform
+                                        .apply_axes(quantize(
+                                            Point2::new(major_axis[0], major_axis[1]),
+                                            QUANTUM,
                                         ))
-                                    },
-                                )
-                            } else if let ([start, end], Some(point)) = (
-                                endpoints.as_slice(),
-                                marker.coordinates_m.and_then(|_| project(marker)),
-                            ) {
-                                let (Some(start), Some(end)) = (project(start), project(end))
-                                else {
-                                    return Err(MarkerGeometryFailure::Absent);
-                                };
-                                minor_arc_geometry(start, end, point, QUANTUM)
-                                    .unwrap_or_else(|| SketchGeometry::native(native_kind))
-                            } else {
-                                (|| -> Result<SketchGeometry, MarkerGeometryFailure> {
-                                    let [start, end] = endpoints.as_slice() else {
+                                        .ok_or(MarkerGeometryFailure::Absent)?;
+                                    SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
+                                        center,
+                                        major_angle: Angle::new(
+                                            (f64_from_i64(axis.1)
+                                                .ok_or(MarkerGeometryFailure::Absent)?)
+                                            .atan2(
+                                                f64_from_i64(axis.0)
+                                                    .ok_or(MarkerGeometryFailure::Absent)?,
+                                            ),
+                                        )
+                                        .ok_or(MarkerGeometryFailure::Absent)?,
+                                        radii: cadmpeg_ir::sketches::EllipseRadii {
+                                            major_radius: Length::new(major * NATIVE_TO_IR)
+                                                .ok_or(MarkerGeometryFailure::Absent)?,
+                                            minor_radius: Length::new(minor * NATIVE_TO_IR)
+                                                .ok_or(MarkerGeometryFailure::Absent)?,
+                                        },
+                                        bounds: None,
+                                    })
+                                    .ok()
+                                    .ok_or(MarkerGeometryFailure::Absent)?
+                                } else if let Some([center, start, end]) =
+                                    index_from_u64(marker.offset()).and_then(|offset| {
+                                        inline_arc_coordinates(&lane.native_payload, offset)
+                                    })
+                                {
+                                    let (Some(center), Some(start), Some(end)) = (
+                                        project_coordinates(center.get()),
+                                        project_coordinates(start.get()),
+                                        project_coordinates(end.get()),
+                                    ) else {
                                         return Err(MarkerGeometryFailure::Absent);
                                     };
-                                    let (start, end) = (
-                                        project(start).ok_or(MarkerGeometryFailure::Absent)?,
-                                        project(end).ok_or(MarkerGeometryFailure::Absent)?,
-                                    );
-                                    let offset = index_from_u64(marker.offset())
-                                        .ok_or(MarkerGeometryFailure::Absent)?;
-                                    if extended_wide_construction_line_roster_indices(
-                                        &lane.native_payload,
-                                        offset,
+                                    minor_arc_geometry(start, end, center, QUANTUM).unwrap_or_else(
+                                        || {
+                                            SketchGeometry::native(cadmpeg_core::nonblank_const!(
+                                                ARC_POINTS_PLACEHOLDER
+                                            ))
+                                        },
                                     )
-                                    .is_some()
-                                        || packed_compact_legacy_curve_endpoint_indices(
-                                            &lane.native_payload,
-                                            offset,
-                                        )
-                                        .is_some_and(
-                                            |_| {
-                                                marker_profile_curve_role(
-                                                    &lane.native_payload,
-                                                    offset,
-                                                ) == Some(2)
-                                            },
-                                        )
-                                        || legacy_direct_compact_selected_axis_endpoint_indices(
+                                } else if let ([start, end], Some(point)) = (
+                                    endpoints.as_slice(),
+                                    marker.coordinates_m.and_then(|_| project(marker)),
+                                ) {
+                                    let (Some(start), Some(end)) = (project(start), project(end))
+                                    else {
+                                        return Err(MarkerGeometryFailure::Absent);
+                                    };
+                                    minor_arc_geometry(start, end, point, QUANTUM)
+                                        .unwrap_or_else(|| SketchGeometry::native(native_kind))
+                                } else {
+                                    (|| -> Result<SketchGeometry, MarkerGeometryFailure> {
+                                        let [start, end] = endpoints.as_slice() else {
+                                            return Err(MarkerGeometryFailure::Absent);
+                                        };
+                                        let (start, end) = (
+                                            project(start).ok_or(MarkerGeometryFailure::Absent)?,
+                                            project(end).ok_or(MarkerGeometryFailure::Absent)?,
+                                        );
+                                        let offset = index_from_u64(marker.offset())
+                                            .ok_or(MarkerGeometryFailure::Absent)?;
+                                        if extended_wide_construction_line_roster_indices(
                                             &lane.native_payload,
                                             offset,
                                         )
                                         .is_some()
-                                    {
-                                        return SketchGeometry::try_from(
-                                            SketchGeometryDefinition::Line { start, end },
-                                        )
-                                        .map_err(|_| MarkerGeometryFailure::Absent);
-                                    }
-                                    let legacy_center = match legacy_marker104_arc_center(
-                                        &lane.native_payload,
-                                        marker,
-                                        &object_markers,
-                                        [endpoints[0], endpoints[1]],
-                                    ) {
-                                        Some(center) => Some(center),
-                                        None => legacy_compact_diameter_arc_center(
-                                            &lane.native_payload,
-                                            marker,
-                                            &object_markers,
-                                            [endpoints[0], endpoints[1]],
-                                        ),
-                                    };
-                                    if let Some([u, v]) = legacy_center {
-                                        let center = transform
-                                            .apply(quantize(
-                                                Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
-                                                QUANTUM,
-                                            ))
-                                            .ok_or(MarkerGeometryFailure::Absent)?;
-                                        let center = Point2::new(
-                                            f64_from_i64(center.0)
-                                                .ok_or(MarkerGeometryFailure::Absent)?
-                                                * QUANTUM,
-                                            f64_from_i64(center.1)
-                                                .ok_or(MarkerGeometryFailure::Absent)?
-                                                * QUANTUM,
-                                        );
-                                        return minor_arc_geometry(start, end, center, QUANTUM)
-                                            .ok_or(MarkerGeometryFailure::Absent);
-                                    }
-                                    if indexed_arc_uses_coordinate_center(
-                                        &lane.native_payload,
-                                        offset,
-                                    ) {
-                                        let [start_u, start_v] = endpoints[0]
-                                            .coordinates_m
-                                            .ok_or(MarkerGeometryFailure::Absent)?
-                                            .get();
-                                        let [end_u, end_v] = endpoints[1]
-                                            .coordinates_m
-                                            .ok_or(MarkerGeometryFailure::Absent)?
-                                            .get();
-                                        let roster_center = coordinate_roster_arc_center(
-                                            &lane.native_payload,
-                                            marker,
-                                            &object_markers,
-                                            [endpoints[0], endpoints[1]],
-                                        )
-                                        .map(|[u, v]| {
-                                            Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR)
-                                        });
-                                        let roster_center_witness = roster_center.is_some();
-                                        let candidates = collect_marker_arc_centers(
-                                            &object_markers,
-                                            endpoints[0].id(),
-                                            endpoints[1].id(),
-                                            NATIVE_TO_IR,
-                                        );
-                                        let (center_start, center_end) =
-                                            if current_indexed_arc_reverses_center_sweep(
+                                            || packed_compact_legacy_curve_endpoint_indices(
                                                 &lane.native_payload,
                                                 offset,
-                                            ) {
-                                                (
-                                                    Point2::new(
-                                                        end_u * NATIVE_TO_IR,
-                                                        end_v * NATIVE_TO_IR,
-                                                    ),
-                                                    Point2::new(
-                                                        start_u * NATIVE_TO_IR,
-                                                        start_v * NATIVE_TO_IR,
-                                                    ),
-                                                )
-                                            } else {
-                                                (
-                                                    Point2::new(
-                                                        start_u * NATIVE_TO_IR,
-                                                        start_v * NATIVE_TO_IR,
-                                                    ),
-                                                    Point2::new(
-                                                        end_u * NATIVE_TO_IR,
-                                                        end_v * NATIVE_TO_IR,
-                                                    ),
-                                                )
-                                            };
-                                        let center = match roster_center {
+                                            )
+                                            .is_some_and(|_| {
+                                                marker_profile_curve_role(
+                                                    &lane.native_payload,
+                                                    offset,
+                                                ) == Some(2)
+                                            })
+                                            || legacy_direct_compact_selected_axis_endpoint_indices(
+                                                &lane.native_payload,
+                                                offset,
+                                            )
+                                            .is_some()
+                                        {
+                                            return SketchGeometry::try_from(
+                                                SketchGeometryDefinition::Line { start, end },
+                                            )
+                                            .map_err(|_| MarkerGeometryFailure::Absent);
+                                        }
+                                        let legacy_center = match legacy_marker104_arc_center(
+                                            &lane.native_payload,
+                                            marker,
+                                            &object_markers,
+                                            [endpoints[0], endpoints[1]],
+                                        ) {
                                             Some(center) => Some(center),
-                                            None => unique_arc_center_marker(
-                                                center_start,
-                                                center_end,
-                                                &candidates,
-                                                QUANTUM,
+                                            None => legacy_compact_diameter_arc_center(
+                                                &lane.native_payload,
+                                                marker,
+                                                &object_markers,
+                                                [endpoints[0], endpoints[1]],
                                             ),
                                         };
-                                        if let Some(center) = center {
+                                        if let Some([u, v]) = legacy_center {
+                                            let center = transform
+                                                .apply(quantize(
+                                                    Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
+                                                    QUANTUM,
+                                                ))
+                                                .ok_or(MarkerGeometryFailure::Absent)?;
+                                            let center = Point2::new(
+                                                f64_from_i64(center.0)
+                                                    .ok_or(MarkerGeometryFailure::Absent)?
+                                                    * QUANTUM,
+                                                f64_from_i64(center.1)
+                                                    .ok_or(MarkerGeometryFailure::Absent)?
+                                                    * QUANTUM,
+                                            );
+                                            return minor_arc_geometry(start, end, center, QUANTUM)
+                                                .ok_or(MarkerGeometryFailure::Absent);
+                                        }
+                                        if indexed_arc_uses_coordinate_center(
+                                            &lane.native_payload,
+                                            offset,
+                                        ) {
+                                            let [start_u, start_v] = endpoints[0]
+                                                .coordinates_m
+                                                .ok_or(MarkerGeometryFailure::Absent)?
+                                                .get();
+                                            let [end_u, end_v] = endpoints[1]
+                                                .coordinates_m
+                                                .ok_or(MarkerGeometryFailure::Absent)?
+                                                .get();
+                                            let roster_center = coordinate_roster_arc_center(
+                                                &lane.native_payload,
+                                                marker,
+                                                &object_markers,
+                                                [endpoints[0], endpoints[1]],
+                                            )
+                                            .map(|[u, v]| {
+                                                Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR)
+                                            });
+                                            let roster_center_witness = roster_center.is_some();
+                                            let candidates = collect_marker_arc_centers(
+                                                &object_markers,
+                                                endpoints[0].id(),
+                                                endpoints[1].id(),
+                                                NATIVE_TO_IR,
+                                            );
+                                            let (center_start, center_end) =
+                                                if current_indexed_arc_reverses_center_sweep(
+                                                    &lane.native_payload,
+                                                    offset,
+                                                ) {
+                                                    (
+                                                        Point2::new(
+                                                            end_u * NATIVE_TO_IR,
+                                                            end_v * NATIVE_TO_IR,
+                                                        ),
+                                                        Point2::new(
+                                                            start_u * NATIVE_TO_IR,
+                                                            start_v * NATIVE_TO_IR,
+                                                        ),
+                                                    )
+                                                } else {
+                                                    (
+                                                        Point2::new(
+                                                            start_u * NATIVE_TO_IR,
+                                                            start_v * NATIVE_TO_IR,
+                                                        ),
+                                                        Point2::new(
+                                                            end_u * NATIVE_TO_IR,
+                                                            end_v * NATIVE_TO_IR,
+                                                        ),
+                                                    )
+                                                };
+                                            let center = match roster_center {
+                                                Some(center) => Some(center),
+                                                None => unique_arc_center_marker(
+                                                    center_start,
+                                                    center_end,
+                                                    &candidates,
+                                                    QUANTUM,
+                                                ),
+                                            };
+                                            if let Some(center) = center {
+                                                let center = transform
+                                                    .apply(quantize(center, QUANTUM))
+                                                    .ok_or(MarkerGeometryFailure::Absent)?;
+                                                let center = Point2::new(
+                                                    f64_from_i64(center.0)
+                                                        .ok_or(MarkerGeometryFailure::Absent)?
+                                                        * QUANTUM,
+                                                    f64_from_i64(center.1)
+                                                        .ok_or(MarkerGeometryFailure::Absent)?
+                                                        * QUANTUM,
+                                                );
+                                                // The three transformed points are quantized independently.
+                                                // Allow two quanta when the record supplies the center directly.
+                                                let tolerance = if roster_center_witness {
+                                                    QUANTUM * 2.0
+                                                } else {
+                                                    QUANTUM
+                                                };
+                                                let geometry = minor_arc_geometry(
+                                                    start, end, center, tolerance,
+                                                );
+                                                return geometry
+                                                    .ok_or(MarkerGeometryFailure::Absent);
+                                            }
+                                        }
+                                        let [start_marker, end_marker] = endpoints.as_slice()
+                                        else {
+                                            return Err(MarkerGeometryFailure::Absent);
+                                        };
+                                        let [start_u, start_v] = start_marker
+                                            .coordinates_m
+                                            .ok_or(MarkerGeometryFailure::Absent)?
+                                            .get();
+                                        let [end_u, end_v] = end_marker
+                                            .coordinates_m
+                                            .ok_or(MarkerGeometryFailure::Absent)?
+                                            .get();
+                                        let candidates = collect_marker_arc_centers(
+                                            &object_markers,
+                                            start_marker.id(),
+                                            end_marker.id(),
+                                            NATIVE_TO_IR,
+                                        );
+                                        if let Some(center) = unique_arc_center_marker(
+                                            Point2::new(
+                                                start_u * NATIVE_TO_IR,
+                                                start_v * NATIVE_TO_IR,
+                                            ),
+                                            Point2::new(end_u * NATIVE_TO_IR, end_v * NATIVE_TO_IR),
+                                            &candidates,
+                                            QUANTUM,
+                                        ) {
                                             let center = transform
                                                 .apply(quantize(center, QUANTUM))
                                                 .ok_or(MarkerGeometryFailure::Absent)?;
@@ -2026,109 +2122,64 @@ pub(crate) fn project_marker_backed_sketches(
                                                     .ok_or(MarkerGeometryFailure::Absent)?
                                                     * QUANTUM,
                                             );
-                                            // The three transformed points are quantized independently.
-                                            // Allow two quanta when the record supplies the center directly.
-                                            let tolerance = if roster_center_witness {
-                                                QUANTUM * 2.0
-                                            } else {
-                                                QUANTUM
-                                            };
-                                            let geometry =
-                                                minor_arc_geometry(start, end, center, tolerance);
-                                            return geometry.ok_or(MarkerGeometryFailure::Absent);
+                                            return minor_arc_geometry(start, end, center, QUANTUM)
+                                                .ok_or(MarkerGeometryFailure::Absent);
                                         }
-                                    }
-                                    let [start_marker, end_marker] = endpoints.as_slice() else {
-                                        return Err(MarkerGeometryFailure::Absent);
-                                    };
-                                    let [start_u, start_v] = start_marker
-                                        .coordinates_m
-                                        .ok_or(MarkerGeometryFailure::Absent)?
-                                        .get();
-                                    let [end_u, end_v] = end_marker
-                                        .coordinates_m
-                                        .ok_or(MarkerGeometryFailure::Absent)?
-                                        .get();
-                                    let candidates = collect_marker_arc_centers(
-                                        &object_markers,
-                                        start_marker.id(),
-                                        end_marker.id(),
-                                        NATIVE_TO_IR,
-                                    );
-                                    if let Some(center) = unique_arc_center_marker(
-                                        Point2::new(start_u * NATIVE_TO_IR, start_v * NATIVE_TO_IR),
-                                        Point2::new(end_u * NATIVE_TO_IR, end_v * NATIVE_TO_IR),
-                                        &candidates,
-                                        QUANTUM,
-                                    ) {
-                                        let center = transform
-                                            .apply(quantize(center, QUANTUM))
-                                            .ok_or(MarkerGeometryFailure::Absent)?;
-                                        let center = Point2::new(
-                                            f64_from_i64(center.0)
-                                                .ok_or(MarkerGeometryFailure::Absent)?
-                                                * QUANTUM,
-                                            f64_from_i64(center.1)
-                                                .ok_or(MarkerGeometryFailure::Absent)?
-                                                * QUANTUM,
-                                        );
-                                        return minor_arc_geometry(start, end, center, QUANTUM)
+                                        if let Some([tu, tv]) = compact_bounded_curve_tangent(
+                                            &lane.native_payload,
+                                            offset,
+                                        ) {
+                                            let (tu, tv) = transform
+                                                .apply_axes(quantize(Point2::new(tu, tv), QUANTUM))
+                                                .ok_or(MarkerGeometryFailure::Absent)?;
+                                            return tangent_bounded_curve(
+                                                start,
+                                                end,
+                                                [
+                                                    f64_from_i64(tu)
+                                                        .ok_or(MarkerGeometryFailure::Absent)?
+                                                        * QUANTUM,
+                                                    f64_from_i64(tv)
+                                                        .ok_or(MarkerGeometryFailure::Absent)?
+                                                        * QUANTUM,
+                                                ],
+                                                QUANTUM,
+                                            )
                                             .ok_or(MarkerGeometryFailure::Absent);
-                                    }
-                                    if let Some([tu, tv]) =
-                                        compact_bounded_curve_tangent(&lane.native_payload, offset)
-                                    {
-                                        let (tu, tv) = transform
-                                            .apply_axes(quantize(Point2::new(tu, tv), QUANTUM))
-                                            .ok_or(MarkerGeometryFailure::Absent)?;
-                                        return tangent_bounded_curve(
-                                            start,
-                                            end,
-                                            [
-                                                f64_from_i64(tu)
-                                                    .ok_or(MarkerGeometryFailure::Absent)?
-                                                    * QUANTUM,
-                                                f64_from_i64(tv)
-                                                    .ok_or(MarkerGeometryFailure::Absent)?
-                                                    * QUANTUM,
-                                            ],
-                                            QUANTUM,
+                                        }
+                                        (current_undetailed_bounded_curve_is_line(
+                                            &lane.native_payload,
+                                            offset,
+                                        ) || legacy_undetailed_profile_line(
+                                            &lane.native_payload,
+                                            offset,
+                                        ))
+                                        .then_some(
+                                            SketchGeometry::try_from(
+                                                SketchGeometryDefinition::Line { start, end },
+                                            )
+                                            .ok()
+                                            .ok_or(MarkerGeometryFailure::Absent)?,
                                         )
-                                        .ok_or(MarkerGeometryFailure::Absent);
-                                    }
-                                    (current_undetailed_bounded_curve_is_line(
-                                        &lane.native_payload,
-                                        offset,
-                                    ) || legacy_undetailed_profile_line(
-                                        &lane.native_payload,
-                                        offset,
-                                    ))
-                                    .then_some(
-                                        SketchGeometry::try_from(SketchGeometryDefinition::Line {
-                                            start,
-                                            end,
-                                        })
-                                        .ok()
-                                        .ok_or(MarkerGeometryFailure::Absent)?,
-                                    )
-                                    .ok_or(MarkerGeometryFailure::Absent)
-                                })()
-                                .or_else(|failure| {
-                                    match failure {
-                                        MarkerGeometryFailure::Absent => {
-                                            Ok(SketchGeometry::native(native_kind))
+                                        .ok_or(MarkerGeometryFailure::Absent)
+                                    })()
+                                    .or_else(|failure| {
+                                        match failure {
+                                            MarkerGeometryFailure::Absent => {
+                                                Ok(SketchGeometry::native(native_kind))
+                                            }
+                                            MarkerGeometryFailure::Codec(error) => {
+                                                Err(MarkerGeometryFailure::Codec(error))
+                                            }
                                         }
-                                        MarkerGeometryFailure::Codec(error) => {
-                                            Err(MarkerGeometryFailure::Codec(error))
-                                        }
-                                    }
-                                })?
+                                    })?
+                                }
                             }
-                        }
-                        SketchInputKind::Relation(_)
-                        | SketchInputKind::Native(_)
-                        | SketchInputKind::NativeHandle(_) => {
-                            return Err(MarkerGeometryFailure::Absent)
+                            SketchInputKind::Relation(_)
+                            | SketchInputKind::Native(_)
+                            | SketchInputKind::NativeHandle(_) => {
+                                return Err(MarkerGeometryFailure::Absent);
+                            }
                         }
                     };
                     if matches!(

@@ -295,6 +295,17 @@ pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
             let center = usize::from(View::u16_le_at(payload, center_at)?);
             Some(CurveForm::Arc { start, end, center })
         }
+        u16::MAX => {
+            let center_at = fields.checked_add(20)?;
+            let tail = center_at.checked_add(2)?;
+            if View::u16_le_at(payload, fields.checked_add(18)?)? != u16::MAX
+                || payload.get(tail..tail.checked_add(4)?)? != I32_MINUS_TWO
+            {
+                return None;
+            }
+            let center = usize::from(View::u16_le_at(payload, center_at)?);
+            Some(CurveForm::Arc { start, end, center })
+        }
         _ => None,
     }
 }

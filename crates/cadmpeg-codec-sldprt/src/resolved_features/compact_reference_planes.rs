@@ -21,6 +21,7 @@ pub(super) struct CompactReferencePlaneIndex {
     component_frames: Vec<(usize, PlaneFrame)>,
     deferred_principal_components: Vec<usize>,
     top_components: Vec<usize>,
+    right_components: Vec<usize>,
 }
 
 impl CompactReferencePlaneIndex {
@@ -31,6 +32,7 @@ impl CompactReferencePlaneIndex {
         let mut component_frames = Vec::new();
         let mut deferred_principal_components = Vec::new();
         let mut top_components = Vec::new();
+        let mut right_components = Vec::new();
         for (offset, byte) in payload.iter().enumerate() {
             if *byte == COMPACT_REFERENCE_PLANE_CLASS[0]
                 && payload.get(offset..offset + COMPACT_REFERENCE_PLANE_CLASS.len())
@@ -58,8 +60,14 @@ impl CompactReferencePlaneIndex {
                     {
                         if let Some(plane) = compact_principal_reference_plane_record(bytes) {
                             deferred_principal_components.push(start);
-                            if plane == cadmpeg_ir::features::PrincipalPlane::Top {
-                                top_components.push(start);
+                            match plane {
+                                cadmpeg_ir::features::PrincipalPlane::Top => {
+                                    top_components.push(start);
+                                }
+                                cadmpeg_ir::features::PrincipalPlane::Right => {
+                                    right_components.push(start);
+                                }
+                                cadmpeg_ir::features::PrincipalPlane::Front => {}
                             }
                         }
                         if let Some(source) = compact_component_reference_plane_record(bytes) {
@@ -80,6 +88,7 @@ impl CompactReferencePlaneIndex {
             component_frames,
             deferred_principal_components,
             top_components,
+            right_components,
         }
     }
 
@@ -111,6 +120,36 @@ impl CompactReferencePlaneIndex {
         );
         (!top.is_empty() && top.len() == principal.len() && custom.is_empty())
             .then(principal_top_component_frame)
+    }
+
+    pub(super) fn principal_right_profile_frame(
+        &self,
+        start: usize,
+        end: usize,
+    ) -> Option<PlaneFrame> {
+        let right = records_in_range(
+            &self.right_components,
+            start,
+            end,
+            COMPACT_COMPONENT_PLANE_RECORD_LEN,
+            |offset| *offset,
+        );
+        let principal = records_in_range(
+            &self.deferred_principal_components,
+            start,
+            end,
+            COMPACT_COMPONENT_PLANE_RECORD_LEN,
+            |offset| *offset,
+        );
+        let custom = records_in_range(
+            &self.component_frames,
+            start,
+            end,
+            COMPACT_COMPONENT_PLANE_RECORD_LEN,
+            |(offset, _)| *offset,
+        );
+        (!right.is_empty() && right.len() == principal.len() && custom.is_empty())
+            .then(|| principal_sketch_frame(cadmpeg_ir::features::PrincipalPlane::Right))
     }
 
     pub(super) fn has_component_frame(&self, start: usize, end: usize) -> bool {

@@ -1932,9 +1932,13 @@ pub(crate) fn extrusion(reader: &mut Reader<'_>, class: &str) -> Res<V> {
         ]));
     }
     if REVOLVES.contains(&cls) {
-        if reader.zeros(reader.p, 5)
+        if (reader.zeros(reader.p, 5)
             && reader.eq(reader.p + 5, &[1, 0, 0, 0])
-            && isclass(reader, reader.p + 9, &["suObList"])?
+            && isclass(reader, reader.p + 9, &["suObList"])?)
+            || (reader.zeros(reader.p, 2)
+                && reader.eq(reader.p + 2, &[1, 0, 0, 0])
+                && reader.zeros(reader.p + 6, 3)
+                && isclass(reader, reader.p + 9, &["suObList"])?)
         {
             reader.skip(9);
         } else {

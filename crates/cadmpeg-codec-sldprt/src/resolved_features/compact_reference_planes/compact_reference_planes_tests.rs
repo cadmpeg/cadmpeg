@@ -158,6 +158,7 @@ fn indexed_profile_frames_resolve_each_record_interval() {
         components: (0..records).map(|i| (i * width, 7)).collect(),
         deferred_principal_components: Vec::new(),
         top_components: Vec::new(),
+        right_components: Vec::new(),
         component_frames: (0..records).map(|i| (i * width, frame)).collect(),
     };
     for i in 0..records {
@@ -183,6 +184,7 @@ fn indexed_component_frames_keep_complete_boundaries_and_ambiguity() {
         components: vec![(0, 7), (width, 7), (width * 2, 9)],
         deferred_principal_components: Vec::new(),
         top_components: Vec::new(),
+        right_components: Vec::new(),
         component_frames: vec![(0, first), (width, first), (width * 2, second)],
     };
     assert_eq!(index.profile_component_frame(0, 0, width - 1), None);
