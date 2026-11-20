@@ -800,3 +800,158 @@ fn use_curve_on_a_procedural_carrier_has_no_domain_finding() {
         .iter()
         .any(|finding| finding.message.contains("coedge use-curve")));
 }
+
+/// The `ParameterDomain` messages on the first edge and the first coedge
+/// after both state `range` on `geometry`.
+fn range_domain_findings(geometry: CurveGeometry, range: [f64; 2]) -> Vec<String> {
+    let mut ir = unit_cube().expect("valid unit cube fixture");
+    let curve_id = ir.geometry.edges[0].curve().cloned().unwrap();
+    if let Some(construction) = geometry.procedural_construction() {
+        ir.geometry
+            .procedural_curves
+            .push(crate::geometry::ProceduralCurve::new(
+                construction.clone(),
+                crate::geometry::ProceduralCurveDefinition::Exact { cache: None },
+            ));
+    }
+    ir.geometry
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .unwrap()
+        .geometry = geometry;
+    let interval = crate::topology::ParameterInterval::new(range).unwrap();
+    ir.geometry.edges[0].set_param_range(Some(interval));
+    ir.geometry.coedges[0].use_curve = Some(crate::topology::CoedgeUseCurve {
+        curve: curve_id,
+        parameter_range: interval,
+    });
+    let entities = [
+        ir.geometry.edges[0].id.as_str().to_owned(),
+        ir.geometry.coedges[0].id.as_str().to_owned(),
+    ];
+    validate_neutral(&ir, Vec::new())
+        .expect("validate the neutral model")
+        .findings
+        .into_iter()
+        .filter(|finding| {
+            finding.check == Check::ParameterDomain
+                && finding
+                    .entity
+                    .as_ref()
+                    .is_some_and(|entity| entities.contains(entity))
+        })
+        .map(|finding| finding.message)
+        .collect()
+}
+
+fn unit_line_nurbs(periodic: bool) -> SolvedCurveGeometry {
+    SolvedCurveGeometry::Nurbs(
+        crate::geometry::nurbs::NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 1.0, 1.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            None,
+            periodic,
+        )
+        .unwrap(),
+    )
+}
+
+fn cached(cache: SolvedCurveGeometry) -> CurveGeometry {
+    CurveGeometry::Procedural {
+        construction: crate::ids::ProceduralCurveId::mint("test:model:construction#cached")
+            .unwrap(),
+        cache: Some(cache),
+    }
+}
+
+#[test]
+fn a_range_past_a_procedural_carriers_nurbs_cache_is_out_of_domain() {
+    assert!(range_domain_findings(cached(unit_line_nurbs(false)), [0.0, 1.0]).is_empty());
+    let findings = range_domain_findings(cached(unit_line_nurbs(false)), [0.0, 2.0]);
+    assert_eq!(findings.len(), 2, "{findings:?}");
+    assert!(findings
+        .iter()
+        .any(|message| message.contains("edge parameter range")));
+    assert!(findings
+        .iter()
+        .any(|message| message.contains("coedge use-curve range [0, 2]")));
+}
+
+#[test]
+fn a_range_on_a_periodic_cache_may_wrap_one_period() {
+    assert!(range_domain_findings(cached(unit_line_nurbs(true)), [0.9, 1.1]).is_empty());
+    assert_eq!(
+        range_domain_findings(cached(unit_line_nurbs(true)), [0.0, 1.5]).len(),
+        2
+    );
+}
+
+#[test]
+fn a_range_past_a_placed_curves_basis_domain_is_out_of_domain() {
+    let placed = |basis| {
+        CurveGeometry::Solved(SolvedCurveGeometry::Transformed(
+            crate::geometry::PlacedCurve::try_new(
+                Box::new(basis),
+                crate::transform::Transform::affine([
+                    [1.0, 0.0, 0.0, 5.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                ])
+                .unwrap(),
+            )
+            .unwrap(),
+        ))
+    };
+    assert!(range_domain_findings(placed(unit_line_nurbs(false)), [0.25, 0.75]).is_empty());
+    assert_eq!(
+        range_domain_findings(placed(unit_line_nurbs(false)), [-0.5, 0.75]).len(),
+        2
+    );
+}
+
+#[test]
+fn a_range_past_a_polylines_sample_parameters_is_out_of_domain() {
+    use crate::geometry::sampled::{PolylineCurve, PolylineSamples, PolylineVertex};
+    let points = vec![
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 0.0, 0.0),
+        Point3::new(1.0, 1.0, 0.0),
+    ];
+    let indexed = || {
+        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
+            PolylineCurve::new(
+                PolylineSamples::Unparameterized {
+                    points: points.clone().try_into().unwrap(),
+                },
+                0.0,
+            )
+            .unwrap(),
+        ))
+    };
+    let descending = || {
+        CurveGeometry::Solved(SolvedCurveGeometry::Polyline(
+            PolylineCurve::new(
+                PolylineSamples::Parameterized {
+                    vertices: points
+                        .iter()
+                        .zip([4.0, 2.0, 0.0])
+                        .map(|(point, parameter)| PolylineVertex {
+                            parameter,
+                            point: *point,
+                        })
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
+                },
+                0.0,
+            )
+            .unwrap(),
+        ))
+    };
+    assert!(range_domain_findings(indexed(), [0.0, 2.0]).is_empty());
+    assert_eq!(range_domain_findings(indexed(), [0.0, 3.0]).len(), 2);
+    assert!(range_domain_findings(descending(), [0.0, 4.0]).is_empty());
+    assert_eq!(range_domain_findings(descending(), [-1.0, 4.0]).len(), 2);
+}
