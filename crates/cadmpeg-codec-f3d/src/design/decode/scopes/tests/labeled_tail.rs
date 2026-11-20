@@ -173,3 +173,22 @@ fn labeled_typed_tail_reads_its_preceding_state_after_the_label() {
     broken[kind_end + 12 + 2 * LABEL.len()] = 1;
     assert!(parse(&broken).is_none());
 }
+
+#[test]
+fn labeled_scope_admits_its_shifted_preceding_state_offset_or_none() {
+    let (bytes, _) = plain_labeled_frame(&PlainTail::default());
+    let scope = parse_plain(&bytes).expect("labeled scope");
+    let offset = scope.previous_history_state_id_offset().unwrap();
+    let mut unshifted = scope.clone();
+    assert!(unshifted
+        .try_edit(|draft| draft.previous_history_state_id_offset = Some(offset - 1))
+        .is_err());
+    let mut absent = scope;
+    absent
+        .try_edit(|draft| {
+            draft.previous_history_state_id_offset = None;
+            draft.previous_history_state_id = None;
+        })
+        .unwrap();
+    assert_eq!(absent.previous_history_state_id_offset(), None);
+}
