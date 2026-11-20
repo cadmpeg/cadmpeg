@@ -94,15 +94,13 @@ fn place_body(ir: &mut CadIr, storage: Storage) {
 }
 
 #[test]
-fn membership_covers_embedded_definitions_and_stops_at_file_and_scope_boundaries() {
+fn membership_spans_embedded_and_file_definitions_and_stops_at_scope_boundaries() {
     let mut ir = unproduced();
     place_body(&mut ir, Storage::Embedded);
     assert_no_design_finding(&ir);
+    // A body of a spanned definition need not be in a state of the scope.
     ir.design.scopes[0].unproduced.clear();
-    assert_finding(
-        &ir,
-        "belongs to no current state or unproduced set of its scope",
-    );
+    assert_no_design_finding(&ir);
     let child_body = body(&ir);
     ir.design.scopes[0].unproduced.insert(child_body);
     let mut child_scope = ir.design.scopes[0].clone();
@@ -122,7 +120,7 @@ fn membership_covers_embedded_definitions_and_stops_at_file_and_scope_boundaries
             source: None,
         },
     );
-    assert_finding(&ir, "must be owned by a definition the scope spans");
+    assert_no_design_finding(&ir);
 }
 
 #[test]
@@ -152,10 +150,7 @@ fn membership_covers_instance_bodies() {
         });
     assert_no_design_finding(&ir);
     ir.design.scopes[0].unproduced.clear();
-    assert_finding(
-        &ir,
-        "belongs to no current state or unproduced set of its scope",
-    );
+    assert_no_design_finding(&ir);
     ir.design.scopes[0].current[0].bodies.push(body);
     assert_no_design_finding(&ir);
 }
@@ -175,8 +170,5 @@ fn a_file_scope_spans_its_unplaced_embedded_definitions() {
     });
     assert_no_design_finding(&ir);
     ir.design.scopes[0].unproduced.clear();
-    assert_finding(
-        &ir,
-        "belongs to no current state or unproduced set of its scope",
-    );
+    assert_no_design_finding(&ir);
 }

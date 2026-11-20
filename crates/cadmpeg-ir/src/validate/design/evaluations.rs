@@ -523,7 +523,11 @@ pub(super) fn check_current_geometry(index: &DesignRecords<'_>, findings: &mut V
                 );
             }
         }
-        for body in owned {
+        let own = index
+            .definitions
+            .get(entity)
+            .map_or(&[][..], |definition| &definition.bodies[..]);
+        for body in own.iter().map(crate::ids::BodyId::as_str) {
             if !scoped.contains(body) {
                 super::error(
                     findings,

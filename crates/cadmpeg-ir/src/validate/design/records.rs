@@ -378,7 +378,7 @@ impl<'a> DesignRecords<'a> {
                 else {
                     continue;
                 };
-                if matches!(placed.storage, Storage::Embedded)
+                if !matches!(placed.storage, Storage::External(_))
                     && !self.scopes.contains_key(prototype)
                     && spanned.insert(prototype)
                 {
