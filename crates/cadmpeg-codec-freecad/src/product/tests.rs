@@ -11,6 +11,7 @@ use crate::product::{
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_ir::ids::OccurrenceId;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::collections::HashSet;
 use std::io::Cursor;
@@ -18,23 +19,26 @@ use std::io::Cursor;
 mod graph_diagnostic_tests;
 mod restoration;
 
-#[test]
-fn local_copy_on_change_target_maps_to_its_definition() {
-    let target = native::LinkTarget::optional_from_wire(native::LinkTargetWire {
-        document: None,
-        document_attribute: None,
-        object: Some("fcstd:native:object#Gear".into()),
-        subelements: Vec::new(),
-    })
-    .expect("valid target")
-    .expect("target is present");
-    let target = super::neutral_link_target(&target)
-        .expect("admitted target")
-        .expect("local reference");
-    assert!(
-        matches!(target, cadmpeg_ir::products::PrototypeReference::Local { definition }
-        if definition.as_str() == "fcstd:model:product_definition#Gear:definition")
-    );
+/// The identity of the definition that owns `occurrence`.
+pub(super) fn owner_id<'ir>(ir: &'ir cadmpeg_ir::CadIr, occurrence: &OccurrenceId) -> &'ir str {
+    cadmpeg_ir::products::owner(&ir.model.product_definitions, occurrence)
+        .expect("every occurrence has an owning definition")
+        .id
+        .as_str()
+}
+
+/// The identity suffixes, from the last `#`, of the occurrences that the
+/// definition whose identity ends with `definition` owns, in its order.
+fn owned_suffixes<'ir>(ir: &'ir cadmpeg_ir::CadIr, definition: &str) -> Vec<&'ir str> {
+    ir.model
+        .product_definitions
+        .iter()
+        .find(|row| row.id.as_str().ends_with(definition))
+        .expect("owning definition")
+        .occurrences
+        .iter()
+        .map(|id| &id.as_str()[id.as_str().rfind('#').unwrap_or_default()..])
+        .collect()
 }
 
 #[test]
@@ -128,7 +132,16 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
         &[[1.0; 3], [2.0; 3]]
     );
     assert_eq!(occurrence.element_visibility(), [true, false]);
-    assert_eq!(result.ir().model.product_definitions.len(), 5);
+    // The link state of an `App::Link` stays in its native record (§9.2).
+    assert_eq!(occurrence.linked_subelements(), ["Face1"]);
+    assert_eq!(occurrence.element_objects().len(), 2);
+    assert_eq!(occurrence.claim_child(), Some(true));
+    assert_eq!(occurrence.copy_on_change(), Some("2"));
+    assert!(occurrence.copy_on_change_source().is_some());
+    assert!(occurrence.copy_on_change_group().is_some());
+    assert_eq!(occurrence.copy_on_change_touched(), Some(true));
+    // Five objects and the document, which is the root definition.
+    assert_eq!(result.ir().model.product_definitions.len(), 6);
     let component = result
         .ir()
         .model
@@ -160,53 +173,39 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
                 .is_some_and(|id| id.ends_with("Occurrence"))
         })
         .collect::<Vec<_>>();
-    assert_eq!(assembly_occurrence.transform.rows()[0][3], 10.0);
+    assert_eq!(assembly_occurrence.transform.unwrap().rows()[0][3], 10.0);
     assert_eq!(link_occurrences.len(), 2);
-    assert_eq!(link_occurrences[0].ordinal, 0);
-    assert_eq!(link_occurrences[0].transform.rows()[0][3], 6.0);
-    assert_eq!(link_occurrences[1].transform.rows()[0][3], 12.0);
-    let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
-        .expect("valid assembly graph");
+    // The assembly owns the link's elements, in element order.
     assert_eq!(
-        assembly::resolved_transform(&graph, &link_occurrences[0].id)
+        component.occurrences,
+        link_occurrences
+            .iter()
+            .map(|occurrence| occurrence.id.clone())
+            .collect::<Vec<_>>()
+    );
+    // Each element's transform composes the link placement, the link's
+    // scale, and the element's placement and scale.
+    let first = link_occurrences[0].transform.unwrap().rows();
+    let second = link_occurrences[1].transform.unwrap().rows();
+    assert_eq!(first[0][3], 6.0);
+    assert_eq!(second[0][3], 12.0);
+    assert_eq!([first[0][0], first[1][1], first[2][2]], [2.0, 3.0, 4.0]);
+    assert_eq!([second[0][0], second[1][1], second[2][2]], [4.0, 6.0, 8.0]);
+    assert_eq!(
+        assembly::resolved_transform(result.ir(), &link_occurrences[0].id)
             .unwrap()
             .rows()[0][3],
         116.0
     );
     assert_eq!(
-        assembly::resolved_transform(&graph, &link_occurrences[1].id)
+        assembly::resolved_transform(result.ir(), &link_occurrences[1].id)
             .unwrap()
             .rows()[0][3],
         122.0
     );
-    assert_eq!(
-        link_occurrences[0]
-            .scale
-            .map(cadmpeg_ir::scalar::FiniteReal::get),
-        [1.0, 1.0, 1.0]
-    );
-    assert_eq!(
-        link_occurrences[1]
-            .scale
-            .map(cadmpeg_ir::scalar::FiniteReal::get),
-        [1.0, 1.0, 1.0]
-    );
-    let first_link = link_occurrences[0].link.as_ref().expect("App::Link state");
-    assert_eq!(first_link.linked_subelements(), ["Face1"]);
     assert_eq!(link_occurrences[0].visible, None);
     assert_eq!(link_occurrences[1].visible, None);
-    assert!(first_link.element_component().is_some());
-    assert_eq!(first_link.claim_child(), Some(true));
-    let copy_on_change = first_link.copy_on_change().expect("copy-on-change state");
-    assert_eq!(copy_on_change.policy, cadmpeg_ir::CopyOnChangePolicy::Owned);
-    assert!(copy_on_change.source.is_some());
-    assert!(copy_on_change.group.is_some());
-    assert_eq!(copy_on_change.touched, Some(true));
-    assert!(matches!(
-        &link_occurrences[0].prototype,
-        cadmpeg_ir::PrototypeReference::Local { definition }
-            if definition.as_str().contains("Prototype")
-    ));
+    assert!(link_occurrences[0].prototype.as_str().contains("Prototype"));
     let prototype = result
         .ir()
         .model
@@ -223,15 +222,14 @@ pub(crate) fn recovers_product_prototypes_occurrences_and_placements() {
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
     let mut corrupted = result.ir().clone();
-    corrupted.model.occurrences[0].prototype = cadmpeg_ir::PrototypeReference::Local {
-        definition: cadmpeg_ir::ids::ProductDefinitionId::mint("fcstd:model:component#missing")
-            .expect("identity grammar"),
-    };
+    corrupted.model.occurrences[0].prototype =
+        cadmpeg_ir::ids::ProductDefinitionId::mint("fcstd:model:component#missing")
+            .expect("identity grammar");
     assert!(cadmpeg_ir::validate_neutral(&corrupted, Vec::new())
         .expect("validate the neutral model")
         .findings
         .iter()
-        .any(|finding| finding.message.contains("invalid occurrence reference")));
+        .any(|finding| finding.message.contains("invalid occurrence prototype")));
 }
 
 #[test]
@@ -908,11 +906,6 @@ fn link_group_places_link_and_object_elements() {
         )
         .expect("link group");
     let occurrences = &decoded.ir().model.occurrences;
-    let group = occurrences
-        .iter()
-        .find(|item| item.id.as_str().ends_with("#Group:container"))
-        .unwrap();
-    let graph = cadmpeg_ir::AssemblyGraph::new(occurrences).unwrap();
     for (id, expected) in [
         ("#Link:instance", [10.0, 4.0, 0.0]),
         ("#Member:container", [10.0, 0.0, 7.0]),
@@ -921,10 +914,8 @@ fn link_group_places_link_and_object_elements() {
             .iter()
             .find(|item| item.id.as_str().ends_with(id))
             .unwrap();
-        assert!(
-            matches!(&item.parent, cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } if occurrence == &group.id)
-        );
-        let rows = assembly::resolved_transform(&graph, &item.id)
+        assert!(owner_id(decoded.ir(), &item.id).ends_with("#Group:definition"));
+        let rows = assembly::resolved_transform(decoded.ir(), &item.id)
             .unwrap()
             .affine_rows();
         for (row, expected) in rows.iter().zip(expected) {
@@ -1152,41 +1143,25 @@ fn composes_nested_link_prototype_placements_once_by_policy() {
             })
             .expect("named occurrence")
     };
-    assert_eq!(
-        occurrence("Inner")
-            .linked_prototype
-            .expect("linked prototype placement")
-            .rows()[0][3],
-        5.0
-    );
-    assert_eq!(
-        occurrence("Outer")
-            .linked_prototype
-            .expect("linked prototype placement")
-            .rows()[0][3],
-        8.0
-    );
-    assert!(occurrence("Override").linked_prototype.is_none());
-    let graph = cadmpeg_ir::AssemblyGraph::new(&result.ir().model.occurrences)
-        .expect("valid assembly graph");
-    assert_eq!(
-        assembly::resolved_transform(&graph, &occurrence("Inner").id)
-            .unwrap()
-            .rows()[0][3],
-        8.0
-    );
-    assert_eq!(
-        assembly::resolved_transform(&graph, &occurrence("Outer").id)
-            .unwrap()
-            .rows()[0][3],
-        20.0
-    );
-    assert_eq!(
-        assembly::resolved_transform(&graph, &occurrence("Override").id)
-            .unwrap()
-            .rows()[0][3],
-        14.0
-    );
+    // A link that follows its object's placement composes the prototype's
+    // placement, through nested links, after its own; one that does not
+    // keeps its own.
+    for (name, local) in [("Inner", 8.0), ("Outer", 10.0), ("Override", 4.0)] {
+        assert_eq!(
+            occurrence(name).transform.unwrap().rows()[0][3],
+            local,
+            "{name}"
+        );
+    }
+    for (name, world) in [("Inner", 8.0), ("Outer", 20.0), ("Override", 14.0)] {
+        assert_eq!(
+            assembly::resolved_transform(result.ir(), &occurrence(name).id)
+                .unwrap()
+                .rows()[0][3],
+            world,
+            "{name}"
+        );
+    }
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
@@ -1219,37 +1194,24 @@ fn transfers_external_product_paths_and_targets() {
                 .is_some_and(|id| id.ends_with("ByPath"))
         })
         .expect("path occurrence");
-    let cadmpeg_ir::PrototypeReference::External { document, object } = &by_path.prototype else {
-        panic!("path prototype is external");
-    };
+    let prototype = result
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.id == by_path.prototype)
+        .expect("prototype definition");
+    // FreeCAD stores a path and the object the link names (§8.1).
     assert_eq!(
-        (match &document {
-            cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()),
-            _ => None,
-        }),
-        Some("parts/widget.FCStd")
+        prototype.storage,
+        cadmpeg_ir::products::Storage::External(
+            cadmpeg_ir::products::ExternalDocument::path("parts/widget.FCStd").with_object("Body")
+        )
     );
-    assert_eq!(
-        (match &document {
-            cadmpeg_ir::products::ExternalDocument::DocumentId { document_id } =>
-                Some(document_id.as_str()),
-            _ => None,
-        }),
-        None
-    );
-    assert_eq!(object.as_deref(), Some("Body"));
-    assert!(!matches!(
-        document,
-        cadmpeg_ir::products::ExternalDocument::Missing {}
-    ));
+    assert!(prototype.bodies.is_empty() && prototype.occurrences.is_empty());
 
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
-    let mut wire = serde_json::to_value(result.ir()).expect("document wire");
-    let document = &mut wire["model"]["occurrences"][0]["prototype"]["document"];
-    document["path"] = serde_json::json!("also-a-path.FCStd");
-    document["document_id"] = serde_json::json!("also-an-id");
-    assert!(serde_json::from_value::<cadmpeg_ir::CadIr>(wire).is_err());
 }
 
 #[test]
@@ -1326,29 +1288,6 @@ fn preserves_external_copy_on_change_targets_when_local_names_collide() {
         copy.group.as_ref().and_then(|target| target.object()),
         Some("fcstd:native:object#Box")
     );
-
-    let neutral_occurrence = result
-        .ir()
-        .model
-        .occurrences
-        .iter()
-        .find(|occurrence| {
-            occurrence
-                .native_ref
-                .as_deref()
-                .is_some_and(|id| id.ends_with("Occurrence"))
-        })
-        .expect("neutral occurrence");
-    let copy = neutral_occurrence
-        .link
-        .as_ref()
-        .and_then(|link| link.copy_on_change())
-        .expect("neutral copy-on-change");
-    assert!(matches!(
-        &copy.source,
-        Some(cadmpeg_ir::PrototypeReference::External { document, object: Some(object) })
-            if (match &document { cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()), _ => None }) == Some("other.FCStd") && object == "Box"
-    ));
     assert!(crate::test_support::validate_native(result.ir()).is_empty());
     assert_valid_document(result.ir());
 }
@@ -1574,12 +1513,18 @@ fn a_stated_zero_element_count_is_a_scalar_link_and_never_a_floored_one() {
         )
         .expect("expanded elements restore their cardinality");
     assert_eq!(decoded.ir().model.occurrences.len(), 1);
-    assert!(decoded.ir().model.occurrences[0]
-        .link
-        .as_ref()
-        .unwrap()
-        .element_component()
-        .is_some());
+    let records = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    let link = records
+        .iter()
+        .find(|record| record.kind() == "occurrence")
+        .expect("link record");
+    assert_eq!(link.element_objects(), ["fcstd:native:object#ElementA"]);
     assert_valid_document(decoded.ir());
 }
 
@@ -1638,7 +1583,7 @@ fn unequal_stale_arrays_do_not_establish_missing_element_count() {
     assert_eq!(result.ir().model.occurrences.len(), 1);
     assert_eq!(
         result.ir().model.occurrences[0].transform,
-        cadmpeg_ir::transform::Transform::identity()
+        Some(cadmpeg_ir::transform::Transform::identity())
     );
     assert_valid_document(result.ir());
 }
@@ -1675,7 +1620,7 @@ fn equal_stale_arrays_do_not_establish_missing_element_count() {
     assert_eq!(result.ir().model.occurrences.len(), 1);
     assert_eq!(
         result.ir().model.occurrences[0].transform,
-        cadmpeg_ir::transform::Transform::identity()
+        Some(cadmpeg_ir::transform::Transform::identity())
     );
     let native = result
         .ir()
@@ -1726,28 +1671,6 @@ fn preserves_unknown_numeric_copy_on_change_index() {
         .arena_as::<native::ProductNodeRecord>("product_nodes")
         .expect("product nodes");
     assert_eq!(records[0].copy_on_change(), Some("99"));
-    let occurrence = result
-        .ir()
-        .model
-        .occurrences
-        .iter()
-        .find(|occurrence| {
-            occurrence
-                .native_ref
-                .as_deref()
-                .is_some_and(|id| id.ends_with("Occurrence"))
-        })
-        .expect("link occurrence");
-    assert_eq!(
-        occurrence
-            .link
-            .as_ref()
-            .expect("link state")
-            .copy_on_change()
-            .expect("copy-on-change state")
-            .policy,
-        cadmpeg_ir::CopyOnChangePolicy::Native("99".into())
-    );
     let restored = cadmpeg_ir::CadIr::from_json(
         &serde_json::to_string(result.ir()).expect("CADIR serialization"),
     )
@@ -1774,17 +1697,6 @@ fn ordinary_group_membership_does_not_compete_with_a_part_placement_parent() {
             &DecodeOptions::default(),
         )
         .expect("dual membership");
-    let part = decoded
-        .ir()
-        .model
-        .occurrences
-        .iter()
-        .find(|o| {
-            o.native_ref
-                .as_deref()
-                .is_some_and(|id| id.ends_with("#Part"))
-        })
-        .expect("part occurrence");
     let shape = decoded
         .ir()
         .model
@@ -1796,12 +1708,7 @@ fn ordinary_group_membership_does_not_compete_with_a_part_placement_parent() {
                 .is_some_and(|id| id.ends_with("#Shape"))
         })
         .expect("shape occurrence");
-    assert_eq!(
-        shape.parent,
-        cadmpeg_ir::products::OccurrenceParent::Occurrence {
-            occurrence: part.id.clone()
-        }
-    );
+    assert!(owner_id(decoded.ir(), &shape.id).ends_with("#Part:definition"));
     assert_eq!(
         decoded
             .ir()
@@ -1872,7 +1779,8 @@ fn assembly_joints_and_linked_prototypes_are_not_occurrences() {
         definitions,
         HashSet::from([
             "fcstd:model:product_definition#Assembly:definition",
-            "fcstd:model:product_definition#Block:definition"
+            "fcstd:model:product_definition#Block:definition",
+            "fcstd:model:product_definition#document:root"
         ])
     );
     let connectors = model.assembly_joints[0].connectors().collect::<Vec<_>>();
@@ -1902,24 +1810,11 @@ fn container_ordinals_follow_source_member_order() {
                 &DecodeOptions::default(),
             )
             .unwrap();
-        let occurrences = &decoded.ir().model.occurrences;
-        let parent = occurrences
-            .iter()
-            .find(|item| item.id.as_str().ends_with("#Group:container"))
-            .unwrap();
-        for (name, ordinal) in [("Second", 0), ("First", 1)] {
-            let suffix = format!("#{name}:instance");
-            let item = occurrences
-                .iter()
-                .find(|item| item.id.as_str().ends_with(&suffix))
-                .unwrap();
-            assert_eq!(item.ordinal, ordinal, "{runtime}: {name}");
-            assert!(matches!(
-                &item.parent,
-                cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence }
-                    if occurrence == &parent.id
-            ));
-        }
+        assert_eq!(
+            owned_suffixes(decoded.ir(), "#Group:definition"),
+            ["#Second:instance", "#First:instance"],
+            "{runtime}"
+        );
         assert_valid_document(decoded.ir());
     }
 }
@@ -1940,27 +1835,9 @@ fn container_ordinals_keep_array_elements_together_in_source_order() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let parent = decoded
-        .ir()
-        .model
-        .occurrences
-        .iter()
-        .find(|item| item.id.as_str().ends_with("#Group:container"))
-        .unwrap();
-    for (suffix, ordinal) in [("#Array:0", 0), ("#Array:1", 1), ("#First:instance", 2)] {
-        let item = decoded
-            .ir()
-            .model
-            .occurrences
-            .iter()
-            .find(|item| item.id.as_str().ends_with(suffix))
-            .unwrap();
-        assert_eq!(item.ordinal, ordinal, "{suffix}");
-        assert!(matches!(
-            &item.parent,
-            cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence }
-                if occurrence == &parent.id
-        ));
-    }
+    assert_eq!(
+        owned_suffixes(decoded.ir(), "#Group:definition"),
+        ["#Array:0", "#Array:1", "#First:instance"]
+    );
     assert_valid_document(decoded.ir());
 }

@@ -169,15 +169,22 @@ impl<'ir> Measurer<'ir> {
         ctx: &DecodeContext<'_>,
         selection: &Selection,
     ) -> Result<MeasureReport, MeasureError> {
-        let model = &self.input.ir.model;
+        let geometry = &self.input.ir.geometry;
         let space = match &selection.occurrence {
             None => None,
-            Some(id) => Some(crate::occurrence::space(self.input.ir, id).ok_or_else(|| {
-                MeasureError::UnknownEntity {
-                    arena: "model.occurrences",
-                    id: id.as_str().to_owned(),
-                }
-            })?),
+            Some(id) => Some(
+                crate::occurrence::space(self.input.ir, &selection.occurrence_above, id)
+                    .ok_or_else(|| MeasureError::UnknownEntity {
+                        arena: "model.occurrences",
+                        id: selection
+                            .occurrence_above
+                            .iter()
+                            .chain([id])
+                            .map(cadmpeg_ir::ids::OccurrenceId::as_str)
+                            .collect::<Vec<_>>()
+                            .join(" / "),
+                    })?,
+            ),
         };
         let scope = self.scope(selection, space.as_ref())?;
         let face_level = selection.face_level();
@@ -191,7 +198,7 @@ impl<'ir> Measurer<'ir> {
         let mut face_rows: BTreeSet<&'ir str> = BTreeSet::new();
         if face_level {
             let all = selection.all_faces || selection.faces.is_empty();
-            for face in &model.faces {
+            for face in &geometry.faces {
                 let selected = all || selection.faces.contains(&face.id);
                 if selected && in_scope(self.owners.face_body(face)) {
                     face_rows.insert(face.id.as_str());
@@ -201,7 +208,7 @@ impl<'ir> Measurer<'ir> {
         let mut edge_rows: BTreeSet<&'ir str> = BTreeSet::new();
         if edge_level {
             let all = selection.all_edges || selection.edges.is_empty();
-            for edge in &model.edges {
+            for edge in &geometry.edges {
                 let selected = all || selection.edges.contains(&edge.id);
                 if selected && in_scope(self.owners.edge_body(edge.id.as_str())) {
                     edge_rows.insert(edge.id.as_str());
@@ -209,7 +216,7 @@ impl<'ir> Measurer<'ir> {
             }
         }
         let body_rows: Vec<&'ir cadmpeg_ir::topology::Body> = if body_level {
-            model
+            geometry
                 .bodies
                 .iter()
                 .filter(|body| in_scope(Some(body.id.as_str())))
@@ -241,9 +248,10 @@ impl<'ir> Measurer<'ir> {
             }
         }
 
-        let items = model.faces.len() + model.edges.len();
+        let items = geometry.faces.len() + geometry.edges.len();
         let Some(allowance) = self.options.work.pass_allowance(items) else {
             return Err(ResourceLimit {
+                scope: cadmpeg_core::decode::LimitScope::for_dimension(ResourceDimension::Entities),
                 dimension: ResourceDimension::Entities,
                 reason: ResourceFailure::BudgetExceeded,
                 limit: 0,
@@ -257,7 +265,7 @@ impl<'ir> Measurer<'ir> {
 
         let world = |body: &str| space.as_ref().and_then(|space| space.placements.get(body));
         let mut composed: HashMap<&'ir str, Option<Transform>> = HashMap::new();
-        let placements: HashMap<&'ir str, Outcome<Placement>> = model
+        let placements: HashMap<&'ir str, Outcome<Placement>> = geometry
             .bodies
             .iter()
             .map(|body| {
@@ -301,7 +309,7 @@ impl<'ir> Measurer<'ir> {
         let surfaces = SurfaceInput {
             owners: &self.owners,
             fidelity: self.input.fidelity,
-            faces: &model.faces,
+            faces: &geometry.faces,
             scope: space.as_ref().map(|space| &space.bodies),
             transform: &|body: &str| composed.get(body).copied().flatten(),
             placement: &placement_of,
@@ -508,15 +516,10 @@ impl<'ir> Measurer<'ir> {
             return Vec::new();
         }
         self.owners
-            .shell(face.shell.as_str())
-            .map(|shell| {
-                shell
-                    .faces()
-                    .iter()
-                    .map(cadmpeg_ir::ids::FaceId::as_str)
-                    .collect()
-            })
-            .unwrap_or_default()
+            .shell_faces(&face.shell)
+            .iter()
+            .map(|face| face.id.as_str())
+            .collect()
     }
 
     /// The reference point of a body's fluxes: the centre of the box of its
@@ -593,7 +596,7 @@ impl<'ir> Measurer<'ir> {
         for body in &selection.bodies {
             let Some(body) = self.owners.body(body.as_str()) else {
                 return Err(MeasureError::UnknownEntity {
-                    arena: "model.bodies",
+                    arena: "geometry.bodies",
                     id: body.as_str().to_owned(),
                 });
             };
@@ -610,7 +613,7 @@ impl<'ir> Measurer<'ir> {
         for face in &selection.faces {
             let Some(record) = self.owners.face(face.as_str()) else {
                 return Err(MeasureError::UnknownEntity {
-                    arena: "model.faces",
+                    arena: "geometry.faces",
                     id: face.as_str().to_owned(),
                 });
             };
@@ -627,12 +630,12 @@ impl<'ir> Measurer<'ir> {
         for surface in &selection.surfaces {
             if self.owners.surface(surface.as_str()).is_none() {
                 return Err(MeasureError::UnknownEntity {
-                    arena: "model.surfaces",
+                    arena: "geometry.surfaces",
                     id: surface.as_str().to_owned(),
                 });
             }
             if let Some(scope) = &scope {
-                let used = self.input.ir.model.faces.iter().any(|face| {
+                let used = self.input.ir.geometry.faces.iter().any(|face| {
                     face.surface == *surface
                         && self
                             .owners
@@ -647,7 +650,7 @@ impl<'ir> Measurer<'ir> {
         for edge in &selection.edges {
             if self.owners.edge(edge.as_str()).is_none() {
                 return Err(MeasureError::UnknownEntity {
-                    arena: "model.edges",
+                    arena: "geometry.edges",
                     id: edge.as_str().to_owned(),
                 });
             }

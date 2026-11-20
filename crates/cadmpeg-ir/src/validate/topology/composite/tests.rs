@@ -9,8 +9,8 @@ use cadmpeg_core::CodecError;
 
 fn model(rows: &[(&str, &[&str])]) -> CadIr {
     let mut ir = crate::examples::unit_cube().unwrap();
-    let template = ir.model.curves[0].clone();
-    ir.model.curves = rows
+    let template = ir.geometry.curves[0].clone();
+    ir.geometry.curves = rows
         .iter()
         .map(|(identity, children)| {
             let mut curve = template.clone();
@@ -43,7 +43,7 @@ fn composite_cycle_validation_keeps_lexical_roots_and_repeated_backedges() {
             &["test:model:curve#a", "test:model:curve#a"],
         ),
     ]);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     super::check(&ctx, &ir, &mut findings).unwrap();
     assert_eq!(
@@ -102,7 +102,7 @@ fn composite_cycle_validation_admits_repeated_acyclic_edges_and_missing_children
         ),
         ("test:model:curve#b", &["test:model:curve#missing"]),
     ]);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     super::check(&ctx, &ir, &mut findings).unwrap();
     assert!(findings.is_empty(), "{findings:?}");

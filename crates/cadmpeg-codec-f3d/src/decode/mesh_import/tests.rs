@@ -100,6 +100,7 @@ fn unjoined_imports_retain_decoded_body_sources_and_named_losses() {
         let mut features = vec![feature];
         let projection = MeshProjection {
             count: 0,
+            unjoined: 0,
             tessellations_by_scope: Default::default(),
         };
         let mut losses = Vec::new();

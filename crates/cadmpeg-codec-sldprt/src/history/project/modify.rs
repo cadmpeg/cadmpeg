@@ -255,6 +255,8 @@ pub(super) fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
         operands,
         op,
         keep_tools: false,
+
+        destination: cadmpeg_ir::features::CombineDestination::default(),
     }))
 }
 
@@ -326,7 +328,7 @@ pub(super) fn project_replace_face(feature: &Feature) -> Option<FeatureDefinitio
     }
     let faces = property_text(feature, "Faces")?;
     let replacement = property_text(feature, "ReplacementFaces")?;
-    cadmpeg_ir::features::ReplaceFaceOperands::new(
+    cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(
         FaceSelection::Native(faces),
         FaceSelection::Native(replacement),
     )

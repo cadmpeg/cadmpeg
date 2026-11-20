@@ -10,7 +10,7 @@ fn repro_cli_cuts_report_and_checks_normal_document_bundle() {
     let report = directory.path().join("report.json");
     let output = directory.path().join("bundle.json");
     let mut document = cadmpeg_ir::examples::unit_cube().unwrap();
-    document.model.points[0].set_position(Point3::new(50.0, 0.0, 0.0).try_into().unwrap());
+    document.geometry.points[0].set_position(Point3::new(50.0, 0.0, 0.0).try_into().unwrap());
     std::fs::write(&input, serde_json::to_vec(&document).unwrap()).unwrap();
     let validation = cadmpeg_ir::validate_neutral(&document, Vec::new()).unwrap();
     let index = validation
@@ -81,7 +81,7 @@ fn repro_cli_nonreproducing_cut_is_written_before_optional_failure() {
     let finding = cadmpeg_ir::report::check::Finding {
         check: Check::GeometricConsistency,
         severity: cadmpeg_ir::report::Severity::Error,
-        entity: Some(document.model.bodies[0].id.to_string()),
+        entity: Some(document.geometry.bodies[0].id.to_string()),
         related: Vec::new(),
         message: "synthetic finding requiring additional context".into(),
     };
@@ -112,6 +112,6 @@ fn repro_cli_nonreproducing_cut_is_written_before_optional_failure() {
         );
         let bundle: Bundle = serde_json::from_slice(&std::fs::read(&output).unwrap()).unwrap();
         assert!(bundle.incomplete_reason.is_some());
-        assert_eq!(bundle.document.model.bodies.len(), 1);
+        assert_eq!(bundle.document.geometry.bodies.len(), 1);
     }
 }

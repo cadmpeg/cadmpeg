@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Format-independent native record types retained from a decoded ASM stream.
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -214,7 +215,7 @@ impl TryFrom<u8> for EndpointSlot {
 }
 
 /// Conditional containment direction on a double-sided ASM face.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum FaceContainment {
@@ -514,7 +515,7 @@ native_record! {
 }
 
 /// Native side classification stored on an ASM wire record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum WireSide {

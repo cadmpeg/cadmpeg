@@ -153,7 +153,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
     };
 
     bind_scalar_operands(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_ref(&history),
         std::slice::from_mut(&mut lane),
     )
@@ -262,6 +262,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     let transform = cadmpeg_ir::transform::Transform::affine([
         [1.0, 0.0, 0.0, 12.0],
@@ -286,6 +287,7 @@ fn mirror_plane_binds_through_one_persistent_face_identity() {
             .expect("placed surface"),
         )),
         source_object: None,
+        native_ref: None,
     };
 
     bind_mirror_surface_planes(
@@ -911,7 +913,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
     };
 
     bind_detached_legacy_sketch_objects(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_ref(&history),
         &HashSet::default(),
         &mut lane,
@@ -939,7 +941,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
     let mut ambiguous_history = history;
     ambiguous_history.features.push(second);
     bind_detached_legacy_sketch_objects(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous_history),
         &HashSet::default(),
         &mut ambiguous,

@@ -51,10 +51,10 @@ fn decode_form_zero_classifies_from_coefficients_in_v4_and_v5_profiles() {
                 version,
                 "{family}"
             );
-            assert_eq!(result.ir().model.curves.len(), 1, "{version} {family}");
+            assert_eq!(result.ir().geometry.curves.len(), 1, "{version} {family}");
             assert!(
                 matches!(
-                    (&result.ir().model.curves[0].geometry, family_number),
+                    (&result.ir().geometry.curves[0].geometry, family_number),
                     (
                         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
                             _
@@ -73,7 +73,7 @@ fn decode_form_zero_classifies_from_coefficients_in_v4_and_v5_profiles() {
                     )
                 ),
                 "{version} {family}: {:?}",
-                result.ir().model.curves[0].geometry
+                result.ir().geometry.curves[0].geometry
             );
             assert!(
                 result
@@ -117,23 +117,23 @@ fn decode_classifies_and_bounds_all_standard_conic_arc_families() {
             )
             .unwrap();
 
-        assert_eq!(result.ir().model.curves.len(), 1, "form {form}");
-        assert_eq!(result.ir().model.edges.len(), 1, "form {form}");
+        assert_eq!(result.ir().geometry.curves.len(), 1, "form {form}");
+        assert_eq!(result.ir().geometry.edges.len(), 1, "form {form}");
         assert_eq!(
-            result.ir().model.edges[0]
+            result.ir().geometry.edges[0]
                 .tolerance
                 .map(cadmpeg_ir::scalar::PositiveReal::get),
             Some(0.001)
         );
         assert!(result
             .ir()
-            .model
+            .geometry
             .vertices
             .iter()
             .all(
                 |vertex| vertex.tolerance.map(cadmpeg_ir::scalar::PositiveReal::get) == Some(0.001)
             ));
-        match (&result.ir().model.curves[0].geometry, form) {
+        match (&result.ir().geometry.curves[0].geometry, form) {
             (
                 cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(_)),
                 0 | 1,
@@ -186,12 +186,12 @@ fn decode_brackets_conic_endpoint_agreement_at_the_global_resolution() {
             .unwrap();
 
         assert_eq!(
-            result.ir().model.curves.len(),
+            result.ir().geometry.curves.len(),
             usize::from(decoded),
             "{point_name}"
         );
         assert_eq!(
-            result.ir().model.edges.len(),
+            result.ir().geometry.edges.len(),
             usize::from(decoded),
             "{point_name}"
         );
@@ -217,7 +217,7 @@ fn decode_rejects_a_conic_endpoint_at_exact_global_resolution() {
         )
         .unwrap();
 
-    assert!(result.ir().model.curves.is_empty());
+    assert!(result.ir().geometry.curves.is_empty());
     assert_eq!(result.report().losses.len(), 1);
     assert_eq!(
         result.report().losses[0].code,
@@ -240,27 +240,27 @@ fn decode_retains_declared_conic_endpoints_after_carrier_validation() {
         .unwrap();
 
     assert!(result.report().losses.is_empty());
-    assert_eq!(result.ir().model.points.len(), 2);
+    assert_eq!(result.ir().geometry.points.len(), 2);
     let start = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| point.position().get().x > 2.0)
         .expect("decoded start endpoint");
     let end = result
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| point.position().get().y > 1.0)
         .expect("decoded terminate endpoint");
     assert!((start.position().get().x - 2.0005).abs() < EPS_ENDPOINT_STORAGE);
     assert!((end.position().get().y - 1.0005).abs() < EPS_ENDPOINT_STORAGE);
-    let range = result.ir().model.edges[0]
+    let range = result.ir().geometry.edges[0]
         .param_range()
         .expect("fixture has a bounded conic range");
-    let geometry = &result.ir().model.curves[0].geometry;
+    let geometry = &result.ir().geometry.curves[0].geometry;
     let evaluated_start = cadmpeg_ir::eval::decode::curve_point(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         geometry,
@@ -296,7 +296,7 @@ fn decode_applies_the_scale_relative_standard_position_gate() {
             )
             .unwrap();
 
-        assert_eq!(result.ir().model.curves.len(), usize::from(decoded));
+        assert_eq!(result.ir().geometry.curves.len(), usize::from(decoded));
         if decoded {
             assert!(result.report().losses.is_empty());
         } else {
@@ -325,7 +325,7 @@ fn decode_canonicalizes_ellipse_arc_seam_noise() {
         .unwrap();
 
     assert_eq!(
-        result.ir().model.edges[0]
+        result.ir().geometry.edges[0]
             .param_range()
             .map(|range| range[0]),
         Some(0.0)
@@ -347,13 +347,13 @@ fn conic_classification_preserves_common_coefficient_scale() {
             )
             .unwrap();
         assert_eq!(
-            decoded.ir().model.curves.len(),
+            decoded.ir().geometry.curves.len(),
             1,
             "{coefficient}: {:?}",
             decoded.report().losses
         );
         let cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(ellipse)) =
-            &decoded.ir().model.curves[0].geometry
+            &decoded.ir().geometry.curves[0].geometry
         else {
             panic!("ellipse");
         };
@@ -375,13 +375,13 @@ fn parabola_projection_preserves_common_large_coefficient_scale() {
             )
             .unwrap();
         assert_eq!(
-            result.ir().model.curves.len(),
+            result.ir().geometry.curves.len(),
             1,
             "{:?}",
             result.report().losses
         );
         let cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola)) =
-            &result.ir().model.curves[0].geometry
+            &result.ir().geometry.curves[0].geometry
         else {
             panic!("expected parabola")
         };

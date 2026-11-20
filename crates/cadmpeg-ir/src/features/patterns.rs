@@ -8,6 +8,7 @@ use super::{
 use crate::ids::OccurrenceId;
 use crate::scalar::{Angle, Length, PositiveAngle, PositiveLength, PositiveReal};
 use crate::units::UnitVector3;
+use cadmpeg_derive::DeserializeName;
 use curve_driven::CurveDrivenPatternParameters;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
@@ -17,7 +18,7 @@ use serde::{Deserialize, Serialize};
 pub mod curve_driven;
 
 /// One geometric selection repeated or reflected by a pattern operation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -433,12 +434,14 @@ impl PatternTransform<NoNestedComposite> {
                 count,
                 second,
                 omitted_instances,
+                symmetric,
             } => PatternTransform::Linear {
                 direction,
                 spacing,
                 count,
                 second,
                 omitted_instances,
+                symmetric,
             },
             Self::LinearOffsets { direction, offsets } => {
                 PatternTransform::LinearOffsets { direction, offsets }
@@ -503,7 +506,7 @@ impl StagePatternKind {
 }
 
 /// Identified pattern form for a pattern that is not yet resolved.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -564,8 +567,14 @@ pub enum PatternTransform<C = CompositePattern> {
         )]
         second: Option<LinearPatternDirection>,
         /// Zero-based positions omitted from the two-direction grid.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         omitted_instances: Vec<[u32; 2]>,
+        /// Whether the first-direction instances lie on both sides of the
+        /// original. `count` includes the original. Grid coordinate `0` is
+        /// the original, an odd coordinate `k` lies `(k + 1) / 2` spacings
+        /// along `direction`, and an even coordinate `k > 0` lies `k / 2`
+        /// spacings against it. An even `count` places `count / 2` instances
+        /// along `direction` and `count / 2 - 1` against it.
+        symmetric: bool,
     },
     /// Repeats seeds at explicitly located distances along a straight direction.
     LinearOffsets {
@@ -790,12 +799,13 @@ fn valid_increasing_locations(locations: impl Iterator<Item = f64>) -> bool {
 }
 
 /// Fixed locus for a progressive pattern scale.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum PatternScaleCenter {
     /// Volume centroid of the first seed feature.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     FirstSeedCentroid,
     /// Explicit model-space point.
     Point(FinitePoint3),
@@ -813,7 +823,7 @@ pub struct PatternStage {
 }
 
 /// Combination rule for a composite-pattern stage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -837,6 +847,9 @@ pub struct LinearPatternDirection {
     pub spacing: PositiveLength,
     /// Nominal grid size along this direction, including the original.
     pub count: u32,
+    /// Whether the instances lie on both sides of the original, distributed
+    /// as for a symmetric first direction.
+    pub symmetric: bool,
 }
 
 // Each optional key below names itself in whatever it refuses.

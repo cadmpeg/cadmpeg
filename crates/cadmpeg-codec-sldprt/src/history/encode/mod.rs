@@ -122,7 +122,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 *alternate_face,
                 corner.as_ref(),
             ),
-            FeatureDefinition::Operation(FeatureOperation::DatumAxis { origin, direction }) => {
+            FeatureDefinition::Operation(FeatureOperation::DatumAxis { axis }) => {
+                let Some((origin, direction)) = axis.geometry().filter(|_| !axis.has_controls())
+                else {
+                    return Err(cadmpeg_core::CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unsupported datum-axis construction or partial geometry",
+                        self.feature.id
+                    )));
+                };
                 self.encode_datum_axis(origin, direction)
             }
             FeatureDefinition::Operation(FeatureOperation::DatumPoint { position, .. }) => {
@@ -317,10 +324,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 operands,
                 op,
                 keep_tools,
+                destination,
             }) => {
                 let target = operands.target();
                 let tools = operands.tools();
-                self.encode_combine(target, tools, *op, *keep_tools)
+                match destination {
+                    cadmpeg_ir::features::CombineDestination::TargetComponent => {
+                        self.encode_combine(target, tools, *op, *keep_tools)
+                    }
+                    cadmpeg_ir::features::CombineDestination::NewComponent => {
+                        self.encode_unsupported()
+                    }
+                }
             }
             FeatureDefinition::Operation(FeatureOperation::CutWithSurface {
                 targets,
@@ -334,6 +349,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 self.encode_delete_face(faces, *heal)
             }
             FeatureDefinition::Operation(FeatureOperation::ReplaceFace { operands }) => {
+                if operands.tangent_chain().is_some() {
+                    return self.encode_unsupported();
+                }
                 let targets = operands.targets();
                 let replacements = operands.replacements();
                 self.encode_replace_face(targets, replacements)

@@ -1,258 +1,289 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "id": "rhino:object:body#record-000000-offset-177",
           "kind": "general",
-          "regions": [
-            "rhino:object:region#record-000000-offset-177"
-          ],
           "visible": true
         },
         {
           "id": "rhino:object:body#record-000001-offset-314",
           "kind": "general",
-          "regions": [
-            "rhino:object:region#record-000001-offset-314"
-          ],
           "visible": true
         }
       ],
       "coedges": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              -1.0,
-              -1.0,
-              3.0,
-              3.0
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 2.0,
-                  "y": 0.0,
-                  "z": 0.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                -1.0,
+                -1.0,
+                3.0,
+                3.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 2.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  }
+                ]
+              }
             }
           },
           "id": "rhino:object:curve#record-000002-offset-659",
           "source_object": {
             "format": "rhino",
+            "instance_path": [],
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
           }
         },
         {
           "geometry": {
-            "degree": 2,
-            "kind": "nurbs",
-            "knots": [
-              4.0,
-              4.0,
-              4.0,
-              9.0,
-              9.0,
-              9.0
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "rational",
-              "points": [
-                {
-                  "point": {
-                    "x": 2.0,
-                    "y": 0.0,
-                    "z": 0.0
+            "kind": "solved",
+            "value": {
+              "degree": 2,
+              "kind": "nurbs",
+              "knots": [
+                4.0,
+                4.0,
+                4.0,
+                9.0,
+                9.0,
+                9.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "rational",
+                "points": [
+                  {
+                    "point": {
+                      "x": 2.0,
+                      "y": 0.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.0
                   },
-                  "weight": 1.0
-                },
-                {
-                  "point": {
-                    "x": 2.0,
-                    "y": 1.9999999999999996,
-                    "z": 0.0
+                  {
+                    "point": {
+                      "x": 2.0,
+                      "y": 1.9999999999999996,
+                      "z": 0.0
+                    },
+                    "weight": 0.7071067811865476
                   },
-                  "weight": 0.7071067811865476
-                },
-                {
-                  "point": {
-                    "x": 1.2246467991473532e-16,
-                    "y": 2.0,
-                    "z": 0.0
-                  },
-                  "weight": 1.0
-                }
-              ]
+                  {
+                    "point": {
+                      "x": 1.2246467991473532e-16,
+                      "y": 2.0,
+                      "z": 0.0
+                    },
+                    "weight": 1.0
+                  }
+                ]
+              }
             }
           },
           "id": "rhino:object:curve#record-000003-offset-840",
           "source_object": {
             "format": "rhino",
+            "instance_path": [],
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
           }
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              2.0,
-              2.0,
-              3.5,
-              9.0,
-              9.0
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 1.0,
-                  "y": 2.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 4.0,
-                  "y": 2.0,
-                  "z": 0.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                2.0,
+                2.0,
+                3.5,
+                9.0,
+                9.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 1.0,
+                    "y": 2.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 4.0,
+                    "y": 2.0,
+                    "z": 0.0
+                  }
+                ]
+              }
             }
           },
           "id": "rhino:object:curve#record-000004-offset-1197",
           "source_object": {
             "format": "rhino",
+            "instance_path": [],
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
           }
         },
         {
           "geometry": {
-            "kind": "unknown",
-            "record": "rhino:object:record#000005"
+            "kind": "solved",
+            "value": {
+              "kind": "unknown",
+              "record": "rhino:object:record#000005"
+            }
           },
           "id": "rhino:object:curve#record-000005-offset-1418",
           "source_object": {
             "format": "rhino",
+            "instance_path": [],
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
           }
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              2.0,
-              2.0
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 1.0,
-                  "y": 0.0,
-                  "z": 0.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                2.0,
+                2.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 1.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  }
+                ]
+              }
             }
           },
           "id": "rhino:object:curve#record-000005-offset-1418.root.component-0",
           "source_object": {
             "format": "rhino",
+            "instance_path": [],
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
           }
         },
         {
           "geometry": {
-            "kind": "unknown"
+            "kind": "solved",
+            "value": {
+              "kind": "unknown"
+            }
           },
           "id": "rhino:object:curve#record-000005-offset-1418.root.component-1",
           "source_object": {
             "format": "rhino",
+            "instance_path": [],
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
           }
         },
         {
           "geometry": {
-            "degree": 1,
-            "kind": "nurbs",
-            "knots": [
-              10.0,
-              10.0,
-              20.0,
-              20.0
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 2.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 3.0,
-                  "y": 0.0,
-                  "z": 0.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 1,
+              "kind": "nurbs",
+              "knots": [
+                10.0,
+                10.0,
+                20.0,
+                20.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 2.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 3.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  }
+                ]
+              }
             }
           },
           "id": "rhino:object:curve#record-000005-offset-1418.root.component-1.component-0",
           "source_object": {
             "format": "rhino",
+            "instance_path": [],
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
           }
         }
       ],
-      "drawings": [],
       "edges": [],
       "faces": [],
-      "features": [],
       "loops": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "pmi": [],
       "points": [
         {
           "id": "rhino:object:point#record-000000-offset-177",
@@ -263,6 +294,7 @@
           },
           "source_object": {
             "format": "rhino",
+            "instance_path": [],
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
           }
@@ -276,6 +308,7 @@
           },
           "source_object": {
             "format": "rhino",
+            "instance_path": [],
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
           }
@@ -289,13 +322,12 @@
           },
           "source_object": {
             "format": "rhino",
+            "instance_path": [],
             "object_id": "00000000-0000-0000-0000-000000000000",
             "visible": true
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [
         {
           "curve": "rhino:object:curve#record-000005-offset-1418",
@@ -338,7 +370,6 @@
         }
       ],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "rhino:object:body#record-000000-offset-177",
@@ -355,7 +386,6 @@
           ]
         }
       ],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "rhino:object:shell#record-000000-offset-177",
@@ -382,15 +412,8 @@
           "region": "rhino:object:region#record-000001-offset-314"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [],
-      "tessellations": [],
       "vertices": [
         {
           "id": "rhino:object:vertex#record-000000-offset-177",
@@ -404,7 +427,63 @@
           "id": "rhino:object:vertex#record-000001-offset-314.1",
           "point": "rhino:object:point#record-000001-offset-314.1"
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "rhino:object:body#record-000000-offset-177",
+            "rhino:object:body#record-000001-offset-314"
+          ],
+          "bom_properties": {},
+          "id": "rhino:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
       ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -493,6 +572,24 @@
         "windows_bitmaps": []
       }
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "absolute_tolerance_millimeters": "0.01",
@@ -506,17 +603,19 @@
         "unit_value": "2"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "archive_version": "50"
             },
             "dialect": "rhino:archive-50"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -524,156 +623,188 @@
       "linear": 0.01
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "archive_version": "50"
           },
           "dialect": "rhino:archive-50"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "object.record-census",
-          "kind": "object_records_untransferred",
-          "namespace": "rhino",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "object.record-census",
+            "kind": "object_records_untransferred",
+            "namespace": "rhino"
+          }
         },
         "message": "decoded 6/6 Rhino object records",
         "severity": "info"
       },
       {
         "code": {
-          "code": "container.integrity-failure",
-          "kind": "integrity_failure",
-          "namespace": "rhino",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.integrity-failure",
+            "kind": "integrity_failure",
+            "namespace": "rhino",
+            "strict_floor": "warning"
+          }
         },
         "message": "CRC mismatch at offset 177 for typecode 0x20008070: expected 0x0, got 0x39b4e298",
         "severity": "error"
       },
       {
         "code": {
-          "code": "container.integrity-failure",
-          "kind": "integrity_failure",
-          "namespace": "rhino",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.integrity-failure",
+            "kind": "integrity_failure",
+            "namespace": "rhino",
+            "strict_floor": "warning"
+          }
         },
         "message": "CRC mismatch at offset 314 for typecode 0x20008070: expected 0x0, got 0x66d82b63",
         "severity": "error"
       },
       {
         "code": {
-          "code": "container.integrity-failure",
-          "kind": "integrity_failure",
-          "namespace": "rhino",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.integrity-failure",
+            "kind": "integrity_failure",
+            "namespace": "rhino",
+            "strict_floor": "warning"
+          }
         },
         "message": "CRC mismatch at offset 659 for typecode 0x20008070: expected 0x0, got 0x5010a2d6",
         "severity": "error"
       },
       {
         "code": {
-          "code": "container.integrity-failure",
-          "kind": "integrity_failure",
-          "namespace": "rhino",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.integrity-failure",
+            "kind": "integrity_failure",
+            "namespace": "rhino",
+            "strict_floor": "warning"
+          }
         },
         "message": "CRC mismatch at offset 840 for typecode 0x20008070: expected 0x0, got 0x966b1368",
         "severity": "error"
       },
       {
         "code": {
-          "code": "container.integrity-failure",
-          "kind": "integrity_failure",
-          "namespace": "rhino",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.integrity-failure",
+            "kind": "integrity_failure",
+            "namespace": "rhino",
+            "strict_floor": "warning"
+          }
         },
         "message": "CRC mismatch at offset 1197 for typecode 0x20008070: expected 0x0, got 0xc25c0543",
         "severity": "error"
       },
       {
         "code": {
-          "code": "container.integrity-failure",
-          "kind": "integrity_failure",
-          "namespace": "rhino",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.integrity-failure",
+            "kind": "integrity_failure",
+            "namespace": "rhino",
+            "strict_floor": "warning"
+          }
         },
         "message": "CRC mismatch at offset 1418 for typecode 0x20008070: expected 0x0, got 0x3d8e7ff3",
         "severity": "error"
       },
       {
         "code": {
-          "code": "container.scan-diagnostic",
-          "kind": "decode_diagnostic",
-          "namespace": "rhino",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.scan-diagnostic",
+            "kind": "decode_diagnostic",
+            "namespace": "rhino"
+          }
         },
         "message": "object at 177 has nil object UUID",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "container.scan-diagnostic",
-          "kind": "decode_diagnostic",
-          "namespace": "rhino",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.scan-diagnostic",
+            "kind": "decode_diagnostic",
+            "namespace": "rhino"
+          }
         },
         "message": "object at 314 has nil object UUID",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "container.scan-diagnostic",
-          "kind": "decode_diagnostic",
-          "namespace": "rhino",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.scan-diagnostic",
+            "kind": "decode_diagnostic",
+            "namespace": "rhino"
+          }
         },
         "message": "object at 659 has nil object UUID",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "container.scan-diagnostic",
-          "kind": "decode_diagnostic",
-          "namespace": "rhino",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.scan-diagnostic",
+            "kind": "decode_diagnostic",
+            "namespace": "rhino"
+          }
         },
         "message": "object at 840 has nil object UUID",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "container.scan-diagnostic",
-          "kind": "decode_diagnostic",
-          "namespace": "rhino",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.scan-diagnostic",
+            "kind": "decode_diagnostic",
+            "namespace": "rhino"
+          }
         },
         "message": "object at 1197 has nil object UUID",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "container.scan-diagnostic",
-          "kind": "decode_diagnostic",
-          "namespace": "rhino",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.scan-diagnostic",
+            "kind": "decode_diagnostic",
+            "namespace": "rhino"
+          }
         },
         "message": "object at 1418 has nil object UUID",
         "severity": "warning"
@@ -684,7 +815,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -692,99 +826,120 @@
       "exactness": {
         "rhino:object:body#record-000000-offset-177": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "rhino:object:curve#record-000002-offset-659": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "rhino:object:curve#record-000003-offset-840": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "rhino:object:curve#record-000004-offset-1197": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "rhino:object:curve#record-000005-offset-1418": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "rhino:object:curve#record-000005-offset-1418.root.component-0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "rhino:object:curve#record-000005-offset-1418.root.component-1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "rhino:object:curve#record-000005-offset-1418.root.component-1.component-0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "rhino:object:region#record-000000-offset-177": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "rhino:object:shell#record-000000-offset-177": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "rhino:object:vertex#record-000000-offset-177": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         }
-      }
+      },
+      "provenance": {}
     },
+    "decode_digest": "831240da3b89abeee4e3cc2a2a501643bf4779c4385c2fec835c61b708aa442d",
+    "file_digests": {},
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
           "data": "cIAAIH0AAAAAAAAAcQAAggEAAAAAAAAA+n8CAFUAAAAAAAAA+/8CABQAAAAAAAAAHRoQw1fx0xG/5wAQgwEi8ExUB6T8/wIAHQAAAAAAAAAQAAAAAAAA8D8AAAAAAAAAQAAAAAAAAAhA5Qs8Sf9/AoAAAAAAAAAAAH8AAIIAAAAAAAAAAJjitDk=",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 177,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "rhino:object:record#000001": {
         "bytes": {
           "data": "cIAAIE0BAAAAAAAAcQAAggIAAAAAAAAA+n8CACUBAAAAAAAA+/8CABQAAAAAAAAAR/OIJPr40xG/7AAQgwEi8BNvR3j8/wIA7QAAAAAAAAAQAgAAAAAAAAAAABBAAAAAAAAAFEAAAAAAAAAYQAAAAAAAABxAAAAAAAAAIEAAAAAAAAAiQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANvFHk3/fwKAAAAAAAAAAAB/AACCAAAAAAAAAABjK9hm",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 314,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "rhino:object:record#000002": {
         "bytes": {
           "data": "cIAAIKkAAAAAAAAAcQAAggQAAAAAAAAA+n8CAIEAAAAAAAAA+/8CABQAAAAAAAAA29TXTkfp0xG/5QAQgwEi8PSb6SP8/wIASQAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8L8AAAAAAAAIQAMAAAApXqJb/38CgAAAAAAAAAAAfwAAggAAAAAAAAAA1qIQUA==",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 659,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "rhino:object:record#000003": {
         "bytes": {
           "data": "cIAAIFkBAAAAAAAAcQAAggQAAAAAAAAA+n8CADEBAAAAAAAA+/8CABQAAAAAAAAAKr4zz7QJ1BG/+wAQgwEi8JYczoH8/wIA+QAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGC1EVPsh+T8AAAAAAAAQQAAAAAAAACJAAwAAAE4x2Kz/fwKAAAAAAAAAAAB/AACCAAAAAAAAAABoE2uW",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 840,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "rhino:object:record#000004": {
         "bytes": {
           "data": "cIAAINEAAAAAAAAAcQAAggQAAAAAAAAA+n8CAKkAAAAAAAAA+/8CABQAAAAAAAAA5tTXTkfp0xG/5QAQgwEi8E6cu9v8/wIAcQAAAAAAAAAQAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAEAAAAAAAAAAAAAAAAAAABBAAAAAAAAAAEAAAAAAAAAAAAMAAAAAAAAAAAAAQAAAAAAAAAxAAAAAAAAAIkADAAAAU8XYlP9/AoAAAAAAAAAAAH8AAIIAAAAAAAAAAEMFXMI=",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 1197,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       },
       "rhino:object:record#000005": {
         "bytes": {
           "data": "cIAAIHACAAAAAAAAcQAAggQAAAAAAAAA+n8CAEgCAAAAAAAA+/8CABQAAAAAAAAA4NTXTkfp0xG/5QAQgwEi8Kr1Koj8/wIAEAIAAAAAAAAQAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAUQPp/AgCBAAAAAAAAAPv/AgAUAAAAAAAAANvU105H6dMRv+UAEIMBIvD0m+kj/P8CAEkAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEADAAAAE5TgUP9/AoAAAAAAAAAAAPp/AgAaAQAAAAAAAPv/AgAUAAAAAAAAAODU105H6dMRv+UAEIMBIvCq9SqI/P8CAOIAAAAAAAAAEAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAkQAAAAAAAADRA+n8CAIEAAAAAAAAA+/8CABQAAAAAAAAA29TXTkfp0xG/5QAQgwEi8PSb6SP8/wIASQAAAAAAAAAQAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJEAAAAAAAAA0QAMAAAC4ZZG2/38CgAAAAAAAAAAAaLSJMP9/AoAAAAAAAAAAAAHTYWf/fwKAAAAAAAAAAAB/AACCAAAAAAAAAADzf449",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 1418,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

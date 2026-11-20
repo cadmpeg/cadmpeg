@@ -39,7 +39,7 @@ use cadmpeg_ir::features::FeatureOperation;
 #[test]
 fn combine_consumes_tools_and_preserves_the_target_identity() {
     let mut ir = complete_block_ir();
-    let target = ir.model.bodies[0].id.clone();
+    let target = ir.geometry.bodies[0].id.clone();
     let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
     ir.model.features[0].evaluation.edit(|_, outputs| {
         outputs.insert(tool.clone());
@@ -76,6 +76,8 @@ fn combine_consumes_tools_and_preserves_the_target_identity() {
 
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         }),
     ));
 
@@ -88,9 +90,9 @@ fn combine_consumes_tools_and_preserves_the_target_identity() {
 #[test]
 fn combine_preserves_tools_when_requested() {
     let mut ir = complete_block_ir();
-    let target = ir.model.bodies[0].id.clone();
+    let target = ir.geometry.bodies[0].id.clone();
     let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
-    ir.model.bodies.push(model_body(tool.as_str()));
+    ir.geometry.bodies.push(model_body(tool.as_str()));
     ir.model.features[0].evaluation.edit(|_, outputs| {
         outputs.insert(tool.clone());
     });
@@ -126,6 +128,8 @@ fn combine_preserves_tools_when_requested() {
 
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: true,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         }),
     ));
 
@@ -138,7 +142,7 @@ fn combine_preserves_tools_when_requested() {
 #[test]
 fn combine_with_exact_local_tools_preserves_its_retained_target() {
     let mut ir = complete_block_ir();
-    let target = ir.model.bodies[0].id.clone();
+    let target = ir.geometry.bodies[0].id.clone();
     let mut combine = body_preserving_feature(
         "combine",
         1,
@@ -156,6 +160,8 @@ fn combine_with_exact_local_tools_preserves_its_retained_target() {
 
             op: cadmpeg_ir::features::BooleanKind::Cut,
             keep_tools: false,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         }),
     );
     combine.suppressed = None;
@@ -170,7 +176,7 @@ fn combine_with_exact_local_tools_preserves_its_retained_target() {
 #[test]
 fn output_free_combine_with_exact_native_operands_is_local_to_history() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut combine = body_neutral_feature(
         "local-combine",
         1,
@@ -183,6 +189,8 @@ fn output_free_combine_with_exact_native_operands_is_local_to_history() {
 
             op: cadmpeg_ir::features::BooleanKind::Intersect,
             keep_tools: false,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         }),
     );
     combine.suppressed = None;
@@ -197,11 +205,11 @@ fn output_free_combine_with_exact_native_operands_is_local_to_history() {
 #[test]
 fn trim_bodies_preserves_all_targets_and_tools() {
     let mut ir = complete_block_ir();
-    let first = ir.model.bodies[0].id.clone();
+    let first = ir.geometry.bodies[0].id.clone();
     let second = BodyId::mint("test:model:entity#second".to_string()).expect("identity grammar");
     let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
-    ir.model.bodies.push(model_body(second.as_str()));
-    ir.model.bodies.push(model_body(tool.as_str()));
+    ir.geometry.bodies.push(model_body(second.as_str()));
+    ir.geometry.bodies.push(model_body(tool.as_str()));
     ir.model.features[0].evaluation.set_outputs(
         cadmpeg_ir::features::DistinctMembers::try_from(vec![
             first.clone(),
@@ -261,9 +269,9 @@ fn trim_bodies_preserves_all_targets_and_tools() {
 #[test]
 fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
     let mut ir = complete_block_ir();
-    let target = ir.model.bodies[0].id.clone();
+    let target = ir.geometry.bodies[0].id.clone();
     let tool = BodyId::mint("test:model:entity#tool".to_string()).expect("identity grammar");
-    ir.model.bodies.push(model_body(tool.as_str()));
+    ir.geometry.bodies.push(model_body(tool.as_str()));
     ir.model.features[0].evaluation.edit(|_, outputs| {
         outputs.insert(tool.clone());
     });
@@ -319,7 +327,7 @@ fn trim_bodies_rejects_outputs_that_do_not_match_its_targets() {
 #[test]
 fn trim_bodies_requires_a_resolved_retained_side_before_lineage() {
     let mut ir = complete_block_ir();
-    let target = ir.model.bodies[0].id.clone();
+    let target = ir.geometry.bodies[0].id.clone();
     ir.model.features.push(body_preserving_feature(
         "trim",
         1,
@@ -398,10 +406,10 @@ fn output_free_trim_is_body_census_neutral_without_resolved_roles() {
 #[test]
 fn sew_replaces_all_inputs_with_its_declared_outputs() {
     let mut ir = complete_block_ir();
-    let first = ir.model.bodies[0].id.clone();
+    let first = ir.geometry.bodies[0].id.clone();
     let second = BodyId::mint("test:model:entity#second".to_string()).expect("identity grammar");
     let sewn = BodyId::mint("test:model:entity#sewn".to_string()).expect("identity grammar");
-    ir.model.bodies[0] = model_body(sewn.as_str());
+    ir.geometry.bodies[0] = model_body(sewn.as_str());
     ir.model.features[0].evaluation.set_outputs(
         cadmpeg_ir::features::DistinctMembers::try_from(vec![first.clone(), second.clone()])
             .unwrap(),
@@ -447,7 +455,7 @@ fn sew_replaces_all_inputs_with_its_declared_outputs() {
 #[test]
 fn local_sew_with_an_already_retained_output_is_census_invariant() {
     let mut ir = complete_block_ir();
-    let output = ir.model.bodies[0].id.clone();
+    let output = ir.geometry.bodies[0].id.clone();
     ir.model.features.push(Feature {
         product_definition: None,
         id: FeatureId::mint("synthetic:test:id#sew-local".to_string()).expect("identity grammar"),
@@ -488,7 +496,7 @@ fn local_sew_with_an_already_retained_output_is_census_invariant() {
 #[test]
 fn combine_rejects_a_tool_absent_from_prior_history() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.features.push(body_preserving_feature(
         "combine",
         1,
@@ -511,6 +519,8 @@ fn combine_rejects_a_tool_absent_from_prior_history() {
 
             op: cadmpeg_ir::features::BooleanKind::Cut,
             keep_tools: false,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         }),
     ));
 
@@ -532,11 +542,11 @@ fn combine_rejects_a_tool_absent_from_prior_history() {
 #[test]
 fn sew_rejects_an_output_identity_owned_by_an_unconsumed_body() {
     let mut ir = complete_block_ir();
-    let first = ir.model.bodies[0].id.clone();
+    let first = ir.geometry.bodies[0].id.clone();
     let second = BodyId::mint("test:model:entity#second".to_string()).expect("identity grammar");
     let unrelated =
         BodyId::mint("test:model:entity#unrelated".to_string()).expect("identity grammar");
-    ir.model.bodies = vec![model_body(unrelated.as_str())];
+    ir.geometry.bodies = vec![model_body(unrelated.as_str())];
     ir.model.features[0].evaluation.set_outputs(
         cadmpeg_ir::features::DistinctMembers::try_from(vec![
             first.clone(),
@@ -617,7 +627,7 @@ fn native_body_selection_is_an_incomplete_semantic_boundary() {
 #[test]
 fn completed_history_reports_a_saved_body_census_mismatch() {
     let mut ir = complete_block_ir();
-    ir.model.bodies.clear();
+    ir.geometry.bodies.clear();
 
     assert_eq!(
         saved_body_census_evidence(&ir),
@@ -632,7 +642,7 @@ fn completed_history_reports_a_saved_body_census_mismatch() {
 #[test]
 fn complete_chamfer_and_fillet_preserve_the_existing_body() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.features.push(body_preserving_feature(
         "chamfer",
         1,
@@ -671,7 +681,7 @@ fn complete_chamfer_and_fillet_preserve_the_existing_body() {
 #[test]
 fn incomplete_chamfer_construction_does_not_change_its_body_identity_effect() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.features.push(body_preserving_feature(
         "chamfer",
         1,
@@ -699,7 +709,7 @@ fn incomplete_chamfer_construction_does_not_change_its_body_identity_effect() {
 #[test]
 fn complete_single_body_dress_up_families_preserve_identity() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let first = FaceSelection::Faces(vec![
         FaceId::mint("test:model:entity#first".to_string()).expect("identity grammar")
     ]);
@@ -739,7 +749,8 @@ fn complete_single_body_dress_up_families_preserve_identity() {
             second_side: None,
         }),
         FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(first, second).unwrap(),
+            operands: cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(first, second)
+                .unwrap(),
         }),
     ];
     for (index, definition) in definitions.into_iter().enumerate() {
@@ -760,9 +771,9 @@ fn complete_single_body_dress_up_families_preserve_identity() {
 #[test]
 fn complete_surface_edits_preserve_every_declared_body_identity() {
     let mut ir = complete_block_ir();
-    let first = ir.model.bodies[0].id.clone();
+    let first = ir.geometry.bodies[0].id.clone();
     let second = BodyId::mint("test:model:entity#second".to_string()).expect("identity grammar");
-    ir.model.bodies.push(model_body(second.as_str()));
+    ir.geometry.bodies.push(model_body(second.as_str()));
     ir.model.features[0].evaluation.edit(|_, outputs| {
         outputs.insert(second.clone());
     });
@@ -851,7 +862,7 @@ fn output_free_surface_edits_are_body_identity_neutral() {
         });
         assert_eq!(
             saved_body_census_evidence(&ir),
-            BodyCensusEvaluation::verified(vec![ir.model.bodies[0].id.clone()]).unwrap()
+            BodyCensusEvaluation::verified(vec![ir.geometry.bodies[0].id.clone()]).unwrap()
         );
     }
 }
@@ -985,7 +996,7 @@ fn unresolved_suppression_is_irrelevant_to_output_free_construction() {
 #[test]
 fn output_free_boolean_construction_has_no_retained_body_effect() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut extrude = complete_extrude_feature(
         "transient-extrude",
         1,
@@ -1011,7 +1022,7 @@ fn output_free_boolean_construction_has_no_retained_body_effect() {
 #[test]
 fn output_free_fset_is_body_census_neutral() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut fset = body_neutral_feature(
         "fset",
         1,
@@ -1032,7 +1043,7 @@ fn output_free_fset_is_body_census_neutral() {
 #[test]
 fn output_free_native_snapshot_is_local_to_history() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut snapshot = body_neutral_feature(
         "snapshot",
         1,
@@ -1077,7 +1088,7 @@ fn unresolved_suppression_still_blocks_a_body_effect() {
 #[test]
 fn unresolved_suppression_does_not_block_a_complete_in_place_edit() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut hole = complete_hole(body.clone());
     hole.suppressed = None;
     ir.model.features.push(hole);
@@ -1091,7 +1102,7 @@ fn unresolved_suppression_does_not_block_a_complete_in_place_edit() {
 #[test]
 fn output_free_hole_is_body_identity_neutral_regardless_of_suppression() {
     let mut ir = complete_block_ir();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     let mut hole = complete_hole(body.clone());
     hole.suppressed = None;
     hole.evaluation.edit(|definition, _| {

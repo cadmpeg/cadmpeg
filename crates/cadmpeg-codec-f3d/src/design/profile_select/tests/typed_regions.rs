@@ -26,6 +26,7 @@ fn selection(
         owner_text_offset: 200,
         sketch_scope_record_index: 7,
         sketch_scope_offset: 300,
+        scope_sketch_containers: Vec::new(),
         identity_record_offset,
         identity_end_offset: 629,
         groups: vec![
@@ -147,6 +148,89 @@ fn typed_profile_regions_preserve_holes_and_refuse_ambiguous_loops() {
     profiles.push(profiles[0].clone());
     sketches[0].profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles).unwrap();
     assert!(resolve(&sketches, &selections).is_none());
+}
+
+#[test]
+fn typed_profile_without_a_scope_placement_joins_the_container_its_scope_record_names() {
+    let mut group = group();
+    group.operand_role =
+        crate::records::topology::construction::DesignConstructionOperandRole::Other(
+            DesignOperandRole::PROFILE,
+        );
+    let mut unscoped = placement();
+    unscoped.scope_record_index = None;
+    let sketch_id = neutral_sketch_id(&unscoped);
+    let curves = [curve(31, 11, 0), curve(32, 12, 0)];
+    let entities: Vec<_> = [(11, 2.0), (12, 1.0)]
+        .into_iter()
+        .map(|(id, radius)| {
+            SketchEntity::new(
+                neutral_sketch_curve_id(&sketch_id, id, 0),
+                sketch_id.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                    center: Point2::new(0.0, 0.0),
+                    radius: Length::new(radius).unwrap(),
+                })
+                .unwrap(),
+            )
+        })
+        .collect();
+    let sketches = [Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(
+            entities
+                .iter()
+                .map(|entity| {
+                    vec![SketchEntityUse {
+                        entity: entity.id().clone(),
+                        reversed: false,
+                    }]
+                })
+                .collect::<Vec<_>>(),
+        )
+        .unwrap(),
+        native_ref: None,
+    }];
+    let resolve = |placements: &[DesignSketchPlacement], containers: Vec<u32>| {
+        let mut selections = [selection(10, 0, 11, true), selection(11, 1, 12, true)];
+        for selection in &mut selections {
+            selection.scope_sketch_containers = containers.clone();
+        }
+        let mut resolution =
+            planar_resolution(&[], placements, &curves, &sketches, &entities).path_resolution();
+        resolution.profile_curves = &selections;
+        resolve_entity_selection_profile(&group, &resolution)
+    };
+    let expected = Some(cadmpeg_ir::features::ProfileRef::Planar(
+        cadmpeg_ir::features::PlanarProfileRef::sketch_regions(
+            sketch_id,
+            vec![
+                SketchProfileRegion::loops(0, vec![]).unwrap(),
+                SketchProfileRegion::loops(1, vec![]).unwrap(),
+            ],
+        )
+        .unwrap(),
+    ));
+    // The scope record names the Sketch container whose suffix is the owner text.
+    assert_eq!(resolve(&[unscoped.clone()], vec![41, 42]), expected);
+    // A scope record that does not name that container joins nothing.
+    assert!(resolve(&[unscoped.clone()], vec![41]).is_none());
+    assert!(resolve(&[unscoped.clone()], vec![]).is_none());
+    // A placement with its own Sketch scope is not joined through the record.
+    let mut scoped = unscoped.clone();
+    scoped.scope_record_index = Some(9);
+    assert!(resolve(&[scoped], vec![42]).is_none());
+    // A placement that carries the named scope joins as before.
+    assert_eq!(resolve(&[placement()], vec![]), expected);
 }
 
 #[test]

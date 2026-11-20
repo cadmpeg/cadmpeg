@@ -234,7 +234,7 @@ pub fn saved_body_census_evidence(ir: &CadIr) -> BodyCensusEvaluation {
         }
     };
     let saved = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.clone())
@@ -260,9 +260,15 @@ fn feature_boundary(feature: &cadmpeg_ir::features::Feature) -> FeatureBoundary 
     FeatureBoundary {
         id: feature.id.clone(),
         name: feature.name.clone(),
-        family: serde_json::to_value(feature.evaluation.definition())
+        family: cadmpeg_ir::hash::finite_json::to_json_value(feature.evaluation.definition())
             .ok()
-            .and_then(|definition| definition.get("definition")?.as_str().map(str::to_string)),
+            .and_then(|definition| {
+                let family = match definition.get("kind")?.as_str()? {
+                    "operation" => definition.get("value")?.get("kind")?.as_str()?,
+                    family => family,
+                };
+                Some(family.to_owned())
+            }),
         ordinal: feature.ordinal,
     }
 }
@@ -298,7 +304,7 @@ fn rederived_body_census(
 ) -> Result<BTreeSet<BodyId>, (FeatureBoundary, UnsupportedBodyCensusReason)> {
     let mut bodies = BTreeSet::new();
     let saved_bodies = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.clone())

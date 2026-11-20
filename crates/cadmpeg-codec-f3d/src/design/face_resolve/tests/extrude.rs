@@ -77,6 +77,7 @@ fn start_binder_fixture(
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     }];
     let sketch = Sketch {
         id: SketchId::mint("synthetic:test:id#start-sketch").unwrap(),
@@ -273,6 +274,7 @@ fn selected_face_start_requires_unique_sketch_plane_coincidence() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
         id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
@@ -285,6 +287,7 @@ fn selected_face_start_requires_unique_sketch_plane_coincidence() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let faces = [
         face("coincident", "surface-coincident"),
@@ -420,6 +423,7 @@ fn extrude_target_geometry_requires_one_forward_parallel_plane() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     };
     let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
         id: SurfaceId::mint(format!("test:model:surface#{id}")).expect("identity grammar"),
@@ -432,6 +436,7 @@ fn extrude_target_geometry_requires_one_forward_parallel_plane() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     };
     let faces = [
         face_with_surface(1, "surface-forward"),

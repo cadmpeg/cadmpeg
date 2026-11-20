@@ -337,7 +337,7 @@ fn counted_two_chart_first_coordinate_reads_positive_dict_prefixes() {
     };
     assert_eq!(
         record.samples[0][0][0],
-        f64::from_be_bytes([0x3f, 0xc0, 0x20, 0, 0, 0, 0, 0])
+        f64::from_be_bytes([0x3f, 0xb0, 0x20, 0, 0, 0, 0, 0])
     );
 }
 
@@ -383,7 +383,7 @@ fn two_chart_replay_consumes_curve_local_scalar_forms() {
     assert_eq!(decoded.len(), 1);
     assert_eq!(decoded[0].samples.len(), 2);
     let expected_first = f64::from_be_bytes([0xbc, 0, 0, 0, 0, 0, 0, 0]);
-    let expected_second = f64::from_be_bytes([0x3f, 0xcb, 0, 0, 0, 0, 0, 0]);
+    let expected_second = f64::from_be_bytes([0x3f, 0xc9, 0, 0, 0, 0, 0, 0]);
     for sample in &decoded[0].samples {
         for chart in sample {
             assert!((chart[0] - expected_first).abs() <= f64::EPSILON);
@@ -1690,5 +1690,15 @@ fn two_chart_productions_read_their_chart_coordinate_forms() {
             (value.to_bits(), repeat, end),
             (0xbffd_a019_1ef4_0b5f, 1, 8)
         );
+    }
+}
+
+#[test]
+fn fc05_reads_the_banded_positive_dict_heads() {
+    for (prefix, value) in [(0x54, 0.18), (0x58, 0.22)] {
+        let bytes = f64::to_be_bytes(value);
+        let mut token = vec![prefix];
+        token.extend_from_slice(&bytes[2..]);
+        assert_eq!(fc05_scalar(&token, 0), Some((value, 7)));
     }
 }

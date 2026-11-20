@@ -490,13 +490,24 @@ byte1 = (prefix - 0x8B) & 0xFF
 byte0 = 0x3F when byte1 >= 0x80, otherwise 0x40
 ```
 
+Prefixes `4b..59` select the first two IEEE bytes from this table instead:
+
+| Prefix   | First two IEEE bytes |
+| -------- | -------------------- |
+| `4b`     | `3fb0`               |
+| `4c`     | `3fb1`               |
+| `4d`     | `3fb5`               |
+| `4e..53` | `3f72 + prefix`      |
+| `54..57` | `3f73 + prefix`      |
+| `58..59` | `3f74 + prefix`      |
+
 Known prefixes include `71→3F E6`, `74→3F E9`, `76→3F EB`, `81→3F F6`, `8b→40 00`, `90→40 05`, `91→40 06`, `a1→40 16`, `a2→40 17`, and `b7→3F E4`. The negative saved-spline tangent form `b3` maps to `BF E0`. In the `var_arr` coordinate lane, `d7` is the sign counterpart of `90` and maps to `C0 05 <tail6>`.
 
 The `var_arr` coordinate lane also defines the sign pairs
 `7e→3F F3`/`c6→BF F3`, `7f→3F F4`/`c7→BF F4`,
 `80→3F F5`/`c8→BF F5`, and
 `97→40 0C`/`dd→C0 0C`. Each prefix is followed by the remaining six IEEE
-bytes. Prefix `51` maps to `3F C6`. The defined negative DICT members are
+bytes. The defined negative DICT members are
 `a7..ac→BF D3..D8`, `ae→BF DA`, `b3→BF E0`, `bd→BF EA`, `c3→BF F0`,
 `c6..ce→BF F3..FB`,
 `d0→BF FE`, `d2→C0 00`, `d4→C0 02`, `d6→C0 04`, `d8→C0 06`,
@@ -1365,15 +1376,15 @@ model-reference token with a seven-byte tail, `19 <scalar>`, `eb ba
 <payload3>`, `ec ba <payload3>`, `ed ba <payload3>`, `5a b2`, or a bare `18`.
 The control shell does not contribute geometry. The two edge parameters use
 the first tabulated-cylinder directrix-coordinate lane. A positive DICT
-parameter with prefix `p` in `4b..a3` reconstructs IEEE bytes two through seven
-with `q = (p + 75) mod 256`; byte one is `3f` when `q >= 80` and `40` otherwise.
+parameter with prefix `p` in `4b..a3` takes its first two IEEE bytes from the
+positive DICT lane of the seven-byte DICT form.
 The signed directrix lattice handles all other parameter prefixes. The
 separator after the first parameter is one byte in `11..14`, or three bytes
 beginning with `00` or `34`; separator payload bytes are not scalar fields.
 The second parameter follows the separator.
 
-The six endpoint coordinates use the same first tabulated-cylinder
-directrix-coordinate lane in XYZ order. A complete endpoint sequence may end
+The six endpoint coordinates use the lane of the two edge parameters, with the
+same positive DICT prefixes, in XYZ order. A complete endpoint sequence may end
 at the body boundary or at `f7 <reference-id>`; a compound close may follow
 that sequence when another bounded body is present. The reference identifies
 the generated entity and does not supply a coordinate. The two triples are
@@ -1784,10 +1795,11 @@ The four point entities form the ordered cubic control polygon `P0, P1, P2, P3`.
 Each packed point body contains two directrix coordinates. A control point is
 numeric only when two defined scalar tokens consume its entire bounded body;
 partial scalar matches do not assign either coordinate.
-In the first-coordinate lane, prefixes `4b..a3` use the positive DICT mapping.
-Negative prefixes `b2..cf`, `d0..dc`, `dd`, and `de..df` derive their two
+In the first-coordinate lane, prefixes `4b..a3` outside the fixed forms of this
+paragraph use the positive DICT mapping.
+Negative prefixes `b3..cf`, `d0..dc`, `dd`, and `de..df` derive their two
 leading IEEE bytes by adding the prefix to `BF2D`, `BF2E`, `BF2F`, and `BF32`,
-respectively. Negative prefixes `a5..a6` and `a7..b1` add to `BF2B` and `BF2C`.
+respectively. Negative prefixes `a5..a6` and `a7..b2` add to `BF2B` and `BF2C`.
 Prefixes `2c`, `4e..4f`, `52`, `54`, and `58..5a` reconstruct
 `3F <tail6> 00`; `45` reconstructs `BF <tail6> 00`.
 The fixed-width forms are `28 <tail7> → 3F <tail7>`,
@@ -1795,7 +1807,7 @@ The fixed-width forms are `28 <tail7> → 3F <tail7>`,
 `41 <tail7> → 3F <tail7>`, `46 <tail7> → C0 <tail7>`, and
 `4a <tail6> → C0 <tail6> 00`.
 In the second-coordinate lane, prefixes `5c` and `5e..a3` use the positive DICT mapping.
-Negative prefixes `a4..a6`, `a7..b1`, and `b2..c7` add to `BF2B`, `BF2C`, and
+Negative prefixes `a4..a6`, `a7..b2`, and `b3..c7` add to `BF2B`, `BF2C`, and
 `BF2D`. Prefixes `c8..cf`, `d0..dc`, `dd`, and `de..df` add to `BF2D`,
 `BF2E`, `BF2F`, and `BF32`, respectively. Prefixes `2c`, `4c..4d`, `50`, and `54` reconstruct
 `3F <tail6> 00`; `45` reconstructs `BF <tail6> 00`; `28` and `41`
@@ -1961,7 +1973,8 @@ before a structural control byte or the bounded body end is a seven-byte
 negative coordinate token. Its value is the big-endian IEEE-754 binary64 image
 `c0 b1 b2 b3 b4 b5 b6 00`. The trailing low byte is implicit; the structural
 control byte is not part of the scalar. An unframed `2d` scalar retains the
-generic eight-byte form.
+generic eight-byte form. A type-26 radius slot reads `2d <tail7>` in its
+eight-byte radius-slot form.
 
 A `geom_type = 26` positional body trailer has the form `01 12 50
 <selector_ci> <outline[2][3]>`. The selector is a compact integer. The outline
@@ -4059,10 +4072,10 @@ parameter rows within one snapshot use occurrence-qualified identities in source
 order. In positional dimension rows, a bare
 `18` in the `aux_value` slot encodes zero and does not consume the following
 compact `ext_id`.
-The positional `value` lane uses the positive DICT lattice `53..a3`; the first
-two IEEE bytes are `3F75 + prefix` and the following six bytes complete the
-value; `ad` is an alias for leading bytes `3F D9`. The seven-byte
-`31 <tail6>` form reconstructs `[40, tail6, 00]`. A bare `18` value is zero. Unresolved `00 XX YY` and `01 XX YY ZZ`
+The positional `value` lane uses the positive DICT lane of the seven-byte DICT
+form for prefixes `51` and `53..a3`, and the following six bytes complete the value; `ad` is an alias for leading bytes `3F D9`. The seven-byte
+`31 <tail6>` form reconstructs `[40, tail6, 00]`. A bare `18` value is zero.
+Every other value prefix uses the `var_arr` coordinate lane. Unresolved `00 XX YY` and `01 XX YY ZZ`
 value forms occupy three and four bytes respectively. Compact `0e` is `-0.5`, so
 the following one-byte `direct`, `aux_value`, and compact `ext_id` fields remain
 aligned. Each unresolved form is a bounded token distinct from a scalar value
@@ -5701,14 +5714,14 @@ positions `k` and `k+3` identifies coordinate axis `k` and plane offset zero.
 Zero pairs or multiple pairs do not define a plane equation.
 Datum-outline nonzero coordinates use the bounded model-coordinate DICT lane. `5e..a3`
 set the two-byte IEEE prefix to `0x3f75 + prefix`; `a4..a6`,
-`a7..b1`, `b2..cf`, `d0..dc`, `dd`, and `de..df` set it to
+`a7..b2`, `b3..cf`, `d0..dc`, `dd`, and `de..df` set it to
 `0xbf2b + prefix`, `0xbf2c + prefix`, `0xbf2d + prefix`, `0xbf2e + prefix`,
 `0xbf2f + prefix`, and `0xbf32 + prefix`, respectively. Each prefix is
 followed by `tail6`.
 The `28` and `41` forms reconstruct `[3f, tail7]`; the fixed `2c`, `4c..4d`,
 `50`, and `54` forms reconstruct
-`[3f, tail6, 00]`. The `46` and `2d` forms retain their eight-byte
-`[40, tail7]` and `[c0, tail7]` forms. Each complete token consumes one
+`[3f, tail6, 00]`. The `2d` and `46` forms retain their eight-byte
+`[40, tail7]` and `[c0, tail7]` forms, respectively. Each complete token consumes one
 coordinate slot; a missing or incomplete token leaves the outline unresolved.
 The `41` scalar form therefore occupies eight bytes: the prefix followed by
 seven payload bytes. The seven-byte `45` and `5c` tokens consume one slot but
@@ -6781,8 +6794,14 @@ all-around symbol and integer `1` enables it for the owning tolerance frame.
 the same `ref_id` and `ref_type` pair as the tolerance attributes.
 
 `Annot_Type` 8 identifies a dimension. Its neutral attributes include
-`PTC_DIM_TYPE`, `PTC_DIM_NOMINAL_VAL`, and `PTC_TOLERANCE_MODE`. `Limits`
-stores absolute bounds in `PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT`.
+`PTC_DIM_TYPE`, `PTC_DIM_NOMINAL_VAL`, and `PTC_TOLERANCE_MODE`.
+`PTC_DIM_TYPE` text `Linear`, `Diameter`, `Radius`, or `Angle` names a
+linear, diameter, radius, or angular dimension. The `PTC_TOLERANCE_MODE` value
+`Limits` stores the bounds in `PTC_DIM_LOWER_LIMIT` and `PTC_DIM_UPPER_LIMIT`.
+In a save whose `#Creo  TM` banner release is 10, they are the absolute lower
+and upper bounds. In a save whose banner release is 4, they are deviations: the
+lower bound is the nominal minus the lower value and the upper bound is the
+nominal plus the upper value.
 `+- Symmetric` stores a deviation magnitude in `PTC_DIM_TOL_VALUE`.
 `Plus-Minus` stores deviation magnitudes in `PTC_DIM_LOWER_TOL_VALUE` and
 `PTC_DIM_UPPER_TOL_VALUE`; the lower deviation is negative. Length values use
@@ -6963,10 +6982,16 @@ tail bytes follow the prefix.
 
 | Prefix   | `H`         |
 | -------- | ----------- |
-| `4b..a3` | `3f75 + p`  |
+| `4b`     | `3fb0`      |
+| `4c`     | `3fb1`      |
+| `4d`     | `3fb5`      |
+| `4e..53` | `3f72 + p`  |
+| `54..57` | `3f73 + p`  |
+| `58..59` | `3f74 + p`  |
+| `5a..a3` | `3f75 + p`  |
 | `a5..a6` | `bf2b + p`  |
-| `a7..b1` | `bf2c + p`  |
-| `b2..cf` | `bf2d + p`  |
+| `a7..b2` | `bf2c + p`  |
+| `b3..cf` | `bf2d + p`  |
 | `d0..dc` | `bf2e + p`  |
 | `dd`     | `bf2f + p`  |
 | `de..df` | `bf32 + p`  |

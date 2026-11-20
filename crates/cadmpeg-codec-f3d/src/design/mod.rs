@@ -62,10 +62,16 @@ pub(crate) enum DesignFeatureFamily {
     Hole,
     Emboss,
     Split,
+    SilhouetteSplit,
     Scale,
     Thread,
+    SheetMetalBaseFace,
     SheetMetalEdgeFlange,
     SheetMetalHem,
+    SheetMetalBend,
+    SheetMetalContourFlange,
+    SheetMetalUnfold,
+    SheetMetalRefold,
 }
 
 /// Return the canonical operation family for a selected feature kind.
@@ -103,10 +109,16 @@ pub(crate) fn design_feature_family(
         Kind::Hole => Some(DesignFeatureFamily::Hole),
         Kind::Emboss => Some(DesignFeatureFamily::Emboss),
         Kind::Split => Some(DesignFeatureFamily::Split),
+        Kind::SilhouetteSplit => Some(DesignFeatureFamily::SilhouetteSplit),
         Kind::Scale => Some(DesignFeatureFamily::Scale),
         Kind::Thread => Some(DesignFeatureFamily::Thread),
+        Kind::Face => Some(DesignFeatureFamily::SheetMetalBaseFace),
         Kind::EdgeFlange => Some(DesignFeatureFamily::SheetMetalEdgeFlange),
         Kind::Hem => Some(DesignFeatureFamily::SheetMetalHem),
+        Kind::Bend => Some(DesignFeatureFamily::SheetMetalBend),
+        Kind::ContourFlange => Some(DesignFeatureFamily::SheetMetalContourFlange),
+        Kind::Unfold => Some(DesignFeatureFamily::SheetMetalUnfold),
+        Kind::Refold => Some(DesignFeatureFamily::SheetMetalRefold),
         Kind::SpherePrimitive
         | Kind::TorusPrimitive
         | Kind::BoxPrimitive
@@ -130,6 +142,7 @@ pub(crate) fn design_feature_family(
         | Kind::ComponentInsert
         | Kind::CopyPaste
         | Kind::JointOrigin
+        | Kind::MotionLink
         | Kind::BaseFlange
         | Kind::SplitFace
         | Kind::PathPattern
@@ -137,10 +150,10 @@ pub(crate) fn design_feature_family(
         | Kind::Modify
         | Kind::DeleteFace
         | Kind::SurfaceDeleteFace
+        | Kind::SurfaceUntrim
         | Kind::UnStitch
         | Kind::RemoveBody
-        | Kind::ReverseNormal
-        | Kind::Face => None,
+        | Kind::ReverseNormal => None,
     }
 }
 

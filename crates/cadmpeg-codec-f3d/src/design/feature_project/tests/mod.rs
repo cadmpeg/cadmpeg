@@ -7,8 +7,10 @@
 )]
 
 mod align;
+mod base_feature;
 pub(super) mod body_selection;
 mod coil;
+mod derived_base;
 mod direct_face;
 mod dispatcher;
 mod draft_pull;
@@ -40,9 +42,11 @@ mod spatial_profiles;
 mod split;
 mod surface;
 mod surface_patch;
+mod surface_untrim;
 mod sweep;
 mod symmetric_extrude;
 mod thread_extent;
+mod thread_nominal_diameter;
 mod timeline;
 mod treatments;
 mod work_plane;

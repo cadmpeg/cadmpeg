@@ -12,7 +12,10 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::Sketch;
 
-use crate::history_records::{AsmHistoricalPlane, AsmHistoricalTopology, AsmHistory};
+use super::output_chain::OutputChain;
+use crate::history_records::{
+    AsmDeltaState, AsmHistoricalPlane, AsmHistoricalTopology, AsmHistory,
+};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::{
     construction::DesignConstructionOperandGroup, face::DesignFaceOperand,
@@ -53,7 +56,7 @@ pub(crate) fn bind(
         let history = &input.histories[state.history];
         let current = &history.states()[state.state];
         let previous = &history.states()[state.previous];
-        let Some(transition) = current.transition.as_ref() else {
+        let Some(changed) = changed_faces(input.histories, history, current, previous) else {
             continue;
         };
         feature.evaluation.edit(|definition, _| {
@@ -119,8 +122,7 @@ pub(crate) fn bind(
                 };
                 let sweep = sweep.unit()?;
                 let start = start_origin(start, origin.get(), normal.get(), sweep, before);
-                let caps: Vec<_> = transition.topology.faces.inserted.iter()
-                    .chain(&transition.topology.faces.updated)
+                let caps: Vec<_> = changed.iter()
                     .filter_map(|slot| exact_plane(after, *slot))
                     .collect();
                 let terminal_caps: Vec<_> = caps.iter().copied().filter(|cap| {
@@ -167,6 +169,53 @@ pub(crate) fn bind(
         });
     }
     losses
+}
+
+/// The faces inserted or updated from the preceding state to the result
+/// state, in transition order: the result transition alone when it follows
+/// the preceding state, otherwise every transition of the complete chain.
+fn changed_faces(
+    histories: &[AsmHistory],
+    history: &AsmHistory,
+    current: &AsmDeltaState,
+    previous: &AsmDeltaState,
+) -> Option<Vec<i64>> {
+    let transition = current.transition.as_ref()?;
+    let transitions = if transition.previous_state_id == Some(previous.state_id) {
+        vec![transition]
+    } else {
+        let chain = OutputChain::resolve(
+            histories,
+            current.state_id,
+            previous.state_id,
+            Some(&history.id),
+        )?;
+        chain
+            .states
+            .iter()
+            .rev()
+            .map(|state_id| {
+                let mut matching = history
+                    .states()
+                    .iter()
+                    .filter(|state| state.state_id == *state_id);
+                match (matching.next(), matching.next()) {
+                    (Some(state), None) => state.transition.as_ref(),
+                    _ => None,
+                }
+            })
+            .collect::<Option<Vec<_>>>()?
+    };
+    let mut changed = Vec::new();
+    for transition in transitions {
+        let faces = &transition.topology.faces;
+        for slot in faces.inserted.iter().chain(&faces.updated) {
+            if !changed.contains(slot) {
+                changed.push(*slot);
+            }
+        }
+    }
+    Some(changed)
 }
 
 fn native(face: &FaceSelection) -> Option<String> {

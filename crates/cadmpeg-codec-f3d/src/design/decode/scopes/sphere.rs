@@ -1,11 +1,16 @@
-use super::shared_frames::{exact_fixed_scalar, extrude_operation_at, marked_record_reference};
+use super::shared_frames::{
+    exact_fixed_scalar, extrude_operation_at, marked_record_reference, rigid_transform_at,
+};
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids::native_stream;
 use crate::layout::{
-    sphere_compact_prefix as compact, sphere_shifted_prefix as shifted,
-    sphere_typed_prefix as typed,
+    marked_sphere_local_frame as marked_frame, sphere_compact_prefix as compact,
+    sphere_shifted_prefix as shifted, sphere_typed_prefix as typed,
+    unmarked_sphere_local_frame as unmarked_frame,
 };
-use crate::records::feature::primitives::DesignSpherePrimitive;
+use crate::records::feature::primitives::{
+    DesignSphereLocalFrameAssumption, DesignSpherePrimitive,
+};
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
 use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use crate::records::sketch_placement::SketchPlacementMatrix;
@@ -19,7 +24,7 @@ pub(super) fn decode(
     owners: &[DesignParameterOwner],
     parameters: &[DesignParameter],
 ) -> Option<DesignSpherePrimitive> {
-    if scope.kind() != DesignFeatureKind::SpherePrimitive || scope.frame_length() == 462 {
+    if scope.kind() != DesignFeatureKind::SpherePrimitive {
         return None;
     }
     let start = usize::try_from(scope.byte_offset()).ok()?;
@@ -29,12 +34,13 @@ pub(super) fn decode(
     let members: Vec<u32> = scope.reference_members().values().copied().collect();
     let suffix = members.get(members.len().checked_sub(3)?..)?;
     let mut forms = [
-        (compact::OPERATION, compact::PLACEMENT, false),
-        (shifted::OPERATION, shifted::PLACEMENT, false),
-        (typed::OPERATION, typed::PLACEMENT, true),
+        (compact::OPERATION, compact::PLACEMENT, false, false),
+        (shifted::OPERATION, shifted::PLACEMENT, false, false),
+        (typed::OPERATION, typed::PLACEMENT, true, false),
+        (typed::OPERATION - 1, typed::PLACEMENT - 1, true, true),
     ]
     .into_iter()
-    .filter_map(|(operation_at, reference_at, is_typed)| {
+    .filter_map(|(operation_at, reference_at, is_typed, prefix_assumed)| {
         let operation = extrude_operation_at(data, operation_at)?;
         (data.get(operation_at + 4) == Some(&1)).then_some(())?;
         let reference = |ordinal: usize| {
@@ -56,12 +62,48 @@ pub(super) fn decode(
             && targets[0] != targets[1]
             && targets[0] != targets[2]
             && targets[1] != targets[2])
-            .then_some((operation, operation_at, targets))
+            .then_some((
+                operation,
+                operation_at,
+                targets,
+                reference_at + 3 * if is_typed { 51 } else { 11 },
+                prefix_assumed,
+            ))
     });
-    let (operation, operation_at, [placement, diameter_record_index, _]) = forms.next()?;
+    let (
+        operation,
+        operation_at,
+        [placement, diameter_record_index, _],
+        frame_at,
+        prefix_framing_assumed,
+    ) = forms.next()?;
     if forms.next().is_some() {
         return None;
     }
+    let marker = data.get(frame_at + marked_frame::IDENTITY).copied();
+    let unmarked = rigid_transform_at(data, frame_at + unmarked_frame::MATRIX);
+    let (transform, transform_at, local_frame_assumption) = if let Some(matrix) = unmarked {
+        (
+            matrix,
+            Some(frame_at + unmarked_frame::MATRIX),
+            (marker == Some(1)).then_some(DesignSphereLocalFrameAssumption::Framing),
+        )
+    } else if marker == Some(1) {
+        (SketchPlacementMatrix::IDENTITY, None, None)
+    } else {
+        match rigid_transform_at(data, frame_at + marked_frame::MATRIX) {
+            Some(matrix) => (
+                matrix,
+                Some(frame_at + marked_frame::MATRIX),
+                (marker != Some(0)).then_some(DesignSphereLocalFrameAssumption::Framing),
+            ),
+            None => (
+                SketchPlacementMatrix::IDENTITY,
+                None,
+                Some(DesignSphereLocalFrameAssumption::Identity),
+            ),
+        }
+    };
     let stream = native_stream(&scope.id)?;
     let mut candidates = owners.iter().filter(|owner| {
         owner.record_index() == diameter_record_index && native_stream(owner.id()) == Some(stream)
@@ -109,10 +151,15 @@ pub(super) fn decode(
     });
     Some(DesignSpherePrimitive {
         placement_record_index: Some(placement),
+        prefix_framing_assumed,
         diameter_owner_assumed,
         diameter_source_assumed,
-        transform: SketchPlacementMatrix::IDENTITY,
-        transform_offset: None,
+        support_transform: None,
+        local_frame_assumption,
+        transform,
+        transform_offset: transform_at
+            .and_then(|offset| start.checked_add(offset))
+            .map(u64_from_index),
         diameter: PositiveReal::new(value)?,
         diameter_record_index,
         diameter_offset,

@@ -16,51 +16,39 @@ use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
 use cadmpeg_ir::CadIr;
 
 pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
-    if !ir.model.bodies.iter().any(|body| {
+    if !ir.geometry.bodies.iter().any(|body| {
         body.transform
             .is_some_and(|value| value != Transform::identity())
     }) {
         return Ok(());
     }
 
-    let regions = ir
-        .model
-        .regions
-        .iter()
-        .map(|value| (value.id.as_str(), value))
-        .collect::<HashMap<_, _>>();
     let shells = ir
-        .model
+        .geometry
         .shells
         .iter()
         .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
-    let faces = ir
-        .model
-        .faces
-        .iter()
-        .map(|value| (value.id.as_str(), value))
-        .collect::<HashMap<_, _>>();
     let loops = ir
-        .model
+        .geometry
         .loops
         .iter()
         .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
     let coedges = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
     let edges = ir
-        .model
+        .geometry
         .edges
         .iter()
         .map(|value| (value.id.as_str(), value))
         .collect::<HashMap<_, _>>();
     let vertices = ir
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|value| (value.id.as_str(), value))
@@ -69,21 +57,15 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
     let mut point_transforms = HashMap::new();
     let mut surface_transforms = HashMap::new();
     let mut curve_transforms = HashMap::new();
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         let transform = body.transform.unwrap_or_default();
         check_rigid(transform)?;
-        for region_id in &body.regions {
-            let region = regions
-                .get(region_id.as_str())
-                .ok_or_else(|| CodecError::Malformed("body references missing region".into()))?;
+        for region in ir.geometry.body_regions(&body.id) {
             for shell_id in &region.shells {
                 let shell = shells.get(shell_id.as_str()).ok_or_else(|| {
                     CodecError::Malformed("region references missing shell".into())
                 })?;
-                for face_id in shell.faces() {
-                    let face = faces.get(face_id.as_str()).ok_or_else(|| {
-                        CodecError::Malformed("shell references missing face".into())
-                    })?;
+                for face in ir.geometry.shell_faces(&shell.id) {
                     assign(&mut surface_transforms, face.surface.as_str(), transform)?;
                     for loop_id in &face.loops {
                         let lp = loops.get(loop_id.as_str()).ok_or_else(|| {
@@ -99,7 +81,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
                             if let Some(curve) = edge.curve() {
                                 assign(&mut curve_transforms, curve.as_str(), transform)?;
                             }
-                            for vertex_id in [&edge.start, &edge.end] {
+                            for vertex_id in edge.vertices() {
                                 let vertex = vertices.get(vertex_id.as_str()).ok_or_else(|| {
                                     CodecError::Malformed("edge references missing vertex".into())
                                 })?;
@@ -112,19 +94,19 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
         }
     }
 
-    for point in &mut ir.model.points {
+    for point in &mut ir.geometry.points {
         if let Some(transform) = point_transforms.get(point.id.as_str()) {
             let placed = placed_point(*transform, point.position())?;
             point.set_position(placed);
         }
     }
-    for surface in &mut ir.model.surfaces {
+    for surface in &mut ir.geometry.surfaces {
         let Some(transform) = surface_transforms.get(surface.id.as_str()).copied() else {
             continue;
         };
         transform_surface(&mut surface.geometry, transform)?;
     }
-    for curve in &mut ir.model.curves {
+    for curve in &mut ir.geometry.curves {
         let Some(transform) = curve_transforms.get(curve.id.as_str()).copied() else {
             continue;
         };
@@ -132,7 +114,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
     }
     if !ir.model.tessellations.is_empty() {
         let transforms = ir
-            .model
+            .geometry
             .bodies
             .iter()
             .map(|body| (body.id.clone(), body.transform.unwrap_or_default()))
@@ -185,7 +167,7 @@ pub(crate) fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
             }
         }
     }
-    ir.model
+    ir.geometry
         .bodies
         .iter_mut()
         .for_each(|body| body.transform = None);

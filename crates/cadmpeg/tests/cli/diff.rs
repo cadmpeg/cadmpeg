@@ -17,8 +17,8 @@ fn diff_reports_modified_entities_and_uses_diff_exit_codes() {
     let dir = tempdir().unwrap();
     let left = unit_cube().expect("unit cube fixture is admitted");
     let mut right = left.clone();
-    let moved = right.model.points[0].position().get();
-    right.model.points[0].set_position(
+    let moved = right.geometry.points[0].position().get();
+    right.geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x + 0.5,
             moved.y,
@@ -26,9 +26,9 @@ fn diff_reports_modified_entities_and_uses_diff_exit_codes() {
         ))
         .expect("a finite position is a point"),
     );
-    right.model.edges[0].tolerance =
+    right.geometry.edges[0].tolerance =
         Some(cadmpeg_ir::scalar::PositiveReal::new(0.01).expect("positive finite tolerance"));
-    right.model.coedges[0].sense = match right.model.coedges[0].sense {
+    right.geometry.coedges[0].sense = match right.geometry.coedges[0].sense {
         cadmpeg_ir::topology::Sense::Forward => cadmpeg_ir::topology::Sense::Reversed,
         cadmpeg_ir::topology::Sense::Reversed => cadmpeg_ir::topology::Sense::Forward,
     };

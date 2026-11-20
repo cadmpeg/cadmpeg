@@ -49,7 +49,7 @@ fn pcurve_uv_offset_translates_cartesian_poles_and_keeps_unchanged_bytes() {
         let decoded = F3dCodec
             .decode(&mut Cursor::new(&source), &DecodeOptions::default())
             .expect("offset decode");
-        let pcurve = &decoded.ir().model.pcurves[0];
+        let pcurve = &decoded.ir().geometry.pcurves[0];
         assert_eq!(pcurve.uv_offset().expect("stored offset").get(), offset);
         assert_eq!(pcurve.parameter_range(), None);
         let PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
@@ -71,7 +71,7 @@ fn pcurve_uv_offset_translates_cartesian_poles_and_keeps_unchanged_bytes() {
         let after = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("patched offset decode");
-        assert_eq!(after.ir().model.pcurves, ir.model.pcurves);
+        assert_eq!(after.ir().geometry.pcurves, ir.geometry.pcurves);
     }
 }
 
@@ -104,20 +104,21 @@ fn pcurve_uv_offset_one_native_period_keeps_cylinder_points() {
     };
     let zero = decode([0.0, 0.0]);
     let shifted = decode([0.0, std::f64::consts::TAU]);
-    let PcurveGeometry::Nurbs { nurbs: zero_curve } = &zero.ir().model.pcurves[0].geometry else {
+    let PcurveGeometry::Nurbs { nurbs: zero_curve } = &zero.ir().geometry.pcurves[0].geometry
+    else {
         panic!("zero NURBS")
     };
     let PcurveGeometry::Nurbs {
         nurbs: shifted_curve,
-    } = &shifted.ir().model.pcurves[0].geometry
+    } = &shifted.ir().geometry.pcurves[0].geometry
     else {
         panic!("shifted NURBS")
     };
-    let support = zero.ir().model.surfaces[0]
+    let support = zero.ir().geometry.surfaces[0]
         .geometry
         .solved()
         .expect("cylinder");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (a, b) in zero_curve
         .pole_rows()
         .raw_points()
@@ -154,7 +155,7 @@ fn pcurve_uv_offset_edits_preserve_neutral_geometry_in_each_record_form() {
             .expect("offset decode");
         let (mut ir, _, fidelity) = decoded.into_parts();
         let offset = FiniteVector::new([3.0, -2.0]).expect("finite offset");
-        match &mut ir.model.pcurves[0].metadata {
+        match &mut ir.geometry.pcurves[0].metadata {
             PcurveMetadata::AsmInline { form } => {
                 *form = PcurveInlineForm::new(
                     form.wrapper_reversed,
@@ -172,16 +173,20 @@ fn pcurve_uv_offset_edits_preserve_neutral_geometry_in_each_record_form() {
             .decode(&mut Cursor::new(patched), &DecodeOptions::default())
             .expect("patched decode");
         assert_eq!(
-            decoded.ir().model.pcurves[0].metadata,
-            ir.model.pcurves[0].metadata
+            decoded.ir().geometry.pcurves[0].metadata,
+            ir.geometry.pcurves[0].metadata
         );
         assert_pcurve_geometry_close(
-            &decoded.ir().model.pcurves[0].geometry,
-            &ir.model.pcurves[0].geometry,
+            &decoded.ir().geometry.pcurves[0].geometry,
+            &ir.geometry.pcurves[0].geometry,
         );
         ir.source = None;
-        ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
-            .expect("clear native records");
+        ir.set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
+        .expect("clear native records");
         let mut generated = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -190,10 +195,10 @@ fn pcurve_uv_offset_edits_preserve_neutral_geometry_in_each_record_form() {
         let decoded = F3dCodec
             .decode(&mut Cursor::new(generated), &DecodeOptions::default())
             .expect("generated decode");
-        assert_eq!(decoded.ir().model.pcurves[0].uv_offset(), Some(offset));
+        assert_eq!(decoded.ir().geometry.pcurves[0].uv_offset(), Some(offset));
         assert_pcurve_geometry_close(
-            &decoded.ir().model.pcurves[0].geometry,
-            &ir.model.pcurves[0].geometry,
+            &decoded.ir().geometry.pcurves[0].geometry,
+            &ir.geometry.pcurves[0].geometry,
         );
     }
 }
@@ -208,9 +213,13 @@ fn pcurve_uv_offset_new_record_defaults_to_zero() {
         .expect("source decode");
     let (mut ir, _, _) = decoded.into_parts();
     ir.source = None;
-    ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
-        .expect("clear native records");
-    ir.model.pcurves[0].metadata = cadmpeg_ir::geometry::pcurve::PcurveMetadata::default();
+    ir.set_native_unknowns(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        "f3d",
+        &[],
+    )
+    .expect("clear native records");
+    ir.geometry.pcurves[0].metadata = cadmpeg_ir::geometry::pcurve::PcurveMetadata::default();
     let mut generated = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -220,15 +229,15 @@ fn pcurve_uv_offset_new_record_defaults_to_zero() {
         .decode(&mut Cursor::new(generated), &DecodeOptions::default())
         .expect("new record decode");
     assert_eq!(
-        after.ir().model.pcurves[0]
+        after.ir().geometry.pcurves[0]
             .uv_offset()
             .expect("stored zero offset")
             .get(),
         [0.0, 0.0]
     );
-    assert_eq!(after.ir().model.pcurves[0].parameter_range(), None);
+    assert_eq!(after.ir().geometry.pcurves[0].parameter_range(), None);
     assert_pcurve_geometry_close(
-        &after.ir().model.pcurves[0].geometry,
-        &ir.model.pcurves[0].geometry,
+        &after.ir().geometry.pcurves[0].geometry,
+        &ir.geometry.pcurves[0].geometry,
     );
 }

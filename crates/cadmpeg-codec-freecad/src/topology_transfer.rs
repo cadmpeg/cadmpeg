@@ -151,9 +151,9 @@ pub(crate) fn transfer(
         occurrences.extend(builder.occurrences);
         losses.extend(builder.losses);
     }
-    close_radial_rings(&mut ir.model.coedges);
-    let referenced_pcurves = referenced_pcurve_ids(&ir.model.coedges);
-    ir.model
+    close_radial_rings(&mut ir.geometry.coedges);
+    let referenced_pcurves = referenced_pcurve_ids(&ir.geometry.coedges);
+    ir.geometry
         .pcurves
         .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
     Ok(occurrences)
@@ -239,17 +239,19 @@ struct ArenaPositions {
 
 impl ArenaPositions {
     fn curve<'i>(&mut self, ir: &'i CadIr, id: &CurveId) -> Option<&'i Curve> {
-        let index = self.curves.find(&ir.model.curves, id, |curve| &curve.id)?;
-        ir.model.curves.get(index)
+        let index = self
+            .curves
+            .find(&ir.geometry.curves, id, |curve| &curve.id)?;
+        ir.geometry.curves.get(index)
     }
 
     fn surface<'i>(&mut self, ir: &'i CadIr, id: &SurfaceId) -> Option<&'i Surface> {
-        ir.model.surfaces.get(self.surface_index(ir, id)?)
+        ir.geometry.surfaces.get(self.surface_index(ir, id)?)
     }
 
     fn surface_index(&mut self, ir: &CadIr, id: &SurfaceId) -> Option<usize> {
         self.surfaces
-            .find(&ir.model.surfaces, id, |surface| &surface.id)
+            .find(&ir.geometry.surfaces, id, |surface| &surface.id)
     }
 
     fn procedural_curve<'i>(
@@ -259,8 +261,8 @@ impl ArenaPositions {
     ) -> Option<&'i ProceduralCurve> {
         let index = self
             .procedural_curves
-            .find(&ir.model.procedural_curves, id, |curve| &curve.id)?;
-        ir.model.procedural_curves.get(index)
+            .find(&ir.geometry.procedural_curves, id, |curve| &curve.id)?;
+        ir.geometry.procedural_curves.get(index)
     }
 }
 
@@ -436,10 +438,11 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 };
                 let primary_range =
                     normalize_pcurve_parameter_range(&primary_geometry, Some(parameter_range));
-                ir.model.pcurves.push(Pcurve {
+                ir.geometry.pcurves.push(Pcurve {
                     id: self.pcurve_id(position + 1, representation_index, false)?,
                     geometry: primary_geometry,
                     metadata: PcurveMetadata::general(None, primary_range.map(Into::into), None),
+                    native_ref: None,
                 });
                 if let Some(secondary) = secondary {
                     let secondary_read =
@@ -466,7 +469,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                         &secondary_geometry,
                         Some(parameter_range),
                     );
-                    ir.model.pcurves.push(Pcurve {
+                    ir.geometry.pcurves.push(Pcurve {
                         id: self.pcurve_id(position + 1, representation_index, true)?,
                         geometry: secondary_geometry,
                         metadata: PcurveMetadata::general(
@@ -474,6 +477,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                             secondary_range.map(Into::into),
                             None,
                         ),
+                        native_ref: None,
                     });
                 }
             }
@@ -605,14 +609,14 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             ir.model.tessellations.truncate(tessellation_start);
             return Ok(());
         }
-        ir.model.bodies.push(Body {
+        ir.geometry.bodies.push(Body {
             id: body_id.clone(),
             kind,
-            regions,
             transform: (!is_identity(root.transform.transform)).then_some(root.transform.transform),
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
         if matches!(
             root_kind,
@@ -676,10 +680,11 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             shells.extend(added);
         }
         if !shells.is_empty() {
-            ir.model.regions.push(Region {
+            ir.geometry.regions.push(Region {
                 id: region_id.clone(),
                 body: body.clone(),
                 shells,
+                native_ref: None,
             });
             if shape.kind() == TextShapeKind::Solid {
                 self.bind_topology(
@@ -742,7 +747,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 };
                 let mut faces = Vec::new();
                 let mut wire_edges = Vec::new();
-                let coedge_start = ir.model.coedges.len();
+                let coedge_start = ir.geometry.coedges.len();
                 for &face_index in component {
                     if let Some(face) = self.append_face(
                         ir,
@@ -755,17 +760,18 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                         faces.push(face);
                     }
                 }
-                retain_wire_edges(&ir.model.coedges[coedge_start..], &mut wire_edges);
-                ir.model.shells.push(
-                    Shell::new(
-                        component_id.clone(),
-                        region.clone(),
-                        faces,
-                        wire_edges,
-                        Vec::new(),
-                    )
-                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
-                );
+                retain_wire_edges(&ir.geometry.coedges[coedge_start..], &mut wire_edges);
+                if faces.is_empty() && wire_edges.is_empty() {
+                    return Err(cadmpeg_core::CodecError::Malformed(
+                        cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+                    ));
+                }
+                ir.geometry.shells.push(Shell::with_members(
+                    component_id.clone(),
+                    region.clone(),
+                    wire_edges,
+                    Vec::new(),
+                ));
                 self.bind_topology(
                     TextShapeKind::Shell,
                     shape_index,
@@ -778,7 +784,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
         }
         let mut faces = Vec::new();
         let mut wire_edges = Vec::new();
-        let coedge_start = ir.model.coedges.len();
+        let coedge_start = ir.geometry.coedges.len();
         match shape.kind() {
             TextShapeKind::Face => {
                 let shape_use = TextShapeUse {
@@ -825,31 +831,28 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                     location: 0.into(),
                 };
                 let vertex = self.ensure_vertex(ir, &vertex_use, transform)?;
-                ir.model.shells.push(
-                    Shell::new(
-                        shell_id.clone(),
-                        region.clone(),
-                        faces,
-                        wire_edges,
-                        vec![vertex],
-                    )
-                    .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
-                );
+                ir.geometry.shells.push(Shell::with_members(
+                    shell_id.clone(),
+                    region.clone(),
+                    wire_edges,
+                    vec![vertex],
+                ));
                 return Ok(vec![shell_id]);
             }
             _ => {}
         }
-        retain_wire_edges(&ir.model.coedges[coedge_start..], &mut wire_edges);
-        ir.model.shells.push(
-            Shell::new(
-                shell_id.clone(),
-                region.clone(),
-                faces,
-                wire_edges,
-                Vec::new(),
-            )
-            .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
-        );
+        retain_wire_edges(&ir.geometry.coedges[coedge_start..], &mut wire_edges);
+        if faces.is_empty() && wire_edges.is_empty() {
+            return Err(cadmpeg_core::CodecError::Malformed(
+                cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+            ));
+        }
+        ir.geometry.shells.push(Shell::with_members(
+            shell_id.clone(),
+            region.clone(),
+            wire_edges,
+            Vec::new(),
+        ));
         if shape.kind() == TextShapeKind::Wire {
             self.bind_topology(shape.kind(), shape_index, transform, shell_id.as_str())?;
         }
@@ -985,7 +988,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                     SurfaceId::mint(id.as_str().to_owned()).map_err(CodecError::malformed)?,
                 );
 
-                ir.model.surfaces.push(Surface {
+                ir.geometry.surfaces.push(Surface {
                     id: SurfaceId::mint(id.as_str().to_owned()).map_err(CodecError::malformed)?,
                     geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(
                         PolygonalSurface::from_admitted_scaled_deflection(
@@ -997,6 +1000,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                         .map_err(|error| CodecError::Malformed(error.to_string()))?,
                     )),
                     source_object: Some(self.source_association()?),
+                    native_ref: None,
                 });
             }
             id
@@ -1113,7 +1117,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                     self.face_pcurve(edge_use, edge_transform, surface, surface_transform)?;
                 let id: CoedgeId = coedge_ids[index].clone();
                 let use_sense = sense(is_reversed(edge_use.orientation) ^ wire_reversed);
-                ir.model.coedges.push(Coedge {
+                ir.geometry.coedges.push(Coedge {
                     id: id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge.id.clone(),
@@ -1133,7 +1137,8 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                             })
                         })
                         .collect::<Result<Vec<_>, CodecError>>()?,
-                });
+                        native_ref: None,
+                    });
                 placed_uses.push((edge, use_sense));
             }
             let ends = placed_uses
@@ -1144,7 +1149,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 .into_iter()
                 .map(|position| coedge_ids[position].clone())
                 .collect();
-            ir.model.loops.push(Loop {
+            ir.geometry.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
@@ -1156,6 +1161,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                         ))
                     })?,
                 ),
+                native_ref: None,
             });
             self.bind_topology(
                 TextShapeKind::Wire,
@@ -1165,7 +1171,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             )?;
             loops.push(loop_id);
         }
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: face_id.clone(),
             shell: shell.clone(),
             surface: surface_id,
@@ -1174,6 +1180,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             name: None,
             color: None,
             tolerance: PositiveReal::from_finite(tolerance),
+            native_ref: None,
         });
         self.bind_topology(
             TextShapeKind::Face,
@@ -1280,13 +1287,13 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             start: start.clone(),
             end: end.clone(),
         };
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::from_finite_parts(curve, param_range)
                 .map_err(CodecError::malformed)?,
-            start,
-            end,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(start, end)),
             tolerance: PositiveReal::from_finite(tolerance),
+            native_ref: None,
         });
         self.bind_topology(TextShapeKind::Edge, edge_use.shape, transform, id.as_str())?;
         self.edges.insert(key, placed.clone());
@@ -1334,7 +1341,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             }
         };
         let id = Self::polygon_curve_id(edge, ordinal, false)?;
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: CurveId::mint(id.as_str().to_owned()).map_err(CodecError::malformed)?,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
@@ -1343,6 +1350,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                     .map_err(|error| CodecError::Malformed(error.to_string()))?
             })),
             source_object: Some(self.source_association()?),
+            native_ref: None,
         });
         if let TextEdgeRepresentation::PolygonPair {
             polygons,
@@ -1354,7 +1362,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 mut samples,
                 deflection,
             } = self.indexed_polygon(polygons[1], *triangulation)?;
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: Self::polygon_curve_id(edge, ordinal, true)?,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Polyline({
@@ -1363,6 +1371,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                         .map_err(|error| CodecError::Malformed(error.to_string()))?
                 })),
                 source_object: Some(self.source_association()?),
+                native_ref: None,
             });
         }
         Ok(id)
@@ -1463,17 +1472,18 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
                 vertex_use.shape
             )));
         };
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             point_id.clone(),
             position,
             Some(self.source_association()?),
         ));
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
             tolerance: positive_tolerance(
                 tolerance.get() * uniform_scale(transform.transform)?.get(),
             ),
+            native_ref: None,
         });
         self.bind_topology(
             TextShapeKind::Vertex,
@@ -1513,11 +1523,12 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             })?;
             let geometry = transform_curve(&base.geometry, transform)?;
             let source_object = base.source_object.clone();
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: id.clone(),
                 geometry,
                 source_object,
+                native_ref: None,
             });
         }
         Ok(id)
@@ -1541,7 +1552,7 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             let wrapper = self
                 .positions
                 .surface_index(ir, &base_id)
-                .map(|index| &mut ir.model.surfaces[index])
+                .map(|index| &mut ir.geometry.surfaces[index])
                 .ok_or_else(|| {
                     CodecError::malformed(format_args!("missing trimmed surface {base_id}"))
                 })?;
@@ -1571,20 +1582,23 @@ impl<'a, 'c, 'r, 'p> Builder<'a, 'c, 'r, 'p> {
             let geometry = transform_surface(&base.geometry, transform)?;
             let source_object = base.source_object.clone();
             let has_procedural_construction = base.geometry.procedural_construction().is_some();
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: id.clone(),
                 geometry,
                 source_object,
+                native_ref: None,
             });
             if has_procedural_construction {
                 let admission = match self.procedural_admission.take() {
                     Some(admission) => admission,
-                    None => cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model),
+                    None => {
+                        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry)
+                    }
                 };
                 self.procedural_admission
                     .insert(admission)
                     .add_surface(
-                        &mut ir.model,
+                        &mut ir.geometry,
                         &id.clone(),
                         ProceduralSurface::new(
                             ProceduralSurfaceId::compose(

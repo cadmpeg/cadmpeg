@@ -1592,6 +1592,19 @@ impl DesignAssemblyOperandPath {
     pub(crate) fn admitted_by_type(&self) -> bool {
         self.type_guid.is_some()
     }
+    pub(crate) fn two_keys_in_one_typed_record(&self) -> bool {
+        let [first, second] = self.occurrence_guids() else {
+            return false;
+        };
+        self.admitted_by_type()
+            && self.identity_guids().len() == 4
+            && self.occurrence_lists().is_empty()
+            && u64::try_from(first.value.as_str().encode_utf16().count())
+                .ok()
+                .and_then(|units| first.offset.checked_add(4 + 2 * units))
+                == Some(second.offset)
+    }
+
     pub(crate) fn is_root(&self) -> bool {
         self.admitted_by_type()
             && self.occurrence_guids.len() == 1

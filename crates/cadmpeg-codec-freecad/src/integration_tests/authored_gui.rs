@@ -23,11 +23,12 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let model = &decoded.ir().model;
+    let geometry = &decoded.ir().geometry;
 
-    assert_eq!(model.bodies.len(), 1);
-    assert_eq!(model.faces.len(), 8);
-    assert_eq!(model.edges.len(), 15);
-    assert_eq!(model.vertices.len(), 10);
+    assert_eq!(geometry.bodies.len(), 1);
+    assert_eq!(geometry.faces.len(), 8);
+    assert_eq!(geometry.edges.len(), 15);
+    assert_eq!(geometry.vertices.len(), 10);
 
     let report = measured("gui_appearance", decoded.ir()).unwrap();
     let [body] = report.bodies().as_slice() else {
@@ -83,10 +84,10 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
     };
     let face_color = |rgb: [u8; 3]| {
         Color::new(
-            f32::from(rgb[0]) / 255.0,
-            f32::from(rgb[1]) / 255.0,
-            f32::from(rgb[2]) / 255.0,
-            1.0 - AUTHORED_TRANSPARENCY,
+            f64::from(rgb[0]) / 255.0,
+            f64::from(rgb[1]) / 255.0,
+            f64::from(rgb[2]) / 255.0,
+            1.0 - f64::from(AUTHORED_TRANSPARENCY),
         )
         .unwrap()
     };
@@ -100,7 +101,7 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
         face_color([89, 89, 161]),
         face_color([102, 99, 168]),
     ];
-    let expected_face_targets = model
+    let expected_face_targets = geometry
         .faces
         .iter()
         .map(|face| AppearanceTarget::Face(face.id.clone()))
@@ -108,45 +109,46 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
     let face_bindings = model
         .appearance_bindings
         .iter()
-        .filter(|binding| matches!(binding.target, AppearanceTarget::Face(_)))
+        .filter(|binding| matches!(&binding.target.entity, AppearanceTarget::Face(_)))
         .collect::<Vec<_>>();
     assert_eq!(face_bindings.len(), expected_face_targets.len());
     assert_eq!(
         face_bindings
             .iter()
-            .map(|binding| binding.target.clone())
+            .map(|binding| binding.target.entity.clone())
             .collect::<BTreeSet<_>>(),
         expected_face_targets
     );
-    let [region_id] = model.bodies[0].regions.as_slice() else {
+    let [region] = geometry
+        .body_regions(&geometry.bodies[0].id)
+        .collect::<Vec<_>>()[..]
+    else {
         panic!("one authored solid region");
     };
-    let region = model
-        .regions
-        .iter()
-        .find(|region| &region.id == region_id)
-        .expect("authored body region");
     let [shell_id] = region.shells.as_slice() else {
         panic!("one authored exterior shell");
     };
-    let shell = model
-        .shells
-        .iter()
-        .find(|shell| &shell.id == shell_id)
-        .expect("authored body shell");
-    assert_eq!(shell.faces().len(), expected_face_colors.len());
-    for (face_index, face_id) in shell.faces().iter().enumerate() {
-        let target = AppearanceTarget::Face(face_id.clone());
+    let shell_faces = geometry.shell_faces(shell_id).collect::<Vec<_>>();
+    assert_eq!(shell_faces.len(), expected_face_colors.len());
+    for (face_index, face) in shell_faces.iter().enumerate() {
+        let target = AppearanceTarget::Face(face.id.clone());
         let binding = face_bindings
             .iter()
-            .find(|binding| binding.target == target)
+            .find(|binding| binding.target.entity == target)
             .expect("every source shell face has an appearance binding");
         let appearance = appearance(&binding.appearance);
+        let color = appearance.base_color.expect("face material color");
+        let expected = expected_face_colors[face_index];
         assert_eq!(
-            appearance.base_color,
-            Some(expected_face_colors[face_index]),
+            [color.r(), color.g(), color.b()],
+            [expected.r(), expected.g(), expected.b()],
             "authored palette color for source-ordered face {}",
             face_index + 1
+        );
+        assert!(
+            (color.a() - expected.a()).abs() < TRANSPARENCY_TOLERANCE,
+            "face opacity {}",
+            color.a()
         );
         let transparency = appearance
             .properties
@@ -159,7 +161,7 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
         );
     }
 
-    let expected_edge_targets = model
+    let expected_edge_targets = geometry
         .edges
         .iter()
         .map(|edge| AppearanceTarget::Edge(edge.id.clone()))
@@ -167,13 +169,13 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
     let edge_bindings = model
         .appearance_bindings
         .iter()
-        .filter(|binding| matches!(binding.target, AppearanceTarget::Edge(_)))
+        .filter(|binding| matches!(&binding.target.entity, AppearanceTarget::Edge(_)))
         .collect::<Vec<_>>();
     assert_eq!(edge_bindings.len(), expected_edge_targets.len());
     assert_eq!(
         edge_bindings
             .iter()
-            .map(|binding| binding.target.clone())
+            .map(|binding| binding.target.entity.clone())
             .collect::<BTreeSet<_>>(),
         expected_edge_targets
     );
@@ -192,7 +194,7 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
         );
     }
 
-    let expected_vertex_targets = model
+    let expected_vertex_targets = geometry
         .vertices
         .iter()
         .map(|vertex| AppearanceTarget::Vertex(vertex.id.clone()))
@@ -200,13 +202,13 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
     let vertex_bindings = model
         .appearance_bindings
         .iter()
-        .filter(|binding| matches!(binding.target, AppearanceTarget::Vertex(_)))
+        .filter(|binding| matches!(&binding.target.entity, AppearanceTarget::Vertex(_)))
         .collect::<Vec<_>>();
     assert_eq!(vertex_bindings.len(), expected_vertex_targets.len());
     assert_eq!(
         vertex_bindings
             .iter()
-            .map(|binding| binding.target.clone())
+            .map(|binding| binding.target.entity.clone())
             .collect::<BTreeSet<_>>(),
         expected_vertex_targets
     );

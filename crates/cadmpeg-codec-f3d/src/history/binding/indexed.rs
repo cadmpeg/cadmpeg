@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::Slots;
 use crate::history_records::{
-    AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCurveAxis,
-    AsmHistoricalCylinder, AsmHistoricalEdge, AsmHistoricalEdgeSample,
+    AsmHistoricalBodyDesignLink, AsmHistoricalCarrierBinding, AsmHistoricalCoedge,
+    AsmHistoricalCurveAxis, AsmHistoricalCylinder, AsmHistoricalEdge, AsmHistoricalEdgeSample,
     AsmHistoricalOptionalCarrierBinding, AsmHistoricalPersistentSubentityTag, AsmHistoricalPlane,
     AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalSurfaceAxis,
     AsmHistoricalSurfaceRadius, AsmHistoricalTopology,
@@ -198,6 +198,7 @@ indexed_topology! {
         shell_faces = 30: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
         shell_wire_edges = 31: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
         shell_free_vertices = 32: AsmHistoricalRelation => |row: &AsmHistoricalRelation| row.owner_ref,
+        body_design_links = 33: AsmHistoricalBodyDesignLink => |row: &AsmHistoricalBodyDesignLink| row.body,
     }
 }
 

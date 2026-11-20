@@ -3,6 +3,8 @@
 //!
 //! Recoverable defects omit bounded records and their dependents. A loss
 //! reports each omission, and exact source spans remain available for fidelity.
+//! A statement that cannot be read is given up as one part, and the records
+//! that need it are named as dropped by that part.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
@@ -10,7 +12,7 @@ use std::num::NonZeroUsize;
 use std::ops::Range;
 use std::sync::Arc;
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 
@@ -27,6 +29,7 @@ mod metadata;
 mod parameters;
 mod recovery;
 pub(crate) mod schema_identifier;
+mod short_names;
 
 use self::parameters::{ParameterValues, RecordParameters};
 
@@ -390,6 +393,8 @@ pub(crate) struct Exchange {
     records: BTreeMap<u64, RawRecord>,
     /// Bounded exchange statements excluded from the interpreted graph.
     omitted_spans: Vec<Range<usize>>,
+    /// Statements given up as parts, in source order.
+    given_up: Vec<GivenUpStatement>,
     schema_identifiers: Vec<AdmittedSchemaIdentifier>,
     implementation_level: DeclaredImplementationLevel,
     entity_ids: EntityIndex,
@@ -457,6 +462,19 @@ impl Exchange {
         &self.omitted_spans
     }
 
+    /// Statements given up as parts, in source order.
+    pub(crate) fn given_up(&self) -> &[GivenUpStatement] {
+        &self.given_up
+    }
+
+    /// Every statement outside the interpreted graph whose exact source is
+    /// retained: omitted statements and given-up parts.
+    pub(crate) fn retained_statement_spans(&self) -> impl Iterator<Item = &Range<usize>> {
+        self.omitted_spans
+            .iter()
+            .chain(self.given_up.iter().map(|statement| &statement.span))
+    }
+
     /// Header-admitted `FILE_SCHEMA` identifiers in source order.
     pub(crate) fn schema_identifiers(&self) -> impl Iterator<Item = &str> {
         self.schema_identifiers
@@ -495,6 +513,7 @@ impl Exchange {
         self.data.clear();
         self.records.clear();
         self.omitted_spans.clear();
+        self.given_up.clear();
         self.schema_identifiers.clear();
         self.entity_ids = EntityIndex::default();
         std::mem::take(&mut self.signatures)
@@ -610,6 +629,41 @@ pub(crate) struct ParseDiagnostic {
     pub(crate) message: String,
 }
 
+/// A HEADER or DATA statement the parser could not read, given up as one
+/// part.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct GivenUpStatement {
+    /// `header_record` or `data_record`.
+    pub(crate) kind: &'static str,
+    /// The statement's exact source extent, through its terminator.
+    pub(crate) span: Range<usize>,
+    /// Why the statement could not be read.
+    pub(crate) cause: GiveUpCause,
+    /// Source offsets of the records dropped because they need it.
+    pub(crate) dropped: Vec<usize>,
+    /// Instance names of kept records and of the entries they lost from an
+    /// unordered aggregate because the entries need it.
+    pub(crate) lost: Vec<(u64, u64)>,
+}
+
+/// Why a statement was given up.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum GiveUpCause {
+    /// The statement violates the exchange grammar.
+    Syntax(String),
+    /// The statement exceeded a bound that applies to one part.
+    Resource(ResourceLimit),
+}
+
+impl GiveUpCause {
+    pub(crate) fn into_error(self) -> CodecError {
+        match self {
+            Self::Syntax(message) => CodecError::Malformed(message),
+            Self::Resource(limit) => limit.into(),
+        }
+    }
+}
+
 /// Parse one exchange structure in the caller's decode session.
 pub(crate) fn parse(
     input: &[u8],
@@ -628,6 +682,8 @@ pub(crate) fn parse_inner(
         lexer,
         last_end: 0,
         diagnostics: Vec::new(),
+        given_up: Vec::new(),
+        given_up_names: BTreeMap::new(),
         omitted_entity_names: None,
         defer_lexical_errors: false,
         budget,
@@ -651,6 +707,10 @@ struct Parser<'input, 'ctx, 'arena> {
     current: Option<Token>,
     last_end: usize,
     diagnostics: Vec<ParseDiagnostic>,
+    given_up: Vec<GivenUpStatement>,
+    /// Instance names of given-up DATA statements, each to the first
+    /// statement that bears it.
+    given_up_names: BTreeMap<u64, usize>,
     omitted_entity_names: Option<(usize, NonZeroUsize)>,
     defer_lexical_errors: bool,
     budget: &'ctx DecodeContext<'arena>,
@@ -841,7 +901,7 @@ impl Parser<'_, '_, '_> {
         self.punct(&TokenKind::Semicolon)?;
         let mut header = Vec::new();
         while !self.peek_name("ENDSEC") && self.current.is_some() {
-            if let Some(record) = self.recover_header_record(&mut omitted_spans)? {
+            if let Some(record) = self.recover_header_record()? {
                 header.push(record);
             }
         }
@@ -1332,6 +1392,7 @@ impl Parser<'_, '_, '_> {
                 signatures,
                 records,
                 omitted_spans,
+                given_up: self.given_up,
                 schema_identifiers: header_admission.schema_identifiers,
                 implementation_level: header_admission.implementation_level,
                 entity_ids,
@@ -1410,6 +1471,7 @@ impl Parser<'_, '_, '_> {
     fn partial(&mut self, simple: bool) -> Result<PartialRecord, ParseError> {
         let offset = self.current_offset();
         let name = self.take_name()?;
+        let name = short_names::entity_name(&name).map_or(name, str::to_owned);
         let presentation = metadata::presentation_record(&name);
         if presentation {
             self.lexer.set_literal_admission(LiteralAdmission::Metadata);
@@ -1601,7 +1663,7 @@ impl Parser<'_, '_, '_> {
             Ok(token) => token,
             Err(error) if self.defer_lexical_errors => {
                 let offset = error.offset();
-                let message = error.to_string();
+                let message = error.message.clone();
                 if let Some(resource) = error.into_resource_error() {
                     return Err(ParseError::Resource(resource));
                 }

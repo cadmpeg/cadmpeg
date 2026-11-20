@@ -11,7 +11,8 @@ use serde::Serialize;
 ///
 /// Panics if serialization fails, the field is absent, or its type differs.
 pub fn field<T: DeserializeOwned>(value: &impl Serialize, key: &str) -> T {
-    let mut wire = serde_json::to_value(value).expect("serialize tested value");
+    let mut wire =
+        cadmpeg_ir::hash::finite_json::to_json_value(value).expect("serialize tested value");
     let field = wire.pointer_mut(&format!("/{key}")).map_or_else(
         || panic!("tested value has no field {key}"),
         serde_json::Value::take,
@@ -25,7 +26,8 @@ pub fn field<T: DeserializeOwned>(value: &impl Serialize, key: &str) -> T {
 ///
 /// Panics if serialization fails or a present field has an unexpected type.
 pub fn field_or_default<T: DeserializeOwned + Default>(value: &impl Serialize, key: &str) -> T {
-    let mut wire = serde_json::to_value(value).expect("serialize tested value");
+    let mut wire =
+        cadmpeg_ir::hash::finite_json::to_json_value(value).expect("serialize tested value");
     wire.pointer_mut(&format!("/{key}"))
         .map(serde_json::Value::take)
         .map_or_else(T::default, |field| {
@@ -48,8 +50,10 @@ pub fn coverage_count(report: &impl Serialize, key: &str) -> usize {
 ///
 /// Panics if serialization or decoding the expected type fails.
 pub fn value<T: DeserializeOwned>(value: &impl Serialize) -> T {
-    serde_json::from_value(serde_json::to_value(value).expect("serialize tested value"))
-        .expect("decode tested wire value")
+    serde_json::from_value(
+        cadmpeg_ir::hash::finite_json::to_json_value(value).expect("serialize tested value"),
+    )
+    .expect("decode tested wire value")
 }
 
 /// Read all recorded coverage measures, including an omitted empty map.

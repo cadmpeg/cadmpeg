@@ -39,7 +39,7 @@ fn full_document_unit_binding_admits_only_physical_geometry() {
         let (bytes, object) = unit_binding_document(unit);
         let result = decode(bytes);
         assert_eq!(
-            result.ir().model.points.len(),
+            result.ir().geometry.points.len(),
             usize::from(transferred),
             "{label}"
         );

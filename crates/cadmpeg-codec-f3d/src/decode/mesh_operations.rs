@@ -9,7 +9,7 @@ use crate::loss::F3dLossCode;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use crate::records::sketch_placement::DesignSketchPlacement;
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::mesh::{
@@ -17,8 +17,8 @@ use cadmpeg_ir::features::mesh::{
     MeshSelection,
 };
 use cadmpeg_ir::features::{
-    BodySelection, FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
-    FeatureSupportPlaneFrame, NativeSelections, SelectionReference,
+    BodyRetentionMode, BodySelection, FaceSelection, Feature, FeatureDefinition, FeatureId,
+    FeatureOperation, FeatureSupportPlaneFrame, NativeSelections, SelectionReference,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
@@ -28,6 +28,11 @@ use std::collections::HashMap;
 
 const MILLIMETRES_PER_DESIGN_LENGTH: f64 = 10.0;
 const PERCENT: f64 = 100.0;
+
+pub(super) mod combine;
+pub(super) mod convert;
+pub(super) mod plane_cut;
+pub(super) mod separate;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct OwnerValue {
@@ -105,6 +110,7 @@ fn modification(
     Some(match *fields {
         MeshOperationFields::Section { .. }
         | MeshOperationFields::Shell { .. }
+        | MeshOperationFields::Remove
         | MeshOperationFields::ReverseNormals => return None,
         MeshOperationFields::Reduce {
             tolerance_owner,
@@ -233,6 +239,7 @@ fn unresolved_modification(kind: MeshOperationKind) -> Option<MeshModification> 
     Some(match kind {
         MeshOperationKind::Section
         | MeshOperationKind::Shell
+        | MeshOperationKind::Remove
         | MeshOperationKind::ReverseNormals => return None,
         MeshOperationKind::Reduce => MeshModification::Reduce {
             distribution: None,
@@ -287,8 +294,12 @@ fn source_selection(
     bodies: Result<Vec<u32>, impl std::fmt::Display>,
     notes: &mut Notes<'_>,
 ) -> Result<MeshSelection, CodecError> {
-    notes.property("mesh-source-group", scope.source_group);
-    notes.property("mesh-input-geometry", scope.input_geometry);
+    if scope.source_group != 0 || !matches!(scope.fields, MeshOperationFields::Remove) {
+        notes.property("mesh-source-group", scope.source_group);
+    }
+    if !matches!(scope.fields, MeshOperationFields::Remove) {
+        notes.property("mesh-input-geometry", scope.input_geometry);
+    }
     if let Some(output) = scope.output_geometry {
         notes.property("mesh-output-geometry", output);
     }
@@ -303,12 +314,20 @@ fn source_selection(
                     notes.losses.push(F3dLossCode::FeatureMeshBodySelectionAssumed.note(format!(
                         "Mesh operation {} interprets source member body references as body selections; member-tail selection controls remain unresolved.", notes.source
                     )));
-                    notes.losses.push(
-                        F3dLossCode::FeatureMeshOperationSourceUnresolved.note(format!(
+                    let message = if matches!(scope.fields, MeshOperationFields::Remove) {
+                        format!(
+                            "Mesh removal {} retains source body records {bodies:?}; their historical tessellation remains unresolved.",
+                            notes.source
+                        )
+                    } else {
+                        format!(
                             "Mesh operation {} retains source body records {bodies:?} and input geometry record {}; their tessellation remains unresolved.",
                             notes.source, scope.input_geometry
-                        )),
-                    );
+                        )
+                    };
+                    notes
+                        .losses
+                        .push(F3dLossCode::FeatureMeshOperationSourceUnresolved.note(message));
                     Some(members)
                 }
                 Err(error) => {
@@ -372,7 +391,9 @@ fn section_binding(
             candidate.native_ref.as_deref() == Some(scope.id.as_str())
                 && matches!(
                     candidate.evaluation.definition(),
-                    FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
+                    FeatureDefinition::Operation(
+                        FeatureOperation::Sketch { .. } | FeatureOperation::SpatialSketch { .. }
+                    )
                 )
         });
         candidates.next().filter(|_| candidates.next().is_none())
@@ -413,10 +434,10 @@ fn section_binding(
 fn scope_bytes<'a>(
     scan: &ContainerScan<'a>,
     scope: &DesignParameterScope,
-) -> Option<(String, &'a [u8])> {
+) -> Option<(String, View<'a>)> {
     let stream = crate::ids::native_stream(&scope.id)?.strip_prefix("f3d:")?;
     let entry = crate::ids::decode_identity_key_component(stream)?;
-    let bytes = scan.entry_view(&entry)?.window();
+    let bytes = scan.entry_view(&entry)?;
     Some((entry, bytes))
 }
 
@@ -481,7 +502,7 @@ pub(super) fn bind_features(
                 .as_ref()
                 .ok_or(MeshOperationFraming("source metadata"))
                 .and_then(|records| records.validate_scope(kind, scope.record_index))
-                .and_then(|frame| read_scope(kind, frame));
+                .and_then(|frame| read_scope(kind, frame.window()));
             Some((scope, indexed.as_ref(), parsed))
         } else {
             None
@@ -557,7 +578,7 @@ pub(super) fn bind_features(
                                     "Mesh section {source} names sketch feature {sketch}; its section curves remain in the native sketch records."
                                 ),
                                 None => format!(
-                                    "Mesh section {source} retains sketch scope record {sketch_scope} in its source properties; no feature projects that scope."
+                                    "Mesh section {source} retains sketch scope record {sketch_scope} in its source properties; no neutral sketch feature projects that scope."
                                 ),
                             }),
                         );
@@ -566,6 +587,29 @@ pub(super) fn bind_features(
                     _ => (None, None),
                 };
                 let bodies = match records {
+                    Some(records) if matches!(kind, MeshOperationKind::Remove) => {
+                        let captured =
+                            records.group_body_references(ctx, operation.source_group)?;
+                        if let Some(count) = captured.declared_count {
+                            notes.property("mesh-source-member-count", count);
+                        }
+                        for (ordinal, member) in captured.member_references.iter().enumerate() {
+                            if *member != 0 {
+                                notes.property(format!("mesh-member-reference:{ordinal}"), member);
+                            }
+                        }
+                        if captured.framing.is_some() {
+                            for (ordinal, body) in captured.references.iter().enumerate() {
+                                if *body != 0 {
+                                    notes.property(format!("mesh-body-reference:{ordinal}"), body);
+                                }
+                            }
+                        }
+                        match captured.framing {
+                            Some(error) => Err(error),
+                            None => Ok(captured.references),
+                        }
+                    }
                     Some(records) => records.group_bodies(ctx, operation.source_group)?,
                     None => Err(MeshOperationFraming("source metadata")),
                 };
@@ -586,6 +630,10 @@ pub(super) fn bind_features(
                     }
                     MeshOperationFields::ReverseNormals => FeatureOperation::ReverseShape {
                         source: body_selection(source),
+                    },
+                    MeshOperationFields::Remove => FeatureOperation::DeleteBody {
+                        bodies: body_selection(source),
+                        mode: BodyRetentionMode::DeleteSelected,
                     },
                     _ => FeatureOperation::MeshModify {
                         source,
@@ -618,6 +666,10 @@ pub(super) fn bind_features(
                     MeshOperationKind::Shell => shell(source, None, &mut notes),
                     MeshOperationKind::ReverseNormals => FeatureOperation::ReverseShape {
                         source: body_selection(source),
+                    },
+                    MeshOperationKind::Remove => FeatureOperation::DeleteBody {
+                        bodies: BodySelection::Unresolved,
+                        mode: BodyRetentionMode::DeleteSelected,
                     },
                     _ => FeatureOperation::MeshModify {
                         source,

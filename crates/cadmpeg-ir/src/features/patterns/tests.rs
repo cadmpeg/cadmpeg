@@ -131,6 +131,7 @@ fn linear<C>(count: u32) -> PatternTransform<C> {
         count,
         second: None,
         omitted_instances: Vec::new(),
+        symmetric: false,
     }
 }
 
@@ -156,8 +157,10 @@ fn pattern_admission_rejects_invalid_numeric_operands() {
                 direction: axis,
                 spacing: PositiveLength::new(1.0).unwrap(),
                 count: 0,
+                symmetric: false,
             }),
             omitted_instances: Vec::new(),
+            symmetric: false,
         },
         PatternTransform::Circular {
             axis_origin: origin,
@@ -336,16 +339,16 @@ fn composite_length_mapping_carries_stage_counts_and_scale_factor() {
 #[test]
 fn pattern_wire_rejects_invalid_counts_locations_and_composition() {
     for wire in [
-        json!({"kind":"linear","spacing":1.0,"count":0}),
-        json!({"kind":"linear","spacing":-1.0,"count":1}),
-        json!({"kind":"linear","spacing":1.0,"count":1,"second":{"direction":{"x":1.0,"y":0.0,"z":0.0},"spacing":1.0,"count":0}}),
+        json!({"kind":"linear","spacing":1.0,"count":0, "omitted_instances": [], "symmetric": false}),
+        json!({"kind":"linear","spacing":-1.0,"count":1, "omitted_instances": [], "symmetric": false}),
+        json!({"kind":"linear","spacing":1.0,"count":1,"second":{"direction":{"x":1.0,"y":0.0,"z":0.0},"spacing":1.0,"count":0,"symmetric":false}, "omitted_instances": [], "symmetric": false}),
         json!({"kind":"linear_offsets","offsets":[]}),
         json!({"kind":"linear_offsets","offsets":[0.0,0.0]}),
         json!({"kind":"curve_driven","spacing":1.0,"count":0}),
         json!({"kind":"scale","center":{"kind":"first_seed_centroid"},"final_factor":0.0,"count":2}),
         json!({"kind":"scale","center":{"kind":"first_seed_centroid"},"final_factor":2.0,"count":1}),
         json!({"kind":"composite","stages":[]}),
-        json!({"kind":"composite","stages":[{"pattern":{"kind":"linear","spacing":1.0,"count":1},"combination":"cartesian_product"}]}),
+        json!({"kind":"composite","stages":[{"pattern":{"kind":"linear","spacing":1.0,"count":1, "omitted_instances": [], "symmetric": false},"combination":"cartesian_product"}]}),
     ] {
         assert!(serde_json::from_value::<PatternKind>(wire).is_err());
     }
@@ -361,7 +364,7 @@ fn admitted_pattern_wire_preserves_tags_and_optional_fields() {
         json!({"kind":"unresolved","form":"mirror"}),
         json!({"kind":"unresolved","form":"scale"}),
         json!({"kind":"unresolved","form":"composite"}),
-        json!({"kind":"linear","spacing":1.0,"count":1}),
+        json!({"kind":"linear","spacing":1.0,"count":1, "omitted_instances": [], "symmetric": false}),
         json!({"kind":"linear_offsets","offsets":[0.0]}),
         json!({"kind":"circular","axis_origin":{"x":0.0,"y":0.0,"z":0.0},"axis_dir":{"x":0.0,"y":0.0,"z":1.0},"angle":1.0,"count":1}),
         json!({"kind":"circular_angles","axis_origin":{"x":0.0,"y":0.0,"z":0.0},"axis_dir":{"x":0.0,"y":0.0,"z":1.0},"angles":[0.0]}),
@@ -386,8 +389,10 @@ fn composite_pattern_counts_use_primary_instance_counts() {
             direction: direction(0.0, 1.0, 0.0),
             spacing: PositiveLength::new(1.0).unwrap(),
             count: 3,
+            symmetric: false,
         }),
         omitted_instances: Vec::new(),
+        symmetric: false,
     };
     let scale = PatternTransform::Scale {
         center: PatternScaleCenter::FirstSeedCentroid,
@@ -400,7 +405,7 @@ fn composite_pattern_counts_use_primary_instance_counts() {
 #[test]
 fn pattern_wire_error_identifies_the_rejected_field() {
     let error = serde_json::from_value::<PatternKind>(json!({
-        "kind":"linear","spacing":1.0,"count":0
+        "kind":"linear","spacing":1.0,"count":0, "omitted_instances": [], "symmetric": false
     }))
     .unwrap_err();
     assert!(error.to_string().contains("count"));
@@ -409,9 +414,9 @@ fn pattern_wire_error_identifies_the_rejected_field() {
 #[test]
 fn pattern_wire_refuses_a_degenerate_direction_point_or_scale_factor() {
     for wire in [
-        json!({"kind":"linear","direction":{"x":0.0,"y":0.0,"z":0.0},"spacing":1.0,"count":1}),
+        json!({"kind":"linear","direction":{"x":0.0,"y":0.0,"z":0.0},"spacing":1.0,"count":1, "omitted_instances": [], "symmetric": false}),
         json!({"kind":"linear_offsets","direction":{"x":0.0,"y":0.0,"z":0.0},"offsets":[0.0]}),
-        json!({"kind":"linear","spacing":1.0,"count":1,"second":{"direction":{"x":0.0,"y":0.0,"z":0.0},"spacing":1.0,"count":1}}),
+        json!({"kind":"linear","spacing":1.0,"count":1,"second":{"direction":{"x":0.0,"y":0.0,"z":0.0},"spacing":1.0,"count":1,"symmetric":false}, "omitted_instances": [], "symmetric": false}),
         json!({"kind":"circular","axis_origin":{"x":0.0,"y":0.0,"z":0.0},"axis_dir":{"x":0.0,"y":0.0,"z":0.0},"angle":1.0,"count":1}),
         json!({"kind":"circular_angles","axis_origin":{"x":0.0,"y":0.0,"z":0.0},"axis_dir":{"x":0.0,"y":0.0,"z":0.0},"angles":[0.0]}),
         json!({"kind":"mirror","plane_origin":{"x":0.0,"y":0.0,"z":0.0},"plane_normal":{"x":0.0,"y":0.0,"z":0.0}}),
@@ -429,7 +434,7 @@ fn pattern_wire_refuses_a_degenerate_direction_point_or_scale_factor() {
 #[test]
 fn admitted_pattern_wire_round_trips_every_carried_field() {
     for wire in [
-        json!({"kind":"linear","direction":{"x":0.0,"y":0.0,"z":1.0},"spacing":1.0,"count":2,"second":{"direction":{"x":0.0,"y":1.0,"z":0.0},"spacing":2.0,"count":3}}),
+        json!({"kind":"linear","direction":{"x":0.0,"y":0.0,"z":1.0},"spacing":1.0,"count":2,"second":{"direction":{"x":0.0,"y":1.0,"z":0.0},"spacing":2.0,"count":3,"symmetric":false}, "omitted_instances": [], "symmetric": false}),
         json!({"kind":"linear_offsets","direction":{"x":1.0,"y":0.0,"z":0.0},"offsets":[0.0,1.0]}),
         json!({"kind":"circular","axis_origin":{"x":1.0,"y":2.0,"z":3.0},"axis_dir":{"x":0.0,"y":0.0,"z":1.0},"angle":1.0,"count":2}),
         json!({"kind":"circular_angles","axis_origin":{"x":1.0,"y":2.0,"z":3.0},"axis_dir":{"x":0.0,"y":0.0,"z":1.0},"angles":[0.0,1.0]}),

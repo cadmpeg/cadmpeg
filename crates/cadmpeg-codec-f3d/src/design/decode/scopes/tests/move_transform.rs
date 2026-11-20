@@ -269,6 +269,47 @@ fn move_face_transform_refuses_a_short_frame_reserved_bytes_and_a_broken_matrix(
 }
 
 #[test]
+fn a_form_0_move_world_direction_code_needs_no_prefix_assumption() {
+    use crate::records::feature::direct_face::{
+        DesignMoveForm, DesignMoveOperation, DesignMovePrefix, DesignMoveReference,
+    };
+    let operation = |form, codes| DesignMoveOperation {
+        form,
+        prefix: Some(DesignMovePrefix {
+            references: std::array::from_fn(|_| DesignMoveReference::Null),
+            codes,
+            matrix_omitted: false,
+            leading: None,
+        }),
+        ..DesignMoveOperation::default()
+    };
+    let losses = |kind: DesignFeatureKind, form, codes| {
+        let scope = DesignParameterScope::empty("f3d:test:scope#12", kind, 12);
+        crate::design::decode::scopes::direct_face::move_transform_prefix_losses(
+            &scope,
+            &operation(form, codes),
+        )
+        .len()
+    };
+    assert_eq!(
+        losses(DesignFeatureKind::Move, DesignMoveForm::Form0, [0, 1]),
+        0
+    );
+    for (kind, form, codes) in [
+        (DesignFeatureKind::Move, DesignMoveForm::Form1, [0, 1]),
+        (DesignFeatureKind::Move, DesignMoveForm::Form0, [1, 0]),
+        (DesignFeatureKind::Move, DesignMoveForm::Form0, [0, 2]),
+        (DesignFeatureKind::MoveFace, DesignMoveForm::Form0, [0, 1]),
+    ] {
+        assert_eq!(
+            losses(kind.clone(), form, codes),
+            1,
+            "{kind:?} {form:?} {codes:?}"
+        );
+    }
+}
+
+#[test]
 fn move_face_transform_refuses_a_record_with_two_admitted_frames() {
     let (first, _) = fixture("313", 256);
     let second_frame = first.len();

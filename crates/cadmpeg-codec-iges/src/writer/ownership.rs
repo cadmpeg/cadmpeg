@@ -15,7 +15,7 @@ pub(super) struct SourceOwnership<'ir> {
 impl<'ir> SourceOwnership<'ir> {
     pub(super) fn build(ir: &'ir CadIr) -> Self {
         let mut owned_surfaces = BTreeSet::new();
-        for face in &ir.model.faces {
+        for face in &ir.geometry.faces {
             owned_surfaces.insert(&face.surface);
         }
         let mut statuses = BTreeMap::new();

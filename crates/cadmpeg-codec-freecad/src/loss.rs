@@ -57,8 +57,6 @@ pub(crate) enum FreecadLossCode {
     DrawingDimensionGeometryNotTransferred,
     /// Persisted drawing content remains native.
     DrawingDimensionToleranceNotTransferred,
-    /// A bounded archive payload cannot be opened; its stored bytes remain retained.
-    ArchiveEntryUnreadable,
     /// A mesh use has no complete neutral placement path.
     MeshPlacementNotTransferred,
     /// Mesh occurrence expansion reached its input-scaled local work cap.
@@ -145,7 +143,6 @@ impl FreecadLossCode {
         Self::DrawingDimensionKindNotTransferred,
         Self::DrawingDimensionGeometryNotTransferred,
         Self::DrawingDimensionToleranceNotTransferred,
-        Self::ArchiveEntryUnreadable,
         Self::MeshPlacementNotTransferred,
         Self::MeshPlacementBounded,
         Self::PersistencePayloadUnresolved,
@@ -204,7 +201,6 @@ impl FreecadLossCode {
             Self::DrawingDimensionToleranceNotTransferred => {
                 "drawing.dimension-tolerance-not-transferred"
             }
-            Self::ArchiveEntryUnreadable => "source.archive-entry-unreadable",
             Self::MeshPlacementNotTransferred => "geometry.mesh-placement-not-transferred",
             Self::MeshPlacementBounded => "geometry.mesh-placement-bounded",
             Self::PersistencePayloadUnresolved => "metadata.persistence-payload-unresolved",
@@ -282,7 +278,6 @@ impl FreecadLossCode {
             | Self::SketchExternalCacheUnresolved
             | Self::SketchExternalReferenceUnresolved
             | Self::SketchProfileMatchingBounded
-            | Self::ArchiveEntryUnreadable
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved
             | Self::PersistenceCountNoncanonical
@@ -323,7 +318,6 @@ impl FreecadLossCode {
             | Self::DrawingDimensionKindNotTransferred
             | Self::DrawingDimensionGeometryNotTransferred
             | Self::DrawingDimensionToleranceNotTransferred
-            | Self::ArchiveEntryUnreadable
             | Self::PersistencePayloadUnresolved
             | Self::PersistenceSideEntryUnresolved => LossTaxonomy::RecordNotTyped,
             Self::FeatureCyclicHistory
@@ -408,7 +402,6 @@ mod tests {
                 "drawing.dimension-kind-not-transferred",
                 "drawing.dimension-geometry-not-transferred",
                 "drawing.dimension-tolerance-not-transferred",
-                "source.archive-entry-unreadable",
                 "geometry.mesh-placement-not-transferred",
                 "geometry.mesh-placement-bounded",
                 "metadata.persistence-payload-unresolved",

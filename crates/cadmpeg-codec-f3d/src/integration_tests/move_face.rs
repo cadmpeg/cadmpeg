@@ -10,7 +10,7 @@ use crate::design::feature_project::{
 use crate::loss::F3dLossCode;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::move_face::{
-    MoveFaceFixture, MoveFaceFrame, OTHER_GUID, TRANSFORM_GUID, TRANSLATION,
+    MoveFaceFixture, MoveFaceFrame, GROUP_GUID, OTHER_GUID, TRANSFORM_GUID, TRANSLATION,
 };
 use cadmpeg_ir::features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation};
 
@@ -24,7 +24,7 @@ struct Projection {
 fn project(fixture: &MoveFaceFixture) -> Projection {
     crate::test_support::zip_test::with_scan(&fixture.archive(), |scan| {
         let types = decode_types(scan).unwrap();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut decoded = decode_parameter_scopes(
             &ctx,
             scan,
@@ -236,6 +236,61 @@ fn framed_move_face_decodes_middle_transform_trailing_references_and_source_form
 }
 
 #[test]
+fn typed_move_face_prologue_decodes_marked_transform_and_group() {
+    for marker_one in [false, true] {
+        let result = project(&MoveFaceFixture {
+            marker_one,
+            typed: Some((TRANSFORM_GUID, GROUP_GUID)),
+            ..Default::default()
+        });
+        assert_projected(&result, TRANSLATION, true);
+        let native = result.scope.move_operation().unwrap();
+        assert_eq!(native.transform_record_index, 71);
+        let (transform_at, group_at) = if marker_one {
+            (
+                crate::layout::move_face_typed_marker_one_prologue::TRANSFORM_REFERENCE,
+                crate::layout::move_face_typed_marker_one_prologue::GROUP_REFERENCE,
+            )
+        } else {
+            (
+                crate::layout::move_face_typed_marker_zero_prologue::TRANSFORM_REFERENCE,
+                crate::layout::move_face_typed_marker_zero_prologue::GROUP_REFERENCE,
+            )
+        };
+        assert_eq!(
+            native.transform_reference_offset,
+            Some(result.scope.byte_offset() + u64::try_from(transform_at).unwrap())
+        );
+        let group = native.face_group.as_ref().unwrap();
+        assert_eq!(group.value, 50);
+        assert_eq!(
+            group.offset,
+            result.scope.byte_offset() + u64::try_from(group_at + 1).unwrap()
+        );
+    }
+}
+
+#[test]
+fn typed_move_face_prologue_requires_registered_reference_types() {
+    let result = project(&MoveFaceFixture {
+        typed: Some((OTHER_GUID, GROUP_GUID)),
+        ..Default::default()
+    });
+    assert!(result.scope.move_operation().is_none());
+    assert!(!matches!(
+        result.operation,
+        FeatureOperation::MoveFace { .. }
+    ));
+    // A group reference of another type marks no face group.
+    let result = project(&MoveFaceFixture {
+        typed: Some((TRANSFORM_GUID, OTHER_GUID)),
+        ..Default::default()
+    });
+    assert!(result.scope.move_operation().unwrap().face_group.is_none());
+    assert_projected(&result, TRANSLATION, false);
+}
+
+#[test]
 fn framed_move_face_retains_motion_through_inconsistent_selection_tables() {
     for marker_one in [false, true] {
         for with_metadata in [false, true] {
@@ -383,6 +438,154 @@ fn framed_move_face_refuses_conflicting_registration_and_actual_transform_ambigu
         let result = project(&fixture);
         assert!(result.scope.move_operation().is_none());
         assert!(matches!(result.operation, FeatureOperation::Native { .. }));
+    }
+}
+
+#[test]
+fn framed_move_face_admits_a_version_3_registration_in_its_longer_frame() {
+    for form in [0, 1, 2, 5] {
+        let mut fixture = MoveFaceFixture {
+            frames: vec![MoveFaceFrame {
+                form,
+                version_3_length: true,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        fixture.types[1] = (TRANSFORM_GUID, 3);
+        let result = project(&fixture);
+        assert_projected(&result, TRANSLATION, true);
+        for code in [
+            F3dLossCode::FeatureMoveFaceTypeConflict,
+            F3dLossCode::FeatureMoveFaceTypeAssumed,
+            F3dLossCode::FeatureMoveTransformAssumed,
+        ] {
+            assert!(
+                !result.losses.contains(&code.kind()),
+                "form {form}: {code:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn framed_move_face_keeps_a_version_3_matrix_in_a_version_2_frame_length() {
+    let mut fixture = MoveFaceFixture::default();
+    fixture.types[1] = (TRANSFORM_GUID, 3);
+    let result = project(&fixture);
+    assert_projected(&result, TRANSLATION, true);
+    assert!(result
+        .losses
+        .contains(&F3dLossCode::FeatureMoveTransformAssumed.kind()));
+    assert!(!result
+        .losses
+        .contains(&F3dLossCode::FeatureMoveFaceTypeConflict.kind()));
+}
+
+#[test]
+fn framed_move_face_prefers_a_version_2_frame_over_a_version_3_sibling() {
+    let mut different = TRANSLATION;
+    different[2][3] = 3.;
+    for version_3_length in [false, true] {
+        for first in [false, true] {
+            let mut frames = vec![
+                MoveFaceFrame::default(),
+                MoveFaceFrame {
+                    class: *b"258",
+                    matrix: different,
+                    version_3_length,
+                    ..Default::default()
+                },
+            ];
+            if first {
+                frames.reverse();
+            }
+            let mut fixture = MoveFaceFixture {
+                frames,
+                ..Default::default()
+            };
+            fixture.types[2] = (TRANSFORM_GUID, 3);
+            let result = project(&fixture);
+            assert_projected(&result, TRANSLATION, true);
+            assert!(!result
+                .losses
+                .contains(&F3dLossCode::FeatureMoveTransformAssumed.kind()));
+        }
+    }
+}
+
+#[test]
+fn framed_move_face_prefers_a_version_3_frame_that_keeps_its_frame_rules() {
+    let mut different = TRANSLATION;
+    different[2][3] = 3.;
+    for first in [false, true] {
+        let mut frames = vec![
+            MoveFaceFrame {
+                version_3_length: true,
+                ..Default::default()
+            },
+            MoveFaceFrame {
+                class: *b"258",
+                matrix: different,
+                ..Default::default()
+            },
+        ];
+        if first {
+            frames.reverse();
+        }
+        let mut fixture = MoveFaceFixture {
+            frames,
+            ..Default::default()
+        };
+        fixture.types[1] = (TRANSFORM_GUID, 3);
+        fixture.types[2] = (TRANSFORM_GUID, 3);
+        let result = project(&fixture);
+        assert_projected(&result, TRANSLATION, true);
+        assert!(!result
+            .losses
+            .contains(&F3dLossCode::FeatureMoveTransformAssumed.kind()));
+    }
+}
+
+#[test]
+fn framed_move_face_reports_a_version_3_frame_without_the_transform_grammar() {
+    let mut fixture = MoveFaceFixture {
+        frames: vec![MoveFaceFrame {
+            malformed: true,
+            version_3_length: true,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    fixture.types[1] = (TRANSFORM_GUID, 3);
+    let result = project(&fixture);
+    assert!(result.scope.move_operation().is_none());
+    assert!(result
+        .losses
+        .contains(&F3dLossCode::FeatureMoveFaceTypeConflict.kind()));
+    assert!(matches!(result.operation, FeatureOperation::Native { .. }));
+}
+
+#[test]
+fn framed_move_face_keeps_a_matrix_whose_form_word_breaks_its_frame_length() {
+    for (version, form, length) in [(3, 5, 276), (2, 0, 253)] {
+        let mut fixture = MoveFaceFixture {
+            frames: vec![MoveFaceFrame {
+                form,
+                length: Some(length),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        fixture.types[1] = (TRANSFORM_GUID, version);
+        let result = project(&fixture);
+        assert_projected(&result, TRANSLATION, true);
+        assert!(
+            result
+                .losses
+                .contains(&F3dLossCode::FeatureMoveTransformAssumed.kind()),
+            "version {version}, form {form}, {length} bytes"
+        );
     }
 }
 

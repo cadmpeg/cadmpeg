@@ -10,7 +10,8 @@ fn mass_properties_round_trip_through_json() {
         id: MassPropertiesId::mint("test:model:mass#0").unwrap(),
         target: PhysicsTarget::Occurrence {
             occurrence: OccurrenceId::mint("test:model:occurrence#0").unwrap(),
-        },
+        }
+        .into(),
         mass: PositiveReal::new(2.5),
         density: None,
         center_of_mass: None,
@@ -22,7 +23,7 @@ fn mass_properties_round_trip_through_json() {
         native_ref: None,
     };
     let json = serde_json::to_value(&mass).unwrap();
-    assert_eq!(json["target"]["kind"], "occurrence");
+    assert_eq!(json["target"]["entity"]["kind"], "occurrence");
     assert!(json.get("density").is_none());
     assert_eq!(
         serde_json::from_value::<MassProperties>(json).unwrap(),
@@ -36,7 +37,8 @@ fn a_native_collider_shape_keeps_its_name() {
         id: ColliderId::mint("test:model:collider#0").unwrap(),
         target: PhysicsTarget::Body {
             body: BodyId::mint("test:model:body#0").unwrap(),
-        },
+        }
+        .into(),
         shape: ColliderShape::Native {
             name: "sdf".to_owned(),
         },
@@ -73,7 +75,8 @@ fn a_rigid_body_keeps_its_initial_velocities_and_rest_state() {
         id: RigidBodyId::mint("test:model:rigid-body#0").unwrap(),
         target: PhysicsTarget::Occurrence {
             occurrence: OccurrenceId::mint("test:model:occurrence#0").unwrap(),
-        },
+        }
+        .into(),
         kinematic: false,
         enabled: true,
         linear_velocity: FiniteVector3::new(Vector3::new(100.0, 0.0, 0.0)),

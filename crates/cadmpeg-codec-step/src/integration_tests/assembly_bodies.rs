@@ -7,9 +7,8 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::products::{
-    Occurrence, OccurrenceParent, ProductDefinition, ProductDefinitionKind, PrototypeReference,
+    ExternalDocument, Occurrence, ProductDefinition, ProductDefinitionKind, Storage,
 };
-use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::CadIr;
@@ -22,46 +21,33 @@ use crate::parse::{Exchange, Value};
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 fn product(name: &str, bodies: Vec<BodyId>) -> ProductDefinition {
-    ProductDefinition {
-        id: format!("test:assembly:product-definition#{name}")
+    let mut product = ProductDefinition::new(
+        format!("test:assembly:product-definition#{name}")
             .try_into()
             .expect("product identity"),
-        kind: ProductDefinitionKind::Part,
-        source_name: None,
-        label: Some(name.into()),
-        description: None,
-        part_number: Some(name.into()),
-        bom_properties: BTreeMap::new(),
-        bodies,
-        sketches: Vec::default(),
-        native_ref: None,
-    }
+        Storage::Embedded,
+    );
+    product.kind = Some(ProductDefinitionKind::Part);
+    product.label = Some(name.into());
+    product.part_number = Some(name.into());
+    product.bodies = bodies;
+    product
 }
 
-fn occurrence(name: &str, parent: Option<&str>, x: f64) -> Occurrence {
-    Occurrence {
-        id: format!("test:assembly:occurrence#{name}")
-            .try_into()
-            .expect("occurrence identity"),
-        prototype: PrototypeReference::Local {
-            definition: product(name, Vec::new()).id,
-        },
-        parent: parent.map_or(OccurrenceParent::Root {}, |parent| {
-            OccurrenceParent::Occurrence {
-                occurrence: format!("test:assembly:occurrence#{parent}")
-                    .try_into()
-                    .expect("parent identity"),
-            }
-        }),
-        ordinal: 0,
-        transform: translation(x),
-        linked_prototype: None,
-        scale: [FiniteReal::ONE; 3],
-        name: Some(name.into()),
-        visible: None,
-        link: None,
-        native_ref: None,
-    }
+fn occurrence(name: &str, x: f64) -> Occurrence {
+    let mut occurrence = Occurrence::new(
+        occurrence_id(name),
+        product(name, Vec::new()).id,
+        Some(translation(x)),
+    );
+    occurrence.name = Some(name.into());
+    occurrence
+}
+
+fn occurrence_id(name: &str) -> cadmpeg_ir::ids::OccurrenceId {
+    format!("test:assembly:occurrence#{name}")
+        .try_into()
+        .expect("occurrence identity")
 }
 
 fn translation(x: f64) -> Transform {
@@ -92,35 +78,45 @@ fn assembly(claim_first: bool) -> CadIr {
             .collect::<Vec<_>>(),
     )
     .expect("second cube");
-    ir.model.bodies.extend(second.model.bodies);
-    ir.model.regions.extend(second.model.regions);
-    ir.model.shells.extend(second.model.shells);
-    ir.model.faces.extend(second.model.faces);
-    ir.model.loops.extend(second.model.loops);
-    ir.model.coedges.extend(second.model.coedges);
-    ir.model.edges.extend(second.model.edges);
-    ir.model.vertices.extend(second.model.vertices);
-    ir.model.points.extend(second.model.points);
-    ir.model.curves.extend(second.model.curves);
-    ir.model.surfaces.extend(second.model.surfaces);
+    ir.geometry.bodies.extend(second.geometry.bodies);
+    ir.geometry.regions.extend(second.geometry.regions);
+    ir.geometry.shells.extend(second.geometry.shells);
+    ir.geometry.faces.extend(second.geometry.faces);
+    ir.geometry.loops.extend(second.geometry.loops);
+    ir.geometry.coedges.extend(second.geometry.coedges);
+    ir.geometry.edges.extend(second.geometry.edges);
+    ir.geometry.vertices.extend(second.geometry.vertices);
+    ir.geometry.points.extend(second.geometry.points);
+    ir.geometry.curves.extend(second.geometry.curves);
+    ir.geometry.surfaces.extend(second.geometry.surfaces);
+    let mut root = product("root", Vec::new());
+    root.storage = Storage::File {
+        document: ExternalDocument::default(),
+        source: None,
+    };
+    root.occurrences = vec![occurrence_id("first"), occurrence_id("second")];
     ir.model.product_definitions = vec![
         product(
             "first",
             if claim_first {
-                vec![ir.model.bodies[0].id.clone()]
+                vec![ir.geometry.bodies[0].id.clone()]
             } else {
                 Vec::new()
             },
         ),
-        product("root", Vec::new()),
+        root,
         product("second", Vec::new()),
     ];
-    ir.model.occurrences = vec![
-        occurrence("root", None, 0.0),
-        occurrence("first", Some("root"), 100.0),
-        occurrence("second", Some("root"), 200.0),
-    ];
+    ir.model.occurrences = vec![occurrence("first", 100.0), occurrence("second", 200.0)];
     ir
+}
+
+/// Removes every occurrence and every definition's list of them.
+fn clear_occurrences(ir: &mut CadIr) {
+    ir.model.occurrences.clear();
+    for product in &mut ir.model.product_definitions {
+        product.occurrences.clear();
+    }
 }
 
 fn reference(value: &Value) -> u64 {
@@ -215,7 +211,7 @@ fn reachable_solids(exchange: &Exchange, representation: u64) -> BTreeSet<u64> {
 fn assert_assembly(claim_first: bool, body_placement: bool) {
     let mut ir = assembly(claim_first);
     if body_placement {
-        ir.model.bodies[1].transform = Some(translation(40.0));
+        ir.geometry.bodies[1].transform = Some(translation(40.0));
     }
     for schema in [
         StepSchema::Ap203Edition1,
@@ -279,14 +275,14 @@ fn assert_assembly(claim_first: bool, body_placement: bool) {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("read assembly");
-        assert_eq!(decoded.ir().model.bodies.len(), 2);
+        assert_eq!(decoded.ir().geometry.bodies.len(), 2);
         assert!(decoded
             .ir()
-            .model
+            .geometry
             .bodies
             .iter()
             .all(|body| body.kind == BodyKind::Solid));
-        assert_eq!(decoded.ir().model.occurrences.len(), 3);
+        assert_eq!(decoded.ir().model.occurrences.len(), 2);
         for (name, count) in [("root", root.len()), ("first", first.len()), ("second", 0)] {
             let product = decoded
                 .ir()
@@ -306,10 +302,10 @@ fn assert_assembly(claim_first: bool, body_placement: bool) {
                 .iter()
                 .find(|occurrence| occurrence.name.as_deref() == Some(name))
                 .expect("decoded child occurrence");
-            assert_eq!(occurrence.transform, translation(x));
+            assert_eq!(occurrence.transform, Some(translation(x)));
         }
-        expected.model.occurrences.clear();
-        actual.model.occurrences.clear();
+        clear_occurrences(&mut expected);
+        clear_occurrences(&mut actual);
         measures_agree("assembly body assignment", &expected, &actual)
             .expect("stored body geometry and placements survive");
     }
@@ -334,7 +330,7 @@ fn unclaimed_assembly_bodies_retain_body_placements_once() {
 fn unclaimed_bodies_without_occurrences_keep_a_product_representation() {
     for sole_product in [true, false] {
         let mut ir = assembly(false);
-        ir.model.occurrences.clear();
+        clear_occurrences(&mut ir);
         if sole_product {
             ir.model
                 .product_definitions
@@ -351,7 +347,7 @@ fn unclaimed_bodies_without_occurrences_keep_a_product_representation() {
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("read bodies without a root occurrence");
-        assert_eq!(decoded.ir().model.bodies.len(), 2);
+        assert_eq!(decoded.ir().geometry.bodies.len(), 2);
         let products = &decoded.ir().model.product_definitions;
         assert_eq!(products.len(), if sole_product { 1 } else { 4 });
         let owners = products
@@ -434,14 +430,14 @@ fn solids_keep_advanced_representations_across_product_and_body_placements() {
                         ir.model.occurrences.clear();
                     }
                     if placed {
-                        ir.model.bodies[1].transform = Some(translation(40.0));
+                        ir.geometry.bodies[1].transform = Some(translation(40.0));
                     }
                     if standalone {
-                        let mut point = ir.model.points[0].clone();
+                        let mut point = ir.geometry.points[0].clone();
                         point.id =
                             cadmpeg_ir::ids::PointId::mint("test:representations:point#standalone")
                                 .unwrap();
-                        ir.model.points.push(point);
+                        ir.geometry.points.push(point);
                     }
                     let mut bytes = Vec::new();
                     write_step(&ir, &mut bytes, schema, &StepWriteOptions::default()).unwrap();
@@ -454,7 +450,7 @@ fn solids_keep_advanced_representations_across_product_and_body_placements() {
                     let decoded = StepCodec::default()
                         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                         .unwrap();
-                    assert_eq!(decoded.ir().model.bodies.len(), 2);
+                    assert_eq!(decoded.ir().geometry.bodies.len(), 2);
                     let mut actual = decoded.into_parts().0;
                     ir.model.product_definitions.clear();
                     ir.model.occurrences.clear();
@@ -476,10 +472,14 @@ fn mixed_solid_and_sheet_geometry_uses_linked_representations() {
     ] {
         for graph in [false, true] {
             let mut ir = assembly(false);
-            ir.model.bodies[1].kind = BodyKind::Sheet;
+            ir.geometry.bodies[1].kind = BodyKind::Sheet;
             if graph {
-                ir.model.product_definitions[0].bodies =
-                    ir.model.bodies.iter().map(|body| body.id.clone()).collect();
+                ir.model.product_definitions[0].bodies = ir
+                    .geometry
+                    .bodies
+                    .iter()
+                    .map(|body| body.id.clone())
+                    .collect();
             } else {
                 ir.model.product_definitions.clear();
                 ir.model.occurrences.clear();
@@ -495,11 +495,11 @@ fn mixed_solid_and_sheet_geometry_uses_linked_representations() {
             let decoded = StepCodec::default()
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .unwrap();
-            assert_eq!(decoded.ir().model.bodies.len(), 2);
+            assert_eq!(decoded.ir().geometry.bodies.len(), 2);
             assert_eq!(
                 decoded
                     .ir()
-                    .model
+                    .geometry
                     .bodies
                     .iter()
                     .filter(|body| body.kind == BodyKind::Solid)
@@ -528,8 +528,7 @@ fn omitted_solid_geometry_does_not_create_an_empty_advanced_representation() {
         StepSchema::Ap242Edition3,
     ] {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-        ir.model.regions.clear();
-        ir.model.bodies[0].regions.clear();
+        ir.geometry.regions.clear();
         let mut bytes = Vec::new();
         write_step(&ir, &mut bytes, schema, &StepWriteOptions::default()).unwrap();
         let (exchange, _) =

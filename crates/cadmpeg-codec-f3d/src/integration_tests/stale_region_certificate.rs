@@ -61,6 +61,7 @@ fn fixture_with_flags(
             secondary_id: 0,
             geometry: None,
             planar_z_noise: None,
+            tail_marker: None,
         });
     }
     let profiles = profile_entities
@@ -404,11 +405,10 @@ fn bind_cut(both: bool, surviving: u32) -> (ProfileRef, Vec<LossNote>, Vec<Sketc
     let history = cut_history(before, after);
     let mut feature: Feature = serde_json::from_value(json!({
         "id": "synthetic:test:feature#cut", "ordinal": 0, "suppressed": false, "native_ref": scope.id,
-        "definition": {"definition": "extrude", "profile": {"kind": "sketch", "value": sketch.id},
+        "definition": {"kind": "operation", "value": {"kind": "extrude", "value": {"profile": {"kind": "planar", "value": {"kind": "sketch", "value": sketch.id}},
         "direction": {"kind": "reversed_profile_normal"}, "start": {"kind": "profile_plane"},
         "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 3.0}}},
-        "op": "cut", "solid": true}
-    })).unwrap();
+        "op": "cut", "solid": true}}}, "dependencies": [], "source_properties": {}, "source_content": [], "outputs": []})).unwrap();
     let work = ProfileGeometryWork::new();
     let losses = crate::test_support::with_decode_context(|ctx| {
         bind_extrude_profile_selections(

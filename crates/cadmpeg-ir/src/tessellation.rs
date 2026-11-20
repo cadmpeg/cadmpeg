@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source tessellation retained alongside exact boundary representation.
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::assets::AssetId;
+use crate::design::refs::StateRef;
 use crate::features::{FinitePoint3, FiniteVector3};
 use crate::ids::{BodyId, FaceId};
 use crate::math::{Point3, Vector3};
@@ -804,9 +806,9 @@ fn admit_normal(normal: Vector3) -> Result<FiniteVector3, TessellationError> {
 /// The domain is the wire's tag, so the selector table exists only on the two
 /// domains that address one: vertex-order addressing has no `indices` key to
 /// leave empty and none to refuse.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "domain", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum ChannelAddressing {
     /// Vertex-order addressing with no explicit index table.
@@ -848,8 +850,14 @@ struct TessellationWire {
     )]
     body: Option<BodyId>,
     /// Faces represented by this mesh, empty when face-level ownership is unknown.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     faces: Vec<FaceId>,
+    /// The state whose geometry holds `body` and `faces`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_state"
+    )]
+    state: Option<StateRef>,
     /// Source chordal deflection tolerance, when carried.
     #[serde(
         default,
@@ -867,19 +875,14 @@ struct TessellationWire {
     /// The mesh's vertices, triangles and shading normals.
     mesh: TessellationMesh,
     /// Undirected geometric feature edges.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     feature_edges: Vec<[u32; 2]>,
     /// Source face or region groups as an ordered partition of the triangle ordinals.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     triangle_groups: Vec<TessellationTriangleGroup>,
     /// Source texture resources assigned to disjoint sets of triangle ordinals.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     texture_assignments: Vec<TessellationTextureAssignment>,
     /// Named texture-coordinate sets.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     texture_coordinates: Vec<TextureCoordinates>,
     /// Additional per-vertex or per-facet data channels.
-    #[serde(default)]
     channels: Vec<TessellationChannel>,
 }
 
@@ -911,6 +914,9 @@ pub struct Tessellation {
     pub body: Option<BodyId>,
     /// Faces represented by this mesh, empty when face-level ownership is unknown.
     pub faces: Vec<FaceId>,
+    /// The state whose geometry holds `body` and `faces`. `None` is the
+    /// current geometry.
+    pub state: Option<StateRef>,
     /// Source chordal deflection tolerance, when carried.
     chordal_deflection: Option<NonNegativeReal>,
     /// Native source-object identity and effective display metadata.
@@ -939,8 +945,34 @@ pub struct TessellationTriangleGroup {
         deserialize_with = "deserialize_source_id"
     )]
     pub source_id: Option<String>,
+    /// The face of the tessellation's body whose triangles the group holds.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_face"
+    )]
+    pub face: Option<FaceId>,
     /// Strictly increasing triangle ordinals belonging to this group.
     pub triangles: Vec<u32>,
+}
+
+impl TessellationTriangleGroup {
+    /// A group of `triangles` with the source identity `source_id`.
+    #[must_use]
+    pub const fn new(source_id: Option<String>, triangles: Vec<u32>) -> Self {
+        Self {
+            source_id,
+            face: None,
+            triangles,
+        }
+    }
+
+    /// The group as the triangles of `face`.
+    #[must_use]
+    pub fn with_face(mut self, face: FaceId) -> Self {
+        self.face = Some(face);
+        self
+    }
 }
 
 /// One source texture resource assigned directly to tessellation triangles.
@@ -962,7 +994,7 @@ pub struct TessellationTextureAssignment {
 }
 
 /// The mesh element that each value of a texture-coordinate set belongs to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum TextureCoordinateAddressing {
@@ -1092,6 +1124,7 @@ fn require_triangle_groups(
         .take(triangle_count)
         .collect::<Vec<_>>();
     let mut source_ids = std::collections::BTreeSet::new();
+    let mut faces = std::collections::BTreeSet::new();
     let valid = triangle_groups.iter().all(|group| {
         !group.triangles.is_empty()
             && group
@@ -1113,6 +1146,7 @@ fn require_triangle_groups(
             && group.source_id.as_ref().is_none_or(|source_id| {
                 !source_id.is_empty() && source_ids.insert(source_id.as_str())
             })
+            && group.face.as_ref().is_none_or(|face| faces.insert(face))
     }) && memberships.iter().all(|visited| *visited);
     if !valid {
         return Err(tessellation_error(
@@ -1201,6 +1235,7 @@ impl Tessellation {
             id,
             body: None,
             faces: Vec::new(),
+            state: None,
             chordal_deflection: None,
             source_object: None,
             mesh,
@@ -1576,6 +1611,7 @@ impl From<Tessellation> for TessellationWire {
             id: tessellation.id,
             body: tessellation.body,
             faces: tessellation.faces,
+            state: tessellation.state,
             chordal_deflection: tessellation.chordal_deflection.map(NonNegativeReal::get),
             source_object: tessellation.source_object,
             mesh: tessellation.mesh.into_raw(),
@@ -1595,6 +1631,7 @@ impl TryFrom<TessellationWire> for Tessellation {
         let mut mesh = Self {
             body: wire.body,
             faces: wire.faces,
+            state: wire.state,
             source_object: wire.source_object,
             ..Self::new(wire.id, wire.mesh, wire.channels)?
         };
@@ -1655,6 +1692,7 @@ mod tests;
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_body, BodyId, "body");
+cadmpeg_core::named_optional_field!(deserialize_state, StateRef, "state");
 cadmpeg_core::named_optional_field!(deserialize_chordal_deflection, f64, "chordal_deflection");
 cadmpeg_core::named_optional_field!(
     deserialize_source_object,
@@ -1662,6 +1700,7 @@ cadmpeg_core::named_optional_field!(
     "source_object"
 );
 cadmpeg_core::named_optional_field!(deserialize_source_id, String, "source_id");
+cadmpeg_core::named_optional_field!(deserialize_face, FaceId, "face");
 
 mod identity_rewrite;
 

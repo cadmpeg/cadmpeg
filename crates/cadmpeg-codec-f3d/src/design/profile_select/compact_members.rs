@@ -76,6 +76,7 @@ pub(super) fn resolve(
         sketch,
         &entities,
         &rings,
+        &std::collections::HashSet::new(),
         scoped.linear_tolerance,
         &work,
         scoped.ctx,

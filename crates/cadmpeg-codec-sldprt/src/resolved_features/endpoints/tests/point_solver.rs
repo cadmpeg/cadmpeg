@@ -76,7 +76,7 @@ fn omitted_point_coordinates_keep_unique_point_with_ambiguous_assignments() {
     // A distance-two pair must use 0 and 2; its shared distance-one neighbor is 1.
     let lane = lane(&[([10, 11], 1.0), ([10, 12], 1.0), ([11, 12], 2.0)]);
     let inferred = inferred_point_coordinates_by_index(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &lane,
         "feature",
     )
@@ -98,7 +98,7 @@ fn omitted_point_coordinates_reject_inconsistent_component_after_domain_filterin
         ([12, 13], 2.0),
     ]);
     let inferred = inferred_point_coordinates_by_index(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &lane,
         "feature",
     )

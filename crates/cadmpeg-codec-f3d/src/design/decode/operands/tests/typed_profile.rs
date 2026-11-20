@@ -225,6 +225,38 @@ fn typed_profile_selection_rejects_a_chain_without_the_scope_record_or_exact_end
     assert!(parse(&bytes).is_none());
 }
 
+fn typed_reference_of(out: &mut Vec<u8>, target: u32, guid: &str) {
+    out.push(1);
+    out.extend_from_slice(&u64::from(target).to_le_bytes());
+    out.extend_from_slice(&36u32.to_le_bytes());
+    out.extend_from_slice(guid.as_bytes());
+    out.extend_from_slice(&[0, 0]);
+}
+
+#[test]
+fn typed_profile_selection_lists_the_sketch_containers_its_scope_record_names() {
+    const CONTAINER: &str = "44A64366-4BD3-4B24-881A-F94C206E8F2D";
+    // The chain names record 77. That record references the Sketch containers
+    // 75 and 80, record 60 of another type, and container 75 a second time.
+    let mut bytes = chain(false);
+    header(&mut bytes, b"383", 77);
+    bytes.extend_from_slice(&[0; 14]);
+    typed_reference_of(&mut bytes, 75, CONTAINER);
+    typed_reference_of(&mut bytes, 60, TYPE);
+    bytes.extend_from_slice(&[0; 4]);
+    typed_reference_of(&mut bytes, 80, CONTAINER);
+    typed_reference_of(&mut bytes, 75, CONTAINER);
+    header(&mut bytes, b"262", 77);
+    let selection = parse(&bytes).expect("typed profile selection");
+    assert_eq!(selection.sketch_scope_record_index, 77);
+    assert_eq!(selection.scope_sketch_containers, [75, 80]);
+    // A chain target with no record in the stream names no container.
+    assert!(parse(&chain(false))
+        .expect("typed profile selection")
+        .scope_sketch_containers
+        .is_empty());
+}
+
 fn region_chain() -> Vec<u8> {
     let mut bytes = chain(false);
     let identity = bytes
@@ -480,7 +512,7 @@ fn marked_profile_selection_decodes_region_loops_from_the_operand_chain() {
     group.id = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-group#90".into();
     let selections = crate::test_support::zip_test::with_scan(&archive, |scan| {
         super::super::decode_profile_curve_selections(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             scan,
             &[group],
             &headers,
@@ -506,4 +538,99 @@ fn marked_profile_selection_decodes_region_loops_from_the_operand_chain() {
     assert!(loops[0].outer);
     assert_eq!(loops[1].entries[0].primary_id, 12);
     assert!(!loops[1].outer);
+}
+
+/// The `chain` records with a sketchless chain record 101 that names
+/// selection record 100.
+fn sketchless_chain() -> Vec<u8> {
+    let plain = chain(false);
+    let chain_at = plain
+        .windows(7)
+        .position(|window| window == [3, 0, 0, 0, b'2', b'7', b'7'])
+        .unwrap();
+    let next_at = plain
+        .windows(7)
+        .position(|window| window == [3, 0, 0, 0, b'2', b'7', b'3'])
+        .unwrap();
+    let mut bytes = plain[..chain_at].to_vec();
+    header(&mut bytes, b"277", 101);
+    bytes.extend_from_slice(&[0; 14]);
+    bytes.extend_from_slice(&[1, 1, 0, 0, 0, 0]);
+    typed_reference(&mut bytes, 100);
+    bytes.extend_from_slice(&[0x19, 0x87, 0x79, 0xee, 0xf1, 0x5c, 0x05, 0x00]);
+    bytes.extend_from_slice(&plain[next_at..]);
+    bytes
+}
+
+fn sketchless_asset(bytes: &[u8]) -> Option<String> {
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let header = DesignRecordHeader {
+        id: "f3d:Design/BulkStream.dat:design-record-header#0".into(),
+        record_index: 100,
+        class_tag: DesignClassTag::try_from("264".to_owned()).unwrap(),
+        byte_offset: 0,
+    };
+    super::super::sketchless_profile_selection_asset(bytes, &records, &header)
+}
+
+#[test]
+fn sketchless_chain_record_names_the_selection_and_no_sketch_scope() {
+    let bytes = sketchless_chain();
+    assert_eq!(
+        sketchless_asset(&bytes).as_deref(),
+        Some("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+    );
+    assert!(parse(&bytes).is_none());
+}
+
+#[test]
+fn chain_record_with_a_sketch_scope_is_not_sketchless() {
+    assert!(sketchless_asset(&chain(false)).is_none());
+}
+
+#[test]
+fn sketchless_chain_record_must_name_its_own_selection() {
+    let mut bytes = sketchless_chain();
+    let marker_at = bytes
+        .windows(6)
+        .position(|window| window == [1, 1, 0, 0, 0, 0])
+        .unwrap();
+    bytes[marker_at + 7] = 99;
+    assert!(sketchless_asset(&bytes).is_none());
+}
+
+#[test]
+fn sketchless_selection_of_another_asset_names_its_asset_guid() {
+    let note = super::super::sketchless_profile_selection_loss(
+        100,
+        80,
+        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        Some("12345678-1234-1234-1234-123456789abc"),
+    );
+    assert_eq!(
+        note.code.local_code(),
+        "feature.extrude-profile-sketch-absent"
+    );
+    assert_eq!(
+        note.message,
+        "Profile selection record 100 of Extrude scope record 80 has a chain record that names no Sketch; its asset GUID aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee is not the Design's asset GUID, and the profile stays native."
+    );
+}
+
+#[test]
+fn sketchless_selection_of_the_design_asset_names_no_sketch() {
+    let note = super::super::sketchless_profile_selection_loss(
+        100,
+        80,
+        "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        Some("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"),
+    );
+    assert_eq!(
+        note.code.local_code(),
+        "feature.extrude-profile-sketch-absent"
+    );
+    assert_eq!(
+        note.message,
+        "Profile selection record 100 of Extrude scope record 80 has a chain record that names no Sketch, and the profile stays native."
+    );
 }

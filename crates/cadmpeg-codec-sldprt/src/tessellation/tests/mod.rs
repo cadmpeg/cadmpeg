@@ -65,6 +65,7 @@ use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex,
 };
+use cadmpeg_ir::CadIr;
 
 mod display_references;
 mod display_tables;
@@ -223,22 +224,18 @@ fn analytic_surface_residuals_measure_normal_distance() {
     .is_some_and(|residual| residual > 0.0));
 }
 
-fn add_face(
-    model: &mut cadmpeg_ir::document::Model,
-    name: &str,
-    geometry: SurfaceGeometry,
-    corners: [Point3; 4],
-) -> FaceId {
+fn add_face(ir: &mut CadIr, name: &str, geometry: SurfaceGeometry, corners: [Point3; 4]) -> FaceId {
     let face_id =
         FaceId::mint(format!("synthetic:test:face#face-{name}")).expect("identity grammar");
     let loop_id =
         LoopId::mint(format!("synthetic:test:loop#loop-{name}")).expect("identity grammar");
     let surface_id = SurfaceId::mint(format!("synthetic:test:surface#surface-{name}"))
         .expect("identity grammar");
-    model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry,
         source_object: None,
+        native_ref: None,
     });
 
     let coedge_ids = (0..4)
@@ -252,15 +249,16 @@ fn add_face(
             .expect("identity grammar");
         let vertex_id = VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
             .expect("identity grammar");
-        model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             point_id.clone(),
             cadmpeg_ir::features::FinitePoint3::new(corner).expect("a finite position is a point"),
             None,
         ));
-        model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
             tolerance: None,
+            native_ref: None,
         });
     }
     for (index, origin) in corners.iter().copied().enumerate() {
@@ -270,24 +268,28 @@ fn add_face(
         let edge_id = EdgeId::mint(format!("synthetic:test:edge#edge-{name}-{index}"))
             .expect("identity grammar");
         let direction = corners[next].vector_from(origin).unit().unwrap();
-        model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve_id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, direction).unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
-        model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
-            start: VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
-                .expect("identity grammar"),
-            end: VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{next}"))
-                .expect("identity grammar"),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
+                    .expect("identity grammar"),
+                VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{next}"))
+                    .expect("identity grammar"),
+            )),
             tolerance: None,
+            native_ref: None,
         });
-        model.coedges.push(Coedge {
+        ir.geometry.coedges.push(Coedge {
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
@@ -295,16 +297,18 @@ fn add_face(
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         });
     }
-    model.loops.push(Loop {
+    ir.geometry.loops.push(Loop {
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
         ),
+        native_ref: None,
     });
-    model.faces.push(Face {
+    ir.geometry.faces.push(Face {
         id: face_id.clone(),
         shell: ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
         surface: surface_id,
@@ -313,13 +317,14 @@ fn add_face(
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     face_id
 }
 
-fn add_square_face(model: &mut cadmpeg_ir::document::Model, name: &str, x: f64) -> FaceId {
+fn add_square_face(ir: &mut CadIr, name: &str, x: f64) -> FaceId {
     add_face(
-        model,
+        ir,
         name,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -340,10 +345,10 @@ fn add_square_face(model: &mut cadmpeg_ir::document::Model, name: &str, x: f64) 
 
 #[test]
 fn face_tolerance_below_display_resolution_is_refused() {
-    let mut model = cadmpeg_ir::document::Model::default();
-    let face_id = add_square_face(&mut model, "below-display-floor", 0.0);
+    let mut ir = CadIr::empty();
+    let face_id = add_square_face(&mut ir, "below-display-floor", 0.0);
     let stated = EPS_DISPLAY_QUANTIZATION / 2.0;
-    model
+    ir.geometry
         .faces
         .iter_mut()
         .find(|face| face.id == face_id)
@@ -353,7 +358,7 @@ fn face_tolerance_below_display_resolution_is_refused() {
             .expect("the test tolerance is positive and finite"),
     );
 
-    let error = assign_unique_surface_owners!(&mut model)
+    let error = assign_unique_surface_owners!(&mut ir)
         .expect_err("a display lane cannot evaluate a finer stated tolerance");
     let text = error.to_string();
     assert!(text.contains(face_id.as_str()), "{text}");
@@ -439,12 +444,7 @@ fn test_nurbs_point_normal(surface: &NurbsSurface, u: f64, v: f64) -> (Point3, V
     )
 }
 
-fn add_cylindrical_patch_face(
-    model: &mut cadmpeg_ir::document::Model,
-    name: &str,
-    min_z: f64,
-    max_z: f64,
-) -> FaceId {
+fn add_cylindrical_patch_face(ir: &mut CadIr, name: &str, min_z: f64, max_z: f64) -> FaceId {
     let radius = 5.0;
     let angles = [0.0, std::f64::consts::FRAC_PI_2];
     let point_at = |angle: f64, z: f64| Point3::new(radius * angle.cos(), radius * angle.sin(), z);
@@ -460,7 +460,7 @@ fn add_cylindrical_patch_face(
         LoopId::mint(format!("synthetic:test:loop#loop-{name}")).expect("identity grammar");
     let surface_id = SurfaceId::mint(format!("synthetic:test:surface#surface-{name}"))
         .expect("identity grammar");
-    model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
@@ -472,6 +472,7 @@ fn add_cylindrical_patch_face(
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
 
     let vertex_ids = corners
@@ -482,16 +483,17 @@ fn add_cylindrical_patch_face(
                 .expect("identity grammar");
             let vertex_id = VertexId::mint(format!("synthetic:test:vertex#vertex-{name}-{index}"))
                 .expect("identity grammar");
-            model.points.push(Point::new(
+            ir.geometry.points.push(Point::new(
                 point_id.clone(),
                 cadmpeg_ir::features::FinitePoint3::new(*point)
                     .expect("a finite position is a point"),
                 None,
             ));
-            model.vertices.push(Vertex {
+            ir.geometry.vertices.push(Vertex {
                 id: vertex_id.clone(),
                 point: point_id,
                 tolerance: None,
+                native_ref: None,
             });
             vertex_id
         })
@@ -542,20 +544,24 @@ fn add_cylindrical_patch_face(
             .expect("identity grammar");
         let edge_id = EdgeId::mint(format!("synthetic:test:edge#edge-{name}-{index}"))
             .expect("identity grammar");
-        model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: curve_id.clone(),
             geometry,
             source_object: None,
+            native_ref: None,
         });
-        model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: edge_id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
-            start: vertex_ids[index].clone(),
-            end: vertex_ids[next].clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                vertex_ids[index].clone(),
+                vertex_ids[next].clone(),
+            )),
             tolerance: None,
+            native_ref: None,
         });
-        model.coedges.push(Coedge {
+        ir.geometry.coedges.push(Coedge {
             id: coedge_ids[index].clone(),
             owner_loop: loop_id.clone(),
             edge: edge_id,
@@ -563,16 +569,18 @@ fn add_cylindrical_patch_face(
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         });
     }
-    model.loops.push(Loop {
+    ir.geometry.loops.push(Loop {
         id: loop_id.clone(),
         face: face_id.clone(),
         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(
             cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).expect("valid loop ring"),
         ),
+        native_ref: None,
     });
-    model.faces.push(Face {
+    ir.geometry.faces.push(Face {
         id: face_id.clone(),
         shell: ShellId::mint("synthetic:test:shell#shell").expect("identity grammar"),
         surface: surface_id,
@@ -581,39 +589,40 @@ fn add_cylindrical_patch_face(
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     face_id
 }
 
-fn model_with_body() -> cadmpeg_ir::document::Model {
-    let mut model = cadmpeg_ir::document::Model::default();
-    model.bodies = vec![Body {
+fn model_with_body() -> CadIr {
+    let mut ir = CadIr::empty();
+    ir.geometry.bodies = vec![Body {
         id: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint("synthetic:test:region#region").expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     }];
-    model.regions = vec![Region {
+    ir.geometry.regions = vec![Region {
         id: RegionId::mint("synthetic:test:region#region").expect("identity grammar"),
         body: BodyId::mint("synthetic:test:body#body").expect("identity grammar"),
         shells: vec![ShellId::mint("synthetic:test:shell#shell").expect("identity grammar")],
+        native_ref: None,
     }];
 
-    model
+    ir
 }
 
-fn set_shell_faces(model: &mut cadmpeg_ir::document::Model, faces: Vec<FaceId>) {
-    model.shells = vec![Shell::new(
-        model.regions[0].shells[0].clone(),
-        model.regions[0].id.clone(),
-        faces,
-        Vec::new(),
-        Vec::new(),
-    )
-    .unwrap()];
+fn set_shell_faces(ir: &mut CadIr, faces: &[FaceId]) {
+    let shell = ir.geometry.regions[0].shells[0].clone();
+    ir.geometry.shells = vec![Shell::new(shell.clone(), ir.geometry.regions[0].id.clone())];
+    for face in &mut ir.geometry.faces {
+        if faces.contains(&face.id) {
+            face.shell = shell.clone();
+        }
+    }
 }
 
 fn persistent_mesh(id: &str) -> Tessellation {
@@ -696,10 +705,10 @@ fn persistent_surface_identity_requires_agreeing_duplicates() {
 
 #[test]
 fn persistent_surface_identity_binds_one_face_and_body() {
-    let mut model = model_with_body();
-    let face = add_square_face(&mut model, "persistent", 0.0);
-    set_shell_faces(&mut model, vec![face.clone()]);
-    model
+    let mut ir = model_with_body();
+    let face = add_square_face(&mut ir, "persistent", 0.0);
+    set_shell_faces(&mut ir, std::slice::from_ref(&face));
+    ir.model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#mesh"));
 
@@ -710,23 +719,23 @@ fn persistent_surface_identity_binds_one_face_and_body() {
     }];
 
     assert_eq!(
-        assign_persistent_owners(&mut model, &face_identities, &bindings),
+        assign_persistent_owners(&mut ir, &face_identities, &bindings),
         vec!["synthetic:test:tessellation#mesh"]
     );
-    assert_eq!(model.tessellations[0].faces, vec![face]);
+    assert_eq!(ir.model.tessellations[0].faces, vec![face]);
     assert_eq!(
-        model.tessellations[0].body,
+        ir.model.tessellations[0].body,
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
 }
 
 #[test]
 fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
-    let mut model = model_with_body();
-    let first = add_square_face(&mut model, "first-persistent", 0.0);
-    let second = add_square_face(&mut model, "second-persistent", 3.0);
-    set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
-    model
+    let mut ir = model_with_body();
+    let first = add_square_face(&mut ir, "first-persistent", 0.0);
+    let second = add_square_face(&mut ir, "second-persistent", 3.0);
+    set_shell_faces(&mut ir, &[first.clone(), second.clone()]);
+    ir.model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#mesh"));
     let face_identities = vec![
@@ -737,14 +746,14 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
         tessellation: "synthetic:test:tessellation#mesh".into(),
         identity: persistent_identity(7, 3, &[]),
     };
-    assert!(assign_persistent_owners(&mut model, &face_identities, &[binding]).is_empty());
-    assert!(model.tessellations[0].faces.is_empty());
+    assert!(assign_persistent_owners(&mut ir, &face_identities, &[binding]).is_empty());
+    assert!(ir.model.tessellations[0].faces.is_empty());
 
-    let mut model = model_with_body();
-    let first = add_square_face(&mut model, "first-mesh", 0.0);
-    let second = add_square_face(&mut model, "second-mesh", 3.0);
-    set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
-    model
+    let mut ir = model_with_body();
+    let first = add_square_face(&mut ir, "first-mesh", 0.0);
+    let second = add_square_face(&mut ir, "second-mesh", 3.0);
+    set_shell_faces(&mut ir, &[first.clone(), second.clone()]);
+    ir.model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#mesh"));
     let face_identities = vec![
@@ -761,25 +770,25 @@ fn persistent_surface_identity_rejects_ambiguous_face_or_mesh_keys() {
             identity: persistent_identity(8, 4, &[]),
         },
     ];
-    assert!(assign_persistent_owners(&mut model, &face_identities, &bindings).is_empty());
-    assert!(model.tessellations[0].faces.is_empty());
+    assert!(assign_persistent_owners(&mut ir, &face_identities, &bindings).is_empty());
+    assert!(ir.model.tessellations[0].faces.is_empty());
 }
 
 #[test]
 fn persistent_surface_identity_preserves_empty_zero_length_and_tail_order() {
-    let mut model = model_with_body();
+    let mut ir = model_with_body();
     let tails: [&[u32]; 5] = [&[], &[0], &[10], &[10, 8], &[8, 10]];
     let mut identities = Vec::new();
     let mut bindings = Vec::new();
     let mut faces = Vec::new();
     for (index, tail) in tails.into_iter().enumerate() {
         let face = add_square_face(
-            &mut model,
+            &mut ir,
             &format!("tail-{index}"),
             f64::from(u32::try_from(index).unwrap()) * 3.0,
         );
         let mesh = format!("synthetic:test:tessellation#tail-{index}");
-        model.tessellations.push(persistent_mesh(&mesh));
+        ir.model.tessellations.push(persistent_mesh(&mesh));
         let identity = persistent_identity(7, 11, tail);
         identities.push((face.clone(), identity.clone()));
         bindings.push(PersistentFaceBinding {
@@ -788,23 +797,23 @@ fn persistent_surface_identity_preserves_empty_zero_length_and_tail_order() {
         });
         faces.push(face);
     }
-    set_shell_faces(&mut model, faces.clone());
+    set_shell_faces(&mut ir, &faces);
     assert_eq!(
-        assign_persistent_owners(&mut model, &identities, &bindings).len(),
+        assign_persistent_owners(&mut ir, &identities, &bindings).len(),
         5
     );
-    for (mesh, expected) in model.tessellations.iter().zip(&faces) {
+    for (mesh, expected) in ir.model.tessellations.iter().zip(&faces) {
         assert_eq!(mesh.faces.as_slice(), std::slice::from_ref(expected));
     }
 }
 
 #[test]
 fn persistent_surface_identity_distinguishes_trailing_path_fields() {
-    let mut model = model_with_body();
-    let first = add_square_face(&mut model, "first-tail", 0.0);
-    let second = add_square_face(&mut model, "second-tail", 3.0);
-    set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
-    model
+    let mut ir = model_with_body();
+    let first = add_square_face(&mut ir, "first-tail", 0.0);
+    let second = add_square_face(&mut ir, "second-tail", 3.0);
+    set_shell_faces(&mut ir, &[first.clone(), second.clone()]);
+    ir.model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#mesh"));
     let face_identities = vec![
@@ -817,10 +826,10 @@ fn persistent_surface_identity_distinguishes_trailing_path_fields() {
     };
 
     assert_eq!(
-        assign_persistent_owners(&mut model, &face_identities, &[binding]),
+        assign_persistent_owners(&mut ir, &face_identities, &[binding]),
         vec!["synthetic:test:tessellation#mesh"]
     );
-    assert_eq!(model.tessellations[0].faces, vec![second]);
+    assert_eq!(ir.model.tessellations[0].faces, vec![second]);
 }
 
 fn key_binding(mesh: &str, key: u32) -> FaceKeyBinding {
@@ -832,49 +841,49 @@ fn key_binding(mesh: &str, key: u32) -> FaceKeyBinding {
 
 #[test]
 fn face_key_binds_one_table_to_one_face_and_body() {
-    let mut model = model_with_body();
-    let first = add_square_face(&mut model, "first-key", 0.0);
-    let second = add_square_face(&mut model, "second-key", 0.0);
-    set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
-    model
+    let mut ir = model_with_body();
+    let first = add_square_face(&mut ir, "first-key", 0.0);
+    let second = add_square_face(&mut ir, "second-key", 0.0);
+    set_shell_faces(&mut ir, &[first.clone(), second.clone()]);
+    ir.model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#mesh"));
     let face_keys = vec![(first, 0x4173_00a6), (second.clone(), 0x4173_00a7)];
 
     assert_eq!(
         assign_face_key_owners(
-            &mut model,
+            &mut ir,
             &face_keys,
             &[key_binding("synthetic:test:tessellation#mesh", 0x4173_00a7)],
         ),
         vec!["synthetic:test:tessellation#mesh"]
     );
-    assert_eq!(model.tessellations[0].faces, vec![second]);
+    assert_eq!(ir.model.tessellations[0].faces, vec![second]);
     assert_eq!(
-        model.tessellations[0].body,
+        ir.model.tessellations[0].body,
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
 }
 
 #[test]
 fn repeated_face_key_on_two_faces_or_two_tables_binds_nothing() {
-    let mut model = model_with_body();
-    let first = add_square_face(&mut model, "first-repeat", 0.0);
-    let second = add_square_face(&mut model, "second-repeat", 3.0);
-    set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
-    model
+    let mut ir = model_with_body();
+    let first = add_square_face(&mut ir, "first-repeat", 0.0);
+    let second = add_square_face(&mut ir, "second-repeat", 3.0);
+    set_shell_faces(&mut ir, &[first.clone(), second.clone()]);
+    ir.model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#mesh"));
     let face_keys = vec![(first.clone(), 7), (second.clone(), 7)];
     assert!(assign_face_key_owners(
-        &mut model,
+        &mut ir,
         &face_keys,
         &[key_binding("synthetic:test:tessellation#mesh", 7)],
     )
     .is_empty());
-    assert!(model.tessellations[0].faces.is_empty());
+    assert!(ir.model.tessellations[0].faces.is_empty());
 
-    model
+    ir.model
         .tessellations
         .push(persistent_mesh("synthetic:test:tessellation#other"));
     let face_keys = vec![(first, 7), (second, 8)];
@@ -882,8 +891,12 @@ fn repeated_face_key_on_two_faces_or_two_tables_binds_nothing() {
         key_binding("synthetic:test:tessellation#mesh", 7),
         key_binding("synthetic:test:tessellation#other", 7),
     ];
-    assert!(assign_face_key_owners(&mut model, &face_keys, &bindings).is_empty());
-    assert!(model.tessellations.iter().all(|mesh| mesh.faces.is_empty()));
+    assert!(assign_face_key_owners(&mut ir, &face_keys, &bindings).is_empty());
+    assert!(ir
+        .model
+        .tessellations
+        .iter()
+        .all(|mesh| mesh.faces.is_empty()));
 }
 
 #[test]
@@ -944,7 +957,7 @@ fn face_key_attribute_binds_a_display_table_off_its_face_support() {
     let mut body = triangle_body();
     body.extend(face_key_attribute(10, key));
     let keyed = decode(&body, &keyed_display);
-    let face = keyed.ir().model.faces[0].id.clone();
+    let face = keyed.ir().geometry.faces[0].id.clone();
     assert!(face.as_str().ends_with("face#10"));
     assert_eq!(keyed.ir().model.tessellations[0].faces, vec![face]);
     assert!(keyed.ir().model.tessellations[0].body.is_some());
@@ -952,11 +965,11 @@ fn face_key_attribute_binds_a_display_table_off_its_face_support() {
 
 #[test]
 fn bounded_planar_trim_selects_between_coincident_supports() {
-    let mut model = model_with_body();
-    let first = add_square_face(&mut model, "first", -4.0);
-    let second = add_square_face(&mut model, "second", 2.0);
-    set_shell_faces(&mut model, vec![first.clone(), second.clone()]);
-    model.tessellations.push(
+    let mut ir = model_with_body();
+    let first = add_square_face(&mut ir, "first", -4.0);
+    let second = add_square_face(&mut ir, "second", 2.0);
+    set_shell_faces(&mut ir, &[first.clone(), second.clone()]);
+    ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint("synthetic:test:tessellation#mesh")
                 .expect("valid identity"),
@@ -974,36 +987,34 @@ fn bounded_planar_trim_selects_between_coincident_supports() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners!(&mut model).unwrap(),
+        assign_unique_surface_owners!(&mut ir).unwrap(),
         vec!["synthetic:test:tessellation#mesh"]
     );
-    assert_eq!(model.tessellations[0].faces, vec![second]);
+    assert_eq!(ir.model.tessellations[0].faces, vec![second]);
     assert_eq!(
-        model.tessellations[0].body,
+        ir.model.tessellations[0].body,
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
 
-    model
+    ir.geometry
         .faces
         .iter_mut()
         .find(|face| face.id == first)
         .unwrap()
         .loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
-    model.tessellations[0].body = None;
-    model.tessellations[0].faces.clear();
-    assert!(assign_unique_surface_owners!(&mut model)
-        .unwrap()
-        .is_empty());
-    assert!(model.tessellations[0].faces.is_empty());
+    ir.model.tessellations[0].body = None;
+    ir.model.tessellations[0].faces.clear();
+    assert!(assign_unique_surface_owners!(&mut ir).unwrap().is_empty());
+    assert!(ir.model.tessellations[0].faces.is_empty());
 }
 
 #[test]
 fn bounded_cylindrical_trim_selects_between_coincident_supports() {
-    let mut model = model_with_body();
-    let lower = add_cylindrical_patch_face(&mut model, "lower", 0.0, 1.0);
-    let upper = add_cylindrical_patch_face(&mut model, "upper", 2.0, 3.0);
-    set_shell_faces(&mut model, vec![lower.clone(), upper.clone()]);
-    model.tessellations.push(
+    let mut ir = model_with_body();
+    let lower = add_cylindrical_patch_face(&mut ir, "lower", 0.0, 1.0);
+    let upper = add_cylindrical_patch_face(&mut ir, "upper", 2.0, 3.0);
+    set_shell_faces(&mut ir, &[lower.clone(), upper.clone()]);
+    ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint(
                 "synthetic:test:tessellation#lower-mesh",
@@ -1023,23 +1034,23 @@ fn bounded_cylindrical_trim_selects_between_coincident_supports() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners!(&mut model).unwrap(),
+        assign_unique_surface_owners!(&mut ir).unwrap(),
         vec!["synthetic:test:tessellation#lower-mesh"]
     );
-    assert_eq!(model.tessellations[0].faces, vec![lower]);
+    assert_eq!(ir.model.tessellations[0].faces, vec![lower]);
     assert_eq!(
-        model.tessellations[0].body,
+        ir.model.tessellations[0].body,
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
 }
 
 #[test]
 fn chordal_cylindrical_mesh_records_measured_support_deflection() {
-    let mut model = model_with_body();
-    let face = add_cylindrical_patch_face(&mut model, "chordal", 0.0, 1.0);
-    set_shell_faces(&mut model, vec![face.clone()]);
+    let mut ir = model_with_body();
+    let face = add_cylindrical_patch_face(&mut ir, "chordal", 0.0, 1.0);
+    set_shell_faces(&mut ir, std::slice::from_ref(&face));
     let deflection = 0.1;
-    model.tessellations.push(
+    ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint(
                 "synthetic:test:tessellation#chordal-mesh",
@@ -1065,22 +1076,22 @@ fn chordal_cylindrical_mesh_records_measured_support_deflection() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners!(&mut model).unwrap(),
+        assign_unique_surface_owners!(&mut ir).unwrap(),
         vec!["synthetic:test:tessellation#chordal-mesh"]
     );
-    assert_eq!(model.tessellations[0].faces, vec![face]);
-    assert!(model.tessellations[0]
+    assert_eq!(ir.model.tessellations[0].faces, vec![face]);
+    assert!(ir.model.tessellations[0]
         .chordal_deflection()
         .is_some_and(|value| (value.get() - deflection).abs() <= f64::EPSILON * 128.0));
 }
 
 #[test]
 fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
-    let mut model = model_with_body();
-    let face = add_cylindrical_patch_face(&mut model, "inconsistent-normals", 0.0, 1.0);
-    set_shell_faces(&mut model, vec![face.clone()]);
+    let mut ir = model_with_body();
+    let face = add_cylindrical_patch_face(&mut ir, "inconsistent-normals", 0.0, 1.0);
+    set_shell_faces(&mut ir, std::slice::from_ref(&face));
     let deflection = 0.1;
-    model.tessellations.push(
+    ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint(
                 "synthetic:test:tessellation#inconsistent-normals-mesh",
@@ -1106,21 +1117,21 @@ fn chordal_cylindrical_mesh_uses_unique_trim_when_normals_disagree() {
     );
 
     assert_eq!(
-        assign_unique_surface_owners!(&mut model).unwrap(),
+        assign_unique_surface_owners!(&mut ir).unwrap(),
         vec!["synthetic:test:tessellation#inconsistent-normals-mesh"]
     );
-    assert_eq!(model.tessellations[0].faces, vec![face]);
-    assert!(model.tessellations[0]
+    assert_eq!(ir.model.tessellations[0].faces, vec![face]);
+    assert!(ir.model.tessellations[0]
         .chordal_deflection()
         .is_some_and(|value| (value.get() - deflection).abs() <= f64::EPSILON * 128.0));
 }
 
 #[test]
 fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
-    let mut model = model_with_body();
-    let face = add_square_face(&mut model, "off-surface", 0.0);
-    set_shell_faces(&mut model, vec![face]);
-    model.tessellations.push(
+    let mut ir = model_with_body();
+    let face = add_square_face(&mut ir, "off-surface", 0.0);
+    set_shell_faces(&mut ir, &[face]);
+    ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint(
                 "synthetic:test:tessellation#off-surface-mesh",
@@ -1145,11 +1156,9 @@ fn off_surface_planar_mesh_does_not_become_a_chordal_cache() {
         .expect("valid tessellation"),
     );
 
-    assert!(assign_unique_surface_owners!(&mut model)
-        .unwrap()
-        .is_empty());
-    assert!(model.tessellations[0].body.is_none());
-    assert!(model.tessellations[0].faces.is_empty());
+    assert!(assign_unique_surface_owners!(&mut ir).unwrap().is_empty());
+    assert!(ir.model.tessellations[0].body.is_none());
+    assert!(ir.model.tessellations[0].faces.is_empty());
 }
 
 #[test]
@@ -1200,15 +1209,15 @@ fn cylindrical_trim_accepts_quantized_points_within_boundary_tolerance() {
 
 #[test]
 fn unique_nurbs_support_binds_exact_display_list_face() {
-    let mut model = model_with_body();
+    let mut ir = model_with_body();
     let surface = test_nurbs_surface();
     let face = add_face(
-        &mut model,
+        &mut ir,
         "nurbs-exact",
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
         test_nurbs_corners(&surface),
     );
-    set_shell_faces(&mut model, vec![face.clone()]);
+    set_shell_faces(&mut ir, std::slice::from_ref(&face));
     let vertices = [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)]
         .map(|(u, v)| {
             cadmpeg_ir::eval::decode::nurbs_surface_point(
@@ -1221,39 +1230,39 @@ fn unique_nurbs_support_binds_exact_display_list_face() {
             .get()
         })
         .to_vec();
-    model.tessellations.push(mesh_from(
+    ir.model.tessellations.push(mesh_from(
         "synthetic:test:tessellation#nurbs-exact-mesh",
         vertices,
         vec![[0, 1, 2]],
     ));
 
     assert_eq!(
-        assign_unique_surface_owners!(&mut model).unwrap(),
+        assign_unique_surface_owners!(&mut ir).unwrap(),
         vec!["synthetic:test:tessellation#nurbs-exact-mesh"]
     );
-    assert_eq!(model.tessellations[0].faces, vec![face]);
+    assert_eq!(ir.model.tessellations[0].faces, vec![face]);
     assert_eq!(
-        model.tessellations[0].body,
+        ir.model.tessellations[0].body,
         Some(BodyId::mint("synthetic:test:body#body").expect("identity grammar"))
     );
-    assert!(model.tessellations[0].chordal_deflection().is_none());
+    assert!(ir.model.tessellations[0].chordal_deflection().is_none());
 }
 
 #[test]
 fn non_exact_nurbs_support_does_not_use_an_unbounded_cache_fit() {
-    let mut model = model_with_body();
+    let mut ir = model_with_body();
     let surface = test_nurbs_surface();
     let face = add_face(
-        &mut model,
+        &mut ir,
         "nurbs-cache",
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
         test_nurbs_corners(&surface),
     );
-    set_shell_faces(&mut model, vec![face]);
+    set_shell_faces(&mut ir, &[face]);
     let samples =
         [(0.15, 0.2), (0.8, 0.2), (0.5, 0.8)].map(|(u, v)| test_nurbs_point_normal(&surface, u, v));
     let deflection = 0.02;
-    model.tessellations.push(
+    ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint(
                 "synthetic:test:tessellation#nurbs-cache-mesh",
@@ -1273,37 +1282,35 @@ fn non_exact_nurbs_support_does_not_use_an_unbounded_cache_fit() {
         .expect("valid tessellation"),
     );
 
-    assert!(assign_unique_surface_owners!(&mut model)
-        .unwrap()
-        .is_empty());
-    assert!(model.tessellations[0].faces.is_empty());
-    assert!(model.tessellations[0].body.is_none());
-    assert!(model.tessellations[0].chordal_deflection().is_none());
+    assert!(assign_unique_surface_owners!(&mut ir).unwrap().is_empty());
+    assert!(ir.model.tessellations[0].faces.is_empty());
+    assert!(ir.model.tessellations[0].body.is_none());
+    assert!(ir.model.tessellations[0].chordal_deflection().is_none());
 }
 
 #[test]
 fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
-    let mut model = model_with_body();
+    let mut ir = model_with_body();
     let surface = test_nurbs_surface();
     let corners = test_nurbs_corners(&surface);
     let first = add_face(
-        &mut model,
+        &mut ir,
         "nurbs-coincident-first",
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
         corners,
     );
     let second = add_face(
-        &mut model,
+        &mut ir,
         "nurbs-coincident-second",
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
         corners,
     );
     {
         for face in [first, second] {
-            set_shell_faces(&mut model, vec![face]);
+            set_shell_faces(&mut ir, &[face]);
         }
     };
-    model.tessellations.push(
+    ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint(
                 "synthetic:test:tessellation#nurbs-ambiguous-mesh",
@@ -1329,26 +1336,24 @@ fn coincident_nurbs_supports_do_not_choose_a_display_list_face() {
         .expect("valid tessellation"),
     );
 
-    assert!(assign_unique_surface_owners!(&mut model)
-        .unwrap()
-        .is_empty());
-    assert!(model.tessellations[0].faces.is_empty());
-    assert!(model.tessellations[0].body.is_none());
+    assert!(assign_unique_surface_owners!(&mut ir).unwrap().is_empty());
+    assert!(ir.model.tessellations[0].faces.is_empty());
+    assert!(ir.model.tessellations[0].body.is_none());
 }
 
 #[test]
 fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() {
-    let mut model = model_with_body();
+    let mut ir = model_with_body();
     let surface = flat_test_nurbs_surface();
     let corners = test_nurbs_corners(&surface);
     let nurbs_face = add_face(
-        &mut model,
+        &mut ir,
         "nurbs-plane-coincident",
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface.clone())),
         corners,
     );
     let plane_face = add_face(
-        &mut model,
+        &mut ir,
         "plane-coincident",
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1362,10 +1367,10 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
     );
     {
         for face in [nurbs_face, plane_face] {
-            set_shell_faces(&mut model, vec![face]);
+            set_shell_faces(&mut ir, &[face]);
         }
     };
-    model.tessellations.push(
+    ir.model.tessellations.push(
         Tessellation::new(
             cadmpeg_ir::tessellation::TessellationId::mint(
                 "synthetic:test:tessellation#nurbs-plane-ambiguous-mesh",
@@ -1393,11 +1398,9 @@ fn coincident_nurbs_and_analytic_supports_do_not_fall_through_to_analytic_fit() 
         .expect("valid tessellation"),
     );
 
-    assert!(assign_unique_surface_owners!(&mut model)
-        .unwrap()
-        .is_empty());
-    assert!(model.tessellations[0].faces.is_empty());
-    assert!(model.tessellations[0].body.is_none());
+    assert!(assign_unique_surface_owners!(&mut ir).unwrap().is_empty());
+    assert!(ir.model.tessellations[0].faces.is_empty());
+    assert!(ir.model.tessellations[0].body.is_none());
 }
 
 #[test]
@@ -1595,11 +1598,11 @@ fn decode_reports_display_list_geometry() {
     assert_eq!(result.ir().model.tessellations[0].channels().len(), 6);
     assert_eq!(
         result.ir().model.tessellations[0].faces,
-        [result.ir().model.faces[0].id.clone()]
+        [result.ir().geometry.faces[0].id.clone()]
     );
     assert_eq!(
         result.ir().model.tessellations[0].body.as_ref(),
-        Some(&result.ir().model.bodies[0].id)
+        Some(&result.ir().geometry.bodies[0].id)
     );
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code.taxonomy() == LossTaxonomy::ReferenceGraphNotClosed

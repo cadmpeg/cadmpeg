@@ -28,8 +28,9 @@ fn nested_solid_transmit_has_feature_input_solid_body_retained_loss() {
         ));
         let result = decode(bytes);
         let model = &result.ir().model;
-        assert_eq!(model.bodies, baseline.ir().model.bodies);
-        assert_eq!(model.faces, baseline.ir().model.faces);
+        let geometry = &result.ir().geometry;
+        assert_eq!(geometry.bodies, baseline.ir().geometry.bodies);
+        assert_eq!(geometry.faces, baseline.ir().geometry.faces);
         assert_eq!(model.sketches.len(), 2);
         assert_eq!(model.sketch_entities.len(), 6);
         assert!(model
@@ -75,8 +76,8 @@ fn stock_body_partition_retains_inputs_and_current_partition_membership() {
         let mut bytes = sldprt_with_body(current_body);
         bytes.extend(make_block(0x20, "Contents/Config-0-StockBodies", &payload));
         let result = decode(bytes.clone());
-        assert_eq!(result.ir().model.bodies, baseline.ir().model.bodies);
-        assert_eq!(result.ir().model.faces, baseline.ir().model.faces);
+        assert_eq!(result.ir().geometry.bodies, baseline.ir().geometry.bodies);
+        assert_eq!(result.ir().geometry.faces, baseline.ir().geometry.faces);
         assert_eq!(
             result.ir().model.configurations,
             baseline.ir().model.configurations
@@ -96,7 +97,7 @@ fn stock_body_partition_retains_inputs_and_current_partition_membership() {
     let mut bytes = sldprt_with_body(&current);
     bytes.extend(make_block(0x20, "Contents/Config-1-Partition", &payload));
     let result = decode(bytes);
-    assert_eq!(result.ir().model.bodies.len(), 2);
-    assert_eq!(result.ir().model.faces.len(), 2);
+    assert_eq!(result.ir().geometry.bodies.len(), 2);
+    assert_eq!(result.ir().geometry.faces.len(), 2);
     assert_valid(&result);
 }

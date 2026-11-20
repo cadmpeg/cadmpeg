@@ -16,6 +16,7 @@
 pub(crate) mod align;
 pub(crate) mod position;
 pub(crate) mod scene;
+pub(crate) mod shell_slots;
 
 use std::io::Write;
 
@@ -31,9 +32,27 @@ pub(crate) mod canvas;
 pub(crate) mod configuration_table;
 pub(crate) mod origin_types;
 pub(crate) mod procedural_support;
+pub(crate) mod reverse_normal;
 pub(crate) mod sketch_relations;
 pub(crate) mod sketch_text;
+pub(crate) mod split_face;
 pub(crate) mod verification;
+
+/// A face of `shell` with no loop, on a surface id the fixture need not hold.
+pub(crate) fn bare_face(id: &str, shell: &str) -> cadmpeg_ir::topology::Face {
+    cadmpeg_ir::topology::Face {
+        id: cadmpeg_ir::ids::FaceId::mint(id).expect("identity grammar"),
+        shell: cadmpeg_ir::ids::ShellId::mint(shell).expect("identity grammar"),
+        surface: cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#bare")
+            .expect("identity grammar"),
+        sense: cadmpeg_ir::topology::Sense::Forward,
+        loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+        name: None,
+        color: None,
+        tolerance: None,
+        native_ref: None,
+    }
+}
 
 pub(crate) fn with_decode_context<T>(
     f: impl FnOnce(&cadmpeg_core::decode::DecodeContext<'_>) -> T,
@@ -59,6 +78,60 @@ pub(crate) fn plan_inherited_write(
 ) -> Result<WritePath, CodecError> {
     let plan = F3dCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
     Ok(plan.write_to(writer)?.write_path().clone())
+}
+
+/// Write `ir` under an inherited target, with `fidelity` or source-less, and
+/// assert that the file is written, decodes again, and charges a loss whose
+/// code is `code` (`namespace/code`) and whose message holds `fragment`.
+pub(crate) fn assert_written_with_loss(
+    ir: &CadIr,
+    fidelity: Option<&SourceFidelity>,
+    code: &str,
+    fragment: &str,
+) -> cadmpeg_ir::report::export::ExportReport {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let mut bytes = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(ir, fidelity), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("the writer writes what it can encode");
+    let decoded = F3dCodec
+        .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
+        .expect("the written file decodes");
+    assert_decodes_back(&report, decoded.report());
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code.to_string() == code && loss.message.contains(fragment)),
+        "expected a {code} loss naming {fragment:?}: {:#?}",
+        report.losses
+    );
+    report
+}
+
+/// The written file's B-rep frames, and a write that charged no
+/// `export:output.empty` decodes with no blocking loss.
+pub(crate) fn assert_decodes_back(
+    written: &cadmpeg_ir::report::export::ExportReport,
+    decoded: &cadmpeg_ir::report::decode::DecodeReport,
+) {
+    let empty = written
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "export/output.empty");
+    for loss in &decoded.losses {
+        assert!(
+            !loss.message.contains("not a decodable"),
+            "the written B-rep frames: {}",
+            loss.message
+        );
+        assert!(
+            empty || loss.severity < cadmpeg_ir::report::Severity::Blocking,
+            "the written file decodes without a blocking loss: {:#?}",
+            decoded.losses
+        );
+    }
 }
 
 /// A finite test value as the checked scalar a record holds.
@@ -282,6 +355,7 @@ pub(crate) mod pipe;
 pub(crate) mod work_plane;
 
 pub(crate) mod component_body_test;
+pub(crate) mod component_design;
 
 pub(crate) mod scan_counts;
 
@@ -295,3 +369,5 @@ pub(crate) fn loss_codes(
 }
 
 pub(crate) mod move_face;
+
+pub(crate) mod typed_reference_scopes;

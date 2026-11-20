@@ -20,13 +20,13 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
     };
     if regenerated_brep {
         let edges = ir
-            .model
+            .geometry
             .shells
             .iter()
             .flat_map(cadmpeg_ir::topology::Shell::wire_edges)
             .collect::<std::collections::BTreeSet<_>>();
         let vertices = ir
-            .model
+            .geometry
             .shells
             .iter()
             .flat_map(cadmpeg_ir::topology::Shell::free_vertices)
@@ -42,7 +42,7 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
             "shell free vertex ownership",
         );
         charge(
-            ir.model
+            ir.geometry
                 .coedges
                 .iter()
                 .map(|coedge| coedge.pcurves.len())
@@ -51,7 +51,7 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
             "coedge pcurve use",
         );
         charge(
-            ir.model
+            ir.geometry
                 .curves
                 .iter()
                 .filter(|curve| {
@@ -74,7 +74,7 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
             .iter()
             .filter(|binding| {
                 !matches!(
-                    binding.target,
+                    binding.target.entity,
                     AppearanceTarget::Face(_) | AppearanceTarget::Body(_)
                 )
             })
@@ -97,7 +97,7 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         .iter()
         .filter(|binding| {
             matches!(
-                binding.target,
+                binding.target.entity,
                 AppearanceTarget::Face(_) | AppearanceTarget::Body(_)
             )
         })

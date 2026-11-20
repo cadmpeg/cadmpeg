@@ -402,11 +402,12 @@ pub(super) fn emit_edges(
         }
         let model_curve_id = curve_id.clone();
         admission.charge()?;
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: model_curve_id,
             geometry,
             source_object: Some(cgm_source("edge", edge_id)?),
+            native_ref: None,
         });
         let procedural = if let Some(helix) = helix {
             Some((
@@ -456,7 +457,7 @@ pub(super) fn emit_edges(
 
             let owner = curve_id.clone();
             admission.charge()?;
-            let _attached = ir.model.add_procedural_curve(&owner, procedural);
+            let _attached = ir.geometry.add_procedural_curve(&owner, procedural);
         }
         annotate(
             annotations,
@@ -465,7 +466,7 @@ pub(super) fn emit_edges(
             "5e_edge",
             Exactness::ByteExact,
         )?;
-        for field in ["start", "end"] {
+        for field in ["ends.start", "ends.end"] {
             annotations.derived(id.as_str(), field)?;
         }
         if edge_range.is_some() {
@@ -487,13 +488,13 @@ pub(super) fn emit_edges(
             VertexId::mint,
         )?;
         admission.charge()?;
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), edge_range)
                 .map_err(cadmpeg_core::CodecError::malformed)?,
-            start,
-            end,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(start, end)),
             tolerance: edge_tolerance,
+            native_ref: None,
         });
     }
     Ok(edge_id_map)

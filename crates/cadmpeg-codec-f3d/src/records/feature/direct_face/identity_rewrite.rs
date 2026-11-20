@@ -2,15 +2,16 @@
 //! Direct identity walks for native record fields.
 
 use super::{
-    DesignDraftFlags, DesignDraftOperation, DesignDraftTwoSided, DesignModifyOperation,
-    DesignMoveForm, DesignMoveLeading, DesignMoveOperation, DesignMovePrefix, DesignMoveReference,
-    DesignOffsetFacesOperation, DesignShellOperation, DesignShellOutsideWall,
-    DesignShellPrefixFlag, DesignShellWallSlots, DesignThickenBoolean,
+    DesignDraftFlags, DesignDraftOperation, DesignDraftParting, DesignDraftTwoSided,
+    DesignModifyOperation, DesignMoveForm, DesignMoveLeading, DesignMoveOperation,
+    DesignMovePrefix, DesignMoveReference, DesignOffsetFacesOperation, DesignShellOperation,
+    DesignShellOutsideWall, DesignShellPrefixFlag, DesignShellWallSlots, DesignThickenBoolean,
     DesignThickenBooleanOperation, DesignThickenOperation,
 };
 
 rewrite_native_record!(DesignDraftOperation, []; {angle, angle_record_index, angle_offset, opposite_angle_record_index, opposite_angle_offset, opposite_angle, flags});
-rewrite_native_record!(DesignDraftFlags, []; {flipped, tangent_chain, two_sided});
+rewrite_native_record!(DesignDraftFlags, []; {flipped, tangent_chain, two_sided, parting});
+rewrite_native_record!(DesignDraftParting, []; {form, mode, prefix_scalars, boundary_flag, fixed_edges, pull, tool, faces});
 rewrite_native_scalar!(DesignDraftTwoSided);
 rewrite_native_scalar!(DesignMoveForm);
 rewrite_native_record!(DesignMoveOperation, []; {transform, transform_offset, transform_record_index, form, form_offset, transform_reference_offset, prefix, face_group});

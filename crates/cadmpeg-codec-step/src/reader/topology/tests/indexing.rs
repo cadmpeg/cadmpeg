@@ -92,11 +92,11 @@ fn pcurves_resolve_on_every_shell_of_one_root() {
         .expect("source fits policy");
     let carriers = crate::reader::index::CarrierIndex::from_ir(&ir);
     super::super::decode(&exchange, &mut ir, &carriers, &ctx).expect("all shells decode");
-    assert_eq!(ir.model.bodies.len(), 100);
-    assert_eq!(ir.model.faces.len(), 100);
-    assert_eq!(ir.model.coedges.len(), 400);
+    assert_eq!(ir.geometry.bodies.len(), 100);
+    assert_eq!(ir.geometry.faces.len(), 100);
+    assert_eq!(ir.geometry.coedges.len(), 400);
     assert_eq!(
-        ir.model
+        ir.geometry
             .coedges
             .iter()
             .filter(|coedge| !coedge.pcurves.is_empty())
@@ -143,11 +143,11 @@ fn pcurves_resolve_on_every_independent_root() {
     let carriers = crate::reader::index::CarrierIndex::from_ir(&ir);
     super::super::decode(&exchange, &mut ir, &carriers, &ctx)
         .expect("all independent roots decode");
-    assert_eq!(ir.model.bodies.len(), 100);
-    assert_eq!(ir.model.faces.len(), 100);
-    assert_eq!(ir.model.coedges.len(), 400);
+    assert_eq!(ir.geometry.bodies.len(), 100);
+    assert_eq!(ir.geometry.faces.len(), 100);
+    assert_eq!(ir.geometry.coedges.len(), 400);
     assert_eq!(
-        ir.model
+        ir.geometry
             .coedges
             .iter()
             .filter(|coedge| !coedge.pcurves.is_empty())

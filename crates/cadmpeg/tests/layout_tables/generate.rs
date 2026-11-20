@@ -391,6 +391,16 @@ fn fence_text(text: &str) -> String {
     normalize(text).replace("```", "'''")
 }
 
+fn record_doc(record: &Record, text: &str) -> String {
+    if record.rust_doc_attributes {
+        format!("#[doc = {text:?}]")
+    } else if text.is_empty() {
+        "///".to_owned()
+    } else {
+        format!("/// {text}")
+    }
+}
+
 /// Turn one validated table into the checked-in `layout.rs` source.
 pub(crate) fn emit_layout_rs(
     file: &LayoutFile,
@@ -481,8 +491,14 @@ fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<Stri
             if reads.contains(&record.name, &const_name) {
                 writeln!(
                     fields_out,
-                    "    /// Offset of `{0}` ({ty_part}). Spec §{1}.",
-                    field.name, record.section
+                    "    {}",
+                    record_doc(
+                        record,
+                        &format!(
+                            "Offset of `{}` ({ty_part}). Spec §{}.",
+                            field.name, record.section
+                        )
+                    )
                 )?;
                 if reads.test_only(&record.name, &const_name) {
                     writeln!(fields_out, "    #[cfg(test)]")?;
@@ -508,8 +524,14 @@ fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<Stri
                         if reads.contains(&record.name, &value_name) {
                             writeln!(
                                 fields_out,
-                                "    /// Stated value of `{0}` (`{1}`). Spec §{2}.",
-                                field.name, field.ty, record.section
+                                "    {}",
+                                record_doc(
+                                    record,
+                                    &format!(
+                                        "Stated value of `{}` (`{}`). Spec §{}.",
+                                        field.name, field.ty, record.section
+                                    )
+                                )
                             )?;
                             if reads.test_only(&record.name, &value_name) {
                                 writeln!(fields_out, "    #[cfg(test)]")?;
@@ -527,47 +549,66 @@ fn emit_layout_source(file: &LayoutFile, reads: &read_set::Reads) -> Result<Stri
         }
         writeln!(
             modules,
-            "/// Byte offsets for the `{}` record.",
-            record.name
+            "{}",
+            record_doc(
+                record,
+                &format!("Byte offsets for the `{}` record.", record.name)
+            )
         )?;
-        writeln!(modules, "///")?;
+        writeln!(modules, "{}", record_doc(record, ""))?;
         match record.size {
             Some(size) => {
                 writeln!(
                     modules,
-                    "/// Spec §{}. Record length {size} B.",
-                    record.section
+                    "{}",
+                    record_doc(
+                        record,
+                        &format!("Spec §{}. Record length {size} B.", record.section)
+                    )
                 )?;
             }
             None => {
-                writeln!(modules, "/// Spec §{}.", record.section)?;
+                writeln!(
+                    modules,
+                    "{}",
+                    record_doc(record, &format!("Spec §{}.", record.section))
+                )?;
             }
         }
         if !record.dialects.is_empty() {
-            writeln!(modules, "///")?;
+            writeln!(modules, "{}", record_doc(record, ""))?;
             writeln!(
                 modules,
-                "/// Dialects: {}.",
-                record
-                    .dialects
-                    .iter()
-                    .map(|id| format!("`{id}`"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                "{}",
+                record_doc(
+                    record,
+                    &format!(
+                        "Dialects: {}.",
+                        record
+                            .dialects
+                            .iter()
+                            .map(|id| format!("`{id}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                )
             )?;
         }
         if !record.note.trim().is_empty() {
-            writeln!(modules, "///")?;
-            writeln!(modules, "/// ```text")?;
-            writeln!(modules, "/// {}", fence_text(&record.note))?;
-            writeln!(modules, "/// ```")?;
+            writeln!(modules, "{}", record_doc(record, ""))?;
+            writeln!(modules, "{}", record_doc(record, "```text"))?;
+            writeln!(modules, "{}", record_doc(record, &fence_text(&record.note)))?;
+            writeln!(modules, "{}", record_doc(record, "```"))?;
         }
         writeln!(modules, "pub(crate) mod {} {{", record.name)?;
         if let Some(size) = record.size.filter(|_| reads.contains(&record.name, "LEN")) {
             writeln!(
                 modules,
-                "    /// Record length in bytes. Spec §{}.",
-                record.section
+                "    {}",
+                record_doc(
+                    record,
+                    &format!("Record length in bytes. Spec §{}.", record.section)
+                )
             )?;
             if reads.test_only(&record.name, "LEN") {
                 writeln!(modules, "    #[cfg(test)]")?;
@@ -746,7 +787,7 @@ mod tests {
     #[test]
     fn layout_emission_filters_records_values_tokens_and_test_reads(
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let file: LayoutFile = toml::from_str(
+        let mut file: LayoutFile = toml::from_str(
             r#"
 schema = 1
 format = "demo"
@@ -808,6 +849,17 @@ anchor = "tag"
         assert!(!rendered.contains("mod unread_record"));
         assert!(!rendered.contains("UNUSED_TAG"));
         assert!(!rendered.contains("allow("));
+        assert!(rendered.contains("/// Byte offsets for the `header` record."));
+        file.records[0].rust_doc_attributes = true;
+        file.records[0].note = "The \"header\" note.".to_owned();
+        let attributed =
+            emit_layout_rs(&file, temporary.path()).map_err(|errors| errors.join("\n"))?;
+        assert!(attributed.contains("#[doc = \"Byte offsets for the `header` record.\"]"));
+        assert!(attributed.contains("#[doc = \"The \\\"header\\\" note.\"]"));
+        assert!(attributed.contains("#[doc = \"Record length in bytes. Spec §1.\"]"));
+        assert!(attributed.contains("#[doc = \"Stated value of `magic` (`u8`). Spec §1.\"]"));
+        assert!(!attributed.contains("/// Byte offsets for the `header` record."));
+        syn::parse_file(&attributed)?;
         Ok(())
     }
 }

@@ -74,7 +74,7 @@ fn native_spatial_sketch_constraints_are_reported_as_design_losses() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -109,6 +109,8 @@ fn typed_native_operands_are_reported_as_design_losses() {
                 .unwrap(),
                 op: cadmpeg_ir::features::BooleanKind::Join,
                 keep_tools: false,
+
+                destination: cadmpeg_ir::features::CombineDestination::default(),
             }),
         ),
         native_ref: None,
@@ -116,7 +118,7 @@ fn typed_native_operands_are_reported_as_design_losses() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )

@@ -96,16 +96,17 @@ fn copy() -> DesignComponentOccurrence {
 }
 
 fn product_occurrence(carrier: &DesignComponentOccurrence) -> Occurrence {
-    serde_json::from_value(serde_json::json!({
-        "id": crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid),
-        "native_ref": carrier.id.clone(),
-        "prototype": {"scope": "local", "definition": crate::ids::neutral_component_id(&carrier.component_guid)},
-        "parent": {"kind": "root"},
-        "ordinal": 0,
-        "transform": [[1.0, 0.0, 0.0, 60.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]],
-        "scale": [1.0, 1.0, 1.0],
-    }))
-    .unwrap()
+    let mut occurrence = Occurrence::new(
+        crate::ids::neutral_component_occurrence_id(&carrier.occurrence_guid),
+        crate::ids::neutral_component_id(&carrier.component_guid),
+        cadmpeg_ir::transform::Transform::affine([
+            [1.0, 0.0, 0.0, 60.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ]),
+    );
+    occurrence.native_ref = Some(carrier.id.clone());
+    occurrence
 }
 
 fn native() -> FeatureDefinition {
@@ -132,9 +133,8 @@ fn project(
         let (Some(occurrence), None) = (matching.next(), matching.next()) else {
             continue;
         };
-        if let cadmpeg_ir::products::PrototypeReference::Local { definition } =
-            &occurrence.prototype
         {
+            let definition = &occurrence.prototype;
             if !definitions
                 .iter()
                 .any(|candidate: &super::super::ProductDefinition| {
@@ -178,19 +178,36 @@ fn project(
 }
 
 #[test]
-fn a_strict_copy_transfer_preserves_insert_component_projection() {
+fn a_strict_copy_transfer_retains_history_when_its_occurrence_resolves() {
     let projected = [product_occurrence(&copy())];
     let (definition, losses) = project(
         &strict_copy_scope(translated(6.0)),
         &[source(), copy()],
         &projected,
     );
-    let FeatureDefinition::Operation(FeatureOperation::InsertComponent { occurrence }) = definition
+    let FeatureDefinition::Operation(FeatureOperation::ComponentTransfer {
+        mode,
+        occurrence,
+        component,
+        target_owner,
+        source_transform,
+        target_transform,
+        ..
+    }) = definition
     else {
-        panic!("a fully joined CopyPaste keeps its existing insertion projection");
+        panic!("a fully joined CopyPaste retains its transfer history");
     };
-    assert_eq!(occurrence, projected[0].id);
-    assert!(losses.is_empty());
+    assert_eq!(mode, cadmpeg_ir::features::ComponentTransferMode::Copy);
+    assert_eq!(occurrence, Some(projected[0].id.clone()));
+    assert!(component.is_some());
+    assert_eq!(component, target_owner);
+    assert_eq!(source_transform, target_transform);
+    assert_eq!(source_transform.unwrap().rows()[0][3], 60.0);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::FeatureOccurrenceTransferSourceUnresolved.kind()
+    );
 }
 
 #[test]
@@ -259,9 +276,7 @@ fn a_copy_transfer_uses_the_stream_qualified_projected_occurrence_id() {
     let allocated_definition =
         cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:product-definition#allocated")
             .unwrap();
-    projected_primary.prototype = cadmpeg_ir::products::PrototypeReference::Local {
-        definition: allocated_definition.clone(),
-    };
+    projected_primary.prototype = allocated_definition.clone();
     let mut projected_other = product_occurrence(&other_stream);
     projected_other.id = crate::ids::stream_component_occurrence_id(
         "f3d:Other/BulkStream.dat",

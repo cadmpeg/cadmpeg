@@ -26,7 +26,9 @@ use crate::records::{
     sketch_placement::valid_sketch_transform,
 };
 use cadmpeg_core::decode::View;
-use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::scalar::{NonZeroReal, PositiveReal};
+
+mod cylinder;
 
 /// Type GUID of the support-face selection reference of the typed-reference box.
 const TYPE_GUID_SUPPORT_FACE: &str = "5A1BF548-241F-46FD-9FB5-E4B05126EB9D";
@@ -57,6 +59,11 @@ pub(super) fn exact_solid_primitive(
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignSolidPrimitive> {
     let start = usize::try_from(scope.byte_offset()).ok()?;
+    let cylinder_prologue = if scope.kind_name() == "CylinderPrimitive" {
+        cylinder::read_extended_prologue(bytes, scope, start)
+    } else {
+        None
+    };
     let (operation, operation_offset, frame_transform) = match scope.kind_name() {
         "SpherePrimitive" | "TorusPrimitive" => {
             let operation_offset = start.checked_add(25)?;
@@ -98,7 +105,11 @@ pub(super) fn exact_solid_primitive(
             }
         }
         "CylinderPrimitive" => {
-            if let Some(operation_offset) = exact_named_solid_primitive_operation(bytes, start) {
+            if let Some(prologue) = cylinder_prologue {
+                (prologue.operation, prologue.operation_offset, None)
+            } else if let Some(operation_offset) =
+                exact_named_solid_primitive_operation(bytes, start)
+            {
                 (
                     extrude_operation_at(bytes, operation_offset)?,
                     operation_offset,
@@ -141,9 +152,15 @@ pub(super) fn exact_solid_primitive(
             let (transform, transform_offset) = matrix(64)?;
             Some(DesignSolidPrimitive::Sphere(
                 crate::records::feature::primitives::DesignSpherePrimitive {
-                    placement_record_index: None,
+                    placement_record_index: Some(marked_record_reference(
+                        bytes,
+                        start + crate::layout::sphere_compact_prefix::PLACEMENT,
+                    )?),
+                    prefix_framing_assumed: false,
                     diameter_owner_assumed: false,
                     diameter_source_assumed: false,
+                    support_transform: None,
+                    local_frame_assumption: None,
                     transform,
                     transform_offset: Some(transform_offset),
                     diameter,
@@ -246,7 +263,10 @@ pub(super) fn exact_solid_primitive(
             else {
                 return None;
             };
-            let height_value = PositiveReal::new(height.evaluated_value().get())?;
+            let height_value = NonZeroReal::new(height.evaluated_value().get())?;
+            if height_value.get() < 0.0 && cylinder_prologue.is_none() {
+                return None;
+            }
             let diameter_value = PositiveReal::new(diameter.evaluated_value().get())?;
             Some(DesignSolidPrimitive::Cylinder(
                 crate::records::feature::primitives::DesignCylinderPrimitive {
@@ -256,6 +276,7 @@ pub(super) fn exact_solid_primitive(
                     diameter: diameter_value,
                     diameter_record_index: diameter.record_index(),
                     diameter_offset: diameter.evaluated_value_offset(),
+                    construction: cylinder_prologue.map(|prologue| prologue.construction),
                     transform: frame_transform,
                     operation,
                     operation_offset: u64_from_index(operation_offset),

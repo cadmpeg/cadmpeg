@@ -2,6 +2,47 @@
 //! Absence spellings of the flattened scope-record readers.
 
 #[test]
+fn named_scope_reference_fields_use_omission_for_absence() {
+    use super::DesignNamedScopeReferences;
+    use crate::records::identity::Located;
+
+    let empty: DesignNamedScopeReferences = serde_json::from_slice(b"{}").unwrap();
+    assert_eq!(empty, DesignNamedScopeReferences::default());
+    assert_eq!(serde_json::to_vec(&empty).unwrap(), b"{}");
+
+    let populated: DesignNamedScopeReferences = serde_json::from_slice(
+        br#"{"middle":{"value":17,"offset":23},"closing":{"value":19,"offset":34}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        populated.middle,
+        Some(Located {
+            value: 17,
+            offset: 23
+        })
+    );
+    assert_eq!(
+        populated.closing,
+        Some(Located {
+            value: 19,
+            offset: 34
+        })
+    );
+    let bytes = serde_json::to_vec(&populated).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<DesignNamedScopeReferences>(&bytes).unwrap(),
+        populated
+    );
+    for (bytes, key) in [
+        (br#"{"middle":null}"#.as_slice(), "middle"),
+        (br#"{"closing":null}"#.as_slice(), "closing"),
+    ] {
+        let error = serde_json::from_slice::<DesignNamedScopeReferences>(bytes).unwrap_err();
+        assert!(error.to_string().contains(key));
+    }
+}
+
+#[test]
 fn sketch_entity_binding_borrowed_wire_matches_owned_wire_bytes() {
     let binding: super::DesignSketchEntityBinding = serde_json::from_str(
         r#"{"entity_id":"0_35","entity_suffix":35,"entity_reference_offset":12}"#,
@@ -350,7 +391,7 @@ fn native_scope_field_rewrite_matches_the_typed_nested_vertex_walk() {
             reference_type_offset: 0,
         });
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut native = cadmpeg_ir::native::NativeNamespace::default();
     native
         .set_arena(
@@ -652,8 +693,8 @@ fn fillet_sets_round_trip_and_belong_to_fillet_scopes() {
                 law: DesignFilletSetLaw::Constant {
                     radius_owner_record_index: 4,
                 },
-                tangency_weight_owner_record_index: 5,
-                tangent_chain: false,
+                tangency_weight_owner_record_index: Some(5),
+                tangent_chain: Some(false),
                 curvature_continuity: None,
             }],
         });
@@ -695,6 +736,7 @@ fn chamfer_sets_round_trip_and_belong_to_chamfer_scopes() {
                 auxiliary_record_index: 5,
                 entry_count: 1,
                 tangent_chain: true,
+                distance_reversed: false,
             }],
         });
     }
@@ -783,4 +825,60 @@ fn captured_position_scope_wire_checks_exact_row_extent_and_offsets() {
             .to_string()
             .contains("captured_positions")
     );
+}
+
+#[test]
+fn a_chamfer_scope_with_fixed_lanes_and_a_set_list_round_trips_as_one_payload() {
+    let chamfer = |extra: serde_json::Value| {
+        let mut value = serde_json::json!({
+            "id": "f3d:test/Design/BulkStream.dat:scope", "byte_offset": 0, "class_tag": "300",
+            "record_index": 1, "frame_length": 200, "kind": "Chamfer", "kind_offset": 32,
+            "feature_ordinal": 1, "feature_ordinal_offset": 128,
+            "history_state_id": 8, "history_state_id_offset": 24,
+            "previous_history_state_id": 7, "previous_history_state_id_offset": 158,
+            "reference_count_offset": 9, "reference_members": [283], "reference_member_offsets": [14],
+            "fixed_chamfer_parameters": {
+                "kind": "equal_distance",
+                "distance": {"value": 0.2, "record_index": 202, "value_offset": 2020}
+            },
+            "chamfer_sets": {
+                "form": "current", "corner_type": "miter", "entry_count": 1,
+                "sets": [{
+                    "record_index": 290, "byte_offset": 34500, "frame_length": 93,
+                    "group_record_index": 283,
+                    "spec": {"kind": "distance_angle", "distance_owner_record_index": 292, "angle_owner_record_index": 295},
+                    "auxiliary_record_index": 297, "entry_count": 1, "tangent_chain": true
+                }]
+            },
+            "paired_class_tag": "261", "paired_byte_offset": 200
+        });
+        for (key, field) in extra.as_object().unwrap() {
+            value[key] = field.clone();
+        }
+        value
+    };
+    let value = chamfer(serde_json::json!({}));
+    let scope: super::DesignParameterScope = serde_json::from_value(value.clone()).unwrap();
+    assert!(scope.fixed_chamfer_parameters().is_some());
+    assert!(scope.chamfer_sets().is_some());
+    let written = serde_json::to_value(&scope).unwrap();
+    assert_eq!(
+        written["fixed_chamfer_parameters"],
+        value["fixed_chamfer_parameters"]
+    );
+    assert_eq!(written["chamfer_sets"], value["chamfer_sets"]);
+    let reread: super::DesignParameterScope = serde_json::from_value(written).unwrap();
+    assert_eq!(reread.chamfer_sets(), scope.chamfer_sets());
+
+    let mixed = chamfer(serde_json::json!({
+        "fixed_fillet_parameters": { "groups": [{
+            "radii": [0.3], "radius_record_indexes": [5], "radius_offsets": [0],
+            "intermediate_parameters": [], "intermediate_parameter_record_indexes": [],
+            "intermediate_parameter_offsets": []
+        }] }
+    }));
+    let error = serde_json::from_value::<super::DesignParameterScope>(mixed)
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("more than one payload family: fixed_fillet_parameters, chamfer"));
 }

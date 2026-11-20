@@ -36,7 +36,7 @@ fn all_around_scope_uses_the_tolerances_direct_target() {
             assert_eq!(modifiers.iter().any(|modifier| modifier == "all_around"), expected);
             if expected {
                 assert!(annotation.targets.iter().any(|target| {
-                    matches!(target, PmiTarget::ShapeAspect { source_id } if source_id.as_str() == "#6")
+                    matches!(&target.entity, PmiTarget::ShapeAspect { source_id } if source_id.as_str() == "#6")
                 }));
             }
         }
@@ -89,16 +89,16 @@ ENDSEC;\nEND-ISO-10303-21;",
     assert!(around
         .targets
         .iter()
-        .any(|target| matches!(target, PmiTarget::Face { .. })));
+        .any(|target| matches!(&target.entity, PmiTarget::Face { .. })));
     assert!(around
         .targets
         .iter()
-        .any(|target| matches!(target, PmiTarget::Point { .. })));
+        .any(|target| matches!(&target.entity, PmiTarget::Point { .. })));
     assert_eq!(
         around
             .targets
             .iter()
-            .filter(|target| matches!(target, PmiTarget::Point { .. }))
+            .filter(|target| matches!(&target.entity, PmiTarget::Point { .. }))
             .count(),
         1
     );
@@ -112,9 +112,9 @@ ENDSEC;\nEND-ISO-10303-21;",
     assert!(point
         .targets
         .iter()
-        .any(|target| matches!(target, PmiTarget::Point { .. })));
+        .any(|target| matches!(&target.entity, PmiTarget::Point { .. })));
     assert!(!point
         .targets
         .iter()
-        .any(|target| matches!(target, PmiTarget::Face { .. })));
+        .any(|target| matches!(&target.entity, PmiTarget::Face { .. })));
 }

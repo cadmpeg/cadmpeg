@@ -89,6 +89,7 @@ fn fixed_extrude(
                         side_extent_discriminator_offsets: [177, 190],
                         first_side_target_ordinal: None,
                         distance_tail: None,
+                        opaque_distance_word: None,
                         extent,
                         direction_face_extend_offsets: [132, 136],
                         direction_reversed: false,
@@ -102,6 +103,7 @@ fn fixed_extrude(
                     extrude_profile: Some(
                         DesignSketchProfileOperand::try_new(
                             crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+                                sketch_absent: false,
                                 scope_reference_ordinal: 0,
                                 record_index: 100,
                                 byte_offset: 300,
@@ -516,6 +518,26 @@ fn the_measurement_word_selects_each_side_or_whole_symmetric_travel() {
     );
     let untailed = whole_travel(&scope(None, [1, 0], None), Some(0.55)).unwrap();
     assert!((untailed - 5.5).abs() < 1.0e-12);
+
+    let legacy = crate::design::test_support::legacy_symmetric_extrude_scope(
+        scope(Some(0.07), [1, 0], None),
+        [101, 100, 11, 12, 13],
+    );
+    let distance = whole_travel(&legacy, Some(0.07)).expect("matching distance carriers");
+    assert!((distance - 0.7).abs() < 1.0e-12, "whole travel: {distance}");
+    assert!(whole_travel(&legacy, Some(0.08)).is_none());
+
+    let indexed_only = crate::design::test_support::legacy_symmetric_extrude_scope(
+        scope(None, [1, 0], None),
+        [101, 100, 11, 12, 13],
+    );
+    let distance = whole_travel(&indexed_only, Some(0.07)).expect("indexed distance");
+    assert!((distance - 0.7).abs() < 1.0e-12);
+
+    let mut different_class = legacy;
+    different_class.class_tag = "331".to_owned().try_into().unwrap();
+    let distance = whole_travel(&different_class, Some(0.07)).unwrap();
+    assert!((distance - 0.7).abs() < 1.0e-12);
 }
 
 mod through_all;

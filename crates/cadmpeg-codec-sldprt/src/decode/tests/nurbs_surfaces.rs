@@ -57,7 +57,7 @@ fn faces_decode_nurbs_surface() {
 
     let nurbs = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find_map(|surface| match &surface.geometry {
@@ -90,7 +90,7 @@ fn faces_decode_compact_counted_nurbs_surface_arrays() {
         .unwrap();
 
     let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-        result.ir().model.surfaces[0].geometry.solved()
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("compact counted NURBS surface");
     };
@@ -127,7 +127,7 @@ fn conflicting_compact_counted_surface_array_is_rejected() {
         .unwrap();
 
     assert!(matches!(
-        result.ir().model.surfaces[0].geometry,
+        result.ir().geometry.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
 }
@@ -169,25 +169,30 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 2);
-    assert_eq!(result.ir().model.surfaces.len(), 3);
-    assert!(result.ir().model.procedural_surfaces.iter().any(|surface| {
-        match surface.definition() {
-            ProceduralSurfaceDefinition::Offset(matched_payload) => matches!(
-                (matched_payload.distance(),),
-                (distance,) if (distance.get() - 2.0).abs() < f64::EPSILON
-            ),
-            _ => false,
-        }
-    }));
-    assert!(result.ir().model.surfaces.iter().any(|surface| {
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 2);
+    assert_eq!(result.ir().geometry.surfaces.len(), 3);
+    assert!(result
+        .ir()
+        .geometry
+        .procedural_surfaces
+        .iter()
+        .any(|surface| {
+            match surface.definition() {
+                ProceduralSurfaceDefinition::Offset(matched_payload) => matches!(
+                    (matched_payload.distance(),),
+                    (distance,) if (distance.get() - 2.0).abs() < f64::EPSILON
+                ),
+                _ => false,
+            }
+        }));
+    assert!(result.ir().geometry.surfaces.iter().any(|surface| {
         matches!(
             surface.geometry,
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(_))
         ) && surface.id.as_str().contains("hidden-support-surf#100")
     }));
 
-    let face_surface = &result.ir().model.faces[0].surface;
+    let face_surface = &result.ir().geometry.faces[0].surface;
     let point = cadmpeg_ir::eval::model_surface_point_by_id(
         cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
         &cadmpeg_ir::index::ModelIndex::build(result.ir()),
@@ -204,6 +209,20 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
 
 /// The fit tolerance, in millimetres, of the cache the decoded blend holds.
 fn blend_cache_fit_tolerance(body: &[u8]) -> Option<f64> {
+    blend_cache(body).fit_tolerance
+}
+
+/// The decoded blend's cache and the losses that report on it.
+struct DecodedBlend {
+    /// The fit tolerance of the cache.
+    fit_tolerance: Option<f64>,
+    /// The loss that reports a blend without a cache.
+    unsolved: Option<String>,
+    /// The loss that reports a kept cache that misses its face.
+    approximate: Option<String>,
+}
+
+fn blend_cache(body: &[u8]) -> DecodedBlend {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
     let result = SldprtCodec
@@ -212,37 +231,53 @@ fn blend_cache_fit_tolerance(body: &[u8]) -> Option<f64> {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let cached = result.ir().model.surfaces.iter().any(|surface| {
+    let cached = result.ir().geometry.surfaces.iter().any(|surface| {
         matches!(
             surface.geometry,
             SurfaceGeometry::Procedural { cache: Some(_), .. }
         )
     });
-    let fit_tolerance = result.ir().model.procedural_surfaces[0]
+    let fit_tolerance = result.ir().geometry.procedural_surfaces[0]
         .cache_fit_tolerance()
         .map(cadmpeg_ir::geometry::FitTolerance::get);
     assert_eq!(cached, fit_tolerance.is_some());
-    let losses: Vec<_> = result
+    let (losses, mut approximate): (Vec<_>, Vec<_>) = result
         .report()
         .losses
         .iter()
         .filter(|loss| loss.code == crate::loss::SldprtLossCode::GeometryCarrierApproximated.kind())
-        .collect();
+        .partition(|loss| loss.message.starts_with("1 fitted blend surface(s)"));
     assert_eq!(losses.len(), usize::from(cached));
+    assert!(approximate.len() <= usize::from(cached), "{approximate:?}");
     if let Some(tolerance) = fit_tolerance {
         assert_eq!(losses[0].message, format!(
             "1 fitted blend surface(s) use approximate carriers; largest fit tolerance {tolerance} mm."
         ));
     }
+    let unsolved: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::SldprtLossCode::GeometryBlendCacheUnsolved.kind())
+        .map(|loss| loss.message.clone())
+        .collect();
+    assert_eq!(unsolved.len(), usize::from(!cached), "{unsolved:?}");
 
-    fit_tolerance
+    DecodedBlend {
+        fit_tolerance,
+        unsolved: unsolved.into_iter().next(),
+        approximate: approximate.pop().map(|loss| loss.message.clone()),
+    }
 }
 
 #[test]
 fn a_blend_on_a_swept_support_solves_its_cache_through_the_face_on_the_sweep() {
-    let fit_tolerance = blend_cache_fit_tolerance(&blend_on_swept_wall_body(true, 0.0))
+    let blend = blend_cache(&blend_on_swept_wall_body(true, 0.0));
+    let fit_tolerance = blend
+        .fit_tolerance
         .expect("the wall's face states the sweep");
     assert!(fit_tolerance < 1.0e-5);
+    assert_eq!(blend.approximate, None);
 }
 
 #[test]
@@ -254,19 +289,41 @@ fn a_blend_on_a_sweep_that_no_face_carries_has_no_cache() {
 }
 
 #[test]
+fn a_blend_cache_within_the_vertex_floor_is_kept_with_its_miss() {
+    let blend = blend_cache(&blend_on_swept_wall_body(true, 5.0e-7));
+    let fit_tolerance = blend
+        .fit_tolerance
+        .expect("a 0.5 um miss is the same branch");
+    assert!(fit_tolerance >= 4.0e-4, "{fit_tolerance}");
+    assert!(fit_tolerance <= 6.0e-4, "{fit_tolerance}");
+    assert_eq!(blend.approximate, None, "a 0.5 um miss is within 1e-3 mm");
+}
+
+#[test]
 fn a_blend_cache_covers_a_vertex_inside_a_quarter_of_the_radius() {
-    let fit_tolerance = blend_cache_fit_tolerance(&blend_on_swept_wall_body(true, 0.001))
+    // A 1 mm miss on a 100 mm ball is the same branch; the face's edges
+    // state no tolerance, so the kept cache is reported as approximate.
+    let blend = blend_cache(&blend_on_swept_wall_body(true, 0.001));
+    let fit_tolerance = blend
+        .fit_tolerance
         .expect("a 1 mm miss on a 100 mm ball is the same branch");
     assert!(fit_tolerance >= 0.9, "{fit_tolerance}");
     assert!(fit_tolerance <= 1.1, "{fit_tolerance}");
+    let message = blend
+        .approximate
+        .expect("the approximate cache is reported");
+    assert!(message.contains("misses a face vertex by"), "{message}");
+    assert!(message.contains("the face keeps the cache"), "{message}");
 }
 
 #[test]
 fn a_blend_cache_past_a_quarter_of_the_radius_from_a_vertex_is_refused() {
-    assert_eq!(
-        blend_cache_fit_tolerance(&blend_on_swept_wall_body(true, 0.03)),
-        None
-    );
+    let blend = blend_cache(&blend_on_swept_wall_body(true, 0.03));
+    assert_eq!(blend.fit_tolerance, None);
+    let message = blend
+        .unsolved
+        .expect("the blend without a cache is reported");
+    assert!(message.contains("a quarter of the radius"), "{message}");
 }
 
 #[test]
@@ -282,10 +339,10 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
         )
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
-    assert_eq!(result.ir().model.surfaces.len(), 3);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.surfaces.len(), 3);
     let ProceduralSurfaceDefinition::Blend(definition_payload) =
-        result.ir().model.procedural_surfaces[0].definition()
+        result.ir().geometry.procedural_surfaces[0].definition()
     else {
         panic!("rolling-ball construction");
     };
@@ -297,7 +354,7 @@ fn blend_emits_typed_and_opaque_hidden_support_surfaces() {
         .map(|support| {
             result
                 .ir()
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == support.surface)
@@ -346,14 +403,14 @@ fn merged_sites_retain_procedural_surface_constructions() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 2);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 2);
     assert!(result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .all(|construction| {
-            result.ir().model.surfaces.iter().any(|surface| {
+            result.ir().geometry.surfaces.iter().any(|surface| {
                 matches!(
                     &surface.geometry,
                     cadmpeg_ir::geometry::SurfaceGeometry::Procedural {
@@ -392,9 +449,9 @@ fn cyclic_offset_surface_graph_remains_unknown() {
         )
         .unwrap();
 
-    assert!(result.ir().model.procedural_surfaces.is_empty());
+    assert!(result.ir().geometry.procedural_surfaces.is_empty());
     assert!(matches!(
-        result.ir().model.surfaces[0].geometry,
+        result.ir().geometry.surfaces[0].geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
     ));
 }
@@ -469,7 +526,7 @@ fn faces_decode_markerless_nurbs_surface_arrays() {
 
     let nurbs = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find_map(|surface| match &surface.geometry {
@@ -490,10 +547,10 @@ fn face_on_untyped_surface_keeps_topology() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     let Some(SolvedSurfaceGeometry::Unknown {
         record: Some(record),
-    }) = result.ir().model.surfaces[0].geometry.solved()
+    }) = result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("opaque surface has no replay record");
     };
@@ -505,7 +562,7 @@ fn face_on_untyped_surface_keeps_topology() {
     assert!(retained
         .links
         .iter()
-        .any(|link| link.as_str() == result.ir().model.surfaces[0].id.as_str()));
+        .any(|link| link.as_str() == result.ir().geometry.surfaces[0].id.as_str()));
     assert!(result
         .report()
         .losses
@@ -541,7 +598,7 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
     let salvaged = SldprtCodec
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("salvage keeps the topology decode");
-    assert_eq!(salvaged.ir().model.faces.len(), 1);
+    assert_eq!(salvaged.ir().geometry.faces.len(), 1);
     let census = salvaged
         .report()
         .losses

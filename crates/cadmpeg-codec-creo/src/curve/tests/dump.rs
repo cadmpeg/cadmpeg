@@ -1392,9 +1392,9 @@ fn decode_places_helix_from_complete_curve_expression_frame() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
-    assert_eq!(result.ir().model.procedural_curves.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_curves.len(), 1);
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) =
-        &result.ir().model.procedural_curves[0].definition()
+        &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("placed helix");
     };
@@ -1427,7 +1427,7 @@ fn decode_places_helix_from_rank_two_curve_expression_frame() {
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("decode");
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix(helix_payload) =
-        &result.ir().model.procedural_curves[0].definition()
+        &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("placed helix");
     };

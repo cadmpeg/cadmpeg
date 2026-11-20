@@ -19,10 +19,10 @@ pub(crate) fn decode_and_write_singular_vertex_loops() {
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode vertex loops");
-    assert_eq!(result.ir().model.loops.len(), 2);
+    assert_eq!(result.ir().geometry.loops.len(), 2);
     assert!(result
         .ir()
-        .model
+        .geometry
         .loops
         .iter()
         .all(|loop_| loop_.singular_vertex().is_some()));
@@ -55,26 +55,26 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode AP214 sheet");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.bodies[0].kind, BodyKind::Sheet);
-    assert_eq!(result.ir().model.regions.len(), 1);
-    assert_eq!(result.ir().model.shells.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.loops.len(), 1);
-    assert_eq!(result.ir().model.coedges.len(), 3);
-    assert_eq!(result.ir().model.edges.len(), 3);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(result.ir().geometry.regions.len(), 1);
+    assert_eq!(result.ir().geometry.shells.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.loops.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 3);
+    assert_eq!(result.ir().geometry.edges.len(), 3);
     assert!(result
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .all(|edge| { edge.param_range().is_some_and(|range| range[0] < range[1]) }));
-    assert_eq!(result.ir().model.vertices.len(), 3);
-    assert_eq!(result.ir().model.pcurves.len(), 1);
+    assert_eq!(result.ir().geometry.vertices.len(), 3);
+    assert_eq!(result.ir().geometry.pcurves.len(), 1);
     assert_eq!(
         result
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .filter(|coedge| !coedge.pcurves.is_empty())
@@ -82,7 +82,7 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
         1
     );
     assert!(
-        matches!(result.ir().model.pcurves[0].geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve)
+        matches!(result.ir().geometry.pcurves[0].geometry, cadmpeg_ir::geometry::pcurve::PcurveGeometry::Line(line_pcurve)
                 if {
                     let origin = line_pcurve.origin().as_raw();
         let direction = line_pcurve.direction().as_raw();
@@ -92,22 +92,22 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
     );
     assert!(result
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| coedge.sense == Sense::Reversed));
-    assert_eq!(result.ir().model.faces[0].sense, Sense::Reversed);
+    assert_eq!(result.ir().geometry.faces[0].sense, Sense::Reversed);
     assert!(result
         .ir()
         .model
         .appearance_bindings
         .iter()
         .any(|binding| matches!(
-            binding.target,
+            &binding.target.entity,
             cadmpeg_ir::appearance::AppearanceTarget::Edge(_)
         )));
     assert_eq!(
-        result.ir().model.faces[0].color,
+        result.ir().geometry.faces[0].color,
         Some(cadmpeg_ir::topology::Color::new(0.9, 0.1, 0.1, 1.0).expect("valid color"))
     );
     assert_eq!(result.ir().model.presentation_layers.len(), 1);
@@ -116,7 +116,12 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
         "machined faces"
     );
     assert!(matches!(
-        result.ir().model.presentation_layers[0].items.as_slice(),
+        result.ir().model.presentation_layers[0]
+            .items
+            .iter()
+            .map(|item| &item.entity)
+            .collect::<Vec<_>>()
+            .as_slice(),
         [cadmpeg_ir::PresentationItem::Face { .. }]
     ));
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
@@ -138,8 +143,8 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
     let roundtrip = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode written pcurve");
-    assert_eq!(roundtrip.ir().model.pcurves.len(), 1);
-    assert_eq!(roundtrip.ir().model.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(roundtrip.ir().geometry.pcurves.len(), 1);
+    assert_eq!(roundtrip.ir().geometry.bodies[0].kind, BodyKind::Sheet);
     assert_eq!(roundtrip.ir().model.presentation_layers.len(), 1);
     assert_eq!(
         roundtrip.ir().model.presentation_layers[0].name,
@@ -151,13 +156,13 @@ pub(crate) fn decode_builds_a_valid_connected_sheet_brep() {
         .appearance_bindings
         .iter()
         .any(|binding| matches!(
-            binding.target,
+            &binding.target.entity,
             cadmpeg_ir::appearance::AppearanceTarget::Edge(_)
         )));
     assert_eq!(
         roundtrip
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .filter(|coedge| !coedge.pcurves.is_empty())
@@ -179,14 +184,14 @@ pub(crate) fn decode_builds_a_valid_ap203_sheet_brep() {
         result.ir().source.as_ref().unwrap().attributes["schema"],
         "CONFIG_CONTROL_DESIGN"
     );
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.bodies[0].kind, BodyKind::Sheet);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.edges.len(), 3);
-    assert_eq!(result.ir().model.vertices.len(), 3);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.edges.len(), 3);
+    assert_eq!(result.ir().geometry.vertices.len(), 3);
     let composite = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#34")
@@ -204,7 +209,7 @@ pub(crate) fn decode_builds_a_valid_ap203_sheet_brep() {
     ));
     assert!(result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .any(|surface| matches!(
@@ -232,7 +237,7 @@ pub(crate) fn decode_builds_a_valid_ap203_sheet_brep() {
     let roundtrip = StepCodec::default()
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("decode written composite curve graph");
-    assert!(roundtrip.ir().model.curves.iter().any(|curve| matches!(
+    assert!(roundtrip.ir().geometry.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
     )));
@@ -258,18 +263,42 @@ fn decode_builds_a_face_based_surface_model() {
         .expect("decode face-based surface model");
 
     assert_eq!(
-        result.ir().model.bodies.len(),
+        result.ir().geometry.bodies.len(),
         1,
         "{:#?}",
         result.report().losses
     );
-    assert_eq!(result.ir().model.bodies[0].kind, BodyKind::Sheet);
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     assert!(result
         .report()
         .losses
         .iter()
         .all(|loss| !loss.message.contains("does not resolve to a complete")));
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn a_face_based_surface_model_accepts_an_open_shell_face_set() {
+    let source =
+        String::from_utf8(include_bytes!("../../../../tests/fixtures/ap214_sheet.p21").to_vec())
+            .expect("fixture is UTF-8")
+            .replace(
+                "#31=SHELL_BASED_SURFACE_MODEL('',(#33));",
+                "#31=FACE_BASED_SURFACE_MODEL('',(#30));",
+            );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode a face-based surface model over an open shell");
+
+    assert_eq!(
+        result.ir().geometry.faces.len(),
+        1,
+        "{:#?}",
+        result.report().losses
+    );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -296,20 +325,29 @@ fn decode_builds_faceted_brep_polygon_loops() {
         .expect("decode faceted brep");
 
     assert_eq!(
-        result.ir().model.bodies.len(),
+        result.ir().geometry.bodies.len(),
         1,
         "{:#?}",
         result.report().losses
     );
-    assert_eq!(result.ir().model.bodies[0].kind, BodyKind::Solid);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert_eq!(result.ir().model.coedges.len(), 3);
-    assert!(result
-        .ir()
-        .model
-        .edges
-        .iter()
-        .all(|edge| edge.curve().is_none()));
+    assert_eq!(result.ir().geometry.bodies[0].kind, BodyKind::Solid);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert_eq!(result.ir().geometry.coedges.len(), 3);
+    let model = &result.ir().geometry;
+    for edge in &model.edges {
+        let curve = edge
+            .curve()
+            .expect("a poly loop segment has a line carrier");
+        let curve = model
+            .curves
+            .iter()
+            .find(|candidate| &candidate.id == curve)
+            .expect("the carrier is in the model");
+        assert!(matches!(
+            curve.geometry.solved(),
+            Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Line(_))
+        ));
+    }
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -332,7 +370,7 @@ fn sheet_root_salvages_independent_shells() {
         .expect("decode sheet with one invalid shell");
 
     assert_eq!(
-        decoded.ir().model.bodies.len(),
+        decoded.ir().geometry.bodies.len(),
         1,
         "{:#?}",
         decoded.report().losses
@@ -361,17 +399,156 @@ fn decode_builds_a_sheet_from_a_geometric_surface_set() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode geometric surface set");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.bodies[0].kind, BodyKind::Sheet);
-    assert_eq!(result.ir().model.faces.len(), 1);
-    assert!(result.ir().model.faces[0].loops.is_empty());
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
+    assert!(matches!(
+        result.ir().geometry.faces[0].loops,
+        cadmpeg_ir::topology::FaceLoops::Classified { .. }
+    ));
+    assert_eq!(result.ir().geometry.coedges.len(), 1);
     assert_eq!(
-        result.ir().model.faces[0].surface.as_str(),
+        result.ir().geometry.edges[0]
+            .param_range()
+            .map(cadmpeg_ir::units::FiniteVector::get),
+        Some([0.0, std::f64::consts::TAU])
+    );
+    assert_eq!(
+        result.ir().geometry.faces[0].surface.as_str(),
         "step:data:surface#11"
     );
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn curve_bounded_surface_boundaries_take_the_winding_of_their_role() {
+    use cadmpeg_ir::topology::Sense;
+
+    let mut source = String::from_utf8(
+        include_bytes!("../../../../tests/fixtures/ap242_geometric_set.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#9=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#7);",
+        "#9=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.F.,#7);",
+    )
+    .replace(
+        "#10=(BOUNDARY_CURVE() ",
+        "#10=(BOUNDARY_CURVE() OUTER_BOUNDARY_CURVE() ",
+    )
+    .replace(
+        "#11=CURVE_BOUNDED_SURFACE('disc',#8,(#10),.F.);",
+        "#11=CURVE_BOUNDED_SURFACE('ring',#8,(#10,#16),.F.);",
+    );
+    let end = source.rfind("ENDSEC;").expect("STEP data section end");
+    source.insert_str(
+        end,
+        "#14=CIRCLE('',#6,2.);\n#15=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#14);\n#16=BOUNDARY_CURVE('hole',(#15),.F.);\n",
+    );
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode a ring");
+    let model = &result.ir().geometry;
+    let face = &model.faces[0];
+    let cadmpeg_ir::topology::FaceLoops::Classified { outer, .. } = &face.loops else {
+        panic!("the outer boundary curve is the outer loop");
+    };
+    assert_eq!(face.loops.len(), 2);
+    for coedge in &model.coedges {
+        let expected = if &coedge.owner_loop == outer {
+            Sense::Forward
+        } else {
+            Sense::Reversed
+        };
+        assert_eq!(coedge.sense, expected, "{}", coedge.id);
+    }
+    let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+/// The disc fixture as a ring: the radius 5 boundary `#10` and the radius 2
+/// boundary `#16`, listed hole first, on `support`, with no outer boundary
+/// curve and no implicit outer boundary.
+fn unflagged_ring(support: &str, extra: &str) -> cadmpeg_ir::codec::DecodeResult {
+    let mut source = String::from_utf8(
+        include_bytes!("../../../../tests/fixtures/ap242_geometric_set.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#11=CURVE_BOUNDED_SURFACE('disc',#8,(#10),.F.);",
+        &format!("#11=CURVE_BOUNDED_SURFACE('ring',{support},(#16,#10),.F.);"),
+    );
+    let end = source.rfind("ENDSEC;").expect("STEP data section end");
+    source.insert_str(
+        end,
+        &format!(
+            "#14=CIRCLE('',#6,2.);\n#15=COMPOSITE_CURVE_SEGMENT(.CONTINUOUS.,.T.,#14);\n#16=BOUNDARY_CURVE('hole',(#15),.F.);\n{extra}"
+        ),
+    );
+    StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode a ring")
+}
+
+#[test]
+fn an_unflagged_boundary_enclosing_the_largest_area_is_the_outer_loop() {
+    let result = unflagged_ring("#8", "");
+    let model = &result.ir().geometry;
+    let cadmpeg_ir::topology::FaceLoops::Classified { outer, .. } = &model.faces[0].loops else {
+        panic!("the largest boundary is the outer loop");
+    };
+    let outer_edge = model
+        .coedges
+        .iter()
+        .find(|coedge| &coedge.owner_loop == outer)
+        .map(|coedge| &coedge.edge)
+        .expect("outer coedge");
+    let curve = model
+        .edges
+        .iter()
+        .find(|edge| &edge.id == outer_edge)
+        .and_then(|edge| edge.curve())
+        .expect("outer edge curve");
+    assert_eq!(curve.as_str(), "step:data:curve#7");
+}
+
+#[test]
+fn unmeasured_unflagged_boundaries_stay_unclassified() {
+    let result = unflagged_ring(
+        "#21",
+        "#17=CARTESIAN_POINT('',(-10.,-10.,0.));\n#18=CARTESIAN_POINT('',(10.,-10.,0.));\n\
+         #19=CARTESIAN_POINT('',(-10.,10.,0.));\n#20=CARTESIAN_POINT('',(10.,10.,0.));\n\
+         #21=B_SPLINE_SURFACE_WITH_KNOTS('',1,1,((#17,#19),(#18,#20)),.UNSPECIFIED.,.F.,.F.,.F.,(2,2),(2,2),(0.,1.),(0.,1.),.UNSPECIFIED.);\n",
+    );
+    let face = &result.ir().geometry.faces[0];
+    assert!(matches!(
+        face.loops,
+        cadmpeg_ir::topology::FaceLoops::Unspecified { .. }
+    ));
+    assert_eq!(face.loops.len(), 2);
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "decode.warning"
+            && loss.message.contains("left its 2 boundaries unclassified")
+    }));
+}
+
+#[test]
+fn a_sole_unflagged_boundary_is_the_outer_boundary() {
+    assert_eq!(
+        crate::reader::topology::largest_boundary([None].into_iter()),
+        Some(0)
+    );
+    assert_eq!(
+        crate::reader::topology::largest_boundary([Some(1.0), Some(-4.0)].into_iter()),
+        Some(1)
+    );
+    assert_eq!(
+        crate::reader::topology::largest_boundary([Some(4.0), None].into_iter()),
+        None
+    );
 }
 
 #[test]
@@ -400,12 +577,12 @@ fn complex_geometric_set_representation_uses_its_named_items() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode complex geometric surface set");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.bodies[0].kind, BodyKind::Sheet);
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     let free_circle = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#14")
@@ -444,11 +621,11 @@ pub(crate) fn reader_recovers_a_valid_solid_from_writer_output() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode generated cube STEP");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.bodies[0].kind, BodyKind::Solid);
-    assert_eq!(result.ir().model.faces.len(), 6);
-    assert_eq!(result.ir().model.edges.len(), 12);
-    assert_eq!(result.ir().model.vertices.len(), 8);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies[0].kind, BodyKind::Solid);
+    assert_eq!(result.ir().geometry.faces.len(), 6);
+    assert_eq!(result.ir().geometry.edges.len(), 12);
+    assert_eq!(result.ir().geometry.vertices.len(), 8);
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);

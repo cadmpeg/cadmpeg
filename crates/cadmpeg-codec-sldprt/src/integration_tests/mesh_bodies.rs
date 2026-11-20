@@ -26,8 +26,8 @@ fn mesh_body_loss_survives_metadata_fallback() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.starts_with("2 mesh body/bodies"));
     assert!(!result.report().geometry_transferred());
-    assert!(result.ir().model.bodies.is_empty());
-    assert!(result.ir().model.faces.is_empty());
+    assert!(result.ir().geometry.bodies.is_empty());
+    assert!(result.ir().geometry.faces.is_empty());
     assert_valid(&result);
 }
 
@@ -57,8 +57,8 @@ fn mesh_body_loss_survives_geometry_transfer_from_another_site() {
     ));
     let result = decode(source);
     assert!(result.report().geometry_transferred());
-    assert_eq!(result.ir().model.bodies.len(), 1);
-    assert_eq!(result.ir().model.faces.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.faces.len(), 1);
     assert!(result.report().losses.iter().any(|loss| {
         loss.code.local_code() == "geometry.mesh-body-not-transferred"
             && loss.message.starts_with("1 mesh body/bodies")

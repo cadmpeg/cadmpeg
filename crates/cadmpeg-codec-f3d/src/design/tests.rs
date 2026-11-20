@@ -74,6 +74,7 @@ fn feature_family_tokens_select_canonical_families() {
     );
     assert_eq!(family("SpirePrimitive"), Some(DesignFeatureFamily::Coil));
     assert_eq!(family("Hem"), Some(DesignFeatureFamily::SheetMetalHem));
+    assert_eq!(family("Bend"), Some(DesignFeatureFamily::SheetMetalBend));
     assert!(crate::design::decode::operands::has_edge_recipe_operands(
         &DesignFeatureKind::Hem
     ));

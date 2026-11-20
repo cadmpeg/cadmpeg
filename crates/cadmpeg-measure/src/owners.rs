@@ -5,8 +5,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use cadmpeg_ir::geometry::pcurve::Pcurve;
 use cadmpeg_ir::geometry::{Curve, ProceduralSurface, Surface};
+use cadmpeg_ir::ids::{BodyId, ShellId};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex};
+use cadmpeg_ir::topology::{
+    Body, ChildLists, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+};
 use cadmpeg_ir::CadIr;
 
 /// Lookups of one document's topology and carriers.
@@ -25,10 +28,14 @@ pub(crate) struct Owners<'ir> {
     curves: HashMap<&'ir str, &'ir Curve>,
     pcurves: HashMap<&'ir str, &'ir Pcurve>,
     procedural_surfaces: HashMap<&'ir str, &'ir ProceduralSurface>,
+    /// Faces of each shell and regions of each body, in arena order.
+    children: ChildLists<'ir>,
     /// Coedges of each edge, in coedge arena order.
     edge_coedges: HashMap<&'ir str, Vec<&'ir Coedge>>,
     /// Edges of each body, sorted.
     body_edges: BTreeMap<&'ir str, BTreeSet<&'ir str>>,
+    /// The first body in ID order that owns each edge.
+    edge_owner: HashMap<&'ir str, &'ir str>,
     /// Vertices of each body, sorted.
     body_vertices: BTreeMap<&'ir str, BTreeSet<&'ir str>>,
     /// Faces of each body, sorted.
@@ -41,52 +48,51 @@ fn by_id<'ir, T>(items: &'ir [T], id: impl Fn(&'ir T) -> &'ir str) -> HashMap<&'
 
 impl<'ir> Owners<'ir> {
     pub(crate) fn new(ir: &'ir CadIr) -> Self {
-        let model = &ir.model;
+        let geometry = &ir.geometry;
         let mut owners = Self {
             ir,
-            bodies: by_id(&model.bodies, |item| item.id.as_str()),
-            regions: by_id(&model.regions, |item| item.id.as_str()),
-            shells: by_id(&model.shells, |item| item.id.as_str()),
-            faces: by_id(&model.faces, |item| item.id.as_str()),
-            loops: by_id(&model.loops, |item| item.id.as_str()),
-            coedges: by_id(&model.coedges, |item| item.id.as_str()),
-            edges: by_id(&model.edges, |item| item.id.as_str()),
-            vertices: by_id(&model.vertices, |item| item.id.as_str()),
-            points: by_id(&model.points, |item| item.id.as_str()),
-            surfaces: by_id(&model.surfaces, |item| item.id.as_str()),
-            curves: by_id(&model.curves, |item| item.id.as_str()),
-            pcurves: by_id(&model.pcurves, |item| item.id.as_str()),
-            procedural_surfaces: by_id(&model.procedural_surfaces, |item| item.id.as_str()),
+            bodies: by_id(&geometry.bodies, |item| item.id.as_str()),
+            regions: by_id(&geometry.regions, |item| item.id.as_str()),
+            shells: by_id(&geometry.shells, |item| item.id.as_str()),
+            faces: by_id(&geometry.faces, |item| item.id.as_str()),
+            loops: by_id(&geometry.loops, |item| item.id.as_str()),
+            coedges: by_id(&geometry.coedges, |item| item.id.as_str()),
+            edges: by_id(&geometry.edges, |item| item.id.as_str()),
+            vertices: by_id(&geometry.vertices, |item| item.id.as_str()),
+            points: by_id(&geometry.points, |item| item.id.as_str()),
+            surfaces: by_id(&geometry.surfaces, |item| item.id.as_str()),
+            curves: by_id(&geometry.curves, |item| item.id.as_str()),
+            pcurves: by_id(&geometry.pcurves, |item| item.id.as_str()),
+            procedural_surfaces: by_id(&geometry.procedural_surfaces, |item| item.id.as_str()),
+            children: geometry.child_lists(),
             edge_coedges: HashMap::new(),
             body_edges: BTreeMap::new(),
+            edge_owner: HashMap::new(),
             body_vertices: BTreeMap::new(),
             body_faces: BTreeMap::new(),
         };
-        for coedge in &model.coedges {
+        for coedge in &geometry.coedges {
             owners
                 .edge_coedges
                 .entry(coedge.edge.as_str())
                 .or_default()
                 .push(coedge);
         }
-        for body in &model.bodies {
+        for body in &geometry.bodies {
             let id = body.id.as_str();
             owners.body_edges.insert(id, BTreeSet::new());
             owners.body_vertices.insert(id, BTreeSet::new());
             owners.body_faces.insert(id, BTreeSet::new());
         }
-        for shell in &model.shells {
+        for shell in &geometry.shells {
             let Some(body) = owners.shell_body(shell.id.as_str()) else {
                 continue;
             };
             let mut faces = BTreeSet::new();
             let mut edges = BTreeSet::new();
             let mut vertices = BTreeSet::new();
-            for face in shell.faces() {
-                faces.insert(face.as_str());
-                let Some(face) = owners.face(face.as_str()) else {
-                    continue;
-                };
+            for face in owners.shell_faces(&shell.id) {
+                faces.insert(face.id.as_str());
                 for loop_id in &face.loops {
                     let Some(face_loop) = owners.loop_(loop_id.as_str()) else {
                         continue;
@@ -100,22 +106,11 @@ impl<'ir> Owners<'ir> {
                     }
                 }
             }
-            edges.extend(
-                shell
-                    .wire_edges()
-                    .iter()
-                    .map(cadmpeg_ir::ids::EdgeId::as_str),
-            );
-            vertices.extend(
-                shell
-                    .free_vertices()
-                    .iter()
-                    .map(cadmpeg_ir::ids::VertexId::as_str),
-            );
+            edges.extend(shell.wire_edges().map(cadmpeg_ir::ids::EdgeId::as_str));
+            vertices.extend(shell.free_vertices().map(cadmpeg_ir::ids::VertexId::as_str));
             for edge in &edges {
                 if let Some(edge) = owners.edge(edge) {
-                    vertices.insert(edge.start.as_str());
-                    vertices.insert(edge.end.as_str());
+                    vertices.extend(edge.vertices().map(cadmpeg_ir::ids::VertexId::as_str));
                 }
             }
             if let Some(set) = owners.body_faces.get_mut(body) {
@@ -126,6 +121,11 @@ impl<'ir> Owners<'ir> {
             }
             if let Some(set) = owners.body_vertices.get_mut(body) {
                 set.extend(vertices);
+            }
+        }
+        for (body, edges) in &owners.body_edges {
+            for edge in edges {
+                owners.edge_owner.entry(*edge).or_insert(*body);
             }
         }
         owners
@@ -179,6 +179,16 @@ impl<'ir> Owners<'ir> {
         self.procedural_surfaces.get(id).copied()
     }
 
+    /// The faces whose shell is `shell`, in arena order.
+    pub(crate) fn shell_faces(&self, shell: &ShellId) -> &[&'ir Face] {
+        self.children.shell_faces(shell)
+    }
+
+    /// The regions whose body is `body`, in arena order.
+    pub(crate) fn body_regions(&self, body: &BodyId) -> &[&'ir Region] {
+        self.children.body_regions(body)
+    }
+
     /// The body-local position of a vertex.
     pub(crate) fn vertex_position(&self, id: &str) -> Option<Point3> {
         let vertex = self.vertex(id)?;
@@ -205,14 +215,18 @@ impl<'ir> Owners<'ir> {
         Some(self.face(owner.face.as_str())?.id.as_str())
     }
 
-    /// The vertices a coedge starts and ends at, in traversal direction.
+    /// The vertices a coedge starts and ends at, in traversal direction. An
+    /// edge with no vertex starts and ends at its own identity.
     pub(crate) fn oriented_ends(&self, coedge: &'ir Coedge) -> (&'ir str, &'ir str) {
         let Some(edge) = self.edge(coedge.edge.as_str()) else {
             return (coedge.id.as_str(), coedge.edge.as_str());
         };
+        let Some(ends) = &edge.ends else {
+            return (edge.id.as_str(), edge.id.as_str());
+        };
         match coedge.sense {
-            Sense::Forward => (edge.start.as_str(), edge.end.as_str()),
-            Sense::Reversed => (edge.end.as_str(), edge.start.as_str()),
+            Sense::Forward => (ends.start.as_str(), ends.end.as_str()),
+            Sense::Reversed => (ends.end.as_str(), ends.start.as_str()),
         }
     }
 
@@ -233,10 +247,7 @@ impl<'ir> Owners<'ir> {
 
     /// The body an edge belongs to, the first in ID order.
     pub(crate) fn edge_body(&self, edge: &str) -> Option<&'ir str> {
-        self.body_edges
-            .iter()
-            .find(|(_, edges)| edges.contains(edge))
-            .map(|(body, _)| *body)
+        self.edge_owner.get(edge).copied()
     }
 
     pub(crate) fn body_faces(&self, body: &str) -> impl Iterator<Item = &'ir str> + '_ {
@@ -270,5 +281,57 @@ impl<'ir> Owners<'ir> {
             .flatten()
             .filter_map(|vertex| self.vertex_position(vertex))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::ids::{BodyId, EdgeId, RegionId, ShellId};
+    use cadmpeg_ir::topology::Shell;
+
+    use super::Owners;
+    use crate::test_support::builders::cuboid;
+
+    /// An edge that two bodies own belongs to the body with the smaller ID,
+    /// also when that body comes later in the arena.
+    #[test]
+    fn shared_edge_belongs_to_first_body_in_id_order() {
+        let mut ir = cuboid([0.0; 3], [1.0; 3]);
+        let later = BodyId::mint("test:model:body#0002").expect("body id");
+        let first = BodyId::mint("test:model:body#0001").expect("body id");
+        ir.geometry.bodies[0].id = later.clone();
+        ir.geometry.regions[0].body = later.clone();
+
+        let shell = ShellId::mint("test:model:shell#0001").expect("shell id");
+        let region = RegionId::mint("test:model:region#0001").expect("region id");
+        let edges: Vec<EdgeId> = ir
+            .geometry
+            .edges
+            .iter()
+            .map(|edge| edge.id.clone())
+            .collect();
+        ir.geometry.shells.push(Shell::with_members(
+            shell.clone(),
+            region.clone(),
+            edges.clone(),
+            Vec::new(),
+        ));
+        let mut first_region = ir.geometry.regions[0].clone();
+        first_region.id = region;
+        first_region.body = first.clone();
+        first_region.shells = vec![shell];
+        ir.geometry.regions.push(first_region);
+        let mut first_body = ir.geometry.bodies[0].clone();
+        first_body.id = first.clone();
+        ir.geometry.bodies.push(first_body);
+
+        let owners = Owners::new(&ir);
+
+        assert_eq!(owners.body_edges(later.as_str()).count(), edges.len());
+        assert_eq!(owners.body_edges(first.as_str()).count(), edges.len());
+        for edge in &edges {
+            assert_eq!(owners.edge_body(edge.as_str()), Some(first.as_str()));
+        }
+        assert_eq!(owners.edge_body("test:model:edge#9999"), None);
     }
 }

@@ -63,7 +63,7 @@ fn dumped(path: &Path) -> Value {
 
 #[cfg(any(feature = "fcstd", feature = "iges"))]
 fn by_id<'a>(document: &'a Value, arena: &str) -> BTreeMap<&'a str, &'a Value> {
-    document["model"][arena]
+    document["geometry"][arena]
         .as_array()
         .map(Vec::as_slice)
         .unwrap_or_default()
@@ -82,8 +82,8 @@ fn discontinuous_rings(document: &Value) -> BTreeMap<String, String> {
         let coedge = coedges[coedge];
         let edge = edges[coedge["edge"].as_str().unwrap()];
         let (start, end) = (
-            edge["start"].as_str().unwrap(),
-            edge["end"].as_str().unwrap(),
+            edge["ends"]["start"].as_str().unwrap(),
+            edge["ends"]["end"].as_str().unwrap(),
         );
         if coedge["sense"] == "reversed" {
             (end, start)
@@ -92,7 +92,7 @@ fn discontinuous_rings(document: &Value) -> BTreeMap<String, String> {
         }
     };
     let mut rings = BTreeMap::new();
-    for face_loop in document["model"]["loops"].as_array().unwrap() {
+    for face_loop in document["geometry"]["loops"].as_array().unwrap() {
         if face_loop["boundary"]["kind"] != "ring" {
             continue;
         }
@@ -129,7 +129,7 @@ fn rings_listed_out_of_traversal_order_are_check_warnings() {
     let source = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd");
     let mut document = dumped(&source);
-    for face_loop in document["model"]["loops"].as_array_mut().unwrap() {
+    for face_loop in document["geometry"]["loops"].as_array_mut().unwrap() {
         if face_loop["boundary"]["kind"] == "ring" {
             face_loop["boundary"]["coedges"]
                 .as_array_mut()
@@ -175,7 +175,11 @@ fn iges_void_shell_faces_have_no_orientation_finding() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../cadmpeg-codec-iges/tests/golden/fixtures/explicit_void_solid.igs");
     let document = dumped(&path);
-    let [region] = document["model"]["regions"].as_array().unwrap().as_slice() else {
+    let [region] = document["geometry"]["regions"]
+        .as_array()
+        .unwrap()
+        .as_slice()
+    else {
         panic!("one region");
     };
     let void = region["shells"][1].as_str().unwrap();
@@ -201,11 +205,11 @@ fn conflicting_void_solid(dir: &Path) -> std::path::PathBuf {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../cadmpeg-codec-iges/tests/golden/fixtures/explicit_void_solid.igs");
     let mut document = dumped(&path);
-    let void = document["model"]["regions"][0]["shells"][1]
+    let void = document["geometry"]["regions"][0]["shells"][1]
         .as_str()
         .unwrap()
         .to_owned();
-    for face in document["model"]["faces"].as_array_mut().unwrap() {
+    for face in document["geometry"]["faces"].as_array_mut().unwrap() {
         if face["shell"] == void.as_str() {
             face["sense"] = Value::from("forward");
         }
@@ -235,12 +239,11 @@ fn conversion_carries_measurement_warnings_and_succeeds() {
 }
 
 #[cfg(feature = "step")]
-/// The freeform B-spline face of `geometry_topology.step` needs far more
-/// than one findings face slice. The check does not read it and states, in
-/// one info finding, how many faces and bodies it did not check, under each
-/// profile; the exit status stays 0.
+/// The freeform B-spline face of `geometry_topology.step` fits one
+/// measurement face slice, which the findings pass draws: the check reads
+/// every face under each profile and states no unchecked items.
 #[test]
-fn a_face_beyond_the_findings_slice_is_counted_in_one_info_finding() {
+fn a_freeform_face_is_checked_under_each_profile() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../cadmpeg-codec-freecad/tests/golden/step/geometry_topology.step");
     for args in [&[][..], &["--limits", "service"][..]] {
@@ -251,21 +254,7 @@ fn a_face_beyond_the_findings_slice_is_counted_in_one_info_finding() {
             .iter()
             .filter(|finding| finding["check"] == "measurement_incomplete")
             .collect();
-        let [finding] = incomplete.as_slice() else {
-            panic!("one measurement_incomplete finding: {incomplete:#?}");
-        };
-        assert_eq!(finding["severity"], "info");
-        assert!(finding.get("entity").is_none());
-        let message = finding["message"].as_str().unwrap();
-        let counts = message
-            .strip_prefix("measurement checks were skipped: the findings allowance ran out before ")
-            .and_then(|rest| rest.strip_suffix(" were checked"))
-            .unwrap_or_else(|| panic!("{message}"));
-        let faces: usize = counts
-            .split_once(' ')
-            .and_then(|(count, _)| count.parse().ok())
-            .unwrap_or_else(|| panic!("{message}"));
-        assert!(faces >= 1, "{message}");
+        assert!(incomplete.is_empty(), "{args:?}: {incomplete:#?}");
     }
 }
 
@@ -304,10 +293,10 @@ fn declared_geometry_errors_fail_check_and_unresolved_targets_warn() {
     ] {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let target = if unresolved {
-            DeclaredTarget::Unresolved {}
+            DeclaredTarget::Unresolved
         } else {
             DeclaredTarget::Bodies {
-                bodies: vec![ir.model.bodies[0].id.clone()],
+                bodies: vec![ir.geometry.bodies[0].id.clone()],
             }
         };
         ir.model.declared_measures.push(DeclaredMeasure::new(

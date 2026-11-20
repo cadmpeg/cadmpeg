@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Identity rewrite implementations for feature records.
 
+use super::boundary_fill::BoundaryFillCell;
+use super::surfaces::{SilhouetteSplitMode, SplitFaceMethod, UntrimLoops};
 use super::{
     AngularTermination, AxisAngle, BinderConstruction, BinderSource, BinderTarget, BodyMember,
     BodyMembers, BodySelection, CapturedComponentPosition, CapturedPositionTransform,
-    CoilConstruction, CoilPlacement, CombineOperands, ComponentTransferMode, DatumPlaneReference,
-    DatumPointConstruction, DistinctMembers, DraftAnchor, DraftPull, DraftSecondSide,
-    EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
+    CoilConstruction, CoilPlacement, CombineDestination, CombineOperands, ComponentTransferMode,
+    DatumPlaneReference, DatumPointConstruction, DistinctMembers, DraftAnchor, DraftPull,
+    DraftSecondSide, EdgeSelection, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart,
     ExtrusionDirectionSource, FaceBlendOperands, FaceMaker, FaceMotion, FaceSelection,
     FeatureDefinition, FeatureEquationCurve, FeatureOperation, FeaturePolyline,
     FilledSurfaceContinuity, FilledSurfaceContinuityState, GeneratedBodyRef, GeneratedCurveRef,
@@ -14,16 +16,15 @@ use super::{
     GeometryImportPath, HelicalSweepConstruction, InsertedBodies, InsertedComponents,
     LinearTermination, LoftGuidance, LoftPointSection, LoftSection, NativeFeatureKind,
     NativeSelections, NonEmptyMembers, PartialRevolveConstruction, PathRef, PlanarProfileRef,
-    PrimitiveSolid, PrimitiveSolidKind, ProfileRef, ReplaceFaceOperands, RevolutionAxis,
-    RevolveConstruction, RevolveExtent, RibConstruction, RuledSurfaceMode, ScaleCenter,
-    SectionOperands, SelectionMembers, SelectionReference, SewBodySelection,
-    SheetMetalFlangeEdgeWidths, SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget,
-    SheetMetalFlangeTwoSidedWidth, SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding,
-    SketchPointSelection, SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion,
-    SketchProfileRegions, SolidFeatureResult, SplitBodyTool, SplitFacePlanes, SplitFaceTool,
-    SurfaceBoundary, SweepGuideRail, SweepOrientation, SweepSection, SweepShape,
-    ThreePointSelection, TreeChildren, TrimBodyOperands, TrimCellSelection, TrimRegion,
-    VertexSelection,
+    PrimitiveSolid, PrimitiveSolidKind, ProfileRef, RevolutionAxis, RevolveConstruction,
+    RevolveExtent, RibConstruction, RuledSurfaceMode, ScaleCenter, SectionOperands,
+    SelectionMembers, SelectionReference, SewBodySelection, SheetMetalFlangeEdgeWidths,
+    SheetMetalFlangeHeight, SheetMetalFlangeHeightTarget, SheetMetalFlangeTwoSidedWidth,
+    SheetMetalFlangeWidth, SheetMetalHemForm, SketchFeatureBinding, SketchPointSelection,
+    SketchProfileBoundaryUse, SketchProfileLoops, SketchProfileRegion, SketchProfileRegions,
+    SolidFeatureResult, SplitBodyTool, SplitFacePlanes, SplitFaceTool, SurfaceBoundary,
+    SweepGuideRail, SweepOrientation, SweepSection, SweepShape, ThreePointSelection, TreeChildren,
+    TrimBodyOperands, TrimCellSelection, TrimRegion, VertexSelection,
 };
 
 rewrite_enum!(AngularTermination, []; {
@@ -36,10 +37,15 @@ rewrite_enum!(AngularTermination, []; {
     ToVertex { vertex },
     OffsetFromFace { face, offset },
     ToShape { target },
+    ToPlane { plane, native, source },
     Angle { angle },
 });
 
 rewrite_record!(AxisAngle, []; { origin, direction, angle });
+rewrite_enum!(BoundaryFillCell, []; {
+    BodyRegion(selection),
+    Recorded { record },
+});
 rewrite_record!(CapturedComponentPosition, []; { selector, occurrence, transform });
 rewrite_enum!(CapturedPositionTransform, []; {
     Affine { transform },
@@ -94,6 +100,8 @@ Reparent,
 });
 
 rewrite_record!(CombineOperands, []; { target, tools });
+
+rewrite_enum!(CombineDestination, []; { TargetComponent, NewComponent });
 
 rewrite_enum!(DatumPlaneReference, []; {
     Feature { feature },
@@ -208,13 +216,14 @@ rewrite_enum!(FeatureOperation, []; {
     MeshCombineFaceGroups { source },
     MeshSection { source, plane, sketch },
     MeshModify { source, modification },
+    MeshConvert(field0),
     InsertBodies { bodies },
     InsertComponent { occurrence },
     InsertComponents { components },
     ComponentTransfer { mode, occurrence, component, source_owner, target_owner, source_transform, target_transform },
     CapturedComponentPositions { positions },
     AssemblyJoint { joint },
-    Form { cages },
+    Form(field0),
     CosmeticThread { face, standard, designation, diameter, pitch, modeled, extent },
     ReferenceImage { asset, visible, mirror_u, mirror_v, frame, bounds, opacity },
     Decal { asset, faces, mapping, opacity },
@@ -222,7 +231,7 @@ rewrite_enum!(FeatureOperation, []; {
     DatumPlane { frame },
     DatumThreePointPlane { frame, points },
     DatumOffsetPlane { reference, distance },
-    DatumAxis { origin, direction },
+    DatumAxis { axis },
     DatumPoint { position, construction },
     PointGeometry { position },
     LineSegment { segment },
@@ -262,7 +271,11 @@ rewrite_enum!(FeatureOperation, []; {
     SheetMetalAttachedPlate { profile, thickness, side, attachment },
     SheetMetalBend { plate, attachment, inside_radius, relief, transition },
     SheetMetalCorner { bend, effect },
-    SheetMetalEdgeFlange { edges, height, angle, height_datum, bend_position, width, bend_radius },
+    SheetMetalBendLines { construction },
+    SheetMetalContourFlange { construction },
+    SheetMetalUnfold { construction },
+    SheetMetalRefold { construction },
+    SheetMetalEdgeFlange(field0),
     SheetMetalHem { edges, bend_position, form, direction, bend_radius },
     Fillet { groups },
     FullRoundFillet { groups },
@@ -284,15 +297,17 @@ Thicken { faces, thickness, side, result, tangent_chain },
     FilledSurface { boundary, support_faces, continuity, merge_result, interior_constraints, reverse_normal },
     TrimSurface { faces, tool, keep },
     ExtendSurface { faces, distance, method },
+    UntrimSurface { faces, loops, extension },
     RuledSurface { edges, support_faces, mode, angle, alternate_face, corner },
     Draft { faces, anchor, angle, outward, second_side },
-    Combine { operands, op, keep_tools },
-    BoundaryFill { tools, cells },
+    Combine { operands, op, keep_tools, destination },
+    BoundaryFill { tools, cells, plane_tools, operation, remove_tools },
     CutWithSurface { targets, tools, reverse },
     TrimBodies { operands, keep },
     TrimBodiesAtPlane { targets, plane, keep },
-    SplitBody { targets, tool },
-    SplitFace { targets, tool },
+    SplitBody { targets, tool, extend_tool },
+    SplitFace { targets, tool, method },
+    SilhouetteSplit { target, direction, mode },
     DeleteBody { bodies, mode },
     DeleteFace { faces, heal },
     ReplaceFace { operands },
@@ -441,8 +456,6 @@ rewrite_enum!(ProfileRef, []; {
     Planar(field0),
 });
 
-rewrite_record!(ReplaceFaceOperands, []; { targets, replacements });
-
 rewrite_record!(RevolutionAxis, []; { origin, direction, reference });
 
 rewrite_enum!(RevolveConstruction, []; {
@@ -483,7 +496,7 @@ rewrite_record!(SheetMetalFlangeEdgeWidths, []; (field0));
 
 rewrite_enum!(SheetMetalFlangeHeight, []; {
     Distance(field0),
-    ToObject { target, offset },
+    ToObject(field0),
 });
 
 rewrite_enum!(SheetMetalFlangeHeightTarget, []; {
@@ -494,9 +507,11 @@ rewrite_enum!(SheetMetalFlangeHeightTarget, []; {
 rewrite_record!(SheetMetalFlangeTwoSidedWidth, []; { first, second });
 
 rewrite_enum!(SheetMetalFlangeWidth, []; {
+    SymmetricPerEdge { widths },
+    TwoOffsetsPerEdge { offsets },
     FullEdge,
-    Symmetric { width },
-    TwoSides { first, second },
+    Symmetric(field0),
+    TwoSides(field0),
     TwoSidesPerEdge { widths },
 });
 
@@ -533,15 +548,34 @@ rewrite_record!(SketchProfileRegions, []; (field0));
 
 rewrite_record!(SplitFacePlanes, []; (field0));
 
+rewrite_enum!(SilhouetteSplitMode, []; { Unresolved, FacesOnly, ShelledBody, SolidBody });
+
 rewrite_enum!(SplitBodyTool, []; {
     Faces(field0),
     Plane { plane },
 });
 
 rewrite_enum!(SplitFaceTool, []; {
+    Faces(field0),
+    Native(field0),
     Path(field0),
     Plane { plane },
     Planes { planes },
+});
+
+rewrite_enum!(SplitFaceMethod, []; {
+    Unresolved {},
+    SurfaceIntersection { extend },
+    ClosestPoint {},
+    AlongVector { direction, native_carrier, native_inputs, native_input_count, native_inputs_complete },
+});
+
+rewrite_enum!(UntrimLoops, []; {
+    Unresolved {},
+    All {},
+    Internal {},
+    External {},
+    Selected { edges },
 });
 
 rewrite_enum!(SurfaceBoundary, []; {
@@ -597,7 +631,18 @@ rewrite_enum!(VertexSelection, []; {
 rewrite_enum!(super::ConfigurationEvaluation, []; { Suppressed {}, Active { outputs } });
 rewrite_record!(super::ConfigurationFeatureState, []; { evaluation, dependencies, definition });
 rewrite_record!(super::FeatureEvaluation, []; { definition, outputs });
-rewrite_record!(super::Feature, []; { id, product_definition, ordinal, name, suppressed, dependencies, source_properties, source_tag, source_text, source_content, evaluation, native_ref });
 rewrite_record!(super::FeatureContent, []; (field0));
 rewrite_enum!(super::FeatureSourceContent, []; { Text(value), Parameter(value), Feature(value) });
 rewrite_enum!(super::ParameterValue, []; { Length(value), Angle(value), Real(value), Integer(value), Boolean(value), String(value) });
+
+rewrite_record!(super::sheet_metal::SheetMetalBendLinesConstruction, []; { bends, stationary, inside_radius });
+rewrite_record!(super::sheet_metal::SheetMetalLineBend, []; { line, angle });
+
+rewrite_record!(super::sheet_metal::SheetMetalUnfoldConstruction, []; {stationary, bends, all_bends, neutral_factor});
+rewrite_record!(super::sheet_metal::SheetMetalRefoldConstruction, []; {unfold});
+
+rewrite_record!(super::sheet_metal::SheetMetalEdgeFlangeConstruction, []; {edges, height, angle, height_datum, bend_position, width, bend_radius});
+rewrite_record!(super::sheet_metal::SheetMetalFlangeOffset, []; {first, second, first_reference, second_reference});
+rewrite_record!(super::sheet_metal::SheetMetalFlangeTargetConstruction, []; {target, offset});
+rewrite_record!(super::sheet_metal::SheetMetalFlangeSymmetricWidth, []; {width});
+rewrite_record!(super::sheet_metal::SheetMetalContourFlangeConstruction, []; {profile, direction, extent, thickness, inside_radius, side, neutral_factor});

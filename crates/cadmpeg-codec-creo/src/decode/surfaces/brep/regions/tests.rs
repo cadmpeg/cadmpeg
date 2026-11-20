@@ -63,6 +63,7 @@ fn disjoint_planar_regions_keep_each_hole_with_its_outer_ring() {
                     )),
                     parameter_range: None,
                     source_object: None,
+                    native_ref: None,
                 });
                 next_curve += 1;
                 next_vertex += 1;
@@ -104,6 +105,7 @@ fn disjoint_planar_regions_keep_each_hole_with_its_outer_ring() {
                         start + std::f64::consts::PI,
                     ]),
                     source_object: None,
+                    native_ref: None,
                 });
                 next_curve += 1;
             }
@@ -229,6 +231,7 @@ fn bounded_arc_must_bulge_outside_and_follow_its_source_interval() {
         )),
         parameter_range: IncreasingParameterInterval::new([0.0, std::f64::consts::PI]),
         source_object: None,
+        native_ref: None,
     });
     for index in 1..4 {
         let a = Point3::new(points[index][0], points[index][1], 0.0);
@@ -242,6 +245,7 @@ fn bounded_arc_must_bulge_outside_and_follow_its_source_interval() {
             )),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
     }
     let world: Vec<_> = (0..points.len())

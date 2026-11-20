@@ -89,6 +89,10 @@ where
 /// reader: `named_optional_field!(deserialize_side<S>, Support<S>, "side")`. A
 /// file that declares its keys in a child module states the visibility the
 /// parent needs: `named_optional_field!(pub(super) deserialize_side, S, "side")`.
+/// A field whose own type's reader admits more than its wire form, such as a
+/// `BTreeSet` that merges a repeated member, reads through a wire type that
+/// refuses it and converts with `Into`:
+/// `named_optional_field!(deserialize_axes, Distinct<Axis> as BTreeSet<Axis>, "axes")`.
 ///
 /// ```
 /// cadmpeg_core::named_optional_field!(deserialize_label, String, "label");
@@ -120,6 +124,14 @@ macro_rules! named_optional_field {
             $value: ::serde::Deserialize<'de>,
         {
             $crate::absent_key::named_present(deserializer, $field)
+        }
+    };
+    ($vis:vis $name:ident, $wire:ty as $value:ty, $field:literal) => {
+        $vis fn $name<'de, D: ::serde::Deserializer<'de>>(
+            deserializer: D,
+        ) -> ::core::result::Result<::core::option::Option<$value>, D::Error> {
+            $crate::absent_key::named_present::<D, $wire>(deserializer, $field)
+                .map(|value| value.map(::core::convert::Into::into))
         }
     };
 }

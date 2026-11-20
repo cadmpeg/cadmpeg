@@ -776,6 +776,7 @@ pub(super) fn transfer_curve_expression_features(
                     id: crate::identity::copy_checked_id(curve_id.as_str())?,
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
                     source_object: None,
+                    native_ref: None,
                 },
             )?;
             source_carriers.admit_procedural_curve(

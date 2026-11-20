@@ -30,14 +30,15 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
     for sense in [true, false] {
         let mut ir = CadIr::empty();
         for id in [&source, &subset] {
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: id.clone(),
                 geometry: line.clone(),
                 source_object: None,
+                native_ref: None,
             });
         }
-        ir.model
+        ir.geometry
             .add_procedural_curve(
                 &subset,
                 ProceduralCurve::new(
@@ -84,7 +85,7 @@ fn cached_subset_retains_local_parameters_for_points_derivatives_and_inversion()
         );
         assert_eq!(
             model_curve_parameter_near_point_with_tolerance(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &index,
                 &subset,
                 expected,
@@ -113,7 +114,7 @@ fn subset_curve_over_wide_interval_maps_finite_local_parameter() {
     let subset = CurveId::mint("test:model:curve#wide-subset").unwrap();
     let mut ir = CadIr::empty();
     for id in [&source, &subset] {
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -124,9 +125,10 @@ fn subset_curve_over_wide_interval_maps_finite_local_parameter() {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
-    ir.model
+    ir.geometry
         .add_procedural_curve(
             &subset,
             ProceduralCurve::new(

@@ -931,6 +931,7 @@ fn semantic_writer_round_trips_typed_combine() {
             operands,
             op: cadmpeg_ir::features::BooleanKind::Join,
             keep_tools: false,
+            ..
         }) if matches!(
             (operands.target(), operands.tools()),
             (BodySelection::Native(target), BodySelection::Native(tools))
@@ -976,6 +977,7 @@ fn semantic_writer_round_trips_typed_combine() {
             operands,
             op: cadmpeg_ir::features::BooleanKind::Intersect,
             keep_tools: false,
+            ..
         }) if matches!(
             (operands.target(), operands.tools()),
             (BodySelection::Native(target), BodySelection::Native(tools))
@@ -1878,15 +1880,12 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
     let mut decoded = EditableDecodeResult::from(decoded);
     assert!(matches!(
        decoded.ir().model.features[0].evaluation.definition(),
-       FeatureDefinition::Operation(FeatureOperation::DatumAxis {
-           origin: geometry_1,
-           direction: geometry_2,
-       })
-    if matches!(geometry_1.get(), Point3 {
+       FeatureDefinition::Operation(FeatureOperation::DatumAxis { axis })
+    if matches!(axis.origin().unwrap().get(), Point3 {
                x: 1.0,
                y: 2.0,
                z: 3.0
-           }) && matches!(geometry_2.get(), Vector3 {
+           }) && matches!(axis.direction().unwrap().get(), Vector3 {
                x: 0.0,
                y: 0.0,
                z: 1.0
@@ -1906,14 +1905,14 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
     {
         let mut ir_edit = decoded.ir_mut();
         ir_edit.model.features[0].evaluation.edit(|definition, _| {
-            let FeatureDefinition::Operation(FeatureOperation::DatumAxis { origin, direction }) =
-                definition
-            else {
-                panic!("typed reference axis");
-            };
-            *origin = cadmpeg_ir::features::FinitePoint3::new(Point3::new(-1.0, 0.0, 2.0)).unwrap();
-            *direction =
-                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap();
+            assert!(matches!(
+                definition,
+                FeatureDefinition::Operation(FeatureOperation::DatumAxis { .. })
+            ));
+            *definition = FeatureDefinition::Operation(FeatureOperation::datum_axis(
+                cadmpeg_ir::features::FinitePoint3::new(Point3::new(-1.0, 0.0, 2.0)).unwrap(),
+                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(0.0, 1.0, 0.0)).unwrap(),
+            ));
         });
         ir_edit.model.features[1].evaluation.edit(|definition, _| {
             let FeatureDefinition::Operation(FeatureOperation::DatumPoint { position, .. }) =
@@ -1942,15 +1941,12 @@ fn semantic_writer_round_trips_reference_axis_and_point() {
     assert_eq!(native[1].properties["Position"], "7mm,8mm,9mm");
     assert!(matches!(
        regenerated.ir().model.features[0].evaluation.definition(),
-       FeatureDefinition::Operation(FeatureOperation::DatumAxis {
-           origin: geometry_1,
-           direction: geometry_2,
-       })
-    if matches!(geometry_1.get(), Point3 {
+       FeatureDefinition::Operation(FeatureOperation::DatumAxis { axis })
+    if matches!(axis.origin().unwrap().get(), Point3 {
                x: -1.0,
                y: 0.0,
                z: 2.0
-           }) && matches!(geometry_2.get(), Vector3 {
+           }) && matches!(axis.direction().unwrap().get(), Vector3 {
                x: 0.0,
                y: 1.0,
                z: 0.0

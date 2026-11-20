@@ -94,19 +94,20 @@ fn generated_fixture(
             .expect("valid PlaneSurface fixture"),
         )),
         source_object: None,
+        native_ref: None,
     };
     let mut scan = crate::test_support::empty_container_scan();
     let mut ir = CadIr::empty();
     for (id, coordinate, reversed) in axial_stations {
         scan.surfaces.rows.push(row(*id, *reversed));
-        ir.model.surfaces.push(plane(
+        ir.geometry.surfaces.push(plane(
             *id,
             Point3::new(0.0, *coordinate, 0.0),
             Vector3::new(0.0, 1.0, 0.0),
         ));
     }
     scan.surfaces.rows.extend([row(33, true), row(34, true)]);
-    ir.model.surfaces.extend([
+    ir.geometry.surfaces.extend([
         plane(33, Point3::new(-4.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
         plane(34, Point3::new(4.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
     ]);
@@ -314,6 +315,7 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         };
         let mut scan = crate::test_support::empty_container_scan();
         scan.surfaces.rows.extend([
@@ -326,12 +328,13 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
             row(35, true),
         ]);
         let mut ir = CadIr::empty();
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#37".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
+                native_ref: None,
             },
             plane(31, Point3::new(0.0, 6.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
             plane(32, Point3::new(0.0, 48.0, 0.0), Vector3::new(0.0, 1.0, 0.0)),
@@ -381,7 +384,7 @@ fn rectilinear_extent_reconciles_native_and_transferred_planes() {
 
         let mut local_only = ir.clone();
         local_only
-            .model
+            .geometry
             .surfaces
             .iter_mut()
             .find(|surface| {

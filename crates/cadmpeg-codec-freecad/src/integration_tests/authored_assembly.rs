@@ -3,8 +3,8 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::products::{
-    ExternalDocument, JointLimits, JointOperands, OccurrenceParent, OperandContainer,
-    PairedJointKind, PrototypeReference,
+    ExternalDocument, JointLimits, JointOperands, Occurrence, OperandContainer, PairedJointKind,
+    ProductDefinition, Storage,
 };
 use cadmpeg_ir::{Codec, DecodeOptions};
 
@@ -45,31 +45,36 @@ fn authored_assembly_keeps_prototypes_occurrences_and_joints() {
             .find(|item| item.id.as_str() == format!("fcstd:model:occurrence#{name}:{suffix}"))
             .unwrap()
     };
+    // The definition named `owner` lists the occurrence at `position`.
+    let owned_at = |owner: &str, item: &Occurrence, position: usize| {
+        assert_eq!(
+            definition(owner).occurrences.get(position),
+            Some(&item.id),
+            "{} in {owner}",
+            item.id
+        );
+    };
     let assembly = occurrence("Assembly", "container");
     let group = occurrence("OccurrenceGroup", "container");
-    assert!(matches!(assembly.parent, OccurrenceParent::Root {}));
     assert!(
-        matches!(&group.parent, OccurrenceParent::Occurrence { occurrence } if occurrence == &assembly.id)
+        cadmpeg_ir::products::owner(&model.product_definitions, &assembly.id)
+            .is_some_and(ProductDefinition::is_root)
     );
-    assert_eq!(group.ordinal, 2);
-    for (name, prototype, origin, ordinal) in [
+    owned_at("Assembly", group, 2);
+    for (name, prototype, origin, position) in [
         ("BracketOccurrence", "BracketPrototype", [10.0, 0.0, 0.0], 0),
         ("PinOccurrence", "PinPrototype", [20.0, 6.0, 3.0], 1),
     ] {
         let item = occurrence(name, "instance");
-        assert_eq!(item.ordinal, ordinal);
-        assert!(
-            matches!(&item.parent, OccurrenceParent::Occurrence { occurrence } if occurrence == &assembly.id)
-        );
-        assert!(
-            matches!(&item.prototype, PrototypeReference::Local { definition: id } if *id == definition(prototype).id)
-        );
-        for (row, expected) in item.transform.affine_rows().iter().zip(origin) {
+        owned_at("Assembly", item, position);
+        assert_eq!(item.prototype, definition(prototype).id);
+        for (row, expected) in item.transform.unwrap().affine_rows().iter().zip(origin) {
             assert!((row[3] - expected).abs() < LENGTH_TOLERANCE, "{name}");
         }
     }
     let pin_rows = occurrence("PinOccurrence", "instance")
         .transform
+        .unwrap()
         .affine_rows();
     for (row, expected) in pin_rows
         .iter()
@@ -80,14 +85,9 @@ fn authored_assembly_keeps_prototypes_occurrences_and_joints() {
         }
     }
     let nested = occurrence("NestedBracketOccurrence", "instance");
-    assert!(
-        matches!(&nested.parent, OccurrenceParent::Occurrence { occurrence } if occurrence == &group.id)
-    );
-    assert_eq!(nested.ordinal, 0);
-    assert!(
-        matches!(&nested.prototype, PrototypeReference::Local { definition: id } if *id == definition("BracketOccurrence").id)
-    );
-    let rows = nested.effective_transform().unwrap().affine_rows();
+    owned_at("OccurrenceGroup", nested, 0);
+    assert_eq!(nested.prototype, definition("BracketOccurrence").id);
+    let rows = nested.transform.unwrap().affine_rows();
     for (row, expected) in rows.iter().zip([10.0, 20.0, 0.0]) {
         assert!((row[3] - expected).abs() < LENGTH_TOLERANCE);
     }
@@ -135,14 +135,9 @@ fn authored_assembly_keeps_prototypes_occurrences_and_joints() {
             assert!((actual - expected).abs() < SCALE_TOLERANCE);
         }
         let item = occurrence("PinArray", &index.to_string());
-        assert_eq!(item.ordinal, u32::try_from(index).unwrap() + 1);
-        assert!(
-            matches!(&item.parent, OccurrenceParent::Occurrence { occurrence } if occurrence == &group.id)
-        );
-        assert!(
-            matches!(&item.prototype, PrototypeReference::Local { definition: id } if *id == definition("PinPrototype").id)
-        );
-        let rows = item.transform.affine_rows();
+        owned_at("OccurrenceGroup", item, index + 1);
+        assert_eq!(item.prototype, definition("PinPrototype").id);
+        let rows = item.transform.unwrap().affine_rows();
         assert!((rows[0][3] - x).abs() < LENGTH_TOLERANCE);
         assert!(rows[1][3].abs() < LENGTH_TOLERANCE);
         assert!(rows[2][3].abs() < LENGTH_TOLERANCE);
@@ -155,14 +150,19 @@ fn authored_assembly_keeps_prototypes_occurrences_and_joints() {
         }
     }
     let external = occurrence("ExternalOccurrence", "instance");
-    assert_eq!(external.ordinal, 4);
-    assert!(
-        matches!(&external.parent, OccurrenceParent::Occurrence { occurrence } if occurrence == &group.id)
+    owned_at("OccurrenceGroup", external, 4);
+    let external_definition = model
+        .product_definitions
+        .iter()
+        .find(|row| row.id == external.prototype)
+        .unwrap();
+    assert_eq!(
+        external_definition.storage,
+        Storage::External(
+            ExternalDocument::path("external_component.FCStd").with_object("ExternalPrototype")
+        )
     );
-    assert!(
-        matches!(&external.prototype, PrototypeReference::External { document: ExternalDocument::Path { path }, object: Some(name) } if path.as_str() == "external_component.FCStd" && name == "ExternalPrototype")
-    );
-    assert!((external.transform.affine_rows()[0][3] - 40.0).abs() < LENGTH_TOLERANCE);
+    assert!((external.transform.unwrap().affine_rows()[0][3] - 40.0).abs() < LENGTH_TOLERANCE);
     let joint = model
         .assembly_joints
         .iter()

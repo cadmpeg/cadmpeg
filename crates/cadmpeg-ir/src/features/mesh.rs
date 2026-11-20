@@ -1,14 +1,23 @@
-use super::{FeatureId, NativeSelections, SelectionMembers, SelectionReference};
+use super::{
+    FeatureDirection3, FeatureId, FinitePoint3, NativeSelections, SelectionMembers,
+    SelectionReference,
+};
 use crate::scalar::{Fraction, Length, NonNegativeLength, PositiveLength, PositiveReal};
 use crate::tessellation::TessellationId;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[doc = "Resolved tessellations or retained mesh source selections."]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(untagged, deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
 pub enum MeshSelection {
     #[doc = "Nonempty distinct local tessellation identities in source order."]
     Tessellations(SelectionMembers<TessellationId>),
@@ -31,8 +40,42 @@ pub enum MeshSelection {
     },
 }
 
+#[doc = "Construction used to convert mesh faces to a boundary representation."]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MeshConversionMethod {
+    #[doc = "Creates a boundary face for each source mesh face."]
+    Faceted,
+    #[doc = "Combines face groups into faces of inferred prismatic features."]
+    Prismatic,
+}
+
+#[doc = "Ordered inputs and construction method of a mesh-to-body conversion."]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct MeshConversion {
+    #[doc = "Input meshes in construction order."]
+    pub sources: Vec<MeshSelection>,
+    #[doc = "Conversion method, when resolved."]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_conversion_method"
+    )]
+    pub method: Option<MeshConversionMethod>,
+}
+
+impl MeshConversion {
+    #[doc = "Build a conversion from ordered sources and an optional method."]
+    pub fn new(sources: Vec<MeshSelection>, method: Option<MeshConversionMethod>) -> Self {
+        Self { sources, method }
+    }
+}
+
 #[doc = "Distribution of the faces that a mesh operation produces."]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MeshFaceDistribution {
@@ -43,7 +86,7 @@ pub enum MeshFaceDistribution {
 }
 
 #[doc = "Quantity that bounds a mesh reduction."]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeshReduceTarget {
@@ -65,7 +108,7 @@ pub enum MeshReduceTarget {
 }
 
 #[doc = "Reconstruction quality of a mesh rebuild."]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MeshRebuildMode {
@@ -76,7 +119,7 @@ pub enum MeshRebuildMode {
 }
 
 #[doc = "Repair applied to a mesh."]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeshRepair {
@@ -110,11 +153,111 @@ pub enum MeshRepair {
     },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[doc = "Effect of an inline plane on a mesh."]
+pub enum MeshPlaneCutMode {
+    #[doc = "Retains the selected half-space of the mesh."]
+    Trim,
+    #[doc = "Partitions the mesh into bodies on both sides of the plane."]
+    SplitBodies,
+    #[doc = "Partitions mesh faces at the plane while retaining one body."]
+    SplitFaces,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[doc = "Faces that close mesh boundaries produced by a plane cut."]
+pub enum MeshPlaneCutFill {
+    #[doc = "Leaves the cut boundaries open."]
+    NoFill,
+    #[doc = "Closes the cut with a minimal number of faces."]
+    Minimal,
+    #[doc = "Closes the cut with uniformly distributed faces."]
+    Uniform,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+#[doc = "Retained half-space relative to the oriented plane normal."]
+pub enum MeshPlaneCutSide {
+    #[doc = "Retains points whose displacement from the origin has a nonnegative dot product with the normal."]
+    Positive,
+    #[doc = "Retains points whose displacement from the origin has a nonpositive dot product with the normal."]
+    Negative,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+#[doc = "Independent plane and cut controls; absent fields remain unknown."]
+pub struct MeshPlaneCut {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_cut_origin"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "FinitePoint3"))]
+    #[doc = "Point on the plane in model-space canonical millimetres."]
+    pub origin: Option<FinitePoint3>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_cut_normal"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "FeatureDirection3"))]
+    #[doc = "Nonzero model-space normal; its magnitude is preserved."]
+    pub normal: Option<FeatureDirection3>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_cut_mode"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "MeshPlaneCutMode"))]
+    #[doc = "Cut effect, independently of the other controls."]
+    pub mode: Option<MeshPlaneCutMode>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_cut_fill"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "MeshPlaneCutFill"))]
+    #[doc = "Boundary fill for trim and body splitting; stored inactive values remain available."]
+    pub fill: Option<MeshPlaneCutFill>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_cut_side"
+    )]
+    #[cfg_attr(feature = "schema", schemars(with = "MeshPlaneCutSide"))]
+    #[doc = "Half-space retained by trimming; stored inactive values remain available."]
+    pub retained_side: Option<MeshPlaneCutSide>,
+}
+
+cadmpeg_core::named_optional_field!(deserialize_cut_origin, FinitePoint3, "origin");
+cadmpeg_core::named_optional_field!(deserialize_cut_normal, FeatureDirection3, "normal");
+cadmpeg_core::named_optional_field!(deserialize_cut_mode, MeshPlaneCutMode, "mode");
+cadmpeg_core::named_optional_field!(deserialize_cut_fill, MeshPlaneCutFill, "fill");
+cadmpeg_core::named_optional_field!(deserialize_cut_side, MeshPlaneCutSide, "retained_side");
+
 #[doc = "Change that a mesh operation applies to its source."]
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum MeshModification {
+    #[doc = "Separates connected shells or face groups into meshes."]
+    Separate {
+        #[doc = "Independent separation controls."]
+        separation: MeshSeparation,
+    },
+    #[doc = "Cuts the source mesh with an inline oriented plane."]
+    PlaneCut {
+        #[doc = "Independently known plane components and cut controls."]
+        cut: MeshPlaneCut,
+    },
     #[doc = "Lowers the face count."]
     Reduce {
         #[doc = "Face distribution of the result, when resolved."]
@@ -179,7 +322,90 @@ pub enum MeshModification {
 }
 cadmpeg_core::named_optional_field!(deserialize_members, NativeSelections, "members");
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[doc = "Partition used to separate a mesh."]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MeshSeparationMethod {
+    #[doc = "Separate connected shells."]
+    Shells,
+    #[doc = "Separate face groups."]
+    FaceGroups,
+}
+
+#[doc = "Face groups selected for mesh separation, independently of the source meshes."]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum MeshSeparationGroups {
+    #[doc = "Separate all source face groups."]
+    All {},
+    #[doc = "Separate selected face groups whose identities can remain unresolved."]
+    Selected {
+        #[doc = "Ordered native group selectors relative to the mesh source."]
+        #[cfg_attr(feature = "schema", schemars(with = "NativeSelections"))]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_members"
+        )]
+        members: Option<NativeSelections>,
+    },
+}
+
+#[doc = "Independent mesh separation settings; absent fields remain unknown."]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct MeshSeparation {
+    #[doc = "Separation partition when resolved."]
+    #[cfg_attr(feature = "schema", schemars(with = "MeshSeparationMethod"))]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_separation_method"
+    )]
+    pub method: Option<MeshSeparationMethod>,
+    #[doc = "Face-group scope when resolved, including inactive stored scope."]
+    #[cfg_attr(feature = "schema", schemars(with = "MeshSeparationGroups"))]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_separation_groups"
+    )]
+    pub groups: Option<MeshSeparationGroups>,
+    #[doc = "Whether face-group separation creates multiple bodies, including an inactive stored value."]
+    #[cfg_attr(feature = "schema", schemars(with = "bool"))]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_multiple_bodies"
+    )]
+    pub multiple_bodies: Option<bool>,
+    #[doc = "Whether separation keeps the source body when resolved."]
+    #[cfg_attr(feature = "schema", schemars(with = "bool"))]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_keep_body"
+    )]
+    pub keep_body: Option<bool>,
+}
+
+cadmpeg_core::named_optional_field!(
+    deserialize_separation_method,
+    MeshSeparationMethod,
+    "method"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_separation_groups,
+    MeshSeparationGroups,
+    "groups"
+);
+cadmpeg_core::named_optional_field!(deserialize_multiple_bodies, bool, "multiple_bodies");
+cadmpeg_core::named_optional_field!(deserialize_keep_body, bool, "keep_body");
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[doc = "Algorithm used to generate mesh face groups."]
@@ -240,6 +466,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_minimum_area_fraction,
     crate::scalar::Fraction,
     "minimum_area_fraction"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_conversion_method,
+    MeshConversionMethod,
+    "method"
 );
 cadmpeg_core::named_optional_field!(deserialize_mode, MeshRebuildMode, "mode");
 cadmpeg_core::named_optional_field!(deserialize_density, PositiveReal, "density");

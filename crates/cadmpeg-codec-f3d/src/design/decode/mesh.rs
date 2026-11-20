@@ -2431,6 +2431,22 @@ pub(crate) fn mesh_split_stream_losses(
     })
 }
 
+pub(crate) fn mesh_component_flag_losses(
+    features: &[DesignMeshFeature],
+) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
+    features.iter().flat_map(DesignMeshFeature::all_bodies).flat_map(|body| {
+        body.split_streams
+            .iter()
+            .filter(|stream| stream.component_flag)
+            .map(|stream| {
+                crate::loss::F3dLossCode::MeshComponentFlagAssumed.note(format!(
+                    "mesh body {} stream {} reads its components flagged Z: true as unflagged f32 components; the native record retains the flag",
+                    body.placement.record().record_index(), stream.name
+                ))
+            })
+    })
+}
+
 pub(crate) fn mesh_history_window_losses(
     features: &[DesignMeshFeature],
 ) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
@@ -2536,11 +2552,7 @@ pub(crate) fn decode_mesh_bodies(
 ) -> Result<MeshDecode, CodecError> {
     let mut design_records = decode_mesh_design_records(ctx, scan)?;
     let mut outcomes = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::Paramesh))
-    {
+    for entry in crate::container::paramesh_entries(scan) {
         let container = match scan
             .entry_bytes(&entry.name)
             .and_then(|bytes| decode_mesh_container(ctx, bytes))

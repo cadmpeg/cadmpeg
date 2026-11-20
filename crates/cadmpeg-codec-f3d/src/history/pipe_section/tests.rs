@@ -28,7 +28,7 @@ fn projected_fixture(
     fixture: &crate::test_support::pipe::Fixture,
     edit: impl FnOnce(&mut crate::native::F3dNative, &mut Feature),
 ) -> (Feature, Vec<LossKind>) {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut native = fixture.decode(&ctx).unwrap();
     let ir = result_model(&[]);
     let mut feature = pipe_feature(&native.design_parameter_scopes[0], &ir);
@@ -52,10 +52,10 @@ fn projected_fixture(
             scopes: &native.design_parameter_scopes,
             groups: &native.design_construction_operand_groups,
             owners: &native.design_parameter_owners,
-            bodies: &ir.model.bodies,
-            regions: &ir.model.regions,
-            faces: &ir.model.faces,
-            surfaces: &ir.model.surfaces,
+            bodies: &ir.geometry.bodies,
+            regions: &ir.geometry.regions,
+            faces: &ir.geometry.faces,
+            surfaces: &ir.geometry.surfaces,
             linear_tolerance: LINEAR_TOLERANCE,
         };
         let mut features = vec![feature];
@@ -383,6 +383,52 @@ fn pipe_projection_uses_explicit_circle_with_partial_extent() {
             ]
         );
     }
+}
+
+#[test]
+fn pipe_projection_reads_unit_fractions_without_a_point_selection_as_the_whole_path() {
+    use crate::test_support::pipe::{Config, Fixture, SectionFrame};
+    use cadmpeg_ir::features::SolidSweepOperation;
+    let (feature, losses) = projected_fixture(
+        &Fixture::new(Config {
+            values: [1.0, 1.0, 0.5, 0.1],
+            section: Some(SectionFrame::of(0)),
+            ..Default::default()
+        }),
+        |_, _| {},
+    );
+    assert_eq!(
+        sweep_operation_and_extent(feature.evaluation.definition()),
+        Some((SolidSweepOperation::NewBody, 1.0, 1.0))
+    );
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn pipe_projection_settles_unit_fractions_of_another_section_without_a_point_selection() {
+    use crate::test_support::pipe::{Config, Fixture, SectionFrame};
+    let parameterization = F3dLossCode::FeaturePipePathParameterizationAssumed.kind();
+    let (_, square) = projected_fixture(
+        &Fixture::new(Config {
+            values: [1.0, 1.0, 0.5, 0.1],
+            section: Some(SectionFrame::of(1)),
+            ..Default::default()
+        }),
+        |_, _| {},
+    );
+    assert!(!square.contains(&parameterization), "{square:?}");
+    let (_, point_selected) = projected_fixture(
+        &Fixture::new(Config {
+            values: [1.0, 1.0, 0.5, 0.1],
+            point_version: Some(2),
+            ..Default::default()
+        }),
+        |_, _| {},
+    );
+    assert!(
+        point_selected.contains(&parameterization),
+        "{point_selected:?}"
+    );
 }
 
 #[test]
@@ -793,7 +839,7 @@ fn cone(radius: f64) -> SurfaceGeometry {
 /// The unit cube with its first face carriers replaced by `carriers`.
 fn result_model(carriers: &[SurfaceGeometry]) -> cadmpeg_ir::CadIr {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    for (surface, geometry) in ir.model.surfaces.iter_mut().zip(carriers) {
+    for (surface, geometry) in ir.geometry.surfaces.iter_mut().zip(carriers) {
         surface.geometry = geometry.clone();
     }
     ir
@@ -816,7 +862,7 @@ fn pipe_feature(scope: &DesignParameterScope, ir: &cadmpeg_ir::CadIr) -> Feature
                 kind: "Pipe".into(),
                 parameters: Default::default(),
             }),
-            cadmpeg_ir::features::DistinctMembers::try_from(vec![ir.model.bodies[0].id.clone()])
+            cadmpeg_ir::features::DistinctMembers::try_from(vec![ir.geometry.bodies[0].id.clone()])
                 .unwrap(),
         ),
         native_ref: Some(scope.id.clone()),
@@ -862,10 +908,10 @@ fn bound_with_losses(
             scopes: std::slice::from_ref(scope),
             groups,
             owners,
-            bodies: &ir.model.bodies,
-            regions: &ir.model.regions,
-            faces: &ir.model.faces,
-            surfaces: &ir.model.surfaces,
+            bodies: &ir.geometry.bodies,
+            regions: &ir.geometry.regions,
+            faces: &ir.geometry.faces,
+            surfaces: &ir.geometry.surfaces,
             linear_tolerance: LINEAR_TOLERANCE,
         },
     );
@@ -882,14 +928,37 @@ fn bound_with_losses(
             ..
         }))
     );
-    assert_eq!(
-        losses.len(),
-        match (projected, read_circle) {
-            (false, _) => 0,
-            (true, true) => 1,
-            (true, false) => 2,
-        }
+    let count = |codes: [F3dLossCode; 2]| {
+        losses
+            .iter()
+            .filter(|loss| codes.iter().any(|code| code.kind() == **loss))
+            .count()
+    };
+    let section = count([
+        F3dLossCode::FeaturePipeCircularSectionInferred,
+        F3dLossCode::FeaturePipeCircularSectionAssumed,
+    ]);
+    let extent = count([
+        F3dLossCode::FeaturePipeWholePathExtentAssumed,
+        F3dLossCode::FeaturePipePathEndSectionAssumed,
+    ]);
+    let fraction = |ordinal: u32| {
+        owners
+            .iter()
+            .find(|owner| owner.local_ordinal() == ordinal)
+            .map(|owner| owner.evaluated_value().get())
+    };
+    let point_selected = matches!(
+        scope.payload(),
+        DesignScopePayload::Pipe(Some(DesignPipeConstruction {
+            point_selection: Some(_),
+            ..
+        }))
     );
+    let open_path = !point_selected && fraction(0) == Some(1.0) && fraction(1) == Some(1.0);
+    assert_eq!(section, usize::from(projected && !read_circle));
+    assert_eq!(extent, usize::from(projected && !open_path));
+    assert_eq!(losses.len(), section + extent);
     (definition, losses)
 }
 
@@ -928,10 +997,7 @@ fn a_new_body_pipe_with_circular_result_faces_projects_as_a_circular_sweep() {
     assert_eq!(circular_section(&definition), Some((2.5, None)));
     assert_eq!(
         losses,
-        [
-            F3dLossCode::FeaturePipeCircularSectionInferred.kind(),
-            F3dLossCode::FeaturePipeWholePathExtentAssumed.kind()
-        ]
+        [F3dLossCode::FeaturePipeCircularSectionInferred.kind()]
     );
     let FeatureDefinition::Operation(FeatureOperation::Sweep {
         path: Some(PathRef::Native(path)),
@@ -1064,10 +1130,7 @@ fn a_pipe_whose_results_a_later_feature_changes_assumes_a_circle_and_unchanged_r
         assert_eq!(circular_section(&definition), Some((2.5, None)));
         assert_eq!(
             losses,
-            [
-                F3dLossCode::FeaturePipeCircularSectionAssumed.kind(),
-                F3dLossCode::FeaturePipeWholePathExtentAssumed.kind()
-            ]
+            [F3dLossCode::FeaturePipeCircularSectionAssumed.kind()]
         );
     }
     assert!(matches!(
@@ -1076,7 +1139,7 @@ fn a_pipe_whose_results_a_later_feature_changes_assumes_a_circle_and_unchanged_r
             &owners(0.5, 0.1),
             &groups,
             &[cylinder(2.5)],
-            |ir, _| ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet
+            |ir, _| ir.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet
         ),
         FeatureDefinition::Operation(FeatureOperation::Native { .. })
     ));
@@ -1086,7 +1149,7 @@ fn a_pipe_whose_results_a_later_feature_changes_assumes_a_circle_and_unchanged_r
             &owners(0.5, 0.1),
             &groups,
             &[cylinder(2.5)],
-            |ir, _| ir.model.regions.clear()
+            |ir, _| ir.geometry.regions.clear()
         ),
         FeatureDefinition::Operation(FeatureOperation::Native { .. })
     ));
@@ -1097,9 +1160,9 @@ fn a_pipe_whose_results_a_later_feature_changes_assumes_a_circle_and_unchanged_r
             &groups,
             &[cylinder(2.5)],
             |ir, _| {
-                let mut twin = ir.model.surfaces[0].clone();
+                let mut twin = ir.geometry.surfaces[0].clone();
                 twin.geometry = cylinder(4.0);
-                ir.model.surfaces.push(twin);
+                ir.geometry.surfaces.push(twin);
             }
         ),
         FeatureDefinition::Operation(FeatureOperation::Native { .. })
@@ -1219,8 +1282,41 @@ fn a_new_body_pipe_without_result_bodies_assumes_a_circle() {
     assert_eq!(circular_section(&definition), Some((3.0, Some(1.5))));
     assert_eq!(
         losses,
+        [F3dLossCode::FeaturePipeCircularSectionAssumed.kind()]
+    );
+}
+
+#[test]
+fn a_point_selected_pipe_with_unit_fractions_assumes_its_whole_path_extent() {
+    use crate::test_support::pipe::{Config, Fixture};
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let native = Fixture::new(Config {
+        values: [1.0, 1.0, 0.5, 0.1],
+        point_version: Some(2),
+        ..Default::default()
+    })
+    .decode(&ctx)
+    .unwrap();
+    let scope = &native.design_parameter_scopes[0];
+    assert!(matches!(
+        scope.payload(),
+        DesignScopePayload::Pipe(Some(DesignPipeConstruction {
+            point_selection: Some(_),
+            ..
+        }))
+    ));
+    let (definition, losses) = bound_with_losses(
+        scope,
+        &native.design_parameter_owners,
+        &native.design_construction_operand_groups,
+        &[cylinder(2.5)],
+        |_, _| {},
+    );
+    assert_eq!(circular_section(&definition), Some((2.5, None)));
+    assert_eq!(
+        losses,
         [
-            F3dLossCode::FeaturePipeCircularSectionAssumed.kind(),
+            F3dLossCode::FeaturePipeCircularSectionInferred.kind(),
             F3dLossCode::FeaturePipeWholePathExtentAssumed.kind()
         ]
     );
@@ -1258,10 +1354,7 @@ fn a_read_circular_shape_projects_without_a_section_test() {
         |_, _| {},
     );
     assert_eq!(circular_section(&definition), Some((2.5, None)));
-    assert_eq!(
-        losses,
-        [F3dLossCode::FeaturePipeWholePathExtentAssumed.kind()]
-    );
+    assert!(losses.is_empty());
 }
 
 #[test]

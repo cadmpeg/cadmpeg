@@ -13,11 +13,14 @@ use crate::bytes::{take_reference, Reference};
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
+use crate::ids::native_stream;
 use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::modify_marker_one_prologue as modify_one;
 use crate::layout::modify_marker_zero_prologue as modify_zero;
 use crate::layout::move_face_marker_one_prologue as face_one;
 use crate::layout::move_face_marker_zero_prologue as face_zero;
+use crate::layout::move_face_typed_marker_one_prologue as typed_face_one;
+use crate::layout::move_face_typed_marker_zero_prologue as typed_face_zero;
 use crate::layout::move_marked_transform_prologue as marked_move;
 use crate::layout::move_marker_one_transform_prologue as extended_move;
 use crate::layout::move_transform_frame_253 as move_frame;
@@ -34,6 +37,11 @@ use crate::layout::move_transform_v3_frame_276 as move_v3_frame_276;
 use crate::layout::move_transform_v3_frame_286 as move_v3_frame_286;
 use crate::layout::move_transform_v3_frame_296 as move_v3_frame_296;
 use crate::layout::rigid_transform_leading_prefix as leading_move;
+use crate::layout::scale_axis_owner_prefix as scale_axis;
+use crate::layout::scale_counted_group_head as scale_counted;
+use crate::layout::scale_counted_group_suffix as scale_counted_suffix;
+use crate::layout::scale_legacy_operation_prefix as scale_legacy;
+use crate::layout::scale_legacy_uniform_head as scale_legacy_head;
 use crate::layout::scale_legacy_uniform_tail as scale_tail;
 use crate::layout::scale_matrix_marker_one_prologue as scale_matrix_one;
 use crate::layout::scale_matrix_marker_zero_prologue as scale_matrix_zero;
@@ -45,34 +53,49 @@ use crate::records::feature::direct_face::DesignModifyOperation;
 use crate::records::feature::direct_face::DesignMoveOperation;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
+use crate::records::identity::Located;
+use crate::records::parameters::{DesignParameter, DesignParameterOwner};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::scalar::PositiveReal;
 use std::collections::HashMap;
 
 const RIGID_TRANSFORM_TYPE_GUID: &str = "84E6245F-1CDC-4FB8-8048-163A85FAD3F0";
 const RIGID_TRANSFORM_TYPE_VERSION: u32 = 2;
+const CONSTRUCTION_OPERAND_GROUP_TYPE_GUID: &str = "2CA5A1CD-C99B-4C9B-91AF-57989148E841";
 const RIGID_TRANSFORM_TYPE_VERSION_3: u32 = 3;
 
-/// Primary-header offset of the marked distance reference of an `OffsetFaces`
-/// scope, or `None` when its prologue is not a known form.
+/// The distance record of an `OffsetFaces` scope, named by the marked
+/// distance reference of its prologue, or `None` when the prologue is not a
+/// known form.
 ///
 /// The 253- and 264-byte token-independent forms are identified by length.
 /// The other forms are identified by their prologue and by the offset of the
 /// ordered-reference count, because their scope tail can be 77 or 78 bytes.
 /// A marker-one prologue stores `1` at offset 20 and a u32 zero at 21, so its
 /// fields start four bytes later than those of a marker-zero prologue.
-fn offset_faces_distance_marker(
+fn offset_faces_distance_record(
     bytes: &[u8],
     scope: &DesignParameterScope,
     start: usize,
-) -> Option<usize> {
-    let references = scope.reference_members().len();
+) -> Option<u32> {
+    let members = scope.reference_members();
+    if members.len() < 3 {
+        return None;
+    }
+    let mut ordered = members.values().copied();
+    let first = ordered.next()?;
+    let second = ordered.next()?;
+    let last = ordered.next_back()?;
     if matches!(
-        (parameter_scope_payload_length(scope), references),
+        (parameter_scope_payload_length(scope), members.len()),
         (Some(264), 4) | (Some(253), 3)
     ) && bytes.get(start + 25) == Some(&1)
     {
-        return Some(25);
+        let distance = marked_record_reference(bytes, start + 25)?;
+        if distance == last {
+            return Some(distance);
+        }
     }
     let count_offset = usize::try_from(scope.reference_count_offset())
         .ok()?
@@ -83,19 +106,31 @@ fn offset_faces_distance_marker(
         _ => return None,
     };
     // A u32 one follows the marked distance reference, then the marked
-    // reference to the selected-face group, the first ordered reference.
-    let first_reference = scope.reference_members().values().next()?;
+    // reference to the selected-face group.
+    let distance = marked_record_reference(bytes, start + distance_marker)?;
+    let group = marked_record_reference(bytes, start + distance_marker + 15)?;
     (View::u32_le_at(bytes, start + distance_marker + 11) == Some(1)
-        && marked_record_reference(bytes, start + distance_marker + 15) == Some(*first_reference))
-    .then_some(distance_marker)
+        && ((group == first && distance == last) || (distance == first && group == second)))
+        .then_some(distance)
 }
 
+/// Whether the distance record of an `OffsetFaces` scope is the last of at
+/// least three ordered references, or the first with the selected-face group
+/// second.
 pub(crate) fn offset_faces_distance_reference_matches(
     scope: &DesignParameterScope,
     distance_record_index: u32,
+    is_face_group: impl Fn(u32) -> bool,
 ) -> bool {
-    scope.reference_members().len() >= 3
-        && scope.reference_members().values().next_back() == Some(&distance_record_index)
+    let members = scope.reference_members();
+    let mut ordered = members.values().copied();
+    match (ordered.next(), ordered.next(), ordered.next_back()) {
+        (Some(first), Some(second), Some(last)) => {
+            last == distance_record_index
+                || (first == distance_record_index && is_face_group(second))
+        }
+        _ => false,
+    }
 }
 
 pub(super) fn exact_direct_face_operation(
@@ -107,11 +142,7 @@ pub(super) fn exact_direct_face_operation(
     let start = usize::try_from(scope.byte_offset()).ok()?;
     match design_feature_family(&scope.kind())? {
         DesignFeatureFamily::OffsetFaces => {
-            let distance_marker = offset_faces_distance_marker(bytes, scope, start)?;
-            let distance_record_index = marked_record_reference(bytes, start + distance_marker)?;
-            if !offset_faces_distance_reference_matches(scope, distance_record_index) {
-                return None;
-            }
+            let distance_record_index = offset_faces_distance_record(bytes, scope, start)?;
             let scalar = exact_fixed_scalar(bytes, records, distance_record_index)?;
             Some(DesignDirectFaceOperation::OffsetFaces(
                 direct_face::DesignOffsetFacesOperation {
@@ -203,37 +234,113 @@ fn marked_move_transform(
     Some(operation)
 }
 
+/// The spelling of the two marked references of a `MoveFace` prologue.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MoveFaceReferenceSpelling {
+    /// Eleven-byte marked same-segment references.
+    Plain,
+    /// 51-byte inline-typed local references.
+    Typed,
+}
+
+/// The fixed field offsets of each `MoveFace` prologue form, keyed by marker
+/// value and ordered-reference count offset.
+struct MoveFacePrologueForm {
+    marker: u8,
+    zero_word: Option<usize>,
+    reference_count: usize,
+    transform_flag: usize,
+    transform_reference: usize,
+    reference_flag: usize,
+    group_reference: usize,
+    spelling: MoveFaceReferenceSpelling,
+}
+
+const MOVE_FACE_PROLOGUE_FORMS: [MoveFacePrologueForm; 4] = [
+    MoveFacePrologueForm {
+        marker: face_zero::MARKER_VALUE,
+        zero_word: None,
+        reference_count: face_zero::REFERENCE_COUNT,
+        transform_flag: face_zero::TRANSFORM_FLAG,
+        transform_reference: face_zero::TRANSFORM_REFERENCE,
+        reference_flag: face_zero::REFERENCE_FLAG,
+        group_reference: face_zero::GROUP_REFERENCE,
+        spelling: MoveFaceReferenceSpelling::Plain,
+    },
+    MoveFacePrologueForm {
+        marker: face_one::MARKER_VALUE,
+        zero_word: Some(face_one::ZERO_WORD),
+        reference_count: face_one::REFERENCE_COUNT,
+        transform_flag: face_one::TRANSFORM_FLAG,
+        transform_reference: face_one::TRANSFORM_REFERENCE,
+        reference_flag: face_one::REFERENCE_FLAG,
+        group_reference: face_one::GROUP_REFERENCE,
+        spelling: MoveFaceReferenceSpelling::Plain,
+    },
+    MoveFacePrologueForm {
+        marker: typed_face_zero::MARKER_VALUE,
+        zero_word: None,
+        reference_count: typed_face_zero::REFERENCE_COUNT,
+        transform_flag: typed_face_zero::TRANSFORM_FLAG,
+        transform_reference: typed_face_zero::TRANSFORM_REFERENCE,
+        reference_flag: typed_face_zero::REFERENCE_FLAG,
+        group_reference: typed_face_zero::GROUP_REFERENCE,
+        spelling: MoveFaceReferenceSpelling::Typed,
+    },
+    MoveFacePrologueForm {
+        marker: typed_face_one::MARKER_VALUE,
+        zero_word: Some(typed_face_one::ZERO_WORD),
+        reference_count: typed_face_one::REFERENCE_COUNT,
+        transform_flag: typed_face_one::TRANSFORM_FLAG,
+        transform_reference: typed_face_one::TRANSFORM_REFERENCE,
+        reference_flag: typed_face_one::REFERENCE_FLAG,
+        group_reference: typed_face_one::GROUP_REFERENCE,
+        spelling: MoveFaceReferenceSpelling::Typed,
+    },
+];
+
+/// The prologue form whose ordered-reference count offset is `count_offset`,
+/// relative to the scope's primary indexed header.
+fn move_face_prologue_form(count_offset: u64) -> Option<&'static MoveFacePrologueForm> {
+    MOVE_FACE_PROLOGUE_FORMS
+        .iter()
+        .find(|form| u64_from_index(form.reference_count) == count_offset)
+}
+
+impl MoveFaceReferenceSpelling {
+    /// The record index of the marked reference at `at` in this spelling. A
+    /// typed reference must name `guid`.
+    fn record_reference(self, bytes: &[u8], at: usize, guid: &str) -> Option<u32> {
+        match self {
+            Self::Plain => marked_record_reference(bytes, at),
+            Self::Typed => crate::bytes::typed_local_reference(bytes, at)
+                .filter(|(_, stored)| stored.eq_ignore_ascii_case(guid))
+                .map(|(target, _)| target),
+        }
+    }
+}
+
 fn move_face_operand_markers(
     bytes: &[u8],
     scope: &DesignParameterScope,
     start: usize,
-) -> Option<(usize, usize)> {
-    let count_offset = usize::try_from(scope.reference_count_offset())
-        .ok()?
-        .checked_sub(start)?;
+) -> Option<(usize, usize, MoveFaceReferenceSpelling)> {
+    let count_offset = scope
+        .reference_count_offset()
+        .checked_sub(u64_from_index(start))?;
+    let form = move_face_prologue_form(count_offset)?;
     let bytes = bytes.get(start..)?;
-    let (flag, transform, reference_flag, group) =
-        match (*bytes.get(face_zero::MARKER)?, count_offset) {
-            (face_one::MARKER_VALUE, face_one::REFERENCE_COUNT)
-                if View::u32_le_at(bytes, face_one::ZERO_WORD) == Some(0) =>
-            {
-                (
-                    face_one::TRANSFORM_FLAG,
-                    face_one::TRANSFORM_REFERENCE,
-                    face_one::REFERENCE_FLAG,
-                    face_one::GROUP_REFERENCE,
-                )
-            }
-            (face_zero::MARKER_VALUE, face_zero::REFERENCE_COUNT) => (
-                face_zero::TRANSFORM_FLAG,
-                face_zero::TRANSFORM_REFERENCE,
-                face_zero::REFERENCE_FLAG,
-                face_zero::GROUP_REFERENCE,
-            ),
-            _ => return None,
-        };
-    (bytes.get(flag) == Some(&1) && View::u32_le_at(bytes, reference_flag) == Some(1))
-        .then_some((transform, group))
+    (*bytes.get(face_zero::MARKER)? == form.marker
+        && form
+            .zero_word
+            .is_none_or(|at| View::u32_le_at(bytes, at) == Some(0))
+        && bytes.get(form.transform_flag) == Some(&1)
+        && View::u32_le_at(bytes, form.reference_flag) == Some(1))
+    .then_some((
+        form.transform_reference,
+        form.group_reference,
+        form.spelling,
+    ))
 }
 
 pub(super) fn exact_move_face_operation(
@@ -247,14 +354,18 @@ pub(super) fn exact_move_face_operation(
         return None;
     }
     let start = usize::try_from(scope.byte_offset()).ok()?;
-    let (transform_marker, group_marker) = move_face_operand_markers(bytes, scope, start)?;
+    let (transform_marker, group_marker, spelling) =
+        move_face_operand_markers(bytes, scope, start)?;
     let transform_at = start.checked_add(transform_marker)?;
-    let transform = marked_record_reference(bytes, transform_at)?;
+    let transform = spelling.record_reference(bytes, transform_at, RIGID_TRANSFORM_TYPE_GUID)?;
     let mut typed = None;
+    let mut typed_3 = None;
     let mut unregistered = None;
     let mut typed_ambiguous = false;
+    let mut typed_3_ambiguous = false;
     let mut unregistered_ambiguous = false;
     let mut conflicting_registration = None;
+    let mut unread_registration = None;
     for (frame_start, paired) in records.frames(transform) {
         let Some((tag, after_tag)) =
             lp_ascii_filtered_view(bytes, frame_start, 3..=3, u8::is_ascii_digit)
@@ -269,27 +380,61 @@ pub(super) fn exact_move_face_operation(
         };
         let registration = class_types.get(&tag);
         if let Some(row) = registration.filter(|row| {
-            row.version != RIGID_TRANSFORM_TYPE_VERSION
-                || !row
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(RIGID_TRANSFORM_TYPE_GUID)
+            !matches!(
+                row.version,
+                RIGID_TRANSFORM_TYPE_VERSION | RIGID_TRANSFORM_TYPE_VERSION_3
+            ) || !row
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(RIGID_TRANSFORM_TYPE_GUID)
         }) {
             conflicting_registration = Some((tag, *row));
             continue;
         }
         let Some(next) = move_transform_at(bytes, frame_start, paired, transform) else {
+            if let Some(row) =
+                registration.filter(|row| row.version == RIGID_TRANSFORM_TYPE_VERSION_3)
+            {
+                unread_registration = Some((tag, *row));
+            }
             continue;
         };
-        if registration.is_some() {
-            typed_ambiguous |= typed.replace(next).is_some();
-        } else {
-            unregistered_ambiguous |= unregistered.replace(next).is_some();
+        match registration.map(|row| row.version) {
+            Some(RIGID_TRANSFORM_TYPE_VERSION_3) => {
+                let breaks =
+                    rigid_transform_rule_breaks(bytes, frame_start, paired, next.form, class_types);
+                let rank = usize::from(!breaks.is_empty());
+                match &typed_3 {
+                    Some((held, _, _)) if *held < rank => {}
+                    Some((held, _, _)) if *held == rank => typed_3_ambiguous = true,
+                    _ => {
+                        typed_3 = Some((rank, next, breaks));
+                        typed_3_ambiguous = false;
+                    }
+                }
+            }
+            Some(_) => {
+                let breaks =
+                    rigid_transform_rule_breaks(bytes, frame_start, paired, next.form, class_types);
+                typed_ambiguous |= typed.replace((next, breaks)).is_some();
+            }
+            None => unregistered_ambiguous |= unregistered.replace(next).is_some(),
         }
     }
-    let mut operation = if let Some(operation) = typed {
-        if typed_ambiguous {
-            return None;
+    let typed = match (typed, typed_3) {
+        (Some(_), _) if typed_ambiguous => return None,
+        (Some(chosen), _) => Some(chosen),
+        (None, Some(_)) if typed_3_ambiguous => return None,
+        (None, Some((_, operation, breaks))) => Some((operation, breaks)),
+        (None, None) => None,
+    };
+    let mut operation = if let Some((operation, breaks)) = typed {
+        if !breaks.is_empty() {
+            losses.push(crate::loss::F3dLossCode::FeatureMoveTransformAssumed.note(format!(
+                "MoveFace scope {} keeps the rigid matrix of its marked transform record {transform}, which has {} (DR-306).",
+                scope.id,
+                breaks.join(" and ")
+            )));
         }
         operation
     } else {
@@ -300,6 +445,11 @@ pub(super) fn exact_move_face_operation(
             if let Some((tag, row)) = conflicting_registration {
                 losses.push(crate::loss::F3dLossCode::FeatureMoveFaceTypeConflict.note(format!(
                     "MoveFace scope {} retains transform record {transform} natively after conflicting class registration {tag}: {} version {} (DR-401).",
+                    scope.id, row.type_guid.as_str(), row.version
+                )));
+            } else if let Some((tag, row)) = unread_registration {
+                losses.push(crate::loss::F3dLossCode::FeatureMoveFaceTypeConflict.note(format!(
+                    "MoveFace scope {} retains transform record {transform} natively: its frame with class registration {tag}, {} version {}, has no readable rigid-transform grammar (DR-401).",
                     scope.id, row.type_guid.as_str(), row.version
                 )));
             }
@@ -314,7 +464,7 @@ pub(super) fn exact_move_face_operation(
     operation.transform_reference_offset = Some(u64_from_index(transform_at));
     operation.face_group = start.checked_add(group_marker).and_then(|at| {
         Some(crate::records::identity::Located {
-            value: marked_record_reference(bytes, at)?,
+            value: spelling.record_reference(bytes, at, CONSTRUCTION_OPERAND_GROUP_TYPE_GUID)?,
             offset: u64_from_index(at.checked_add(1)?),
         })
     });
@@ -502,7 +652,7 @@ pub(super) fn move_transform_prefix_losses(
                     .references
                     .iter()
                     .any(|reference| !matches!(reference, direct_face::DesignMoveReference::Null))
-        }) || prefix.codes != [0; 2]
+        }) || prefix.codes != [0; 2] && !translation_direction_flag(scope, operation)
             || prefix
                 .references
                 .iter()
@@ -522,6 +672,20 @@ pub(super) fn move_transform_prefix_losses(
         "{} scope {} applies the rigid matrix of form {} in transform record {}; its prefix references and codes {:?} are assumed to leave that motion unchanged (DR-306).",
         scope.kind().as_str(), scope.id, u32::from(operation.form), operation.transform_record_index, operation.prefix
     )) }).collect()
+}
+
+/// Code word `[0, 1]` of a form-0 `Move` transform selects world translation
+/// directions; the stored matrix already holds the resulting motion.
+fn translation_direction_flag(
+    scope: &DesignParameterScope,
+    operation: &DesignMoveOperation,
+) -> bool {
+    design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Move)
+        && operation.form == direct_face::DesignMoveForm::Form0
+        && operation
+            .prefix
+            .as_ref()
+            .is_some_and(|prefix| prefix.codes == [0, 1])
 }
 
 /// The one admitted rigid-transform frame among `record_indices`.
@@ -722,18 +886,16 @@ pub(crate) fn move_operation_links_hold(
 ) -> bool {
     scope.move_operation().is_none_or(|operation| {
         let face = scope.kind() == scope::DesignFeatureKind::MoveFace;
-        let face_offsets = [
-            (face_zero::REFERENCE_COUNT, face_zero::TRANSFORM_REFERENCE, face_zero::GROUP_REFERENCE),
-            (face_one::REFERENCE_COUNT, face_one::TRANSFORM_REFERENCE, face_one::GROUP_REFERENCE),
-        ].into_iter().find_map(|(count, transform, group)| {
-            if scope.byte_offset().checked_add(u64_from_index(count)) != Some(scope.reference_count_offset()) {
-                return None;
-            }
-            Some((
-                scope.byte_offset().checked_add(u64_from_index(transform))?,
-                scope.byte_offset().checked_add(u64_from_index(group))?.checked_add(1)?,
-            ))
-        });
+        let face_offsets = scope
+            .reference_count_offset()
+            .checked_sub(scope.byte_offset())
+            .and_then(move_face_prologue_form)
+            .and_then(|form| {
+                Some((
+                    scope.byte_offset().checked_add(u64_from_index(form.transform_reference))?,
+                    scope.byte_offset().checked_add(u64_from_index(form.group_reference))?.checked_add(1)?,
+                ))
+            });
         let transform_offset_valid = operation.transform_reference_offset.is_none_or(|offset| {
             if face {
                 face_offsets.is_some_and(|(expected, _)| offset == expected)
@@ -1002,32 +1164,196 @@ fn matrix_scale(
     ))
 }
 
+fn scale_guid_closes_prefix(bytes: &[u8], guid_at: usize, table_at: u64) -> Option<()> {
+    let (guid, end) = crate::bytes::lp_utf16_bounded_view(bytes, guid_at, 36..=36)?;
+    let separator =
+        scale_legacy_head::REFERENCE_COUNT - scale_legacy_head::ZERO_BEFORE_REFERENCE_TABLE;
+    (guid.eq_str("00000000-0000-0000-0000-000000000000")
+        && end.checked_add(separator)? == usize::try_from(table_at).ok()?
+        && View::u24_le_at(bytes, end)? == 0)
+        .then_some(())
+}
+
+fn counted_group_scale(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Option<DesignScaleOperation> {
+    scope.label.as_ref()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let count = View::u32_le_at(bytes, start + scale_counted::GROUP_COUNT)?;
+    let (factor_owner, first, second, center) = match count {
+        1 => {
+            let [&owner, &first, _, &center] = scope.reference_members().values_array()?;
+            (owner, first, None, center)
+        }
+        2 => {
+            let [&owner, &first, &second, _, &center] = scope.reference_members().values_array()?;
+            if first == second {
+                return None;
+            }
+            (owner, first, Some(second), center)
+        }
+        _ => return None,
+    };
+    let mut at = start + scale_counted::LEN;
+    for group in std::iter::once(first).chain(second) {
+        if marked_record_reference(bytes, at)? != group {
+            return None;
+        }
+        at += scale_legacy::FACTOR_REFERENCE - scale_legacy::CENTER_REFERENCE;
+    }
+    if bytes.get(start + 16..start + scale_legacy::FACTOR)? != [0; 5]
+        || marked_record_reference(bytes, start + scale_legacy::CENTER_REFERENCE)? != center
+        || marked_record_reference(bytes, start + scale_legacy::FACTOR_REFERENCE)? != factor_owner
+        || *bytes.get(start + scale_counted::MARKER)? != scale_counted::MARKER_VALUE
+        || View::u32_le_at(bytes, at + scale_counted_suffix::ONE)?
+            != scale_counted_suffix::ONE_VALUE
+        || View::u32_le_at(bytes, at + scale_counted_suffix::ZERO)?
+            != scale_counted_suffix::ZERO_VALUE
+    {
+        return None;
+    }
+    scale_guid_closes_prefix(
+        bytes,
+        at + scale_counted_suffix::LEN,
+        scope.reference_count_offset(),
+    )?;
+    let factor_at = start + scale_legacy::FACTOR;
+    let factor = PositiveReal::new(View::f64_le_at(bytes, factor_at)?)?;
+    let point = exact_point_data_construction(bytes, records, [&center], stream_types)?;
+    Some(DesignScaleOperation {
+        body_group_record_index: first,
+        further_body_group_record_indices: second.into_iter().collect(),
+        center_record_index: center,
+        center_position: Some(Located {
+            value: point.position,
+            offset: point.position_offset,
+        }),
+        factors: DesignScaleFactors::Uniform {
+            factor,
+            offset: u64_from_index(factor_at),
+        },
+        matrix_offset: None,
+    })
+}
+
+pub(super) fn exact_axis_owner_scale(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
+    parameters: &[DesignParameter],
+    parameter_owners: &[DesignParameterOwner],
+) -> Option<DesignScaleOperation> {
+    if scope.kind() != scope::DesignFeatureKind::Scale || scope.label.is_none() {
+        return None;
+    }
+    let [&x, &y, &z, &group, _, _, &center] = scope.reference_members().values_array()?;
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    if bytes.get(start + scale_axis::ZERO_RUN_18..start + scale_axis::CENTER_REFERENCE)? != [0; 18]
+        || marked_record_reference(bytes, start + scale_axis::CENTER_REFERENCE)? != center
+        || *bytes.get(start + scale_axis::ZERO_BYTE)? != scale_axis::ZERO_BYTE_VALUE
+        || View::u32_le_at(bytes, start + scale_axis::ONE)? != scale_axis::ONE_VALUE
+        || View::u16_le_at(bytes, start + scale_axis::ZERO_WORD)? != scale_axis::ZERO_WORD_VALUE
+        || marked_record_reference(bytes, start + scale_axis::X_OWNER)? != x
+        || marked_record_reference(bytes, start + scale_axis::Y_OWNER)? != y
+        || marked_record_reference(bytes, start + scale_axis::Z_OWNER)? != z
+        || View::u32_le_at(bytes, start + scale_axis::GROUP_COUNT)? != scale_axis::GROUP_COUNT_VALUE
+        || marked_record_reference(bytes, start + scale_axis::GROUP_REFERENCE)? != group
+    {
+        return None;
+    }
+    scale_guid_closes_prefix(
+        bytes,
+        start + scale_axis::LEN,
+        scope.reference_count_offset(),
+    )?;
+    let point = exact_point_data_construction(bytes, records, [&center], stream_types)?;
+    let stream = native_stream(&scope.id)?;
+    let factor = |owner_index, ordinal, kind| {
+        let mut owners = parameter_owners.iter().filter(|owner| {
+            native_stream(owner.id()) == Some(stream) && owner.record_index() == owner_index
+        });
+        let owner = owners.next()?;
+        if owners.next().is_some()
+            || owner.scope_record_index() != scope.record_index
+            || owner.local_ordinal() != ordinal
+            || owner.text_value().is_some()
+        {
+            return None;
+        }
+        let mut matches = parameters.iter().filter(|parameter| {
+            native_stream(&parameter.id) == Some(stream)
+                && parameter.record_index == owner.parameter_record_index()
+        });
+        let parameter = matches.next()?;
+        if matches.next().is_some()
+            || parameter.owner_record_index() != Some(owner_index)
+            || parameter.source_kind_str() != kind
+            || parameter.evaluated_value() != owner.evaluated_value()
+        {
+            return None;
+        }
+        Some((
+            PositiveReal::new(owner.evaluated_value().get())?,
+            owner.evaluated_value_offset(),
+        ))
+    };
+    let (x, x_at) = factor(x, 0, "ScaleX")?;
+    let (y, y_at) = factor(y, 1, "ScaleY")?;
+    let (z, z_at) = factor(z, 2, "ScaleZ")?;
+    Some(DesignScaleOperation {
+        body_group_record_index: group,
+        further_body_group_record_indices: Vec::new(),
+        center_record_index: center,
+        center_position: Some(Located {
+            value: point.position,
+            offset: point.position_offset,
+        }),
+        factors: DesignScaleFactors::PerAxis {
+            factors: [x, y, z],
+            offsets: [x_at, y_at, z_at],
+        },
+        matrix_offset: None,
+    })
+}
+
 pub(super) fn exact_scale_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<Option<DesignScaleOperation>, cadmpeg_core::CodecError> {
+) -> Option<DesignScaleOperation> {
+    if scope.kind() != scope::DesignFeatureKind::Scale {
+        return None;
+    }
     let reference_count = scope.reference_members().len();
+    let payload_length = parameter_scope_payload_length(scope);
+    let named = scope.label.is_some();
     let payload_form = matches!(
-        (parameter_scope_payload_length(scope), reference_count),
-        (Some(297 | 299), 5) | (Some(308), 6)
-    );
+        (payload_length, reference_count),
+        (Some(297..=299), 5) | (Some(308), 6)
+    ) || (named && (payload_length, reference_count) == (Some(310), 6));
     let english_frame_form = matches!(
         (scope.frame_length(), reference_count),
         (307 | 309, 5) | (318, 6)
     );
-    let mut read_by_english_frame = false;
-    let operation = (|| -> Option<Result<DesignScaleOperation, cadmpeg_core::CodecError>> {
-        if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Scale) {
-            return None;
-        }
+    let modern_form = matches!(payload_length, Some(302 | 303)) && reference_count == 5;
+    let read_by_english_frame = !modern_form && !payload_form && english_frame_form;
+    let operation = (|| {
         let start = usize::try_from(scope.byte_offset()).ok()?;
         let (body_group_record_index, center_record_index, uniform_factor_offset, center) =
-            if parameter_scope_payload_length(scope) == Some(303)
-                && scope.reference_members().len() == 5
-            {
+            if modern_form {
+                if payload_length == Some(302) {
+                    scale_guid_closes_prefix(
+                        bytes,
+                        start + crate::layout::scale_modern_operation_prefix::LEN,
+                        scope.reference_count_offset(),
+                    )?;
+                }
                 let [factor_record_index, body_group_record_index, _, _, center_record_index] =
                     scope.reference_members().values_array()?;
                 if View::u32_le_at(bytes, start + 20)? != 1
@@ -1055,10 +1381,7 @@ pub(super) fn exact_scale_operation(
                     start + 25,
                     center,
                 )
-            } else if scope.kind() == scope::DesignFeatureKind::Scale
-                && (payload_form || english_frame_form)
-            {
-                read_by_english_frame = !payload_form;
+            } else if payload_form || english_frame_form {
                 if read_by_english_frame && scope.frame_length() == 309 {
                     let (guid, _) = crate::bytes::lp_utf16_bounded_view(
                         bytes,
@@ -1076,24 +1399,21 @@ pub(super) fn exact_scale_operation(
                         return None;
                     }
                 }
-                if parameter_scope_payload_length(scope) == Some(299) {
-                    let (guid, _) = crate::bytes::lp_utf16_bounded_view(
+                if matches!(payload_length, Some(298 | 299 | 310)) {
+                    scale_guid_closes_prefix(
                         bytes,
-                        start.checked_add(75)?,
-                        36..=36,
+                        start + scale_legacy_head::NULL_GUID_CODE_UNIT_COUNT,
+                        scope.reference_count_offset(),
                     )?;
-                    if !guid.eq_str("00000000-0000-0000-0000-000000000000")
-                        || View::u24_le_at(bytes, start.checked_add(151)?)? != 0
-                        || scope.reference_count_offset() != scope.byte_offset().checked_add(154)?
-                        || scope.kind_offset() != scope.byte_offset().checked_add(221)?
-                        || scope.feature_ordinal_offset()
-                            != scope
-                                .paired_byte_offset()
-                                .checked_sub(u64::try_from(scale_tail::LEN).ok()?)?
-                        || scope.previous_history_state_id_offset()
-                            != scope.feature_ordinal_offset().checked_add(
-                                u64::try_from(scale_tail::PREVIOUS_HISTORY_STATE_ID).ok()?,
-                            )
+                    if scope.reference_count_offset()
+                        != scope
+                            .byte_offset()
+                            .checked_add(u64_from_index(scale_legacy_head::REFERENCE_COUNT))?
+                        || (!named
+                            && scope.previous_history_state_id_offset()
+                                != scope.feature_ordinal_offset().checked_add(u64_from_index(
+                                    scale_tail::PREVIOUS_HISTORY_STATE_ID,
+                                )))
                     {
                         return None;
                     }
@@ -1113,6 +1433,14 @@ pub(super) fn exact_scale_operation(
                 {
                     return None;
                 }
+                if payload_length == Some(310) && named {
+                    let [_, _, first, second, _, _] = scope.reference_members().values_array()?;
+                    if group_member_indices(bytes, records, *body_group_record_index)?
+                        != [*first, *second]
+                    {
+                        return None;
+                    }
+                }
                 let point = exact_point_data_construction(
                     bytes,
                     records,
@@ -1130,7 +1458,7 @@ pub(super) fn exact_scale_operation(
             };
         let uniform_factor =
             cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, uniform_factor_offset)?)?;
-        Some(Ok(DesignScaleOperation {
+        Some(DesignScaleOperation {
             body_group_record_index,
             further_body_group_record_indices: Vec::new(),
             center_record_index,
@@ -1141,12 +1469,22 @@ pub(super) fn exact_scale_operation(
                 offset: u64_from_index(uniform_factor_offset),
             },
             matrix_offset: None,
-        }))
-    })()
-    .transpose()?;
-    let operation = match operation {
-        Some(operation) => Some(operation),
-        None => long_modern_scale(bytes, records, scope, stream_types).or_else(|| {
+        })
+    })();
+    if operation.is_some() && read_by_english_frame {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureScaleFrameLengthFormAssumed.note(format!(
+                "{} reads the legacy Scale form of its {}-byte frame; its {}-byte payload matches no form.",
+                scope.id,
+                scope.frame_length(),
+                payload_length.unwrap_or_default()
+            )),
+        );
+    }
+    operation
+        .or_else(|| long_modern_scale(bytes, records, scope, stream_types))
+        .or_else(|| counted_group_scale(bytes, records, scope, stream_types))
+        .or_else(|| {
             let (operation, word) = matrix_scale(bytes, records, scope, stream_types)?;
             if word != 0 {
                 losses.push(crate::loss::F3dLossCode::FeatureScaleMatrixWordAssumed.note(
@@ -1157,19 +1495,7 @@ pub(super) fn exact_scale_operation(
                 ));
             }
             Some(operation)
-        }),
-    };
-    if operation.is_some() && read_by_english_frame {
-        losses.push(
-            crate::loss::F3dLossCode::FeatureScaleFrameLengthFormAssumed.note(format!(
-                "{} reads the legacy Scale form of its {}-byte frame; its {}-byte payload matches no form.",
-                scope.id,
-                scope.frame_length(),
-                parameter_scope_payload_length(scope).unwrap_or_default()
-            )),
-        );
-    }
-    Ok(operation)
+        })
 }
 
 #[cfg(test)]

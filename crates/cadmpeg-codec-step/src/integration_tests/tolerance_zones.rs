@@ -4,8 +4,9 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::pmi::zones::ToleranceConstraints;
+use cadmpeg_ir::pmi::zones::{ToleranceZone, ToleranceZoneForm};
 use cadmpeg_ir::pmi::PmiDefinition;
+use cadmpeg_ir::scalar::{Length, PositiveLength};
 
 use crate::export::write_step;
 use crate::test_support::exchange::decode_inline;
@@ -29,21 +30,35 @@ const ZONES: &str = "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
 #42=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1);
 #99=UNRESOLVED_PRODUCT();";
 
-fn constraints<'a>(
-    result: &'a cadmpeg_ir::codec::DecodeResult,
-    name: &str,
-) -> &'a ToleranceConstraints {
+/// The zone fields of one named geometric tolerance.
+#[derive(Debug)]
+struct Constraints<'a> {
+    displacement: Option<Length>,
+    maximum: Option<PositiveLength>,
+    zones: &'a [ToleranceZone],
+}
+
+fn constraints<'a>(result: &'a cadmpeg_ir::codec::DecodeResult, name: &str) -> Constraints<'a> {
     result
         .ir()
         .model
         .pmi
         .iter()
         .find_map(|annotation| {
-            let PmiDefinition::GeometricTolerance { constraints, .. } = &annotation.definition
+            let PmiDefinition::GeometricTolerance {
+                displacement,
+                maximum_upper,
+                zones,
+                ..
+            } = &annotation.definition
             else {
                 return None;
             };
-            (annotation.name.as_deref() == Some(name)).then_some(constraints)
+            (annotation.name.as_deref() == Some(name)).then_some(Constraints {
+                displacement: *displacement,
+                maximum: *maximum_upper,
+                zones,
+            })
         })
         .expect("named tolerance")
 }
@@ -51,10 +66,10 @@ fn constraints<'a>(
 fn assert_constraints(result: &cadmpeg_ir::codec::DecodeResult) {
     let profile = constraints(result, "profile");
     assert!((profile.displacement.expect("displacement").get() - 0.75).abs() < EPS_ZONE_LENGTH);
-    let [zone] = profile.zones.as_slice() else {
+    let [zone] = profile.zones else {
         panic!("one zone: {profile:?}")
     };
-    assert_eq!(zone.form.as_str(), "cylindrical or circular");
+    assert_eq!(zone.form, ToleranceZoneForm::CylindricalOrCircular);
     let [projection] = zone.projections.as_slice() else {
         panic!("one projection: {zone:?}")
     };
@@ -137,7 +152,7 @@ fn invalid_projection_is_reported_instead_of_becoming_unprojected() {
 #[test]
 fn spherical_dimension_modifiers_round_trip_through_compound_items() {
     use crate::test_support::pmi_limits::LIMIT_DIMENSION;
-    use cadmpeg_ir::pmi::DimensionKind;
+    use cadmpeg_ir::pmi::{DimensionModifier, PmiDimensionKind as DimensionKind};
     let source = LIMIT_DIMENSION
         .replace("'diameter'", "'spherical diameter'")
         .replace("(#12,#11,#13)", "(#12,#11,#13,#16,#19)");
@@ -168,10 +183,14 @@ fn spherical_dimension_modifiers_round_trip_through_compound_items() {
                 }
             })
             .expect("dimension");
-        assert_eq!(dimension.kind(), &DimensionKind::SphericalDiameter);
+        assert_eq!(dimension.dimension, DimensionKind::SphericalDiameter);
         assert_eq!(
-            dimension.modifiers(),
-            ["auxiliary", "controlled radius", "statistical"]
+            dimension.modifiers,
+            [
+                DimensionModifier::Reference,
+                DimensionModifier::ControlledRadius,
+                DimensionModifier::Statistical
+            ]
         );
     }
 }
@@ -193,7 +212,7 @@ fn shared_tolerance_zone_ownership_is_reported_without_independent_zone_clones()
 fn a_projection_boundary_must_reference_a_shape_aspect() {
     let input = ZONES.replace("(#20,(#6),#6,#31,#32)", "(#20,(#99),#6,#31,#32)");
     let result = decode_inline(&input);
-    let [zone] = constraints(&result, "profile").zones.as_slice() else {
+    let [zone] = constraints(&result, "profile").zones else {
         panic!("one zone form")
     };
     assert!(zone.projections.is_empty());

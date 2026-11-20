@@ -75,33 +75,36 @@ fn assert_closed_cylinder(brep: &str) {
     let decoded = decode(brep);
     let ir = decoded.ir();
     assert_valid_document(ir);
-    assert_eq!(ir.model.bodies.len(), 1);
-    assert_eq!(ir.model.bodies[0].kind, BodyKind::Solid);
-    assert_eq!(ir.model.faces.len(), 3);
-    assert_eq!(ir.model.loops.len(), 3);
-    assert_eq!(ir.model.edges.len(), 4);
-    assert_eq!(ir.model.coedges.len(), 6);
-    let [shell] = ir.model.shells.as_slice() else {
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(ir.geometry.bodies[0].kind, BodyKind::Solid);
+    assert_eq!(ir.geometry.faces.len(), 3);
+    assert_eq!(ir.geometry.loops.len(), 3);
+    assert_eq!(ir.geometry.edges.len(), 4);
+    assert_eq!(ir.geometry.coedges.len(), 6);
+    let [shell] = ir.geometry.shells.as_slice() else {
         panic!("one closed shell");
     };
-    assert_eq!(shell.faces().len(), 3);
-    let [wire_edge] = shell.wire_edges() else {
+    assert_eq!(ir.geometry.shell_faces(&shell.id).count(), 3);
+    let [wire_edge] = shell.wire_edges().collect::<Vec<_>>()[..] else {
         panic!("additional edge remains shell wire geometry");
     };
     let edge = ir
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| &edge.id == wire_edge)
         .unwrap();
-    assert_ne!(edge.start, edge.end);
+    assert_ne!(
+        edge.ends.as_ref().unwrap().start,
+        edge.ends.as_ref().unwrap().end
+    );
     assert!(edge.curve().is_some());
     assert!(ir
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| &coedge.edge != wire_edge));
-    for face_loop in &ir.model.loops {
+    for face_loop in &ir.geometry.loops {
         let LoopBoundary::Ring(ring) = &face_loop.boundary else {
             panic!("boundary ring");
         };
@@ -110,20 +113,26 @@ fn assert_closed_cylinder(brep: &str) {
             .iter()
             .map(|id| {
                 let coedge = ir
-                    .model
+                    .geometry
                     .coedges
                     .iter()
                     .find(|coedge| &coedge.id == id)
                     .unwrap();
                 let edge = ir
-                    .model
+                    .geometry
                     .edges
                     .iter()
                     .find(|edge| edge.id == coedge.edge)
                     .unwrap();
                 match coedge.sense {
-                    Sense::Forward => (&edge.start, &edge.end),
-                    Sense::Reversed => (&edge.end, &edge.start),
+                    Sense::Forward => (
+                        &edge.ends.as_ref().unwrap().start,
+                        &edge.ends.as_ref().unwrap().end,
+                    ),
+                    Sense::Reversed => (
+                        &edge.ends.as_ref().unwrap().end,
+                        &edge.ends.as_ref().unwrap().start,
+                    ),
                 }
             })
             .collect();
@@ -186,8 +195,8 @@ fn mixed_wire_keeps_boundary_and_internal_edge_roles() {
 #[test]
 fn forward_open_edge_still_fails_boundary_ordering() {
     let decoded = decode(&CYLINDER.replace("i10 0", "+10 0"));
-    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Sheet);
-    assert_eq!(decoded.ir().model.loops.len(), 4);
+    assert_eq!(decoded.ir().geometry.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(decoded.ir().geometry.loops.len(), 4);
     let plan = cadmpeg_codec_step::StepCodec::default()
         .plan(
             EncodeInput::new(decoded.ir(), None),
@@ -210,17 +219,20 @@ fn repeated_internal_edge_uses_share_one_shell_wire_edge() {
 fn an_internal_use_of_a_boundary_edge_keeps_one_edge_owner() {
     let decoded = decode(&CYLINDER.replace("i10 0", "i11 0"));
     assert_valid_document(decoded.ir());
-    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Solid);
-    assert_eq!(decoded.ir().model.edges.len(), 3);
-    assert!(decoded.ir().model.shells[0].wire_edges().is_empty());
+    assert_eq!(decoded.ir().geometry.bodies[0].kind, BodyKind::Solid);
+    assert_eq!(decoded.ir().geometry.edges.len(), 3);
+    assert!(decoded.ir().geometry.shells[0]
+        .wire_edges()
+        .next()
+        .is_none());
 }
 
 #[test]
 fn a_face_root_keeps_its_internal_edge_as_shell_wire_geometry() {
     let decoded = decode(&CYLINDER.replace("\n+1 1 *", "\n+3 1 *"));
     assert_valid_document(decoded.ir());
-    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Sheet);
-    assert_eq!(decoded.ir().model.faces.len(), 1);
-    assert_eq!(decoded.ir().model.loops.len(), 1);
-    assert_eq!(decoded.ir().model.shells[0].wire_edges().len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.loops.len(), 1);
+    assert_eq!(decoded.ir().geometry.shells[0].wire_edges().count(), 1);
 }

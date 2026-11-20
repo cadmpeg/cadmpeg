@@ -65,7 +65,7 @@ fn authored_binary_exact_shape_declared_reading_matches_source_dimensions() {
     assert_eq!(sphere_use.orientation, TextOrientation::Forward);
     let sphere = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| {
@@ -77,7 +77,7 @@ fn authored_binary_exact_shape_declared_reading_matches_source_dimensions() {
         .unwrap();
     let face = decoded
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.surface == sphere.id)
