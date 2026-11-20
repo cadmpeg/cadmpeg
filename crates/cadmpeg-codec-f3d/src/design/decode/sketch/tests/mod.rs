@@ -9,6 +9,7 @@
 mod curves;
 mod index;
 mod lost_edge;
+mod member_run;
 mod persistent;
 mod placement;
 mod points;

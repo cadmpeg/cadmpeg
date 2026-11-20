@@ -1028,13 +1028,24 @@ fn sketch_graph_point(record_index: u32) -> SketchPoint {
     .unwrap()
 }
 
+/// The Geometry member bytes from offset 11 through the zero byte after an
+/// empty display name, with a direct-container reference to record 300.
+fn push_unnamed_contained_member_head(bytes: &mut Vec<u8>) {
+    bytes.extend_from_slice(&[0; 25]);
+    bytes.push(1);
+    bytes.extend_from_slice(&300u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.push(0);
+}
+
 #[test]
 fn sketch_member_run_counts_base_point_and_stops_at_count() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"282");
     bytes.extend_from_slice(&100u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 41]);
+    push_unnamed_contained_member_head(&mut bytes);
     bytes.extend_from_slice(&3u32.to_le_bytes());
     for value in [1130u32, 1131, 1179] {
         bytes.push(1);
@@ -1151,7 +1162,7 @@ fn sketch_member_run_backfills_relation_free_owners() {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"282");
     bytes.extend_from_slice(&100u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 41]);
+    push_unnamed_contained_member_head(&mut bytes);
     bytes.extend_from_slice(&3u32.to_le_bytes());
     let mut member_offsets = Vec::new();
     member_offsets.push(u64_from_index(bytes.len() + 1));

@@ -34169,6 +34169,2433 @@ type = "bytes[51]"
 source = "spec"
 anchor = "a 51-byte typed reference at offset 23"
 
+# --- Records of a Base Feature design ----------------------------------------
+
+[[record]]
+name = "base_feature_feature_timeline"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "of a `Base Feature` design is 47 bytes: the indexed header, ten zero bytes, the timeline context"
+size = 47
+note = "Feature timeline record of type `2F4C1849-1A5A-4F6C-A086-8DD445CBF94B`, type version `3`, with one item."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "is 47 bytes: the indexed header"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "the indexed header, ten zero bytes, the timeline context"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "timeline_context"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "ten zero bytes, the timeline context, u32 item count `1`"
+
+[[record.field]]
+name = "item_count"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "u32 item count `1`, and the `Base Feature` scope"
+value = 1
+
+[[record.field]]
+name = "base_feature_scope"
+offset = 36
+type = "bytes[11]"
+source = "spec"
+anchor = "u32 item count `1`, and the `Base Feature` scope"
+
+[[record]]
+name = "base_feature_body_reference"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "The form with no appearance entry continues after the LP-UTF16 name `0_<index>`"
+size = 891
+note = "Body-reference record of type `D3937028-C20C-4E65-B010-94AD418A5C20`, type version `19`, with a three-digit record index, appearance-entry count `k = 0`, and the appearance `PrismOpaque`. The record is `869 + 2a` bytes for an appearance name of `a` code units; the fields after that name move with it."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "| 9 \u00d7 u8 | zero |"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "property_flag"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "| 20 | u8 | `1` |"
+value = 1
+
+[[record.field]]
+name = "property_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "`1`, the property count"
+value = 1
+
+[[record.field]]
+name = "property_name_length"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "property name: `BASEFEAT_DM_BODY_REF` in the design body-reference record"
+value = 20
+
+[[record.field]]
+name = "property_name"
+offset = 29
+type = "bytes[20]"
+source = "spec"
+anchor = "property name: `BASEFEAT_DM_BODY_REF` in the design body-reference record"
+
+[[record.field]]
+name = "meta_type_length"
+offset = 49
+type = "u32"
+source = "spec"
+anchor = "| \u2014 | LP-ASCII | `PassiveRefMetaType` |"
+value = 18
+
+[[record.field]]
+name = "meta_type"
+offset = 53
+type = "bytes[18]"
+source = "spec"
+anchor = "| \u2014 | LP-ASCII | `PassiveRefMetaType` |"
+value = "PassiveRefMetaType"
+
+[[record.field]]
+name = "other_body_reference"
+offset = 71
+type = "bytes[11]"
+source = "spec"
+anchor = "the other body-reference record of the body"
+
+[[record.field]]
+name = "act_key_length"
+offset = 82
+type = "u32"
+source = "spec"
+anchor = "`0_` followed by the decimal record index of this record"
+value = 5
+
+[[record.field]]
+name = "act_key_code_units"
+offset = 86
+type = "bytes[10]"
+source = "spec"
+anchor = "`0_` followed by the decimal record index of this record"
+
+[[record.field]]
+name = "body_kind"
+offset = 96
+type = "u32"
+source = "spec"
+anchor = "body kind: `2` for a solid body, `4` for a sheet body"
+
+[[record.field]]
+name = "area"
+offset = 100
+type = "f64"
+source = "spec"
+anchor = "| f64 | area |"
+
+[[record.field]]
+name = "area_accuracy"
+offset = 108
+type = "f64"
+source = "spec"
+anchor = "relative accuracy of the area"
+
+[[record.field]]
+name = "centroid"
+offset = 116
+type = "f64[3]"
+source = "spec"
+anchor = "| 3 \u00d7 f64 | centroid |"
+
+[[record.field]]
+name = "volume_centroid_accuracy"
+offset = 140
+type = "f64"
+source = "spec"
+anchor = "relative accuracy of the volume and the centroid"
+
+[[record.field]]
+name = "second_moments"
+offset = 148
+type = "f64[3]"
+source = "spec"
+anchor = "`Ixx`, `Iyy`, `Izz`: second moments of the volume about the coordinate axes"
+
+[[record.field]]
+name = "products_of_inertia"
+offset = 172
+type = "f64[3]"
+source = "spec"
+anchor = "the inertia-tensor entries `xy`, `xz`, `yz`"
+
+[[record.field]]
+name = "mass_block_guid_length"
+offset = 196
+type = "u32"
+source = "spec"
+anchor = "mass-block GUID of 36 code units"
+value = 36
+
+[[record.field]]
+name = "mass_block_guid_code_units"
+offset = 200
+type = "bytes[72]"
+source = "spec"
+anchor = "mass-block GUID of 36 code units"
+
+[[record.field]]
+name = "volume"
+offset = 272
+type = "f64"
+source = "spec"
+anchor = "| f64 | volume |"
+
+[[record.field]]
+name = "volume_accuracy"
+offset = 280
+type = "f64"
+source = "spec"
+anchor = "relative accuracy of the volume, equal to the relative accuracy of the volume and the centroid"
+
+[[record.field]]
+name = "body_ordinal"
+offset = 288
+type = "u32"
+source = "spec"
+anchor = "body ordinal, from `1`"
+
+[[record.field]]
+name = "appearance_entry_flag"
+offset = 292
+type = "u8"
+source = "spec"
+anchor = "appearance-entry count `k`: `0`"
+value = 1
+
+[[record.field]]
+name = "appearance_entry_count"
+offset = 293
+type = "u32"
+source = "spec"
+anchor = "appearance-entry count `k`: `0`"
+value = 0
+
+[[record.field]]
+name = "constant_word"
+offset = 297
+type = "u32"
+source = "spec"
+anchor = "`0x00236810`"
+value = 0x00236810
+
+[[record.field]]
+name = "constant_flag"
+offset = 301
+type = "u8"
+source = "spec"
+anchor = "appearance-entry count `k`: `0` | | u32 | `0x00236810` | | u8 | `1` |"
+value = 1
+
+[[record.field]]
+name = "design_flag"
+offset = 302
+type = "u8"
+source = "spec"
+anchor = "`1` in the design body-reference record, `0` in the parameter body-reference record"
+
+[[record.field]]
+name = "minus_one"
+offset = 303
+type = "f64[4]"
+source = "spec"
+anchor = "| 4 \u00d7 f64 | `-1.0` |"
+
+[[record.field]]
+name = "unit_scale"
+offset = 335
+type = "f32"
+source = "spec"
+anchor = "| 4 \u00d7 f64 | `-1.0` | | f32 | `1.0` |"
+
+[[record.field]]
+name = "zero_run"
+offset = 339
+type = "bytes[10]"
+source = "spec"
+anchor = "| 10 \u00d7 u8 | zero |"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "node_guid_length"
+offset = 349
+type = "u32"
+source = "spec"
+anchor = "node GUID in the design body-reference record, parameter GUID in the parameter body-reference record"
+value = 36
+
+[[record.field]]
+name = "node_guid_code_units"
+offset = 353
+type = "bytes[72]"
+source = "spec"
+anchor = "node GUID in the design body-reference record, parameter GUID in the parameter body-reference record"
+
+[[record.field]]
+name = "material_asset_manager"
+offset = 425
+type = "bytes[11]"
+source = "spec"
+anchor = "| reference | the Protein asset manager |"
+
+[[record.field]]
+name = "material_guid_length"
+offset = 436
+type = "u32"
+source = "spec"
+anchor = "physical-material instance GUID, 36 code units"
+value = 36
+
+[[record.field]]
+name = "material_guid_code_units"
+offset = 440
+type = "bytes[72]"
+source = "spec"
+anchor = "physical-material instance GUID, 36 code units"
+
+[[record.field]]
+name = "material_library_length"
+offset = 512
+type = "u32"
+source = "spec"
+anchor = "physical-material library `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C`"
+value = 36
+
+[[record.field]]
+name = "material_library_code_units"
+offset = 516
+type = "bytes[72]"
+source = "spec"
+anchor = "physical-material library `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C`"
+
+[[record.field]]
+name = "material_word"
+offset = 588
+type = "u32"
+source = "spec"
+anchor = "physical-material library `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C` | | u32 | `0` |"
+value = 0
+
+[[record.field]]
+name = "material_name_length"
+offset = 592
+type = "u32"
+source = "spec"
+anchor = "physical material `PrismMaterial-022`"
+value = 17
+
+[[record.field]]
+name = "material_name_code_units"
+offset = 596
+type = "bytes[34]"
+source = "spec"
+anchor = "physical material `PrismMaterial-022`"
+
+[[record.field]]
+name = "body_owner"
+offset = 630
+type = "bytes[11]"
+source = "spec"
+anchor = "the `Body` owner: the design `Body` owner in the design body-reference record"
+
+[[record.field]]
+name = "null_reference"
+offset = 641
+type = "u8"
+source = "spec"
+anchor = "| u8 | `0`, a null reference |"
+value = 0
+
+[[record.field]]
+name = "scene_node"
+offset = 642
+type = "bytes[11]"
+source = "spec"
+anchor = "the record's Scene node"
+
+[[record.field]]
+name = "scene_word"
+offset = 653
+type = "u32"
+source = "spec"
+anchor = "the record's Scene node (type `702b9cd2-537c-429e-8cc4-22beeeb98c37`) | | u32 | `0` |"
+value = 0
+
+[[record.field]]
+name = "colour"
+offset = 657
+type = "f32[4]"
+source = "spec"
+anchor = "appearance colour: `0.9647059`, `0.9647059`, `0.9529412`, `1.0`"
+
+[[record.field]]
+name = "appearance_asset_manager"
+offset = 673
+type = "bytes[11]"
+source = "spec"
+anchor = "appearance colour: `0.9647059`, `0.9647059`, `0.9529412`, `1.0` | | reference | the Protein asset manager |"
+
+[[record.field]]
+name = "appearance_flag"
+offset = 684
+type = "u8"
+source = "spec"
+anchor = "appearance flag `1`: the appearance is an appearance asset"
+
+[[record.field]]
+name = "appearance_guid_length"
+offset = 685
+type = "u32"
+source = "spec"
+anchor = "appearance instance GUID, 36 code units"
+value = 36
+
+[[record.field]]
+name = "appearance_guid_code_units"
+offset = 689
+type = "bytes[72]"
+source = "spec"
+anchor = "appearance instance GUID, 36 code units"
+
+[[record.field]]
+name = "appearance_library_length"
+offset = 761
+type = "u32"
+source = "spec"
+anchor = "appearance library `BA5EE55E-9982-449B-9D66-9F036540E140`"
+value = 36
+
+[[record.field]]
+name = "appearance_library_code_units"
+offset = 765
+type = "bytes[72]"
+source = "spec"
+anchor = "appearance library `BA5EE55E-9982-449B-9D66-9F036540E140`"
+
+[[record.field]]
+name = "appearance_word"
+offset = 837
+type = "u32"
+source = "spec"
+anchor = "appearance library `BA5EE55E-9982-449B-9D66-9F036540E140` | | u32 | `0` |"
+value = 0
+
+[[record.field]]
+name = "appearance_name_length"
+offset = 841
+type = "u32"
+source = "spec"
+anchor = "appearance `PrismOpaque`"
+value = 11
+
+[[record.field]]
+name = "appearance_name_code_units"
+offset = 845
+type = "bytes[22]"
+source = "spec"
+anchor = "appearance `PrismOpaque`"
+
+[[record.field]]
+name = "tail_word"
+offset = 867
+type = "u32"
+source = "spec"
+anchor = "appearance `PrismOpaque` | | u32 | `0` |"
+value = 0
+
+[[record.field]]
+name = "tail_scale"
+offset = 871
+type = "f32"
+source = "spec"
+anchor = "appearance `PrismOpaque` | | u32 | `0` | | f32 | `1.0` |"
+
+[[record.field]]
+name = "tail_flag"
+offset = 875
+type = "u8"
+source = "spec"
+anchor = "| f32 | `1.0` | | u8 | `1` | | u32 | `0` | | reference | the `Body` owner of the first presentation envelope |"
+value = 1
+
+[[record.field]]
+name = "tail_zero"
+offset = 876
+type = "u32"
+source = "spec"
+anchor = "| u8 | `1` | | u32 | `0` | | reference | the `Body` owner of the first presentation envelope |"
+value = 0
+
+[[record.field]]
+name = "body_owner_repeat"
+offset = 880
+type = "bytes[11]"
+source = "spec"
+anchor = "the `Body` owner of the first presentation envelope"
+
+[[record]]
+name = "base_feature_parameter_collection"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "of a design with `n` parameters is `61 + 11n` bytes when the 19 bytes after its indexed header are zero"
+size = 61
+note = "Parameter collection of type `B0556F58-EE09-46A7-B18F-E296F48E5B13`, type version `4`, with `n = 0`. Each parameter reference adds eleven bytes before the component-aggregate reference."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[19]"
+source = "spec"
+anchor = "| 19 \u00d7 u8 | zero |"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "count_c"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "count `c`, at least `n`"
+
+[[record.field]]
+name = "companion"
+offset = 34
+type = "bytes[11]"
+source = "spec"
+anchor = "its record of type `E276745D-D84E-40D5-88BC-8C94DD4ACCDF`"
+
+[[record.field]]
+name = "separator"
+offset = 45
+type = "u8"
+source = "spec"
+anchor = "its record of type `E276745D-D84E-40D5-88BC-8C94DD4ACCDF` | | u8 | `0` |"
+value = 0
+
+[[record.field]]
+name = "parameter_count"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "parameter count `n`"
+value = 0
+
+[[record.field]]
+name = "component_aggregate"
+offset = 50
+type = "bytes[11]"
+source = "spec"
+anchor = "| reference | the component aggregate |"
+
+[[record]]
+name = "base_feature_parameter_collection_companion"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "is 44 bytes: the indexed header, eight zero bytes, `u8 1`, u32 `1`, the parameter collection, and nine zero bytes"
+size = 44
+note = "Record of type `E276745D-D84E-40D5-88BC-8C94DD4ACCDF`, type version `1`."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "is 44 bytes: the indexed header"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "the indexed header, eight zero bytes, `u8 1`"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "flag"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "eight zero bytes, `u8 1`, u32 `1`"
+value = 1
+
+[[record.field]]
+name = "count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "`u8 1`, u32 `1`, the parameter collection"
+value = 1
+
+[[record.field]]
+name = "parameter_collection"
+offset = 24
+type = "bytes[11]"
+source = "spec"
+anchor = "u32 `1`, the parameter collection, and nine zero bytes"
+
+[[record.field]]
+name = "tail_zero"
+offset = 35
+type = "bytes[9]"
+source = "spec"
+anchor = "the parameter collection, and nine zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record]]
+name = "base_feature_component_aggregate_prefix"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "stores these fields when its property-group count `G` is `0`"
+size = 892
+note = "Component aggregate of type `E03784ED-5E19-4E14-B9F2-3B07017018CD`, type version `23`, with property-group count `G = 0`, through the code-unit count of the component name. A property group is inserted at offset 122 and moves every later offset by its length."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "| 8 \u00d7 u8 | zero |"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "flag_zero"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "| 8 \u00d7 u8 | zero | | u8 | `0` |"
+value = 0
+
+[[record.field]]
+name = "word_one"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "| u8 | `0` | | u32 | `1` |"
+value = 1
+
+[[record.field]]
+name = "flag_a"
+offset = 24
+type = "u8"
+source = "spec"
+anchor = "| u32 | `1` | | u8 | `0` | | u8 | `1` |"
+value = 0
+
+[[record.field]]
+name = "flag_b"
+offset = 25
+type = "u8"
+source = "spec"
+anchor = "| u8 | `0` | | u8 | `1` | | f32 | `1.0` |"
+value = 1
+
+[[record.field]]
+name = "scale"
+offset = 26
+type = "f32"
+source = "spec"
+anchor = "| u8 | `1` | | f32 | `1.0` |"
+
+[[record.field]]
+name = "record_8ef00d65"
+offset = 30
+type = "bytes[11]"
+source = "spec"
+anchor = "records of types `8EF00D65-F18D-4179-A644-FE0CA39943D6`"
+
+[[record.field]]
+name = "record_878c70a7"
+offset = 41
+type = "bytes[11]"
+source = "spec"
+anchor = "records of types `8EF00D65-F18D-4179-A644-FE0CA39943D6`"
+
+[[record.field]]
+name = "record_1e650ea7"
+offset = 52
+type = "bytes[11]"
+source = "spec"
+anchor = "records of types `8EF00D65-F18D-4179-A644-FE0CA39943D6`"
+
+[[record.field]]
+name = "record_f670456d"
+offset = 63
+type = "bytes[11]"
+source = "spec"
+anchor = "records of types `8EF00D65-F18D-4179-A644-FE0CA39943D6`"
+
+[[record.field]]
+name = "record_b4cde096"
+offset = 74
+type = "bytes[11]"
+source = "spec"
+anchor = "records of types `8EF00D65-F18D-4179-A644-FE0CA39943D6`"
+
+[[record.field]]
+name = "origin_container"
+offset = 85
+type = "bytes[11]"
+source = "spec"
+anchor = "| reference | the origin container |"
+
+[[record.field]]
+name = "record_64435f6e"
+offset = 96
+type = "bytes[11]"
+source = "spec"
+anchor = "records of types `64435F6E-077A-4f6b-A7B6-537BF84BA414`"
+
+[[record.field]]
+name = "record_bf7a6b8b"
+offset = 107
+type = "bytes[11]"
+source = "spec"
+anchor = "records of types `64435F6E-077A-4f6b-A7B6-537BF84BA414`, `BF7A6B8B-6E56-4C84-8882-1E8A1C1FE487`"
+
+[[record.field]]
+name = "property_group_count"
+offset = 118
+type = "u32"
+source = "spec"
+anchor = "property-group count `G`"
+value = 0
+
+[[record.field]]
+name = "next_persistent_identity"
+offset = 122
+type = "u64"
+source = "spec"
+anchor = "next value of the persistent-identity counter"
+
+[[record.field]]
+name = "record_ad3f9695"
+offset = 130
+type = "bytes[11]"
+source = "spec"
+anchor = "record of type `AD3F9695-7FDF-4708-AE05-B21309CDE969`"
+
+[[record.field]]
+name = "parameter_body_owner"
+offset = 141
+type = "bytes[11]"
+source = "spec"
+anchor = "the parameter `Body` owner (type `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA`)"
+
+[[record.field]]
+name = "record_91461d14"
+offset = 152
+type = "bytes[11]"
+source = "spec"
+anchor = "record of type `91461D14-4F77-44B2-9E79-8B052566D9CE`"
+
+[[record.field]]
+name = "container_count"
+offset = 163
+type = "u32"
+source = "spec"
+anchor = "record of type `91461D14-4F77-44B2-9E79-8B052566D9CE` | | u32 | `1` |"
+value = 1
+
+[[record.field]]
+name = "arrangements_container_length"
+offset = 167
+type = "u32"
+source = "spec"
+anchor = "`arrangementsContainer`"
+value = 21
+
+[[record.field]]
+name = "arrangements_container_code_units"
+offset = 171
+type = "bytes[42]"
+source = "spec"
+anchor = "`arrangementsContainer`"
+
+[[record.field]]
+name = "record_60f93de2"
+offset = 213
+type = "bytes[11]"
+source = "spec"
+anchor = "the record of type `60F93DE2-6329-4598-A6AF-096AC63E627C`"
+
+[[record.field]]
+name = "timeline_context"
+offset = 224
+type = "bytes[11]"
+source = "spec"
+anchor = "the record of type `60F93DE2-6329-4598-A6AF-096AC63E627C`, the timeline context"
+
+[[record.field]]
+name = "record_7e84430b"
+offset = 235
+type = "bytes[11]"
+source = "spec"
+anchor = "the record of type `7E84430B-74C7-4B67-92D0-4131A0B79109`"
+
+[[record.field]]
+name = "null_reference_a"
+offset = 246
+type = "u8"
+source = "spec"
+anchor = "| u8 | `0`, a null reference |"
+value = 0
+
+[[record.field]]
+name = "record_fa21074e"
+offset = 247
+type = "bytes[11]"
+source = "spec"
+anchor = "record of type `FA21074E-32D2-4DC9-9E77-8F53D7E7D96B`"
+
+[[record.field]]
+name = "null_reference_b"
+offset = 258
+type = "u8"
+source = "spec"
+anchor = "| u8 | `0`, a null reference |"
+value = 0
+
+[[record.field]]
+name = "record_3978701c"
+offset = 259
+type = "bytes[11]"
+source = "spec"
+anchor = "record of type `3978701C-58EC-401A-8D24-A6FF4103DC24`"
+
+[[record.field]]
+name = "zero_b"
+offset = 270
+type = "bytes[6]"
+source = "spec"
+anchor = "| 6 \u00d7 u8 | zero |"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "paired_header"
+offset = 276
+type = "bytes[11]"
+source = "spec"
+anchor = "paired indexed header"
+
+[[record.field]]
+name = "zero_c"
+offset = 287
+type = "bytes[8]"
+source = "spec"
+anchor = "paired indexed header | | 8 \u00d7 u8 | zero |"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "record_0c5dab90"
+offset = 295
+type = "bytes[11]"
+source = "spec"
+anchor = "records of types `0C5DAB90-715E-49EA-A56E-E30F2328F43E`"
+
+[[record.field]]
+name = "record_47c245a2"
+offset = 306
+type = "bytes[11]"
+source = "spec"
+anchor = "records of types `0C5DAB90-715E-49EA-A56E-E30F2328F43E`, `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`"
+
+[[record.field]]
+name = "minus_one"
+offset = 317
+type = "f64[4]"
+source = "spec"
+anchor = "| 4 \u00d7 f64 | `-1.0` |"
+
+[[record.field]]
+name = "record_ac202226"
+offset = 349
+type = "bytes[11]"
+source = "spec"
+anchor = "records of types `AC202226-A700-462A-BC41-13631C9E95D5`"
+
+[[record.field]]
+name = "record_596c8b98"
+offset = 360
+type = "bytes[11]"
+source = "spec"
+anchor = "records of types `AC202226-A700-462A-BC41-13631C9E95D5`, `596C8B98-D176-4E40-B294-6404BAD566BC`"
+
+[[record.field]]
+name = "design_body_owner"
+offset = 371
+type = "bytes[11]"
+source = "spec"
+anchor = "the design `Body` owner (type `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA`)"
+
+[[record.field]]
+name = "record_0dbf95ed"
+offset = 382
+type = "bytes[11]"
+source = "spec"
+anchor = "records of types `0DBF95ED-82D2-4CC4-936D-642370679CBB`"
+
+[[record.field]]
+name = "record_fcb17d75"
+offset = 393
+type = "bytes[11]"
+source = "spec"
+anchor = "records of types `0DBF95ED-82D2-4CC4-936D-642370679CBB`, `FCB17D75-8538-4E8E-BDBE-CB4FE2120DB7`"
+
+[[record.field]]
+name = "record_77ef6384"
+offset = 404
+type = "bytes[11]"
+source = "spec"
+anchor = "`FCB17D75-8538-4E8E-BDBE-CB4FE2120DB7`, `77EF6384-409E-498D-8167-BCA537533B35`"
+
+[[record.field]]
+name = "parameter_collection"
+offset = 415
+type = "bytes[11]"
+source = "spec"
+anchor = "| reference | the parameter collection |"
+
+[[record.field]]
+name = "null_reference_c"
+offset = 426
+type = "u8"
+source = "spec"
+anchor = "| reference | the parameter collection | | u8 | `0`, a null reference |"
+value = 0
+
+[[record.field]]
+name = "record_30dcfc57"
+offset = 427
+type = "bytes[11]"
+source = "spec"
+anchor = "the record of type `30DCFC57-8E13-405B-9295-5CF74AC1FB39`"
+
+[[record.field]]
+name = "sketch_collection"
+offset = 438
+type = "bytes[11]"
+source = "spec"
+anchor = "the record of type `30DCFC57-8E13-405B-9295-5CF74AC1FB39`, the sketch collection"
+
+[[record.field]]
+name = "record_372234a0"
+offset = 449
+type = "bytes[11]"
+source = "spec"
+anchor = "the records of types `372234A0-2A6C-4122-8047-E74DBA04F326`"
+
+[[record.field]]
+name = "record_a8635b5f"
+offset = 460
+type = "bytes[11]"
+source = "spec"
+anchor = "the records of types `372234A0-2A6C-4122-8047-E74DBA04F326` and `A8635B5F-1E2C-45FD-8BA9-0173B0FEB75E`"
+
+[[record.field]]
+name = "colour_word"
+offset = 471
+type = "u32"
+source = "spec"
+anchor = "`A8635B5F-1E2C-45FD-8BA9-0173B0FEB75E` | | u32 | `0` |"
+value = 0
+
+[[record.field]]
+name = "colour_flag"
+offset = 475
+type = "u8"
+source = "spec"
+anchor = "| u32 | `0` | | u8 | `0` | | 4 \u00d7 f32 | component colour"
+value = 0
+
+[[record.field]]
+name = "colour"
+offset = 476
+type = "f32[4]"
+source = "spec"
+anchor = "component colour: red, green, blue, and alpha `1.0`"
+
+[[record.field]]
+name = "material_asset_manager"
+offset = 492
+type = "bytes[11]"
+source = "spec"
+anchor = "component colour: red, green, blue, and alpha `1.0` | | reference | the Protein asset manager |"
+
+[[record.field]]
+name = "material_guid_length"
+offset = 503
+type = "u32"
+source = "spec"
+anchor = "physical-material instance GUID, 36 code units"
+value = 36
+
+[[record.field]]
+name = "material_guid_code_units"
+offset = 507
+type = "bytes[72]"
+source = "spec"
+anchor = "physical-material instance GUID, 36 code units"
+
+[[record.field]]
+name = "material_library_length"
+offset = 579
+type = "u32"
+source = "spec"
+anchor = "physical-material library `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C`"
+value = 36
+
+[[record.field]]
+name = "material_library_code_units"
+offset = 583
+type = "bytes[72]"
+source = "spec"
+anchor = "physical-material library `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C`"
+
+[[record.field]]
+name = "material_word"
+offset = 655
+type = "u32"
+source = "spec"
+anchor = "physical-material library `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C` | | u32 | `0` |"
+value = 0
+
+[[record.field]]
+name = "material_name_length"
+offset = 659
+type = "u32"
+source = "spec"
+anchor = "physical material `PrismMaterial-022`"
+value = 17
+
+[[record.field]]
+name = "material_name_code_units"
+offset = 663
+type = "bytes[34]"
+source = "spec"
+anchor = "physical material `PrismMaterial-022`"
+
+[[record.field]]
+name = "reference_flag"
+offset = 697
+type = "u8"
+source = "spec"
+anchor = "physical material `PrismMaterial-022` | | u8 | `1` |"
+value = 1
+
+[[record.field]]
+name = "record_f9cb8717"
+offset = 698
+type = "bytes[11]"
+source = "spec"
+anchor = "record of type `F9CB8717-EB86-47F2-AAA7-39E142C57A09`"
+
+[[record.field]]
+name = "first_lowercase_guid_length"
+offset = 709
+type = "u32"
+source = "spec"
+anchor = "GUID of 36 lowercase code units"
+value = 36
+
+[[record.field]]
+name = "first_lowercase_guid_code_units"
+offset = 713
+type = "bytes[72]"
+source = "spec"
+anchor = "GUID of 36 lowercase code units"
+
+[[record.field]]
+name = "act_component_record"
+offset = 785
+type = "bytes[15]"
+source = "spec"
+anchor = "| cross-segment reference | the ACT component record |"
+
+[[record.field]]
+name = "component_naming_space"
+offset = 800
+type = "bytes[11]"
+source = "spec"
+anchor = "the component naming space (type `904F885E-D859-4755-A7EF-6EBED8732FAD`)"
+
+[[record.field]]
+name = "naming_space_separator"
+offset = 811
+type = "u8"
+source = "spec"
+anchor = "the component naming space (type `904F885E-D859-4755-A7EF-6EBED8732FAD`) | | u8 | `0` |"
+value = 0
+
+[[record.field]]
+name = "second_lowercase_guid_length"
+offset = 812
+type = "u32"
+source = "spec"
+anchor = "GUID of 36 lowercase code units"
+value = 36
+
+[[record.field]]
+name = "second_lowercase_guid_code_units"
+offset = 816
+type = "bytes[72]"
+source = "spec"
+anchor = "GUID of 36 lowercase code units"
+
+[[record.field]]
+name = "component_name_length"
+offset = 888
+type = "u32"
+source = "spec"
+anchor = "component name, `L` code units"
+
+[[record]]
+name = "base_feature_component_aggregate_tail"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "The record is `904 + 2L` bytes"
+size = 12
+note = "Offsets are relative to the end of the component-name code units of the component aggregate."
+
+[[record.field]]
+name = "separator"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "component name, `L` code units | | u8 | `0` |"
+value = 0
+
+[[record.field]]
+name = "root_instance"
+offset = 1
+type = "bytes[11]"
+source = "spec"
+anchor = "the root instance (type `CE2913AA-CFE0-4F04-9102-24424ED3BCFA`)"
+
+[[record]]
+name = "base_feature_origin_point"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "origin point, type `0E18EEF2-0D6F-480C-997E-5EBC7369AE5F`, version `0`, 165 bytes"
+size = 165
+note = "Origin record with the shared head and tail of the origin records and its geometry."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "| 9 \u00d7 u8 | zero |"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "property_flag"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "| 9 \u00d7 u8 | zero | | u8 | `1` |"
+value = 1
+
+[[record.field]]
+name = "property_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "`1`, the property count"
+value = 1
+
+[[record.field]]
+name = "property_name_length"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "`EntityGenesis`"
+value = 13
+
+[[record.field]]
+name = "property_name"
+offset = 29
+type = "bytes[13]"
+source = "spec"
+anchor = "`EntityGenesis`"
+value = "EntityGenesis"
+
+[[record.field]]
+name = "property_type_length"
+offset = 42
+type = "u32"
+source = "spec"
+anchor = "`IntrinsicMetaTypeuint64`"
+value = 23
+
+[[record.field]]
+name = "property_type"
+offset = 46
+type = "bytes[23]"
+source = "spec"
+anchor = "`IntrinsicMetaTypeuint64`"
+value = "IntrinsicMetaTypeuint64"
+
+[[record.field]]
+name = "property_value"
+offset = 69
+type = "u64"
+source = "spec"
+anchor = "`IntrinsicMetaTypeuint64` | | u64 | `0` |"
+value = 0
+
+[[record.field]]
+name = "point"
+offset = 77
+type = "f64[3]"
+source = "spec"
+anchor = "f64 point `(0, 0, 0)`"
+
+[[record.field]]
+name = "geometry_end_zero"
+offset = 101
+type = "bytes[5]"
+source = "spec"
+anchor = "the geometry of the record | | 5 \u00d7 u8 | zero |"
+value = [0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "word"
+offset = 106
+type = "u32"
+source = "spec"
+anchor = "`0xffffffff`"
+value = 0xffffffff
+
+[[record.field]]
+name = "name_flag"
+offset = 110
+type = "u8"
+source = "spec"
+anchor = "`0xffffffff` | | u8 | `1` |"
+value = 1
+
+[[record.field]]
+name = "name_length"
+offset = 111
+type = "u32"
+source = "spec"
+anchor = "| LP-UTF16 | name |"
+value = 1
+
+[[record.field]]
+name = "name_code_units"
+offset = 115
+type = "bytes[2]"
+source = "spec"
+anchor = "| LP-UTF16 | name |"
+
+[[record.field]]
+name = "name_tail"
+offset = 117
+type = "bytes[3]"
+source = "spec"
+anchor = "| 3 \u00d7 u8 | `00 00 01` |"
+value = [0, 0, 1]
+
+[[record.field]]
+name = "zero_b"
+offset = 120
+type = "bytes[8]"
+source = "spec"
+anchor = "`00 00 01` | | 8 \u00d7 u8 | zero |"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "asset_settings"
+offset = 128
+type = "bytes[11]"
+source = "spec"
+anchor = "the `AssetSettings` record (type `23FD63FB-4EBE-4c85-A42B-5D9809AA3499`)"
+
+[[record.field]]
+name = "zero_c"
+offset = 139
+type = "bytes[2]"
+source = "spec"
+anchor = "| 2 \u00d7 u8 | zero |"
+value = [0, 0]
+
+[[record.field]]
+name = "scale_a"
+offset = 141
+type = "f32"
+source = "spec"
+anchor = "| 2 \u00d7 u8 | zero | | f32 | `1.0` |"
+
+[[record.field]]
+name = "scale_b"
+offset = 145
+type = "f32"
+source = "spec"
+anchor = "`1.0` for the point and the planes, `1.3` for the axes"
+
+[[record.field]]
+name = "zero_d"
+offset = 149
+type = "bytes[5]"
+source = "spec"
+anchor = "| 5 \u00d7 u8 | zero | | reference | the origin container |"
+value = [0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "origin_container"
+offset = 154
+type = "bytes[11]"
+source = "spec"
+anchor = "| 5 \u00d7 u8 | zero | | reference | the origin container |"
+
+[[record]]
+name = "base_feature_origin_axis"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "origin axis, type `19031004-3AB6-4D13-ABBF-C51EE214688D`, version `0`, 205 bytes"
+size = 205
+note = "Origin record with the shared head and tail of the origin records and its geometry."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "| 9 \u00d7 u8 | zero |"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "property_flag"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "| 9 \u00d7 u8 | zero | | u8 | `1` |"
+value = 1
+
+[[record.field]]
+name = "property_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "`1`, the property count"
+value = 1
+
+[[record.field]]
+name = "property_name_length"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "`EntityGenesis`"
+value = 13
+
+[[record.field]]
+name = "property_name"
+offset = 29
+type = "bytes[13]"
+source = "spec"
+anchor = "`EntityGenesis`"
+value = "EntityGenesis"
+
+[[record.field]]
+name = "property_type_length"
+offset = 42
+type = "u32"
+source = "spec"
+anchor = "`IntrinsicMetaTypeuint64`"
+value = 23
+
+[[record.field]]
+name = "property_type"
+offset = 46
+type = "bytes[23]"
+source = "spec"
+anchor = "`IntrinsicMetaTypeuint64`"
+value = "IntrinsicMetaTypeuint64"
+
+[[record.field]]
+name = "property_value"
+offset = 69
+type = "u64"
+source = "spec"
+anchor = "`IntrinsicMetaTypeuint64` | | u64 | `0` |"
+value = 0
+
+[[record.field]]
+name = "origin"
+offset = 77
+type = "f64[3]"
+source = "spec"
+anchor = "f64 origin `(0, 0, 0)`, f64 unit direction"
+
+[[record.field]]
+name = "direction"
+offset = 101
+type = "f64[3]"
+source = "spec"
+anchor = "f64 unit direction, f64 `0.175`"
+
+[[record.field]]
+name = "scalar_a"
+offset = 125
+type = "f64"
+source = "spec"
+anchor = "f64 unit direction, f64 `0.175`, f64 `2.25`"
+
+[[record.field]]
+name = "scalar_b"
+offset = 133
+type = "f64"
+source = "spec"
+anchor = "f64 `0.175`, f64 `2.25`"
+
+[[record.field]]
+name = "geometry_end_zero"
+offset = 141
+type = "bytes[5]"
+source = "spec"
+anchor = "the geometry of the record | | 5 \u00d7 u8 | zero |"
+value = [0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "word"
+offset = 146
+type = "u32"
+source = "spec"
+anchor = "`0xffffffff`"
+value = 0xffffffff
+
+[[record.field]]
+name = "name_flag"
+offset = 150
+type = "u8"
+source = "spec"
+anchor = "`0xffffffff` | | u8 | `1` |"
+value = 1
+
+[[record.field]]
+name = "name_length"
+offset = 151
+type = "u32"
+source = "spec"
+anchor = "| LP-UTF16 | name |"
+value = 1
+
+[[record.field]]
+name = "name_code_units"
+offset = 155
+type = "bytes[2]"
+source = "spec"
+anchor = "| LP-UTF16 | name |"
+
+[[record.field]]
+name = "name_tail"
+offset = 157
+type = "bytes[3]"
+source = "spec"
+anchor = "| 3 \u00d7 u8 | `00 00 01` |"
+value = [0, 0, 1]
+
+[[record.field]]
+name = "zero_b"
+offset = 160
+type = "bytes[8]"
+source = "spec"
+anchor = "`00 00 01` | | 8 \u00d7 u8 | zero |"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "asset_settings"
+offset = 168
+type = "bytes[11]"
+source = "spec"
+anchor = "the `AssetSettings` record (type `23FD63FB-4EBE-4c85-A42B-5D9809AA3499`)"
+
+[[record.field]]
+name = "zero_c"
+offset = 179
+type = "bytes[2]"
+source = "spec"
+anchor = "| 2 \u00d7 u8 | zero |"
+value = [0, 0]
+
+[[record.field]]
+name = "scale_a"
+offset = 181
+type = "f32"
+source = "spec"
+anchor = "| 2 \u00d7 u8 | zero | | f32 | `1.0` |"
+
+[[record.field]]
+name = "scale_b"
+offset = 185
+type = "f32"
+source = "spec"
+anchor = "`1.0` for the point and the planes, `1.3` for the axes"
+
+[[record.field]]
+name = "zero_d"
+offset = 189
+type = "bytes[5]"
+source = "spec"
+anchor = "| 5 \u00d7 u8 | zero | | reference | the origin container |"
+value = [0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "origin_container"
+offset = 194
+type = "bytes[11]"
+source = "spec"
+anchor = "| 5 \u00d7 u8 | zero | | reference | the origin container |"
+
+[[record]]
+name = "base_feature_origin_plane"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "origin plane, type `8D424E29-DE23-4B1F-A3AD-84C52A497D1A`, version `1`, 252 bytes"
+size = 252
+note = "Origin record with the shared head and tail of the origin records and its geometry."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "| 9 \u00d7 u8 | zero |"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "property_flag"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "| 9 \u00d7 u8 | zero | | u8 | `1` |"
+value = 1
+
+[[record.field]]
+name = "property_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "`1`, the property count"
+value = 1
+
+[[record.field]]
+name = "property_name_length"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "`EntityGenesis`"
+value = 13
+
+[[record.field]]
+name = "property_name"
+offset = 29
+type = "bytes[13]"
+source = "spec"
+anchor = "`EntityGenesis`"
+value = "EntityGenesis"
+
+[[record.field]]
+name = "property_type_length"
+offset = 42
+type = "u32"
+source = "spec"
+anchor = "`IntrinsicMetaTypeuint64`"
+value = 23
+
+[[record.field]]
+name = "property_type"
+offset = 46
+type = "bytes[23]"
+source = "spec"
+anchor = "`IntrinsicMetaTypeuint64`"
+value = "IntrinsicMetaTypeuint64"
+
+[[record.field]]
+name = "property_value"
+offset = 69
+type = "u64"
+source = "spec"
+anchor = "`IntrinsicMetaTypeuint64` | | u64 | `0` |"
+value = 0
+
+[[record.field]]
+name = "geometry_word"
+offset = 77
+type = "u32"
+source = "spec"
+anchor = "u32 `0`, f64 `0.25`, f64 `0.25`, u8 `0`"
+value = 0
+
+[[record.field]]
+name = "scalar_a"
+offset = 81
+type = "f64"
+source = "spec"
+anchor = "u32 `0`, f64 `0.25`, f64 `0.25`"
+
+[[record.field]]
+name = "scalar_b"
+offset = 89
+type = "f64"
+source = "spec"
+anchor = "u32 `0`, f64 `0.25`, f64 `0.25`"
+
+[[record.field]]
+name = "flag"
+offset = 97
+type = "u8"
+source = "spec"
+anchor = "f64 `0.25`, u8 `0`, f64 origin `(0, 0, 0)`"
+value = 0
+
+[[record.field]]
+name = "origin"
+offset = 98
+type = "f64[3]"
+source = "spec"
+anchor = "u8 `0`, f64 origin `(0, 0, 0)`, f64 unit u direction"
+
+[[record.field]]
+name = "u_direction"
+offset = 122
+type = "f64[3]"
+source = "spec"
+anchor = "f64 unit u direction"
+
+[[record.field]]
+name = "v_direction"
+offset = 146
+type = "f64[3]"
+source = "spec"
+anchor = "f64 unit v direction"
+
+[[record.field]]
+name = "scalar_c"
+offset = 170
+type = "f64"
+source = "spec"
+anchor = "f64 unit v direction, f64 `2.0`, f64 `2.0`"
+
+[[record.field]]
+name = "scalar_d"
+offset = 178
+type = "f64"
+source = "spec"
+anchor = "f64 unit v direction, f64 `2.0`, f64 `2.0`"
+
+[[record.field]]
+name = "geometry_end_zero"
+offset = 186
+type = "bytes[5]"
+source = "spec"
+anchor = "the geometry of the record | | 5 \u00d7 u8 | zero |"
+value = [0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "word"
+offset = 191
+type = "u32"
+source = "spec"
+anchor = "`0xffffffff`"
+value = 0xffffffff
+
+[[record.field]]
+name = "name_flag"
+offset = 195
+type = "u8"
+source = "spec"
+anchor = "`0xffffffff` | | u8 | `1` |"
+value = 1
+
+[[record.field]]
+name = "name_length"
+offset = 196
+type = "u32"
+source = "spec"
+anchor = "| LP-UTF16 | name |"
+value = 2
+
+[[record.field]]
+name = "name_code_units"
+offset = 200
+type = "bytes[4]"
+source = "spec"
+anchor = "| LP-UTF16 | name |"
+
+[[record.field]]
+name = "name_tail"
+offset = 204
+type = "bytes[3]"
+source = "spec"
+anchor = "| 3 \u00d7 u8 | `00 00 01` |"
+value = [0, 0, 1]
+
+[[record.field]]
+name = "zero_b"
+offset = 207
+type = "bytes[8]"
+source = "spec"
+anchor = "`00 00 01` | | 8 \u00d7 u8 | zero |"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "asset_settings"
+offset = 215
+type = "bytes[11]"
+source = "spec"
+anchor = "the `AssetSettings` record (type `23FD63FB-4EBE-4c85-A42B-5D9809AA3499`)"
+
+[[record.field]]
+name = "zero_c"
+offset = 226
+type = "bytes[2]"
+source = "spec"
+anchor = "| 2 \u00d7 u8 | zero |"
+value = [0, 0]
+
+[[record.field]]
+name = "scale_a"
+offset = 228
+type = "f32"
+source = "spec"
+anchor = "| 2 \u00d7 u8 | zero | | f32 | `1.0` |"
+
+[[record.field]]
+name = "scale_b"
+offset = 232
+type = "f32"
+source = "spec"
+anchor = "`1.0` for the point and the planes, `1.3` for the axes"
+
+[[record.field]]
+name = "zero_d"
+offset = 236
+type = "bytes[5]"
+source = "spec"
+anchor = "| 5 \u00d7 u8 | zero | | reference | the origin container |"
+value = [0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "origin_container"
+offset = 241
+type = "bytes[11]"
+source = "spec"
+anchor = "| 5 \u00d7 u8 | zero | | reference | the origin container |"
+
+[[record]]
+name = "base_feature_act_table_prefix"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "ACT table, 741 bytes and its entries"
+size = 33
+note = "ACT table of type `8EF12734-4D22-4F6A-8A80-1462E6B40A13`, through its entry count. The entries and the aspect block follow."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[4]"
+source = "spec"
+anchor = "header; 4 zero bytes; LP-ASCII `ACTTable`"
+value = [0, 0, 0, 0]
+
+[[record.field]]
+name = "name_length"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "LP-ASCII `ACTTable`"
+value = 8
+
+[[record.field]]
+name = "name"
+offset = 19
+type = "bytes[8]"
+source = "spec"
+anchor = "LP-ASCII `ACTTable`"
+value = "ACTTable"
+
+[[record.field]]
+name = "zero_b"
+offset = 27
+type = "bytes[2]"
+source = "spec"
+anchor = "LP-ASCII `ACTTable`; 2 zero bytes; u32 entry count `E`"
+value = [0, 0]
+
+[[record.field]]
+name = "entry_count"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "u32 entry count `E`"
+
+[[record]]
+name = "base_feature_act_components_root"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "components root, 75 bytes"
+size = 75
+note = "ACT components root of type `596618BE-CD74-4BC9-A627-2DA799696C2D`."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[4]"
+source = "spec"
+anchor = "header; 4 zero bytes; LP-ASCII `ACTComponentsRoot`"
+value = [0, 0, 0, 0]
+
+[[record.field]]
+name = "name_length"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "LP-ASCII `ACTComponentsRoot`; 2 zero bytes"
+value = 17
+
+[[record.field]]
+name = "name"
+offset = 19
+type = "bytes[17]"
+source = "spec"
+anchor = "LP-ASCII `ACTComponentsRoot`; 2 zero bytes"
+value = "ACTComponentsRoot"
+
+[[record.field]]
+name = "zero_b"
+offset = 36
+type = "bytes[2]"
+source = "spec"
+anchor = "LP-ASCII `ACTComponentsRoot`; 2 zero bytes; LP-ASCII `ACTComponentsRoot`"
+value = [0, 0]
+
+[[record.field]]
+name = "name_repeat_length"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "2 zero bytes; LP-ASCII `ACTComponentsRoot`; u32 `1`"
+value = 17
+
+[[record.field]]
+name = "name_repeat"
+offset = 42
+type = "bytes[17]"
+source = "spec"
+anchor = "2 zero bytes; LP-ASCII `ACTComponentsRoot`; u32 `1`"
+value = "ACTComponentsRoot"
+
+[[record.field]]
+name = "component_count"
+offset = 59
+type = "u32"
+source = "spec"
+anchor = "LP-ASCII `ACTComponentsRoot`; u32 `1`; the component record; `00`"
+value = 1
+
+[[record.field]]
+name = "component_record"
+offset = 63
+type = "bytes[11]"
+source = "spec"
+anchor = "u32 `1`; the component record; `00`"
+
+[[record.field]]
+name = "tail_zero"
+offset = 74
+type = "u8"
+source = "spec"
+anchor = "the component record; `00` |"
+value = 0
+
+[[record]]
+name = "base_feature_act_component_record_prefix"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "component record, `73 + 2L` bytes"
+size = 61
+note = "ACT component record of type `D956D02C-2806-4E57-8B2E-EFA323A5C2B8`, through the code-unit count of the component name."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "header; 10 zero bytes; the naming-space link; LP-UTF16 key `1_2`"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "naming_space_link"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "the naming-space link; LP-UTF16 key `1_2`"
+
+[[record.field]]
+name = "key_length"
+offset = 32
+type = "u32"
+source = "spec"
+anchor = "LP-UTF16 key `1_2`; a cross-segment reference to the Design component aggregate"
+value = 3
+
+[[record.field]]
+name = "key_code_units"
+offset = 36
+type = "bytes[6]"
+source = "spec"
+anchor = "LP-UTF16 key `1_2`; a cross-segment reference to the Design component aggregate"
+
+[[record.field]]
+name = "design_component_aggregate"
+offset = 42
+type = "bytes[15]"
+source = "spec"
+anchor = "a cross-segment reference to the Design component aggregate"
+
+[[record.field]]
+name = "component_name_length"
+offset = 57
+type = "u32"
+source = "spec"
+anchor = "LP-UTF16 component name of `L` code units"
+
+[[record]]
+name = "base_feature_act_component_record_tail"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "component record, `73 + 2L` bytes"
+size = 12
+note = "Offsets are relative to the end of the component-name code units of the ACT component record."
+
+[[record.field]]
+name = "separator"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "LP-UTF16 component name of `L` code units; `00`; the instance root"
+value = 0
+
+[[record.field]]
+name = "instance_root"
+offset = 1
+type = "bytes[11]"
+source = "spec"
+anchor = "LP-UTF16 component name of `L` code units; `00`; the instance root"
+
+[[record]]
+name = "base_feature_act_naming_space_link"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "naming-space link, 56 bytes"
+size = 56
+note = "ACT naming-space link of type `F01D16CF-95D5-4239-A488-00448AC88023`."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "naming-space link, 56 bytes | header; 10 zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "design_naming_space"
+offset = 21
+type = "bytes[15]"
+source = "spec"
+anchor = "a cross-segment reference to the Design component naming space"
+
+[[record.field]]
+name = "zero_b"
+offset = 36
+type = "bytes[9]"
+source = "spec"
+anchor = "9 zero bytes; the component record |"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "component_record"
+offset = 45
+type = "bytes[11]"
+source = "spec"
+anchor = "9 zero bytes; the component record |"
+
+[[record]]
+name = "base_feature_act_instances_root"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "instances root, 96 bytes"
+size = 96
+note = "ACT instances root of type `F3E2665C-F3E1-4BA7-8676-8B90579B56D3`."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[4]"
+source = "spec"
+anchor = "header; 4 zero bytes; LP-ASCII `ACTInstancesRoot`"
+value = [0, 0, 0, 0]
+
+[[record.field]]
+name = "name_length"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "LP-ASCII `ACTInstancesRoot`; bytes `00 00 01`"
+value = 16
+
+[[record.field]]
+name = "name"
+offset = 19
+type = "bytes[16]"
+source = "spec"
+anchor = "LP-ASCII `ACTInstancesRoot`; bytes `00 00 01`"
+value = "ACTInstancesRoot"
+
+[[record.field]]
+name = "marker"
+offset = 35
+type = "bytes[3]"
+source = "spec"
+anchor = "bytes `00 00 01` and 7 zero bytes"
+value = [0, 0, 1]
+
+[[record.field]]
+name = "zero_b"
+offset = 38
+type = "bytes[7]"
+source = "spec"
+anchor = "bytes `00 00 01` and 7 zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "instance_root"
+offset = 45
+type = "bytes[11]"
+source = "spec"
+anchor = "bytes `00 00 01` and 7 zero bytes; the instance root; u32 `1`"
+
+[[record.field]]
+name = "instance_count"
+offset = 56
+type = "u32"
+source = "spec"
+anchor = "the instance root; u32 `1`; LP-ASCII `ACTInstancesRoot`"
+value = 1
+
+[[record.field]]
+name = "name_repeat_length"
+offset = 60
+type = "u32"
+source = "spec"
+anchor = "u32 `1`; LP-ASCII `ACTInstancesRoot`; u32 `1`"
+value = 16
+
+[[record.field]]
+name = "name_repeat"
+offset = 64
+type = "bytes[16]"
+source = "spec"
+anchor = "u32 `1`; LP-ASCII `ACTInstancesRoot`; u32 `1`"
+value = "ACTInstancesRoot"
+
+[[record.field]]
+name = "instance_count_repeat"
+offset = 80
+type = "u32"
+source = "spec"
+anchor = "LP-ASCII `ACTInstancesRoot`; u32 `1`; the instance root; `00`"
+value = 1
+
+[[record.field]]
+name = "instance_root_repeat"
+offset = 84
+type = "bytes[11]"
+source = "spec"
+anchor = "u32 `1`; the instance root; `00`"
+
+[[record.field]]
+name = "tail_zero"
+offset = 95
+type = "u8"
+source = "spec"
+anchor = "u32 `1`; the instance root; `00` |"
+value = 0
+
+[[record]]
+name = "base_feature_act_instance_root"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "instance root, 200 bytes"
+size = 200
+note = "ACT instance root of type `96E1B59A-1989-4493-AA92-67E6072135F6`."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[4]"
+source = "spec"
+anchor = "header; 4 zero bytes; LP-ASCII `ACTInstanceRoot`"
+value = [0, 0, 0, 0]
+
+[[record.field]]
+name = "name_length"
+offset = 15
+type = "u32"
+source = "spec"
+anchor = "LP-ASCII `ACTInstanceRoot`; 3 zero bytes"
+value = 15
+
+[[record.field]]
+name = "name"
+offset = 19
+type = "bytes[15]"
+source = "spec"
+anchor = "LP-ASCII `ACTInstanceRoot`; 3 zero bytes"
+value = "ACTInstanceRoot"
+
+[[record.field]]
+name = "zero_b"
+offset = 34
+type = "bytes[3]"
+source = "spec"
+anchor = "LP-ASCII `ACTInstanceRoot`; 3 zero bytes; u32 `6`"
+value = [0, 0, 0]
+
+[[record.field]]
+name = "aspect_count"
+offset = 37
+type = "u32"
+source = "spec"
+anchor = "3 zero bytes; u32 `6`; the six aspect names as LP-ASCII"
+value = 6
+
+[[record.field]]
+name = "aspect_appearance_length"
+offset = 41
+type = "u32"
+source = "spec"
+anchor = "u32 `6`; the six aspect names as LP-ASCII"
+value = 10
+
+[[record.field]]
+name = "aspect_appearance"
+offset = 45
+type = "bytes[10]"
+source = "spec"
+anchor = "u32 `6`; the six aspect names as LP-ASCII"
+value = "Appearance"
+
+[[record.field]]
+name = "aspect_geometry_length"
+offset = 55
+type = "u32"
+source = "spec"
+anchor = "u32 `6`; the six aspect names as LP-ASCII"
+value = 8
+
+[[record.field]]
+name = "aspect_geometry"
+offset = 59
+type = "bytes[8]"
+source = "spec"
+anchor = "u32 `6`; the six aspect names as LP-ASCII"
+value = "Geometry"
+
+[[record.field]]
+name = "aspect_physical_material_length"
+offset = 67
+type = "u32"
+source = "spec"
+anchor = "u32 `6`; the six aspect names as LP-ASCII"
+value = 16
+
+[[record.field]]
+name = "aspect_physical_material"
+offset = 71
+type = "bytes[16]"
+source = "spec"
+anchor = "u32 `6`; the six aspect names as LP-ASCII"
+value = "PhysicalMaterial"
+
+[[record.field]]
+name = "aspect_properties_length"
+offset = 87
+type = "u32"
+source = "spec"
+anchor = "u32 `6`; the six aspect names as LP-ASCII"
+value = 10
+
+[[record.field]]
+name = "aspect_properties"
+offset = 91
+type = "bytes[10]"
+source = "spec"
+anchor = "u32 `6`; the six aspect names as LP-ASCII"
+value = "Properties"
+
+[[record.field]]
+name = "aspect_structure_change_length"
+offset = 101
+type = "u32"
+source = "spec"
+anchor = "u32 `6`; the six aspect names as LP-ASCII"
+value = 15
+
+[[record.field]]
+name = "aspect_structure_change"
+offset = 105
+type = "bytes[15]"
+source = "spec"
+anchor = "u32 `6`; the six aspect names as LP-ASCII"
+value = "StructureChange"
+
+[[record.field]]
+name = "aspect_transform_length"
+offset = 120
+type = "u32"
+source = "spec"
+anchor = "u32 `6`; the six aspect names as LP-ASCII"
+value = 9
+
+[[record.field]]
+name = "aspect_transform"
+offset = 124
+type = "bytes[9]"
+source = "spec"
+anchor = "u32 `6`; the six aspect names as LP-ASCII"
+value = "Transform"
+
+[[record.field]]
+name = "separator_a"
+offset = 133
+type = "u8"
+source = "spec"
+anchor = "the six aspect names as LP-ASCII; `00`; the instance root itself"
+value = 0
+
+[[record.field]]
+name = "instance_root_self"
+offset = 134
+type = "bytes[11]"
+source = "spec"
+anchor = "the instance root itself; `00`; the component record"
+
+[[record.field]]
+name = "separator_b"
+offset = 145
+type = "u8"
+source = "spec"
+anchor = "the instance root itself; `00`; the component record"
+value = 0
+
+[[record.field]]
+name = "component_record"
+offset = 146
+type = "bytes[11]"
+source = "spec"
+anchor = "the instance root itself; `00`; the component record; LP-UTF16 key `1_6`"
+
+[[record.field]]
+name = "key_length"
+offset = 157
+type = "u32"
+source = "spec"
+anchor = "LP-UTF16 key `1_6`; `00`; a cross-segment reference to the Design root instance"
+value = 3
+
+[[record.field]]
+name = "key_code_units"
+offset = 161
+type = "bytes[6]"
+source = "spec"
+anchor = "LP-UTF16 key `1_6`; `00`; a cross-segment reference to the Design root instance"
+
+[[record.field]]
+name = "separator_c"
+offset = 167
+type = "u8"
+source = "spec"
+anchor = "LP-UTF16 key `1_6`; `00`; a cross-segment reference to the Design root instance"
+value = 0
+
+[[record.field]]
+name = "design_root_instance"
+offset = 168
+type = "bytes[15]"
+source = "spec"
+anchor = "a cross-segment reference to the Design root instance"
+
+[[record.field]]
+name = "word"
+offset = 183
+type = "u32"
+source = "spec"
+anchor = "u32 `0`; the component record; 2 zero bytes"
+value = 0
+
+[[record.field]]
+name = "component_record_repeat"
+offset = 187
+type = "bytes[11]"
+source = "spec"
+anchor = "u32 `0`; the component record; 2 zero bytes"
+
+[[record.field]]
+name = "tail_zero"
+offset = 198
+type = "bytes[2]"
+source = "spec"
+anchor = "u32 `0`; the component record; 2 zero bytes"
+value = [0, 0]
+
+[[record]]
+name = "base_feature_act_aspect_entry_prefix"
+kind = "byte"
+section = "Records of a Base Feature design"
+anchor = "An aspect entry of type `ABC8C0E3-50FB-4E8C-AFF3-116759A36073` is the header"
+size = 25
+note = "ACT aspect entry through its aspect count. The aspect pairs and the key follow."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "indexed header"
+
+[[record.field]]
+name = "zero"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "is the header, ten zero bytes, a u32 aspect count `A`"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "aspect_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "a u32 aspect count `A`"
+
 # --- §3.1 Derived Base Feature scope frames ---------------------------------
 
 [[record]]

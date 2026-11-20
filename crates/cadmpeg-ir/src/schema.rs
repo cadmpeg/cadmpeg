@@ -4,7 +4,7 @@
 use serde::Serialize;
 
 pub mod rewrite;
-/// Caller-accounted structural value projection and reconstruction.
+/// Caller-accounted structural JSON projection.
 pub mod structural;
 
 /// Canonical neutral arena kind.
