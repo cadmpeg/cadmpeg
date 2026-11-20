@@ -136,6 +136,7 @@ pub struct F3zSession<'a> {
     pub(super) archive: archive::ArchiveSession,
     pub(super) model_root: String,
     pub(super) omitted_drawing_root: Option<String>,
+    identities: BTreeMap<String, cadmpeg_ir::products::ExternalDocument>,
     checkpoint: DecodeCheckpoint,
     members: Vec<F3zMember>,
     origin: Arc<()>,
@@ -173,6 +174,7 @@ impl<'a> F3zSession<'a> {
                 let archive = archive::classify_members(ctx, &scan, true)?;
                 Ok((model_root, omitted_drawing_root, archive))
             })?;
+        let identities = archive::document_identities(ctx, &scan)?;
         let (checkpoint, mut members) =
             super::observer::phase(super::observer::F3zPhase::SessionOpen, || {
                 archive.member_checkpoint(&model_root)?;
@@ -217,6 +219,7 @@ impl<'a> F3zSession<'a> {
             archive,
             model_root,
             omitted_drawing_root,
+            identities,
             checkpoint,
             members,
             origin: Arc::new(()),
@@ -372,8 +375,39 @@ impl<'a> F3zSession<'a> {
             ctx.with_arena(&arena, |local| {
                 let mut decoded =
                     crate::decode::decode_archive_member(local, scan, &self.archive.layers)?;
+                let mut identity_changed = false;
+                for definition in &mut decoded.ir.model.product_definitions {
+                    use cadmpeg_ir::products::Storage;
+                    let (document, identity) = match &mut definition.storage {
+                        Storage::File {
+                            document,
+                            source: None,
+                        } => (document, self.identities.get(id)),
+                        Storage::External(document) => {
+                            let identity = document
+                                .path
+                                .as_ref()
+                                .and_then(|path| self.identities.get(path.as_str()));
+                            (document, identity)
+                        }
+                        Storage::File { .. } | Storage::Embedded => continue,
+                    };
+                    if let Some(identity) = identity {
+                        identity_changed |= (document.document_id.is_none()
+                            && identity.document_id.is_some())
+                            || (document.version.is_none() && identity.version.is_some());
+                        document.document_id = document
+                            .document_id
+                            .take()
+                            .or_else(|| identity.document_id.clone());
+                        document.version =
+                            document.version.take().or_else(|| identity.version.clone());
+                    }
+                }
                 if id == self.model_root {
                     crate::scene::collect(local, scan, &mut decoded.ir, &mut decoded.body.losses)?;
+                }
+                if identity_changed || id == self.model_root {
                     decoded.ir.finalize();
                     let hash = cadmpeg_ir::hash::document_local_sha256(
                         local,

@@ -38,7 +38,25 @@ pub(crate) fn state_root_definition(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
 ) -> Result<(), CodecError> {
-    ir.state_root_definition(ctx, file_root_id(), ExternalDocument::default())?;
+    if ctx.container_only() {
+        return Ok(());
+    }
+    let design = match ir.native.namespace("f3d") {
+        Some(namespace) => namespace
+            .arena_iter_as_for_decode::<crate::records::xref::XrefDesign>(ctx, "xref_designs")
+            .next()
+            .transpose()?,
+        None => None,
+    };
+    let document = design.as_ref().map(crate::xref::document_identity);
+    if let Some(root) =
+        ir.state_root_definition(ctx, file_root_id(), ExternalDocument::default())?
+    {
+        if let (Some(identity), Storage::File { document, .. }) = (document, &mut root.storage) {
+            document.document_id = document.document_id.take().or(identity.document_id);
+            document.version = document.version.take().or(identity.version);
+        }
+    }
     Ok(())
 }
 

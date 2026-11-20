@@ -484,6 +484,14 @@ pub(crate) fn design_for<'a>(
         .find(|design| design.target_file_name == reference.relative_path)
 }
 
+pub(crate) fn document_identity(design: &XrefDesign) -> ExternalDocument {
+    ExternalDocument {
+        document_id: cadmpeg_core::text::NonBlankString::new(design.lineage_urn.clone()),
+        version: cadmpeg_core::text::NonBlankString::new(design.version_urn.clone()),
+        ..ExternalDocument::default()
+    }
+}
+
 /// External product structure projected into local component instance paths.
 pub(crate) struct ExternalOccurrenceProjection {
     /// One definition of external storage per referenced document.
@@ -565,7 +573,11 @@ pub(crate) fn project_occurrences(
         {
             projection.definitions.push(ProductDefinition::new(
                 id,
-                Storage::External(ExternalDocument::path(path.to_owned())),
+                Storage::External(ExternalDocument {
+                    path: cadmpeg_core::text::NonBlankString::new(path),
+                    ..design_for(table, reference)
+                        .map_or_else(ExternalDocument::default, document_identity)
+                }),
             ));
         }
     }
