@@ -21,6 +21,9 @@ reader's code-authored generators. The STEP member is built from a synthetic
 CADIR solid with the cadmpeg STEP encoder. ZIP timestamps use the writer's
 fixed default. Tests require an offline process.
 
+A present thread pitch that cannot be admitted carries `onshape/record.malformed`.
+The hole keeps its thread specification without pitch.
+
 Admitted thin walls use typed design operations and Native model companions.
 The design timeline carries the decoded sketches, their placed frames and
 solved curves. Thin profile picks name those design sketch entities. Model

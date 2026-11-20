@@ -400,6 +400,32 @@ fn blind_holes_require_drill_point_and_depth_reference_and_read_thread_facts() {
 }
 
 #[test]
+fn unresolved_thread_pitches_keep_threads_and_charge_a_loss() {
+    for pitch in [json!("0.25 in"), json!("0 mm"), json!(0.7), json!("0.7")] {
+        let bytes = edit(&fixture("hole-forms"), |path, response| {
+            if path.ends_with("features.json") {
+                parameter(&mut response["features"][5], "standardTappedOrClearance")["value"]
+                    ["pitch"] = pitch.clone();
+            }
+        });
+        let result = decode(&bytes);
+        let wire = wire(&result);
+        assert_eq!(kind(&wire, 5), "hole");
+        let thread = &wire["model"]["features"][5]["definition"]["value"]["value"]["shape"]
+            ["construction"]["value"]["specification"];
+        assert_eq!(thread["kind"], "threaded");
+        assert_eq!(thread["designation"], "M4");
+        assert!(thread.get("pitch").is_none());
+        assert!(result.report().losses.iter().any(|loss| {
+            loss.code.to_string() == "onshape/record.malformed"
+                && loss.message.contains(&pitch.to_string())
+                && loss.message.contains("kept the thread without pitch")
+        }));
+        validate(result);
+    }
+}
+
+#[test]
 fn negative_variable_angles_keep_their_signed_parameter_value() {
     let bytes = edit(&fixture("revolve"), |path, response| {
         if !path.ends_with("features.json") {

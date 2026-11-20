@@ -59,3 +59,15 @@ Need: The source rule for signed angular travel and its relation to `oppositeDir
 Conflict: An absolute parameter value contradicts its signed expression.
 
 Note: A negative revolve quantity retains its feature as Native with `history.not-supported`.
+
+## ONSHAPE-007 — Thin side of a reversed line interval
+
+Question: Does a one-sided thin line use the directed profile or the stored `dirX` and `dirY` carrier when `endParam < startParam`?
+
+Known: A decoded line runs from its `startParam` point to its `endParam` point. `WallSide::Right` is the right side of the open profile seen looking against its normal. The decoder maps a positive `thickness1`, zero `thickness2` and false `flipWall` to `right` for an open line.
+
+Need: A stored one-sided thin extrude over a line with `endParam < startParam`, its sketch frame, wall flags and final STEP body. A matching increasing-interval case establishes the control.
+
+Conflict: Reversing the parameter interval reverses the profile tangent relative to the stored carrier direction.
+
+Note: The decoder retains its current side mapping until stored wall geometry establishes the source convention.

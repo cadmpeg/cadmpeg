@@ -893,7 +893,7 @@ pub(super) fn map(
             };
             Ok(definition(kind, operation))
         }
-        "hole" => hole(feature, ordinal, inputs, model, unresolved),
+        "hole" => hole(feature, ordinal, inputs, model, report, unresolved),
         other => Err(format!("{other} features are not supported yet")),
     }
 }
@@ -903,6 +903,7 @@ fn hole(
     ordinal: usize,
     inputs: &topology::Inputs<'_>,
     model: &mut Model,
+    report: &mut Report,
     unresolved: &BTreeSet<String>,
 ) -> Mapping<Value> {
     if enabled(feature, "oppositeDirection")? {
@@ -970,7 +971,7 @@ fn hole(
     if let (Some(standard), Some(fields)) = (standard, construction.as_object_mut()) {
         fields.insert(
             "specification".into(),
-            specification(feature, standard, tapped, model, unresolved)?,
+            specification(feature, standard, tapped, model, report, unresolved)?,
         );
     }
     let mut operation = json!({"profile": profile, "profile_filter": "points",
@@ -1002,6 +1003,7 @@ fn specification(
     standard: &Value,
     tapped: bool,
     model: &Model,
+    report: &mut Report,
     unresolved: &BTreeSet<String>,
 ) -> Mapping<Value> {
     let name = standard
@@ -1054,21 +1056,30 @@ fn specification(
     if let Some(size) = size {
         fields.insert("designation".into(), json!(size));
     }
-    if let Some(pitch) = standard.get("pitch").and_then(Value::as_str) {
-        let mut parts = pitch.split_whitespace();
-        if let (Some(Ok(n)), Some(unit), None) = (
-            parts.next().map(str::parse::<f64>),
-            parts.next(),
-            parts.next(),
-        ) {
-            let pitch = match unit {
+    if let Some(source_pitch) = standard.get("pitch") {
+        let pitch = source_pitch.as_str().and_then(|pitch| {
+            let mut parts = pitch.split_whitespace();
+            let (Some(Ok(n)), Some(unit), None) = (
+                parts.next().map(str::parse::<f64>),
+                parts.next(),
+                parts.next(),
+            ) else {
+                return None;
+            };
+            match unit {
                 "mm" => Some(n),
                 "tpi" if n > 0.0 => Some(25.4 / n),
                 _ => None,
-            };
-            if let Some(pitch) = pitch.filter(|p| p.is_finite() && *p > 0.0) {
-                fields.insert("pitch".into(), json!(pitch));
             }
+        });
+        if let Some(pitch) = pitch.filter(|p| p.is_finite() && *p > 0.0) {
+            fields.insert("pitch".into(), json!(pitch));
+        } else {
+            report.push_coded(
+                text(feature, "featureId")?,
+                crate::loss::OnshapeLossCode::RecordMalformed,
+                format!("thread pitch {source_pitch} is unresolved; kept the thread without pitch"),
+            );
         }
     }
     if parameter(feature, "majorDiameter").is_ok() {
