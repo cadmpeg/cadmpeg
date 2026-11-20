@@ -711,10 +711,11 @@ attribute:
 | `file_schema.schema_identifiers.<n>`     | `FILE_SCHEMA.schema_identifiers[n]`     |
 
 `<n>` is the zero-based position in the source list, and every list member
-supplies an attribute. A value is the whole string after §4 escape decoding,
-with control characters left out; a string longer than its effective length
-below keeps every character. A string that is omitted, does not decode, or
-holds no non-whitespace character supplies no attribute.
+holding a non-blank decodable string supplies an attribute. A value is the
+whole string after §4 escape decoding, with control characters left out; a
+string longer than its effective length below keeps every character. A string
+that is omitted, does not decode, or holds no non-whitespace character
+supplies no attribute.
 
 `FILE_DESCRIPTION` strings and every `FILE_NAME` string attribute have an
 effective length of at most 256 characters. A non-empty `FILE_NAME` timestamp
