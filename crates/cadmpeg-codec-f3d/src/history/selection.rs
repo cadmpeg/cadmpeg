@@ -961,6 +961,12 @@ pub(crate) fn bind_entity_selection_history(
             .filter_map(crate::records::topology::entity_selection::DesignEntitySelectionOperand::topology_identities)
             .flat_map(|(primary, secondary)| std::iter::once(primary).chain(secondary)),
     );
+    let primaries = operands
+        .iter()
+        .filter_map(crate::records::topology::entity_selection::DesignEntitySelectionOperand::topology_identities)
+        .map(|(primary, _)| primary)
+        .collect::<Vec<_>>();
+    let identities_by_history = per_history_identities(histories, &primaries);
     for operand in operands {
         operand.historical_edge_candidates.clear();
         operand.historical_face_candidates.clear();
@@ -968,7 +974,8 @@ pub(crate) fn bind_entity_selection_history(
         let Some((primary, secondary)) = operand.topology_identities() else {
             continue;
         };
-        operand.historical_face_candidates = entity_selection_face_candidates(primary, histories);
+        operand.historical_face_candidates =
+            entity_selection_face_candidates(primary, &identities_by_history);
         let stream = crate::ids::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -1010,6 +1017,12 @@ pub(crate) fn bind_hole_selection_history(
     scopes: &mut [crate::records::feature::scope::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
+    let primaries = scopes
+        .iter()
+        .filter_map(|scope| scope.hole_construction()?.face_selection.as_ref())
+        .map(|selection| selection.primary_identity)
+        .collect::<Vec<_>>();
+    let identities_by_history = per_history_identities(histories, &primaries);
     for scope in scopes {
         let Some(construction) = scope.hole_construction_mut() else {
             continue;
@@ -1018,7 +1031,7 @@ pub(crate) fn bind_hole_selection_history(
             continue;
         };
         selection.historical_face_candidates =
-            entity_selection_face_candidates(selection.primary_identity, histories);
+            entity_selection_face_candidates(selection.primary_identity, &identities_by_history);
     }
 }
 
@@ -1380,19 +1393,22 @@ pub(crate) fn bind_mirror_selection_planes(
                     continue;
                 }
                 crate::design::decode::meta::OriginClassification::NotOrigin => {
-                    let persistent_candidates = if let Some(identity) = identity
-                        .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity) {
-                        entity_selection_face_candidates(identity.local_id, histories)
-                    } else {
-                        Vec::new()
-                    };
-                    let primary_candidates =
-                        entity_selection_face_candidates(operand.primary_identity, histories);
                     let mut local_ids = vec![operand.primary_identity];
                     local_ids.extend(
                         identity
                             .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity)
                             .map(|identity| identity.local_id),
+                    );
+                    let identities_by_history = per_history_identities(histories, &local_ids);
+                    let persistent_candidates = if let Some(identity) = identity
+                        .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity) {
+                        entity_selection_face_candidates(identity.local_id, &identities_by_history)
+                    } else {
+                        Vec::new()
+                    };
+                    let primary_candidates = entity_selection_face_candidates(
+                        operand.primary_identity,
+                        &identities_by_history,
                     );
                     let mut faces = Vec::new();
                     for candidate in primary_candidates.iter().chain(&persistent_candidates) {
@@ -1958,15 +1974,33 @@ pub(super) fn historical_mirror_coedge_plane(
         .then_some(first.clone())
 }
 
+/// Each history paired with its own identity index over `local_ids`.
+pub(super) fn per_history_identities<'a>(
+    histories: &'a [AsmHistory],
+    local_ids: &[u64],
+) -> Vec<(&'a AsmHistory, HistoricalIdentityIndex)> {
+    histories
+        .iter()
+        .map(|history| {
+            (
+                history,
+                HistoricalIdentityIndex::build(
+                    std::slice::from_ref(history),
+                    local_ids.iter().copied(),
+                ),
+            )
+        })
+        .collect()
+}
+
 pub(super) fn entity_selection_face_candidates(
     local_id: u64,
-    histories: &[AsmHistory],
+    histories: &[(&AsmHistory, HistoricalIdentityIndex)],
 ) -> Vec<crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate> {
     use crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate;
 
     let mut candidates = Vec::new();
-    'histories: for history in histories {
-        let identities = HistoricalIdentityIndex::build(std::slice::from_ref(history), [local_id]);
+    'histories: for (history, identities) in histories {
         let Some((kind, entity_ref, state_ids)) = identities.selection_identity_kind(local_id)
         else {
             continue;
