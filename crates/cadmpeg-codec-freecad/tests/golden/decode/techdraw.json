@@ -1970,6 +1970,7 @@
             -1.0,
             0.0
           ],
+          "hidden_line": "exact",
           "id": "fcstd:model:drawing#Front:entity",
           "kind": "view",
           "native_ref": "fcstd:native:drawing#Front",
@@ -1981,7 +1982,6 @@
             "LockPosition": "<Bool value=\"false\"/>",
             "Rotation": "<Float value=\"0.0000000000000000\"/>",
             "Scale": "<Float value=\"2.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"2\"/>",
             "X": "<Float value=\"65.0000000000000000\"/>",
             "Y": "<Float value=\"180.0000000000000000\"/>"
           },
@@ -2005,9 +2005,10 @@
               }
             ]
           },
-          "rotation_degrees": 0.0,
+          "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewPart",
           "scale": 2.0,
+          "scale_from": "own",
           "x_direction": [
             1.0,
             0.0,
@@ -2032,7 +2033,6 @@
             "MeasureType": "<Integer value=\"1\"/>",
             "Rotation": "<Float value=\"0.0000000000000000\"/>",
             "Scale": "<Float value=\"1.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"0\"/>",
             "X": "<Float value=\"65.0000000000000000\"/>",
             "Y": "<Float value=\"160.0000000000000000\"/>"
           },
@@ -2052,9 +2052,10 @@
               }
             ]
           },
-          "rotation_degrees": 0.0,
+          "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewDimension",
-          "scale": 1.0
+          "scale": 1.0,
+          "scale_from": "sheet"
         },
         {
           "assets": [],
@@ -2069,7 +2070,6 @@
             "LockPosition": "<Bool value=\"false\"/>",
             "Rotation": "<Float value=\"0.0000000000000000\"/>",
             "Scale": "<Float value=\"1.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"0\"/>",
             "X": "<Float value=\"120.0000000000000000\"/>",
             "Y": "<Float value=\"100.0000000000000000\"/>"
           },
@@ -2086,9 +2086,10 @@
               }
             ]
           },
-          "rotation_degrees": 0.0,
+          "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewAnnotation",
-          "scale": 1.0
+          "scale": 1.0,
+          "scale_from": "sheet"
         },
         {
           "assets": [],
@@ -2099,9 +2100,9 @@
           "object": "fcstd:native:object#Page",
           "order": 0,
           "parameters": {
-            "ProjectionType": "<Integer value=\"0\"/>",
             "Scale": "<Float value=\"1.0000000000000000\"/>"
           },
+          "projection": "first",
           "relationships": {
             "Template": [
               {
@@ -2284,6 +2285,7 @@
             0.0,
             1.0
           ],
+          "hidden_line": "exact",
           "id": "fcstd:model:drawing#Top:entity",
           "kind": "view",
           "native_ref": "fcstd:native:drawing#Top",
@@ -2295,7 +2297,6 @@
             "LockPosition": "<Bool value=\"false\"/>",
             "Rotation": "<Float value=\"0.0000000000000000\"/>",
             "Scale": "<Float value=\"1.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"2\"/>",
             "X": "<Float value=\"65.0000000000000000\"/>",
             "Y": "<Float value=\"230.0000000000000000\"/>"
           },
@@ -2319,9 +2320,10 @@
               }
             ]
           },
-          "rotation_degrees": 0.0,
+          "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewPart",
           "scale": 1.0,
+          "scale_from": "own",
           "x_direction": [
             1.0,
             0.0,
@@ -2409,7 +2411,24 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "fcstd:model:body#Box:Shape:Box.Shape.brp:34%40location1"
+          ],
+          "bom_properties": {},
+          "id": "fcstd:model:product_definition#document:root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [
         {
@@ -2417,13 +2436,23 @@
             "fcstd:native:entry#BoxCorners",
             "fcstd:native:entry#Length.SavedGeometry.0.brp"
           ],
+          "basic": false,
           "dimension_kind": {
             "kind": "horizontal_distance"
           },
           "format": "%.2w",
           "id": "fcstd:model:semantic-annotation#Length:content",
           "kind": "dimension",
+          "measured_on": "view",
           "native_ref": "fcstd:native:annotation#Length",
+          "negated": false,
+          "number_format": {
+            "decimals": 2,
+            "prefix": "",
+            "suffix": "",
+            "trim_zeros": true,
+            "unit_shown": false
+          },
           "object": "fcstd:native:object#Length",
           "order": 0,
           "parameters": {
@@ -2596,7 +2625,7 @@
           "carrier_census": "7d06a4bde9c8713ac37f69996b4d2a2c142332c4c992b6e3560336e3c18383f4",
           "design_census": "f34de2afa3000497746c6edfebd2d055fe89bd3c72492580cf2683b1ffe86e33",
           "document": "6f858ee6b2e86afbed818de68dbc980ed677b216825802860f13dd9da72dc246",
-          "drawings": "b56452e7d1a7de8b2e0a03f516ad9ddb9f9b2881ce8a90b7d8c0aca51cc222ed",
+          "drawings": "e434aadff778d1ab72d028705438ef12ffa8bcdbb13d8e49f8019de5edd4fa04",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "entries": "5dca5ed67073317de6ba99debab263eb1ba86137cc68e679e8a994d2d3d08339",
           "extensions": "21af737f335b3574cf5c2e0e48fb1bed917107e7ecbfaa5d116daac2f7a425d5",

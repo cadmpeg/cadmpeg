@@ -986,6 +986,9 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .geometry
         .bodies
         .retain(|body| selected.contains(&body.id));
+    for definition in &mut subset.model.product_definitions {
+        definition.bodies.retain(|body| selected.contains(body));
+    }
     subset
         .geometry
         .regions
@@ -4543,6 +4546,9 @@ mod nurbs_write_tests {
             definition: cadmpeg_ir::PmiDefinition::Datum {
                 identification: "A".into(),
             },
+            native_ref: None,
+            native_options: cadmpeg_ir::design::options::NativeOptions::new(),
+            source_settings: cadmpeg_ir::design::options::NativeOptions::new(),
         });
         let hash = pmi_local_sha256(&ir).expect("PMI baseline hash");
         ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(

@@ -38,8 +38,9 @@ pub enum Check {
     /// omits it from its dependencies; references form a cycle; an identity,
     /// ordinal, address, or range is repeated or invalid; a constraint's
     /// operands are not the kinds the constraint states; a configuration state
-    /// disagrees with the feature states it closes over; or an entity schema
-    /// cannot state its typed references.
+    /// disagrees with the feature states it closes over; an entity schema
+    /// cannot state its typed references; or an occurrence places the root
+    /// definition.
     ReferentialIntegrity,
     /// A coedge radial ring does not close, crosses edges, or, with two
     /// members, states equal coedge senses.
@@ -96,7 +97,9 @@ pub enum Check {
     /// ordinal, configuration source index, or feature ordinal, a design states
     /// more than one active configuration, a feature states more than one input
     /// or result topology state, a sketch constraint states the wrong number of
-    /// members, or a native record census disagrees with the source container.
+    /// members, a native record census disagrees with the source container, or
+    /// a document states more than one root definition, or a complete decoded
+    /// document none.
     Counts,
     /// A face's edge loop does not list its coedges in traversal order: its
     /// coedges form one closed traversal by vertex identity in another order,
@@ -124,6 +127,11 @@ pub enum Check {
     /// an evaluation key or base, a current state, a resolved state, or a
     /// configuration, arrangement, or override.
     Design,
+    /// A record of the process layer breaks a rule of part 10 of the CADIR
+    /// v11 specification: an operation's setup membership, a step, a
+    /// reference between process records, a toolpath or process state key,
+    /// a binding, or a setting stated off its operation's class.
+    Process,
 }
 
 impl fmt::Display for Check {
@@ -153,6 +161,7 @@ impl fmt::Display for Check {
             Self::MeasurementIncomplete => "measurement_incomplete",
             Self::DeclaredMeasure => "declared_measure",
             Self::Design => "design",
+            Self::Process => "process",
         })
     }
 }

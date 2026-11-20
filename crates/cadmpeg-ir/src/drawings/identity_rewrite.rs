@@ -3,7 +3,10 @@
 
 use super::{Drawing, DrawingKind};
 
-rewrite_record!(Drawing, []; {id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation_degrees, sheet, curves, template_geometry, x_direction, parameters, assets, native_ref});
+rewrite_record!(Drawing, []; {id, object, kind, runtime_type, order, visible, relationships, template, position, scale, direction, rotation, sheet, curves, template_geometry, x_direction, scale_from, projection, perspective, hidden_line, parameters, assets, native_ref});
+rewrite_scalar!(super::ScaleFrom);
+rewrite_scalar!(super::ProjectionAngle);
+rewrite_scalar!(super::HiddenLineMethod);
 rewrite_enum!(DrawingKind, []; {
     Page,
     Template,

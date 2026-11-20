@@ -667,7 +667,7 @@ impl Builder<'_, '_, '_, '_> {
                             .filter(|body| bodies.contains(&body.id))
                         {
                             body.transform = local;
-                            body.name = Some(prim.name.clone());
+                            body.name = Some(definition_name(prim, key).to_owned());
                         }
                         bodies
                     }
@@ -809,7 +809,7 @@ impl Builder<'_, '_, '_, '_> {
             id: crate::ids::body(key),
             kind,
             transform: None,
-            name: Some(prim.name.clone()),
+            name: Some(definition_name(prim, key).to_owned()),
             color,
             visible: None,
             native_ref: None,
@@ -920,9 +920,8 @@ impl Builder<'_, '_, '_, '_> {
         let mut groups: Vec<TessellationTriangleGroup> = mesh
             .subsets
             .iter()
-            .map(|subset| TessellationTriangleGroup {
-                source_id: Some(subset.path.clone()),
-                triangles: subset.triangles.clone(),
+            .map(|subset| {
+                TessellationTriangleGroup::new(Some(subset.path.clone()), subset.triangles.clone())
             })
             .collect();
         if !groups.is_empty() {
@@ -937,10 +936,7 @@ impl Builder<'_, '_, '_, '_> {
                 .filter(|triangle| !claimed.contains(triangle))
                 .collect();
             if !rest.is_empty() {
-                groups.push(TessellationTriangleGroup {
-                    source_id: None,
-                    triangles: rest,
-                });
+                groups.push(TessellationTriangleGroup::new(None, rest));
             }
         }
         let coordinates = mesh

@@ -80,7 +80,7 @@ fn single_face_resolves_arena_permutations_in_traversal_order() {
         Point3::new(0.0, 2.0, 0.0),
     ]);
     let expected = super::super::brep_payload(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &WritableModel::try_new(&ir).expect("writable triangle"),
         crate::RhinoArchiveVersion::V8,
     )
@@ -91,7 +91,7 @@ fn single_face_resolves_arena_permutations_in_traversal_order() {
     let model =
         WritableModel::try_new(&ir).expect("references resolve independently of arena order");
     let actual = super::super::brep_payload(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &model,
         crate::RhinoArchiveVersion::V8,
     )

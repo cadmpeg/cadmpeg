@@ -119,37 +119,47 @@ pub(super) fn bind_shell_removed_faces(
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     walls: &ShellWalls<'_>,
-) {
-    let FaceSelection::Native(native) = selection else {
-        return;
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let native = match selection {
+        FaceSelection::Native(native) => native.as_str(),
+        FaceSelection::Historical { native, .. } => native.as_str(),
+        _ => return None,
     };
-    let mut matching = groups.iter().filter(|group| group.id == *native);
+    let mut matching = groups.iter().filter(|group| group.id == native);
     let (Some(group), None) = (matching.next(), matching.next()) else {
-        return;
+        return None;
     };
     if group.scope_record_index != scope.record_index
         || crate::ids::native_stream(&group.id) != crate::ids::native_stream(&scope.id)
     {
-        return;
+        return None;
     }
     let (Some(input), Some(output)) = (walls.input, walls.output) else {
-        return;
+        return None;
     };
-    let Some(offset) = wall_offset(walls.thickness, walls.mode) else {
-        return;
-    };
+    let offset = wall_offset(walls.thickness, walls.mode)?;
     let members: Vec<u32> = group.members().iter().map(|member| member.value).collect();
-    let Some(faces) = removed_face_selection(&members, offset, walls.transition, input, output)
-    else {
-        return;
-    };
+    let faces = removed_face_selection(&members, offset, walls.transition, input, output)?;
     let prefix = crate::ids::feature_input_prefix(feature_id, walls.previous_state_id);
-    let selected = faces
+    let selected: Vec<_> = faces
         .into_iter()
         .map(|slot| {
             crate::ids::history_input_face_id(&prefix, cadmpeg_ir::ids::IdentityKey::from(slot))
         })
         .collect();
+    if let FaceSelection::Historical { faces, .. } = selection {
+        let recipe_set = faces.iter().collect::<BTreeSet<_>>();
+        let wall_set = selected.iter().collect::<BTreeSet<_>>();
+        return (recipe_set != wall_set).then(|| {
+            crate::loss::F3dLossCode::FeatureShellRemovedFacesAssumed.note(format!(
+                "Shell {} has recipe removed faces {faces:?} and wall-derived removed faces {selected:?}; the recipe faces are retained (DR-223).",
+                scope.id
+            ))
+        });
+    }
+    let FaceSelection::Native(native) = selection else {
+        return None;
+    };
     if let Ok(historical) = FaceSelection::historical(
         crate::ids::history_input_state_id(&prefix),
         selected,
@@ -157,6 +167,7 @@ pub(super) fn bind_shell_removed_faces(
     ) {
         *selection = historical;
     }
+    None
 }
 
 #[cfg(test)]

@@ -1,9 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Test-only charge probes. Normal builds contain no probe state or calls.
+//! Test-only charge probes and decode contexts. Normal builds contain no
+//! probe state or calls.
 
 use std::cell::{Cell, RefCell};
 
-use super::{ResourceDimension, ResourceLimits};
+use super::{
+    DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, ResourceDimension, ResourceLimits,
+};
+
+/// A service-policy decode context for a test that creates native records
+/// without reading a source file.
+#[must_use]
+pub fn service_decode_context() -> DecodeContext<'static> {
+    let arena = Box::leak(Box::new(DecodeArena::new()));
+    DecodeContext::new(arena, &DecodePolicy::service(), DecodeDepth::Full)
+}
 
 #[derive(Debug)]
 struct Target {

@@ -6,7 +6,7 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::tessellation::{ChannelAddressing, TessellationChannel};
+use cadmpeg_ir::tessellation::{ChannelAddressing, TessellationChannel, TessellationTriangleGroup};
 
 use crate::loss::UsdLossCode;
 use crate::test_support::{decode, encode, prim_layer};
@@ -237,6 +237,48 @@ fn export_losses_are_emitted() {
         &report.losses,
         UsdLossCode::ExportChannelNotWritten
     ));
+}
+
+/// A body keeps its exact B-rep, and its tessellation has a triangle group
+/// that names a face of the body. No `GeomSubset` property states that
+/// face, so the export reports it.
+#[test]
+fn a_triangle_group_face_is_reported_as_not_written() {
+    let meshed = decode(&mesh(TRIANGLE));
+    let (mesh_ir, _, _) = meshed.into_parts();
+    let patch = decode(&format!(
+        "#usda 1.0\ndef NurbsPatch \"P\"\n{{\n{PATCH}\n}}\n"
+    ));
+    let (mut ir, _, _) = patch.into_parts();
+    let body = ir.geometry.bodies[0].id.clone();
+    let face = ir.geometry.faces[0].id.clone();
+    let group = TessellationTriangleGroup::new(Some("S".to_owned()), vec![0]).with_face(face);
+    let tessellation = mesh_ir.model.tessellations[0]
+        .clone()
+        .with_body(Some(body))
+        .with_triangle_groups(vec![group])
+        .unwrap();
+    ir.model.tessellations.push(tessellation);
+    let (text, report) = encode(&ir);
+    assert!(text.contains("def GeomSubset \"S\""), "{text}");
+    assert!(
+        !emitted(&report.losses, UsdLossCode::ExportTopologyTessellated),
+        "{:#?}",
+        report.losses
+    );
+    let notes: Vec<_> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == UsdLossCode::ExportGroupFaceNotWritten.kind())
+        .collect();
+    assert_eq!(notes.len(), 1, "{:#?}", report.losses);
+    assert!(
+        notes[0]
+            .message
+            .contains("1 triangle group faces were not written"),
+        "{}",
+        notes[0].message
+    );
 }
 
 #[test]

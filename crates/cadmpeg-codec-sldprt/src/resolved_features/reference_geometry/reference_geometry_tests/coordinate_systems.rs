@@ -180,7 +180,7 @@ fn solved_coordinate_system_projects_orthogonalized_flipped_frame() {
     );
     let mut histories = vec![coordinate_system_history()];
     enrich_history_coordinate_systems(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut histories,
         &[record.lane],
     )
@@ -592,7 +592,7 @@ fn solved_coordinate_system_rejects_cross_lane_disagreement() {
     );
     let mut histories = vec![coordinate_system_history()];
     enrich_history_coordinate_systems(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut histories,
         &[first.lane, second.lane],
     )

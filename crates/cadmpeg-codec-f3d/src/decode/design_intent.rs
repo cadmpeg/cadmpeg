@@ -938,6 +938,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         .extend(crate::history::bind_generated_body_selections(
             &mut model.features,
             &body_selection_inputs,
+            &scope_histories,
+            geometry.primary_brep,
+            &mut losses,
         ));
     losses.extend(crate::history::bind_feature_face_selections(
         &mut model.features,
@@ -1012,7 +1015,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.sketch_curve_identities,
         &design.sketch_surfaces,
         &design.sketch_relations,
-        geometry.tolerances.linear.get(),
+        crate::design::feature_project::SpatialProfileSearch {
+            linear_tolerance: geometry.tolerances.linear.get(),
+            work: crate::design::feature_project::SPATIAL_PROFILE_SEARCH_WORK,
+        },
     )?;
     model.spatial_sketches = spatial.sketches;
     model.spatial_sketch_entities = spatial.entities;
@@ -1964,6 +1970,11 @@ fn extend_related_design_records(
         geometry.persistent_subentity_tags,
         &design.design_parameter_scopes,
     );
+    profile_losses.extend(crate::history::linked_states::inferred_history_losses(
+        &design.design_body_recipe_operands,
+        &design.design_parameter_scopes,
+        &design.asm_histories,
+    ));
     crate::history::body_recipe_operands::bind_body_recipe_operand_history_candidates(
         &mut design.design_body_recipe_operands,
         &prereqs.construction_recipes,

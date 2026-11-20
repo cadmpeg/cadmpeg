@@ -40,7 +40,7 @@ fn generated_f3d_rewrites_plane_frame() {
 }
 
 #[test]
-fn generated_f3d_rejects_analytic_surface_family_changes() {
+fn generated_f3d_regenerates_on_analytic_surface_family_changes() {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let decoded = EditableDecodeResult::from(
@@ -62,13 +62,12 @@ fn generated_f3d_rejects_analytic_surface_family_changes() {
         .unwrap(),
     ));
 
-    let error = crate::test_support::plan_inherited_write(
+    crate::test_support::assert_written_with_loss(
         &edited,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .expect_err("native plane record cannot silently retain a sphere edit");
-    assert!(error
-        .to_string()
-        .contains("does not support edits to surface"));
+        Some(decoded.source_fidelity()),
+        &crate::loss::F3dLossCode::WriterPatchDeclined
+            .kind()
+            .to_string(),
+        "does not support edits to surface",
+    );
 }
