@@ -5285,10 +5285,10 @@ pub(crate) fn bind_scope_histories(
         let Some(construction) = scope.base_feature_construction() else {
             continue;
         };
-        let mut referenced_histories = construction.body_reference_records().filter_map(|suffix| {
+        let mut referenced_histories = construction.body_entity_suffixes().filter_map(|suffix| {
             let mut bindings = body_bindings.iter().filter(|binding| {
                 crate::ids::same_native_occurrence(binding.id(), &scope.id)
-                    && binding.entity_suffix == u64::from(suffix)
+                    && binding.entity_suffix == suffix
             });
             let binding = bindings.next()?;
             if bindings.next().is_some() {
