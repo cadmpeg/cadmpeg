@@ -12850,7 +12850,7 @@ Unstated regions:
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 26 B
 
-Offsets are relative to the scope's indexed header, for `P = 0`. The `D` owner references follow. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the scope's indexed header, for `P = 0`. The `D` owner references follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -12864,7 +12864,7 @@ Offsets are relative to the scope's indexed header, for `P = 0`. The `D` owner r
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 30 B
 
-Offsets are relative to the scope's indexed header, for `P = 1`. The `D` owner references follow. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the scope's indexed header, for `P = 1`. The `D` owner references follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -12879,7 +12879,7 @@ Offsets are relative to the scope's indexed header, for `P = 1`. The `D` owner r
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 144 B
 
-Offsets are relative to the end of the `D` owner references, for `J = 0`. The `D` dimension owners of the ordered reference table follow. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the end of the `D` owner references, for `J = 0`. The `D` dimension owners of the ordered reference table follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -12940,7 +12940,7 @@ Offsets are relative to the primary indexed header of a container without an `En
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 13 B
 
-Offsets are relative to the end of the entity name. The `R` relation references follow. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the end of the entity name. The `R` relation references follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -12953,7 +12953,7 @@ Offsets are relative to the end of the entity name. The `R` relation references 
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 5 B
 
-Offsets are relative to the end of the relation run. The `M` dimension-frame references follow. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the end of the relation run. The `M` dimension-frame references follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -12964,7 +12964,7 @@ Offsets are relative to the end of the relation run. The `M` dimension-frame ref
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 15 B
 
-Offsets are relative to the end of the dimension-frame run. The `X` references follow. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the end of the dimension-frame run. The `X` references follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -12979,7 +12979,7 @@ Offsets are relative to the end of the dimension-frame run. The `X` references f
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 17 B
 
-Offsets are relative to the end of the `X` run, for the null reference in the slot. The paired indexed header of the Geometry member follows. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the end of the `X` run, for the null reference in the slot. The paired indexed header of the Geometry member follows. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -12992,7 +12992,7 @@ Offsets are relative to the end of the `X` run, for the null reference in the sl
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 27 B
 
-Offsets are relative to the end of the `X` run, for a body-presentation owner in the slot. The paired indexed header of the Geometry member follows. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the end of the `X` run, for a body-presentation owner in the slot. The paired indexed header of the Geometry member follows. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -13005,7 +13005,7 @@ Offsets are relative to the end of the `X` run, for a body-presentation owner in
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 51 B
 
-Offsets are relative to the Geometry member's paired header, for a direct-container reference to a collection or folder. The display-name code units follow. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the Geometry member's paired header, for a direct-container reference to a collection or folder. The display-name code units follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -13035,7 +13035,7 @@ Unstated regions:
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 5 B
 
-Offsets are relative to the end of the display name. The `N` member references and the closing reference follow. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the end of the display name. The `N` member references and the closing reference follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -13046,7 +13046,7 @@ Offsets are relative to the end of the display name. The `N` member references a
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 34 B
 
-Offsets are relative to the frame record's indexed header. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the frame record's indexed header. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -13060,7 +13060,7 @@ Offsets are relative to the frame record's indexed header. Each reference field 
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 162 B
 
-Offsets are relative to the frame record's indexed header. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the frame record's indexed header. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -13134,7 +13134,7 @@ Offsets are relative to the placement's indexed header, for a sketch on `XZ` or 
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 133 B
 
-Offsets are relative to the end of the `values` list: placement offset 110 in the identity form and 238 in the matrix form. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the end of the `values` list: placement offset 110 in the identity form and 238 in the matrix form. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -13174,7 +13174,7 @@ Offsets are relative to the tracking flag's indexed header.
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 312 B
 
-Offsets are relative to the path's indexed header. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the path's indexed header. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -13210,7 +13210,7 @@ Offsets are relative to the path's indexed header. Each reference field is the e
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 106 B
 
-Offsets are relative to the transform's indexed header. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the transform's indexed header. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -13227,7 +13227,7 @@ Offsets are relative to the transform's indexed header. Each reference field is 
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 33 B
 
-Offsets are relative to the record's indexed header. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the record's indexed header. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -13240,7 +13240,7 @@ Offsets are relative to the record's indexed header. Each reference field is the
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 221 B
 
-Offsets are relative to the point's indexed header. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the point's indexed header. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -13266,7 +13266,7 @@ Offsets are relative to the point's indexed header. Each reference field is the 
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 225 B
 
-Offsets are relative to the point's indexed header. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the point's indexed header. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -13293,7 +13293,7 @@ Offsets are relative to the point's indexed header. Each reference field is the 
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 25 B
 
-Offsets are relative to the companion's indexed header. The `k` curve references, a zero byte, and the point reference follow; the record is `37 + 11k` bytes. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the companion's indexed header. The `k` curve references, a zero byte, and the point reference follow; the record is `37 + 11k` bytes. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -13326,7 +13326,7 @@ Offsets are relative to the end of the one point reference (`p = 5`). The sketch
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 5 | `zero_pad` | `bytes[5]` | little | spec | The curve tail stores `p` zero bytes, with `p = 5` after one point reference and `p = 3` after two or three · value `[0, 0, 0, 0, 0]` |
+| 0 | 5 | `pad` | `bytes[5]` | little | spec | The curve tail stores `p` pad bytes, with `p = 5` after one point reference and `p = 3` after two or three |
 | 5 | 1 | `curve_flag_a` | `u8` | little | spec | the curve flag `A` |
 | 6 | 1 | `reference_flag_b` | `u8` | little | spec | `B` is `1` for projected geometry |
 | 7 | 2 | `zero_pair` | `bytes[2]` | little | spec | two zero bytes, the u32 construction flag, `u8 1`, four zero bytes · value `[0, 0]` |
@@ -13334,10 +13334,10 @@ Offsets are relative to the end of the one point reference (`p = 5`). The sketch
 | 13 | 1 | `marker` | `u8` | little | spec | two zero bytes, the u32 construction flag, `u8 1`, four zero bytes · value `1` |
 | 14 | 4 | `zero_run_4` | `bytes[4]` | little | spec | two zero bytes, the u32 construction flag, `u8 1`, four zero bytes · value `[0, 0, 0, 0]` |
 | 18 | 1 | `projected_marker` | `u8` | little | spec | a u8 `1` that projected geometry can store as `0` |
-| 19 | 12 | `zero_run_12` | `bytes[12]` | little | spec | twelve zero bytes, the f32 values `1.0` and `1.0`, and five zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
-| 31 | 4 | `scale_a` | `f32` | little | spec | twelve zero bytes, the f32 values `1.0` and `1.0`, and five zero bytes · value `1.0` |
-| 35 | 4 | `scale_b` | `f32` | little | spec | twelve zero bytes, the f32 values `1.0` and `1.0`, and five zero bytes · value `1.0` |
-| 39 | 5 | `zero_run_5` | `bytes[5]` | little | spec | twelve zero bytes, the f32 values `1.0` and `1.0`, and five zero bytes · value `[0, 0, 0, 0, 0]` |
+| 19 | 12 | `run_12` | `bytes[12]` | little | spec | twelve bytes, the f32 values `1.0` and `1.0`, and five zero bytes |
+| 31 | 4 | `scale_a` | `f32` | little | spec | twelve bytes, the f32 values `1.0` and `1.0`, and five zero bytes · value `1.0` |
+| 35 | 4 | `scale_b` | `f32` | little | spec | twelve bytes, the f32 values `1.0` and `1.0`, and five zero bytes · value `1.0` |
+| 39 | 5 | `zero_run_5` | `bytes[5]` | little | spec | twelve bytes, the f32 values `1.0` and `1.0`, and five zero bytes · value `[0, 0, 0, 0, 0]` |
 
 ## `sketch_item_curve_tail_points`
 
@@ -13347,7 +13347,7 @@ Offsets are relative to the end of the two or three point references (`p = 3`). 
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 3 | `zero_pad` | `bytes[3]` | little | spec | The curve tail stores `p` zero bytes, with `p = 5` after one point reference and `p = 3` after two or three · value `[0, 0, 0]` |
+| 0 | 3 | `pad` | `bytes[3]` | little | spec | The curve tail stores `p` pad bytes, with `p = 5` after one point reference and `p = 3` after two or three |
 | 3 | 1 | `curve_flag_a` | `u8` | little | spec | the curve flag `A` |
 | 4 | 1 | `reference_flag_b` | `u8` | little | spec | `B` is `1` for projected geometry |
 | 5 | 2 | `zero_pair` | `bytes[2]` | little | spec | two zero bytes, the u32 construction flag, `u8 1`, four zero bytes · value `[0, 0]` |
@@ -13355,10 +13355,10 @@ Offsets are relative to the end of the two or three point references (`p = 3`). 
 | 11 | 1 | `marker` | `u8` | little | spec | two zero bytes, the u32 construction flag, `u8 1`, four zero bytes · value `1` |
 | 12 | 4 | `zero_run_4` | `bytes[4]` | little | spec | two zero bytes, the u32 construction flag, `u8 1`, four zero bytes · value `[0, 0, 0, 0]` |
 | 16 | 1 | `projected_marker` | `u8` | little | spec | a u8 `1` that projected geometry can store as `0` |
-| 17 | 12 | `zero_run_12` | `bytes[12]` | little | spec | twelve zero bytes, the f32 values `1.0` and `1.0`, and five zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
-| 29 | 4 | `scale_a` | `f32` | little | spec | twelve zero bytes, the f32 values `1.0` and `1.0`, and five zero bytes · value `1.0` |
-| 33 | 4 | `scale_b` | `f32` | little | spec | twelve zero bytes, the f32 values `1.0` and `1.0`, and five zero bytes · value `1.0` |
-| 37 | 5 | `zero_run_5` | `bytes[5]` | little | spec | twelve zero bytes, the f32 values `1.0` and `1.0`, and five zero bytes · value `[0, 0, 0, 0, 0]` |
+| 17 | 12 | `run_12` | `bytes[12]` | little | spec | twelve bytes, the f32 values `1.0` and `1.0`, and five zero bytes |
+| 29 | 4 | `scale_a` | `f32` | little | spec | twelve bytes, the f32 values `1.0` and `1.0`, and five zero bytes · value `1.0` |
+| 33 | 4 | `scale_b` | `f32` | little | spec | twelve bytes, the f32 values `1.0` and `1.0`, and five zero bytes · value `1.0` |
+| 37 | 5 | `zero_run_5` | `bytes[5]` | little | spec | twelve bytes, the f32 values `1.0` and `1.0`, and five zero bytes · value `[0, 0, 0, 0, 0]` |
 
 ## `sketch_item_relation_head`
 
@@ -13391,7 +13391,7 @@ Unstated regions:
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 134 B
 
-Offsets are relative to the owner's indexed header, for the 104-byte form; the paired part follows at 104. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+Offsets are relative to the owner's indexed header, for the 104-byte form; the paired part follows at 104. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

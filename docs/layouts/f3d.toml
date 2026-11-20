@@ -42055,7 +42055,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "**Sketch scope frame.**"
 size = 26
-note = "Offsets are relative to the scope's indexed header, for `P = 0`. The `D` owner references follow. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the scope's indexed header, for `P = 0`. The `D` owner references follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "indexed_header"
@@ -42100,7 +42100,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "**Sketch scope frame.**"
 size = 30
-note = "Offsets are relative to the scope's indexed header, for `P = 1`. The `D` owner references follow. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the scope's indexed header, for `P = 1`. The `D` owner references follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "indexed_header"
@@ -42153,7 +42153,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "**Sketch scope frame.**"
 size = 144
-note = "Offsets are relative to the end of the `D` owner references, for `J = 0`. The `D` dimension owners of the ordered reference table follow. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the end of the `D` owner references, for `J = 0`. The `D` dimension owners of the ordered reference table follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "flag_f"
@@ -42370,7 +42370,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The relation run follows"
 size = 13
-note = "Offsets are relative to the end of the entity name. The `R` relation references follow. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the end of the entity name. The `R` relation references follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "base_record"
@@ -42407,7 +42407,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The dimension-frame run follows"
 size = 5
-note = "Offsets are relative to the end of the relation run. The `M` dimension-frame references follow. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the end of the relation run. The `M` dimension-frame references follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "frame_run_marker"
@@ -42430,7 +42430,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "the u32 sketch word"
 size = 15
-note = "Offsets are relative to the end of the dimension-frame run. The `X` references follow. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the end of the dimension-frame run. The `X` references follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "zero_byte"
@@ -42482,7 +42482,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The slot after the `X` run holds"
 size = 17
-note = "Offsets are relative to the end of the `X` run, for the null reference in the slot. The paired indexed header of the Geometry member follows. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the end of the `X` run, for the null reference in the slot. The paired indexed header of the Geometry member follows. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "presentation_owner"
@@ -42521,7 +42521,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The slot after the `X` run holds"
 size = 27
-note = "Offsets are relative to the end of the `X` run, for a body-presentation owner in the slot. The paired indexed header of the Geometry member follows. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the end of the `X` run, for a body-presentation owner in the slot. The paired indexed header of the Geometry member follows. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "presentation_owner"
@@ -42559,7 +42559,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The direct-container reference names the sketch collection"
 size = 51
-note = "Offsets are relative to the Geometry member's paired header, for a direct-container reference to a collection or folder. The display-name code units follow. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the Geometry member's paired header, for a direct-container reference to a collection or folder. The display-name code units follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.gap]]
 offset = 0
@@ -42614,7 +42614,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "the `N` member references in ascending record-index order"
 size = 5
-note = "Offsets are relative to the end of the display name. The `N` member references and the closing reference follow. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the end of the display name. The `N` member references and the closing reference follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "zero_byte"
@@ -42637,7 +42637,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The sketch frame record is 34 bytes when the placement stores the identity"
 size = 34
-note = "Offsets are relative to the frame record's indexed header. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the frame record's indexed header. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "indexed_header"
@@ -42682,7 +42682,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "It is 162 bytes when the placement stores a matrix"
 size = 162
-note = "Offsets are relative to the frame record's indexed header. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the frame record's indexed header. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "indexed_header"
@@ -43069,7 +43069,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The base level of the placement follows the `values` list"
 size = 133
-note = "Offsets are relative to the end of the `values` list: placement offset 110 in the identity form and 238 in the matrix form. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the end of the `values` list: placement offset 110 in the identity form and 238 in the matrix form. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "base_marker"
@@ -43246,7 +43246,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "**Placement path.**"
 size = 312
-note = "Offsets are relative to the path's indexed header. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the path's indexed header. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "indexed_header"
@@ -43454,7 +43454,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "is 106 bytes"
 size = 106
-note = "Offsets are relative to the transform's indexed header. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the transform's indexed header. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "indexed_header"
@@ -43520,7 +43520,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "a reference to a 33-byte record of type `CB4F4CC2-9D6F-48BA-9B1F-20C1992C9C9C`"
 size = 33
-note = "Offsets are relative to the record's indexed header. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the record's indexed header. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "indexed_header"
@@ -43557,7 +43557,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The record is 221 bytes without the four zero bytes"
 size = 221
-note = "Offsets are relative to the point's indexed header. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the point's indexed header. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "indexed_header"
@@ -43690,7 +43690,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "and 225 bytes with them"
 size = 225
-note = "Offsets are relative to the point's indexed header. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the point's indexed header. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "indexed_header"
@@ -43831,7 +43831,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The point companion is the indexed header, ten zero bytes, a u32 count `k`"
 size = 25
-note = "Offsets are relative to the companion's indexed header. The `k` curve references, a zero byte, and the point reference follow; the record is `37 + 11k` bytes. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the companion's indexed header. The `k` curve references, a zero byte, and the point reference follow; the record is `37 + 11k` bytes. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "indexed_header"
@@ -43929,12 +43929,11 @@ size = 44
 note = "Offsets are relative to the end of the one point reference (`p = 5`). The sketch container reference follows."
 
 [[record.field]]
-name = "zero_pad"
+name = "pad"
 offset = 0
 type = "bytes[5]"
 source = "spec"
-anchor = "The curve tail stores `p` zero bytes, with `p = 5` after one point reference and `p = 3` after two or three"
-value = [0, 0, 0, 0, 0]
+anchor = "The curve tail stores `p` pad bytes, with `p = 5` after one point reference and `p = 3` after two or three"
 
 [[record.field]]
 name = "curve_flag_a"
@@ -43989,19 +43988,18 @@ source = "spec"
 anchor = "a u8 `1` that projected geometry can store as `0`"
 
 [[record.field]]
-name = "zero_run_12"
+name = "run_12"
 offset = 19
 type = "bytes[12]"
 source = "spec"
-anchor = "twelve zero bytes, the f32 values `1.0` and `1.0`, and five zero bytes"
-value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+anchor = "twelve bytes, the f32 values `1.0` and `1.0`, and five zero bytes"
 
 [[record.field]]
 name = "scale_a"
 offset = 31
 type = "f32"
 source = "spec"
-anchor = "twelve zero bytes, the f32 values `1.0` and `1.0`, and five zero bytes"
+anchor = "twelve bytes, the f32 values `1.0` and `1.0`, and five zero bytes"
 value = 1.0
 
 [[record.field]]
@@ -44009,7 +44007,7 @@ name = "scale_b"
 offset = 35
 type = "f32"
 source = "spec"
-anchor = "twelve zero bytes, the f32 values `1.0` and `1.0`, and five zero bytes"
+anchor = "twelve bytes, the f32 values `1.0` and `1.0`, and five zero bytes"
 value = 1.0
 
 [[record.field]]
@@ -44017,7 +44015,7 @@ name = "zero_run_5"
 offset = 39
 type = "bytes[5]"
 source = "spec"
-anchor = "twelve zero bytes, the f32 values `1.0` and `1.0`, and five zero bytes"
+anchor = "twelve bytes, the f32 values `1.0` and `1.0`, and five zero bytes"
 value = [0, 0, 0, 0, 0]
 
 [[record]]
@@ -44029,12 +44027,11 @@ size = 42
 note = "Offsets are relative to the end of the two or three point references (`p = 3`). The sketch container reference follows."
 
 [[record.field]]
-name = "zero_pad"
+name = "pad"
 offset = 0
 type = "bytes[3]"
 source = "spec"
-anchor = "The curve tail stores `p` zero bytes, with `p = 5` after one point reference and `p = 3` after two or three"
-value = [0, 0, 0]
+anchor = "The curve tail stores `p` pad bytes, with `p = 5` after one point reference and `p = 3` after two or three"
 
 [[record.field]]
 name = "curve_flag_a"
@@ -44089,19 +44086,18 @@ source = "spec"
 anchor = "a u8 `1` that projected geometry can store as `0`"
 
 [[record.field]]
-name = "zero_run_12"
+name = "run_12"
 offset = 17
 type = "bytes[12]"
 source = "spec"
-anchor = "twelve zero bytes, the f32 values `1.0` and `1.0`, and five zero bytes"
-value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+anchor = "twelve bytes, the f32 values `1.0` and `1.0`, and five zero bytes"
 
 [[record.field]]
 name = "scale_a"
 offset = 29
 type = "f32"
 source = "spec"
-anchor = "twelve zero bytes, the f32 values `1.0` and `1.0`, and five zero bytes"
+anchor = "twelve bytes, the f32 values `1.0` and `1.0`, and five zero bytes"
 value = 1.0
 
 [[record.field]]
@@ -44109,7 +44105,7 @@ name = "scale_b"
 offset = 33
 type = "f32"
 source = "spec"
-anchor = "twelve zero bytes, the f32 values `1.0` and `1.0`, and five zero bytes"
+anchor = "twelve bytes, the f32 values `1.0` and `1.0`, and five zero bytes"
 value = 1.0
 
 [[record.field]]
@@ -44117,7 +44113,7 @@ name = "zero_run_5"
 offset = 37
 type = "bytes[5]"
 source = "spec"
-anchor = "twelve zero bytes, the f32 values `1.0` and `1.0`, and five zero bytes"
+anchor = "twelve bytes, the f32 values `1.0` and `1.0`, and five zero bytes"
 value = [0, 0, 0, 0, 0]
 
 [[record]]
@@ -44183,7 +44179,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "The 104-byte form"
 size = 134
-note = "Offsets are relative to the owner's indexed header, for the 104-byte form; the paired part follows at 104. Each reference field is the eleven-byte same-segment form and each null reference is one byte; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+note = "Offsets are relative to the owner's indexed header, for the 104-byte form; the paired part follows at 104. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
 
 [[record.field]]
 name = "indexed_header"
