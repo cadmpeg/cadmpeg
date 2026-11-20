@@ -2992,16 +2992,17 @@ existing partition node.
 A cylindrical face spanning a complete angular period stores two loops. Each
 loop contains one coedge whose edge is closed and whose carrier is a circle
 coaxial with the cylinder. The stored topology omits the longitudinal seam.
-Its endpoints are the two circle points
-`center - ref_direction * radius`, where `ref_direction` is the cylinder
-carrier's reference direction, and each circle's vertex moves to its endpoint.
-A circle vertex that is also the end of another edge keeps its stored
-position: a hole circle that touches a straight edge of its face shares the
-touching vertex with that edge. When such a vertex lies off its circle point
-by more than the linear resolution, the seam is the cylinder ruling through
-that vertex, and its endpoints are the two circle points on that ruling. When
-two such vertices lie on different rulings, the neutral topology keeps the two
-loops and adds no seam. The neutral topology joins the seam endpoints
+A circle vertex is fixed when the file stores its point or another edge also
+ends at it. A hole circle that touches a straight edge of its face shares the
+touching vertex with that edge. A fixed vertex keeps its position. The seam's
+endpoints are the two circle points `center - ref_direction * radius`, where
+`ref_direction` is the cylinder carrier's reference direction. When a fixed
+vertex lies off its circle point by more than the linear resolution, the seam
+is the cylinder ruling through that vertex, and its endpoints are the two
+circle points on that ruling. Each vertex that is not fixed moves to its
+endpoint. When a fixed vertex lies off its endpoint by more than the linear
+resolution, the neutral topology keeps the two loops and adds no seam. The
+neutral topology joins the seam endpoints
 with one line edge, inserts two oppositely oriented radial coedges for that
 edge, and combines the two circular coedges and two seam coedges into one
 loop.
