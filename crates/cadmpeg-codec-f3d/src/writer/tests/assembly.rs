@@ -209,4 +209,14 @@ fn writer_accepts_a_standalone_joint_nested_below_a_component_insert_key() {
     assert!(
         crate::writer::primitives::validate_assembly_projection(&target, Some(&native)).is_err()
     );
+
+    let joint = target.model.assembly_joints[0].id.to_string();
+    crate::test_support::assert_written_with_loss(
+        &target,
+        None,
+        &crate::loss::F3dLossCode::WriterJointOmitted
+            .kind()
+            .to_string(),
+        &joint,
+    );
 }
