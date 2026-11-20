@@ -428,8 +428,9 @@ fn an_open_edge_against_its_nurbs_curve_is_written_with_its_ends_exchanged() {
 
 #[test]
 fn edges_with_and_against_one_nurbs_curve_both_take_ranges_on_it() {
-    // Edge 0 runs from 10 to 0 on the curve and edge 8, (0,0,0) to (0,0,10),
-    // from 10 to 20: the curve is shared, so only the edge against it changes.
+    // Edge 0 runs from 10 to 0 on the curve and the edge from (0,0,0) to
+    // (0,0,10) from 10 to 20: the curve is shared, so only the edge against it
+    // changes. The arena is in id order, so that edge is found by its id.
     let mut ir = cube_with_unranged_nurbs_edge(
         vec![0.0, 0.0, 10.0, 20.0, 20.0],
         vec![
@@ -439,20 +440,27 @@ fn edges_with_and_against_one_nurbs_curve_both_take_ranges_on_it() {
         ],
         false,
     );
+    let with = ir
+        .geometry
+        .edges
+        .iter()
+        .position(|edge| edge.id.as_str() == "synthetic:cube:edge#8")
+        .expect("the cube's edge from corner 0 to corner 4");
     let curve = ir.geometry.edges[0].curve().cloned();
-    ir.geometry.edges[8].carrier = EdgeCarrier::new(curve, None).expect("a curve without a range");
-    let edges = [0, 8].map(|index| ir.geometry.edges[index].id.to_string());
+    ir.geometry.edges[with].carrier =
+        EdgeCarrier::new(curve, None).expect("a curve without a range");
+    let edges = [0, with].map(|index| ir.geometry.edges[index].id.to_string());
     let (report, decoded) = write(&ir);
     for edge in &edges {
         assert!(!record_invalid_names(&report, edge), "{:#?}", report.losses);
     }
     assert_eq!(
         decoded.geometry.edges[0].curve(),
-        decoded.geometry.edges[8].curve()
+        decoded.geometry.edges[with].curve()
     );
     for (index, expected, start) in [
         (0, [0.0, 10.0], Point3::new(10.0, 0.0, 0.0)),
-        (8, [10.0, 20.0], Point3::new(0.0, 0.0, 0.0)),
+        (with, [10.0, 20.0], Point3::new(0.0, 0.0, 0.0)),
     ] {
         let range = decoded.geometry.edges[index]
             .param_range()
