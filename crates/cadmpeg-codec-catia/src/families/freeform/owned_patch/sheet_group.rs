@@ -846,7 +846,7 @@ mod tests {
         };
         let resolve_station = |bytes: &[u8], end| {
             let alloc = Allocations::read(bytes, 0, end);
-            super::super::stations::parameter(
+            super::super::stations::wide_parameter(
                 bytes,
                 &alloc.records,
                 0,
