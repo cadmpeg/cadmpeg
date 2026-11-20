@@ -1781,7 +1781,7 @@ A compact Sketch-point termination of an Extrude is tracked in DR-480.
 
 **Note.** An ambiguous interval retains its native scope, ordered references, state identities, and candidate histories with `feature.output-state-chain-unbound`.
 
-### DR-917. Generated-body selections with an unresolved history
+### DR-1005. Generated-body selections with an unresolved history
 
 **Question.** Which native relation selects the history of a body-pattern seed or `RemoveBody` operand when scope-history bindings and state identities leave several candidate histories?
 
