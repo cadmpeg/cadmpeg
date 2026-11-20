@@ -1060,6 +1060,56 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** The compatibility decoder selects advanced-ID omission. This selection is not proof of the physical omitted member. Neutral map-channel interpretation remains subject to MA-04.
 
+### DR-904. Protein stream header words
+
+**Question.** What do the two i32 words and the u32 word at bytes 4 through 15 of a Protein stream header record?
+
+**Known.** `protein.md` §2 "`InstanceProperties.bin` and `DefinitionIteratorProperties.bin` start with" gives the values `-1`, `-1`, and `0`. Every stream holds consecutive records with no page outside a record (`protein.md` §3).
+
+**Need.** A stream whose pages include a page outside every record, or a stream that a producer extended in place, to relate the words to page allocation.
+
+### DR-905. Text of the Protein schema documents
+
+**Question.** Which text do the nine schema documents of a Fusion Protein package hold, and does a reader take the property declarations from the package or from its own library schema of the same identifier and `SchemaVersion`?
+
+**Known.** `protein.md` §8 "A schema document declares one schema" gives the schemas, their bases, `type` values, and `SchemaVersion` values. `protein.md` §9 "The tables below give each instance record's value block" gives every serialized property with its declaring schema and carrier. A schema document also declares non-serialized properties, labels, bounds, user-interface and implementation members. The text of a schema document is the same in every package that has its identifier and `SchemaVersion`.
+
+**Need.** The declarations that a writer must emit beyond the serialized properties, so that a package with generated schema documents reads the same as one with library schema documents.
+
+### DR-906. Second form of the appearance of a Base Feature body
+
+**Question.** What selects the second form of the body's appearance and its twin in the Protein package of a Base Feature design?
+
+**Known.** `protein.md` §9 "The Protein package of a Fusion Base Feature design" gives the common form: the twin has base asset identifier `PrismOpaque` and the definition `Opaque(R,G,B)`, and the appearance has the colour `(246, 246, 243)`. In the second form, the twin is a copy of the appearance aspect: base asset identifier `PrismMaterial-022_physmat_aspects:Prism-374`, `AssetLibID` `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C`, the aspect's values, and a definition record equal to the aspect's definition. The appearance then has `generic_diffuse` equal to the aspect's `opaque_albedo`, `generic_glossiness` `0.7015873193740845`, and `generic_reflectivity_at_0deg` `0.0529`. The other values of the body's appearance and twin, and the records of the physical material and its aspects, equal the common form. The packages of the second form share the physical-material identifier and the body-appearance identifier. `protein.md` §9 "An appearance and its twin carry one colour" gives the appearance pairs that a per-face assignment adds to a package of the second form: each pair has the common form with the colour of its face.
+
+**Need.** The source property, for example a material or appearance setting of the design or of its template, that selects one form. A package of the common form with a per-face assignment, to show whether the form of an added pair follows the form of the body's appearance.
+
+### DR-907. Join from an instance record to its definition record
+
+**Question.** Which rule joins an instance record to its definition record when the definition's asset identifier differs from the instance's base asset identifier?
+
+**Known.** `protein.md` §6 "`AssetData/AssetTableOfContents.bin` lists the instance records" pairs each instance record with one definition record by page index. In the package of `protein.md` §9 "The Protein package of a Fusion Base Feature design", the structural aspect has base asset identifier `PrismMaterial-022_physmat_aspects_1:StructuralPlastic-004` and definition asset identifier `StructuralPlastic-004`, the appearance aspect has base asset identifier `PrismMaterial-022_physmat_aspects:Prism-374` and definition asset identifier `Prism-374`, and the twin has base asset identifier `PrismOpaque` and definition asset identifier `Opaque(R,G,B)`. The physical material and the appearance have a base asset identifier equal to the definition asset identifier. The decoder (`crates/cadmpeg-codec-f3d/src/materials.rs`) joins an instance record to a definition through an asset identifier equal to the instance's base asset identifier. A schema-bearing instance joins through the pair `(asset identifier, schema identifier)` of `protein.md` §5 "A definition stream can repeat one asset identifier", and a schema-less instance joins when its asset identifier has one catalog schema. The joined definition supplies the schema identifier and the category, and repeats with differing categories supply no category.
+
+**Conflict.** The equal-identifier join finds no definition for the two aspects and the twin, and the table of contents finds one for each.
+
+**Need.** A decision whether the decoder joins through the table of contents when the package has one.
+
+### DR-908. Members of other Fusion Protein packages
+
+**Question.** Which rule gives the members of the Protein package of a Fusion design whose package differs from the package of a Base Feature design?
+
+**Known.** `protein.md` §8 "The `.protein` member of a Fusion Base Feature design" gives the members of the package of a Base Feature design, in ZIP order. Other Fusion packages hold other member lists. Their `Schemas` folder adds schema documents, for example `PrismMetalSchema`, `PrismTransparentSchema`, `PrismLayeredSchema`, `StructuralMetalSchema`, `StructuralGenericSchema`, `ThermalCommonSchema`, `ThermalSolidSchema`, `BumpMapSchema`, `TextureMap2dSchema`, and `UnifiedBitmapSchema`, and can omit schema documents of the nine in §8. Some packages name the stream version member `AssetData/StreamVersionTable.inf`. Some packages add a `Resources` folder with `cnx.xml` and `core.xml`, and in it one folder per name of the form `{GUID}_Post2015`, with the suffix once or more, that holds `cnx.xml`, `core.xml`, and a `thumbnail` folder.
+
+**Need.** The rule that selects the schema documents, the name of the stream version member, and the `Resources` members of a package, and the ZIP entry fields, text, and order of those members, so that a writer can emit the package of a design with other materials or appearances.
+
+### DR-909. Separator of the `PrismMaterial-022` preview path
+
+**Question.** What selects the separator `<s>` in the preview path of the `PrismMaterial-022` definition record?
+
+**Known.** `protein.md` §9 "The table-of-contents entry of each instance names one definition record" gives the preview path `Mats<s>PrismOpaque<s>Presets<s>t_Prism-374.png`. The separator is `\` or `/`. Packages of the common form store either value. The packages of the second form (DR-906) store `\`.
+
+**Need.** The producer state, for example the Fusion version or the material library that saved the design, that selects the separator.
+
 ## 4. T-splines
 
 ### TS-05. Form selection-group scalar and flags
