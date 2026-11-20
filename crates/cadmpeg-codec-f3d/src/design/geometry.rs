@@ -19,6 +19,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::PositiveLength;
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 const EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12: f64 = 1.0e-12;
 const EPS_GEOMETRY_TANGENT_NESTED_LINE_PROFILE_E10: f64 = 1.0e-10;
@@ -87,6 +88,35 @@ pub(crate) struct ProfileGeometryWork {
     hole_boundary_inferred_selections: Cell<usize>,
     region_hole_inferred_selections: Cell<usize>,
     sampled_regions: RefCell<Vec<RegionSampleEntry>>,
+    arrangement_reuse: RefCell<Option<ArrangementReuse>>,
+}
+
+/// The arrangement that the profile lookups inside one
+/// [`ProfileGeometryWork::reusing_arrangement`] call share, once built, with
+/// the arrangement work its build charged.
+struct ArrangementReuse {
+    key: ArrangementKey,
+    built: Option<(Option<Rc<Vec<SketchArrangementFace>>>, usize)>,
+}
+
+/// The addresses of a sketch and of its entity slice, the slice length, and
+/// the bits of a tolerance.
+type ArrangementKey = (usize, usize, usize, u64);
+
+/// The key of `sketch`, `entities`, and `tolerance`. The scope that holds a
+/// key keeps the sketch and the slice borrowed, so an equal key names the
+/// same sketch and entities.
+fn arrangement_key(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+) -> ArrangementKey {
+    (
+        std::ptr::from_ref(sketch).addr(),
+        entities.as_ptr().addr(),
+        entities.len(),
+        tolerance.to_bits(),
+    )
 }
 
 /// The samples of one set of atomic regions, keyed by the bits of the
@@ -134,7 +164,94 @@ impl ProfileGeometryWork {
             hole_boundary_inferred_selections: Cell::new(0),
             region_hole_inferred_selections: Cell::new(0),
             sampled_regions: RefCell::new(Vec::new()),
+            arrangement_reuse: RefCell::new(None),
         }
+    }
+
+    /// Run `run` with one shared build of the arrangement of `sketch` and
+    /// `entities` at `tolerance` for the region lookups inside it.
+    pub(super) fn reusing_arrangement<T>(
+        &self,
+        sketch: &cadmpeg_ir::sketches::Sketch,
+        entities: &[cadmpeg_ir::sketches::SketchEntity],
+        tolerance: f64,
+        run: impl FnOnce() -> T,
+    ) -> T {
+        let outer = self.arrangement_reuse.replace(Some(ArrangementReuse {
+            key: arrangement_key(sketch, entities, tolerance),
+            built: None,
+        }));
+        let result = run();
+        self.arrangement_reuse.replace(outer);
+        result
+    }
+
+    /// The faces `build` makes for `key`. Inside a
+    /// [`Self::reusing_arrangement`] call for `key`, a later call takes the
+    /// faces of an earlier build and charges the arrangement work that build
+    /// charged. It does so only when that build left the cap unexhausted and
+    /// set no flag or inferred count, and when the cap is unexhausted and
+    /// holds that work. Each build then charges, sets, and returns the same.
+    fn arrangement_faces(
+        &self,
+        key: ArrangementKey,
+        build: impl FnOnce() -> Result<Option<Vec<SketchArrangementFace>>, CodecError>,
+    ) -> Result<Option<Rc<Vec<SketchArrangementFace>>>, CodecError> {
+        let scoped = self
+            .arrangement_reuse
+            .borrow()
+            .as_ref()
+            .filter(|reuse| reuse.key == key)
+            .map(|reuse| reuse.built.clone());
+        let Some(built) = scoped else {
+            return Ok(build()?.map(Rc::new));
+        };
+        if let Some((faces, charged)) = built {
+            if !self.arrangement.exhausted()
+                && self.arrangement.remaining() >= charged
+                && (charged == 0 || self.arrangement.charge_by(charged))
+            {
+                return Ok(faces);
+            }
+        }
+        let flags = self.flag_cells();
+        let outer_flags = flags.map(Cell::take);
+        let inferred = self.inferred_counts();
+        let consumed = self.arrangement.consumed();
+        let faces = build();
+        let reusable = !self.arrangement.exhausted()
+            && self.inferred_counts() == inferred
+            && flags.iter().all(|flag| !flag.get());
+        let charged = self.arrangement.consumed() - consumed;
+        for (flag, outer) in flags.iter().zip(outer_flags) {
+            flag.set(flag.get() || outer);
+        }
+        let faces = faces?.map(Rc::new);
+        if reusable {
+            if let Some(reuse) = self.arrangement_reuse.borrow_mut().as_mut() {
+                reuse.built = Some((faces.clone(), charged));
+            }
+        }
+        Ok(faces)
+    }
+
+    /// Every flag a search sets for the open selection.
+    fn flag_cells(&self) -> [&Cell<bool>; 13] {
+        [
+            &self.arrangement_skipped,
+            &self.densification_skipped,
+            &self.crossing_loop_skipped,
+            &self.crossing_loop_assumed,
+            &self.loop_flags_assumed,
+            &self.coincident_direction_assumed,
+            &self.cut_regions_assumed,
+            &self.cut_regions_beyond_profile,
+            &self.island_absence_assumed,
+            &self.polyline_side_assumed,
+            &self.cap_outline_assumed,
+            &self.cap_carrier_assumed,
+            &self.spatial_transition_assumed,
+        ]
     }
 
     /// The samples `sample` takes of `regions` at `tolerance`. Each distinct
@@ -680,12 +797,17 @@ pub(super) fn arrangement_region_containing_points(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<ArrangementRegion>, CodecError> {
-    let Some(faces) = sketch_arrangement_faces(sketch, entities, tolerance, work, ctx)? else {
+    let Some(faces) = work
+        .arrangement_faces(arrangement_key(sketch, entities, tolerance), || {
+            sketch_arrangement_faces(sketch, entities, tolerance, work, ctx)
+        })?
+    else {
         return Ok(None);
     };
+    let faces: &[SketchArrangementFace] = &faces;
     let mut boundary = None;
     let mut boundary_count = 0;
-    for face in &faces {
+    for face in faces {
         let mut matches = true;
         for point in points {
             let mut on_boundary = false;
@@ -714,7 +836,7 @@ pub(super) fn arrangement_region_containing_points(
     let mut interior = None;
     let mut interior_count = 0;
     let mut assumed = false;
-    for face in &faces {
+    for face in faces {
         let mut excluded = false;
         let mut assumed_out = false;
         let mut assumed_in = false;
