@@ -6007,7 +6007,7 @@ Direct-prefix offsets are relative to the primary Thread indexed header. The thr
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The direct prefix stores ten zero bytes at offsets 11 through 20 |
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes at offsets 11 through 20 |
-| 21 | 8 | `fixed_scalar` | `f64` | little | spec | f64 `60.0` at offset 21 |
+| 21 | 8 | `fixed_scalar` | `f64` | little | spec | the f64 thread angle at offset 21 |
 | 29 | 5 | `standard_marker` | `bytes[5]` | little | spec | the standard form marker is `01 02 00 00 00` |
 | 34 | 4 | `standard_prefix_tail` | `bytes[4]` | little | spec | its form token is `36 00 67 00` |
 
@@ -6020,7 +6020,7 @@ The direct compact prefix has the same fixed width as the direct standard prefix
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The direct prefix stores ten zero bytes at offsets 11 through 20 |
-| 21 | 8 | `fixed_scalar` | `f64` | little | spec | f64 `60.0` at offset 21 |
+| 21 | 8 | `fixed_scalar` | `f64` | little | spec | the f64 thread angle at offset 21 |
 | 29 | 5 | `compact_marker` | `bytes[5]` | little | spec | The compact form marker is `00 02 00 00 00` |
 | 34 | 4 | `compact_prefix_tail` | `bytes[4]` | little | spec | its form token is `36 00 48 00` |
 
@@ -6040,7 +6040,7 @@ Offsets are relative to the primary Thread indexed header. The three LP-UTF16 fi
 | 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
 | 20 | 4 | `owner_marker` | `u32` | little | spec | u32 `1` at offset 20 |
 | 24 | 1 | `separator` | `u8` | little | spec | one zero byte at offset 24 |
-| 25 | 8 | `fixed_scalar` | `f64` | little | spec | f64 `60.0` at offset 25 |
+| 25 | 8 | `fixed_scalar` | `f64` | little | spec | the f64 thread angle at offset 25 |
 | 33 | 5 | `form_marker` | `bytes[5]` | little | spec | Its form marker starts at offset 33 |
 | 38 | 4 | `form_token` | `bytes[4]` | little | spec | its form token starts at offset 38 |
 
@@ -8101,7 +8101,7 @@ Spec §3.1 · layout: byte offsets · size: 25 B
 N = 1. Offsets are relative to the end of the 96-byte analytic payload.
 
 Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/sketch_project.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -8121,7 +8121,7 @@ Spec §3.1 · layout: byte offsets · size: 34 B
 N = 2. Offsets are relative to the end of the 96-byte analytic payload.
 
 Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/sketch_project.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -8144,7 +8144,7 @@ Spec §3.1 · layout: byte offsets · size: 45 B
 N = 3. Offsets are relative to the end of the 96-byte analytic payload.
 
 Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/sketch_project.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -8162,6 +8162,75 @@ Parsed by:
 | 39 | 1 | `tail_marker` | `u8` | little | spec | u8 tail marker |
 | 40 | 4 | `flag_guard` | `u32` | little | spec | u32 `1` |
 | 44 | 1 | `construction_flag` | `u8` | little | spec | u8 construction flag |
+
+## `sketch_curve_short_tail_1_reference`
+
+Spec §3.1 · layout: byte offsets · size: 24 B
+
+N = 1, two opaque bytes. Offsets are relative to the end of the 96-byte analytic payload. The decoder reads `tail_byte` as the tail marker (DR-890) and a `lane` of 1 as construction geometry (DR-898).
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `reference_marker` | `u8` | little | spec | `0x01` |
+| 1 | 4 | `reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 5 | 6 | `reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 11 | 5 | `zero_pad` | `bytes[5]` | little | spec | `P = 5` when `N = 1` |
+| 16 | 2 | `opaque` | `bytes[2]` | little | spec | two opaque bytes in place of the three |
+| 18 | 1 | `tail_byte` | `u8` | little | spec | one byte follows the two opaque bytes |
+| 19 | 4 | `lane` | `u32` | little | spec | u32 lane that is `0` or `1` |
+| 23 | 1 | `trailing_one` | `u8` | little | spec | a byte that is `1` |
+
+## `sketch_curve_short_tail_2_references`
+
+Spec §3.1 · layout: byte offsets · size: 33 B
+
+N = 2, two opaque bytes. Offsets are relative to the end of the 96-byte analytic payload. The decoder reads `tail_byte` as the tail marker (DR-890) and a `lane` of 1 as construction geometry (DR-898).
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `first_reference_marker` | `u8` | little | spec | `0x01` |
+| 1 | 4 | `first_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 5 | 6 | `first_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 11 | 1 | `second_reference_marker` | `u8` | little | spec | `0x01` |
+| 12 | 4 | `second_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 16 | 6 | `second_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 22 | 3 | `zero_pad` | `bytes[3]` | little | spec | `P = 3` when `N` is `2` or `3` |
+| 25 | 2 | `opaque` | `bytes[2]` | little | spec | two opaque bytes in place of the three |
+| 27 | 1 | `tail_byte` | `u8` | little | spec | one byte follows the two opaque bytes |
+| 28 | 4 | `lane` | `u32` | little | spec | u32 lane that is `0` or `1` |
+| 32 | 1 | `trailing_one` | `u8` | little | spec | a byte that is `1` |
+
+## `sketch_curve_short_tail_3_references`
+
+Spec §3.1 · layout: byte offsets · size: 44 B
+
+N = 3, two opaque bytes. Offsets are relative to the end of the 96-byte analytic payload. The decoder reads `tail_byte` as the tail marker (DR-890) and a `lane` of 1 as construction geometry (DR-898).
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `first_reference_marker` | `u8` | little | spec | `0x01` |
+| 1 | 4 | `first_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 5 | 6 | `first_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 11 | 1 | `second_reference_marker` | `u8` | little | spec | `0x01` |
+| 12 | 4 | `second_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 16 | 6 | `second_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 22 | 1 | `third_reference_marker` | `u8` | little | spec | `0x01` |
+| 23 | 4 | `third_reference_record_index` | `u32` | little | spec | u32 `record_index` |
+| 27 | 6 | `third_reference_zero_trailer` | `bytes[6]` | little | spec | six zero bytes |
+| 33 | 3 | `zero_pad` | `bytes[3]` | little | spec | `P = 3` when `N` is `2` or `3` |
+| 36 | 2 | `opaque` | `bytes[2]` | little | spec | two opaque bytes in place of the three |
+| 38 | 1 | `tail_byte` | `u8` | little | spec | one byte follows the two opaque bytes |
+| 39 | 4 | `lane` | `u32` | little | spec | u32 lane that is `0` or `1` |
+| 43 | 1 | `trailing_one` | `u8` | little | spec | a byte that is `1` |
 
 ## `sheet_metal_region_carrier_prefix`
 
@@ -8539,6 +8608,23 @@ Parsed by:
 | 11 | 14 | `zero_run_14` | `bytes[14]` | little | spec | The chain record at the selection's record index plus one stores fourteen zero bytes |
 | 25 | 6 | `chain_marker` | `bytes[6]` | little | spec | The chain record at the selection's record index plus one stores fourteen zero bytes |
 | 31 | 51 | `sketch_scope_reference` | `bytes[51]` | little | spec | The chain record at the selection's record index plus one stores fourteen zero bytes |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header precedes this field run.
+
+## `typed_reference_sketchless_profile_chain_record`
+
+Spec §3.1 · layout: byte offsets · size: 82 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 14 | `zero_run_14` | `bytes[14]` | little | spec | A sketchless chain record stores fourteen zero bytes |
+| 25 | 6 | `chain_marker` | `bytes[6]` | little | spec | A sketchless chain record stores fourteen zero bytes |
+| 31 | 51 | `selection_reference` | `bytes[51]` | little | spec | A sketchless chain record stores fourteen zero bytes |
 
 Unstated regions:
 
@@ -9171,7 +9257,7 @@ Parsed by:
 | 25 | 24 | `origin` | `f64[3]` | little | spec | The 221-byte spacing direction form |
 | 49 | 24 | `displacement` | `f64[3]` | little | spec | The 221-byte spacing direction form |
 | 73 | 16 | `zero_run_16` | `bytes[16]` | little | spec | The 221-byte spacing direction form |
-| 89 | 4 | `distance_type` | `u32` | little | spec | The 221-byte spacing direction form · value `7` |
+| 89 | 4 | `distance_type` | `u32` | little | spec | The 221-byte spacing direction form |
 | 93 | 1 | `spacing_flag` | `u8` | little | spec | The 221-byte spacing direction form · value `0` |
 | 94 | 24 | `negative_ones` | `f64[3]` | little | spec | The 221-byte spacing direction form |
 | 118 | 4 | `selection_count` | `u32` | little | spec | The 221-byte spacing direction form |
@@ -11110,8 +11196,8 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The extended Thread prefix stores ten zero bytes at offsets 11 through 20 and f64 `60.0` at offset 21. |
-| 21 | 8 | `fixed_scalar` | `f64` | little | spec | The extended Thread prefix stores ten zero bytes at offsets 11 through 20 and f64 `60.0` at offset 21. |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | The extended Thread prefix stores ten zero bytes at offsets 11 through 20 and the f64 thread angle at offset 21. |
+| 21 | 8 | `fixed_scalar` | `f64` | little | spec | The extended Thread prefix stores ten zero bytes at offsets 11 through 20 and the f64 thread angle at offset 21. |
 | 29 | 1 | `external_flag` | `u8` | little | spec | Offset 29 is `1` for an external thread and `0` for an internal thread. |
 | 30 | 4 | `entry_count` | `u32` | little | spec | Offset 30 stores the u32 count of the 16-byte entries that follow it |
 
@@ -11654,7 +11740,7 @@ Parsed by:
 | 11 | 10 | `zero_run` | `bytes[10]` | little | spec | The compact Reverse Normal prefix |
 | 21 | 4 | `group_count` | `u32` | little | spec | The compact Reverse Normal prefix · value `1` |
 | 25 | 11 | `group_reference` | `bytes[11]` | little | spec | The compact Reverse Normal prefix |
-| 36 | 76 | `null_guid` | `bytes[76]` | little | spec | The compact Reverse Normal prefix |
+| 36 | 76 | `link_guid` | `bytes[76]` | little | spec | The compact Reverse Normal prefix |
 | 112 | 3 | `zero_tail` | `bytes[3]` | little | spec | The compact Reverse Normal prefix |
 
 ## `shifted_reverse_normal_prefix`
@@ -11672,7 +11758,7 @@ Parsed by:
 | 21 | 4 | `zero_run_after_marker` | `bytes[4]` | little | spec | The shifted Reverse Normal prefix |
 | 25 | 4 | `group_count` | `u32` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. · value `1` |
 | 29 | 11 | `group_reference` | `bytes[11]` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. |
-| 40 | 76 | `null_guid` | `bytes[76]` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. |
+| 40 | 76 | `link_guid` | `bytes[76]` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. |
 | 116 | 3 | `zero_tail` | `bytes[3]` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. |
 
 ## `path_pattern_settings`

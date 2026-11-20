@@ -1461,13 +1461,14 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
     source_less.geometry.procedural_surfaces[0]
         .set_cache_fit_tolerance(Some(0.01))
         .unwrap();
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("cache-less extrusion tolerance must be rejected");
-    assert!(error
-        .to_string()
-        .contains("cache-less F3D extrusion cannot carry a cache-fit tolerance"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterBodyOmitted
+            .kind()
+            .to_string(),
+        "cache-less F3D extrusion cannot carry a cache-fit tolerance",
+    );
 }
 
 #[test]
