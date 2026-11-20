@@ -3734,7 +3734,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Question.** Does a rectangular-pattern scope whose direction one has zero distance or count one, and whose pattern payload is bound, store a direction record for direction one, and does the payload's U-direction reference at offset 122 name that record?
 
-**Known.** `f3d.md` §3.1 states that a direction with count greater than one and zero distance has no direction record, that a scope can store both records when one direction has count one, and that the payload names the U-direction record at offset 122 and stores the V displacement at offset 63.
+**Known.** `f3d.md` §3.1 states that a direction with count greater than one and zero distance repeats the seed in place, that a scope can store both records when one direction has count one, and that the payload names the U-direction record at offset 122 and stores the V displacement at offset 63.
 
 **Need.** A save with a zero-distance direction one beside a pattern payload, with its direction records and instance positions.
 
