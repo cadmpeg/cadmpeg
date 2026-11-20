@@ -13,6 +13,10 @@ use crate::report::Severity;
 const D16: &str = "a dimension difference is a parameter override";
 
 fn offset_plane(offset: &Value, after: &Value) -> FeatureDefinition {
+    optioned_plane(offset, after, &json!({}))
+}
+
+fn optioned_plane(offset: &Value, after: &Value, options: &Value) -> FeatureDefinition {
     serde_json::from_value(json!({"operation": {"kind": "datum", "value": {
         "element": {"kind": "plane", "value": {
             "inputs": [{
@@ -28,7 +32,7 @@ fn offset_plane(offset: &Value, after: &Value) -> FeatureDefinition {
             "after": after,
             "resolved_in": {}
         }},
-        "native_options": {},
+        "native_options": options,
         "source_settings": {}
     }}}))
     .unwrap()
@@ -41,8 +45,14 @@ fn literal(value: f64) -> Value {
 /// The fixture with its extrude a plane offset 10 from XY, and `large`
 /// overriding its definition with `definition`.
 fn overridden(definition: FeatureDefinition) -> CadIr {
+    overridden_from(offset_plane(&literal(10.0), &json!([])), definition)
+}
+
+/// The fixture with its extrude defined by `base`, and `large` overriding
+/// its definition with `definition`.
+fn overridden_from(base: FeatureDefinition, definition: FeatureDefinition) -> CadIr {
     let mut ir = document();
-    ir.design.features[0].definition = offset_plane(&literal(10.0), &json!([]));
+    ir.design.features[0].definition = base;
     ir.design.configurations[1].overrides.features.insert(
         feature("extrude"),
         FeatureStateOverride {
@@ -54,9 +64,23 @@ fn overridden(definition: FeatureDefinition) -> CadIr {
 }
 
 fn d16(ir: &CadIr) -> bool {
+    !d16_messages(ir).is_empty()
+}
+
+fn d16_messages(ir: &CadIr) -> Vec<String> {
     design_findings(ir)
-        .iter()
-        .any(|finding| finding.severity == Severity::Error && finding.message.contains(D16))
+        .into_iter()
+        .filter(|finding| finding.severity == Severity::Error && finding.message.contains(D16))
+        .map(|finding| finding.message)
+        .collect()
+}
+
+/// A native option map of one integer and one length option.
+fn options(count: i64, depth: &Value) -> Value {
+    json!({
+        "test:count": {"kind": "integer", "value": {"kind": "literal", "value": count}},
+        "test:depth": depth
+    })
 }
 
 #[test]
@@ -121,4 +145,54 @@ fn the_comparison_at_the_construction_ceiling_runs_on_a_small_stack() {
         .join()
         .unwrap();
     assert!(found);
+}
+
+#[test]
+fn the_place_names_fields_tags_and_indices() {
+    let messages = d16_messages(&overridden(offset_plane(&literal(12.0), &json!([]))));
+    assert_eq!(messages.len(), 1, "{messages:#?}");
+    assert!(
+        messages[0].contains(
+            "at operation.datum.value.element.plane.value.inputs.0.value.length.value than"
+        ),
+        "{messages:#?}"
+    );
+}
+
+#[test]
+fn a_map_entry_is_placed_under_its_key() {
+    let length = |value: f64| json!({"kind": "length", "value": literal(value)});
+    let plane = |count: i64, depth: f64| {
+        optioned_plane(&literal(10.0), &json!([]), &options(count, &length(depth)))
+    };
+    assert!(!d16(&overridden_from(plane(3, 1.0), plane(3, 1.0))));
+    let messages = d16_messages(&overridden_from(plane(3, 1.0), plane(4, 1.0)));
+    assert_eq!(messages.len(), 1, "{messages:#?}");
+    assert!(
+        messages[0]
+            .contains("at operation.datum.value.native_options.test:count.integer.value than"),
+        "{messages:#?}"
+    );
+    let messages = d16_messages(&overridden_from(plane(3, 1.0), plane(3, 2.0)));
+    assert_eq!(messages.len(), 1, "{messages:#?}");
+    assert!(
+        messages[0]
+            .contains("at operation.datum.value.native_options.test:depth.length.value than"),
+        "{messages:#?}"
+    );
+}
+
+#[test]
+fn a_dimension_under_another_tag_is_not_compared() {
+    let base = optioned_plane(
+        &literal(10.0),
+        &json!([]),
+        &options(3, &json!({"kind": "length", "value": literal(1.0)})),
+    );
+    let real = optioned_plane(
+        &literal(10.0),
+        &json!([]),
+        &options(3, &json!({"kind": "real", "value": literal(2.0)})),
+    );
+    assert!(!d16(&overridden_from(base, real)));
 }
