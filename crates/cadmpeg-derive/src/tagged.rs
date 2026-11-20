@@ -242,7 +242,7 @@ fn split(tokens: &[TokenTree], angles: bool) -> Vec<&[TokenTree]> {
         if let TokenTree::Punct(punct) = token {
             match punct.as_char() {
                 '<' if angles => depth += 1,
-                '>' if angles && !arrow => depth = depth.saturating_sub(1),
+                '>' if angles && !arrow && depth > 0 => depth -= 1,
                 ',' if depth == 0 => {
                     parts.push(&tokens[start..index]);
                     start = index + 1;
@@ -267,8 +267,8 @@ fn closing_angle(tokens: &[TokenTree], open: usize) -> Result<usize, String> {
         if let TokenTree::Punct(punct) = token {
             match punct.as_char() {
                 '<' => depth += 1,
-                '>' if !arrow => {
-                    depth = depth.saturating_sub(1);
+                '>' if !arrow && depth > 0 => {
+                    depth -= 1;
                     if depth == 0 {
                         return Ok(index);
                     }
@@ -319,7 +319,7 @@ fn default_at(tokens: &[TokenTree]) -> Option<usize> {
         if let TokenTree::Punct(punct) = token {
             match punct.as_char() {
                 '<' => depth += 1,
-                '>' => depth = depth.saturating_sub(1),
+                '>' if depth > 0 => depth -= 1,
                 '=' if depth == 0 => return Some(index),
                 _ => {}
             }
