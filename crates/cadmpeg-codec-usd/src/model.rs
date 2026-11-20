@@ -1057,7 +1057,7 @@ impl Builder<'_, '_, '_, '_> {
         let Some((path, layer)) = &surface.module else {
             return Ok(None);
         };
-        Ok(Some(match self.layers.texture(self.ctx, *layer, path)? {
+        Ok(Some(match self.layers.texture(self.ctx, *layer, path) {
             Resource::Located(id) => id,
             Resource::Embedded { .. } | Resource::Unlocated => path.clone(),
         }))
@@ -1069,33 +1069,29 @@ impl Builder<'_, '_, '_, '_> {
         let mut out = Vec::new();
         for slot in &surface.textures {
             let texture = &slot.texture;
-            let resource = self
-                .layers
-                .texture(self.ctx, texture.layer, &texture.file)?;
-            let (identity, content) = match resource {
-                Resource::Embedded { id, bytes } => (
-                    id,
-                    AssetData::new(bytes).map(|data| AssetContent::Embedded { data }),
-                ),
-                Resource::Located(id) => {
-                    let uri = NonBlankString::new(id.clone());
-                    (id, uri.map(|uri| AssetContent::External { uri }))
-                }
+            let resource = self.layers.texture(self.ctx, texture.layer, &texture.file);
+            let identity = match &resource {
+                Resource::Embedded { id, .. } | Resource::Located(id) => id.clone(),
                 Resource::Unlocated => {
                     self.tallies.unlocated_textures.insert(texture.file.clone());
-                    let uri = NonBlankString::new(texture.file.clone());
-                    (
-                        texture.file.clone(),
-                        uri.map(|uri| AssetContent::External { uri }),
-                    )
+                    texture.file.clone()
                 }
-            };
-            let Some(content) = content else {
-                self.tallies.materials.insert(surface.material.clone());
-                continue;
             };
             let asset = crate::ids::asset(&identity);
             if !self.ir.model.assets.iter().any(|known| known.id == asset) {
+                let content = match resource {
+                    Resource::Embedded { package, name, .. } => {
+                        let bytes = package.snapshot.open(self.ctx, &name)?.window().to_vec();
+                        AssetData::new(bytes).map(|data| AssetContent::Embedded { data })
+                    }
+                    Resource::Located(_) | Resource::Unlocated => {
+                        NonBlankString::new(identity).map(|uri| AssetContent::External { uri })
+                    }
+                };
+                let Some(content) = content else {
+                    self.tallies.materials.insert(surface.material.clone());
+                    continue;
+                };
                 self.ctx.charge_entities(1, "usd_texture_asset")?;
                 let name = texture
                     .file
