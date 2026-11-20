@@ -17481,7 +17481,7 @@ anchor = "ends with the code-unit count of its LP-UTF16 name"
 name = "sketch_extrude_body_owner"
 kind = "byte"
 section = "Records of a sketch-driven Extrude"
-anchor = "The common form of the `Body` owner (type `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA`) is 103 bytes"
+anchor = "The 103-byte form of the `Body` owner (type `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA`) has the layout"
 size = 103
 note = "Offsets are relative to the `Body` owner's primary indexed header."
 
