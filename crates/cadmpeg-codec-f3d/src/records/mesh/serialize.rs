@@ -67,7 +67,8 @@ impl Serialize for BodyRef<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         #[derive(Serialize)]
         struct Wire<'a> {
-            scope_record_index: u32,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            scope_record_index: Option<u32>,
             #[serde(skip_serializing_if = "Option::is_none")]
             scope_body_ordinal: Option<u32>,
             body_words: &'a super::DesignMeshBodyWords,
