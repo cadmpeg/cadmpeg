@@ -186,16 +186,21 @@ fn scoped_cube() -> CadIr {
 }
 
 fn write(ir: &CadIr) -> (ExportReport, CadIr) {
+    let (report, decoded, _) = write_bytes(ir);
+    (report, decoded)
+}
+
+fn write_bytes(ir: &CadIr) -> (ExportReport, CadIr, Vec<u8>) {
     let mut bytes = Vec::new();
     let report = F3dCodec
         .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("the writer writes the design scope");
     let decoded = F3dCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .expect("the written file decodes");
     crate::test_support::assert_decodes_back(&report, decoded.report());
-    (report, decoded.into_parts().0)
+    (report, decoded.into_parts().0, bytes)
 }
 
 fn loss<'a>(report: &'a ExportReport, code: &str) -> Vec<&'a str> {
@@ -426,4 +431,255 @@ fn edited_design_parameters_replace_the_native_records() {
         "{:#?}",
         report.losses
     );
+}
+
+/// The Design stream of a written archive, and the frame of the one record
+/// of each type as its primary index bounds it.
+struct DesignStream {
+    bulk: Vec<u8>,
+    meta: crate::metastream::MetaStream,
+}
+
+impl DesignStream {
+    fn read(archive: &[u8]) -> Self {
+        let mut zip = zip::ZipArchive::new(Cursor::new(archive)).expect("a ZIP archive");
+        let mut entry = |name: &str| {
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(
+                &mut zip
+                    .by_name(&format!(
+                        "{}/Design1/{name}",
+                        crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
+                    ))
+                    .expect("the Design stream"),
+                &mut bytes,
+            )
+            .expect("the entry reads");
+            bytes
+        };
+        let bulk = entry("BulkStream.dat");
+        let meta = crate::metastream::parse(&entry("MetaStream.dat"), "MetaStream.dat")
+            .expect("the MetaStream parses");
+        Self { bulk, meta }
+    }
+
+    /// The record index and frame of the one record of type `guid`.
+    fn frame(&self, guid: &str) -> (u64, &[u8]) {
+        let records = self
+            .meta
+            .types
+            .iter()
+            .filter(|row| row.type_guid.as_str().eq_ignore_ascii_case(guid))
+            .flat_map(|row| row.entities.values().copied())
+            .collect::<Vec<_>>();
+        let [record] = records.as_slice() else {
+            panic!("one record of type {guid}: {records:?}");
+        };
+        let position = self
+            .meta
+            .records
+            .iter()
+            .position(|entry| entry.entity_id == *record)
+            .expect("a primary-index entry");
+        let start = usize::try_from(self.meta.records[position].bulk_offset).expect("offset");
+        let end = self
+            .meta
+            .records
+            .get(position + 1)
+            .map_or(self.bulk.len(), |next| {
+                usize::try_from(next.bulk_offset).expect("offset")
+            });
+        (*record, &self.bulk[start..end])
+    }
+}
+
+fn u32_at(bytes: &[u8], at: usize) -> u32 {
+    u32::from_le_bytes(bytes[at..at + 4].try_into().expect("four bytes"))
+}
+
+fn u64_at(bytes: &[u8], at: usize) -> u64 {
+    u64::from_le_bytes(bytes[at..at + 8].try_into().expect("eight bytes"))
+}
+
+#[test]
+fn the_cube_is_one_base_feature_item_of_the_timeline() {
+    let (report, ir) = write(&scoped_cube());
+    let base_features = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| match feature.evaluation.definition() {
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::BaseFeature { bodies },
+            ) => Some(bodies),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let [bodies] = base_features.as_slice() else {
+        panic!("one Base Feature: {:#?}", ir.model.features);
+    };
+    let resolved = match bodies {
+        cadmpeg_ir::features::BodySelection::Bodies(bodies)
+        | cadmpeg_ir::features::BodySelection::Resolved { bodies, .. } => bodies.as_slice(),
+        other => panic!("the Base Feature resolves its body: {other:?}"),
+    };
+    assert_eq!(resolved, [ir.geometry.bodies[0].id.clone()]);
+    let native = f3d_native(&ir);
+    let [timeline] = native.design_feature_timelines.as_slice() else {
+        panic!("one timeline");
+    };
+    assert_eq!(timeline.frame().items().len(), 1);
+    assert!(loss(&report, "export/record.residual-unavailable")
+        .iter()
+        .any(|message| message.contains("component aggregate")));
+}
+
+#[test]
+fn the_history_is_one_insertion_state() {
+    let (_, ir) = write(&scoped_cube());
+    let native = f3d_native(&ir);
+    let [history] = native.asm_histories.as_slice() else {
+        panic!("one ASM history");
+    };
+    let preamble = history.preamble.expect("a history preamble");
+    assert_eq!((preamble.stream_size, preamble.history_entry_count), (3, 1));
+    let [head, root] = history.states() else {
+        panic!("two states: {:#?}", history.states());
+    };
+    assert_eq!(
+        (
+            head.state_id,
+            head.previous_ref,
+            head.next_ref,
+            head.node_index
+        ),
+        (3, None, Some(1), 0)
+    );
+    assert_eq!(
+        (
+            root.state_id,
+            root.previous_ref,
+            root.next_ref,
+            root.node_index
+        ),
+        (2, Some(0), None, 1)
+    );
+    assert!(root.bulletin_boards.is_empty());
+    let [board] = head.bulletin_boards.as_slice() else {
+        panic!("one bulletin board");
+    };
+    assert_eq!((board.owner_ref, board.number), (0, 2));
+    let inserted = board
+        .changes
+        .iter()
+        .map(|change| (change.old_ref(), change.new_ref()))
+        .collect::<Vec<_>>();
+    let slots = i64::try_from(inserted.len()).expect("slot count");
+    assert!(slots > 0);
+    assert_eq!(
+        inserted,
+        (1..=slots)
+            .map(|slot| (None, Some(slot)))
+            .collect::<Vec<_>>()
+    );
+    assert!(crate::history::graph_is_coherent(history));
+}
+
+#[test]
+fn every_base_feature_face_is_named_by_its_token() {
+    let (_, ir) = write(&scoped_cube());
+    let native = f3d_native(&ir);
+    let mut tokens = native
+        .persistent_subentity_tags
+        .iter()
+        .map(|tag| {
+            assert_eq!(tag.design_references, [-300]);
+            assert_eq!(tag.selector, 1);
+            tag.token.as_str().to_owned()
+        })
+        .collect::<Vec<_>>();
+    tokens.sort();
+    assert_eq!(tokens, ["0", "1", "2", "3", "4", "5"]);
+    let [link] = native.persistent_design_links.as_slice() else {
+        panic!("one body name");
+    };
+    assert_eq!((link.design_id.as_str(), link.design_reference), ("300", 1));
+}
+
+#[test]
+fn the_scope_is_the_result_body_form_with_its_item_tail() {
+    let (_, _, bytes) = write_bytes(&scoped_cube());
+    let stream = DesignStream::read(&bytes);
+    let (scope, frame) = stream.frame("D7015B81-AB4D-4C89-BED7-AA4411E1964A");
+    // One body: the kind at 169 + 52, the 78-byte tail, the paired header and
+    // the 30-byte paired scope record.
+    assert_eq!(frame.len(), 271 + 52 + 30);
+    assert_eq!(u32_at(frame, 20), 2);
+    assert_eq!(u32_at(frame, 161 + 52), 3);
+    assert_eq!(u32_at(frame, 165 + 52), 12);
+    let tail = &frame[193 + 52..271 + 52];
+    assert_eq!(u32_at(tail, 0), 1);
+    assert_eq!(&tail[16..19], [0, 0, 0]);
+    assert_eq!(tail[30], 0);
+    assert_eq!(u32_at(tail, 31), 2);
+    assert_eq!((tail[62], tail[63], tail[64]), (1, 0, 0));
+    assert_eq!(
+        u64_at(frame, 271 + 52 + 7) & 0xffff_ffff,
+        scope & 0xffff_ffff
+    );
+}
+
+#[test]
+fn the_persistent_id_table_maps_the_base_feature_identity() {
+    let (_, _, bytes) = write_bytes(&scoped_cube());
+    let stream = DesignStream::read(&bytes);
+    let (scope, _) = stream.frame("D7015B81-AB4D-4C89-BED7-AA4411E1964A");
+    let (_, table) = stream.frame("5D89B935-3F04-4CAB-81F5-E7B309E7E13F");
+    assert_eq!(u32_at(table, 21), 1);
+    assert_eq!(u64_at(table, 25), scope);
+    assert_eq!((u32_at(table, 33), u64_at(table, 37)), (1, 300));
+    assert_eq!(u32_at(table, 45), 1);
+    assert_eq!((u64_at(table, 49), u64_at(table, 57)), (300, scope));
+    assert_eq!(u32_at(table, 65), 0);
+    let (_, origin) = stream.frame("2972A3B8-3627-49BC-8C3D-18707605EC44");
+    assert_eq!(origin.len(), 115);
+    assert_eq!(u32_at(origin, 23), 7);
+    let planes = [71, 82, 93].map(|at| u64_at(origin, at + 1));
+    assert_eq!([planes[1], planes[2]], [planes[0] + 1, planes[0] + 2]);
+}
+
+#[test]
+fn the_parameter_tails_name_the_parameter_collection() {
+    let (_, ir, bytes) = write_bytes(&scoped_cube());
+    let stream = DesignStream::read(&bytes);
+    let (collection, frame) = stream.frame("B0556F58-EE09-46A7-B18F-E296F48E5B13");
+    let written = u32_at(frame, 46);
+    assert_eq!(u32_at(frame, 30), written);
+    assert_eq!(
+        usize::try_from(written).expect("count"),
+        ir.model.parameters.len()
+    );
+    assert_eq!(
+        frame.len(),
+        61 + 11 * usize::try_from(written).expect("count")
+    );
+    assert!(collection > 0);
+}
+
+#[test]
+fn a_document_with_no_body_writes_the_timeline_with_no_item() {
+    let mut ir = scoped_cube();
+    ir.geometry = cadmpeg_ir::document::Topology::default();
+    ir.design.scopes[0].current[0].bodies.clear();
+    let (report, decoded_ir) = write(&ir);
+    assert!(decoded_ir.geometry.bodies.is_empty());
+    assert_length(&decoded_ir, "Width", "60 mm", 60.0);
+    let native = f3d_native(&decoded_ir);
+    let [timeline] = native.design_feature_timelines.as_slice() else {
+        panic!("one timeline");
+    };
+    assert!(timeline.frame().items().is_empty());
+    assert!(native.asm_histories.is_empty());
+    assert!(!loss(&report, "export/output.empty").is_empty());
+    assert_eq!(loss(&report, "export/evaluation.missing").len(), 1);
 }
