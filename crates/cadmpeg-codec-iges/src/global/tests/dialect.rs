@@ -93,7 +93,7 @@ fn fixed_ascii_verified_versions_decode_under_their_versioned_profiles() {
             result.report().dialects().unwrap().primary().declared()["effective_version"],
             version_name
         );
-        assert_eq!(result.ir().model.points.len(), 1);
+        assert_eq!(result.ir().geometry.points.len(), 1);
         assert!(
             result.report().losses.is_empty(),
             "{version_name}: {:#?}",
@@ -123,7 +123,7 @@ fn declared_versions_outside_the_verified_set_decode_with_a_dialect_loss() {
         let declared = &result.report().dialects().unwrap().primary().declared();
         assert_eq!(declared["effective_version"], version_name);
         assert_eq!(declared["version_flag"], flag);
-        assert_eq!(result.ir().model.points.len(), 1);
+        assert_eq!(result.ir().geometry.points.len(), 1);
         assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
         assert_eq!(
             result.report().losses[0].code,
@@ -198,7 +198,7 @@ fn a_verified_v4_version_with_no_maximum_line_width_names_the_line_weight_loss()
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
     assert_eq!(dialect_losses(result.report()), 0);
     assert_eq!(
@@ -230,7 +230,7 @@ fn a_malformed_version_flag_clamps_to_the_default_and_charges_the_dialect_loss()
     let declared = &result.report().dialects().unwrap().primary().declared();
     assert_eq!(declared["effective_version"], "2.0");
     assert_eq!(declared["version_flag"], "3");
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
     assert_eq!(dialect_losses(result.report()), 1);
     assert!(result.report().losses[0].message.contains("field 23"));
@@ -284,7 +284,7 @@ fn the_4_0_string_contract_allows_ascii_control_bytes() {
         result.ir().source.as_ref().unwrap().attributes["sender_product"],
         "\u{1}roduct"
     );
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(dialect_losses(result.report()), 0);
     assert_eq!(
         report_code_count(result.report(), IgesLossCode::GlobalMetadataFieldUnusable),
@@ -448,7 +448,7 @@ fn the_5_0_double_precision_fields_are_conditional_on_parameter_syntax() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(
         report_code_count(result.report(), IgesLossCode::GlobalMetadataFieldUnusable),
         0
@@ -475,7 +475,7 @@ fn the_5_0_double_precision_fields_are_conditional_on_parameter_syntax() {
     let result = IgesCodec
         .decode(&mut Cursor::new(double_bytes), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(
         report_code_count(result.report(), IgesLossCode::GlobalMetadataFieldUnusable),
         1
@@ -592,7 +592,7 @@ fn an_absent_version_flag_reports_the_default_dialect() {
     let declared = &result.report().dialects().unwrap().primary().declared();
     assert_eq!(declared["effective_version"], "2.0");
     assert_eq!(declared["version_flag"], "3");
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     assert_eq!(result.report().losses.len(), 1, "{:#?}", result.report());
     assert_eq!(dialect_losses(result.report()), 1);
 }

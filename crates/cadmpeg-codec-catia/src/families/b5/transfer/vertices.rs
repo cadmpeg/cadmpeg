@@ -105,7 +105,7 @@ pub(super) fn emit_vertices(
             Exactness::ByteExact,
         )?;
         admission.charge()?;
-        ir.model
+        ir.geometry
             .points
             .push(Point::new(point_id.clone(), *coordinates, None));
         let vertex_id = crate::resource::compose_index_id(
@@ -122,10 +122,11 @@ pub(super) fn emit_vertices(
         )?;
         annotations.derived(vertex_id.as_str(), "point")?;
         admission.charge()?;
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
             tolerance: vertex_tolerances.get(&index).copied(),
+            native_ref: None,
         });
     }
     for (rank, vertex) in graph.vertices.logical_vertices().iter().enumerate() {
@@ -146,7 +147,7 @@ pub(super) fn emit_vertices(
             Exactness::Derived,
         )?;
         admission.charge()?;
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             point_id.clone(),
             vertex.point,
             Some(cgm_source("vertex", vertex.object_id)?),
@@ -165,10 +166,11 @@ pub(super) fn emit_vertices(
         )?;
         annotations.derived(vertex_id.as_str(), "point")?;
         admission.charge()?;
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
             tolerance: vertex_tolerances.get(&index).copied(),
+            native_ref: None,
         });
     }
     Ok(())

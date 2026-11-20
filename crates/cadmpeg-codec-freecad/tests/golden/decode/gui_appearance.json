@@ -1,650 +1,31 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [
-        {
-          "appearance": "fcstd:appearance:edge#ColoredModel:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:12%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:12%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#ColoredModel:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:14%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:14%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#ColoredModel:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:15%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:15%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#ColoredModel:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:19%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:19%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#ColoredModel:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:20%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:20%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#ColoredModel:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:23%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:23%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#ColoredModel:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:27%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:27%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#ColoredModel:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:28%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:28%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#ColoredModel:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:3%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:3%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#ColoredModel:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:31%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:31%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#ColoredModel:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:37%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:37%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#ColoredModel:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:38%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:38%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#ColoredModel:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:5%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:5%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#ColoredModel:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:7%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:7%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:edge#ColoredModel:1",
-          "channels": {
-            "precedence": "edge_array_over_line"
-          },
-          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:8%40location1",
-          "object_type": "ViewProvider Edge",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:8%40location1",
-            "kind": "edge"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:shape-material#ColoredModel:1",
-          "channels": {
-            "precedence": "face_over_object"
-          },
-          "id": "fcstd:appearance:binding#shape-material:ColoredModel:25",
-          "object_type": "ViewProvider ShapeAppearance",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:10%40location1",
-            "kind": "face"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:shape-material#ColoredModel:2",
-          "channels": {
-            "precedence": "face_over_object"
-          },
-          "id": "fcstd:appearance:binding#shape-material:ColoredModel:26",
-          "object_type": "ViewProvider ShapeAppearance",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:17%40location1",
-            "kind": "face"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:shape-material#ColoredModel:3",
-          "channels": {
-            "precedence": "face_over_object"
-          },
-          "id": "fcstd:appearance:binding#shape-material:ColoredModel:27",
-          "object_type": "ViewProvider ShapeAppearance",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1",
-            "kind": "face"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:shape-material#ColoredModel:4",
-          "channels": {
-            "precedence": "face_over_object"
-          },
-          "id": "fcstd:appearance:binding#shape-material:ColoredModel:28",
-          "object_type": "ViewProvider ShapeAppearance",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:30%40location1",
-            "kind": "face"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:shape-material#ColoredModel:5",
-          "channels": {
-            "precedence": "face_over_object"
-          },
-          "id": "fcstd:appearance:binding#shape-material:ColoredModel:29",
-          "object_type": "ViewProvider ShapeAppearance",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:33%40location1",
-            "kind": "face"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:shape-material#ColoredModel:6",
-          "channels": {
-            "precedence": "face_over_object"
-          },
-          "id": "fcstd:appearance:binding#shape-material:ColoredModel:30",
-          "object_type": "ViewProvider ShapeAppearance",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:35%40location1",
-            "kind": "face"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:shape-material#ColoredModel:7",
-          "channels": {
-            "precedence": "face_over_object"
-          },
-          "id": "fcstd:appearance:binding#shape-material:ColoredModel:31",
-          "object_type": "ViewProvider ShapeAppearance",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:40%40location1",
-            "kind": "face"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:shape-material#ColoredModel:8",
-          "channels": {
-            "precedence": "face_over_object"
-          },
-          "id": "fcstd:appearance:binding#shape-material:ColoredModel:32",
-          "object_type": "ViewProvider ShapeAppearance",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:42%40location1",
-            "kind": "face"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1",
-            "kind": "vertex"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1",
-            "kind": "vertex"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1",
-            "kind": "vertex"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1",
-            "kind": "vertex"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1",
-            "kind": "vertex"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1",
-            "kind": "vertex"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1",
-            "kind": "vertex"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1",
-            "kind": "vertex"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1",
-            "kind": "vertex"
-          }
-        },
-        {
-          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
-          "channels": {
-            "precedence": "vertex_array_over_point"
-          },
-          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1",
-          "object_type": "ViewProvider Vertex",
-          "source_entity_id": "fcstd:native:object#ColoredModel",
-          "target": {
-            "id": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1",
-            "kind": "vertex"
-          }
-        }
-      ],
-      "appearances": [
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.10196078568696976,
-            "g": 0.10196078568696976,
-            "r": 0.10196078568696976
-          },
-          "id": "fcstd:appearance:edge#ColoredModel",
-          "name": "ColoredModel line appearance",
-          "properties": {
-            "line_width": 2.5
-          },
-          "schema": "FCStd ViewProvider line style"
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.10196078568696976,
-            "g": 0.10196078568696976,
-            "r": 0.10196078568696976
-          },
-          "id": "fcstd:appearance:edge#ColoredModel:1",
-          "name": "ColoredModel Edge1 appearance",
-          "properties": {
-            "line_width": 2.5
-          },
-          "schema": "FCStd LineColorArray"
-        },
-        {
-          "base_color": {
-            "a": 0.8799999952316284,
-            "b": 0.6000000238418579,
-            "g": 0.3490196168422699,
-            "r": 0.250980406999588
-          },
-          "id": "fcstd:appearance:shape-material#ColoredModel:1",
-          "name": "ColoredModel face 1 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.12000000476837158
-          },
-          "schema": "FCStd ShapeAppearance"
-        },
-        {
-          "base_color": {
-            "a": 0.8799999952316284,
-            "b": 0.6313725709915161,
-            "g": 0.38823530077934265,
-            "r": 0.3019607961177826
-          },
-          "id": "fcstd:appearance:shape-material#ColoredModel:2",
-          "name": "ColoredModel face 2 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.12000000476837158
-          },
-          "schema": "FCStd ShapeAppearance"
-        },
-        {
-          "base_color": {
-            "a": 0.8799999952316284,
-            "b": 0.658823549747467,
-            "g": 0.4313725531101227,
-            "r": 0.3490196168422699
-          },
-          "id": "fcstd:appearance:shape-material#ColoredModel:3",
-          "name": "ColoredModel face 3 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.12000000476837158
-          },
-          "schema": "FCStd ShapeAppearance"
-        },
-        {
-          "base_color": {
-            "a": 0.8799999952316284,
-            "b": 0.6901960968971252,
-            "g": 0.3490196168422699,
-            "r": 0.4000000059604645
-          },
-          "id": "fcstd:appearance:shape-material#ColoredModel:4",
-          "name": "ColoredModel face 4 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.12000000476837158
-          },
-          "schema": "FCStd ShapeAppearance"
-        },
-        {
-          "base_color": {
-            "a": 0.8799999952316284,
-            "b": 0.7215686440467834,
-            "g": 0.38823530077934265,
-            "r": 0.250980406999588
-          },
-          "id": "fcstd:appearance:shape-material#ColoredModel:5",
-          "name": "ColoredModel face 5 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.12000000476837158
-          },
-          "schema": "FCStd ShapeAppearance"
-        },
-        {
-          "base_color": {
-            "a": 0.8799999952316284,
-            "b": 0.6000000238418579,
-            "g": 0.4313725531101227,
-            "r": 0.3019607961177826
-          },
-          "id": "fcstd:appearance:shape-material#ColoredModel:6",
-          "name": "ColoredModel face 6 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.12000000476837158
-          },
-          "schema": "FCStd ShapeAppearance"
-        },
-        {
-          "base_color": {
-            "a": 0.8799999952316284,
-            "b": 0.6313725709915161,
-            "g": 0.3490196168422699,
-            "r": 0.3490196168422699
-          },
-          "id": "fcstd:appearance:shape-material#ColoredModel:7",
-          "name": "ColoredModel face 7 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.12000000476837158
-          },
-          "schema": "FCStd ShapeAppearance"
-        },
-        {
-          "base_color": {
-            "a": 0.8799999952316284,
-            "b": 0.658823549747467,
-            "g": 0.38823530077934265,
-            "r": 0.4000000059604645
-          },
-          "id": "fcstd:appearance:shape-material#ColoredModel:8",
-          "name": "ColoredModel face 8 material",
-          "properties": {
-            "ambient_packed": 1431655935.0,
-            "emissive_packed": 255.0,
-            "shininess": 0.8999999761581421,
-            "specular_packed": 2290649343.0,
-            "transparency": 0.12000000476837158
-          },
-          "schema": "FCStd ShapeAppearance"
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.14901961386203766,
-            "g": 0.3490196168422699,
-            "r": 0.9490196108818054
-          },
-          "id": "fcstd:appearance:vertex#ColoredModel",
-          "name": "ColoredModel point appearance",
-          "properties": {
-            "point_size": 4.0
-          },
-          "schema": "FCStd ViewProvider point style"
-        },
-        {
-          "base_color": {
-            "a": 1.0,
-            "b": 0.14901961386203766,
-            "g": 0.3490196168422699,
-            "r": 0.9490196108818054
-          },
-          "id": "fcstd:appearance:vertex#ColoredModel:1",
-          "name": "ColoredModel Vertex1 appearance",
-          "properties": {
-            "point_size": 4.0
-          },
-          "schema": "FCStd PointColorArray"
-        }
-      ],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "id": "fcstd:model:body#ColoredModel:Shape:ColoredModel.Shape.brp:45%40location1",
           "kind": "solid",
-          "regions": [
-            "fcstd:model:region#ColoredModel:Shape:ColoredModel.Shape.brp:44%40location1"
-          ],
           "visible": true
         }
       ],
@@ -845,6 +226,7 @@
           "edge": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:23%40location1",
           "id": "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1%3A2%3A1",
           "owner_loop": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1%3A2",
+          "pcurves": [],
           "radial_next": "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:40%40location1%3A1%3A3",
           "sense": "reversed"
         },
@@ -1121,322 +503,380 @@
           "sense": "forward"
         }
       ],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ColoredModel:Shape:ColoredModel.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 9.0,
-              "y": 6.0,
-              "z": 7.0
-            },
-            "kind": "circle",
-            "radius": 3.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 9.0,
+                "y": 6.0,
+                "z": 7.0
+              },
+              "kind": "circle",
+              "radius": 3.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ColoredModel:Shape:ColoredModel.Shape.brp:10",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 12.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 12.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ColoredModel:Shape:ColoredModel.Shape.brp:11",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 18.0,
-              "y": 12.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 18.0,
+                "y": 12.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ColoredModel:Shape:ColoredModel.Shape.brp:12",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 18.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 18.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ColoredModel:Shape:ColoredModel.Shape.brp:13",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 9.0,
-              "y": 6.0,
-              "z": 19.0
-            },
-            "kind": "circle",
-            "radius": 3.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 9.0,
+                "y": 6.0,
+                "z": 19.0
+              },
+              "kind": "circle",
+              "radius": 3.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ColoredModel:Shape:ColoredModel.Shape.brp:14",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 12.0,
-              "y": 5.999999999999999,
-              "z": 7.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 12.0,
+                "y": 5.999999999999999,
+                "z": 7.0
+              }
             }
           },
           "id": "fcstd:model:curve#ColoredModel:Shape:ColoredModel.Shape.brp:15",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 7.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 7.0
+              }
             }
           },
           "id": "fcstd:model:curve#ColoredModel:Shape:ColoredModel.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 12.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 12.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ColoredModel:Shape:ColoredModel.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ColoredModel:Shape:ColoredModel.Shape.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ColoredModel:Shape:ColoredModel.Shape.brp:5",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 18.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 18.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "fcstd:model:curve#ColoredModel:Shape:ColoredModel.Shape.brp:6",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 7.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 7.0
+              }
             }
           },
           "id": "fcstd:model:curve#ColoredModel:Shape:ColoredModel.Shape.brp:7",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 0.0,
-              "y": 12.0,
-              "z": 7.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 0.0,
+                "y": 12.0,
+                "z": 7.0
+              }
             }
           },
           "id": "fcstd:model:curve#ColoredModel:Shape:ColoredModel.Shape.brp:8",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "direction": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "kind": "line",
-            "origin": {
-              "x": 18.0,
-              "y": 0.0,
-              "z": 7.0
+            "kind": "solved",
+            "value": {
+              "direction": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "kind": "line",
+              "origin": {
+                "x": 18.0,
+                "y": 0.0,
+                "z": 7.0
+              }
             }
           },
           "id": "fcstd:model:curve#ColoredModel:Shape:ColoredModel.Shape.brp:9",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         }
       ],
-      "drawings": [],
       "edges": [
         {
           "carrier": {
@@ -1446,9 +886,11 @@
               18.0
             ]
           },
-          "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1",
+            "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:12%40location1",
-          "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1459,9 +901,11 @@
               7.0
             ]
           },
-          "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1",
+            "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1"
+          },
           "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:14%40location1",
-          "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1472,9 +916,11 @@
               18.0
             ]
           },
-          "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1",
+            "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:15%40location1",
-          "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1485,9 +931,11 @@
               18.0
             ]
           },
-          "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1",
+            "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1"
+          },
           "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:19%40location1",
-          "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1498,9 +946,11 @@
               12.0
             ]
           },
-          "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1",
+            "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1"
+          },
           "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:20%40location1",
-          "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1511,9 +961,11 @@
               6.283185307179586
             ]
           },
-          "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1",
+            "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1"
+          },
           "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:23%40location1",
-          "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1524,9 +976,11 @@
               18.0
             ]
           },
-          "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1",
+            "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1"
+          },
           "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:27%40location1",
-          "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1537,9 +991,11 @@
               7.0
             ]
           },
-          "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1",
+            "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1"
+          },
           "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:28%40location1",
-          "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1550,9 +1006,11 @@
               7.0
             ]
           },
-          "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1",
+            "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:3%40location1",
-          "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1563,9 +1021,11 @@
               12.0
             ]
           },
-          "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1",
+            "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1"
+          },
           "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:31%40location1",
-          "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1576,9 +1036,11 @@
               6.283185307179586
             ]
           },
-          "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1",
+            "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1"
+          },
           "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:37%40location1",
-          "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1589,9 +1051,11 @@
               12.0
             ]
           },
-          "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1",
+            "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1"
+          },
           "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:38%40location1",
-          "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1602,9 +1066,11 @@
               12.0
             ]
           },
-          "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1",
+            "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1"
+          },
           "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:5%40location1",
-          "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1615,9 +1081,11 @@
               7.0
             ]
           },
-          "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1",
+            "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1"
+          },
           "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:7%40location1",
-          "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1",
           "tolerance": 1e-7
         },
         {
@@ -1628,9 +1096,11 @@
               12.0
             ]
           },
-          "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1",
+          "ends": {
+            "end": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1",
+            "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1"
+          },
           "id": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:8%40location1",
-          "start": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1",
           "tolerance": 1e-7
         }
       ],
@@ -1638,7 +1108,7 @@
         {
           "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:10%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:10%40location1%3A1"
             ]
@@ -1651,7 +1121,7 @@
         {
           "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:17%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:17%40location1%3A1"
             ]
@@ -1664,7 +1134,7 @@
         {
           "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1%3A1",
               "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1%3A2"
@@ -1678,7 +1148,7 @@
         {
           "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:30%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:30%40location1%3A1"
             ]
@@ -1691,7 +1161,7 @@
         {
           "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:33%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:33%40location1%3A1"
             ]
@@ -1704,7 +1174,7 @@
         {
           "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:35%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:35%40location1%3A1"
             ]
@@ -1717,7 +1187,7 @@
         {
           "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:40%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:40%40location1%3A1"
             ]
@@ -1730,7 +1200,7 @@
         {
           "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:42%40location1",
           "loops": {
-            "classification": "unspecified",
+            "kind": "unspecified",
             "loops": [
               "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:42%40location1%3A1"
             ]
@@ -1739,25 +1209,6 @@
           "shell": "fcstd:model:shell#ColoredModel:Shape:ColoredModel.Shape.brp:43%40location1",
           "surface": "fcstd:model:surface#ColoredModel:Shape:ColoredModel.Shape.brp:9",
           "tolerance": 1e-7
-        }
-      ],
-      "features": [
-        {
-          "definition": {
-            "definition": "stored_geometry"
-          },
-          "id": "fcstd:design:feature#ColoredModel",
-          "name": "ColoredModel",
-          "native_ref": "fcstd:native:object#ColoredModel",
-          "ordinal": 1,
-          "outputs": [
-            "fcstd:model:body#ColoredModel:Shape:ColoredModel.Shape.brp:45%40location1"
-          ],
-          "source_properties": {
-            "Visibility": "true"
-          },
-          "source_tag": "Part::Feature",
-          "suppressed": null
         }
       ],
       "loops": [
@@ -1769,7 +1220,8 @@
               "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:10%40location1%3A1%3A3",
               "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:10%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:10%40location1",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:10%40location1%3A1"
@@ -1782,7 +1234,8 @@
               "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:17%40location1%3A1%3A3",
               "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:17%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:17%40location1",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:17%40location1%3A1"
@@ -1795,7 +1248,8 @@
               "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1%3A1%3A4",
               "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1%3A1"
@@ -1805,7 +1259,8 @@
             "coedges": [
               "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1%3A2%3A1"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1%3A2"
@@ -1818,7 +1273,8 @@
               "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:30%40location1%3A1%3A3",
               "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:30%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:30%40location1",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:30%40location1%3A1"
@@ -1831,7 +1287,8 @@
               "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:33%40location1%3A1%3A3",
               "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:33%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:33%40location1",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:33%40location1%3A1"
@@ -1844,7 +1301,8 @@
               "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:35%40location1%3A1%3A3",
               "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:35%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:35%40location1",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:35%40location1%3A1"
@@ -1857,7 +1315,8 @@
               "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:40%40location1%3A1%3A3",
               "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:40%40location1%3A1%3A2"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:40%40location1",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:40%40location1%3A1"
@@ -1867,14 +1326,13 @@
             "coedges": [
               "fcstd:model:coedge#ColoredModel:Shape:ColoredModel.Shape.brp:42%40location1%3A1%3A1"
             ],
-            "kind": "ring"
+            "kind": "ring",
+            "vertex_uses": []
           },
           "face": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:42%40location1",
           "id": "fcstd:model:loop#ColoredModel:Shape:ColoredModel.Shape.brp:42%40location1%3A1"
         }
       ],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [
         {
           "geometry": {
@@ -1896,7 +1354,7 @@
                 18.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1919,7 +1377,7 @@
                 18.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1942,7 +1400,7 @@
                 7.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1965,7 +1423,7 @@
                 7.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -1988,7 +1446,7 @@
                 18.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2011,7 +1469,7 @@
                 18.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2034,7 +1492,7 @@
                 18.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2057,7 +1515,7 @@
                 18.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2080,7 +1538,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2103,7 +1561,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2126,7 +1584,7 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2149,7 +1607,7 @@
                 18.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2172,7 +1630,7 @@
                 18.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2195,7 +1653,7 @@
                 7.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2218,7 +1676,7 @@
                 7.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2241,7 +1699,7 @@
                 7.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2264,7 +1722,7 @@
                 7.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2287,7 +1745,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2310,7 +1768,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2333,7 +1791,7 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2361,7 +1819,7 @@
                 6.283185307179586
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2384,7 +1842,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2407,7 +1865,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2430,7 +1888,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2453,7 +1911,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2476,7 +1934,7 @@
                 7.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2499,7 +1957,7 @@
                 7.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2522,7 +1980,7 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         },
         {
@@ -2545,11 +2003,10 @@
                 12.0
               ]
             },
-            "source": "general"
+            "kind": "general"
           }
         }
       ],
-      "pmi": [],
       "points": [
         {
           "id": "fcstd:model:point#ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1",
@@ -2560,6 +2017,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
@@ -2572,6 +2030,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
@@ -2584,6 +2043,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
@@ -2596,6 +2056,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
@@ -2608,6 +2069,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
@@ -2620,6 +2082,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
@@ -2632,6 +2095,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
@@ -2644,6 +2108,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
@@ -2656,6 +2121,7 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
@@ -2668,55 +2134,13 @@
           },
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         }
       ],
-      "presentation_documents": [
-        {
-          "id": "fcstd:presentation:document#0",
-          "native_ref": "fcstd:gui:document#0",
-          "schema_version": 1,
-          "states": [
-            {
-              "kind": {
-                "type": "Native",
-                "value": "Expand"
-              },
-              "order": 0
-            },
-            {
-              "attributes": {
-                "settings": "OrthographicCamera {\n  viewportMapping ADJUST_CAMERA\n  position 17.311642 -2.3116379 17.811638\n  orientation 0.74290609 0.30772209 0.59447283  1.2171158\n  nearDistance 0\n  farDistance 28.79236\n  aspectRatio 1\n  focalDistance 14.39618\n  height 32.432148\n\n}\n"
-              },
-              "kind": {
-                "type": "Camera",
-                "value": {
-                  "orientation": [
-                    0.74290609,
-                    0.30772209,
-                    0.59447283,
-                    1.2171158
-                  ],
-                  "position": [
-                    17.311642,
-                    -2.3116379,
-                    17.811638
-                  ],
-                  "properties": {
-                    "settings": "OrthographicCamera {\n  viewportMapping ADJUST_CAMERA\n  position 17.311642 -2.3116379 17.811638\n  orientation 0.74290609 0.30772209 0.59447283  1.2171158\n  nearDistance 0\n  farDistance 28.79236\n  aspectRatio 1\n  focalDistance 14.39618\n  height 32.432148\n\n}\n"
-                  }
-                }
-              },
-              "order": 1
-            }
-          ]
-        }
-      ],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [],
-      "product_definitions": [],
       "regions": [
         {
           "body": "fcstd:model:body#ColoredModel:Shape:ColoredModel.Shape.brp:45%40location1",
@@ -2726,283 +2150,278 @@
           ]
         }
       ],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "fcstd:model:shell#ColoredModel:Shape:ColoredModel.Shape.brp:43%40location1",
-          "members": [
-            {
-              "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:10%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:17%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:30%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:33%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:35%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:40%40location1",
-              "kind": "face"
-            },
-            {
-              "id": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:42%40location1",
-              "kind": "face"
-            }
-          ],
+          "members": [],
           "region": "fcstd:model:region#ColoredModel:Shape:ColoredModel.Shape.brp:44%40location1"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "fcstd:model:surface#ColoredModel:Shape:ColoredModel.Shape.brp:1",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "fcstd:model:surface#ColoredModel:Shape:ColoredModel.Shape.brp:2",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 7.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 7.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#ColoredModel:Shape:ColoredModel.Shape.brp:3",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": -0.0,
-              "y": 1.0,
-              "z": 0.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 12.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": -0.0,
+                "y": 1.0,
+                "z": 0.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 12.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "fcstd:model:surface#ColoredModel:Shape:ColoredModel.Shape.brp:4",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#ColoredModel:Shape:ColoredModel.Shape.brp:5",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
-            },
-            "origin": {
-              "x": 18.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "u_axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              },
+              "origin": {
+                "x": 18.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "u_axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              }
             }
           },
           "id": "fcstd:model:surface#ColoredModel:Shape:ColoredModel.Shape.brp:6",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "cylinder",
-            "origin": {
-              "x": 9.0,
-              "y": 6.0,
-              "z": 7.0
-            },
-            "radius": 3.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "cylinder",
+              "origin": {
+                "x": 9.0,
+                "y": 6.0,
+                "z": 7.0
+              },
+              "radius": 3.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#ColoredModel:Shape:ColoredModel.Shape.brp:7",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 9.0,
-              "y": 6.0,
-              "z": 7.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 9.0,
+                "y": 6.0,
+                "z": 7.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#ColoredModel:Shape:ColoredModel.Shape.brp:8",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         },
         {
           "geometry": {
-            "kind": "plane",
-            "normal": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "origin": {
-              "x": 9.0,
-              "y": 6.0,
-              "z": 19.0
-            },
-            "u_axis": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": -0.0
+            "kind": "solved",
+            "value": {
+              "kind": "plane",
+              "normal": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "origin": {
+                "x": 9.0,
+                "y": 6.0,
+                "z": 19.0
+              },
+              "u_axis": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": -0.0
+              }
             }
           },
           "id": "fcstd:model:surface#ColoredModel:Shape:ColoredModel.Shape.brp:9",
           "source_object": {
             "format": "fcstd",
+            "instance_path": [],
             "object_id": "fcstd:native:object#ColoredModel"
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1",
@@ -3054,7 +2473,828 @@
           "point": "fcstd:model:point#ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1",
           "tolerance": 1e-7
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [
+        {
+          "appearance": "fcstd:appearance:edge#ColoredModel:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:12%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:12%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#ColoredModel:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:14%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:14%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#ColoredModel:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:15%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:15%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#ColoredModel:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:19%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:19%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#ColoredModel:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:20%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:20%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#ColoredModel:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:23%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:23%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#ColoredModel:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:27%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:27%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#ColoredModel:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:28%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:28%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#ColoredModel:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:3%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:3%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#ColoredModel:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:31%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:31%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#ColoredModel:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:37%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:37%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#ColoredModel:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:38%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:38%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#ColoredModel:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:5%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:5%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#ColoredModel:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:7%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:7%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:edge#ColoredModel:1",
+          "channels": {
+            "precedence": "edge_array_over_line"
+          },
+          "id": "fcstd:appearance:binding#edge:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:8%40location1",
+          "object_type": "ViewProvider Edge",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "edge",
+              "value": "fcstd:model:edge#ColoredModel:Shape:ColoredModel.Shape.brp:8%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:shape-material#ColoredModel:1",
+          "channels": {
+            "precedence": "face_over_object"
+          },
+          "id": "fcstd:appearance:binding#shape-material:ColoredModel:25",
+          "object_type": "ViewProvider ShapeAppearance",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:10%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:shape-material#ColoredModel:2",
+          "channels": {
+            "precedence": "face_over_object"
+          },
+          "id": "fcstd:appearance:binding#shape-material:ColoredModel:26",
+          "object_type": "ViewProvider ShapeAppearance",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:17%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:shape-material#ColoredModel:3",
+          "channels": {
+            "precedence": "face_over_object"
+          },
+          "id": "fcstd:appearance:binding#shape-material:ColoredModel:27",
+          "object_type": "ViewProvider ShapeAppearance",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:25%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:shape-material#ColoredModel:4",
+          "channels": {
+            "precedence": "face_over_object"
+          },
+          "id": "fcstd:appearance:binding#shape-material:ColoredModel:28",
+          "object_type": "ViewProvider ShapeAppearance",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:30%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:shape-material#ColoredModel:5",
+          "channels": {
+            "precedence": "face_over_object"
+          },
+          "id": "fcstd:appearance:binding#shape-material:ColoredModel:29",
+          "object_type": "ViewProvider ShapeAppearance",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:33%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:shape-material#ColoredModel:6",
+          "channels": {
+            "precedence": "face_over_object"
+          },
+          "id": "fcstd:appearance:binding#shape-material:ColoredModel:30",
+          "object_type": "ViewProvider ShapeAppearance",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:35%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:shape-material#ColoredModel:7",
+          "channels": {
+            "precedence": "face_over_object"
+          },
+          "id": "fcstd:appearance:binding#shape-material:ColoredModel:31",
+          "object_type": "ViewProvider ShapeAppearance",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:40%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:shape-material#ColoredModel:8",
+          "channels": {
+            "precedence": "face_over_object"
+          },
+          "id": "fcstd:appearance:binding#shape-material:ColoredModel:32",
+          "object_type": "ViewProvider ShapeAppearance",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "face",
+              "value": "fcstd:model:face#ColoredModel:Shape:ColoredModel.Shape.brp:42%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:1%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:11%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:13%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:18%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:2%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:22%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:26%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:36%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:4%40location1"
+            }
+          }
+        },
+        {
+          "appearance": "fcstd:appearance:vertex#ColoredModel:1",
+          "channels": {
+            "precedence": "vertex_array_over_point"
+          },
+          "id": "fcstd:appearance:binding#vertex:ColoredModel:1:ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1",
+          "object_type": "ViewProvider Vertex",
+          "source_entity_id": "fcstd:native:object#ColoredModel",
+          "target": {
+            "entity": {
+              "kind": "vertex",
+              "value": "fcstd:model:vertex#ColoredModel:Shape:ColoredModel.Shape.brp:6%40location1"
+            }
+          }
+        }
       ],
+      "appearances": [
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.10196078431372549,
+            "g": 0.10196078431372549,
+            "r": 0.10196078431372549
+          },
+          "id": "fcstd:appearance:edge#ColoredModel",
+          "name": "ColoredModel line appearance",
+          "properties": {
+            "line_width": 2.5
+          },
+          "schema": "FCStd ViewProvider line style",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.10196078431372549,
+            "g": 0.10196078431372549,
+            "r": 0.10196078431372549
+          },
+          "id": "fcstd:appearance:edge#ColoredModel:1",
+          "name": "ColoredModel Edge1 appearance",
+          "properties": {
+            "line_width": 2.5
+          },
+          "schema": "FCStd LineColorArray",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 0.8799999952316284,
+            "b": 0.6,
+            "g": 0.34901960784313724,
+            "r": 0.25098039215686274
+          },
+          "id": "fcstd:appearance:shape-material#ColoredModel:1",
+          "name": "ColoredModel face 1 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.12000000476837158
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 0.8799999952316284,
+            "b": 0.6313725490196078,
+            "g": 0.38823529411764707,
+            "r": 0.30196078431372547
+          },
+          "id": "fcstd:appearance:shape-material#ColoredModel:2",
+          "name": "ColoredModel face 2 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.12000000476837158
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 0.8799999952316284,
+            "b": 0.6588235294117647,
+            "g": 0.43137254901960786,
+            "r": 0.34901960784313724
+          },
+          "id": "fcstd:appearance:shape-material#ColoredModel:3",
+          "name": "ColoredModel face 3 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.12000000476837158
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 0.8799999952316284,
+            "b": 0.6901960784313725,
+            "g": 0.34901960784313724,
+            "r": 0.4
+          },
+          "id": "fcstd:appearance:shape-material#ColoredModel:4",
+          "name": "ColoredModel face 4 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.12000000476837158
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 0.8799999952316284,
+            "b": 0.7215686274509804,
+            "g": 0.38823529411764707,
+            "r": 0.25098039215686274
+          },
+          "id": "fcstd:appearance:shape-material#ColoredModel:5",
+          "name": "ColoredModel face 5 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.12000000476837158
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 0.8799999952316284,
+            "b": 0.6,
+            "g": 0.43137254901960786,
+            "r": 0.30196078431372547
+          },
+          "id": "fcstd:appearance:shape-material#ColoredModel:6",
+          "name": "ColoredModel face 6 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.12000000476837158
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 0.8799999952316284,
+            "b": 0.6313725490196078,
+            "g": 0.34901960784313724,
+            "r": 0.34901960784313724
+          },
+          "id": "fcstd:appearance:shape-material#ColoredModel:7",
+          "name": "ColoredModel face 7 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.12000000476837158
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 0.8799999952316284,
+            "b": 0.6588235294117647,
+            "g": 0.38823529411764707,
+            "r": 0.4
+          },
+          "id": "fcstd:appearance:shape-material#ColoredModel:8",
+          "name": "ColoredModel face 8 material",
+          "properties": {
+            "ambient_packed": 1431655935.0,
+            "emissive_packed": 255.0,
+            "shininess": 0.8999999761581421,
+            "specular_packed": 2290649343.0,
+            "transparency": 0.12000000476837158
+          },
+          "schema": "FCStd ShapeAppearance",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.14901960784313725,
+            "g": 0.34901960784313724,
+            "r": 0.9490196078431372
+          },
+          "id": "fcstd:appearance:vertex#ColoredModel",
+          "name": "ColoredModel point appearance",
+          "properties": {
+            "point_size": 4.0
+          },
+          "schema": "FCStd ViewProvider point style",
+          "textures": []
+        },
+        {
+          "base_color": {
+            "a": 1.0,
+            "b": 0.14901960784313725,
+            "g": 0.34901960784313724,
+            "r": 0.9490196078431372
+          },
+          "id": "fcstd:appearance:vertex#ColoredModel:1",
+          "name": "ColoredModel Vertex1 appearance",
+          "properties": {
+            "point_size": 4.0
+          },
+          "schema": "FCStd PointColorArray",
+          "textures": []
+        }
+      ],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [
+        {
+          "definition": {
+            "kind": "operation",
+            "value": {
+              "kind": "stored_geometry",
+              "value": {}
+            }
+          },
+          "dependencies": [],
+          "id": "fcstd:design:feature#ColoredModel",
+          "name": "ColoredModel",
+          "native_ref": "fcstd:native:object#ColoredModel",
+          "ordinal": 1,
+          "outputs": [
+            "fcstd:model:body#ColoredModel:Shape:ColoredModel.Shape.brp:45%40location1"
+          ],
+          "source_content": [],
+          "source_properties": {
+            "Visibility": "true"
+          },
+          "source_tag": "Part::Feature"
+        }
+      ],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [
+        {
+          "id": "fcstd:presentation:document#0",
+          "native_ref": "fcstd:gui:document#0",
+          "schema_version": 1,
+          "states": [
+            {
+              "assets": [],
+              "attributes": {
+                "settings": "OrthographicCamera {\n  viewportMapping ADJUST_CAMERA\n  position 17.311642 -2.3116379 17.811638\n  orientation 0.74290609 0.30772209 0.59447283  1.2171158\n  nearDistance 0\n  farDistance 28.79236\n  aspectRatio 1\n  focalDistance 14.39618\n  height 32.432148\n\n}\n"
+              },
+              "kind": {
+                "kind": "Camera",
+                "value": {
+                  "orientation": [
+                    0.74290609,
+                    0.30772209,
+                    0.59447283,
+                    1.2171158
+                  ],
+                  "position": [
+                    17.311642,
+                    -2.3116379,
+                    17.811638
+                  ],
+                  "properties": {
+                    "settings": "OrthographicCamera {\n  viewportMapping ADJUST_CAMERA\n  position 17.311642 -2.3116379 17.811638\n  orientation 0.74290609 0.30772209 0.59447283  1.2171158\n  nearDistance 0\n  farDistance 28.79236\n  aspectRatio 1\n  focalDistance 14.39618\n  height 32.432148\n\n}\n"
+                  }
+                }
+              },
+              "order": 1
+            }
+          ]
+        }
+      ],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "fcstd:model:body#ColoredModel:Shape:ColoredModel.Shape.brp:45%40location1"
+          ],
+          "bom_properties": {},
+          "id": "fcstd:model:product_definition#document:root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": [
         {
           "display_mode": "0",
@@ -3162,7 +3402,7 @@
           "physical_ledger": "4f3e09f4eee9aeec874e9b1cbb0922eefe51acccb8f3c743a35e9190d276b907",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "8c417cb609109e67022dae36480260b1bc337e869d9c01b7bbefb9c2fa245004",
-          "shape_payloads": "7e96e09b39034daebc24a2f8969e9ca5feaa355d412b8cfdc06ba2bef0203cee",
+          "shape_payloads": "d7217b8a710ce3d0e9a0b450013c0326783beef3c798b18ee0db495414237af8",
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f",
           "unknowns": "4dc8111b8eca9e949c9484d1f2e3e560b63650c525501e6e61f860012579f100"
         }
@@ -3234,25 +3474,39 @@
       },
       "__elided": "attachment and product-node records are pinned directly; remaining native arena values are omitted and pinned by a digest over their canonical JSON"
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "application_domains": "App,Part",
-        "archive_entry_count": "7",
         "document_kind": "part",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "2",
-        "physical_archive_bytes": "5042",
-        "physical_ledger_spans": "50",
-        "program_version": "1.1R20260414 (Git shallow)",
-        "thumbnail_bytes": "955"
+        "program_version": "1.1R20260414 (Git shallow)"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "file_version": "1",
               "program_version": "1.1R20260414 (Git shallow)",
@@ -3260,7 +3514,8 @@
             },
             "dialect": "fcstd:schema-4"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -3268,16 +3523,21 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "file_version": "1",
             "program_version": "1.1R20260414 (Git shallow)",
@@ -3285,7 +3545,8 @@
           },
           "dialect": "fcstd:schema-4"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [],
     "notes": [
@@ -3299,20 +3560,30 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {},
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "393db41b6acd1d3c890dc07085017fa6f07e91f96d59e7a244e2c834075ffcc2",
+    "file_digests": {},
     "retained_records": {
       "fcstd:native:thumbnail#thumbnails/Thumbnail.png": {
         "bytes": {
           "data": "iVBORw0KGgoAAAANSUhEUgAAAQAAAAEACAIAAADTED8xAAADgklEQVR42u3Ty20CQRBFUfLyykGQh4NwGA6HKBwAEViyxIotEgLPmP5UVR/pBjDV887h5/ciLdvBEwgACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAmA9J0/3rfnuQC4HL++C7Rr9/c1/BIAAEiz+x4SAAAg6/qbGAAAgKzTb8IAAADSr/8VAwAAkH76rzAAAIA66/+HAQAAKLX+vQYAAKDa+ncZAACAguvfbgAAAAAAAIBy699oAAAAyq5/iwEAAAAAAACKrv9PAwAAUHz9zw0AAAAAAAAAAAAAVF3/EwMAAAAAAAAAAAAAhdf/yAAAAAAAAAAAAAAAAAAAAAAAHXr7PDUJgLYAWv0XAAAAAAAAAAAAAAAA6AUgVOkA9HsKAAAAAAAAAAAAAAAAAAAAAAAAAIDCAHIZ6PoOAAAAAAAAAADAUgCyGOj9CAAAAAAAAAAAwGoA4hsY8AIALA0gsoEx5wMAAAAALAwgpoFhtwMAQDgDIw8HAAAAAFgeQBwDg68GAIBABsafDAAAUQxMuRcAAEIYmHUsAABMZjD3TAAAmGlg+o0AADCHQZDrAABggoE4pwEAwDgJAS8CAIDuEiIfAgAASwcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAABAIAAAEAAACAAABAAAAgAAAQAAAIAAAEAgAAAQAAAIAAAEAAACAAABAAAAgAAAQCAAABAAAAgAAAQAAAIAAAEAAACAAABAIAAAEAAACAAABAAAAgAAAQAAAIAAAEAgAAAQAAAIAAAEAAACAAABAAAAgAAAQCAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYCUAACAAABAAAAgAAAQAAAIAAAEAgAAAQAAAIAAAEAAACAAABAAAAgAAAQCAAABAAAAgAAAQAPEBSABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASABIAEgASAAIAK8gACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJAAkACQAJACkm67roDDe+hRNuAAAAABJRU5ErkJggg==",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

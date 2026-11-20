@@ -17,8 +17,8 @@ pub(super) fn check_typed_references(
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     macro_rules! check_arenas {
-        ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
-            $(for entity in &ir.model.$field {
+        ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
+            $(for entity in &ir.$home.$field {
                 let owner = entity.identity();
                 let walk = entity.visit_references(ctx, &mut |target| {
                     if index.contains(target) { return Ok(()); }
@@ -79,7 +79,7 @@ mod tests {
         let mut ir = unit_cube().expect("valid unit cube fixture");
         ir.model.tessellations.push(tessellation);
         let mut findings = Vec::new();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let index = ModelIndex::build(&ir);
         let identities = crate::index::identities::BorrowedIdentities::build(|add| {
             for id in index.identities(crate::index::StandardIndex) {
@@ -100,10 +100,11 @@ mod tests {
         use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceDimension};
         use cadmpeg_core::CodecError;
         let mut ir = crate::CadIr::empty();
-        ir.model.vertices.push(crate::topology::Vertex {
+        ir.geometry.vertices.push(crate::topology::Vertex {
             id: "test:model:vertex#owner".try_into().unwrap(),
             point: "test:model:point#missing".try_into().unwrap(),
             tolerance: None,
+            native_ref: None,
         });
         let identities = crate::index::identities::BorrowedIdentities::<()>::new();
         let arena = DecodeArena::new();
@@ -133,8 +134,10 @@ mod tests {
             .product_definitions
             .push(crate::products::ProductDefinition {
                 sketches: Vec::default(),
+
+                tessellations: Vec::new(),
                 id: owner.try_into().unwrap(),
-                kind: crate::products::ProductDefinitionKind::Part,
+                kind: Some(crate::products::ProductDefinitionKind::Part),
                 source_name: Some("test:model:name#plain".into()),
                 label: None,
                 description: None,
@@ -142,6 +145,14 @@ mod tests {
                 bom_properties: std::collections::BTreeMap::new(),
                 bodies: vec![target.try_into().unwrap(), target.try_into().unwrap()],
                 native_ref: None,
+                generated_from: None,
+                storage: crate::products::Storage::Embedded,
+                occurrences: Vec::new(),
+                instance_bodies: Vec::new(),
+                representations: Vec::new(),
+                units: None,
+                general_tolerance: None,
+                active: None,
             });
         let identities = crate::index::identities::BorrowedIdentities::<()>::new();
         let arena = DecodeArena::new();

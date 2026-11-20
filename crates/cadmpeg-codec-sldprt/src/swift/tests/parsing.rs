@@ -258,7 +258,11 @@ fn parses_and_projects_semantic_graph() {
         &["maximum_material_requirement", "projected_zone:4_mm"]
     );
     assert_eq!(
-        position.targets,
+        position
+            .targets
+            .iter()
+            .map(|target| target.entity.clone())
+            .collect::<Vec<_>>(),
         [
             PmiTarget::ShapeAspect {
                 source_id: cadmpeg_core::text::NonBlankString::new("F20")
@@ -295,9 +299,9 @@ fn parses_and_projects_semantic_graph() {
     let PmiDefinition::Dimension(relation) = &angle.definition else {
         panic!("angular definition");
     };
-    let nominal = relation.nominal().expect("angular nominal");
+    let nominal = relation.literal_nominal().expect("angular nominal");
     assert_eq!(
-        *nominal,
+        nominal,
         PmiValue::new(0.0, PmiQuantity::Angle).expect("finite angle")
     );
 }
@@ -449,7 +453,7 @@ fn swift_serialized_entity_depth_cap_leaves_the_root_unresolved() {
     }
     let mut payload = Vec::new();
     encode_entity(&nested, &mut payload);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     // The outer root exceeds the nesting cap; each inner candidate is a
     // second root, so no unique root remains.
     assert!(parse_unique_root(&ctx, &payload).unwrap().is_none());
@@ -466,7 +470,7 @@ fn duplicate_swift_annotation_reference_ids_refuse_before_projection() {
     root.annotations.entities = vec![annotation.clone(), annotation];
     let mut payload = Vec::new();
     encode_entity(&root, &mut payload);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let error = parse_unique_root(&ctx, &payload).unwrap_err();
     assert!(
         matches!(&error, CodecError::Malformed(message) if message == "duplicate SWIFT object reference ID A42")
@@ -538,7 +542,7 @@ fn assert_malformed_swift_projection(annotation: Entity, reason: &str) {
     let class = crate::swift::short_class(&annotation.class).to_owned();
     let source = source_with_swift_annotation(annotation);
     let scan = crate::test_support::container::scan(&source);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut provenance = cadmpeg_ir::annotations::Annotations::default();
     let expected = format!("SWIFT annotation A42 ({class}): {reason}");
     assert!(
@@ -609,7 +613,7 @@ fn swift_valid_and_suppressed_annotations_have_explicit_dispositions() {
         annotation.doubles.insert("Tolerance".into(), value);
         let source = source_with_swift_annotation(annotation);
         let scan = crate::test_support::container::scan(&source);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut provenance = cadmpeg_ir::annotations::Annotations::default();
         let projected = crate::swift::annotations(
             &ctx,
@@ -637,7 +641,7 @@ fn swift_valid_and_suppressed_annotations_have_explicit_dispositions() {
         annotation.integers.insert("IsSuppressed".into(), 1);
         let source = source_with_swift_annotation(annotation);
         let scan = crate::test_support::container::scan(&source);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut provenance = cadmpeg_ir::annotations::Annotations::default();
         assert!(crate::swift::annotations(
             &ctx,
@@ -660,7 +664,7 @@ fn swift_valid_and_suppressed_annotations_have_explicit_dispositions() {
 fn swift_recognized_unprojected_annotation_records_unsupported_loss() {
     let source = source_with_swift_annotation(super::entity("GdtWidth"));
     let scan = crate::test_support::container::scan(&source);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut provenance = cadmpeg_ir::annotations::Annotations::default();
     assert!(crate::swift::annotations(
         &ctx,
@@ -712,22 +716,25 @@ fn swift_spherical_zone_type_is_scoped_to_position() {
         .iter()
         .find(|annotation| annotation.id == pmi_id("A20").unwrap())
         .expect("position");
-    let PmiDefinition::GeometricTolerance { constraints, .. } = &position.definition else {
+    let PmiDefinition::GeometricTolerance { zones, .. } = &position.definition else {
         panic!("position tolerance")
     };
-    let [zone] = constraints.zones.as_slice() else {
+    let [zone] = zones.as_slice() else {
         panic!("one spherical zone")
     };
-    assert_eq!(zone.form.as_str(), "spherical");
+    assert_eq!(
+        zone.form,
+        cadmpeg_ir::pmi::zones::ToleranceZoneForm::Spherical
+    );
 
     let straightness = projected
         .iter()
         .find(|annotation| annotation.id == pmi_id("A50").unwrap())
         .expect("straightness");
-    let PmiDefinition::GeometricTolerance { constraints, .. } = &straightness.definition else {
+    let PmiDefinition::GeometricTolerance { zones, .. } = &straightness.definition else {
         panic!("straightness tolerance")
     };
-    assert!(constraints.zones.is_empty());
+    assert!(zones.is_empty());
 }
 
 fn class_declaration(class: &str) -> Vec<u8> {
@@ -756,7 +763,7 @@ fn a_declared_display_list_that_its_head_does_not_frame_reports_its_loss() {
         &payload,
     ));
     let scan = crate::test_support::container::scan(&source);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut provenance = cadmpeg_ir::annotations::Annotations::default();
     let mut losses = Vec::new();
     crate::swift::annotations(&ctx, &scan, &mut provenance, None, &[], &[], &mut losses)

@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Boundary-representation topology.
 //!
-//! Flat arenas in [`crate::document::Model`] store the hierarchy
+//! Flat arenas in [`crate::document::Topology`] store the hierarchy
 //! `body → region → shell → face → loop → coedge → edge → vertex`. Faces,
 //! edges, coedges, and vertices reference surface, curve, pcurve, and point
-//! carriers by typed ID.
+//! carriers by typed ID. Each record names its parent; a child list whose
+//! order carries no meaning (a shell's faces, a body's regions) is derived
+//! from those parent pointers and is not stored.
 
-use crate::features::{BodySelectionError, FinitePoint3, NonEmptyMembers};
+use crate::features::{FinitePoint3, NonEmptyMembers};
 use crate::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, IdentityKey, IdentityNamespace, LoopId, PcurveId,
     PointId, RegionId, ShellId, SurfaceId, VertexId,
 };
 use crate::math::Point3;
-use crate::scalar::UnitBinary32;
+use crate::scalar::{Fraction, UnitBinary32};
 use crate::transform::Transform;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -21,98 +24,78 @@ use serde::{Deserialize, Serialize};
 /// RGBA color, components in `[0, 1]`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(try_from = "ColorWire")]
-pub struct Color {
-    r: f32,
-    g: f32,
-    b: f32,
-    a: f32,
-}
-
-#[derive(Deserialize)]
-#[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
-struct ColorWire {
+pub struct Color {
     /// Red component.
-    r: f32,
+    pub r: Fraction,
     /// Green component.
-    g: f32,
+    pub g: Fraction,
     /// Blue component.
-    b: f32,
+    pub b: Fraction,
     /// Opacity component.
-    a: f32,
-}
-
-impl TryFrom<ColorWire> for Color {
-    type Error = String;
-
-    fn try_from(wire: ColorWire) -> Result<Self, Self::Error> {
-        for (field, value) in [("r", wire.r), ("g", wire.g), ("b", wire.b), ("a", wire.a)] {
-            if !(0.0..=1.0).contains(&value) {
-                return Err(format!("color {field} must be finite and in [0, 1]"));
-            }
-        }
-        Ok(Self {
-            r: wire.r,
-            g: wire.g,
-            b: wire.b,
-            a: wire.a,
-        })
-    }
+    pub a: Fraction,
 }
 
 impl Color {
     /// Construct RGBA components in the closed unit interval.
-    pub fn new(r: f32, g: f32, b: f32, a: f32) -> Option<Self> {
-        Self::try_from(ColorWire { r, g, b, a }).ok()
+    pub const fn new(r: f64, g: f64, b: f64, a: f64) -> Option<Self> {
+        match (
+            Fraction::new(r),
+            Fraction::new(g),
+            Fraction::new(b),
+            Fraction::new(a),
+        ) {
+            (Some(r), Some(g), Some(b), Some(a)) => Some(Self { r, g, b, a }),
+            _ => None,
+        }
     }
 
     /// Construct RGBA from admitted binary32 unit fractions.
     #[must_use]
     pub fn from_unit_binary32(components: [UnitBinary32; 4]) -> Self {
-        let [r, g, b, a] = components.map(UnitBinary32::get);
+        let [r, g, b, a] = components.map(Fraction::from);
         Self { r, g, b, a }
     }
 
     /// Convert eight-bit RGBA components to the closed unit interval.
     pub fn from_rgba8(r: u8, g: u8, b: u8, a: u8) -> Self {
         Self {
-            r: f32::from(r) / 255.0,
-            g: f32::from(g) / 255.0,
-            b: f32::from(b) / 255.0,
-            a: f32::from(a) / 255.0,
+            r: Fraction::from_byte(r),
+            g: Fraction::from_byte(g),
+            b: Fraction::from_byte(b),
+            a: Fraction::from_byte(a),
         }
     }
 
     /// Red component.
-    pub const fn r(self) -> f32 {
-        self.r
+    pub const fn r(self) -> f64 {
+        self.r.get()
     }
     /// Green component.
-    pub const fn g(self) -> f32 {
-        self.g
+    pub const fn g(self) -> f64 {
+        self.g.get()
     }
     /// Blue component.
-    pub const fn b(self) -> f32 {
-        self.b
+    pub const fn b(self) -> f64 {
+        self.b.get()
     }
     /// Opacity component.
-    pub const fn a(self) -> f32 {
-        self.a
+    pub const fn a(self) -> f64 {
+        self.a.get()
     }
 
     /// Replace opacity with its complement.
     #[must_use]
     pub fn invert_alpha(self) -> Self {
         Self {
-            a: 1.0 - self.a,
+            a: self.a.complement(),
             ..self
         }
     }
 
     /// Replace opacity with a component in the closed unit interval.
-    pub fn with_alpha(self, a: f32) -> Option<Self> {
-        Self::new(self.r, self.g, self.b, a)
+    pub fn with_alpha(self, a: f64) -> Option<Self> {
+        Fraction::new(a).map(|a| Self { a, ..self })
     }
 }
 
@@ -120,7 +103,7 @@ impl Color {
 ///
 /// For a coedge this compares traversal with its edge curve. For a face it
 /// compares the face normal with its surface normal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -132,7 +115,7 @@ pub enum Sense {
 }
 
 /// A top-level solid, sheet, wire, or general body.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -156,10 +139,7 @@ pub struct Body {
     /// Arena id.
     pub id: BodyId,
     /// The dimensional kind of topology contained by the body.
-    #[serde(default)]
     pub kind: BodyKind,
-    /// Constituent regions.
-    pub regions: Vec<RegionId>,
     /// Optional world placement of the body's geometry.
     #[serde(
         default,
@@ -189,6 +169,13 @@ pub struct Body {
         deserialize_with = "deserialize_visible"
     )]
     pub visible: Option<bool>,
+    /// The source record this body projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 /// A connected region of a body.
@@ -203,19 +190,22 @@ pub struct Region {
     /// Ordered boundary shells. For a solid region, the first shell is the
     /// exterior boundary and all subsequent shells bound voids.
     pub shells: Vec<ShellId>,
+    /// The source record this region projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
-/// One member of a shell: a face, a wire edge, or a free vertex.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// One member of a shell that names no parent of its own: a wire edge or a
+/// free vertex. A shell's faces name it through [`Face::shell`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum ShellMember {
-    /// A face bounded by the owning shell.
-    Face {
-        /// Arena id of the face.
-        id: FaceId,
-    },
     /// An edge belonging directly to a wire shell.
     WireEdge {
         /// Arena id of the edge.
@@ -228,40 +218,10 @@ pub enum ShellMember {
     },
 }
 
-/// The members of a shell, sorted into the three kinds.
+/// An oriented boundary of a region.
 ///
-/// The wire carries one non-empty member list, so "all three lists are empty"
-/// has no spelling and no arm refuses it.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(from = "NonEmptyMembers<ShellMember>", into = "Vec<ShellMember>")]
-struct ShellMembers {
-    faces: Vec<FaceId>,
-    wire_edges: Vec<EdgeId>,
-    free_vertices: Vec<VertexId>,
-}
-
-impl From<NonEmptyMembers<ShellMember>> for ShellMembers {
-    fn from(members: NonEmptyMembers<ShellMember>) -> Self {
-        let mut sorted = Self {
-            faces: Vec::new(),
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        };
-        for member in members {
-            match member {
-                ShellMember::Face { id } => sorted.faces.push(id),
-                ShellMember::WireEdge { id } => sorted.wire_edges.push(id),
-                ShellMember::FreeVertex { id } => sorted.free_vertices.push(id),
-            }
-        }
-        sorted
-    }
-}
-
-/// An oriented nonempty boundary of a region.
-///
-/// The members travel as one tagged list, so a shell that owns nothing is
-/// unrepresentable beyond the empty list the member type refuses.
+/// Its faces are the faces whose [`Face::shell`] names it; `members` lists
+/// only the wire edges and free vertices, which name no parent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -270,173 +230,145 @@ pub struct Shell {
     pub id: ShellId,
     /// Owning region.
     pub region: RegionId,
-    /// Faces, wire edges, and free vertices owned by the shell.
-    #[cfg_attr(feature = "schema", schemars(with = "Vec<ShellMember>"))]
-    members: ShellMembers,
+    /// Wire edges and free vertices owned by the shell.
+    pub members: Vec<ShellMember>,
+    /// The source record this shell projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 impl Shell {
-    /// Admits a shell that owns at least one face, wire edge, or free vertex.
-    pub fn new(
-        id: ShellId,
-        region: RegionId,
-        faces: Vec<FaceId>,
-        wire_edges: Vec<EdgeId>,
-        free_vertices: Vec<VertexId>,
-    ) -> Result<Self, BodySelectionError> {
-        if faces.is_empty() && wire_edges.is_empty() && free_vertices.is_empty() {
-            return Err(BodySelectionError::Empty);
-        }
-        let members = ShellMembers {
-            faces,
-            wire_edges,
-            free_vertices,
-        };
-        Ok(Self {
-            id,
-            region,
-            members,
-        })
-    }
-
-    /// Constructs a shell with one face.
-    pub fn with_face(id: ShellId, region: RegionId, face: FaceId) -> Self {
+    /// Constructs a shell with no wire edge or free vertex.
+    #[must_use]
+    pub const fn new(id: ShellId, region: RegionId) -> Self {
         Self {
             id,
             region,
-            members: ShellMembers {
-                faces: vec![face],
-                wire_edges: Vec::new(),
-                free_vertices: Vec::new(),
-            },
+            members: Vec::new(),
+            native_ref: None,
         }
+    }
+
+    /// Constructs a shell that owns these wire edges and free vertices.
+    #[must_use]
+    pub fn with_members(
+        id: ShellId,
+        region: RegionId,
+        wire_edges: Vec<EdgeId>,
+        free_vertices: Vec<VertexId>,
+    ) -> Self {
+        let mut shell = Self::new(id, region);
+        shell.members.extend(
+            wire_edges
+                .into_iter()
+                .map(|id| ShellMember::WireEdge { id }),
+        );
+        shell.members.extend(
+            free_vertices
+                .into_iter()
+                .map(|id| ShellMember::FreeVertex { id }),
+        );
+        shell
     }
 
     /// Constructs a shell with one wire edge.
+    #[must_use]
     pub fn with_wire_edge(id: ShellId, region: RegionId, edge: EdgeId) -> Self {
-        Self {
-            id,
-            region,
-            members: ShellMembers {
-                faces: Vec::new(),
-                wire_edges: vec![edge],
-                free_vertices: Vec::new(),
-            },
-        }
+        Self::with_members(id, region, vec![edge], Vec::new())
     }
 
     /// Constructs a shell with one free vertex.
+    #[must_use]
     pub fn with_free_vertex(id: ShellId, region: RegionId, vertex: VertexId) -> Self {
-        Self {
-            id,
-            region,
-            members: ShellMembers {
-                faces: Vec::new(),
-                wire_edges: Vec::new(),
-                free_vertices: vec![vertex],
-            },
-        }
-    }
-
-    /// Construct a shell from a nonempty, already allocated face list.
-    pub fn with_faces(
-        id: ShellId,
-        region: RegionId,
-        faces: Vec<FaceId>,
-    ) -> Result<Self, BodySelectionError> {
-        if faces.is_empty() {
-            return Err(BodySelectionError::Empty);
-        }
-        Ok(Self {
-            id,
-            region,
-            members: ShellMembers {
-                faces,
-                wire_edges: Vec::new(),
-                free_vertices: Vec::new(),
-            },
-        })
-    }
-
-    /// Construct a shell from a nonempty, already allocated free-vertex list.
-    pub fn with_free_vertices(
-        id: ShellId,
-        region: RegionId,
-        free_vertices: Vec<VertexId>,
-    ) -> Result<Self, BodySelectionError> {
-        if free_vertices.is_empty() {
-            return Err(BodySelectionError::Empty);
-        }
-        Ok(Self {
-            id,
-            region,
-            members: ShellMembers {
-                faces: Vec::new(),
-                wire_edges: Vec::new(),
-                free_vertices,
-            },
-        })
-    }
-
-    /// Faces of the shell.
-    pub fn faces(&self) -> &[FaceId] {
-        &self.members.faces
+        Self::with_members(id, region, Vec::new(), vec![vertex])
     }
 
     /// Edges belonging directly to the shell.
-    pub fn wire_edges(&self) -> &[EdgeId] {
-        &self.members.wire_edges
+    pub fn wire_edges(&self) -> impl Iterator<Item = &EdgeId> {
+        self.members.iter().filter_map(|member| match member {
+            ShellMember::WireEdge { id } => Some(id),
+            ShellMember::FreeVertex { .. } => None,
+        })
     }
 
     /// Vertices belonging directly to the shell.
-    pub fn free_vertices(&self) -> &[VertexId] {
-        &self.members.free_vertices
-    }
-
-    /// Replace the already allocated face list while preserving other members.
-    pub fn replace_faces(&mut self, faces: Vec<FaceId>) -> Result<(), BodySelectionError> {
-        if faces.is_empty()
-            && self.members.wire_edges.is_empty()
-            && self.members.free_vertices.is_empty()
-        {
-            return Err(BodySelectionError::Empty);
-        }
-        self.members.faces = faces;
-        Ok(())
-    }
-
-    /// Edits topology members and preserves the shell when admission fails.
-    pub fn edit_topology<R>(
-        &mut self,
-        edit: impl FnOnce(&mut Vec<FaceId>, &mut Vec<EdgeId>, &mut Vec<VertexId>) -> R,
-    ) -> Result<R, BodySelectionError> {
-        let mut faces = self.members.faces.clone();
-        let mut wire_edges = self.members.wire_edges.clone();
-        let mut free_vertices = self.members.free_vertices.clone();
-        let result = edit(&mut faces, &mut wire_edges, &mut free_vertices);
-        *self = Self::new(
-            self.id.clone(),
-            self.region.clone(),
-            faces,
-            wire_edges,
-            free_vertices,
-        )?;
-        Ok(result)
-    }
-
-    /// Appends a face to the shell.
-    pub fn add_face(&mut self, face: FaceId) {
-        self.members.faces.push(face);
+    pub fn free_vertices(&self) -> impl Iterator<Item = &VertexId> {
+        self.members.iter().filter_map(|member| match member {
+            ShellMember::FreeVertex { id } => Some(id),
+            ShellMember::WireEdge { .. } => None,
+        })
     }
 
     /// Appends a wire edge to the shell.
     pub fn add_wire_edge(&mut self, edge: EdgeId) {
-        self.members.wire_edges.push(edge);
+        self.members.push(ShellMember::WireEdge { id: edge });
     }
 
     /// Appends a free vertex to the shell.
     pub fn add_free_vertex(&mut self, vertex: VertexId) {
-        self.members.free_vertices.push(vertex);
+        self.members.push(ShellMember::FreeVertex { id: vertex });
+    }
+}
+
+impl crate::document::Topology {
+    /// The faces of `shell`, the faces whose [`Face::shell`] names it, in
+    /// arena order.
+    pub fn shell_faces<'a, 'b>(
+        &'a self,
+        shell: &'b ShellId,
+    ) -> impl Iterator<Item = &'a Face> + use<'a, 'b> {
+        self.faces.iter().filter(move |face| &face.shell == shell)
+    }
+
+    /// The regions of `body`, the regions whose [`Region::body`] names it, in
+    /// arena order.
+    pub fn body_regions<'a, 'b>(
+        &'a self,
+        body: &'b BodyId,
+    ) -> impl Iterator<Item = &'a Region> + use<'a, 'b> {
+        self.regions
+            .iter()
+            .filter(move |region| &region.body == body)
+    }
+
+    /// Every shell's faces and every body's regions, derived from the parent
+    /// pointers in one pass over each arena.
+    #[must_use]
+    pub fn child_lists(&self) -> ChildLists<'_> {
+        let mut lists = ChildLists::default();
+        for face in &self.faces {
+            lists.faces.entry(&face.shell).or_default().push(face);
+        }
+        for region in &self.regions {
+            lists.regions.entry(&region.body).or_default().push(region);
+        }
+        lists
+    }
+}
+
+/// The unordered child lists of a [`crate::document::Topology`], derived from
+/// its records' parent pointers. Each list holds its children in arena order.
+#[derive(Debug, Default)]
+pub struct ChildLists<'a> {
+    faces: std::collections::HashMap<&'a ShellId, Vec<&'a Face>>,
+    regions: std::collections::HashMap<&'a BodyId, Vec<&'a Region>>,
+}
+
+impl<'a> ChildLists<'a> {
+    /// The faces whose [`Face::shell`] names `shell`.
+    #[must_use]
+    pub fn shell_faces(&self, shell: &ShellId) -> &[&'a Face] {
+        self.faces.get(shell).map_or(&[], Vec::as_slice)
+    }
+
+    /// The regions whose [`Region::body`] names `body`.
+    #[must_use]
+    pub fn body_regions(&self, body: &BodyId) -> &[&'a Region] {
+        self.regions.get(body).map_or(&[], Vec::as_slice)
     }
 }
 
@@ -474,6 +406,13 @@ pub struct Face {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_tolerance")]
     pub tolerance: Option<crate::scalar::PositiveReal>,
+    /// The source record this face projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 impl Face {
@@ -496,9 +435,9 @@ impl Face {
 /// `loops` on `Unspecified` is a `Vec`, not a non-empty list: a closed surface
 /// with no boundary is a face with no loop, and nx, sat, step and freecad all
 /// produce one.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "classification", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum FaceLoops {
     /// The source did not classify outer versus inner; loops keep source order.
@@ -608,7 +547,7 @@ impl<'a> IntoIterator for &'a FaceLoops {
 ///
 /// Stored on [`FaceLoops`], not on [`Loop`], so a loop cannot disagree with
 /// face membership, and carried on the wire beside the loop id it classifies.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -635,6 +574,13 @@ pub struct Loop {
     pub face: FaceId,
     /// Vertex-only or coedge-ring boundary.
     pub boundary: LoopBoundary,
+    /// The source record this loop projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 /// One ordered parameter-space representation of a coedge.
@@ -661,7 +607,7 @@ pub struct PcurveUse {
 }
 
 /// The mutually exclusive forms of a loop boundary.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LoopBoundary {
@@ -670,7 +616,6 @@ pub enum LoopBoundary {
         /// Referenced pole vertex.
         vertex: VertexId,
         /// Ordered parameter-space images associated with the pole.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         pcurves: Vec<PcurveUse>,
     },
     /// An ordered coedge ring and its anchored pole occurrences.
@@ -695,7 +640,6 @@ impl std::error::Error for LoopRingError {}
 #[serde(try_from = "LoopRingWire")]
 pub struct LoopRing {
     coedges: Vec<CoedgeId>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     vertex_uses: Vec<AnchoredVertexUse>,
 }
 
@@ -706,7 +650,6 @@ struct LoopRingWire {
     /// Coedges in source traversal order.
     coedges: Vec<CoedgeId>,
     /// Pole occurrences in source traversal order.
-    #[serde(default)]
     vertex_uses: Vec<AnchoredVertexUse>,
 }
 
@@ -953,7 +896,6 @@ pub struct AnchoredVertexUse {
     /// Preceding coedge in the cyclic traversal.
     pub after: CoedgeId,
     /// Ordered parameter-space images associated with this pole occurrence.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pcurves: Vec<PcurveUse>,
 }
 
@@ -976,7 +918,6 @@ pub struct Coedge {
     /// Direction relative to the edge curve.
     pub sense: Sense,
     /// Ordered parameter-space images of this coedge on the face surface.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pcurves: Vec<PcurveUse>,
     /// Optional coedge-local 3D carrier used instead of the shared edge curve.
     #[serde(
@@ -985,6 +926,13 @@ pub struct Coedge {
         deserialize_with = "deserialize_use_curve"
     )]
     pub use_curve: Option<CoedgeUseCurve>,
+    /// The source record this coedge projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 /// Next and previous coedge ids from the owning loop ring.
@@ -1304,7 +1252,7 @@ impl TryFrom<EdgeCarrierWire> for EdgeCarrier {
     }
 }
 
-/// An edge between two vertices with an optional curve carrier.
+/// An edge with an optional curve carrier and the vertices that bound it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -1313,17 +1261,64 @@ pub struct Edge {
     pub id: EdgeId,
     /// Carrier and its admitted parameter range.
     pub carrier: EdgeCarrier,
-    /// Start vertex.
-    pub start: VertexId,
-    /// End vertex.
-    pub end: VertexId,
+    /// Start and end vertices. `None` is a closed edge with no vertex, on a
+    /// closed carrier.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_ends"
+    )]
+    pub ends: Option<EdgeEnds>,
     /// Optional geometric tolerance in the document's length unit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_tolerance")]
     pub tolerance: Option<crate::scalar::PositiveReal>,
+    /// The source record this edge projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
+}
+
+/// The start and end vertices of an edge.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct EdgeEnds {
+    /// Start vertex.
+    pub start: VertexId,
+    /// End vertex.
+    pub end: VertexId,
+}
+
+impl EdgeEnds {
+    /// Pair a start and an end vertex.
+    #[must_use]
+    pub const fn new(start: VertexId, end: VertexId) -> Self {
+        Self { start, end }
+    }
 }
 
 impl Edge {
+    /// Start vertex, when the edge has vertices.
+    #[must_use]
+    pub fn start(&self) -> Option<&VertexId> {
+        self.ends.as_ref().map(|ends| &ends.start)
+    }
+
+    /// End vertex, when the edge has vertices.
+    #[must_use]
+    pub fn end(&self) -> Option<&VertexId> {
+        self.ends.as_ref().map(|ends| &ends.end)
+    }
+
+    /// Start and end vertices, in that order, when the edge has vertices.
+    pub fn vertices(&self) -> impl Iterator<Item = &VertexId> {
+        self.ends.iter().flat_map(|ends| [&ends.start, &ends.end])
+    }
+
     /// Map the carrier identity without changing its presence or parameter range.
     pub fn map_curve(&mut self, map: impl FnOnce(&CurveId) -> CurveId) {
         self.carrier.map_curve(map);
@@ -1370,6 +1365,13 @@ pub struct Vertex {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_tolerance")]
     pub tolerance: Option<crate::scalar::PositiveReal>,
+    /// The source record this vertex projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 /// A position carrier for a vertex.
@@ -1388,6 +1390,13 @@ pub struct Point {
         deserialize_with = "deserialize_source_object"
     )]
     pub source_object: Option<crate::provenance::SourceObjectAssociation>,
+    /// The source record this point projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1401,6 +1410,9 @@ struct PointWire {
     /// Source object carrying this free point, when known.
     #[serde(default, deserialize_with = "deserialize_source_object")]
     source_object: Option<crate::provenance::SourceObjectAssociation>,
+    /// The source record this point projects.
+    #[serde(default, deserialize_with = "deserialize_native_ref")]
+    native_ref: Option<String>,
 }
 
 impl Point {
@@ -1418,6 +1430,7 @@ impl Point {
             id,
             position,
             source_object,
+            native_ref: None,
         }
     }
 
@@ -1437,7 +1450,10 @@ impl TryFrom<PointWire> for Point {
     type Error = &'static str;
     fn try_from(wire: PointWire) -> Result<Self, Self::Error> {
         let position = FinitePoint3::new(wire.position).ok_or(Self::NON_FINITE_POSITION)?;
-        Ok(Self::new(wire.id, position, wire.source_object))
+        Ok(Self {
+            native_ref: wire.native_ref,
+            ..Self::new(wire.id, position, wire.source_object)
+        })
     }
 }
 
@@ -1446,6 +1462,8 @@ cadmpeg_core::named_optional_field!(
     crate::scalar::PositiveReal,
     "tolerance"
 );
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
+cadmpeg_core::named_optional_field!(deserialize_ends, EdgeEnds, "ends");
 
 #[cfg(test)]
 mod tests {
@@ -1458,8 +1476,8 @@ mod tests {
             .map(|value| UnitBinary32::new(value).expect("each component is in the unit interval"));
         let color = Color::from_unit_binary32(components);
         assert_eq!(
-            [color.r(), color.g(), color.b(), color.a()].map(f32::to_bits),
-            [-0.0_f32, 0.25, 1.0, 0.5].map(f32::to_bits)
+            [color.r(), color.g(), color.b(), color.a()].map(f64::to_bits),
+            [-0.0_f64, 0.25, 1.0, 0.5].map(f64::to_bits)
         );
     }
 
@@ -1590,12 +1608,10 @@ mod tests {
 
         for wire in [
             serde_json::json!({
-                "classification": "unspecified",
-                "loops": ["t:b:loop#1", "t:b:loop#2"]
+                "kind": "unspecified", "loops": ["t:b:loop#1", "t:b:loop#2"]
             }),
             serde_json::json!({
-                "classification": "classified",
-                "outer": "t:b:loop#1",
+                "kind": "classified", "outer": "t:b:loop#1",
                 "inner": ["t:b:loop#2"]
             }),
         ] {
@@ -1607,7 +1623,7 @@ mod tests {
         // refused for the missing key, so it is not a second spelling of an
         // unclassified face.
         let error = serde_json::from_value::<FaceLoops>(
-            serde_json::json!({"classification": "classified", "inner": ["t:b:loop#2"]}),
+            serde_json::json!({"kind": "classified", "inner": ["t:b:loop#2"]}),
         )
         .unwrap_err()
         .to_string();
@@ -1661,7 +1677,7 @@ mod tests {
 
         let mut edge = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model
+            .geometry
             .edges
             .remove(0);
         let curve = edge.curve().cloned().expect("the cube edges have carriers");
@@ -1696,7 +1712,7 @@ mod tests {
 
         let mut edge = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model
+            .geometry
             .edges
             .remove(0);
         let interval = ParameterInterval::new([-1.5, 2.0]).expect("ordered");
@@ -1730,7 +1746,7 @@ mod tests {
     fn edge_parameter_edits_commit_only_valid_pairs() {
         let mut edge = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model
+            .geometry
             .edges
             .remove(0);
         let original = edge.clone();
@@ -1744,117 +1760,50 @@ mod tests {
     }
 
     #[test]
-    fn shell_admission_requires_one_topology_member_and_preserves_wire_fields() {
+    fn shell_members_hold_wire_edges_and_free_vertices_and_refuse_faces() {
         let id = super::ShellId::mint("test:model:shell#1").unwrap();
         let region = super::RegionId::mint("test:model:region#1").unwrap();
-        let face = super::FaceId::mint("test:model:face#1").unwrap();
         let edge = super::EdgeId::mint("test:model:edge#1").unwrap();
         let vertex = super::VertexId::mint("test:model:vertex#1").unwrap();
-        for mask in 0..8 {
-            let faces = if mask & 1 != 0 {
-                vec![face.clone(), face.clone()]
-            } else {
-                Vec::new()
-            };
-            let edges = if mask & 2 != 0 {
-                vec![edge.clone()]
-            } else {
-                Vec::new()
-            };
-            let vertices = if mask & 4 != 0 {
-                vec![vertex.clone()]
-            } else {
-                Vec::new()
-            };
-            let admitted = super::Shell::new(
-                id.clone(),
-                region.clone(),
-                faces.clone(),
-                edges.clone(),
-                vertices.clone(),
-            );
-            assert_eq!(admitted.is_ok(), mask != 0);
-            let mut members = Vec::new();
-            for face in &faces {
-                members.push(serde_json::json!({"kind": "face", "id": face}));
-            }
-            for edge in &edges {
-                members.push(serde_json::json!({"kind": "wire_edge", "id": edge}));
-            }
-            for vertex in &vertices {
-                members.push(serde_json::json!({"kind": "free_vertex", "id": vertex}));
-            }
-            let wire = serde_json::json!({"id":id,"region":region,"members":members});
-            let decoded = serde_json::from_value::<super::Shell>(wire.clone());
-            assert_eq!(decoded.is_ok(), mask != 0);
-            if let Ok(shell) = decoded {
-                assert_eq!(serde_json::to_value(shell).unwrap(), wire);
-            }
-        }
-    }
-
-    #[test]
-    fn shell_admission_reuses_owned_member_storage() {
-        let faces = vec![super::FaceId::mint("test:model:face#1").unwrap()];
-        let storage = faces.as_ptr();
-        let shell = super::Shell::new(
-            super::ShellId::mint("test:model:shell#1").unwrap(),
-            super::RegionId::mint("test:model:region#1").unwrap(),
-            faces,
-            Vec::new(),
-            Vec::new(),
-        )
-        .unwrap();
-        assert_eq!(shell.faces().as_ptr(), storage);
-    }
-
-    #[test]
-    fn shell_topology_edits_admit_the_whole_replacement_and_keep_old_values_on_failure() {
-        let mut shell = super::Shell::with_face(
-            super::ShellId::mint("test:model:shell#1").unwrap(),
-            super::RegionId::mint("test:model:region#1").unwrap(),
-            super::FaceId::mint("test:model:face#1").unwrap(),
+        let shell = super::Shell::with_members(
+            id.clone(),
+            region.clone(),
+            vec![edge.clone()],
+            vec![vertex.clone()],
         );
-        let original = shell.clone();
-        assert!(shell
-            .edit_topology(|faces, edges, vertices| {
-                faces.clear();
-                edges.clear();
-                vertices.clear();
-            })
-            .is_err());
-        assert_eq!(shell, original);
-        let vertex = super::VertexId::mint("test:model:vertex#1").unwrap();
-        shell
-            .edit_topology(|faces, _, vertices| {
-                faces.clear();
-                vertices.push(vertex.clone());
-            })
-            .unwrap();
-        assert!(shell.faces().is_empty());
-        assert_eq!(shell.free_vertices(), &[vertex]);
-    }
+        assert_eq!(shell.wire_edges().collect::<Vec<_>>(), [&edge]);
+        assert_eq!(shell.free_vertices().collect::<Vec<_>>(), [&vertex]);
+        let wire = serde_json::json!({
+            "id": id,
+            "region": region,
+            "members": [
+                {"kind": "wire_edge", "id": edge},
+                {"kind": "free_vertex", "id": vertex},
+            ],
+        });
+        assert_eq!(serde_json::to_value(&shell).unwrap(), wire);
+        assert_eq!(serde_json::from_value::<super::Shell>(wire).unwrap(), shell);
 
-    #[test]
-    fn shell_face_list_construction_and_replacement_keep_members() {
-        let shell_id = super::ShellId::mint("test:model:shell#faces").unwrap();
-        let region_id = super::RegionId::mint("test:model:region#faces").unwrap();
-        let first = super::FaceId::mint("test:model:face#first").unwrap();
-        let second = super::FaceId::mint("test:model:face#second").unwrap();
-        assert!(super::Shell::with_faces(shell_id.clone(), region_id.clone(), Vec::new()).is_err());
-        let mut shell =
-            super::Shell::with_faces(shell_id, region_id, vec![first.clone(), second.clone()])
-                .unwrap();
-        assert_eq!(shell.faces(), &[first.clone(), second.clone()]);
-        assert!(shell.replace_faces(Vec::new()).is_err());
-        assert_eq!(shell.faces(), &[first, second.clone()]);
-        shell.replace_faces(vec![second.clone()]).unwrap();
-        assert_eq!(shell.faces(), &[second]);
+        let face_only = super::Shell::new(id.clone(), region.clone());
+        let wire = serde_json::json!({"id": id, "region": region, "members": []});
+        assert_eq!(serde_json::to_value(&face_only).unwrap(), wire);
+        assert_eq!(
+            serde_json::from_value::<super::Shell>(wire).unwrap(),
+            face_only
+        );
+
+        let face = super::FaceId::mint("test:model:face#1").unwrap();
+        let wire = serde_json::json!({
+            "id": id,
+            "region": region,
+            "members": [{"kind": "face", "id": face}],
+        });
+        assert!(serde_json::from_value::<super::Shell>(wire).is_err());
     }
 
     #[test]
     fn color_rejects_invalid_components_on_construction_and_wire() {
-        for invalid in [-1.0, 1.1, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        for invalid in [-1.0, 1.1, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             for index in 0..4 {
                 let mut values = [0.5; 4];
                 values[index] = invalid;
@@ -1864,9 +1813,7 @@ mod tests {
         for field in ["r", "g", "b", "a"] {
             let mut value = serde_json::json!({"r": 0.0, "g": 0.0, "b": 0.0, "a": 1.0});
             value[field] = serde_json::json!(-1.0);
-            let error =
-                serde_json::from_value::<super::Color>(value).expect_err("invalid component");
-            assert!(error.to_string().contains(field));
+            assert!(serde_json::from_value::<super::Color>(value).is_err());
         }
         let color = super::Color::new(0.0, 0.25, 0.5, 1.0).expect("valid color");
         assert_eq!(
@@ -1897,7 +1844,7 @@ mod tests {
 
     #[test]
     fn loop_ring_membership_checks_complete_text_and_keeps_source_order() {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let first = super::CoedgeId::mint("test:model:coedge#prefix-long").unwrap();
         let second = super::CoedgeId::mint("test:model:coedge#prefix").unwrap();
         let third = super::CoedgeId::mint("test:model:coedge#alpha").unwrap();
@@ -1992,6 +1939,7 @@ mod tests {
             id: "test:model:loop#0".try_into().unwrap(),
             face: "test:model:face#0".try_into().unwrap(),
             boundary: LoopBoundary::Ring(LoopRing::new(vec![coedge.clone()], Vec::new()).unwrap()),
+            native_ref: None,
         };
         let before = loop_.clone();
         assert!(loop_.replace_ring(Vec::new(), Vec::new()).is_err());
@@ -2019,7 +1967,7 @@ mod tests {
             "use_curve": {
                 "curve": "test:model:curve#0",
                 "parameter_range": [0.25, 0.75]
-            }
+            }, "pcurves": []
         })
     }
 
@@ -2039,6 +1987,7 @@ mod tests {
             boundary: LoopBoundary::Ring(
                 super::LoopRing::new(vec![coedge.id.clone()], Vec::new()).unwrap(),
             ),
+            native_ref: None,
         };
         assert_eq!(
             coedge_ring_neighbors(std::slice::from_ref(&loop_), &coedge),
@@ -2060,10 +2009,10 @@ mod tests {
 
     #[test]
     fn a_coedge_states_no_ring_neighbor_and_its_loop_order_survives_a_round_trip() {
-        let model = crate::examples::unit_cube()
+        let geometry = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model;
-        let coedge = &model.coedges[0];
+            .geometry;
+        let coedge = &geometry.coedges[0];
         let wire = serde_json::to_value(coedge).unwrap();
         assert!(wire.get("next").is_none(), "{wire}");
         assert!(wire.get("previous").is_none(), "{wire}");
@@ -2076,9 +2025,9 @@ mod tests {
         assert!(error.contains("next"), "{error}");
         assert_eq!(&serde_json::from_value::<Coedge>(wire).unwrap(), coedge);
 
-        let before = coedge_ring_neighbors(&model.loops, coedge).expect("a ring neighbor pair");
-        let round_tripped: crate::document::Model =
-            serde_json::from_value(serde_json::to_value(&model).unwrap()).unwrap();
+        let before = coedge_ring_neighbors(&geometry.loops, coedge).expect("a ring neighbor pair");
+        let round_tripped: crate::document::Topology =
+            serde_json::from_value(serde_json::to_value(&geometry).unwrap()).unwrap();
         let after = coedge_ring_neighbors(&round_tripped.loops, &round_tripped.coedges[0])
             .expect("a ring neighbor pair");
         assert_eq!(before, after);
@@ -2125,7 +2074,8 @@ mod tests {
             "face": "test:model:face#0",
             "boundary": {
                 "kind": "vertex",
-                "vertex": "test:model:vertex#0"
+                "vertex": "test:model:vertex#0",
+                "pcurves": []
             }
         });
         let loop_: Loop = serde_json::from_value(json.clone()).unwrap();
@@ -2147,7 +2097,8 @@ mod tests {
                 "coedges": ["test:model:coedge#0"],
                 "vertex_uses": [{
                     "vertex": "test:model:vertex#0",
-                    "after": "test:model:coedge#0"
+                    "after": "test:model:coedge#0",
+                    "pcurves": []
                 }]
             }
         });
@@ -2178,7 +2129,7 @@ mod tests {
             "boundary": {
                 "kind": "ring",
                 "coedges": ["test:model:coedge#0"],
-                "vertex_uses": [{ "vertex": "test:model:vertex#0" }]
+                "vertex_uses": [{ "vertex": "test:model:vertex#0", "pcurves": [] }]
             }
         });
         assert!(serde_json::from_value::<Loop>(ring_without_anchor).is_err());
@@ -2200,19 +2151,16 @@ mod tests {
 
     #[test]
     fn a_classified_face_states_its_outer_loop_once() {
-        let mut model = crate::examples::unit_cube()
+        let mut geometry = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model;
-        let face = &mut model.faces[0];
+            .geometry;
+        let face = &mut geometry.faces[0];
         let mut members = face.loops.iter().cloned();
         let outer = members.next().expect("a cube face states a loop");
         let inner = members.collect();
         face.loops = FaceLoops::classified(outer.clone(), inner);
         let wire = serde_json::to_value(&*face).unwrap();
-        assert_eq!(
-            wire["loops"]["classification"],
-            serde_json::json!("classified")
-        );
+        assert_eq!(wire["loops"]["kind"], serde_json::json!("classified"));
         assert_eq!(wire["loops"]["outer"], serde_json::json!(outer.as_str()));
         assert!(wire["loops"].get("loops").is_none());
         let restored: Face = serde_json::from_value(wire).unwrap();
@@ -2232,16 +2180,13 @@ mod tests {
 
     #[test]
     fn an_unclassified_face_states_its_loops_in_source_order() {
-        let model = crate::examples::unit_cube()
+        let geometry = crate::examples::unit_cube()
             .expect("valid unit cube fixture")
-            .model;
-        let face = &model.faces[0];
+            .geometry;
+        let face = &geometry.faces[0];
         assert!(matches!(face.loops, FaceLoops::Unspecified { .. }));
         let wire = serde_json::to_value(face).unwrap();
-        assert_eq!(
-            wire["loops"]["classification"],
-            serde_json::json!("unspecified")
-        );
+        assert_eq!(wire["loops"]["kind"], serde_json::json!("unspecified"));
         assert!(wire["loops"].get("outer").is_none());
         assert_eq!(
             wire["loops"]["loops"]
@@ -2257,25 +2202,23 @@ mod tests {
     #[test]
     fn a_face_states_either_a_classification_or_a_loop_order() {
         for wire in [
-            serde_json::json!({"classification": "classified", "outer": "test:model:loop#0", "inner": []}),
-            serde_json::json!({"classification": "unspecified", "loops": ["test:model:loop#0"]}),
+            serde_json::json!({"kind": "classified", "outer": "test:model:loop#0", "inner": []}),
+            serde_json::json!({"kind": "unspecified", "loops": ["test:model:loop#0"]}),
         ] {
             let loops: FaceLoops = serde_json::from_value(wire.clone()).unwrap();
             assert_eq!(serde_json::to_value(&loops).unwrap(), wire);
         }
         // Mixing the two arms' keys names no shape.
         assert!(serde_json::from_value::<FaceLoops>(serde_json::json!({
-            "classification": "classified",
-            "outer": "test:model:loop#0",
+            "kind": "classified", "outer": "test:model:loop#0",
             "loops": ["test:model:loop#0"]
         }))
         .is_err());
         // A face with no boundary has a spelling: nx, sat, step and freecad
         // each produce one, so `loops` is a plain list.
         let none: FaceLoops =
-            serde_json::from_value(serde_json::json!({"classification": "unspecified",
-                "loops": []}))
-            .unwrap();
+            serde_json::from_value(serde_json::json!({"kind": "unspecified", "loops": []}))
+                .unwrap();
         assert!(none.is_empty());
     }
 
@@ -2303,8 +2246,7 @@ mod tests {
             "surface": "test:model:surface#0",
             "sense": "forward",
             "loops": {
-                "classification": "classified",
-                "outer": ["test:model:loop#0", "test:model:loop#1"],
+                "kind": "classified", "outer": ["test:model:loop#0", "test:model:loop#1"],
                 "inner": []
             }
         });
@@ -2319,8 +2261,7 @@ mod tests {
             "surface": "test:model:surface#0",
             "sense": "forward",
             "loops": {
-                "classification": "classified",
-                "outer": "test:model:loop#0",
+                "kind": "classified", "outer": "test:model:loop#0",
                 "inner": [],
                 "zz_bogus": 1
             }
@@ -2337,7 +2278,7 @@ mod tests {
             "id": "test:model:loop#0",
             "face": "test:model:face#0",
             "boundary_role": "outer",
-            "boundary": { "kind": "vertex", "vertex": "test:model:vertex#0" }
+            "boundary": { "kind": "vertex", "vertex": "test:model:vertex#0", "pcurves": [] }
         });
         let error = serde_json::from_value::<Loop>(wire)
             .unwrap_err()
@@ -2363,6 +2304,7 @@ mod tests {
                     id: id.clone(),
                     position: coordinates,
                     source_object: None,
+                    native_ref: None,
                 }),
                 Err(Point::NON_FINITE_POSITION)
             );
@@ -2394,6 +2336,7 @@ mod tests {
                 id: PointId::mint("t:model:point#0").expect("identity grammar"),
                 position: Point3::new(f64::INFINITY, 0.0, 0.0),
                 source_object: None,
+                native_ref: None,
             }),
             Err("point position coordinates must be finite")
         );

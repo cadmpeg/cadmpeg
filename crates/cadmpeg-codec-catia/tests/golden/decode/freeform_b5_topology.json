@@ -1,44 +1,95 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
-      "bodies": [],
-      "coedges": [],
+    "design": {
+      "arrangements": [],
       "configurations": [],
-      "curves": [],
-      "drawings": [],
-      "edges": [],
-      "faces": [],
+      "containers": [],
+      "evaluations": [],
       "features": [],
-      "loops": [],
-      "occurrences": [],
+      "names": [],
       "parameters": [],
-      "pcurves": [],
-      "pmi": [],
-      "points": [],
-      "presentation_documents": [],
-      "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
-      "product_definitions": [],
-      "regions": [],
-      "semantic_annotations": [],
-      "shells": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "catia:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -90,7 +141,8 @@
         "storage_property_members": [],
         "unknowns": [
           {
-            "id": "catia:payload:unknown#brep-stream"
+            "id": "catia:payload:unknown#brep-stream",
+            "links": []
           }
         ],
         "value_blocks": [],
@@ -104,30 +156,38 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
-      "attributes": {
-        "brep_stream_len": "416",
-        "brep_stream_sha256": "98a1afc06fb070d7e0f51e857e79d7a100b6e564321d2216831e321856e77386",
-        "external_reference_count": "0",
-        "fbb_face_rows": "0",
-        "fbb_runs": "0",
-        "file_size": "679",
-        "finjpl_segment_count": "0",
-        "inner_offset": "16",
-        "outer_dir_offset": "679",
-        "preview_count": "0",
-        "stream_count": "2",
-        "vertex_records": "3"
-      },
+      "attributes": {},
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
+            "declared": {},
             "dialect": "catia:float-packed-inner-no-fbb"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -135,7 +195,10 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
@@ -467,34 +530,41 @@
       "unresolved_unreferenced_relation_expression_count": 0
     },
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
+          "declared": {},
           "dialect": "catia:float-packed-inner-no-fbb"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "geometry.brep-not-transferred",
-          "kind": "geometry_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.brep-not-transferred",
+            "kind": "geometry_not_transferred",
+            "namespace": "catia",
+            "strict_floor": "warning"
+          }
         },
         "message": "No B-rep geometry was transferred. This file's storage variant is `catia:float-packed-inner-no-fbb` (float-packed inner-no-FBB (object-stream b5 03 topology): freeform carrier decode supported); the applicable decoded record families transfer geometry in this codec.",
         "severity": "blocking"
       },
       {
         "code": {
-          "code": "topology.graph-not-built",
-          "kind": "topology_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "topology.graph-not-built",
+            "kind": "topology_not_transferred",
+            "namespace": "catia",
+            "strict_floor": "warning"
+          }
         },
         "message": "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not built for this file.",
         "severity": "blocking"
@@ -508,7 +578,10 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -516,7 +589,8 @@
       "exactness": {
         "catia:payload:unknown#brep-stream": {
           "entity": "unknown",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         }
       },
       "provenance": {
@@ -527,15 +601,23 @@
         }
       }
     },
+    "decode_digest": "8192d93eaace3eea36bf0a3ed23812f372bc35828e3fcae13863a6a4cad57142",
+    "file_digests": {},
     "retained_records": {
       "catia:payload:unknown#brep-stream": {
         "bytes": {
           "data": "tQMnSWQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAtQMhQMgAAACBGGQAAQUAAAkIAQAAAAAAAAAAAAAAAAAA8D8JCQAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAABQUHtQMhQMkAAACBGGQAAQUAAAkIAQAAAAAAAAAAAAAAAAAA8D8JCQAAAAAAAPA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAPA/BQUHtQMhQMoAAACBGGQAAQUAAAkIAQAAAAAAAAAAAAAAAAAA8D8JCQAAAAAAAAAAAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAABQUHtQNeACwBAAC1A14ALQEAALUDXgAuAQAAtQNiGZABAACHGMgAGCwBGMkAGC0BGMoAGC4BGGQAgwUFtQNfCPQBAACCGGQAGJABBQUIAQAAAAAAAAAAAAAAAAUIAQAAgD8AAAAAAAAAAAUIAQAAAAAAAIA/AAAAAAA=",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
-        "stream": "catia:MainDataStream+SurfacicReps"
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "untyped": [
+          "model"
+        ]
       }
-    }
+    },
+    "unrepresented": [
+      "model"
+    ]
   }
 }

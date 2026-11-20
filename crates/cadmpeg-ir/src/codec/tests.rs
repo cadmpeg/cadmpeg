@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::wire;
+use crate::test_support::wire;
 
 use std::collections::BTreeMap;
 use std::io::Cursor;
@@ -18,14 +18,18 @@ use super::{
     Decoded, FormatId,
 };
 use crate::ContainerSummary;
-use cadmpeg_core::decode::{DecodeContext, DecodeDepth, DecodeMode, InspectOptions, View};
+use cadmpeg_core::decode::{
+    ContentScope, DecodeContext, DecodeDepth, DecodeMode, InspectOptions, View,
+};
 use cadmpeg_core::CodecError;
 
 fn decoded(ir: CadIr) -> Decoded {
     Decoded {
         ir,
         body: DecodeBody::new(crate::report::decode::DecodeTransfer::full(true)),
-        source_fidelity: SourceFidelity::default(),
+        source_fidelity: SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(
+            b"test source",
+        )),
     }
 }
 
@@ -77,10 +81,13 @@ impl CodecBackend for RejectFloorCodec {
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, _root: View<'_>) -> Result<Decoded, CodecError> {
-        let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
-        if ctx.container_only() {
+        let mut decoded = if ctx.container_only() {
+            let mut decoded = decoded(CadIr::empty());
             decoded.body.transfer = crate::report::decode::DecodeTransfer::ContainerOnly {};
-        }
+            decoded
+        } else {
+            decoded(unit_cube().expect("valid unit cube fixture"))
+        };
         decoded
             .body
             .losses
@@ -132,8 +139,8 @@ fn the_sealed_decode_flags_and_strictly_refuses_a_shallower_delivery() {
     let result = GeometryOnlyCodec
         .decode(&mut Cursor::new(vec![1u8, 2, 3, 4]), &options)
         .unwrap();
-    assert_eq!(result.ir().decode_depth(), DecodeDepth::Geometry);
-    assert_eq!(depth_losses(&result).len(), 1);
+    assert_eq!(result.ir().scope(), ContentScope::geometry());
+    assert_eq!(depth_losses(&result).len(), 2);
 
     let error = GeometryOnlyCodec
         .decode(
@@ -209,9 +216,10 @@ impl CodecBackend for ForeignIdentityCodec {
         _root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
         Ok(serde_json::from_value(serde_json::json!({
-            "identity": {"classification": "unclassified", "format": "foreign"},
+            "identity": {"kind": "unclassified", "format": "foreign"},
             "container_kind": "flat",
             "entries": [],
+            "losses": [],
             "notes": []
         }))
         .expect("foreign inspection fixture"))
@@ -388,7 +396,7 @@ fn a_decode_result_with_unclassified_source_yields_an_unclassified_report() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.source = Some(
         serde_json::from_value(serde_json::json!({
-            "identity": {"classification": "unclassified", "format": "test"},
+            "identity": {"kind": "unclassified", "format": "test"},
             "attributes": {},
         }))
         .unwrap(),
@@ -420,9 +428,11 @@ fn a_decode_result_keeps_the_body_it_was_given() {
         .record(crate::report::decode::CoverageKey::new("entities"), 3);
     let result = DecodeResult::new(
         Decoded {
-            ir: unit_cube().expect("valid unit cube fixture"),
+            ir: CadIr::empty(),
             body,
-            source_fidelity: SourceFidelity::default(),
+            source_fidelity: SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(
+                b"test source",
+            )),
         },
         FormatId::new("test"),
         DecodeDepth::Container,
@@ -459,11 +469,14 @@ fn the_document_records_the_depth_the_backend_reported() {
         DecodeTransfer::full(false),
         DecodeTransfer::full(true),
     ] {
-        let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
+        let mut decoded = decoded(if transfer.container_only() {
+            CadIr::empty()
+        } else {
+            unit_cube().expect("valid unit cube fixture")
+        });
         decoded.body.transfer = transfer;
-        let result =
-            DecodeResult::new(decoded, FormatId::new("test"), DecodeDepth::Container).unwrap();
-        assert_eq!(result.ir().decode_depth(), transfer.depth());
+        let result = DecodeResult::new(decoded, FormatId::new("test"), transfer.depth()).unwrap();
+        assert_eq!(result.ir().scope(), transfer.depth().scope());
         assert_eq!(result.report().depth(), transfer.depth());
         assert_eq!(
             result.report().geometry_transferred(),
@@ -474,49 +487,78 @@ fn the_document_records_the_depth_the_backend_reported() {
 }
 
 #[test]
-fn the_wrapper_flags_a_depth_shallower_than_requested() {
-    for (delivered, requested) in [
-        (DecodeDepth::Container, DecodeDepth::Geometry),
-        (DecodeDepth::Container, DecodeDepth::Full),
-        (DecodeDepth::Geometry, DecodeDepth::Full),
+fn the_wrapper_flags_each_requested_class_left_undelivered() {
+    use cadmpeg_core::decode::ArenaClass::{Design, Model, Process};
+    for (delivered, requested, missing) in [
+        (DecodeDepth::Container, DecodeDepth::Geometry, &[Model][..]),
+        (
+            DecodeDepth::Container,
+            DecodeDepth::Full,
+            &[Model, Design, Process],
+        ),
+        (DecodeDepth::Geometry, DecodeDepth::Design, &[Design]),
+        (DecodeDepth::Geometry, DecodeDepth::Full, &[Design, Process]),
+        (DecodeDepth::Design, DecodeDepth::Full, &[Process]),
     ] {
-        let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
+        let mut decoded = decoded(if delivered == DecodeDepth::Container {
+            CadIr::empty()
+        } else {
+            unit_cube().expect("valid unit cube fixture")
+        });
         decoded.body.transfer = crate::report::decode::DecodeTransfer::at(delivered, true);
         let result = DecodeResult::new(decoded, FormatId::new("test"), requested).unwrap();
 
-        assert_eq!(result.ir().decode_depth(), delivered);
-        let [loss] = depth_losses(&result)[..] else {
-            panic!("expected one depth loss: {:?}", result.report().losses);
-        };
-        assert_eq!(loss.severity, crate::report::Severity::Error);
-        assert_eq!(
-            loss.strict_consequence(),
-            crate::report::loss::StrictConsequence::Reject
-        );
-        assert!(loss
-            .message
-            .contains(&format!("requested {requested} depth")));
-        assert!(loss
-            .message
-            .contains(&format!("delivered {delivered} depth")));
+        assert_eq!(result.ir().scope(), delivered.scope());
+        let losses = depth_losses(&result);
+        assert_eq!(losses.len(), missing.len(), "{losses:?}");
+        for (loss, class) in losses.into_iter().zip(missing) {
+            assert_eq!(loss.severity, crate::report::Severity::Error);
+            assert_eq!(
+                loss.strict_consequence(),
+                crate::report::loss::StrictConsequence::Reject
+            );
+            assert!(loss
+                .message
+                .contains(&format!("requested {requested} depth")));
+            assert!(loss
+                .message
+                .contains(&format!("did not deliver the {class} class")));
+        }
     }
 }
 
 #[test]
-fn the_wrapper_refuses_design_records_below_full_depth() {
+fn the_wrapper_records_only_the_classes_a_request_names_when_the_rest_are_empty() {
+    for requested in [DecodeDepth::Geometry, DecodeDepth::Design] {
+        let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
+        decoded.body.transfer = crate::report::decode::DecodeTransfer::full(true);
+        let result = DecodeResult::new(decoded, FormatId::new("test"), requested).unwrap();
+        assert_eq!(result.ir().scope(), requested.scope());
+        assert!(depth_losses(&result).is_empty());
+    }
+}
+
+#[test]
+fn the_wrapper_refuses_records_of_a_class_the_scope_excludes() {
     let ir = with_parameter(unit_cube().expect("valid unit cube fixture"));
-    for depth in [DecodeDepth::Container, DecodeDepth::Geometry] {
+    for (depth, expected) in [
+        (DecodeDepth::Container, "model arena `bodies`"),
+        (DecodeDepth::Geometry, "design arena `parameters`"),
+    ] {
         let mut decoded = decoded(ir.clone());
         decoded.body.transfer = crate::report::decode::DecodeTransfer::at(depth, true);
         let error = DecodeResult::new(decoded, FormatId::new("test"), depth).unwrap_err();
         assert!(matches!(error, CodecError::Malformed(_)), "{error}");
-        assert!(
-            error.to_string().contains("design arena `parameters`"),
-            "{error}"
-        );
+        assert!(error.to_string().contains(expected), "{error}");
     }
 
+    let mut decoded = decoded(ir.clone());
+    decoded.body.transfer = crate::report::decode::DecodeTransfer::full(true);
+    let result = DecodeResult::new(decoded, FormatId::new("test"), DecodeDepth::Geometry).unwrap();
+    assert_eq!(result.ir().scope(), ContentScope::design());
+    assert_eq!(result.ir().model.parameters.len(), 1);
+
     let result = decode_result(ir);
-    assert_eq!(result.ir().decode_depth(), DecodeDepth::Full);
+    assert_eq!(result.ir().scope(), ContentScope::full());
     assert_eq!(result.ir().model.parameters.len(), 1);
 }

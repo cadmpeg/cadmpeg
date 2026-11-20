@@ -1452,7 +1452,7 @@ fn decode_transfers_exact_consolidated_line_profiles() {
         ),
         1
     );
-    assert!(decoded.ir().model.curves.iter().any(
+    assert!(decoded.ir().geometry.curves.iter().any(
         |curve| matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve))
                 if {
                     let origin = line_curve.origin().get();
@@ -1490,13 +1490,13 @@ fn decode_routes_a_line_profile_only_nested_stream_to_a_wire() {
         1
     );
     assert_eq!(
-        decoded.ir().model.edges[0]
+        decoded.ir().geometry.edges[0]
             .param_range()
             .map(cadmpeg_ir::units::FiniteVector::get),
         Some([-4.0, 9.0])
     );
     assert_eq!(
-        decoded.ir().model.bodies[0].kind,
+        decoded.ir().geometry.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Wire
     );
     assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
@@ -1519,7 +1519,7 @@ fn decode_routes_a_resolved_revolution_only_nested_stream_to_freeform() {
     );
     let revolution = decoded
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "catia:consolidated:surface-revolution#0")
@@ -1553,7 +1553,7 @@ fn transferred_line_profile_identities_retain_their_native_ordinals() {
         .expect("decode mixed-metric line profiles");
     let line_ids = decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .filter(|curve| {
@@ -1610,4 +1610,45 @@ fn object_stream_vertex_record_reads_one_xyz_point() {
         vertices[0].get(),
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
+}
+
+#[test]
+fn requested_edge_resolution_preserves_full_resolution_geometry() {
+    use crate::families::consolidated::records::{
+        resolve_consolidated_edge_blocks_from_records, resolve_selected_consolidated_edge_blocks,
+    };
+    let mut bytes = a5_cylinder_bound_edge_stream();
+    bytes.extend(a5_cylinder_bound_edge_stream());
+    let records = crate::wire::records::consolidated_records(&bytes);
+    crate::test_support::with_service_context(|ctx| {
+        let full = resolve_consolidated_edge_blocks_from_records(
+            ctx,
+            &bytes,
+            &records,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("full resolution");
+        assert_eq!(full.len(), 2);
+        let selected = resolve_selected_consolidated_edge_blocks(
+            ctx,
+            &bytes,
+            &records,
+            |block| block.pcurves[0].pos == full[1].block.pcurves[0].pos,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("selected resolution");
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].supports, full[1].supports);
+        assert_eq!(selected[0].shared_loci, full[1].shared_loci);
+        assert_eq!(selected[0].endpoint_loci, full[1].endpoint_loci);
+        let empty = resolve_selected_consolidated_edge_blocks(
+            ctx,
+            &bytes,
+            &records,
+            |_| false,
+            &mut crate::nurbs::LaneRefusals::new(),
+        )
+        .expect("empty selection");
+        assert!(empty.is_empty());
+    });
 }

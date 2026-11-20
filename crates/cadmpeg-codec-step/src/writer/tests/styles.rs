@@ -17,59 +17,59 @@ fn coloured_wire_bodies_ir(count: usize) -> CadIr {
     let template = wire_body_ir(1.0);
     let cube = unit_cube().expect("unit cube fixture is admitted");
     let mut ir = template.clone();
-    let edges = cube.model.edges[..count].to_vec();
-    ir.model.edges.clone_from(&edges);
-    ir.model.curves = cube
-        .model
+    let edges = cube.geometry.edges[..count].to_vec();
+    ir.geometry.edges.clone_from(&edges);
+    ir.geometry.curves = cube
+        .geometry
         .curves
         .iter()
         .filter(|curve| edges.iter().any(|edge| edge.curve() == Some(&curve.id)))
         .cloned()
         .collect();
-    ir.model.vertices = cube
-        .model
+    ir.geometry.vertices = cube
+        .geometry
         .vertices
         .iter()
         .filter(|vertex| {
-            edges
-                .iter()
-                .any(|edge| edge.start == vertex.id || edge.end == vertex.id)
+            edges.iter().any(|edge| {
+                edge.ends.as_ref().unwrap().start == vertex.id
+                    || edge.ends.as_ref().unwrap().end == vertex.id
+            })
         })
         .cloned()
         .collect();
-    ir.model.points = cube
-        .model
+    ir.geometry.points = cube
+        .geometry
         .points
         .iter()
-        .filter(|point| ir.model.vertices.iter().any(|v| v.point == point.id))
+        .filter(|point| ir.geometry.vertices.iter().any(|v| v.point == point.id))
         .cloned()
         .collect();
-    ir.model.shells.clear();
-    ir.model.regions.clear();
-    ir.model.bodies.clear();
+    ir.geometry.shells.clear();
+    ir.geometry.regions.clear();
+    ir.geometry.bodies.clear();
     for (index, edge) in edges.iter().enumerate() {
         let shell_id = ShellId::mint(format!("test:model:shell#wire{index}")).expect("shell id");
         let region_id =
             RegionId::mint(format!("test:model:region#wire{index}")).expect("region id");
         let body_id = BodyId::mint(format!("test:model:body#wire{index}")).expect("body id");
-        let mut shell = template.model.shells[0].clone();
+        let mut shell = template.geometry.shells[0].clone();
         shell.id = shell_id.clone();
         shell.region = region_id.clone();
-        shell
-            .edit_topology(|_, wire_edges, _| *wire_edges = vec![edge.id.clone()])
-            .expect("wire topology");
-        let mut region = template.model.regions[0].clone();
+        shell.members = vec![cadmpeg_ir::topology::ShellMember::WireEdge {
+            id: edge.id.clone(),
+        }];
+        let mut region = template.geometry.regions[0].clone();
         region.id = region_id.clone();
         region.body = body_id.clone();
         region.shells = vec![shell_id];
-        let mut body = template.model.bodies[0].clone();
+        let mut body = template.geometry.bodies[0].clone();
         body.id = body_id;
-        body.regions = vec![region_id];
-        let red = f32::from(u8::try_from(index + 1).expect("small count")) / 10.0;
+        let red = f64::from(u8::try_from(index + 1).expect("small count")) / 10.0;
         body.color = Some(cadmpeg_ir::topology::Color::new(red, 0.0, 0.0, 1.0).expect("color"));
-        ir.model.shells.push(shell);
-        ir.model.regions.push(region);
-        ir.model.bodies.push(body);
+        ir.geometry.shells.push(shell);
+        ir.geometry.regions.push(region);
+        ir.geometry.bodies.push(body);
     }
     ir
 }

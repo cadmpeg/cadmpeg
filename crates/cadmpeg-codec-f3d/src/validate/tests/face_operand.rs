@@ -182,3 +182,15 @@ fn mirror_admits_its_selection_runs_and_bounded_plane_operand() {
         Kind::Face
     ));
 }
+
+#[test]
+fn a_face_operand_next_index_agrees_with_the_header_at_its_next_offset() {
+    use super::super::face_operand_next_header_matches as matches_next;
+    assert!(matches_next(Some(104), 104, true));
+    assert!(!matches_next(Some(104), 105, true));
+    assert!(!matches_next(Some(104), 0, true));
+    assert!(matches_next(None, 0, false));
+    assert!(matches_next(None, 0, true));
+    assert!(matches_next(None, 105, false));
+    assert!(!matches_next(None, 105, true));
+}

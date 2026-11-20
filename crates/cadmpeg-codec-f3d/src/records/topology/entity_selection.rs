@@ -1080,7 +1080,7 @@ mod tests;
 
 mod identity_rewrite;
 
-/// One curve entry of a typed-reference profile identity record.
+/// One curve entry of a profile identity record.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DesignProfileCurveEntry {
     /// Sketch-curve primary identity named by the entry.
@@ -1094,9 +1094,7 @@ pub(crate) struct DesignProfileCurveEntry {
     pub(crate) entry_fields: [u32; 3],
 }
 
-/// Profile selection whose identity record lists curve loops of one Sketch,
-/// written by the container generation whose references carry inline type
-/// GUIDs.
+/// Profile selection whose identity record lists curve loops of one Sketch.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignProfileCurveSelection {
     /// Globally unique deterministic identifier for this native selection.
@@ -1119,6 +1117,11 @@ pub(crate) struct DesignProfileCurveSelection {
     pub(crate) sketch_scope_record_index: u32,
     /// Byte offset of the Sketch scope reference target.
     pub(crate) sketch_scope_offset: u64,
+    /// Sketch container record indices that the frame of the Sketch scope
+    /// record names through typed local references, in stored order without
+    /// repeats. Empty for compact references.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) scope_sketch_containers: Vec<u32>,
     /// Byte offset of the identity record at the selection index plus three.
     pub(crate) identity_record_offset: u64,
     pub(crate) identity_end_offset: u64,
@@ -1142,6 +1145,42 @@ pub(crate) struct DesignProfileCurveLoop {
 }
 
 impl DesignProfileCurveSelection {
+    pub(crate) fn region_group_count_offset(&self) -> Option<u64> {
+        let first = self.groups.first()?.region.first()?.entries.first()?;
+        let offset = first.primary_id_offset.checked_sub(16)?;
+        let relative = offset.checked_sub(self.identity_record_offset)?;
+        let count_offset = if self.compact_references() {
+            crate::layout::compact_reference_profile_identity_record::REGION_GROUP_COUNT
+        } else {
+            crate::layout::typed_reference_profile_identity_record::REGION_GROUP_COUNT
+        };
+        (cadmpeg_core::decode::u64_from_index(count_offset) == relative).then_some(offset)
+    }
+
+    pub(crate) fn compact_references(&self) -> bool {
+        self.groups
+            .first()
+            .and_then(|group| group.region.first())
+            .and_then(|loop_| loop_.entries.first())
+            .and_then(|entry| entry.primary_id_offset.checked_sub(16))
+            .and_then(|offset| offset.checked_sub(self.identity_record_offset))
+            == Some(cadmpeg_core::decode::u64_from_index(
+                crate::layout::compact_reference_profile_identity_record::REGION_GROUP_COUNT,
+            ))
+    }
+
+    pub(crate) fn complete_loop_groups(&self) -> bool {
+        self.groups.iter().all(|group| {
+            group.further.is_empty()
+                && group.region.iter().all(|loop_| {
+                    loop_
+                        .entries
+                        .iter()
+                        .all(|entry| matches!(entry.entry_fields, [0 | 1, 1, 1]))
+                })
+        })
+    }
+
     pub(crate) fn valid_layout(&self) -> bool {
         self.lists_end() == Some(self.identity_end_offset)
     }
@@ -1178,12 +1217,7 @@ impl DesignProfileCurveSelection {
         if self.groups.is_empty() {
             return None;
         }
-        let mut cursor = self
-            .identity_record_offset
-            .checked_add(cadmpeg_core::decode::u64_from_index(
-                crate::layout::typed_reference_profile_identity_record::REGION_GROUP_COUNT,
-            ))?
-            .checked_add(4)?;
+        let mut cursor = self.region_group_count_offset()?.checked_add(4)?;
         for group in &self.groups {
             cursor = region_end(&group.region, cursor)?.checked_add(4)?;
             for region in &group.further {

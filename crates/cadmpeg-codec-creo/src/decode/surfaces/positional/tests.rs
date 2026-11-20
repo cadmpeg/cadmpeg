@@ -194,7 +194,7 @@ fn unresolved_round_type26_frames_are_not_admitted_as_constant_tori() {
         .expect("valid source object identity"),
         0
     );
-    assert!(ir.model.surfaces.is_empty());
+    assert!(ir.geometry.surfaces.is_empty());
 }
 
 #[test]
@@ -234,7 +234,7 @@ fn transfers_an_exact_zero_major_inline_frame_as_a_sphere() {
         1
     );
     let Some(SolvedSurfaceGeometry::Sphere(sphere_surface)) =
-        ir.model.surfaces[0].geometry.solved()
+        ir.geometry.surfaces[0].geometry.solved()
     else {
         panic!("zero-major positional frame must transfer as a sphere");
     };
@@ -277,7 +277,7 @@ fn positional_sphere_is_in_millimeters_at_ir_admission() {
         )
         .expect("positional sphere transfer");
     });
-    let surface = ir.model.surfaces.first().expect("positional sphere");
+    let surface = ir.geometry.surfaces.first().expect("positional sphere");
     let Some(SolvedSurfaceGeometry::Sphere(sphere)) = surface.geometry.solved() else {
         panic!("positional sphere changed family");
     };

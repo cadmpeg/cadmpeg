@@ -136,7 +136,7 @@ fn unresolved_boundary_excludes_its_faces_and_keeps_other_faces() {
     );
     for resolved in [false, true] {
         let mut ir = cadmpeg_ir::document::CadIr::empty();
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             id: cadmpeg_ir::ids::CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 10),
             geometry: CurveGeometry::Solved(if resolved {
                 SolvedCurveGeometry::Line(
@@ -151,8 +151,9 @@ fn unresolved_boundary_excludes_its_faces_and_keeps_other_faces() {
             }),
             source_object: None,
             parameter_range: None,
+            native_ref: None,
         });
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             id: cadmpeg_ir::ids::CurveId::compose(&crate::identity::VISIBGEOM_CURVE, 11),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 cadmpeg_ir::geometry::analytic::LineCurve::try_new(
@@ -163,6 +164,7 @@ fn unresolved_boundary_excludes_its_faces_and_keeps_other_faces() {
             )),
             source_object: None,
             parameter_range: None,
+            native_ref: None,
         });
         let mut faces = BTreeMap::from([
             (5, vec![&loops[0]]),

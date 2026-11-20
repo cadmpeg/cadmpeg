@@ -60,14 +60,11 @@ pub(super) fn mesh_options(index: &ModelIndex<'_>, body: &Body) -> cadmpeg_tesse
             high[axis] = high[axis].max(value);
         }
     };
-    let faces = body
-        .regions
-        .iter()
-        .filter_map(|region| index.regions(region.as_str(), query))
+    let geometry = &index.ir().geometry;
+    let faces = geometry
+        .body_regions(&body.id)
         .flat_map(|region| region.shells.iter())
-        .filter_map(|shell| index.shells(shell.as_str(), query))
-        .flat_map(|shell| shell.faces().iter())
-        .filter_map(|face| index.faces(face.as_str(), query));
+        .flat_map(|shell| geometry.shell_faces(shell));
     for face in faces {
         if let Some(geometry) = index
             .surfaces(face.surface.as_str(), query)
@@ -82,7 +79,7 @@ pub(super) fn mesh_options(index: &ModelIndex<'_>, body: &Body) -> cadmpeg_tesse
             .flat_map(|loop_| loop_.coedges().iter())
             .filter_map(|coedge| index.coedges(coedge.as_str(), query))
             .filter_map(|coedge| index.edges(coedge.edge.as_str(), query));
-        for vertex in edges.flat_map(|edge| [&edge.start, &edge.end]) {
+        for vertex in edges.flat_map(cadmpeg_ir::topology::Edge::vertices) {
             if let Some(point) = index
                 .vertices(vertex.as_str(), query)
                 .and_then(|vertex| index.points(vertex.point.as_str(), query))
@@ -109,13 +106,18 @@ pub(super) fn mesh_options(index: &ModelIndex<'_>, body: &Body) -> cadmpeg_tesse
     }
 }
 
-/// The mesh of `faces` of `body`, in order; each face keeps its own points.
-/// Faces with no mesh are named with the reason.
+/// A face and the range of its triangles in a body mesh.
+pub(super) type FaceTriangles = (FaceId, std::ops::Range<usize>);
+
+/// The mesh of `faces` of `body`, in order, with the triangles of each face;
+/// each face keeps its own points. Faces with no mesh are named with the
+/// reason.
 pub(super) fn mesh(
     body: &Body,
     faces: &[&FaceId],
     tessellator: &mut Tessellator<'_>,
-) -> (Option<Tessellation>, Vec<String>) {
+) -> (Option<(Tessellation, Vec<FaceTriangles>)>, Vec<String>) {
+    let mut ranges = Vec::new();
     let mut positions = Vec::new();
     let mut normals = Vec::new();
     let mut triangles = Vec::new();
@@ -128,6 +130,7 @@ pub(super) fn mesh(
                 continue;
             }
         };
+        let first = triangles.len();
         // Points in the order the triangles first reach them.
         let mut renumbered = std::collections::BTreeMap::new();
         for corners in &mesh.triangles {
@@ -147,6 +150,9 @@ pub(super) fn mesh(
             }
             triangles.push(triangle);
         }
+        if triangles.len() > first {
+            ranges.push(((*face).clone(), first..triangles.len()));
+        }
     }
     if triangles.is_empty() {
         return (None, unmeshed);
@@ -163,7 +169,7 @@ pub(super) fn mesh(
         });
     match tessellation {
         Ok(tessellation) => (
-            Some(tessellation.with_body(Some(body.id.clone()))),
+            Some((tessellation.with_body(Some(body.id.clone())), ranges)),
             unmeshed,
         ),
         Err(reason) => {

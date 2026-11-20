@@ -19,7 +19,7 @@ use serde::Deserialize;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
-use cadmpeg_ir::products::{ExternalDocument, Occurrence, OccurrenceParent, PrototypeReference};
+use cadmpeg_ir::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 
 use crate::bytes::utf16::Utf16View;
 use crate::bytes::{
@@ -486,8 +486,29 @@ pub(crate) fn design_for<'a>(
 
 /// External product structure projected into local component instance paths.
 pub(crate) struct ExternalOccurrenceProjection {
+    /// One definition of external storage per referenced document.
+    pub(crate) definitions: Vec<ProductDefinition>,
     pub(crate) occurrences: Vec<Occurrence>,
+    /// Each occurrence and the local occurrence it sits in, `None` at the
+    /// top level, in their order among their siblings.
+    pub(crate) placements: Vec<(
+        cadmpeg_ir::ids::OccurrenceId,
+        Option<cadmpeg_ir::ids::OccurrenceId>,
+    )>,
     pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+}
+
+/// The definition of the external document at `path`.
+pub(crate) fn document_definition_id(path: &str) -> cadmpeg_ir::ids::ProductDefinitionId {
+    cadmpeg_ir::ids::ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("f3d", "xref", "document"),
+        cadmpeg_ir::ids::IdentityKey::encode_segment(path),
+    )
+}
+
+/// Whether `definition` is the definition of an external document.
+pub(crate) fn is_document_definition(definition: &cadmpeg_ir::ids::ProductDefinitionId) -> bool {
+    definition.as_str().contains("xref:document#")
 }
 
 /// Repeat external placements below each instance of their local owner.
@@ -505,13 +526,7 @@ pub(crate) fn project_occurrences(
         .map(|carrier| (carrier.id.as_str(), carrier))
         .collect::<BTreeMap<_, _>>();
     let mut instances = BTreeMap::<(&str, u64), Vec<_>>::new();
-    let mut ordinals = BTreeMap::new();
     for occurrence in local {
-        if let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent {
-            let next = u64::from(occurrence.ordinal) + 1;
-            let ordinal = ordinals.entry(parent).or_insert(0);
-            *ordinal = (*ordinal).max(next);
-        }
         let Some(carrier) = occurrence
             .native_ref
             .as_deref()
@@ -535,9 +550,25 @@ pub(crate) fn project_occurrences(
             .push(&occurrence.id);
     }
     let mut projection = ExternalOccurrenceProjection {
+        definitions: Vec::new(),
         occurrences: Vec::new(),
+        placements: Vec::new(),
         losses: Vec::new(),
     };
+    for reference in &table.references {
+        let path = reference.relative_path.as_str();
+        let id = document_definition_id(path);
+        if projection
+            .definitions
+            .iter()
+            .all(|definition| definition.id != id)
+        {
+            projection.definitions.push(ProductDefinition::new(
+                id,
+                Storage::External(ExternalDocument::path(path.to_owned())),
+            ));
+        }
+    }
     // An occurrence at the document root takes its current pose: the world
     // transform its component-path carrier stores.
     let mut current_poses = 0usize;
@@ -547,11 +578,12 @@ pub(crate) fn project_occurrences(
                    current_poses: &mut usize|
      -> Result<Occurrence, CodecError> {
         if let Some(pose) = &reference.current_pose {
-            occurrence.transform =
-                crate::design::components::neutral_transform(pose.transform.map_or(
+            occurrence.transform = Some(crate::design::components::neutral_transform(
+                pose.transform.map_or(
                     IDENTITY_ROWS,
                     crate::records::xref::XrefPlacementTransform::rows,
-                ))?;
+                ),
+            )?);
             *current_poses += 1;
         }
         Ok(occurrence)
@@ -576,9 +608,9 @@ pub(crate) fn project_occurrences(
             .as_ref()
             .and_then(|source| source.owner.as_ref().map(|owner| (source, owner)));
         let Some((source, owner)) = owner else {
-            projection
-                .occurrences
-                .push(at_root(occurrence, reference, &mut current_poses)?);
+            let occurrence = at_root(occurrence, reference, &mut current_poses)?;
+            projection.placements.push((occurrence.id.clone(), None));
+            projection.occurrences.push(occurrence);
             continue;
         };
         let components = sources.components.get(&source.stream);
@@ -588,9 +620,9 @@ pub(crate) fn project_occurrences(
                 .and_then(|record| components.roots.get(&record))
         });
         if root.is_some_and(|root| root.root_entity == owner.target) {
-            projection
-                .occurrences
-                .push(at_root(occurrence, reference, &mut current_poses)?);
+            let occurrence = at_root(occurrence, reference, &mut current_poses)?;
+            projection.placements.push((occurrence.id.clone(), None));
+            projection.occurrences.push(occurrence);
             continue;
         }
         let unique = components.is_some_and(|components| {
@@ -610,25 +642,30 @@ pub(crate) fn project_occurrences(
                     "external occurrence carrier {} in {}: local owner {} has no unique instantiated component; the decoded world carrier places the occurrence at the document root",
                     source.carrier_record_index, source.stream, owner.target
                 )));
-                projection
-                    .occurrences
-                    .push(at_root(occurrence, reference, &mut current_poses)?);
+                let occurrence = at_root(occurrence, reference, &mut current_poses)?;
+                projection.placements.push((occurrence.id.clone(), None));
+                projection.occurrences.push(occurrence);
             } else if let Some(owner_world) =
                 crate::design::components::owners::placement(sources, &source.stream, owner.target)
             {
                 let mut occurrence = occurrence;
-                occurrence.transform =
-                    owner_world.compose(occurrence.transform).map_err(|error| {
-                        CodecError::malformed(format!(
-                            "external owner placement composition: {error}"
-                        ))
-                    })?;
+                occurrence.transform = Some(
+                    owner_world
+                        .compose(occurrence.transform.unwrap_or_default())
+                        .map_err(|error| {
+                            CodecError::malformed(format!(
+                                "external owner placement composition: {error}"
+                            ))
+                        })?,
+                );
+                projection.placements.push((occurrence.id.clone(), None));
                 projection.occurrences.push(occurrence);
             } else {
                 projection.losses.push(F3dLossCode::XrefOwnerUnresolved.note(format!(
                     "external occurrence carrier {} in {}: local owner {} has no unique instantiated component; placement remains at the document root",
                     source.carrier_record_index, source.stream, owner.target
                 )));
+                projection.placements.push((occurrence.id.clone(), None));
                 projection.occurrences.push(occurrence);
             }
             continue;
@@ -641,6 +678,9 @@ pub(crate) fn project_occurrences(
                 + cadmpeg_core::decode::u64_from_index(projection.occurrences.len());
             if used >= sources.limits.max_entities {
                 return Err(cadmpeg_core::decode::ResourceLimit {
+                    scope: cadmpeg_core::decode::LimitScope::for_dimension(
+                        cadmpeg_core::decode::ResourceDimension::Entities,
+                    ),
                     dimension: cadmpeg_core::decode::ResourceDimension::Entities,
                     reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
                     limit: sources.limits.max_entities,
@@ -656,14 +696,9 @@ pub(crate) fn project_occurrences(
                 reference.ordinal,
                 reference.occurrence_ordinal,
             );
-            child.parent = OccurrenceParent::Occurrence {
-                occurrence: (*parent).clone(),
-            };
-            let ordinal = ordinals.entry(parent).or_insert(0);
-            child.ordinal = u32::try_from(*ordinal).map_err(|_| {
-                CodecError::malformed("external occurrence sibling ordinal exceeds u32::MAX")
-            })?;
-            *ordinal += 1;
+            projection
+                .placements
+                .push((child.id.clone(), Some((*parent).clone())));
             projection.occurrences.push(child);
         }
     }
@@ -686,17 +721,6 @@ fn has_decoded_placement(reference: &XrefReference) -> bool {
         || reference.current_pose.is_some()
 }
 
-pub(crate) fn local_root_ordinal_start(table: &XrefTable) -> usize {
-    if table.derived_references.is_empty() {
-        return table.references.len();
-    }
-    table
-        .references
-        .iter()
-        .rposition(has_decoded_placement)
-        .map_or(0, |ordinal| ordinal + 1)
-}
-
 pub(crate) fn has_projected_placement(
     reference: &XrefReference,
     occurrences: &[Occurrence],
@@ -716,7 +740,7 @@ pub(crate) const IDENTITY_ROWS: [[f64; 4]; 4] = [
 /// Construct document-frame placements before local owner expansion.
 fn root_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg_core::CodecError> {
     let mut occurrences = Vec::new();
-    for (ordinal, reference) in table.references.iter().enumerate() {
+    for reference in &table.references {
         let path = reference.relative_path.as_str().to_owned();
         let transform = reference.transform.map_or(
             [
@@ -727,25 +751,13 @@ fn root_occurrences(table: &XrefTable) -> Result<Vec<Occurrence>, cadmpeg_core::
             ],
             crate::records::xref::XrefPlacementTransform::rows,
         );
-        occurrences.push(Occurrence {
-            id: crate::ids::neutral_xref_occurrence_id(
-                reference.ordinal,
-                reference.occurrence_ordinal,
-            ),
-            prototype: PrototypeReference::External {
-                document: ExternalDocument::path(path),
-                object: None,
-            },
-            parent: OccurrenceParent::Root {},
-            ordinal: ordinal_at(ordinal)?,
-            transform: crate::design::components::neutral_transform(transform)?,
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: None,
-            visible: None,
-            link: None,
-            native_ref: Some(reference.id.as_str().to_owned()),
-        });
+        let mut occurrence = Occurrence::new(
+            crate::ids::neutral_xref_occurrence_id(reference.ordinal, reference.occurrence_ordinal),
+            document_definition_id(&path),
+            Some(crate::design::components::neutral_transform(transform)?),
+        );
+        occurrence.native_ref = Some(reference.id.as_str().to_owned());
+        occurrences.push(occurrence);
     }
     Ok(occurrences)
 }
@@ -777,7 +789,7 @@ pub(crate) fn unique_occurrence<'a>(
     occurrences: &'a [Occurrence],
 ) -> Option<&'a Occurrence> {
     let mut matches = occurrences.iter().filter(|occurrence| {
-        matches!(occurrence.prototype, PrototypeReference::External { .. })
+        is_document_definition(&occurrence.prototype)
             && occurrence.native_ref.as_deref() == Some(reference.id.as_str())
     });
     let occurrence = matches.next()?;
@@ -1513,13 +1525,24 @@ pub(crate) fn legacy_placement_metadata_native(source: &XrefPlacementSource) -> 
 struct LegacyAttributedPlacementDetails<'a> {
     carrier_record_index: u64,
     occurrence_guid: crate::records::mesh::DesignRelaxedGuidText,
+    occurrence_guid_offset: usize,
     owner: u64,
     role: Utf16View<'a>,
+    role_offset: usize,
     transform: Option<[[f64; 4]; 4]>,
+    transform_offset: Option<usize>,
 }
 
 fn legacy_attributed_placement_details(
     body: &[u8],
+) -> Option<LegacyAttributedPlacementDetails<'_>> {
+    legacy_attributed_placement_generation(body, false)
+        .or_else(|| legacy_attributed_placement_generation(body, true))
+}
+
+fn legacy_attributed_placement_generation(
+    body: &[u8],
+    leading_placement: bool,
 ) -> Option<LegacyAttributedPlacementDetails<'_>> {
     let tag_units = usize::try_from(legacy_prefix::CLASS_TAG_LENGTH_VALUE).ok()?;
     let (tag, _) = lp_ascii_strict(body, legacy_prefix::CLASS_TAG_LENGTH, tag_units..=tag_units)?;
@@ -1546,25 +1569,52 @@ fn legacy_attributed_placement_details(
     let attributes = body.get(legacy_prefix::LEN..)?;
     let attributes_len = legacy_placement_attributes_len(attributes)?;
     let members_start = legacy_prefix::LEN + attributes_len;
-    let members = body.get(members_start..members_start + legacy_members::LEN)?;
+    let leading_len = if leading_placement {
+        if attributes_len
+            != crate::layout::legacy_attributed_external_placement_empty_attributes::LEN
+        {
+            return None;
+        }
+        let flag_at = members_start + legacy_members::METADATA_GUID_LENGTH;
+        match *body.get(flag_at)? {
+            1 => 1,
+            0 => {
+                decode_rigid_matrix(body, flag_at + 1)?;
+                129
+            }
+            _ => return None,
+        }
+    } else {
+        0
+    };
+    let member_offset = |offset: usize| {
+        offset
+            + if offset >= legacy_members::METADATA_GUID_LENGTH {
+                leading_len
+            } else {
+                0
+            }
+    };
+    let members = body.get(members_start..members_start + legacy_members::LEN + leading_len)?;
     let control = View::u16_le_at(members, legacy_members::CONTROL)?;
     if (control != legacy_members::CONTROL_VALUE
         && !(control == legacy_identity_control::CONTROL_VALUE
-            && attributes_len == legacy_attributes::LEN
-            && members.get(legacy_members::IDENTITY_FLAG) == Some(&1)))
+            && (leading_placement
+                || (attributes_len == legacy_attributes::LEN
+                    && members.get(member_offset(legacy_members::IDENTITY_FLAG)) == Some(&1)))))
         || View::u32_le_at(members, legacy_members::ORDINAL)? == 0
-        || members.get(legacy_members::REFERENCE_SEPARATOR)
+        || members.get(member_offset(legacy_members::REFERENCE_SEPARATOR))
             != Some(&legacy_members::REFERENCE_SEPARATOR_VALUE)
     {
         return None;
     }
     for (offset, units) in [
         (
-            legacy_members::METADATA_GUID_LENGTH,
+            member_offset(legacy_members::METADATA_GUID_LENGTH),
             legacy_members::METADATA_GUID_LENGTH_VALUE,
         ),
         (
-            legacy_members::TRACKING_GUID_LENGTH,
+            member_offset(legacy_members::TRACKING_GUID_LENGTH),
             legacy_members::TRACKING_GUID_LENGTH_VALUE,
         ),
     ] {
@@ -1576,32 +1626,35 @@ fn legacy_attributed_placement_details(
             return None;
         }
     }
-    let mut reference_end = legacy_members::METADATA_REFERENCE;
+    let mut reference_end = member_offset(legacy_members::METADATA_REFERENCE);
     if !matches!(
         take_reference(members, &mut reference_end)?,
         Reference::CrossSegment { target, inline_type_guid: None, .. } if target != 0
-    ) || reference_end != legacy_members::REFERENCE_SEPARATOR
+    ) || reference_end != member_offset(legacy_members::REFERENCE_SEPARATOR)
     {
         return None;
     }
-    let mut repeated_end = legacy_members::REPEATED_TARGET_REFERENCE;
+    let mut repeated_end = member_offset(legacy_members::REPEATED_TARGET_REFERENCE);
     let repeated = take_legacy_occurrence_reference(members, &mut repeated_end)?;
-    if repeated_end != legacy_members::IDENTITY_FLAG
+    if repeated_end != member_offset(legacy_members::IDENTITY_FLAG)
         || repeated.entity != first.entity
         || repeated.source_occurrence_identity != first.source_occurrence_identity
         || !repeated.type_guid.eq_ignore_ascii_case(first.type_guid)
     {
         return None;
     }
-    let tail = body.get(members_start + legacy_members::LEN..)?;
-    let (tail, transform) = match *members.get(legacy_members::IDENTITY_FLAG)? {
-        1 => (tail, None),
-        0 if tail.len() == legacy_matrix_tail::LEN => (
-            tail.get(legacy_matrix_tail::ZERO..)?,
-            Some(decode_rigid_matrix(tail, legacy_matrix_tail::MATRIX)?),
-        ),
-        _ => return None,
-    };
+    let tail_start = members_start + legacy_members::LEN + leading_len;
+    let tail = body.get(tail_start..)?;
+    let (tail, identity_tail_start, transform) =
+        match *members.get(member_offset(legacy_members::IDENTITY_FLAG))? {
+            1 => (tail, tail_start, None),
+            0 if tail.len() == legacy_matrix_tail::LEN => (
+                tail.get(legacy_matrix_tail::ZERO..)?,
+                tail_start + legacy_matrix_tail::ZERO,
+                Some(decode_rigid_matrix(tail, legacy_matrix_tail::MATRIX)?),
+            ),
+            _ => return None,
+        };
     if tail.len() != legacy_identity_tail::LEN
         || View::u32_le_at(tail, legacy_identity_tail::ZERO)? != legacy_identity_tail::ZERO_VALUE
         || tail.get(legacy_identity_tail::SEPARATOR) != Some(&legacy_identity_tail::SEPARATOR_VALUE)
@@ -1633,16 +1686,57 @@ fn legacy_attributed_placement_details(
         carrier_record_index: View::u64_le_at(body, legacy_prefix::ENTITY)?,
         occurrence_guid: lp_utf16_bounded_view(
             members,
-            legacy_members::TRACKING_GUID_LENGTH,
+            member_offset(legacy_members::TRACKING_GUID_LENGTH),
             tracking_units..=tracking_units,
         )?
         .0
         .to_string()
         .try_into()
         .ok()?,
+        occurrence_guid_offset: members_start
+            + member_offset(legacy_members::TRACKING_GUID_LENGTH)
+            + 4,
         owner,
         role,
+        role_offset: identity_tail_start + legacy_identity_tail::ROLE_LENGTH + 4,
         transform,
+        transform_offset: transform.map(|_| tail_start + legacy_matrix_tail::MATRIX),
+    })
+}
+
+/// A `Component Insert` carrier stored as an attributed legacy placement, with
+/// absolute offsets.
+pub(crate) struct AttributedInsertCarrier {
+    pub(crate) role: String,
+    pub(crate) role_offset: usize,
+    pub(crate) transform_offset: Option<usize>,
+    pub(crate) occurrence_key:
+        crate::records::identity::Located<crate::records::mesh::DesignRelaxedGuidText>,
+}
+
+pub(crate) fn attributed_component_insert_carrier(
+    bytes: &[u8],
+    carrier_at: usize,
+    relation_at: usize,
+    carrier_record_index: u32,
+) -> Option<AttributedInsertCarrier> {
+    let details = legacy_attributed_placement_details(bytes.get(carrier_at..relation_at)?)?;
+    if details.carrier_record_index != u64::from(carrier_record_index) {
+        return None;
+    }
+    Some(AttributedInsertCarrier {
+        role: details.role.to_string(),
+        role_offset: carrier_at.checked_add(details.role_offset)?,
+        transform_offset: match details.transform_offset {
+            Some(offset) => Some(carrier_at.checked_add(offset)?),
+            None => None,
+        },
+        occurrence_key: crate::records::identity::Located {
+            value: details.occurrence_guid,
+            offset: cadmpeg_core::decode::u64_from_index(
+                carrier_at.checked_add(details.occurrence_guid_offset)?,
+            ),
+        },
     })
 }
 
@@ -1820,7 +1914,6 @@ fn same_external_target(
                 target: a,
                 segment: sa,
                 asset_guid: aa,
-                target_type_guid: ta,
                 link_name: ra,
                 version: va,
                 ..
@@ -1829,7 +1922,6 @@ fn same_external_target(
                 target: b,
                 segment: sb,
                 asset_guid: ab,
-                target_type_guid: tb,
                 link_name: rb,
                 version: vb,
                 ..
@@ -1838,7 +1930,10 @@ fn same_external_target(
             a == b
                 && sa == sb
                 && aa.eq_ignore_ascii_case(ab)
-                && ta.eq_ignore_ascii_case(tb)
+                && left
+                    .document_type()
+                    .zip(right.document_type())
+                    .is_some_and(|(a, b)| a.eq_ignore_ascii_case(b))
                 && ra == rb
                 && match (va, vb) {
                     (None, None) => true,
@@ -2247,8 +2342,14 @@ impl ClosingOccurrenceChain<'_> {
             return false;
         }
         let mut at = 0;
-        matches!(take_reference(self.references.window(), &mut at), Some(Reference::Local { target, inline_type_guid }) if target == placement && inline_type_guid.is_none_or(|guid| guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)))
-            && matches!(take_reference(self.references.window(), &mut at), Some(Reference::CrossDocument { target: record, target_type_guid, link_name, .. }) if record == target && target_type_guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID) && link_name.eq_str(role))
+        if !matches!(take_reference(self.references.window(), &mut at), Some(Reference::Local { target, inline_type_guid }) if target == placement && inline_type_guid.is_none_or(|guid| guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)))
+        {
+            return false;
+        }
+        let Some(reference) = take_reference(self.references.window(), &mut at) else {
+            return false;
+        };
+        matches!(&reference, Reference::CrossDocument { target: record, link_name, .. } if *record == target && reference.document_type().is_some_and(|guid| guid.eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)) && link_name.eq_str(role))
     }
 }
 
@@ -2456,16 +2557,11 @@ fn cross_document_target<'a>(
 ) -> Option<(u64, &'a str)> {
     match reference {
         Reference::CrossDocument {
-            target,
-            inline_type_guid,
-            target_type_guid,
-            link_name,
-            ..
+            target, link_name, ..
         } if *target != 0
-            && target_type_guid.eq_ignore_ascii_case(type_guid)
-            && inline_type_guid
-                .as_deref()
-                .is_none_or(|inline| inline.eq_ignore_ascii_case(target_type_guid)) =>
+            && reference
+                .document_type()
+                .is_some_and(|guid| guid.eq_ignore_ascii_case(type_guid)) =>
         {
             Some((*target, link_name.as_str()))
         }
@@ -2709,6 +2805,32 @@ pub(crate) fn component_path_carriers(
     )
 }
 
+/// Count the component-path records of one Design stream whose path elements
+/// are all local references but that neither the two-element current-pose form
+/// nor the any-length local form admits.
+pub(crate) fn unadmitted_local_component_paths(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    serializer_magic: Option<u32>,
+) -> Result<usize, CodecError> {
+    Ok(
+        typed_records(bytes, meta, "CommonData", COMPONENT_PATH_TYPE_GUID)?
+            .iter()
+            .filter_map(|record| bytes.get(record.offset..record.end))
+            .filter(|body| local_component_path_unadmitted(body, serializer_magic))
+            .count(),
+    )
+}
+
+/// Whether a component-path record has only local path elements and matches
+/// neither the two-element current-pose form nor the any-length local form.
+pub(crate) fn local_component_path_unadmitted(body: &[u8], serializer_magic: Option<u32>) -> bool {
+    occurrence_path_members(body)
+        .is_some_and(|(members, _)| members.iter().all(|(element, _)| element.local().is_some()))
+        && local_component_path_pose(body, serializer_magic).is_none()
+        && component_path_carrier(body, serializer_magic).is_none()
+}
+
 /// Re-read a retained component-path record through the carrier parser and
 /// require it to state the retained path and matrix.
 pub(crate) fn component_path_matches(
@@ -2789,6 +2911,15 @@ pub(crate) fn identity_component_insert_carrier(
 /// not an admission key: the type-table identity and exact member framing are
 /// the stable discriminators.
 fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f64; 4]; 4]>)> {
+    legacy_occurrence_placement_details(body)
+        .map(|(link_name, _, transform)| (link_name, transform.map(|(_, matrix)| matrix)))
+}
+
+/// The legacy typed placement with the payload offset of its role and the
+/// offset of its matrix, relative to the record header.
+type LegacyPlacementDetails<'a> = (Utf16View<'a>, usize, Option<(usize, [[f64; 4]; 4])>);
+
+fn legacy_occurrence_placement_details(body: &[u8]) -> Option<LegacyPlacementDetails<'_>> {
     let (mut at, targets_match) = legacy_occurrence_prefix(body, false)?;
     if !targets_match {
         return None;
@@ -2799,8 +2930,9 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f
         1 => None,
         0 => {
             let matrix = decode_rigid_matrix(body, at)?;
+            let offset = at;
             at = at.checked_add(128)?;
-            Some(matrix)
+            Some((offset, matrix))
         }
         _ => return None,
     };
@@ -2808,6 +2940,7 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f
         return None;
     }
     at += 4;
+    let role_offset = at.checked_add(4)?;
     let (link_name, after_role) = lp_utf16_bounded_view(body, at, 36..=36)?;
     if !link_name.is_guid_relaxed() {
         return None;
@@ -2817,7 +2950,35 @@ fn legacy_occurrence_placement(body: &[u8]) -> Option<(Utf16View<'_>, Option<[[f
         return None;
     }
     at += 12;
-    (at == body.len()).then_some((link_name, transform))
+    (at == body.len()).then_some((link_name, role_offset, transform))
+}
+
+/// Bind a legacy typed occurrence placement to a Component Insert scope
+/// through its relation record. The carrier ends at the relation record, and
+/// its placement equals the scope transform.
+pub(crate) fn legacy_typed_component_insert_carrier(
+    bytes: &[u8],
+    carrier_at: usize,
+    relation_at: usize,
+    carrier_record_index: u32,
+    expected_transform: [[f64; 4]; 4],
+) -> Option<(String, usize, Option<usize>)> {
+    let body = bytes.get(carrier_at..relation_at)?;
+    if View::u64_le_at(body, 7)? != u64::from(carrier_record_index) {
+        return None;
+    }
+    let (role, role_offset, transform) = legacy_occurrence_placement_details(body)?;
+    let matrix = transform.map_or(
+        cadmpeg_ir::transform::Transform::identity().rows(),
+        |(_, matrix)| matrix,
+    );
+    (matrix == expected_transform).then(|| {
+        (
+            role.to_string(),
+            carrier_at + role_offset,
+            transform.map(|(offset, _)| carrier_at + offset),
+        )
+    })
 }
 
 /// Return the role from a structurally valid legacy placement prefix.

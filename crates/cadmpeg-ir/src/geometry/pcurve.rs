@@ -45,7 +45,7 @@ pub struct WeightedPole2<P = Point2> {
 // whose positions are `FinitePoint2` values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum PcurveNurbsPoles<P = Point2> {
     /// A polynomial pcurve: its poles carry no weight.
@@ -1242,7 +1242,6 @@ impl TryFrom<HyperbolicPcurveWire> for HyperbolicPcurve {
 pub struct TrimmedPcurve {
     #[cfg_attr(feature = "schema", schemars(with = "[f64; 2]"))]
     parameter_range: ParameterInterval,
-    #[serde(default = "crate::default_true")]
     same_sense: bool,
     basis: Box<PcurveGeometry>,
     #[serde(skip)]
@@ -1256,7 +1255,6 @@ struct TrimmedPcurveWire {
     /// Native parameter interval retained from the basis.
     parameter_range: [f64; 2],
     /// Whether the trim follows increasing basis parameters.
-    #[serde(default = "crate::default_true")]
     same_sense: bool,
     /// Curve this curve trims.
     basis: Box<PcurveGeometry>,
@@ -1383,7 +1381,7 @@ impl TryFrom<OffsetPcurveWire> for OffsetPcurve {
 }
 
 /// The shape of a parameter-space (u, v) curve on a surface.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum PcurveGeometry {
@@ -1467,7 +1465,7 @@ pub struct WeightedPolarNurbsPole<P = Point2, S = f64> {
 // A source states raw values; a `PolarPcurveNurbs` holds the admitted poles.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum PolarNurbsPoles<P = Point2, S = f64> {
     /// A polynomial polar curve: its poles carry no weight.
@@ -1717,7 +1715,6 @@ struct PolarPcurveNurbsWire {
     degree: u32,
     knots: Vec<f64>,
     poles: PolarNurbsPoles,
-    #[serde(default)]
     periodic: bool,
 }
 
@@ -1756,7 +1753,6 @@ pub struct PcurveNurbs {
     knots: KnotVector,
     #[cfg_attr(feature = "schema", schemars(with = "PcurveNurbsPoles"))]
     poles: PcurveNurbsPoles<FinitePoint2>,
-    #[serde(default)]
     periodic: bool,
 }
 
@@ -2013,7 +2009,6 @@ impl<'de> Deserialize<'de> for PcurveNurbs {
             degree: u32,
             knots: Vec<f64>,
             poles: PcurveNurbsPoles,
-            #[serde(default)]
             periodic: bool,
         }
 
@@ -2310,8 +2305,14 @@ pub struct Pcurve {
     /// Parameter-space shape.
     pub geometry: PcurveGeometry,
     /// Source parameterization metadata.
-    #[serde(default)]
     pub metadata: PcurveMetadata,
+    /// The source record this pcurve projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 impl Pcurve {
@@ -2342,8 +2343,8 @@ impl Pcurve {
 }
 
 /// Source-specific pcurve parameterization metadata.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "source", rename_all = "snake_case", deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub enum PcurveMetadata {
     /// An ASM inline `exp_par_cur` record and its complete native tail.
@@ -2354,7 +2355,6 @@ pub enum PcurveMetadata {
     /// Metadata that does not assert the ASM inline-record contract.
     General {
         /// Optional fields carried without an inline-record claim.
-        #[serde(default)]
         form: PcurveGeneralForm,
     },
 }
@@ -2368,6 +2368,34 @@ impl Default for PcurveMetadata {
 }
 
 impl PcurveMetadata {
+    #[doc = "Scale support-chart offsets and fit tolerances while preserving curve parameters."]
+    pub fn scale_chart(&mut self, scales: [f64; 2]) -> Result<(), &'static str> {
+        if !scales.iter().all(|v| v.is_finite() && *v > 0.0) {
+            return Err("chart scales must be positive and finite");
+        }
+        let offset = self
+            .uv_offset()
+            .map(|value| {
+                let value = value.get();
+                admit_pcurve_uv_offset([value[0] * scales[0], value[1] * scales[1]])
+            })
+            .transpose()?;
+        let tolerance = self
+            .fit_tolerance()
+            .map(|v| admit_pcurve_fit_tolerance(v.get() * scales[0].max(scales[1])))
+            .transpose()?;
+        match self {
+            Self::AsmInline { form } => {
+                form.uv_offset = offset.ok_or(Self::NON_FINITE_UV_OFFSET)?;
+                form.fit_tolerance = tolerance.ok_or(Self::INVALID_FIT_TOLERANCE)?;
+            }
+            Self::General { form } => {
+                form.uv_offset = offset;
+                form.fit_tolerance = tolerance;
+            }
+        }
+        Ok(())
+    }
     /// The refusal of a parameter range with a non-finite endpoint.
     pub const NON_FINITE_PARAMETER_RANGE: &'static str =
         "pcurve parameter_range endpoints must be finite";
@@ -2646,6 +2674,7 @@ impl PcurveGeneralForm {
 
 // Each optional key below names itself in whatever it refuses.
 cadmpeg_core::named_optional_field!(deserialize_uv_offset, [f64; 2], "uv_offset");
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_wrapper_reversed, bool, "wrapper_reversed");
 cadmpeg_core::named_optional_field!(deserialize_parameter_range, [f64; 2], "parameter_range");
 cadmpeg_core::named_optional_field!(

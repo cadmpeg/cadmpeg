@@ -108,3 +108,95 @@ fn circles_inward_of_a_body_stop_when_the_next_circle_passes_the_wall() {
         None
     );
 }
+
+#[test]
+fn concentric_ring_regions_emit_disjoint_annuli_with_hole_boundaries() {
+    use cadmpeg_ir::features::SketchProfileRegion;
+    use cadmpeg_ir::ids::SketchEntityId;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::sketches::SketchEntityUse;
+
+    let make_use = |name: &str| SketchEntityUse {
+        entity: SketchEntityId::mint(format!("test:sketch:entity#{name}")).unwrap(),
+        reversed: false,
+    };
+    let u_inner = make_use("c825");
+    let u_mid = make_use("c900");
+    let u_outer = make_use("c9597");
+    let circles = [
+        ConcentricCircle {
+            index: 1,
+            center: Point2::new(0.0, 0.0),
+            radius: 8.25,
+            use_: &u_inner,
+        },
+        ConcentricCircle {
+            index: 0,
+            center: Point2::new(0.0, 0.0),
+            radius: 9.0,
+            use_: &u_mid,
+        },
+        ConcentricCircle {
+            index: 2,
+            center: Point2::new(0.0, 0.0),
+            radius: 9.597,
+            use_: &u_outer,
+        },
+    ];
+
+    // Inward case: innermost ring keeps the 8.25 bore open as a hole, outer ring has 9.0 as its hole.
+    let inward = concentric_ring_regions(&circles, &[0, 2], Some(&circles[0])).unwrap();
+    assert_eq!(inward.len(), 2);
+    match &inward[0] {
+        SketchProfileRegion::Trimmed {
+            outer_boundary,
+            hole_boundaries,
+        } => {
+            assert_eq!(outer_boundary[0].entity, u_mid.entity);
+            assert!(!outer_boundary[0].reversed);
+            assert_eq!(hole_boundaries.len(), 1);
+            assert_eq!(hole_boundaries[0][0].entity, u_inner.entity);
+            assert!(hole_boundaries[0][0].reversed);
+        }
+        other => panic!("expected Trimmed ring 0, got {other:?}"),
+    }
+    match &inward[1] {
+        SketchProfileRegion::Trimmed {
+            outer_boundary,
+            hole_boundaries,
+        } => {
+            assert_eq!(outer_boundary[0].entity, u_outer.entity);
+            assert_eq!(hole_boundaries.len(), 1);
+            assert_eq!(hole_boundaries[0][0].entity, u_mid.entity);
+            assert!(hole_boundaries[0][0].reversed);
+        }
+        other => panic!("expected Trimmed ring 1, got {other:?}"),
+    }
+
+    // Outward case without a sketch circle on the body cylinder: innermost region is a disc,
+    // outer region is the disjoint annulus between them.
+    let outward = concentric_ring_regions(&circles, &[0, 2], None).unwrap();
+    assert_eq!(outward.len(), 2);
+    match &outward[0] {
+        SketchProfileRegion::Trimmed {
+            outer_boundary,
+            hole_boundaries,
+        } => {
+            assert_eq!(outer_boundary[0].entity, u_mid.entity);
+            assert!(hole_boundaries.is_empty());
+        }
+        other => panic!("expected Trimmed ring 0, got {other:?}"),
+    }
+    match &outward[1] {
+        SketchProfileRegion::Trimmed {
+            outer_boundary,
+            hole_boundaries,
+        } => {
+            assert_eq!(outer_boundary[0].entity, u_outer.entity);
+            assert_eq!(hole_boundaries.len(), 1);
+            assert_eq!(hole_boundaries[0][0].entity, u_mid.entity);
+            assert!(hole_boundaries[0][0].reversed);
+        }
+        other => panic!("expected Trimmed ring 1, got {other:?}"),
+    }
+}

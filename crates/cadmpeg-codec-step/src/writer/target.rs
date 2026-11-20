@@ -78,7 +78,7 @@ pub(crate) fn plan(
 /// every arena or record the graph does not carry. Arenas charged as a whole
 /// are `Dropped`.
 fn coverage(schema: StepSchema) -> ArenaDispositions {
-    use ArenaDisposition::{Dropped, Omitted, Reported, Written};
+    use ArenaDisposition::{Dropped, Ignored, Omitted, Reported, Written};
     let ap242 = |supported: bool| if supported { Written } else { Reported };
     ArenaDispositions {
         bodies: Written,
@@ -118,6 +118,7 @@ fn coverage(schema: StepSchema) -> ArenaDispositions {
         view_presentations: Dropped,
         tessellations: ap242(schema.supports_tessellation()),
         point_clouds: Omitted,
+        history_bodies: Ignored,
         appearances: Written,
         appearance_bindings: Written,
         attributes: Dropped,
@@ -131,5 +132,7 @@ fn coverage(schema: StepSchema) -> ArenaDispositions {
         physics_scenes: Omitted,
         solver_settings: Omitted,
         declared_measures: Omitted,
+        design: cadmpeg_ir::codec::write::DesignArenaDispositions::uniform(Omitted),
+        process: cadmpeg_ir::codec::write::ProcessArenaDispositions::uniform(Omitted),
     }
 }

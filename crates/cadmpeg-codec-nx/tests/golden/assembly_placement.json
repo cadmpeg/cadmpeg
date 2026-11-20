@@ -1,45 +1,97 @@
 {
   "decode": {
     "ir": {
-      "decode_depth": "full",
-      "ir_version": "10",
-      "model": {
-        "appearance_bindings": [],
-        "appearances": [],
-        "assembly_joints": [],
-        "attributes": [],
-        "bodies": [],
-        "coedges": [],
+      "design": {
+        "arrangements": [],
         "configurations": [],
-        "curves": [],
-        "drawings": [],
-        "edges": [],
-        "faces": [],
+        "containers": [],
+        "evaluations": [],
         "features": [],
-        "loops": [],
-        "occurrences": [],
+        "names": [],
         "parameters": [],
-        "pcurves": [],
-        "pmi": [],
-        "points": [],
-        "presentation_documents": [],
-        "presentation_layers": [],
-        "procedural_curves": [],
-        "procedural_surfaces": [],
-        "product_definitions": [],
-        "regions": [],
-        "semantic_annotations": [],
-        "shells": [],
+        "programs": [],
+        "publications": [],
+        "scopes": [],
+        "sheet_metal_rules": [],
         "sketch_constraints": [],
         "sketch_entities": [],
         "sketches": [],
+        "spatial_sketch_constraints": [],
+        "spatial_sketch_entities": [],
+        "spatial_sketches": [],
+        "spreadsheets": []
+      },
+      "fragment": false,
+      "geometry": {
+        "bodies": [],
+        "coedges": [],
+        "curves": [],
+        "edges": [],
+        "faces": [],
+        "loops": [],
+        "pcurves": [],
+        "points": [],
+        "procedural_curves": [],
+        "procedural_surfaces": [],
+        "regions": [],
+        "shells": [],
+        "subds": [],
+        "surfaces": [],
+        "vertices": []
+      },
+      "ir_version": "11",
+      "model": {
+        "appearance_bindings": [],
+        "appearances": [],
+        "articulations": [],
+        "assembly_joints": [],
+        "assets": [],
+        "attributes": [],
+        "colliders": [],
+        "configurations": [],
+        "declared_measures": [],
+        "drawings": [],
+        "feature_input_topologies": [],
+        "feature_result_topologies": [],
+        "features": [],
+        "history_bodies": [],
+        "mass_properties": [],
+        "occurrences": [],
+        "parameters": [],
+        "physical_materials": [],
+        "physics_scenes": [],
+        "pmi": [],
+        "point_clouds": [],
+        "presentation_documents": [],
+        "presentation_layers": [],
+        "product_definitions": [
+          {
+            "bodies": [],
+            "bom_properties": {},
+            "id": "nx:document:product-definition#root",
+            "instance_bodies": [],
+            "kind": "part",
+            "occurrences": [],
+            "representations": [],
+            "sketches": [],
+            "storage": {
+              "document": {},
+              "kind": "file"
+            },
+            "tessellations": []
+          }
+        ],
+        "rigid_bodies": [],
+        "semantic_annotations": [],
+        "sketch_constraints": [],
+        "sketch_entities": [],
+        "sketches": [],
+        "solver_settings": [],
+        "spatial_sketch_constraints": [],
         "spatial_sketch_entities": [],
         "spatial_sketches": [],
         "spreadsheets": [],
-        "subds": [],
-        "surfaces": [],
         "tessellations": [],
-        "vertices": [],
         "view_presentations": []
       },
       "native": {
@@ -70,31 +122,40 @@
           ]
         }
       },
+      "process": {
+        "features": [],
+        "groups": [],
+        "machines": [],
+        "operations": [],
+        "parameters": [],
+        "presets": [],
+        "programs": [],
+        "setups": [],
+        "states": [],
+        "toolpaths": [],
+        "tools": []
+      },
+      "scope": {
+        "design": true,
+        "model": true,
+        "process": true
+      },
       "source": {
-        "attributes": {
-          "deltas_streams": "0",
-          "directory_entries": "1",
-          "file_size": "163",
-          "footer_entry_count": "0",
-          "footer_fingerprint": "00000000",
-          "footer_offset": "149",
-          "header_entry_count": "1",
-          "jpeg_preview_count": "0",
-          "partition_streams": "0",
-          "plain_streams": "0"
-        },
+        "attributes": {},
         "identity": {
-          "classification": "classified",
           "dialects": {
             "extra": [],
             "primary": {
-              "admission": "admitted",
+              "admission": {
+                "kind": "admitted"
+              },
               "declared": {
                 "splmsstr_version": "6"
               },
               "dialect": "nx:splmsstr"
             }
-          }
+          },
+          "kind": "classified"
         }
       },
       "tolerances": {
@@ -102,41 +163,51 @@
         "linear": 1e-6
       },
       "units": {
-        "length": "millimeter"
+        "angle": "radian",
+        "length": "millimeter",
+        "mass": "kilogram",
+        "time": "second"
       }
     },
     "report": {
+      "coverage": {},
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "splmsstr_version": "6"
             },
             "dialect": "nx:splmsstr"
           }
-        }
+        },
+        "kind": "classified"
       },
       "losses": [
         {
           "code": {
-            "code": "geometry.not-transferred",
-            "kind": "geometry_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced",
-            "strict_floor": "warning"
+            "kind": "namespaced",
+            "value": {
+              "code": "geometry.not-transferred",
+              "kind": "geometry_not_transferred",
+              "namespace": "nx",
+              "strict_floor": "warning"
+            }
           },
           "message": "No B-rep geometry was transferred: no gate-passing analytic carrier was found in the embedded Parasolid streams (they may hold only B-spline/procedural geometry this codec does not yet type). The streams are preserved verbatim as unknown passthrough records.",
           "severity": "blocking"
         },
         {
           "code": {
-            "code": "assembly.placement-frame-unresolved",
-            "kind": "assembly_placements_not_transferred",
-            "namespace": "nx",
-            "scope": "namespaced"
+            "kind": "namespaced",
+            "value": {
+              "code": "assembly.placement-frame-unresolved",
+              "kind": "assembly_placements_not_transferred",
+              "namespace": "nx"
+            }
           },
           "message": "Withheld 1 NX placement(s) and 0 FastLoad component use(s) from neutral output because the part does not establish the placement translation unit: it declares no length expression. Their placement frames and component uses remain in the NX native namespace.",
           "severity": "blocking"
@@ -148,11 +219,21 @@
       ],
       "transfer": {
         "geometry_transferred": false,
-        "transfer": "full"
+        "kind": "full"
+      },
+      "transfer_ledger": {
+        "entries": []
       }
     },
     "source_fidelity": {
       "annotations": {
+        "exactness": {
+          "nx:document:product-definition#root": {
+            "entity": "derived",
+            "fields": {},
+            "kind": "entity"
+          }
+        },
         "provenance": {
           "nx:assembly:placement#76": {
             "offset": 76,
@@ -160,7 +241,11 @@
             "tag": "ASSEMBLY_PLACEMENT"
           }
         }
-      }
+      },
+      "decode_digest": "9b480aa66a510859c6cb734a7489aa152d616e88bc404786841cee5eefd0dc3b",
+      "file_digests": {},
+      "retained_records": {},
+      "unrepresented": []
     }
   },
   "inspect": {
@@ -171,28 +256,31 @@
           "file_offset": "76",
           "region": "HEADER"
         },
-        "compression": "none",
+        "kind": "none",
         "name": "/Root/UG_PART/UG_PART",
         "role": "part-payload",
         "size": {
-          "form": "exact",
+          "kind": "exact",
           "size": 73
         }
       }
     ],
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "splmsstr_version": "6"
           },
           "dialect": "nx:splmsstr"
         }
-      }
+      },
+      "kind": "classified"
     },
+    "losses": [],
     "notes": [
       "SPLMSSTR container: file tag 0, footer offset 149, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 0 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"

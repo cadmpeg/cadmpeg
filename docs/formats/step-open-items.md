@@ -27,8 +27,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 Edition 3 (`{ 1 0 10303 442 4 1 4 }`).
 `crates/cadmpeg-codec-step/src/options.rs:61-71` defines `StepSchema` through
 `Ap242Edition3` with no Edition 4 variant, and
-`crates/cadmpeg-codec-step/src/dialect.rs:232-240` maps only the Edition 1
-through 3 object identifiers to rows. An Edition 4 declaration
+`crates/cadmpeg-codec-step/src/dialect.rs:247-256` maps the Edition 1
+through 3 object identifiers and the ISO/TS 10303-442:2018 identifier
+(`442 2`, as Edition 2) to rows. An Edition 4 declaration
 (`{ 1 0 10303 442 7 1 4 }`) therefore classifies as `Unknown` and is read
 with the nearest-strategy grammar. `step.md` §1 names the Edition 4 object
 identifier as a Part 28 derivation input. `docs/evaluations.toml` declares no
@@ -38,6 +39,22 @@ Edition 4 dialect.
 it. The answer either adds the Edition 4 row, schema variant, and evaluation,
 or records Edition 4 as out of scope, marking future sources at the
 nearest-strategy fallback.
+
+### ER-06. AP242 edition of the ISO/TS 10303-442:2018 module identifier
+
+**Question.** Which AP242 edition does a `FILE_SCHEMA` identifier with the
+object identifier `{ 1 0 10303 442 2 1 4 }` declare?
+
+**Known.** `step.md` §6 gives `{ 1 0 10303 442 2 1 4 }` as the identifier of
+ISO/TS 10303-442:2018, the AP242 module edition between the Edition 1 module
+(`442 1`) and the Edition 2 module (`442 3`). The decoder reads it as
+`step:ap242-e2` and charges `source.schema-edition-assumed`. A same-format
+convert then declares the Edition 2 identifier `{ 1 0 10303 442 3 1 4 }`; only
+the decode report carries the loss.
+
+**Need.** The decoder assumes that the 2018 module carries the Edition 2
+entity vocabulary. The answer either confirms the Edition 2 row or gives the
+module its own row and write target.
 
 ### ER-02. `step:ap242-e3` as the weakest supported row
 
@@ -221,18 +238,20 @@ consumer knows the emitted shell is not the complete neutral shell.
 **Question.** Which channel reports a linear uncertainty measure that does not
 resolve, when the document projection transfers a value?
 
-**Known.** `crates/cadmpeg-codec-step/src/reader/geometry.rs:3907-3965` counts
+**Known.** `crates/cadmpeg-codec-step/src/reader/geometry.rs:3979-4047` counts
 each `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT` measure that does not resolve. A
 measure does not resolve when its record is absent, when it holds no number,
 when it holds no unit reference, when its unit is not a length unit and not a
 plane-angle unit, or when its scaled value is not finite or is not more than
-zero. `crates/cadmpeg-codec-step/src/reader/geometry.rs:3983-4018` adds these
+zero. `crates/cadmpeg-codec-step/src/reader/geometry.rs:4064-4106` adds these
 counts across all contexts and gives `LinearUncertainty::Value`, `Empty`, or
 `Ambiguous`. Only `Empty` and `Ambiguous` keep the count.
-`crates/cadmpeg-codec-step/src/reader/geometry.rs:550-576` reports
-`geometry.uncertainty-length-unresolved` for `Empty`, and names the count in the
-`geometry.uncertainty-length-ambiguous` note for `Ambiguous`. The `Value` arm
-writes `ir.tolerances.linear` and reports nothing. `step.md` §8 "CADIR decision:
+`crates/cadmpeg-codec-step/src/reader/geometry.rs:571-595` reports
+`geometry.uncertainty-length-unresolved` for `Empty`.
+`crates/cadmpeg-codec-step/src/reader/topology/tolerances.rs` reports
+`geometry.uncertainty-length-ambiguous` for `Ambiguous` when the count is
+positive, and names the count in the note. The `Value`
+arm writes `ir.tolerances.linear` and reports nothing. `step.md` §8 "CADIR decision:
 `Tolerances.linear` is the document projection of the" gives the same rule: it
 asks for a note only when no candidate resolves.
 
@@ -369,65 +388,3 @@ gap recorded in the loss note. A consumer that reads the emitted file reads
 a reduced layer as source-small. The answer either
 defines a carrier for each neutral member or specifies subset export with a
 per-item record as the exchange form.
-
-## 8. Product structure and placement
-
-### PS-16. Occurrence placement inferred without a STEP occurrence association
-
-**Question.** Can a parent representation's `MAPPED_ITEM` place a
-`NEXT_ASSEMBLY_USAGE_OCCURRENCE` when no STEP relationship associates that
-mapped item with the occurrence?
-
-**Known.** The occurrence-specific mapped-item assembly form uses an additional
-shape representation linked to the occurrence through
-`SHAPE_DEFINITION_REPRESENTATION` and `PRODUCT_DEFINITION_SHAPE`.
-`step.md` §8 also defines an implicit parent-representation salvage path and
-states that it is not a STEP occurrence association.
-`crates/cadmpeg-codec-step/src/reader/product.rs:1101-1163` searches the parent
-definition's representations for mapped items whose mapped representation
-resolves to the child definition. It assigns the transform when the child
-definition has one matching usage and the search finds one distinct transform.
-The uniqueness checks make the result independent of aggregate and record
-order, but they do not create a source relationship between the mapped item and
-the occurrence.
-
-**Need.** The neutral occurrence receives a placement that the source graph does
-not assign to it. The answer either requires an occurrence association before
-the placement transfers, or represents the inferred association explicitly so
-that it cannot be mistaken for a STEP-declared occurrence placement.
-
-### PS-17. Product-definition reuse with instance-specific children
-
-**Question.** How can STEP retain distinct child structures under occurrences
-that share one CADIR product definition, including repeated identity roots?
-
-**Known.** ISO 10303-44 defines each `NEXT_ASSEMBLY_USAGE_OCCURRENCE` as one
-constituent occurrence. The relationship identifies parent and child product
-definitions. The exporter selects a synthetic model product for distinct local
-root definitions with at least one representable root. A repeated root
-definition suppresses this path when a direct child has a local prototype,
-an emitted product definition, a rigid placement, and unit scale. Invalid
-child rows do not suppress the path. The existing non-identity root placement
-path remains active. A single local root product definition with one identity
-root and one scaled root uses the direct-product path; the writer records the
-scaled placement loss and writes no relationship for the identity root.
-The exporter groups child representation placements by parent product
-definition. It writes a `NEXT_ASSEMBLY_USAGE_OCCURRENCE` when the child and
-parent have emitted product definitions and the child has a rigid, unit-scale
-placement. The reader groups those relationships by parent product definition
-and expands each group for every occurrence of that definition.
-
-**Need.** A repeated product definition with instance-specific children needs
-one shared child structure or separate product-definition variants. A variant
-writer must preserve body ownership and report the identity split that the
-reader creates. A controlled exchange with repeated uses and differing child
-subtrees must distinguish that approach from a scoped transfer loss.
-
-**Conflict.** CADIR attaches each child to an occurrence ID. STEP attaches each
-child relationship to a product-definition ID. The reader applies the shared
-product-definition child list to every occurrence of that definition.
-
-**Note.** The synthetic-root regression covers distinct local root definitions
-with no repeated root definition that owns nested occurrences. The repeated
-definition cases remain open for identity-root names, nested-child counts, and
-instance-specific child structures.

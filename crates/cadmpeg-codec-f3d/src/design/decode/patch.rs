@@ -83,6 +83,7 @@ pub(super) fn surface_patch_selection(
     type_info: Option<(&str, u32)>,
 ) -> Result<Option<DesignSurfacePatchSelection>, cadmpeg_core::CodecError> {
     use crate::layout::surface_patch_selection_prefix as prefix;
+    use crate::layout::surface_patch_v5_compact_selection_frame as v5_compact;
     use crate::layout::surface_patch_v5_interior_list_prefix as v5_interior;
     use crate::layout::surface_patch_v5_selection_frame as v5_frame;
     use crate::layout::surface_patch_v5_tool_reference_prefix as v5_tool;
@@ -107,9 +108,18 @@ pub(super) fn surface_patch_selection(
     if !guid.eq_ignore_ascii_case(SURFACE_PATCH_TYPE) {
         return Ok(None);
     }
+    let start_offset = parsed!(usize::try_from(scope.byte_offset()).ok());
+    let end_offset = parsed!(usize::try_from(scope.paired_byte_offset()).ok());
+    let frame = parsed!(bytes.get(start_offset..end_offset));
     let (start, interior, tool) = match version {
         5 => (
-            v5_frame::SELECTION_PREFIX,
+            if View::u32_le_at(frame, v5_frame::SELECTION_PREFIX)
+                == Some(prefix::LEADING_WORD_VALUE)
+            {
+                v5_frame::SELECTION_PREFIX
+            } else {
+                v5_compact::SELECTION_PREFIX
+            },
             (
                 v5_interior::ZERO_RUN,
                 v5_interior::INTERIOR_COUNT,
@@ -137,9 +147,6 @@ pub(super) fn surface_patch_selection(
         ),
         _ => return Ok(None),
     };
-    let start_offset = parsed!(usize::try_from(scope.byte_offset()).ok());
-    let end_offset = parsed!(usize::try_from(scope.paired_byte_offset()).ok());
-    let frame = parsed!(bytes.get(start_offset..end_offset));
     if parsed!(View::u32_le_at(
         frame,
         parsed!(start.checked_add(prefix::LEADING_WORD))

@@ -95,7 +95,7 @@ fn header_literal_recovery_preserves_geometry_and_exact_source() {
     let expected = codec
         .decode(&mut Cursor::new(original), &DecodeOptions::default())
         .unwrap();
-    assert!(!expected.ir().model.faces.is_empty());
+    assert!(!expected.ir().geometry.faces.is_empty());
     let name_start = original.find("FILE_NAME").unwrap();
     let name_end = name_start + original[name_start..].find('\n').unwrap();
     for literal in [
@@ -120,10 +120,11 @@ fn header_literal_recovery_preserves_geometry_and_exact_source() {
                 .decode(&mut Cursor::new(&source), &DecodeOptions::default())
                 .unwrap(),
         );
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert_eq!(
-            recovered.ir().source.as_ref().unwrap().attributes["bytes_unclassified"],
-            "0"
+            cadmpeg_test_support::wire::coverage_count(recovered.report(), "bytes_unclassified"),
+            0
         );
         assert!(recovered
             .report()
@@ -154,14 +155,14 @@ fn header_literal_recovery_preserves_geometry_and_exact_source() {
         .report()
         .losses
         .iter()
-        .any(|loss| { loss.code == crate::loss::StepLossCode::ParseRecordOmitted.kind() }));
+        .any(|loss| { loss.code == cadmpeg_ir::unknown::part::record_unreadable_kind() }));
     assert!(recovered
         .ir()
         .native_unknowns("step")
         .unwrap()
         .iter()
         .any(|record| {
-            record.id.as_str().starts_with("step:file:omitted#")
+            record.id.as_str().starts_with("step:source:part#")
                 && recovered
                     .source_fidelity()
                     .retained_record(record.id.as_str())
@@ -195,6 +196,7 @@ fn unverified_implementation_level_does_not_impose_edition3_schema_cardinality()
         let recovered = codec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap();
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert!(!recovered.report().losses.is_empty());
     }
@@ -221,7 +223,8 @@ fn missing_file_name_keeps_geometry_and_retains_header_bytes() {
             .decode(&mut Cursor::new(&source), &DecodeOptions::default())
             .unwrap(),
     );
-    assert!(!expected.ir().model.faces.is_empty());
+    assert!(!expected.ir().geometry.faces.is_empty());
+    assert_eq!(recovered.ir().geometry, expected.ir().geometry);
     assert_eq!(recovered.ir().model, expected.ir().model);
     assert!(recovered
         .report()
@@ -266,6 +269,7 @@ fn unverified_header_interpretation_keeps_geometry_and_exact_source() {
                 .decode(&mut Cursor::new(&source), &DecodeOptions::default())
                 .expect("readable header interpretation"),
         );
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert!(recovered
             .report()
@@ -325,6 +329,7 @@ fn unusable_presentation_literals_preserve_shape_and_exact_record() {
                 .decode(&mut Cursor::new(&source), &DecodeOptions::default())
                 .unwrap(),
         );
+        assert_eq!(recovered.ir().geometry, expected.ir().geometry);
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert!(recovered
             .report()
@@ -337,8 +342,8 @@ fn unusable_presentation_literals_preserve_shape_and_exact_record() {
             .values()
             .any(|record_source| record_source.data() == Some(record.as_bytes())));
         assert_eq!(
-            recovered.ir().source.as_ref().unwrap().attributes["bytes_unclassified"],
-            "0"
+            cadmpeg_test_support::wire::coverage_count(recovered.report(), "bytes_unclassified"),
+            0
         );
     }
 }

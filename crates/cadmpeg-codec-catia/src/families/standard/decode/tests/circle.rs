@@ -43,7 +43,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
     let mut ir = CadIr::empty();
     let center = Point3::new(0.0, 2.0, 3.0);
     let radius = 2.0;
-    ir.model.points.extend(
+    ir.geometry.points.extend(
         [
             Point3::new(center.x, center.y, center.z - radius),
             Point3::new(center.x, center.y, center.z + radius),
@@ -72,12 +72,13 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
         SurfaceId::mint("catia:test:surface#sphere-0".to_string()).expect("identity grammar"),
         SurfaceId::mint("catia:test:surface#sphere-1".to_string()).expect("identity grammar"),
     ];
-    ir.model
+    ir.geometry
         .surfaces
         .extend(surface_ids.iter().cloned().map(|id| Surface {
             id,
             geometry: sphere_geometry.clone(),
             source_object: None,
+            native_ref: None,
         }));
     let bindings = [
         (surface_ids[0].clone(), false, 0),
@@ -115,7 +116,7 @@ fn standard_circle_without_an_admissible_plane_normal_retains_unknown_carrier() 
     let curve = curve.expect("the serialized circle retains a carrier identity");
     assert_eq!(range, None);
     assert!(matches!(
-        ir.model
+        ir.geometry
             .curves
             .iter()
             .find(|candidate| candidate.id == curve),
@@ -173,7 +174,7 @@ fn analytic_membership_preserves_radial_distance_at_large_axial_offsets() {
     for axial in [0.0, 1e8, 1e200] {
         assert_eq!(
             point_on_surface_if_supported(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 Point3::new(1.0, 0.0, axial),
                 &cylinder
             ),
@@ -181,7 +182,7 @@ fn analytic_membership_preserves_radial_distance_at_large_axial_offsets() {
         );
         assert_eq!(
             point_on_surface_if_supported(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 Point3::new(2.0, 0.0, axial),
                 &cylinder
             ),
@@ -280,7 +281,7 @@ fn numerical_seventh_short_witnessed_arc_retains_its_sweep() {
 fn sphere_section_circle_attaches_one_curve() {
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:test:surface#sphere-0").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
@@ -292,6 +293,7 @@ fn sphere_section_circle_attaches_one_curve() {
             .expect("valid sphere"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let support = StandardCurveSupport {
         pos: 12,
@@ -311,14 +313,14 @@ fn sphere_section_circle_attaches_one_curve() {
         )
     })
     .expect("attach standard circles");
-    assert_eq!(ir.model.curves.len(), 1);
+    assert_eq!(ir.geometry.curves.len(), 1);
 }
 
 #[test]
 fn sphere_section_circle_between_two_points_builds_an_edge_curve() {
     let mut ir = CadIr::empty();
     let surface_id = SurfaceId::mint("catia:test:surface#sphere-0").expect("identity grammar");
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
@@ -330,12 +332,13 @@ fn sphere_section_circle_between_two_points_builds_an_edge_curve() {
             .expect("valid sphere"),
         )),
         source_object: None,
+        native_ref: None,
     });
     for (index, position) in [Point3::new(0.8, 0.0, 0.6), Point3::new(0.0, 0.8, 0.6)]
         .into_iter()
         .enumerate()
     {
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             PointId::mint(format!("catia:test:point#{index}")).expect("identity grammar"),
             cadmpeg_ir::features::FinitePoint3::new(position).expect("finite point"),
             None,

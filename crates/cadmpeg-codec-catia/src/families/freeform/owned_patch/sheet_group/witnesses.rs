@@ -135,13 +135,18 @@ pub(super) fn repair_boundary(
             if disagrees_with_sites(edge, sites) {
                 return None;
             }
-            sides.push(edge_alignment::reproject(edge, side, &patch.surface)?);
+            sides.push(edge_alignment::reproject_corroborated(
+                edge,
+                side,
+                &patch.surface,
+            )?);
         } else {
             sides.push(side.clone());
         }
     }
     let patch = Patch {
         face: patch.face,
+        recovery: patch.recovery,
         body: patch.body,
         forward: patch.forward,
         sense_inferred: patch.sense_inferred,

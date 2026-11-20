@@ -33,21 +33,38 @@ pub(super) fn classify(
     chart: &Chart<'_>,
     resolved: &ResolvedFace<'_>,
     shapes: &[Option<LoopShape>],
-    context: FiniteContext,
+    v_tolerance: f64,
+    input: &super::RegionInput<'_, '_>,
 ) -> Measure<Region> {
+    let context = input.context;
     let Some(domain) = chart.domain() else {
         return Err(invalid("the carrier has no finite domain"));
     };
     let rings = ring_loops(resolved)?;
     let base = domain[1][0];
-    let vertex_loops = vec![
+    let mut vertex_loops = vec![
         LoopRegion {
             role: LoopRole::Vertex,
             factor: 0.0,
         };
         resolved.loops.len()
     ];
-    if rings.is_empty() {
+    let seam_domain = chart.periods().iter().all(Option::is_some)
+        && rings.iter().all(|(index, ring)| {
+            ring.pieces.iter().enumerate().all(|(position, piece)| {
+                piece.synthesized()
+                    || input
+                        .seams
+                        .get(*index)
+                        .and_then(|seams| seams.get(position))
+                        .copied()
+                        .unwrap_or(false)
+            })
+        });
+    if rings.is_empty() || seam_domain {
+        for (index, _) in &rings {
+            vertex_loops[*index].role = LoopRole::Domain;
+        }
         return Ok(Region {
             rule: RegionRule::WholeSurface,
             loops: vertex_loops,
@@ -57,6 +74,12 @@ pub(super) fn classify(
             exterior: 1.0,
             closed: None,
         });
+    }
+    // A domain periodic in `u` alone nests its loops as a cylinder does.
+    if let [Some(_), None] = chart.periods() {
+        if !context.implicit_outer {
+            return super::periodic::classify(face, chart, resolved, shapes, v_tolerance);
+        }
     }
     if chart.periods().iter().any(Option::is_some) {
         return Err(MeasureFailure::unavailable(

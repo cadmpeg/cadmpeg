@@ -3,6 +3,7 @@
 #![allow(clippy::unwrap_used)]
 
 pub(crate) mod construction_curve;
+pub(crate) mod mesh;
 pub(crate) mod sequence;
 pub(crate) mod wide;
 
@@ -1047,7 +1048,7 @@ pub(crate) fn edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
 /// Bare edge-use `refs[0]` names the forward coedge that stores the edge
 /// direction. A zero canonical reference is reserved for compact fixtures
 /// whose unique forward coedge supplies the same relation.
-fn edge_use_with_canonical(
+pub(crate) fn edge_use_with_canonical(
     attr: u16,
     canonical_coedge: u16,
     curve_attr: u16,
@@ -1384,7 +1385,7 @@ fn typed_prefix(bytes: &mut Vec<u8>, tag: [u8; 2], attr: u16, node_id: u32) {
 }
 
 /// Append one validated XT ownership graph for a compact face bridge.
-fn typed_single_face_ownership(
+pub(crate) fn typed_single_face_ownership(
     bytes: &mut Vec<u8>,
     body_attr: u16,
     shell_attr: u16,
@@ -1537,6 +1538,42 @@ pub(crate) fn int_attribute(node: u16, definition: u16, owner: u16, value_node: 
     b.extend(definition.to_be_bytes());
     b.extend(owner.to_be_bytes());
     for reference in [1_u16, 1, 1, 1, value_node] {
+        b.extend(reference.to_be_bytes());
+    }
+    b
+}
+
+/// An attribute family named `family` with field codes `fields`, and one
+/// instance on `owner` whose first integer field names a list of `values`.
+/// The family's name, definition, list and instance take nodes `base` to
+/// `base + 3`.
+pub(crate) fn int_list_attribute(
+    family: &str,
+    fields: &[u8],
+    base: u16,
+    owner: u16,
+    values: &[u32],
+) -> Vec<u8> {
+    let mut b = attribute_name(base, family);
+    b.extend(attribute_definition(base + 1, base, fields));
+    b.extend([0x00, 0x52]);
+    b.extend(u32::try_from(values.len()).unwrap().to_be_bytes());
+    b.extend((base + 2).to_be_bytes());
+    for value in values {
+        b.extend(value.to_be_bytes());
+    }
+    b.extend([0x00, 0x51]);
+    b.extend(u32::try_from(fields.len()).unwrap().to_be_bytes());
+    b.extend((base + 3).to_be_bytes());
+    b.extend(u32::from(base + 3).to_be_bytes());
+    b.extend((base + 1).to_be_bytes());
+    b.extend(owner.to_be_bytes());
+    for _ in 0..4 {
+        b.extend(1_u16.to_be_bytes());
+    }
+    let list = fields.iter().position(|code| *code == 1);
+    for at in 0..fields.len() {
+        let reference = if Some(at) == list { base + 2 } else { 1 };
         b.extend(reference.to_be_bytes());
     }
     b

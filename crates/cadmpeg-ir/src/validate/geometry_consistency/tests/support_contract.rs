@@ -43,20 +43,22 @@ fn support_curve_with_heights([ends, middle]: [f64; 2], fit: Option<f64>) -> Cad
     )
     .unwrap();
     surface.set_cache_fit_tolerance(fit.map(|value| FitTolerance::try_new(value).unwrap()));
-    ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface));
+    ir.geometry.surfaces[0].geometry =
+        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(surface));
     ir
 }
 
 fn using_edge(ir: &mut CadIr, range: [f64; 2]) {
     let mut cube = unit_cube().unwrap();
-    let mut edge = cube.model.edges.remove(0);
-    edge.set_curve(Some(ir.model.curves[0].id.clone())).unwrap();
+    let mut edge = cube.geometry.edges.remove(0);
+    edge.set_curve(Some(ir.geometry.curves[0].id.clone()))
+        .unwrap();
     edge.set_param_range(Some(ParameterInterval::new(range).unwrap()));
-    ir.model.edges.push(edge);
+    ir.geometry.edges.push(edge);
 }
 
 fn assert_support_failure(ir: &CadIr, fails: bool) {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let index = crate::index::ModelIndex::new_model_only(ir);
     let mut findings = Vec::new();
     check_procedural_support_consistency(
@@ -67,7 +69,7 @@ fn assert_support_failure(ir: &CadIr, fails: bool) {
     )
     .unwrap();
     assert_eq!(!findings.is_empty(), fails, "{findings:?}");
-    let context = match ir.model.procedural_curves[0].definition() {
+    let context = match ir.geometry.procedural_curves[0].definition() {
         ProceduralCurveDefinition::SurfaceCurve { family } => family.context(),
         ProceduralCurveDefinition::Intersection { context, .. } => context,
         ProceduralCurveDefinition::Spring(payload) => payload.support_context(),
@@ -76,9 +78,9 @@ fn assert_support_failure(ir: &CadIr, fails: bool) {
     let sides = super::super::cache_support_endpoint_failures(
         &ctx,
         &index,
-        &ir.model.curves[0],
+        &ir.geometry.curves[0],
         context,
-        ir.model.procedural_curves[0]
+        ir.geometry.procedural_curves[0]
             .cache_fit_tolerance()
             .map(FitTolerance::get),
     )
@@ -96,7 +98,7 @@ fn cache_first_spring_support_contract_tracks_the_reversed_cache() {
         for miss in [0.0, 0.2] {
             let mut ir = support_curve(miss, None);
             let ProceduralCurveDefinition::SurfaceCurve { family } =
-                ir.model.procedural_curves[0].definition()
+                ir.geometry.procedural_curves[0].definition()
             else {
                 panic!("surface curve")
             };
@@ -120,7 +122,7 @@ fn cache_first_spring_support_contract_tracks_the_reversed_cache() {
             );
             if reversed {
                 definition.reverse_support_contexts().unwrap();
-                *ir.model.curves[0]
+                *ir.geometry.curves[0]
                     .geometry
                     .solved_cache_mut()
                     .expect("solved cache") = SolvedCurveGeometry::Line(
@@ -131,7 +133,7 @@ fn cache_first_spring_support_contract_tracks_the_reversed_cache() {
                     .unwrap(),
                 );
             }
-            ir.model.procedural_curves[0].replace_definition(definition);
+            ir.geometry.procedural_curves[0].replace_definition(definition);
             assert_support_failure(&ir, miss > 0.0);
         }
     }
@@ -172,12 +174,12 @@ fn all_edges_and_coedge_use_ranges_contribute_to_the_hull() {
     using_edge(&mut ir, [0.25, 0.5]);
     using_edge(&mut ir, [0.5, 0.75]);
     assert_support_failure(&ir, false);
-    let mut coedge = unit_cube().unwrap().model.coedges.remove(0);
+    let mut coedge = unit_cube().unwrap().geometry.coedges.remove(0);
     coedge.use_curve = Some(CoedgeUseCurve {
-        curve: ir.model.curves[0].id.clone(),
+        curve: ir.geometry.curves[0].id.clone(),
         parameter_range: ParameterInterval::new([0.125, 0.5]).unwrap(),
     });
-    ir.model.coedges.push(coedge);
+    ir.geometry.coedges.push(coedge);
     assert_support_failure(&ir, true);
 }
 
@@ -192,7 +194,7 @@ fn used_hull_keeps_the_context_pcurve_parameter_map() {
 /// record does: the cache at `t` is the construction at `-t`.
 fn reversed_support_curve(miss: f64) -> CadIr {
     let mut ir = support_curve(miss, None);
-    *ir.model.curves[0]
+    *ir.geometry.curves[0]
         .geometry
         .solved_cache_mut()
         .expect("solved cache") = SolvedCurveGeometry::Line(
@@ -233,7 +235,7 @@ fn reversed_curve_on_a_symmetric_interval_meets_its_contract() {
         .unwrap(),
     };
     let mut ir = mapped_surface_curve_with_pcurve(pcurve.clone(), [0.0, 1.0]);
-    *ir.model.curves[0]
+    *ir.geometry.curves[0]
         .geometry
         .solved_cache_mut()
         .expect("solved cache") = SolvedCurveGeometry::Line(
@@ -246,7 +248,7 @@ fn reversed_curve_on_a_symmetric_interval_meets_its_contract() {
     let context = IntcurveSupportContext::try_new(
         [
             IntcurveSupportSide {
-                surface: Some(ir.model.surfaces[0].id.clone()),
+                surface: Some(ir.geometry.surfaces[0].id.clone()),
                 pcurve: Some(SupportPcurve::new(pcurve, None)),
             },
             IntcurveSupportSide {
@@ -258,7 +260,7 @@ fn reversed_curve_on_a_symmetric_interval_meets_its_contract() {
         std::array::from_fn(|_| Vec::new()),
     )
     .unwrap();
-    ir.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Intersection {
+    ir.geometry.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Intersection {
         context,
         discontinuity_flag: false,
         cache: None,
@@ -286,14 +288,14 @@ fn an_unranged_edge_keeps_the_full_construction_interval() {
     let mut ir = support_curve(0.2, None);
     using_edge(&mut ir, [0.25, 0.75]);
     using_edge(&mut ir, [0.25, 0.75]);
-    ir.model.edges[1].set_param_range(None);
+    ir.geometry.edges[1].set_param_range(None);
     assert_support_failure(&ir, true);
 }
 
 #[test]
 fn typed_support_definition_supplies_the_cache_fit() {
     let mut ir = support_curve(0.05, None);
-    let surface = ir.model.surfaces[0].id.clone();
+    let surface = ir.geometry.surfaces[0].id.clone();
     let definition = procedural_surface! {
         id: ProceduralSurfaceId::mint("test:model:procedural-surface#fit").unwrap(),
         definition: ProceduralSurfaceDefinition::Exact(
@@ -306,7 +308,7 @@ fn typed_support_definition_supplies_the_cache_fit() {
         cache_fit_tolerance: Some(0.1),
         record_bounds: None,
     };
-    ir.model
+    ir.geometry
         .add_procedural_surface(&surface, definition)
         .unwrap();
     assert_support_failure(&ir, false);
@@ -316,17 +318,17 @@ fn typed_support_definition_supplies_the_cache_fit() {
 fn curve_fit_above_the_support_fit_sets_the_allowance() {
     let mut ir = support_curve(0.2, Some(0.1));
     let ProceduralCurveDefinition::SurfaceCurve { family } =
-        ir.model.procedural_curves[0].definition()
+        ir.geometry.procedural_curves[0].definition()
     else {
         panic!("surface curve");
     };
     let context = family.context().clone();
-    ir.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Intersection {
+    ir.geometry.procedural_curves[0].replace_definition(ProceduralCurveDefinition::Intersection {
         context,
         discontinuity_flag: false,
         cache: None,
     });
-    ir.model.procedural_curves[0]
+    ir.geometry.procedural_curves[0]
         .set_cache_fit_tolerance(Some(0.3))
         .unwrap();
     assert_support_failure(&ir, false);
@@ -335,13 +337,13 @@ fn curve_fit_above_the_support_fit_sets_the_allowance() {
 fn offset_with_reparameterized_base(height: f64) -> CadIr {
     let mut ir = mapped_surface_offset();
     let ProceduralCurveDefinition::SurfaceOffset(payload) =
-        ir.model.procedural_curves[0].definition()
+        ir.geometry.procedural_curves[0].definition()
     else {
         panic!("offset");
     };
     let context = payload.context().clone();
     let base = payload.base().clone();
-    ir.model.procedural_curves[0].replace_definition(ProceduralCurveDefinition::SurfaceOffset(
+    ir.geometry.procedural_curves[0].replace_definition(ProceduralCurveDefinition::SurfaceOffset(
         crate::geometry::curve_payloads::SurfaceOffsetCurveConstruction::try_new(
             context,
             false,
@@ -353,7 +355,7 @@ fn offset_with_reparameterized_base(height: f64) -> CadIr {
         )
         .unwrap(),
     ));
-    ir.model.curves[1].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+    ir.geometry.curves[1].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         crate::geometry::nurbs::NurbsCurve::from_lanes(
             2,
             vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
@@ -367,7 +369,7 @@ fn offset_with_reparameterized_base(height: f64) -> CadIr {
         )
         .unwrap(),
     ));
-    *ir.model.curves[0].geometry.solved_cache_mut().unwrap() = SolvedCurveGeometry::Line(
+    *ir.geometry.curves[0].geometry.solved_cache_mut().unwrap() = SolvedCurveGeometry::Line(
         crate::geometry::analytic::LineCurve::try_new(
             Point3::new(2.0, 0.0, height),
             Vector3::new(1.0, 0.0, 0.0),
@@ -380,7 +382,7 @@ fn offset_with_reparameterized_base(height: f64) -> CadIr {
 
 #[test]
 fn offset_used_hull_keeps_base_endpoint_witnesses_on_their_stored_parameters() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let ir = offset_with_reparameterized_base(25.0);
     let index = crate::index::ModelIndex::new_model_only(&ir);
     let mut findings = Vec::new();
@@ -396,7 +398,7 @@ fn offset_used_hull_keeps_base_endpoint_witnesses_on_their_stored_parameters() {
 
 #[test]
 fn offset_used_hull_above_its_distance_allowance_is_reported() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let ir = offset_with_reparameterized_base(26.0);
     let index = crate::index::ModelIndex::new_model_only(&ir);
     let mut findings = Vec::new();

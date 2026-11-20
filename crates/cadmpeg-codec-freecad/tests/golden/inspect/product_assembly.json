@@ -8,8 +8,8 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compression": "deflate",
       "expanded": 76819,
+      "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
       "stored": 4439
@@ -21,8 +21,8 @@
         "data_offset": "4537",
         "header_offset": "4481"
       },
-      "compression": "deflate",
       "expanded": 8913,
+      "kind": "deflate",
       "name": "BracketPrototype.Shape.brp",
       "role": "brep",
       "stored": 768
@@ -34,8 +34,8 @@
         "data_offset": "5357",
         "header_offset": "5305"
       },
-      "compression": "deflate",
       "expanded": 3367,
+      "kind": "deflate",
       "name": "PinPrototype.Shape.brp",
       "role": "brep",
       "stored": 431
@@ -47,8 +47,8 @@
         "data_offset": "5831",
         "header_offset": "5788"
       },
-      "compression": "deflate",
       "expanded": 4,
+      "kind": "deflate",
       "name": "PlacementList",
       "role": "auxiliary",
       "stored": 6
@@ -60,8 +60,8 @@
         "data_offset": "5876",
         "header_offset": "5837"
       },
-      "compression": "deflate",
       "expanded": 4,
+      "kind": "deflate",
       "name": "ScaleList",
       "role": "auxiliary",
       "stored": 6
@@ -73,8 +73,8 @@
         "data_offset": "5926",
         "header_offset": "5882"
       },
-      "compression": "deflate",
       "expanded": 4,
+      "kind": "deflate",
       "name": "PlacementList1",
       "role": "auxiliary",
       "stored": 6
@@ -86,8 +86,8 @@
         "data_offset": "5972",
         "header_offset": "5932"
       },
-      "compression": "deflate",
       "expanded": 4,
+      "kind": "deflate",
       "name": "ScaleList1",
       "role": "auxiliary",
       "stored": 6
@@ -99,8 +99,8 @@
         "data_offset": "6022",
         "header_offset": "5978"
       },
-      "compression": "deflate",
       "expanded": 4,
+      "kind": "deflate",
       "name": "PlacementList2",
       "role": "auxiliary",
       "stored": 6
@@ -112,8 +112,8 @@
         "data_offset": "6068",
         "header_offset": "6028"
       },
-      "compression": "deflate",
       "expanded": 4,
+      "kind": "deflate",
       "name": "ScaleList2",
       "role": "auxiliary",
       "stored": 6
@@ -125,8 +125,8 @@
         "data_offset": "6118",
         "header_offset": "6074"
       },
-      "compression": "deflate",
       "expanded": 172,
+      "kind": "deflate",
       "name": "PlacementList3",
       "role": "auxiliary",
       "stored": 17
@@ -138,8 +138,8 @@
         "data_offset": "6175",
         "header_offset": "6135"
       },
-      "compression": "deflate",
       "expanded": 76,
+      "kind": "deflate",
       "name": "ScaleList3",
       "role": "auxiliary",
       "stored": 15
@@ -151,8 +151,8 @@
         "data_offset": "6234",
         "header_offset": "6190"
       },
-      "compression": "deflate",
       "expanded": 4,
+      "kind": "deflate",
       "name": "PlacementList4",
       "role": "auxiliary",
       "stored": 6
@@ -164,19 +164,20 @@
         "data_offset": "6280",
         "header_offset": "6240"
       },
-      "compression": "deflate",
       "expanded": 4,
+      "kind": "deflate",
       "name": "ScaleList4",
       "role": "auxiliary",
       "stored": 6
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_version": "1",
           "program_version": "1.1R20260414 (Git shallow)",
@@ -184,8 +185,10 @@
         },
         "dialect": "fcstd:schema-4"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",

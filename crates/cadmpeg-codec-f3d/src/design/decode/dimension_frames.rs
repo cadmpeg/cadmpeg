@@ -87,24 +87,37 @@ fn dimension_companion_keys<'a>(
     keys
 }
 
-fn dimension_geometry_indices(
-    stream: &str,
-    points: &[SketchPoint],
-    curves: &[SketchCurveIdentity],
-) -> HashSet<u32> {
-    let mut indices = HashSet::new();
-    for index in points
+fn dimension_geometry_indices<'a>(
+    points: &'a [SketchPoint],
+    curves: &'a [SketchCurveIdentity],
+) -> HashMap<&'a str, HashSet<u32>> {
+    let mut indices = HashMap::<_, HashSet<u32>>::new();
+    for (id, index) in points
         .iter()
-        .filter(|point| native_stream(&point.id) == Some(stream))
-        .map(|point| point.record_index)
+        .map(|point| (point.id.as_str(), point.record_index))
         .chain(
             curves
                 .iter()
-                .filter(|curve| native_stream(&curve.id) == Some(stream))
-                .map(|curve| curve.record_index),
+                .map(|curve| (curve.id.as_str(), curve.record_index)),
         )
     {
-        indices.insert(index);
+        if let Some(stream) = native_stream(id) {
+            indices.entry(stream).or_default().insert(index);
+        }
+    }
+    indices
+}
+
+fn sketch_entity_indices(entities: &[DesignEntityHeader]) -> HashMap<&str, HashSet<u32>> {
+    let mut indices = HashMap::<_, HashSet<u32>>::new();
+    for entity in entities.iter().filter(|entity| entity.in_sketch_module()) {
+        let (Some(stream), Ok(index)) = (
+            native_stream(&entity.id),
+            u32::try_from(entity.entity_id.suffix()),
+        ) else {
+            continue;
+        };
+        indices.entry(stream).or_default().insert(index);
     }
     indices
 }
@@ -594,73 +607,98 @@ enum RecipeReferenceTokenFrame {
 struct ScannedRecipeReferenceOperand<'a> {
     selector: u32,
     token: &'a str,
+    token_integer: u32,
     token_at: usize,
     references_at: usize,
     reference_count: usize,
     next: usize,
 }
 
-fn scan_recipe_reference_operand(
-    prefix: &[u8],
+fn scan_recipe_reference_operand<'a>(
+    prefix: &'a [u8],
     at: usize,
     token_frame: RecipeReferenceTokenFrame,
-) -> Option<ScannedRecipeReferenceOperand<'_>> {
+) -> Option<ScannedRecipeReferenceOperand<'a>> {
     let selector = View::u32_le_at(prefix, at).filter(|value| *value != 0)?;
     let token_encoding_at = at.checked_add(4)?;
-    let length_prefixed = (!matches!(token_frame, RecipeReferenceTokenFrame::Packed))
-        .then(|| {
+    let finish = |token: &'a str, token_at: usize, integer_at: usize| {
+        let token_integer = View::u32_le_at(prefix, integer_at)?;
+        let count_at = integer_at.checked_add(4)?;
+        let references_at = count_at.checked_add(4)?;
+        let reference_count = cadmpeg_core::decode::bounded_len(
+            u64::from(View::u32_le_at(prefix, count_at).filter(|value| *value != 0)?),
+            4,
+            prefix.len().checked_sub(references_at)?,
+        )?;
+        let references_end = references_at.checked_add(reference_count.checked_mul(4)?)?;
+        let next = match token_frame {
+            RecipeReferenceTokenFrame::Packed => references_end,
+            RecipeReferenceTokenFrame::Either | RecipeReferenceTokenFrame::LengthPrefixed => {
+                if View::u32_le_at(prefix, references_end) != Some(0) {
+                    return None;
+                }
+                references_end.checked_add(4)?
+            }
+        };
+        for ordinal in 0..reference_count {
+            let reference_at = references_at.checked_add(ordinal.checked_mul(4)?)?;
+            View::i32_le_at(prefix, reference_at).filter(|value| *value != 0)?;
+        }
+        Some(ScannedRecipeReferenceOperand {
+            selector,
+            token,
+            token_integer,
+            token_at,
+            references_at,
+            reference_count,
+            next,
+        })
+    };
+    if !matches!(token_frame, RecipeReferenceTokenFrame::Packed) {
+        if let Some((token, integer_at)) =
             lp_ascii_filtered_view(prefix, token_encoding_at, 0..=2000, u8::is_ascii_graphic)
-                .and_then(|(token, marker_at)| {
-                    (is_decimal_integer_token(token.as_bytes())
-                        && View::u32_le_at(prefix, marker_at) == Some(0))
-                    .then_some((token, token_encoding_at + 4, marker_at + 4))
-                })
-        })
-        .flatten();
-    let packed = (!matches!(token_frame, RecipeReferenceTokenFrame::LengthPrefixed))
-        .then(|| {
-            (1usize..=8).find_map(|length| {
-                let token =
-                    prefix.get(token_encoding_at..token_encoding_at.checked_add(length)?)?;
-                let zero_at = token_encoding_at.checked_add(length)?;
-                (is_decimal_integer_token(token)
-                    && prefix.get(zero_at..zero_at + 4) == Some(&[0; 4]))
-                .then(|| std::str::from_utf8(token).ok())
-                .flatten()
-                .map(|token| (token, token_encoding_at, zero_at + 4))
-            })
-        })
-        .flatten();
-    let (token, token_at, marker_at) = length_prefixed.or(packed)?;
-    let reference_count =
-        usize::try_from(View::u32_le_at(prefix, marker_at).filter(|value| *value != 0)?).ok()?;
-    let reference_bytes = reference_count.checked_mul(4)?;
-    let references_at = marker_at.checked_add(4)?;
-    if reference_bytes > prefix.len().checked_sub(references_at)? {
+                .filter(|(token, _)| is_decimal_integer_token(token.as_bytes()))
+        {
+            if let Some(operand) = finish(token, token_encoding_at + 4, integer_at) {
+                return Some(operand);
+            }
+        }
+    }
+    if matches!(token_frame, RecipeReferenceTokenFrame::LengthPrefixed) {
         return None;
     }
-    let references_end = references_at.checked_add(reference_bytes)?;
-    let next = match token_frame {
-        RecipeReferenceTokenFrame::Packed => references_end,
-        RecipeReferenceTokenFrame::Either | RecipeReferenceTokenFrame::LengthPrefixed => {
-            if View::u32_le_at(prefix, references_end) != Some(0) {
-                return None;
-            }
-            references_end.checked_add(4)?
+    let mut candidate = None;
+    let mut ambiguous = false;
+    for length in 1usize..=8 {
+        let integer_at = token_encoding_at.checked_add(length)?;
+        let token = prefix.get(token_encoding_at..integer_at)?;
+        if token == b"-" {
+            continue;
         }
-    };
-    for reference_ordinal in 0..reference_count {
-        let design_reference_at = references_at.checked_add(reference_ordinal.checked_mul(4)?)?;
-        View::i32_le_at(prefix, design_reference_at).filter(|value| *value != 0)?;
+        if !is_decimal_integer_token(token) {
+            break;
+        }
+        let Some(operand) = finish(
+            std::str::from_utf8(token).ok()?,
+            token_encoding_at,
+            integer_at,
+        ) else {
+            continue;
+        };
+        if operand.token_integer == 0 {
+            return Some(operand);
+        }
+        if matches!(token_frame, RecipeReferenceTokenFrame::Packed) {
+            continue;
+        }
+        ambiguous |= candidate.is_some();
+        candidate = Some(operand);
     }
-    Some(ScannedRecipeReferenceOperand {
-        selector,
-        token,
-        token_at,
-        references_at,
-        reference_count,
-        next,
-    })
+    if ambiguous {
+        None
+    } else {
+        candidate
+    }
 }
 
 struct DecodedRecipeReferenceOperand {
@@ -691,6 +729,7 @@ fn decode_recipe_reference_operand(
             selector: i64::from(scanned.selector),
             selector_offset,
             token: token_copy,
+            token_integer: scanned.token_integer,
             token_offset,
             design_reference: i64::from(design_reference),
             design_reference_offset,
@@ -768,6 +807,7 @@ pub(crate) fn bind_recipe_reference_candidates(
     reference.alternate_selector_edges.clear();
     for tag in tags.iter().filter(|tag| {
         tag.token.as_str() == reference.token
+            && tag.token_integer == reference.token_integer
             && tag.design_references.contains(&reference.design_reference)
             && owner_id.is_none_or(|owner_id| crate::ids::same_native_occurrence(&tag.id, owner_id))
     }) {
@@ -926,6 +966,9 @@ pub(crate) fn decode_dimension_locus_pairs(
     } = inputs;
     let parameters = dimension_parameter_index(parameters);
     let dimension_companions = dimension_companion_keys(owners, &parameters);
+    let bounds = CompanionBounds::new(parameters.values().copied(), owners, scopes, headers);
+    let geometry = dimension_geometry_indices(points, curves);
+    let no_geometry = HashSet::new();
     let mut out = Vec::new();
     for (companion, scope) in companions.iter().filter_map(|companion| {
         let scope = native_stream(companion.id())?;
@@ -937,16 +980,9 @@ pub(crate) fn decode_dimension_locus_pairs(
         let Some(entry) = entry else {
             continue;
         };
-        let geometry_indices = dimension_geometry_indices(scope, points, curves);
+        let geometry_indices = geometry.get(scope).unwrap_or(&no_geometry);
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some((start, end)) = companion_owned_interval(
-            companion,
-            parameters.values().copied(),
-            owners,
-            scopes,
-            headers,
-            bytes.len(),
-        ) else {
+        let Some((start, end)) = bounds.interval(companion, bytes.len()) else {
             continue;
         };
         let Some(mut pair) = find_dimension_locus_pair(
@@ -954,7 +990,7 @@ pub(crate) fn decode_dimension_locus_pairs(
             start,
             end,
             companion.record_index(),
-            &geometry_indices,
+            geometry_indices,
         ) else {
             continue;
         };
@@ -1131,6 +1167,9 @@ pub(crate) fn decode_dimension_null_locus_pairs(
     } = inputs;
     let parameters = dimension_parameter_index(parameters);
     let dimension_companions = dimension_companion_keys(owners, &parameters);
+    let bounds = CompanionBounds::new(parameters.values().copied(), owners, scopes, headers);
+    let geometry = dimension_geometry_indices(points, curves);
+    let no_geometry = HashSet::new();
     let mut typed_companions = HashSet::new();
     for key in
         pairs
@@ -1153,16 +1192,9 @@ pub(crate) fn decode_dimension_null_locus_pairs(
         let Some(entry) = entry else {
             continue;
         };
-        let geometry_indices = dimension_geometry_indices(scope, points, curves);
+        let geometry_indices = geometry.get(scope).unwrap_or(&no_geometry);
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some((start, end)) = companion_owned_interval(
-            companion,
-            parameters.values().copied(),
-            owners,
-            scopes,
-            headers,
-            bytes.len(),
-        ) else {
+        let Some((start, end)) = bounds.interval(companion, bytes.len()) else {
             continue;
         };
         let Some(mut pair) = find_dimension_null_locus_pair(
@@ -1170,7 +1202,7 @@ pub(crate) fn decode_dimension_null_locus_pairs(
             start,
             end,
             companion.record_index(),
-            &geometry_indices,
+            geometry_indices,
         ) else {
             continue;
         };
@@ -1307,6 +1339,10 @@ pub(crate) fn decode_dimension_annotation_frames(
     } = inputs;
     let parameters = dimension_parameter_index(parameters);
     let dimension_companions = dimension_companion_keys(owners, &parameters);
+    let bounds = CompanionBounds::new(parameters.values().copied(), owners, scopes, headers);
+    let geometry = dimension_geometry_indices(points, curves);
+    let entities = sketch_entity_indices(entities);
+    let no_indices = HashSet::new();
     let mut out = Vec::new();
     let mut decoded_offsets = HashSet::new();
     for (companion_ordinal, companion) in companions.iter().enumerate() {
@@ -1323,18 +1359,8 @@ pub(crate) fn decode_dimension_annotation_frames(
         else {
             continue;
         };
-        let geometry_indices = dimension_geometry_indices(stream, points, curves);
-        let mut sketch_entities = HashSet::new();
-        for entity in entities
-            .iter()
-            .filter(|entity| native_stream(&entity.id) == Some(stream) && entity.in_sketch_module())
-        {
-            let Ok(index) = u32::try_from(entity.entity_id.suffix()) else {
-                continue;
-            };
-
-            sketch_entities.insert(index);
-        }
+        let geometry_indices = geometry.get(stream).unwrap_or(&no_indices);
+        let sketch_entities = entities.get(stream).unwrap_or(&no_indices);
         let mut governed_owners = HashMap::new();
         for owner in owners.iter().filter(|owner| {
             native_stream(owner.id()) == Some(stream)
@@ -1348,14 +1374,7 @@ pub(crate) fn decode_dimension_annotation_frames(
             .iter()
             .filter(|companion| native_stream(companion.id()) == Some(stream))
         {
-            let Some((start, end)) = companion_owned_interval(
-                companion,
-                parameters.values().copied(),
-                owners,
-                scopes,
-                headers,
-                bytes.len(),
-            ) else {
+            let Some((start, end)) = bounds.interval(companion, bytes.len()) else {
                 continue;
             };
 
@@ -1398,8 +1417,8 @@ pub(crate) fn decode_dimension_annotation_frames(
                     at,
                     containing_companion_record_index,
                     &governed_owners,
-                    &geometry_indices,
-                    &sketch_entities,
+                    geometry_indices,
+                    sketch_entities,
                 ) {
                     if frame.paired_byte_offset() >= u64_from_index(end) {
                         position = at + 1;
@@ -1695,6 +1714,9 @@ pub(crate) fn decode_dimension_presentation_frames(
         sketch_scope_by_entity.insert((stream, placement.entity_id.suffix()), scope_record_index);
     }
     let types = decode_types(scan)?;
+    let geometry = dimension_geometry_indices(points, curves);
+    let entities = sketch_entity_indices(entities);
+    let no_indices = HashSet::new();
     let mut out = Vec::new();
     for entry in scan
         .entries
@@ -1721,17 +1743,8 @@ pub(crate) fn decode_dimension_presentation_frames(
         if paired_classes.is_empty() {
             continue;
         }
-        let geometry_indices = dimension_geometry_indices(&stream, points, curves);
-        let mut sketch_entities = HashSet::new();
-        for entity in entities.iter().filter(|entity| {
-            native_stream(&entity.id) == Some(stream.as_str()) && entity.in_sketch_module()
-        }) {
-            let Ok(index) = u32::try_from(entity.entity_id.suffix()) else {
-                continue;
-            };
-
-            sketch_entities.insert(index);
-        }
+        let geometry_indices = geometry.get(stream.as_str()).unwrap_or(&no_indices);
+        let sketch_entities = entities.get(stream.as_str()).unwrap_or(&no_indices);
         let bytes = scan.entry_bytes(&entry.name)?;
         for header in indexed_record_offsets(bytes) {
             let start = header.offset;
@@ -1742,8 +1755,8 @@ pub(crate) fn decode_dimension_presentation_frames(
                 bytes,
                 start,
                 primary_type_guid,
-                &geometry_indices,
-                &sketch_entities,
+                geometry_indices,
+                sketch_entities,
                 &paired_classes,
             ) else {
                 continue;
@@ -1895,6 +1908,10 @@ pub(crate) fn decode_dimension_locus_groups(
     } = inputs;
     let parameters = dimension_parameter_index(parameters);
     let dimension_companions = dimension_companion_keys(owners, &parameters);
+    let bounds = CompanionBounds::new(parameters.values().copied(), owners, scopes, headers);
+    let geometry = dimension_geometry_indices(points, curves);
+    let entities = sketch_entity_indices(entities);
+    let no_indices = HashSet::new();
     let mut out = Vec::new();
     for (companion, scope) in companions.iter().filter_map(|companion| {
         let scope = native_stream(companion.id())?;
@@ -1906,27 +1923,10 @@ pub(crate) fn decode_dimension_locus_groups(
         let Some(entry) = entry else {
             continue;
         };
-        let geometry_indices = dimension_geometry_indices(scope, points, curves);
-        let mut sketch_entities = HashSet::new();
-        for entity in entities
-            .iter()
-            .filter(|entity| native_stream(&entity.id) == Some(scope) && entity.in_sketch_module())
-        {
-            let Ok(index) = u32::try_from(entity.entity_id.suffix()) else {
-                continue;
-            };
-
-            sketch_entities.insert(index);
-        }
+        let geometry_indices = geometry.get(scope).unwrap_or(&no_indices);
+        let sketch_entities = entities.get(scope).unwrap_or(&no_indices);
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some((start, end)) = companion_owned_interval(
-            companion,
-            parameters.values().copied(),
-            owners,
-            scopes,
-            headers,
-            bytes.len(),
-        ) else {
+        let Some((start, end)) = bounds.interval(companion, bytes.len()) else {
             continue;
         };
         let candidates = find_dimension_locus_groups(
@@ -1934,8 +1934,8 @@ pub(crate) fn decode_dimension_locus_groups(
             start,
             end,
             companion.record_index(),
-            &geometry_indices,
-            &sketch_entities,
+            geometry_indices,
+            sketch_entities,
         );
         for mut group in candidates {
             group.id = design_record_id(
@@ -1988,76 +1988,140 @@ fn find_dimension_locus_groups(
     candidates
 }
 
-pub(super) fn companion_owned_interval<'a>(
-    companion: &DesignParameterCompanion,
-    parameters: impl IntoIterator<Item = &'a DesignParameter>,
-    owners: &[DesignParameterOwner],
-    scopes: &[DesignParameterScope],
-    headers: &[DesignRecordHeader],
-    stream_length: usize,
-) -> Option<(usize, usize)> {
-    let native_scope = native_stream(companion.id())?;
-    let owning_scope_record_index = owners
-        .iter()
-        .find(|owner| {
-            native_stream(owner.id()) == Some(native_scope)
-                && owner.record_index() == companion.owner_record_index()
-        })
-        .map(crate::records::parameters::DesignParameterOwner::scope_record_index);
-    let mut foreign_scope_members = HashSet::new();
-    for member in scopes
-        .iter()
-        .filter(|scope| {
-            native_stream(&scope.id) == Some(native_scope)
-                && Some(scope.record_index) != owning_scope_record_index
-        })
-        .flat_map(|scope| scope.reference_members().values().copied())
-    {
-        if !foreign_scope_members.contains(&member) {
-            foreign_scope_members.insert(member);
+/// Scopes that list one record as a reference member.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MemberOf {
+    /// One scope record index lists the record.
+    One(u32),
+    /// Two or more distinct scope record indices list the record.
+    Several,
+}
+
+/// Record offsets that end the byte interval a parameter companion owns,
+/// indexed by stream.
+pub(super) struct CompanionBounds<'a> {
+    /// Scope record index of the first owner with each (stream, record index).
+    owner_scopes: HashMap<(&'a str, u32), u32>,
+    /// Sorted offsets of owner, parameter and scope records.
+    record_offsets: HashMap<&'a str, Vec<usize>>,
+    /// Record headers that a scope lists as a reference member, sorted by
+    /// offset.
+    member_headers: HashMap<&'a str, Vec<(usize, MemberOf)>>,
+}
+
+impl<'a> CompanionBounds<'a> {
+    pub(super) fn new(
+        parameters: impl IntoIterator<Item = &'a DesignParameter>,
+        owners: &'a [DesignParameterOwner],
+        scopes: &'a [DesignParameterScope],
+        headers: &'a [DesignRecordHeader],
+    ) -> Self {
+        let mut owner_scopes = HashMap::new();
+        for owner in owners {
+            if let Some(stream) = native_stream(owner.id()) {
+                owner_scopes
+                    .entry((stream, owner.record_index()))
+                    .or_insert(owner.scope_record_index());
+            }
+        }
+        let mut record_offsets = HashMap::<_, Vec<usize>>::new();
+        for (id, offset) in owners
+            .iter()
+            .map(|owner| (owner.id().as_str(), owner.byte_offset()))
+            .chain(
+                parameters
+                    .into_iter()
+                    .map(|parameter| (parameter.id.as_str(), parameter.byte_offset())),
+            )
+            .chain(
+                scopes
+                    .iter()
+                    .map(|scope| (scope.id.as_str(), scope.byte_offset())),
+            )
+        {
+            if let (Some(stream), Ok(offset)) = (native_stream(id), usize::try_from(offset)) {
+                record_offsets.entry(stream).or_default().push(offset);
+            }
+        }
+        for offsets in record_offsets.values_mut() {
+            offsets.sort_unstable();
+        }
+        let mut member_of = HashMap::new();
+        for scope in scopes {
+            let Some(stream) = native_stream(&scope.id) else {
+                continue;
+            };
+            for &member in scope.reference_members().values() {
+                member_of
+                    .entry((stream, member))
+                    .and_modify(|of: &mut MemberOf| {
+                        if *of != MemberOf::One(scope.record_index) {
+                            *of = MemberOf::Several;
+                        }
+                    })
+                    .or_insert(MemberOf::One(scope.record_index));
+            }
+        }
+        let mut member_headers = HashMap::<_, Vec<_>>::new();
+        for header in headers {
+            let (Some(stream), Ok(offset)) = (
+                native_stream(&header.id),
+                usize::try_from(header.byte_offset),
+            ) else {
+                continue;
+            };
+            if let Some(&of) = member_of.get(&(stream, header.record_index)) {
+                member_headers.entry(stream).or_default().push((offset, of));
+            }
+        }
+        for rows in member_headers.values_mut() {
+            rows.sort_unstable_by_key(|&(offset, _)| offset);
+        }
+        Self {
+            owner_scopes,
+            record_offsets,
+            member_headers,
         }
     }
-    let start = companion
-        .payload_byte_offset()
-        .and_then(|offset| usize::try_from(offset).ok())?;
-    let end = owners
-        .iter()
-        .filter(|owner| {
-            native_stream(owner.id()) == Some(native_scope)
-                && owner.byte_offset() > companion.byte_offset()
-        })
-        .filter_map(|owner| usize::try_from(owner.byte_offset()).ok())
-        .chain(
-            parameters
-                .into_iter()
-                .filter(|parameter| {
-                    native_stream(&parameter.id) == Some(native_scope)
-                        && parameter.byte_offset() > companion.byte_offset()
-                })
-                .filter_map(|parameter| usize::try_from(parameter.byte_offset()).ok()),
-        )
-        .chain(
-            scopes
+
+    /// The byte interval `companion` owns: from its payload to the next owner,
+    /// parameter, or scope record, or to the next reference member of a scope
+    /// other than the companion's owning scope.
+    pub(super) fn interval(
+        &self,
+        companion: &DesignParameterCompanion,
+        stream_length: usize,
+    ) -> Option<(usize, usize)> {
+        let stream = native_stream(companion.id())?;
+        let owning_scope = self
+            .owner_scopes
+            .get(&(stream, companion.owner_record_index()))
+            .copied();
+        let start = companion
+            .payload_byte_offset()
+            .and_then(|offset| usize::try_from(offset).ok())?;
+        let after = companion.byte_offset();
+        let record = self.record_offsets.get(stream).and_then(|offsets| {
+            offsets
+                .get(offsets.partition_point(|&offset| u64_from_index(offset) <= after))
+                .copied()
+        });
+        let header = self.member_headers.get(stream).and_then(|rows| {
+            rows[rows.partition_point(|&(offset, _)| u64_from_index(offset) <= after)..]
                 .iter()
-                .filter(|scope| {
-                    native_stream(&scope.id) == Some(native_scope)
-                        && scope.byte_offset() > companion.byte_offset()
+                .find(|(_, of)| match of {
+                    MemberOf::One(scope) => owning_scope != Some(*scope),
+                    MemberOf::Several => true,
                 })
-                .filter_map(|scope| usize::try_from(scope.byte_offset()).ok()),
-        )
-        .chain(
-            headers
-                .iter()
-                .filter(|header| {
-                    native_stream(&header.id) == Some(native_scope)
-                        && header.byte_offset > companion.byte_offset()
-                        && foreign_scope_members.contains(&header.record_index)
-                })
-                .filter_map(|header| usize::try_from(header.byte_offset).ok()),
-        )
-        .min()
-        .unwrap_or(stream_length);
-    (start <= end && end <= stream_length).then_some((start, end))
+                .map(|&(offset, _)| offset)
+        });
+        let end = record
+            .into_iter()
+            .chain(header)
+            .min()
+            .unwrap_or(stream_length);
+        (start <= end && end <= stream_length).then_some((start, end))
+    }
 }
 
 fn parse_dimension_locus_group(

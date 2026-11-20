@@ -8,7 +8,7 @@ fn decoded_unknown_limit_error(
 ) -> cadmpeg_core::CodecError {
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "nx",
         &[cadmpeg_ir::NativeUnknownRecord {
             id: cadmpeg_ir::ids::UnknownId::mint("test:model:entity#prior")
@@ -37,6 +37,7 @@ fn decoded_unknown_limit_error(
     crate::test_support::with_decode_context_over(&[], adjust, |ctx| {
         match super::super::decoded(
             ctx,
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(&[]),
             ir,
             body,
             cadmpeg_ir::Annotations::default(),
@@ -79,6 +80,7 @@ fn bounded_indexed_section_search_reports_a_scan_loss() {
     let scan = super::super::Scan {
         container,
         streams: Vec::new(),
+        untyped: std::cell::RefCell::default(),
     };
     let mut body = cadmpeg_ir::codec::DecodeBody {
         transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(false),

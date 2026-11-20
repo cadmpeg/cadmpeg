@@ -19,8 +19,8 @@ use cadmpeg_ir::ContainerSummary;
 use crate::chunks::{
     checked_count_bytes, checksum_children_through_class_end, chunk_at, direct_checksum_ranges,
     parse_header, validate_eof, verify_checksum, verify_checksum_ranges, ArchiveVersion,
-    BoundedReader, ChecksumStatus, FramingError, TCODE_CRC, TCODE_ENDOFFILE, TCODE_ENDOFTABLE,
-    TCODE_SHORT,
+    BoundedReader, ChecksumStatus, FramingError, CHECKSUM_CHILD_CAP, TCODE_CRC, TCODE_ENDOFFILE,
+    TCODE_ENDOFTABLE, TCODE_SHORT,
 };
 use crate::instances::{parse_definitions, DefinitionScan};
 use crate::layout::file_header;
@@ -391,6 +391,7 @@ fn checksum_warning(
             data,
             chunk.body().clone(),
             archive,
+            CHECKSUM_CHILD_CAP,
             "render-settings userdata",
         ) {
             Ok(children) => children,
@@ -1573,7 +1574,9 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> Result<Decoded, CodecErr
             notes,
             transfer_ledger: cadmpeg_ir::report::decode::TransferLedger::default(),
         },
-        source_fidelity: cadmpeg_ir::SourceFidelity::default(),
+        source_fidelity: cadmpeg_ir::SourceFidelity::new(
+            cadmpeg_ir::hash::digest::Sha256Digest::digest(scan.data),
+        ),
     })
 }
 

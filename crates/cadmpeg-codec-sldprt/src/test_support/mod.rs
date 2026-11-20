@@ -36,7 +36,7 @@ fn fixture_native_envelope_context(
     let mut ir = input.ir.clone();
     if input.fidelity.is_none() {
         ir.set_native_unknowns(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "sldprt",
             &[],
         )?;
@@ -45,8 +45,11 @@ fn fixture_native_envelope_context(
             std::collections::BTreeMap::default(),
         ));
     }
-    let mut fidelity = input.fidelity.cloned().unwrap_or_default();
-    let source = match fidelity.retained_record(crate::SOURCE_IMAGE_ID) {
+    let fidelity = input.fidelity.cloned();
+    let source = match fidelity
+        .as_ref()
+        .and_then(|fidelity| fidelity.retained_record(crate::SOURCE_IMAGE_ID))
+    {
         Some(record) => record
             .data()
             .ok_or_else(|| {
@@ -80,6 +83,9 @@ fn fixture_native_envelope_context(
         } else {
             container::native_envelope_fixture(&source)
         };
+    let mut fidelity = fidelity.unwrap_or_else(|| {
+        SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(&source))
+    });
     let _previous_image = fidelity.remove_retained_record(crate::SOURCE_IMAGE_ID);
     fidelity.insert_retained_record(
         crate::source_image_id(),
@@ -100,6 +106,11 @@ fn fixture_native_envelope_context(
             std::collections::BTreeMap::default(),
         ));
     }
+    ir.state_root_definition(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        crate::decode::root_definition_id(),
+        cadmpeg_ir::products::ExternalDocument::default(),
+    )?;
     Ok((ir, fidelity))
 }
 
@@ -170,6 +181,7 @@ pub(crate) mod container;
 pub(crate) mod history;
 pub(crate) mod ir;
 pub(crate) mod native;
+pub(crate) mod nist;
 pub(crate) mod parasolid;
 pub(crate) mod pmi;
 pub(crate) mod surfaces;

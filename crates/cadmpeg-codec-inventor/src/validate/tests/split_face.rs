@@ -85,6 +85,7 @@ fn face_split_validation_recomputes_both_controls_and_all_operand_slots() -> Tes
                     tool: SplitFaceTool::Plane {
                         plane: datum.id.clone(),
                     },
+                    method: cadmpeg_ir::features::surfaces::SplitFaceMethod::default(),
                 },
             ));
             let result = FeatureResultTopology::new(

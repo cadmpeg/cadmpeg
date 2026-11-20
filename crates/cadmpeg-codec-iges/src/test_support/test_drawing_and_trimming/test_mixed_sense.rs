@@ -23,11 +23,11 @@ const UNIT_PATCH: &str =
 
 /// The coedges of the first loop of `ir` in loop order.
 fn loop_coedges(ir: &CadIr) -> Vec<&cadmpeg_ir::topology::Coedge> {
-    ir.model.loops[0]
+    ir.geometry.loops[0]
         .coedges()
         .iter()
         .map(|id| {
-            ir.model
+            ir.geometry
                 .coedges
                 .iter()
                 .find(|coedge| coedge.id == *id)
@@ -100,7 +100,7 @@ pub(crate) fn disagreeing_parameter_curve_square_file(preference: u8) -> Vec<u8>
 /// edge reversed and the other three forward.
 pub(crate) fn mixed_sense_outer_loop_model() -> CadIr {
     let mut ir = decoded(bounded_square_file());
-    let [face] = ir.model.faces.as_mut_slice() else {
+    let [face] = ir.geometry.faces.as_mut_slice() else {
         panic!("the fixture decodes one face");
     };
     let FaceLoops::Unspecified { loops } = &face.loops else {
@@ -138,7 +138,7 @@ pub(crate) fn composite_edge_outer_loop_model() -> CadIr {
     for position in [0, 2] {
         let edge_id = loop_coedges(&ir)[position].edge.clone();
         let edge = ir
-            .model
+            .geometry
             .edges
             .iter_mut()
             .find(|edge| edge.id == edge_id)
@@ -155,7 +155,7 @@ pub(crate) fn composite_edge_outer_loop_model() -> CadIr {
             same_sense: true,
             transition: CompositeCurveTransition::Continuous,
         }];
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             id: composite,
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
                 segments: segments.try_into().expect("one segment"),
@@ -163,9 +163,10 @@ pub(crate) fn composite_edge_outer_loop_model() -> CadIr {
             }),
             parameter_range: range.and_then(IncreasingParameterInterval::new),
             source_object: None,
+            native_ref: None,
         });
     }
-    ir.model
+    ir.geometry
         .curves
         .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
     ir
@@ -177,9 +178,9 @@ pub(crate) fn composite_edge_outer_loop_model() -> CadIr {
 /// traversal, so the face traces the same boundary.
 pub(crate) fn reversed_closed_outer_edge_model() -> CadIr {
     let mut ir = decoded(trimmed_plane_with_inner_loop_file());
-    let outer = ir.model.loops[0].coedges()[0].clone();
+    let outer = ir.geometry.loops[0].coedges()[0].clone();
     let edge = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id == outer)
@@ -211,14 +212,14 @@ pub(crate) fn edge_direction_parameter_curve_boundary_model() -> CadIr {
 pub(crate) fn edge_direction_parameter_curve_brep_model() -> CadIr {
     let mut ir = decoded(explicit_multi_pcurve_loop_file());
     let position = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .position(|coedge| coedge.pcurves.len() == 2)
         .expect("the coedge with two parameter curves");
-    let edge = ir.model.coedges[position].edge.clone();
+    let edge = ir.geometry.coedges[position].edge.clone();
     reverse_edge(&mut ir, &edge);
-    let coedge = &mut ir.model.coedges[position];
+    let coedge = &mut ir.geometry.coedges[position];
     coedge.pcurves.reverse();
     let pcurves = coedge
         .pcurves
@@ -236,14 +237,14 @@ pub(crate) fn edge_direction_parameter_curve_brep_model() -> CadIr {
 /// coedge of the edge inverts its sense.
 fn reverse_edge(ir: &mut CadIr, edge_id: &cadmpeg_ir::ids::EdgeId) {
     let edge = ir
-        .model
+        .geometry
         .edges
         .iter_mut()
         .find(|edge| edge.id == *edge_id)
         .expect("the edge");
     let curve_id = edge.curve().expect("an edge curve").clone();
     let curve = ir
-        .model
+        .geometry
         .curves
         .iter_mut()
         .find(|curve| curve.id == curve_id)
@@ -273,8 +274,10 @@ fn reverse_edge(ir: &mut CadIr, edge_id: &cadmpeg_ir::ids::EdgeId) {
         .map(|range| IncreasingParameterInterval::new(reversed(range.into())).expect("a range"));
     let range = edge.param_range().map(|range| reversed(range.get()));
     edge.carrier = EdgeCarrier::new(Some(curve_id), range).expect("the reversed edge range");
-    std::mem::swap(&mut edge.start, &mut edge.end);
-    for coedge in &mut ir.model.coedges {
+    if let Some(ends) = edge.ends.as_mut() {
+        std::mem::swap(&mut ends.start, &mut ends.end);
+    }
+    for coedge in &mut ir.geometry.coedges {
         if coedge.edge == *edge_id {
             coedge.sense = match coedge.sense {
                 Sense::Forward => Sense::Reversed,
@@ -290,7 +293,7 @@ fn reverse_edge(ir: &mut CadIr, edge_id: &cadmpeg_ir::ids::EdgeId) {
 /// over the same domain.
 fn reverse_pcurve(ir: &mut CadIr, pcurve_id: &cadmpeg_ir::ids::PcurveId) {
     let pcurve = ir
-        .model
+        .geometry
         .pcurves
         .iter_mut()
         .find(|pcurve| pcurve.id == *pcurve_id)

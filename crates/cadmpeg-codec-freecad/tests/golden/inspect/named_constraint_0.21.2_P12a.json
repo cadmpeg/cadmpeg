@@ -8,8 +8,8 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compression": "deflate",
       "expanded": 32255,
+      "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
       "stored": 3468
@@ -21,8 +21,8 @@
         "data_offset": "3553",
         "header_offset": "3510"
       },
-      "compression": "deflate",
       "expanded": 7114,
+      "kind": "deflate",
       "name": "PartShape.brp",
       "role": "brep",
       "stored": 801
@@ -34,8 +34,8 @@
         "data_offset": "4398",
         "header_offset": "4354"
       },
-      "compression": "deflate",
       "expanded": 1671,
+      "kind": "deflate",
       "name": "PartShape1.brp",
       "role": "brep",
       "stored": 328
@@ -47,8 +47,8 @@
         "data_offset": "4770",
         "header_offset": "4726"
       },
-      "compression": "deflate",
       "expanded": 4994,
+      "kind": "deflate",
       "name": "PartShape2.brp",
       "role": "brep",
       "stored": 638
@@ -60,8 +60,8 @@
         "data_offset": "5452",
         "header_offset": "5408"
       },
-      "compression": "deflate",
       "expanded": 5217,
+      "kind": "deflate",
       "name": "PartShape3.brp",
       "role": "brep",
       "stored": 644
@@ -73,8 +73,8 @@
         "data_offset": "6141",
         "header_offset": "6096"
       },
-      "compression": "deflate",
       "expanded": 31168,
+      "kind": "deflate",
       "name": "GuiDocument.xml",
       "role": "gui-document",
       "stored": 2086
@@ -86,8 +86,8 @@
         "data_offset": "8269",
         "header_offset": "8227"
       },
-      "compression": "deflate",
       "expanded": 8,
+      "kind": "deflate",
       "name": "DiffuseColor",
       "role": "auxiliary",
       "stored": 9
@@ -99,8 +99,8 @@
         "data_offset": "8322",
         "header_offset": "8278"
       },
-      "compression": "deflate",
       "expanded": 8,
+      "kind": "deflate",
       "name": "LineColorArray",
       "role": "auxiliary",
       "stored": 8
@@ -112,8 +112,8 @@
         "data_offset": "8375",
         "header_offset": "8330"
       },
-      "compression": "deflate",
       "expanded": 8,
+      "kind": "deflate",
       "name": "PointColorArray",
       "role": "auxiliary",
       "stored": 8
@@ -125,8 +125,8 @@
         "data_offset": "8426",
         "header_offset": "8383"
       },
-      "compression": "deflate",
       "expanded": 8,
+      "kind": "deflate",
       "name": "DiffuseColor1",
       "role": "auxiliary",
       "stored": 9
@@ -138,8 +138,8 @@
         "data_offset": "8480",
         "header_offset": "8435"
       },
-      "compression": "deflate",
       "expanded": 8,
+      "kind": "deflate",
       "name": "LineColorArray1",
       "role": "auxiliary",
       "stored": 9
@@ -151,8 +151,8 @@
         "data_offset": "8535",
         "header_offset": "8489"
       },
-      "compression": "deflate",
       "expanded": 8,
+      "kind": "deflate",
       "name": "PointColorArray1",
       "role": "auxiliary",
       "stored": 9
@@ -164,8 +164,8 @@
         "data_offset": "8587",
         "header_offset": "8544"
       },
-      "compression": "deflate",
       "expanded": 8,
+      "kind": "deflate",
       "name": "DiffuseColor2",
       "role": "auxiliary",
       "stored": 9
@@ -177,8 +177,8 @@
         "data_offset": "8641",
         "header_offset": "8596"
       },
-      "compression": "deflate",
       "expanded": 8,
+      "kind": "deflate",
       "name": "LineColorArray2",
       "role": "auxiliary",
       "stored": 8
@@ -190,19 +190,20 @@
         "data_offset": "8695",
         "header_offset": "8649"
       },
-      "compression": "deflate",
       "expanded": 8,
+      "kind": "deflate",
       "name": "PointColorArray2",
       "role": "auxiliary",
       "stored": 8
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_version": "1",
           "program_version": "0.21R33771 (Git)",
@@ -210,8 +211,10 @@
         },
         "dialect": "fcstd:schema-4"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",

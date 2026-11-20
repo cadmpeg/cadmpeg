@@ -111,7 +111,6 @@ fn project(
         components,
         body_bindings: &[],
         bodies: Some(&empty),
-        root_ordinal_start: 0,
         limits: cadmpeg_core::decode::ResourceLimits::default(),
     })
     .unwrap()
@@ -130,19 +129,42 @@ fn instance(carriers: &[DesignComponentOccurrence], chain: &[u32]) -> Occurrence
     let mut id =
         crate::ids::neutral_component_occurrence_id(&by_record(carriers, *first).occurrence_guid);
     for record in rest {
-        id = crate::ids::nested_component_occurrence_id(
+        id = crate::ids::nested_occurrence_id(
             &id,
-            &by_record(carriers, *record).occurrence_guid,
+            &crate::ids::neutral_component_occurrence_id(
+                &by_record(carriers, *record).occurrence_guid,
+            ),
         );
     }
     id
 }
 
+/// The world placement of the projected instance `id`: its placement under
+/// each instance it sits in, outermost first.
 fn world(projection: &super::super::LocalComponentProjection, id: &OccurrenceId) -> [[f64; 4]; 4] {
-    let graph = cadmpeg_ir::products::AssemblyGraph::new(&projection.occurrences).unwrap();
-    cadmpeg_test_support::assembly::resolved_transform(&graph, id)
-        .unwrap()
-        .rows()
+    let transform = |id: &OccurrenceId| {
+        projection
+            .occurrences
+            .iter()
+            .find(|occurrence| &occurrence.id == id)
+            .unwrap()
+            .transform
+            .unwrap()
+    };
+    let parent = |id: &OccurrenceId| {
+        projection
+            .placements
+            .iter()
+            .find(|(child, _)| child == id)
+            .and_then(|(_, parent)| parent.clone())
+    };
+    let mut world = transform(id);
+    let mut current = id.clone();
+    while let Some(above) = parent(&current) {
+        world = transform(&above).compose(world).unwrap();
+        current = above;
+    }
+    world.rows()
 }
 
 fn local(projection: &super::super::LocalComponentProjection, id: &OccurrenceId) -> [[f64; 4]; 4] {
@@ -152,6 +174,7 @@ fn local(projection: &super::super::LocalComponentProjection, id: &OccurrenceId)
         .find(|occurrence| &occurrence.id == id)
         .unwrap()
         .transform
+        .unwrap()
         .rows()
 }
 
@@ -1098,7 +1121,6 @@ fn versioned_joint_relations_preserve_saved_occurrence_poses() {
                 components: &components,
                 body_bindings: &[],
                 bodies: Some(&empty),
-                root_ordinal_start: 0,
                 limits: cadmpeg_core::decode::ResourceLimits::default(),
             },
             &[registration],
@@ -1112,4 +1134,209 @@ fn versioned_joint_relations_preserve_saved_occurrence_poses() {
         };
         assert_close(world(&projection, &parent), expected);
     }
+}
+
+#[test]
+fn a_proven_root_instance_element_selects_the_saved_world_pose() {
+    let mut components = super::two_component_stream(Some(276));
+    components
+        .get_mut(STREAM)
+        .unwrap()
+        .root_instances
+        .insert(900);
+    let carriers = [carrier(
+        100,
+        "00000000-0000-4000-8000-000000000001",
+        placed(1, pose(EYE, [9.0, 9.0, 9.0])),
+        super::DOCUMENT_ROOT,
+    )];
+    let saved = pose(EYE, [2.0, 3.0, 4.0]);
+    let mut path = path(
+        901,
+        &[
+            (900, Kind::Other),
+            (159, Kind::Component),
+            (100, Kind::Occurrence),
+        ],
+        saved,
+    );
+    path.elements[0].discriminator = 0;
+    let projection = project(&carriers, &components, &[path.clone()]);
+    assert_close(
+        world(&projection, &instance(&carriers, &[100])),
+        millimetres(saved),
+    );
+    assert!(!has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseUnresolved
+    ));
+    let direct = self::path(
+        903,
+        &[(100, Kind::Occurrence), (159, Kind::Component)],
+        saved,
+    );
+    let projection = project(&carriers, &components, &[direct]);
+    assert_close(
+        world(&projection, &instance(&carriers, &[100])),
+        millimetres(saved),
+    );
+    for discriminator in [0, 1, 2, u32::MAX] {
+        for position in 0..path.elements.len() {
+            let mut qualified = path.clone();
+            qualified.elements[0].discriminator = discriminator;
+            qualified.elements.swap(0, position);
+            let projection = project(&carriers, &components, &[qualified.clone()]);
+            assert_close(
+                world(&projection, &instance(&carriers, &[100])),
+                millimetres(saved),
+            );
+            qualified.elements[position].record_index = 902;
+            let projection = project(&carriers, &components, &[qualified]);
+            assert_close(
+                world(&projection, &instance(&carriers, &[100])),
+                millimetres(pose(EYE, [9.0, 9.0, 9.0])),
+            );
+            assert!(has(
+                &projection,
+                F3dLossCode::LocalOccurrencePathPoseUnresolved
+            ));
+        }
+    }
+    let mut unproven = path;
+    unproven.elements[0].record_index = 902;
+    let projection = project(&carriers, &components, &[unproven]);
+    assert_close(
+        world(&projection, &instance(&carriers, &[100])),
+        millimetres(pose(EYE, [9.0, 9.0, 9.0])),
+    );
+    assert!(has(
+        &projection,
+        F3dLossCode::LocalOccurrencePathPoseUnresolved
+    ));
+}
+
+fn object_snapshot(carrier: &mut DesignComponentOccurrence) {
+    let mut wire = serde_json::to_value(&*carrier).unwrap();
+    wire["attributed"] = serde_json::json!({
+        "attributes": [], "property_names": ["Transform"],
+        "persistent_key": "0_100", "ordinal_prefix": 0,
+        "path_discriminator": 0, "key_record_index": 0, "key_segment_index": 0
+    });
+    *carrier = serde_json::from_value(wire).unwrap();
+}
+
+#[test]
+fn an_object_snapshot_with_an_unproven_body_frame_keeps_its_subtree_native() {
+    let (mut carriers, components) = fixture(1);
+    object_snapshot(
+        carriers
+            .iter_mut()
+            .find(|carrier| carrier.record_index == 100)
+            .unwrap(),
+    );
+    let projection = project(&carriers, &components, &[]);
+    for chain in [
+        &[100][..],
+        &[100, u32::try_from(SUB_MODULE).unwrap()],
+        &[
+            100,
+            u32::try_from(SUB_MODULE).unwrap(),
+            u32::try_from(LEAF).unwrap(),
+        ],
+    ] {
+        let id = instance(&carriers, chain);
+        assert!(projection
+            .occurrences
+            .iter()
+            .all(|occurrence| occurrence.id != id));
+    }
+    assert!(projection
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::LocalOccurrenceUnplaced.kind()));
+}
+
+#[test]
+fn an_object_snapshot_with_a_resolved_world_path_uses_the_path_pose() {
+    let (mut carriers, components) = fixture(1);
+    object_snapshot(
+        carriers
+            .iter_mut()
+            .find(|carrier| carrier.record_index == 100)
+            .unwrap(),
+    );
+    let saved = pose(EYE, [2.0, 3.0, 5.0]);
+    carriers
+        .iter_mut()
+        .find(|carrier| carrier.record_index == 100)
+        .unwrap()
+        .current_pose = Some(crate::records::xref::XrefCurrentPose {
+        carrier_record_index: 900,
+        frame_bytes: Vec::new().into(),
+        transform: Some(saved.try_into().unwrap()),
+    });
+    let projection = project(&carriers, &components, &[]);
+    assert_close(
+        world(&projection, &instance(&carriers, &[100])),
+        millimetres(saved),
+    );
+}
+
+#[test]
+fn a_nested_object_snapshot_uses_an_independent_world_path() {
+    let (mut carriers, components) = fixture(1);
+    object_snapshot(
+        carriers
+            .iter_mut()
+            .find(|carrier| carrier.record_index == 300)
+            .unwrap(),
+    );
+    let saved = pose(EYE, [2.0, 3.0, 5.0]);
+    let projection = project(
+        &carriers,
+        &components,
+        &[path(
+            900,
+            &[(159, Kind::Component), (300, Kind::Occurrence)],
+            saved,
+        )],
+    );
+    assert_close(
+        world(&projection, &instance(&carriers, &[100, 300])),
+        millimetres(saved),
+    );
+}
+
+#[test]
+fn a_world_path_proves_one_expanded_object_snapshot() {
+    let (mut carriers, components) = fixture(2);
+    object_snapshot(
+        carriers
+            .iter_mut()
+            .find(|carrier| carrier.record_index == 300)
+            .unwrap(),
+    );
+    let saved = pose(EYE, [2.0, 3.0, 5.0]);
+    let projection = project(
+        &carriers,
+        &components,
+        &[path(
+            900,
+            &[
+                (159, Kind::Component),
+                (300, Kind::Occurrence),
+                (100, Kind::Occurrence),
+            ],
+            saved,
+        )],
+    );
+    assert_close(
+        world(&projection, &instance(&carriers, &[100, 300])),
+        millimetres(saved),
+    );
+    let unresolved = instance(&carriers, &[400, 300]);
+    assert!(projection
+        .occurrences
+        .iter()
+        .all(|occurrence| occurrence.id != unresolved));
 }

@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NIST FTC specimen PMI against the definition workbook and STEP source.
 
-use std::io::Cursor;
-use std::path::Path;
-
-use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
+use cadmpeg_ir::design::parameter::{Deviations, Tolerance as DimensionTolerance};
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::pmi::{
-    DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
+    GeometricToleranceKind, PmiAnnotation, PmiDefinition, PmiDimensionKind as DimensionKind,
     PmiTarget,
 };
 use cadmpeg_ir::CadIr;
 
-use crate::SldprtCodec;
+use crate::test_support::nist::{ftc_06, ftc_08};
 
 mod ftc06;
 mod ftc08;
@@ -22,17 +19,6 @@ const MM_PER_INCH: f64 = 25.4;
 const VALUE_TOLERANCE: f64 = 1.0e-8;
 const CYLINDER_AXIS_DIRECTION_TOLERANCE: f64 = 1.0e-8;
 const CYLINDER_AXIS_ORIGIN_TOLERANCE_MM: f64 = 1.0e-6;
-
-fn specimen(name: &str) -> DecodeResult {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/sldprt")
-        .join(name);
-    let bytes =
-        std::fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    SldprtCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap_or_else(|error| panic!("decode {}: {error}", path.display()))
-}
 
 /// Each presentation's text and the sorted names of the annotations it depicts.
 fn depicted_names(ir: &CadIr) -> Vec<(Option<String>, Vec<String>)> {
@@ -69,20 +55,22 @@ fn assert_dimension(ir: &CadIr, kind: &DimensionKind, nominal: f64, deviation: f
             let PmiDefinition::Dimension(dimension) = &annotation.definition else {
                 return false;
             };
-            let Some(nominal_value) = dimension.nominal() else {
+            let Some(nominal_value) = dimension.literal_nominal() else {
                 return false;
             };
-            let Some(DimensionTolerance::PlusMinus { lower, upper }) = dimension.tolerance() else {
+            let Some(DimensionTolerance::Deviations(Deviations { lower, upper })) =
+                dimension.tolerance.as_ref()
+            else {
                 return false;
             };
-            dimension.kind() == kind
+            (&dimension.dimension) == kind
                 && (nominal_value.value.get() - nominal * MM_PER_INCH).abs() < VALUE_TOLERANCE
-                && (lower.value.get() + deviation * MM_PER_INCH).abs() < VALUE_TOLERANCE
-                && (upper.value.get() - deviation * MM_PER_INCH).abs() < VALUE_TOLERANCE
+                && (lower.get() + deviation * MM_PER_INCH).abs() < VALUE_TOLERANCE
+                && (upper.get() - deviation * MM_PER_INCH).abs() < VALUE_TOLERANCE
                 && annotation
                     .targets
                     .iter()
-                    .any(|target| matches!(target, PmiTarget::Face { .. }))
+                    .any(|target| matches!(&target.entity, PmiTarget::Face { .. }))
         }),
         "missing {kind:?} {nominal} ± {deviation} inches with a face target"
     );
@@ -105,18 +93,20 @@ fn assert_named_dimension_targets(
     let PmiDefinition::Dimension(dimension) = &annotation.definition else {
         panic!("{name} dimension")
     };
-    assert_eq!(dimension.kind(), kind);
-    let nominal_value = dimension.nominal().expect("dimension nominal");
+    assert_eq!((&dimension.dimension), kind);
+    let nominal_value = dimension.literal_nominal().expect("dimension nominal");
     assert!((nominal_value.value.get() - nominal * MM_PER_INCH).abs() < VALUE_TOLERANCE);
-    let Some(DimensionTolerance::PlusMinus { lower, upper }) = dimension.tolerance() else {
+    let Some(DimensionTolerance::Deviations(Deviations { lower, upper })) =
+        dimension.tolerance.as_ref()
+    else {
         panic!("{name} plus-minus tolerance")
     };
-    assert!((lower.value.get() + deviation * MM_PER_INCH).abs() < VALUE_TOLERANCE);
-    assert!((upper.value.get() - deviation * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+    assert!((lower.get() + deviation * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+    assert!((upper.get() - deviation * MM_PER_INCH).abs() < VALUE_TOLERANCE);
     let faces = annotation
         .targets
         .iter()
-        .filter_map(|target| match target {
+        .filter_map(|target| match &target.entity {
             PmiTarget::Face { face } => Some(face),
             _ => None,
         })
@@ -162,8 +152,8 @@ fn assert_counterbore_targets(ir: &CadIr) {
             let PmiDefinition::Dimension(dimension) = &annotation.definition else {
                 return false;
             };
-            dimension.kind() == &DimensionKind::Diameter
-                && dimension.nominal().is_some_and(|value| {
+            dimension.dimension == DimensionKind::Diameter
+                && dimension.literal_nominal().is_some_and(|value| {
                     (value.value.get() - 0.625 * MM_PER_INCH).abs() < VALUE_TOLERANCE
                 })
         })
@@ -172,16 +162,16 @@ fn assert_counterbore_targets(ir: &CadIr) {
         .targets
         .iter()
         .filter_map(|target| {
-            let PmiTarget::Face { face } = target else {
+            let PmiTarget::Face { face } = &target.entity else {
                 return None;
             };
             let face = ir
-                .model
+                .geometry
                 .faces
                 .iter()
                 .find(|candidate| &candidate.id == face)?;
             let surface = ir
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|candidate| candidate.id == face.surface)?;
@@ -218,18 +208,18 @@ fn assert_tolerance<'a>(
             && (value.get().value.get() - magnitude * MM_PER_INCH).abs() < VALUE_TOLERANCE
             && datum_system.as_ref().map(|id| datum_names(ir, id)).unwrap_or_default() == datums
             && actual_modifiers == modifiers
-            && annotation.targets.iter().any(|target| matches!(target, PmiTarget::Face { .. }))
+            && annotation.targets.iter().any(|target| matches!(&target.entity, PmiTarget::Face { .. }))
     }).unwrap_or_else(|| panic!("missing {kind:?} {magnitude} inches, datums {datums:?}, modifiers {modifiers:?}, and a face target"))
 }
 
 fn assert_cylinder_axes(ir: &CadIr, annotation: &PmiAnnotation, diameter: f64, count: usize) {
     let mut axes: Vec<(Vector3, Point3)> = Vec::new();
     for target in &annotation.targets {
-        let PmiTarget::Face { face } = target else {
+        let PmiTarget::Face { face } = &target.entity else {
             continue;
         };
         let Some(face) = ir
-            .model
+            .geometry
             .faces
             .iter()
             .find(|candidate| &candidate.id == face)
@@ -237,7 +227,7 @@ fn assert_cylinder_axes(ir: &CadIr, annotation: &PmiAnnotation, diameter: f64, c
             continue;
         };
         let Some(surface) = ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|candidate| candidate.id == face.surface)
@@ -292,14 +282,16 @@ fn assert_depth_targets_counterbore(
     let PmiDefinition::Dimension(dimension) = &annotation.definition else {
         panic!("{depth_name} dimension")
     };
-    assert_eq!(dimension.kind(), &DimensionKind::Size);
-    let value = dimension.nominal().expect("depth nominal");
+    assert_eq!(dimension.dimension, DimensionKind::Size);
+    let value = dimension.literal_nominal().expect("depth nominal");
     assert!((value.value.get() - nominal * MM_PER_INCH).abs() < VALUE_TOLERANCE);
-    let Some(DimensionTolerance::PlusMinus { lower, upper }) = dimension.tolerance() else {
+    let Some(DimensionTolerance::Deviations(Deviations { lower, upper })) =
+        dimension.tolerance.as_ref()
+    else {
         panic!("depth plus-minus tolerance")
     };
-    assert!((lower.value.get() + deviation * MM_PER_INCH).abs() < VALUE_TOLERANCE);
-    assert!((upper.value.get() - deviation * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+    assert!((lower.get() + deviation * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+    assert!((upper.get() - deviation * MM_PER_INCH).abs() < VALUE_TOLERANCE);
     assert_cylinder_axes(ir, annotation, counterbore_diameter, target_count);
 
     let counterbore = ir
@@ -311,11 +303,11 @@ fn assert_depth_targets_counterbore(
     let PmiDefinition::Dimension(counterbore_dimension) = &counterbore.definition else {
         panic!("{counterbore_name} dimension")
     };
-    assert_eq!(counterbore_dimension.kind(), &DimensionKind::Diameter);
+    assert_eq!(counterbore_dimension.dimension, DimensionKind::Diameter);
     let depth_faces = annotation
         .targets
         .iter()
-        .filter_map(|target| match target {
+        .filter_map(|target| match &target.entity {
             PmiTarget::Face { face } => Some(face),
             _ => None,
         })
@@ -323,7 +315,7 @@ fn assert_depth_targets_counterbore(
     let counterbore_faces = counterbore
         .targets
         .iter()
-        .filter_map(|target| match target {
+        .filter_map(|target| match &target.entity {
             PmiTarget::Face { face } => Some(face),
             _ => None,
         })
@@ -342,18 +334,21 @@ fn assert_spherical_position(ir: &CadIr) {
         &["D", "B", "C"],
         &[],
     );
-    let PmiDefinition::GeometricTolerance { constraints, .. } = &annotation.definition else {
+    let PmiDefinition::GeometricTolerance { zones, .. } = &annotation.definition else {
         panic!("spherical position definition")
     };
-    let [zone] = constraints.zones.as_slice() else {
+    let [zone] = zones.as_slice() else {
         panic!("one spherical tolerance zone")
     };
-    assert_eq!(zone.form.as_str(), "spherical");
+    assert_eq!(
+        zone.form,
+        cadmpeg_ir::pmi::zones::ToleranceZoneForm::Spherical
+    );
 }
 
 #[test]
 fn ftc_06_0812_nominal_and_counterbore_parameter_remain_distinct_source_values() {
-    let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
+    let result = ftc_06();
     let ir = result.ir();
     let diameter = ir
         .model
@@ -364,7 +359,7 @@ fn ftc_06_0812_nominal_and_counterbore_parameter_remain_distinct_source_values()
     let PmiDefinition::Dimension(dimension) = &diameter.definition else {
         panic!("Diameter49 dimension")
     };
-    let nominal = dimension.nominal().expect("Diameter49 nominal");
+    let nominal = dimension.literal_nominal().expect("Diameter49 nominal");
     assert!((nominal.value.get() - 0.812 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
 
     assert!(ir.model.parameters.iter().any(|parameter| {
@@ -380,7 +375,7 @@ fn ftc_06_0812_nominal_and_counterbore_parameter_remain_distinct_source_values()
 
 #[test]
 fn ftc_06_hole_dimensions_match_nist_and_step() {
-    let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
+    let result = ftc_06();
     let ir = result.ir();
     assert_dimension(ir, &DimensionKind::Diameter, 0.415, 0.008);
     assert_dimension(ir, &DimensionKind::Diameter, 0.625, 0.020);
@@ -446,7 +441,7 @@ fn ftc_06_hole_dimensions_match_nist_and_step() {
 
 #[test]
 fn ftc_08_tangent_and_free_state_tolerances_match_nist() {
-    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    let result = ftc_08();
     let ir = result.ir();
     assert_tolerance(
         ir,
@@ -466,7 +461,7 @@ fn ftc_08_tangent_and_free_state_tolerances_match_nist() {
 
 #[test]
 fn ftc_08_common_datum_compartments_match_nist() {
-    let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
+    let result = ftc_08();
     let ir = result.ir();
     for (magnitude, expected, modifier) in [
         (0.04, ["D", "E", "F"], None),
@@ -488,7 +483,7 @@ fn ftc_08_common_datum_compartments_match_nist() {
                     || !annotation
                         .targets
                         .iter()
-                        .any(|target| matches!(target, PmiTarget::Face { .. }))
+                        .any(|target| matches!(&target.entity, PmiTarget::Face { .. }))
                 {
                     return false;
                 }

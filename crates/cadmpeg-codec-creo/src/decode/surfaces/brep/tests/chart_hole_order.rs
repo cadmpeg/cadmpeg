@@ -34,6 +34,7 @@ fn line_curve(id: u32, start: [f64; 2], end: [f64; 2]) -> Curve {
             )
             .expect("line"),
         )),
+        native_ref: None,
     }
 }
 
@@ -54,6 +55,7 @@ fn half_circle_curve(id: u32, center: [f64; 2], radius: f64, reference: f64) -> 
             )
             .expect("circle"),
         )),
+        native_ref: None,
     }
 }
 

@@ -12,6 +12,7 @@ fn unit_feature_directions_admit_only_unit_vectors_on_the_wire() {
 
     fn refuses<T: serde::de::DeserializeOwned + std::fmt::Debug>(
         wire: &serde_json::Value,
+        payload: &str,
         key: &str,
     ) {
         for refused in [
@@ -20,12 +21,13 @@ fn unit_feature_directions_admit_only_unit_vectors_on_the_wire() {
             serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0 + 2.0e-9}),
         ] {
             let mut wire = wire.clone();
-            wire[key] = refused;
+            wire.pointer_mut(payload).unwrap()[key] = refused;
             let error = serde_json::from_value::<T>(wire).unwrap_err().to_string();
             assert!(error.contains("direction must have unit length"), "{error}");
         }
         let mut near_unit = wire.clone();
-        near_unit[key] = serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0 + 5.0e-10});
+        near_unit.pointer_mut(payload).unwrap()[key] =
+            serde_json::json!({"x": 0.0, "y": 0.0, "z": 1.0 + 5.0e-10});
         assert!(serde_json::from_value::<T>(near_unit).is_ok());
     }
 
@@ -65,14 +67,14 @@ fn unit_feature_directions_admit_only_unit_vectors_on_the_wire() {
         let wire = serde_json::to_value(&operation).unwrap();
         let decoded: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(decoded).unwrap(), wire);
-        refuses::<FeatureOperation>(&wire, key);
+        refuses::<FeatureOperation>(&wire, "/value", key);
     }
 
     let binormal = serde_json::to_value(SweepOrientation::Binormal {
         direction: UnitVector3::Z_AXIS,
     })
     .unwrap();
-    refuses::<SweepOrientation>(&binormal, "direction");
+    refuses::<SweepOrientation>(&binormal, "", "direction");
 
     let helical = serde_json::to_value(HelicalSweepConstruction {
         profile: PlanarProfileRef::Native("helix:profile".into()),
@@ -89,5 +91,5 @@ fn unit_feature_directions_admit_only_unit_vectors_on_the_wire() {
         allow_multi_profile_faces: None,
     })
     .unwrap();
-    refuses::<HelicalSweepConstruction>(&helical, "axis_direction");
+    refuses::<HelicalSweepConstruction>(&helical, "", "axis_direction");
 }

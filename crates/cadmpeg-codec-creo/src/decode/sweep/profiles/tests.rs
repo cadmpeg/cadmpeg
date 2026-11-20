@@ -566,7 +566,8 @@ fn overflowing_profile_area_is_not_validated() {
     assert!(super::ValidatedProfile::new(
         &ctx,
         profile,
-        &mut super::ProfileValidationWork::new(1).expect("work")
+        &mut super::ProfileValidationWork::new(1, super::PROFILE_VALIDATION_WORK_FLOOR)
+            .expect("work")
     )
     .expect("construct the validated profile")
     .is_none());

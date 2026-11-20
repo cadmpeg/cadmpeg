@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::assets::{Asset, AssetContent, AssetData};
-use crate::document::{CadIr, Model};
+use crate::document::{CadIr, Model, Topology};
 use crate::features::{Feature, FeatureDefinition, FeatureOperation};
 use crate::math::Point3;
 use crate::native::{Native, NativeRecord};
@@ -9,7 +9,7 @@ use crate::topology::Point;
 
 fn staged_document() -> CadIr {
     let mut ir = CadIr::empty();
-    ir.model.points.push(Point::new(
+    ir.geometry.points.push(Point::new(
         "test:append:point#new".try_into().unwrap(),
         crate::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
             .expect("a finite position is a point"),
@@ -81,8 +81,11 @@ fn rejected_append_restores_neutral_native_and_parent_state() {
     ir.native.namespace_mut("empty");
     let before = ir.clone();
     let staged = staged_document();
-    let result = ir.try_append(staged.model, staged.native, |combined| {
-        assert_eq!(combined.model.points.len(), before.model.points.len() + 1);
+    let result = ir.try_append(staged.geometry, staged.model, staged.native, |combined| {
+        assert_eq!(
+            combined.geometry.points.len(),
+            before.geometry.points.len() + 1
+        );
         assert_eq!(combined.model.assets.len(), 1);
         assert!(combined
             .model
@@ -103,11 +106,15 @@ fn rejected_append_restores_neutral_native_and_parent_state() {
 fn accepted_append_preserves_all_staged_records_and_parent_relations() {
     let mut ir = CadIr::empty();
     let staged = staged_document();
-    ir.try_append(staged.model.clone(), staged.native.clone(), |_| {
-        Ok(Ok::<_, ()>(()))
-    })
+    ir.try_append(
+        staged.geometry.clone(),
+        staged.model.clone(),
+        staged.native.clone(),
+        |_| Ok(Ok::<_, ()>(())),
+    )
     .unwrap()
     .unwrap();
+    assert_eq!(ir.geometry, staged.geometry);
     assert_eq!(ir.model, staged.model);
     assert_eq!(ir.native, staged.native);
     assert_eq!(
@@ -120,13 +127,13 @@ fn accepted_append_preserves_all_staged_records_and_parent_relations() {
 fn actual_admission_rejects_duplicate_identity_without_changing_the_document() {
     let mut ir = crate::examples::unit_cube().unwrap();
     let before = ir.clone();
-    let model = Model {
-        points: vec![ir.model.points[0].clone()],
-        ..Model::default()
+    let geometry = Topology {
+        points: vec![ir.geometry.points[0].clone()],
+        ..Topology::default()
     };
-    let result = ir.try_append(model, Native::default(), |combined| {
+    let result = ir.try_append(geometry, Model::default(), Native::default(), |combined| {
         let report = crate::admit(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             combined,
             crate::DRAFT_CORE_CHECKS,
             Vec::new(),
@@ -152,7 +159,7 @@ fn resource_refused_append_restores_neutral_native_and_parent_state() {
     policy.limits.max_recursion_depth = 0;
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
-    let result = ir.try_append(staged.model, staged.native, |_| {
+    let result = ir.try_append(staged.geometry, staged.model, staged.native, |_| {
         let _depth = ctx.enter_nested("test append callback refusal")?;
         Ok(Ok::<(), ()>(()))
     });

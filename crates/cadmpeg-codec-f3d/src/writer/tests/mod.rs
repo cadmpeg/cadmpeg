@@ -3,7 +3,9 @@
 
 mod act;
 mod appearances;
+mod assembly;
 mod design_edits;
+mod reductions;
 mod sketch_edits;
 mod source_less_analytic;
 mod source_less_bodies;

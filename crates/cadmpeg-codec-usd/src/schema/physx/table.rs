@@ -47,7 +47,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, -1, false)),
     },
     Attribute {
         schema: "PhysxSceneAPI",
@@ -135,7 +135,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxSceneAPI",
@@ -143,7 +143,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxSceneAPI",
@@ -263,7 +263,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxSceneAPI",
@@ -351,7 +351,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxRigidBodyAPI",
@@ -359,7 +359,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxRigidBodyAPI",
@@ -367,7 +367,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxRigidBodyAPI",
@@ -407,7 +407,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxRigidBodyAPI",
@@ -431,7 +431,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 0, 1, true)),
+        unit: Unit::Fixed(Dim::new(0, 0, 1, -1, true)),
     },
     Attribute {
         schema: "PhysxRigidBodyAPI",
@@ -439,7 +439,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 1, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 1, 0, -1, false)),
     },
     Attribute {
         schema: "PhysxRigidBodyAPI",
@@ -447,7 +447,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, -1, false)),
     },
     Attribute {
         schema: "PhysxRigidBodyAPI",
@@ -455,7 +455,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, -1, false)),
     },
     Attribute {
         schema: "PhysxRigidBodyAPI",
@@ -471,7 +471,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(2, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(2, 0, 0, -2, false)),
     },
     Attribute {
         schema: "PhysxRigidBodyAPI",
@@ -503,7 +503,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(2, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(2, 0, 0, -2, false)),
     },
     Attribute {
         schema: "PhysxContactReportAPI",
@@ -519,7 +519,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 1, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 1, 0, -2, false)),
     },
     Attribute {
         schema: "PhysxCollisionAPI",
@@ -527,7 +527,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxCollisionAPI",
@@ -535,7 +535,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxCollisionAPI",
@@ -543,7 +543,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxCollisionAPI",
@@ -551,7 +551,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxConvexHullCollisionAPI",
@@ -567,7 +567,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxConvexDecompositionCollisionAPI",
@@ -575,7 +575,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxConvexDecompositionCollisionAPI",
@@ -599,7 +599,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxConvexDecompositionCollisionAPI",
@@ -655,7 +655,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxTriangleMeshSimplificationCollisionAPI",
@@ -663,7 +663,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxTriangleMeshCollisionAPI",
@@ -671,7 +671,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxSDFMeshCollisionAPI",
@@ -695,7 +695,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: true,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxSDFMeshCollisionAPI",
@@ -703,7 +703,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: true,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxSDFMeshCollisionAPI",
@@ -727,7 +727,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: true,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxSurfaceVelocityAPI",
@@ -735,7 +735,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "vector3f",
         uniform: false,
         value: Value::Reals,
-        unit: Unit::Fixed(Dim::new(0, 0, 1, true)),
+        unit: Unit::Fixed(Dim::new(0, 0, 1, -1, true)),
     },
     Attribute {
         schema: "PhysxSurfaceVelocityAPI",
@@ -743,7 +743,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "vector3f",
         uniform: false,
         value: Value::Reals,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, -1, false)),
     },
     Attribute {
         schema: "PhysxSurfaceVelocityAPI",
@@ -785,8 +785,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         value: Value::Real,
         unit: Unit::Switched {
             switch: "physxMaterial:compliantContactAccelerationSpring",
-            off: Dim::new(0, 1, 0, false),
-            on: Dim::new(0, 0, 0, false),
+            off: Dim::new(0, 1, 0, -1, false),
+            on: Dim::new(0, 0, 0, -1, false),
         },
     },
     Attribute {
@@ -797,8 +797,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         value: Value::Real,
         unit: Unit::Switched {
             switch: "physxMaterial:compliantContactAccelerationSpring",
-            off: Dim::new(0, 1, 0, false),
-            on: Dim::new(0, 0, 0, false),
+            off: Dim::new(0, 1, 0, -2, false),
+            on: Dim::new(0, 0, 0, -2, false),
         },
     },
     Attribute {
@@ -832,8 +832,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Real,
         unit: Unit::Joint {
-            linear: Dim::new(0, 1, 0, false),
-            angular: Dim::new(2, 1, 0, false),
+            linear: Dim::new(0, 1, 0, 0, false),
+            angular: Dim::new(2, 1, 0, 0, false),
         },
     },
     Attribute {
@@ -842,7 +842,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxJointAPI",
@@ -851,8 +851,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Real,
         unit: Unit::Joint {
-            linear: Dim::new(1, 0, 0, false),
-            angular: Dim::new(0, 0, 1, true),
+            linear: Dim::new(1, 0, 0, -1, false),
+            angular: Dim::new(0, 0, 1, -1, true),
         },
     },
     Attribute {
@@ -861,7 +861,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 1, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 1, 0, -1, false)),
     },
     Attribute {
         schema: "PhysxPhysicsDistanceJointAPI",
@@ -877,7 +877,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 1, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 1, 0, -2, false)),
     },
     Attribute {
         schema: "PhysxLimitAPI",
@@ -886,8 +886,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Real,
         unit: Unit::Joint {
-            linear: Dim::new(1, 0, 0, false),
-            angular: Dim::new(0, 0, 1, true),
+            linear: Dim::new(1, 0, 0, -1, false),
+            angular: Dim::new(0, 0, 1, -1, true),
         },
     },
     Attribute {
@@ -897,8 +897,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Real,
         unit: Unit::Joint {
-            linear: Dim::new(0, 1, 0, false),
-            angular: Dim::new(2, 1, -1, true),
+            linear: Dim::new(0, 1, 0, -1, false),
+            angular: Dim::new(2, 1, -1, -1, true),
         },
     },
     Attribute {
@@ -907,7 +907,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxLimitAPI",
@@ -916,8 +916,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Real,
         unit: Unit::Joint {
-            linear: Dim::new(0, 1, 0, false),
-            angular: Dim::new(2, 1, -1, true),
+            linear: Dim::new(0, 1, 0, -2, false),
+            angular: Dim::new(2, 1, -1, -2, true),
         },
     },
     Attribute {
@@ -927,8 +927,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Real,
         unit: Unit::Joint {
-            linear: Dim::new(1, 0, 0, false),
-            angular: Dim::new(0, 0, 1, true),
+            linear: Dim::new(1, 0, 0, 0, false),
+            angular: Dim::new(0, 0, 1, 0, true),
         },
     },
     Attribute {
@@ -938,8 +938,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Real,
         unit: Unit::Joint {
-            linear: Dim::new(1, 0, 0, false),
-            angular: Dim::new(0, 0, 1, true),
+            linear: Dim::new(1, 0, 0, -1, false),
+            angular: Dim::new(0, 0, 1, -1, true),
         },
     },
     Attribute {
@@ -964,7 +964,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(2, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(2, 0, 0, -2, false)),
     },
     Attribute {
         schema: "PhysxArticulationAPI",
@@ -988,7 +988,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(2, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(2, 0, 0, -2, false)),
     },
     Attribute {
         schema: "PhysxForceAPI",
@@ -997,8 +997,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Reals,
         unit: Unit::Mode {
-            force: Dim::new(1, 1, 0, false),
-            acceleration: Dim::new(1, 0, 0, false),
+            force: Dim::new(1, 1, 0, -2, false),
+            acceleration: Dim::new(1, 0, 0, -2, false),
         },
     },
     Attribute {
@@ -1024,8 +1024,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Reals,
         unit: Unit::Mode {
-            force: Dim::new(2, 1, 0, false),
-            acceleration: Dim::new(0, 0, 1, true),
+            force: Dim::new(2, 1, 0, -2, false),
+            acceleration: Dim::new(0, 0, 1, -2, true),
         },
     },
     Attribute {
@@ -1042,7 +1042,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float[]",
         uniform: false,
         value: Value::Reals,
-        unit: Unit::Fixed(Dim::new(0, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxTendonAxisAPI",
@@ -1050,7 +1050,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float[]",
         uniform: false,
         value: Value::Reals,
-        unit: Unit::Fixed(Dim::new(0, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxTendonAxisAPI",
@@ -1066,7 +1066,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 1, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 1, 0, -1, false)),
     },
     Attribute {
         schema: "PhysxTendonAxisRootAPI",
@@ -1074,7 +1074,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 1, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 1, 0, -2, false)),
     },
     Attribute {
         schema: "PhysxTendonAxisRootAPI",
@@ -1082,7 +1082,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxTendonAxisRootAPI",
@@ -1090,7 +1090,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxTendonAxisRootAPI",
@@ -1098,7 +1098,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxTendonAxisRootAPI",
@@ -1106,7 +1106,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 1, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 1, 0, -2, false)),
     },
     Attribute {
         schema: "PhysxTendonAxisRootAPI",
@@ -1122,7 +1122,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxTendonAttachmentAPI",
@@ -1130,7 +1130,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxTendonAttachmentAPI",
@@ -1138,7 +1138,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "point3f",
         uniform: false,
         value: Value::Reals,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxTendonAttachmentAPI",
@@ -1162,7 +1162,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 1, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 1, 0, -1, false)),
     },
     Attribute {
         schema: "PhysxTendonAttachmentRootAPI",
@@ -1170,7 +1170,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 1, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 1, 0, -2, false)),
     },
     Attribute {
         schema: "PhysxTendonAttachmentRootAPI",
@@ -1178,7 +1178,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxTendonAttachmentRootAPI",
@@ -1186,7 +1186,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 1, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 1, 0, -2, false)),
     },
     Attribute {
         schema: "PhysxTendonAttachmentRootAPI",
@@ -1202,7 +1202,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxTendonAttachmentLeafAPI",
@@ -1210,7 +1210,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxTendonAttachmentLeafAPI",
@@ -1218,7 +1218,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(1, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(1, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxMimicJointAPI",
@@ -1226,7 +1226,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 0, 0, 0, false)),
     },
     Attribute {
         schema: "PhysxMimicJointAPI",
@@ -1242,7 +1242,7 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         usd_type: "float",
         uniform: false,
         value: Value::Real,
-        unit: Unit::Fixed(Dim::new(0, 0, 0, false)),
+        unit: Unit::Fixed(Dim::new(0, 0, 0, -1, false)),
     },
     Attribute {
         schema: "PhysxMimicJointAPI",
@@ -1251,8 +1251,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Real,
         unit: Unit::Joint {
-            linear: Dim::new(1, 0, 0, false),
-            angular: Dim::new(0, 0, 1, true),
+            linear: Dim::new(1, 0, 0, 0, false),
+            angular: Dim::new(0, 0, 1, 0, true),
         },
     },
     Attribute {
@@ -1278,8 +1278,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Real,
         unit: Unit::Joint {
-            linear: Dim::new(0, 1, 0, false),
-            angular: Dim::new(2, 1, 0, false),
+            linear: Dim::new(0, 1, 0, 0, false),
+            angular: Dim::new(2, 1, 0, 0, false),
         },
     },
     Attribute {
@@ -1289,8 +1289,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Real,
         unit: Unit::Joint {
-            linear: Dim::new(1, 1, 0, false),
-            angular: Dim::new(2, 1, 0, false),
+            linear: Dim::new(1, 1, 0, -2, false),
+            angular: Dim::new(2, 1, 0, -2, false),
         },
     },
     Attribute {
@@ -1300,8 +1300,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Real,
         unit: Unit::Joint {
-            linear: Dim::new(1, 0, 0, false),
-            angular: Dim::new(0, 0, 1, true),
+            linear: Dim::new(1, 0, 0, -1, false),
+            angular: Dim::new(0, 0, 1, -1, true),
         },
     },
     Attribute {
@@ -1311,8 +1311,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Real,
         unit: Unit::Joint {
-            linear: Dim::new(1, 1, 0, false),
-            angular: Dim::new(2, 1, 0, false),
+            linear: Dim::new(1, 1, 0, -2, false),
+            angular: Dim::new(2, 1, 0, -2, false),
         },
     },
     Attribute {
@@ -1322,8 +1322,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Real,
         unit: Unit::Joint {
-            linear: Dim::new(0, 1, 0, false),
-            angular: Dim::new(2, 1, -1, true),
+            linear: Dim::new(0, 1, 0, -1, false),
+            angular: Dim::new(2, 1, -1, -1, true),
         },
     },
     Attribute {
@@ -1333,8 +1333,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Real,
         unit: Unit::Joint {
-            linear: Dim::new(1, 0, 0, false),
-            angular: Dim::new(0, 0, 1, true),
+            linear: Dim::new(1, 0, 0, -1, false),
+            angular: Dim::new(0, 0, 1, -1, true),
         },
     },
     Attribute {
@@ -1344,8 +1344,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Real,
         unit: Unit::Joint {
-            linear: Dim::new(0, -1, 0, false),
-            angular: Dim::new(-2, -1, 1, true),
+            linear: Dim::new(0, -1, 0, 1, false),
+            angular: Dim::new(-2, -1, 1, 1, true),
         },
     },
     Attribute {
@@ -1355,8 +1355,8 @@ pub(super) const ATTRIBUTES: &[Attribute] = &[
         uniform: false,
         value: Value::Real,
         unit: Unit::Joint {
-            linear: Dim::new(0, 1, 0, false),
-            angular: Dim::new(2, 1, -1, true),
+            linear: Dim::new(0, 1, 0, -1, false),
+            angular: Dim::new(2, 1, -1, -1, true),
         },
     },
 ];

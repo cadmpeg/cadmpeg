@@ -2,12 +2,13 @@
 //! Direct identity walks for native record fields.
 
 use super::{
-    DesignLoftConstruction, DesignPipeConstruction, DesignPipePointSelection,
+    DesignLoftConstruction, DesignPipeConstruction, DesignPipePointSelection, DesignPipeSection,
     DesignRevolveConstruction, DesignSweepConstruction,
 };
 
 rewrite_native_record!(DesignLoftConstruction, []; {operation, operation_offset, reference_target, section_records, rail_groups});
-rewrite_native_record!(DesignPipeConstruction, []; {operation, operation_offset, is_hollow, is_hollow_offset, opaque_post_operation, opaque_post_operation_offset, record_indexes, point_selection});
+rewrite_native_record!(DesignPipeConstruction, []; {operation, operation_offset, is_hollow, is_hollow_offset, opaque_post_operation, opaque_post_operation_offset, record_indexes, point_selection, section});
+rewrite_native_scalar!(DesignPipeSection);
 rewrite_native_record!(DesignPipePointSelection, []; {prefix_reference_offset, point_data});
 rewrite_native_scalar!(DesignRevolveConstruction);
 rewrite_native_record!(DesignSweepConstruction, []; {operation, operation_offset, values, record_indexes, value_offsets});

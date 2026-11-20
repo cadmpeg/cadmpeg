@@ -50,6 +50,8 @@ pub(crate) enum InventorLossCode {
     SketchRecordMalformed,
     /// Typed feature records could not be parsed exactly.
     FeatureRecordMalformed,
+    /// A decoded operation has operands outside the v11 operation contract.
+    FeatureDesignOperationNative,
     /// An optional feature label is empty and has no neutral display name.
     FeatureLabelUnusable,
     /// Sketch curves carry entity flags whose construction meaning is
@@ -161,8 +163,36 @@ pub(crate) enum InventorLossCode {
     FeatureSheetMetalBendControlsRetained,
     /// Projected sheet-metal relief and transition forms remain in native style records.
     FeatureSheetMetalStyleFormsNative,
+    /// The active unfold rule states no decimal K-factor; sheet-metal rules keep no allowance.
+    FeatureSheetMetalUnfoldFactorNative,
+    /// A style `KFactor` parameter differs from the active unfold-rule K-factor; the rule keeps no allowance.
+    FeatureSheetMetalStyleFactorConflict,
+    /// No active unfold rule resolves in a part with sheet-metal styles.
+    FeatureSheetMetalUnfoldRuleUnresolved,
+    /// A sheet-metal rule takes its K-factor from the style `KFactor` parameter without an active unfold rule.
+    FeatureSheetMetalStyleFactorAssumed,
     /// An attached plate stays native; the note names the first refused admission check.
     FeatureSheetMetalPlateRefused,
+    /// Projected contour flanges retain construction controls and their bend and corner records natively.
+    FeatureSheetMetalContourControlsRetained,
+    /// A contour flange stays native; the note names the first refused admission check.
+    FeatureSheetMetalContourFlangeRefused,
+    /// Projected Unfold and Refold features retain controls and face operands natively.
+    FeatureSheetMetalFoldControlsRetained,
+    /// A Refold record stores no reference to the Unfold whose bends it restores.
+    FeatureSheetMetalRefoldSourceUnresolved,
+    /// An Unfold or Refold stays native; the note names the first refused admission check.
+    FeatureSheetMetalFoldRefused,
+    /// A sheet-metal face plate without a bend stays native; the note names the first refused check.
+    FeatureSheetMetalFaceRefused,
+    /// A sheet-metal plate, bend, or corner stays native without another sheet-metal note; the note names the projection stage.
+    FeatureSheetMetalNativeUnexplained,
+    /// The edge-naming and stored-edge joins have no records; the note names the reason.
+    FeatureEdgeInventoryUnavailable,
+    /// A feature-label class has no recognized family; its features stay native and the note names the class.
+    FeatureNativeClassUnrecognized,
+    /// A sheet-metal style record has a segment version without a field layout; plates that need the style stay native.
+    FeatureSheetMetalStyleVersionUnread,
     /// Revolve operands differ from the admitted construction forms.
     FeatureRevolveOperandsNative,
     /// `DeleteFace` Boolean construction roles remain unresolved.
@@ -289,6 +319,17 @@ pub(crate) enum InventorLossCode {
     KernelHistoryTagSchemaAssumed,
     /// Split and Base features have no bound history state.
     FeatureHistoryStateUnbound,
+    /// A history state could not be materialized or decoded to the body of a
+    /// Base or Split feature.
+    FeatureHistoryBodyUndecoded,
+    /// The body of a Base or Split feature in its history state is not a closed
+    /// manifold solid.
+    FeatureHistoryBodyNotClosed,
+    /// A part passed the local cap of history bodies or of their materialization work.
+    FeatureHistoryBodyBounded,
+    /// The Base or Split feature of a decoded history body is not a projected
+    /// feature, so the body has no origin to name.
+    FeatureHistoryBodyUnlinked,
     /// Drawing records retain unresolved semantics natively.
     DrawingNativeOnly,
     /// A drawing record is outside its typed prefix form.
@@ -320,6 +361,7 @@ impl InventorLossCode {
         Self::DesignRecordMalformed,
         Self::SketchRecordMalformed,
         Self::FeatureRecordMalformed,
+        Self::FeatureDesignOperationNative,
         Self::FeatureLabelUnusable,
         Self::SketchConstructionUnresolved,
         Self::SketchAxisDistanceNative,
@@ -372,7 +414,21 @@ impl InventorLossCode {
         Self::FeatureSheetMetalAttachmentControlsRetained,
         Self::FeatureSheetMetalBendControlsRetained,
         Self::FeatureSheetMetalStyleFormsNative,
+        Self::FeatureSheetMetalUnfoldFactorNative,
+        Self::FeatureSheetMetalStyleFactorConflict,
+        Self::FeatureSheetMetalUnfoldRuleUnresolved,
+        Self::FeatureSheetMetalStyleFactorAssumed,
         Self::FeatureSheetMetalPlateRefused,
+        Self::FeatureSheetMetalContourControlsRetained,
+        Self::FeatureSheetMetalContourFlangeRefused,
+        Self::FeatureSheetMetalFoldControlsRetained,
+        Self::FeatureSheetMetalRefoldSourceUnresolved,
+        Self::FeatureSheetMetalFoldRefused,
+        Self::FeatureSheetMetalFaceRefused,
+        Self::FeatureSheetMetalNativeUnexplained,
+        Self::FeatureEdgeInventoryUnavailable,
+        Self::FeatureNativeClassUnrecognized,
+        Self::FeatureSheetMetalStyleVersionUnread,
         Self::FeatureRevolveOperandsNative,
         Self::FeatureDeleteFaceOperandsNative,
         Self::FeatureFilletOperandsNative,
@@ -436,6 +492,10 @@ impl InventorLossCode {
         Self::KernelHistoryBounded,
         Self::KernelHistoryTagSchemaAssumed,
         Self::FeatureHistoryStateUnbound,
+        Self::FeatureHistoryBodyUndecoded,
+        Self::FeatureHistoryBodyNotClosed,
+        Self::FeatureHistoryBodyBounded,
+        Self::FeatureHistoryBodyUnlinked,
         Self::DrawingNativeOnly,
         Self::DrawingRecordMalformed,
         Self::PmiTargetUnresolved,
@@ -460,6 +520,7 @@ impl InventorLossCode {
             Self::PresentationRecordMalformed => "presentation.record-malformed",
             Self::DesignRecordMalformed => "design.record-malformed",
             Self::SketchRecordMalformed => "sketch.record-malformed",
+            Self::FeatureDesignOperationNative => "feature.design-operation-native",
             Self::FeatureRecordMalformed => "feature.record-malformed",
             Self::FeatureLabelUnusable => "feature.label-unusable",
             Self::SketchConstructionUnresolved => "sketch.construction-unresolved",
@@ -535,7 +596,33 @@ impl InventorLossCode {
                 "feature.sheet-metal-bend-controls-retained"
             }
             Self::FeatureSheetMetalStyleFormsNative => "feature.sheet-metal-style-forms-native",
+            Self::FeatureSheetMetalUnfoldFactorNative => "feature.sheet-metal-unfold-factor-native",
+            Self::FeatureSheetMetalStyleFactorConflict => {
+                "feature.sheet-metal-style-factor-conflict"
+            }
+            Self::FeatureSheetMetalUnfoldRuleUnresolved => {
+                "feature.sheet-metal-unfold-rule-unresolved"
+            }
+            Self::FeatureSheetMetalStyleFactorAssumed => "feature.sheet-metal-style-factor-assumed",
             Self::FeatureSheetMetalPlateRefused => "feature.sheet-metal-plate-refused",
+            Self::FeatureSheetMetalContourControlsRetained => {
+                "feature.sheet-metal-contour-controls-retained"
+            }
+            Self::FeatureSheetMetalContourFlangeRefused => {
+                "feature.sheet-metal-contour-flange-refused"
+            }
+            Self::FeatureSheetMetalFoldControlsRetained => {
+                "feature.sheet-metal-fold-controls-retained"
+            }
+            Self::FeatureSheetMetalRefoldSourceUnresolved => {
+                "feature.sheet-metal-refold-source-unresolved"
+            }
+            Self::FeatureSheetMetalFoldRefused => "feature.sheet-metal-fold-refused",
+            Self::FeatureSheetMetalFaceRefused => "feature.sheet-metal-face-refused",
+            Self::FeatureSheetMetalNativeUnexplained => "feature.sheet-metal-native-unexplained",
+            Self::FeatureEdgeInventoryUnavailable => "feature.edge-inventory-unavailable",
+            Self::FeatureNativeClassUnrecognized => "feature.native-class-unrecognized",
+            Self::FeatureSheetMetalStyleVersionUnread => "feature.sheet-metal-style-version-unread",
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureMirrorOperandsNative => "feature.mirror-operands-native",
             Self::FeatureMirrorBooleanNative => "feature.mirror-boolean-native",
@@ -599,6 +686,10 @@ impl InventorLossCode {
             Self::KernelHistoryBounded => "source.kernel-history-bounded",
             Self::KernelHistoryTagSchemaAssumed => "source.kernel-history-tag-schema-assumed",
             Self::FeatureHistoryStateUnbound => "feature.history-state-unbound",
+            Self::FeatureHistoryBodyUndecoded => "feature.history-body-undecoded",
+            Self::FeatureHistoryBodyNotClosed => "feature.history-body-not-closed",
+            Self::FeatureHistoryBodyBounded => "feature.history-body-bounded",
+            Self::FeatureHistoryBodyUnlinked => "feature.history-body-unlinked",
             Self::DrawingNativeOnly => "drawing.native-only",
             Self::DrawingRecordMalformed => "drawing.record-malformed",
             Self::PmiTargetUnresolved => "pmi.target-unresolved",
@@ -671,6 +762,7 @@ impl InventorLossCode {
             | Self::FeatureThreadDefinitionPartial
             | Self::FeatureThickenOperandsNative
             | Self::FeatureThickenConstructionNative
+            | Self::FeatureDesignOperationNative
             | Self::FeatureShellDefinitionPartial
             | Self::FeatureSheetMetalAttachmentControlsNative
             | Self::FeatureSheetMetalBendControlsNative
@@ -680,7 +772,21 @@ impl InventorLossCode {
             | Self::FeatureSheetMetalAttachmentControlsRetained
             | Self::FeatureSheetMetalBendControlsRetained
             | Self::FeatureSheetMetalStyleFormsNative
+            | Self::FeatureSheetMetalUnfoldFactorNative
+            | Self::FeatureSheetMetalStyleFactorConflict
+            | Self::FeatureSheetMetalUnfoldRuleUnresolved
+            | Self::FeatureSheetMetalStyleFactorAssumed
             | Self::FeatureSheetMetalPlateRefused
+            | Self::FeatureSheetMetalContourControlsRetained
+            | Self::FeatureSheetMetalContourFlangeRefused
+            | Self::FeatureSheetMetalFoldControlsRetained
+            | Self::FeatureSheetMetalRefoldSourceUnresolved
+            | Self::FeatureSheetMetalFoldRefused
+            | Self::FeatureSheetMetalFaceRefused
+            | Self::FeatureSheetMetalNativeUnexplained
+            | Self::FeatureEdgeInventoryUnavailable
+            | Self::FeatureNativeClassUnrecognized
+            | Self::FeatureSheetMetalStyleVersionUnread
             | Self::FeatureBodySelectionNative
             | Self::FeatureMirrorOperandsNative
             | Self::FeatureMirrorBooleanNative
@@ -733,6 +839,10 @@ impl InventorLossCode {
             | Self::KernelHistoryBounded
             | Self::KernelHistoryTagSchemaAssumed
             | Self::FeatureHistoryStateUnbound
+            | Self::FeatureHistoryBodyUndecoded
+            | Self::FeatureHistoryBodyNotClosed
+            | Self::FeatureHistoryBodyBounded
+            | Self::FeatureHistoryBodyUnlinked
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
@@ -806,6 +916,7 @@ mod tests {
                 "design.record-malformed",
                 "sketch.record-malformed",
                 "feature.record-malformed",
+                "feature.design-operation-native",
                 "feature.label-unusable",
                 "sketch.construction-unresolved",
                 "sketch.axis-distance-native",
@@ -858,7 +969,21 @@ mod tests {
                 "feature.sheet-metal-attachment-controls-retained",
                 "feature.sheet-metal-bend-controls-retained",
                 "feature.sheet-metal-style-forms-native",
+                "feature.sheet-metal-unfold-factor-native",
+                "feature.sheet-metal-style-factor-conflict",
+                "feature.sheet-metal-unfold-rule-unresolved",
+                "feature.sheet-metal-style-factor-assumed",
                 "feature.sheet-metal-plate-refused",
+                "feature.sheet-metal-contour-controls-retained",
+                "feature.sheet-metal-contour-flange-refused",
+                "feature.sheet-metal-fold-controls-retained",
+                "feature.sheet-metal-refold-source-unresolved",
+                "feature.sheet-metal-fold-refused",
+                "feature.sheet-metal-face-refused",
+                "feature.sheet-metal-native-unexplained",
+                "feature.edge-inventory-unavailable",
+                "feature.native-class-unrecognized",
+                "feature.sheet-metal-style-version-unread",
                 "feature.revolve-operands-native",
                 "feature.delete-face-operands-native",
                 "feature.fillet-operands-native",
@@ -922,6 +1047,10 @@ mod tests {
                 "source.kernel-history-bounded",
                 "source.kernel-history-tag-schema-assumed",
                 "feature.history-state-unbound",
+                "feature.history-body-undecoded",
+                "feature.history-body-not-closed",
+                "feature.history-body-bounded",
+                "feature.history-body-unlinked",
                 "drawing.native-only",
                 "drawing.record-malformed",
                 "pmi.target-unresolved",

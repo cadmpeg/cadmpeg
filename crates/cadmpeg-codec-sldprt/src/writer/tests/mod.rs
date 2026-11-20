@@ -14,6 +14,7 @@ mod parameters_extrude;
 mod patterns_history;
 mod record_losses;
 mod reemitted_lanes;
+mod replace_face;
 mod round_trip;
 mod sketch_tessellation;
 mod swobjects;
@@ -21,3 +22,5 @@ mod targets;
 mod thicken_reference;
 mod transformed_surface;
 mod vertex_records;
+
+mod datum_axes;

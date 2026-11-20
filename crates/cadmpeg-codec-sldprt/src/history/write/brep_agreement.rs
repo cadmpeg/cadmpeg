@@ -433,6 +433,8 @@ fn feature_directly_affects_brep(feature: &Feature) -> bool {
     !matches!(
         operation,
         FeatureOperation::TreeNode { .. }
+            | FeatureOperation::MeshGenerateFaceGroups { .. }
+            | FeatureOperation::MeshCombineFaceGroups { .. }
             | FeatureOperation::CosmeticThread { .. }
             | FeatureOperation::ReferenceImage { .. }
             | FeatureOperation::Decal { .. }

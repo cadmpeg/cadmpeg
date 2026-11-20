@@ -84,3 +84,6 @@ fn hidden_node_entity(bytes: &[u8], frame: PrimaryRecordFrame) -> Option<u64> {
     }
     Some(take_reference(record, &mut cursor)?.into_local()?.0)
 }
+
+#[cfg(test)]
+mod tests;
