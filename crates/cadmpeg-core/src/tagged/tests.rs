@@ -359,6 +359,16 @@ fn a_refusal_inside_adjacent_content_states_the_position_after_the_object() {
     );
 }
 
+#[test]
+fn an_extra_sequence_element_refuses_in_serde_json_words() {
+    let input = r#"["count",3,null,5]"#;
+    assert!(read::<serde_form::Internal>(input).starts_with("refused "));
+    assert_eq!(
+        read::<tagged_form::Internal>(input),
+        "refused trailing characters"
+    );
+}
+
 /// `levels` steps nested in each other around one empty step.
 fn nested_steps(levels: usize) -> String {
     let mut text = String::new();
