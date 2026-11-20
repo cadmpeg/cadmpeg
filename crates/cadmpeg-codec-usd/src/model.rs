@@ -1007,7 +1007,7 @@ impl Builder<'_, '_, '_, '_> {
         if self.appearances.insert(surface.material.clone()) {
             let mut record = surface_appearance(surface);
             record.textures = self.textures(surface)?;
-            record.library_id = self.module(surface)?;
+            record.library_id = self.module(surface);
             self.ir.model.appearances.push(record);
         }
         Ok(crate::ids::appearance(&surface.material))
@@ -1053,14 +1053,12 @@ impl Builder<'_, '_, '_, '_> {
 
     /// The MDL module of `surface`: the identity of the file it names, or
     /// the path as written for a module that the MDL search path finds.
-    fn module(&self, surface: &SurfaceShader) -> Result<Option<String>, CodecError> {
-        let Some((path, layer)) = &surface.module else {
-            return Ok(None);
-        };
-        Ok(Some(match self.layers.texture(self.ctx, *layer, path) {
+    fn module(&self, surface: &SurfaceShader) -> Option<String> {
+        let (path, layer) = surface.module.as_ref()?;
+        Some(match self.layers.texture(self.ctx, *layer, path) {
             Resource::Located(id) => id,
             Resource::Embedded { .. } | Resource::Unlocated => path.clone(),
-        }))
+        })
     }
 
     /// The texture references of `surface`, with an asset for each image
