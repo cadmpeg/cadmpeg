@@ -450,7 +450,7 @@ pub(crate) fn transfers_uniform_irregular_and_two_axis_patterns() {
         .native
         .namespace_mut("fcstd")
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "design_census",
             &stale_census,
         )
