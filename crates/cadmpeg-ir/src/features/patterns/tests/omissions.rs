@@ -60,7 +60,7 @@ fn grid_counts_include_both_directions_and_exclude_omitted_positions() {
     let empty =
         serde_json::to_value(PatternKind::<CompositePattern>::new(grid(Vec::new())).unwrap())
             .unwrap();
-    assert!(empty.get("omitted_instances").is_none());
+    assert_eq!(empty["omitted_instances"], json!([]));
     assert!(serde_json::from_value::<PatternKind>(empty).is_ok());
 }
 

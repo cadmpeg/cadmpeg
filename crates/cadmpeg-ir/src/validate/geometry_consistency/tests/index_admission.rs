@@ -46,19 +46,19 @@ fn geometric_checks_reuse_the_prepared_index_without_copying_native_identities()
 #[test]
 fn geometric_vertex_indexes_keep_last_duplicate_and_skip_missing_points() {
     let mut ir = crate::examples::unit_cube().unwrap();
-    let vertex = ir.model.vertices[0].clone();
+    let vertex = ir.geometry.vertices[0].clone();
     let mut point = ir
-        .model
+        .geometry
         .points
         .iter()
         .find(|point| point.id == vertex.point)
         .unwrap()
         .clone();
     point.set_position(crate::features::FinitePoint3::new(Point3::new(7.0, 8.0, 9.0)).unwrap());
-    ir.model.points.push(point);
+    ir.geometry.points.push(point);
     let mut missing = vertex.clone();
     missing.point = "test:model:point#missing".try_into().unwrap();
-    ir.model.vertices.push(missing);
+    ir.geometry.vertices.push(missing);
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;

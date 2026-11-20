@@ -16,6 +16,7 @@ use crate::provenance::SourceObjectAssociation;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveI64};
 use crate::transform::Transform;
 use crate::units::FiniteVector;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -53,9 +54,9 @@ pub mod surface_payloads;
 pub const MAX_GEOMETRY_NESTING: usize = 256;
 
 /// Admitted conditional flag shapes in the pre-revision offset-surface layout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LegacyExtensionFlags {
     /// The compact `offsur` layout has no extension flag.
     Absent {},
@@ -81,7 +82,7 @@ pub enum LegacyExtensionFlags {
 // admitted extension, whose scalars are `FiniteReal` values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "layout", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
 pub enum OffsetExtension<R = f64> {
     /// Pre-revision conditional flag sequence.
@@ -105,7 +106,7 @@ pub enum OffsetExtension<R = f64> {
 
 /// Analytic, NURBS, or opaque surface geometry established without a
 /// construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -245,9 +246,9 @@ impl TryFrom<PlacedSurfaceWire> for PlacedSurface {
 }
 
 /// Analytic, NURBS, procedural, or opaque surface geometry.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum SurfaceGeometry {
     /// Exact surface defined by a procedural construction in the same model.
@@ -264,7 +265,6 @@ pub enum SurfaceGeometry {
         cache: Option<SolvedSurfaceGeometry>,
     },
     /// A carrier whose shape is established without a construction.
-    #[serde(untagged)]
     Solved(SolvedSurfaceGeometry),
 }
 
@@ -314,11 +314,18 @@ pub struct Surface {
         deserialize_with = "deserialize_source_object"
     )]
     pub source_object: Option<SourceObjectAssociation>,
+    /// The source record this surface projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 /// The analytic or free-form shape of a 3D curve carrier established without a
 /// construction.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -340,7 +347,11 @@ pub enum SolvedCurveGeometry {
         /// Ordered curve uses and their continuity contracts.
         segments: CompositeCurveSegments,
         /// Whether the source classifies the complete curve as self-intersecting.
-        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_self_intersect"
+        )]
         self_intersect: Option<bool>,
     },
     /// Free-form NURBS curve.
@@ -484,9 +495,9 @@ impl TryFrom<PlacedCurveWire> for PlacedCurve {
 }
 
 /// The analytic, free-form, procedural, or opaque shape of a 3D curve carrier.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum CurveGeometry {
     /// Exact curve defined by a procedural construction in the same model.
@@ -503,7 +514,6 @@ pub enum CurveGeometry {
         cache: Option<SolvedCurveGeometry>,
     },
     /// A carrier whose shape is established without a construction.
-    #[serde(untagged)]
     Solved(SolvedCurveGeometry),
 }
 
@@ -599,7 +609,7 @@ pub struct CompositeCurveSegment {
 }
 
 /// STEP composite-curve transition continuity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -674,6 +684,13 @@ pub struct Curve {
         deserialize_with = "deserialize_source_object"
     )]
     pub source_object: Option<SourceObjectAssociation>,
+    /// The source record this curve projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 /// Four optional finite parameter bounds retained from one native surface
@@ -765,8 +782,19 @@ pub struct ProceduralSurface {
     /// the neutral surface-carrier interval; its definition retains the
     /// source directrix interval separately. `None` when the record stores no
     /// bound fields.
-    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_procedural_surface_record_bounds"
+    )]
     record_bounds: Option<RecordBounds>,
+    /// The source record this construction projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 /// Parameter fields carried by exact and loft spline-surface constructions.
@@ -799,7 +827,7 @@ pub enum SplineSurfaceParameters<R = f64> {
 // spline, whose scalars are `FiniteReal` values.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "layout", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
 pub enum ExactSpline<R = f64> {
     /// Legacy solved-cache layout with ordered U/V ranges.
@@ -1013,7 +1041,6 @@ pub enum ProceduralSurfaceDefinition {
         ///
         /// These are separate from `boundaries`: one STEP surface curve can
         /// carry both a model-space curve and pcurves on the support surface.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         boundary_pcurves: Vec<PcurveId>,
         /// Whether the support's natural outer boundary is implicit.
         implicit_outer: bool,
@@ -1096,7 +1123,6 @@ enum ProceduralSurfaceDefinitionWire {
     CurveBounded {
         support: SurfaceId,
         boundaries: Vec<CurveId>,
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
         boundary_pcurves: Vec<PcurveId>,
         implicit_outer: bool,
     },
@@ -1388,7 +1414,7 @@ impl LegacyCache {
 /// revision-gated layout: the tolerance is stated in exactly one of them.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "layout", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CacheContract<F> {
     /// Legacy layout, which states its own solved-cache tolerance.
     Legacy {
@@ -1949,6 +1975,7 @@ impl ProceduralSurface {
             id,
             definition,
             record_bounds,
+            native_ref: None,
         }
     }
 
@@ -2029,7 +2056,11 @@ pub enum DeformableSurfaceData<R = f64, V = Vector3, P = Point3> {
         /// First scalar after the flag.
         first_parameter: R,
         /// Version-gated ASM long when present.
-        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_version_value"
+        )]
         version_value: Option<i64>,
         /// Second scalar after the optional long.
         second_parameter: R,
@@ -2172,7 +2203,6 @@ pub struct DeformableSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
     /// Cache contract: the revision-gated fields surrounding the support and
     /// shared surface tail, or the legacy solved-cache tolerance this
     /// construction states instead.
-    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     pub cache: CacheContract<RevisionSurfaceForm<Vec<bool>, R>>,
     /// Six ordered solved-surface discontinuity arrays.
     pub discontinuities: [Vec<R>; 6],
@@ -2678,7 +2708,7 @@ impl TryFrom<HelixLineProfileWire> for HelixLineProfile {
 }
 
 /// Profile-specific tail of a helix surface.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -2818,12 +2848,13 @@ pub struct InlineTSplineSubtransform {
     /// Line-oriented topology and geometry program.
     pub program: cadmpeg_core::text::NonBlankString,
     /// Optional native separator boolean.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub separator: Option<bool>,
     /// Companion values program.
     pub values: cadmpeg_core::text::NonBlankString,
 }
 
-#[derive(Deserialize)]
+#[derive(cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -2833,7 +2864,10 @@ enum InlineTSplineSubtransformWire {
         /// Line-oriented topology and geometry program.
         program: String,
         /// Optional native separator boolean.
-        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(
+            default,
+            deserialize_with = "deserialize_inline_t_spline_subtransform_wire_separator"
+        )]
         separator: Option<bool>,
         /// Companion values program.
         values: String,
@@ -2885,7 +2919,7 @@ pub enum TSplineSubtransform {
     },
 }
 
-#[derive(Deserialize)]
+#[derive(cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -2895,7 +2929,7 @@ enum TSplineSubtransformWire {
         /// Line-oriented topology and geometry program.
         program: String,
         /// Optional native separator boolean.
-        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(default, deserialize_with = "deserialize_separator")]
         separator: Option<bool>,
         /// Companion values program.
         values: String,
@@ -2983,7 +3017,6 @@ pub struct TSplineSurfaceConstruction {
     /// the shared tail first, then four optional parameter values
     /// (`support_bounds`), the type code as an enum, the nested subtransform
     /// scope, and the trailing integer.
-    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<RevisionSurfaceForm<Vec<bool>, FiniteReal>>,
 }
 
@@ -3080,7 +3113,6 @@ struct TSplineSurfaceConstructionWire {
     /// the shared tail first, then four optional parameter values
     /// (`support_bounds`), the type code as an enum, the nested subtransform
     /// scope, and the trailing integer.
-    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<RevisionSurfaceForm>,
 }
 
@@ -3108,7 +3140,6 @@ pub struct BlendSupport {
     /// The support surface.
     pub surface: SurfaceId,
     /// Selects the opposite surface-normal side when true.
-    #[serde(default)]
     pub reversed: bool,
 }
 
@@ -3326,7 +3357,7 @@ pub struct RollingBallJetDerivative<R = f64, V = Vector3> {
 }
 
 /// Cross-section family of a procedural blend.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -3357,27 +3388,21 @@ pub struct RevisionSurfaceForm<F: Default = Vec<bool>, R = f64> {
     /// Positive serializer-revision integer following the subtype name.
     pub revision: PositiveI64,
     /// Optional U/V bound fields following the support surface.
-    #[serde(default)]
     pub support_bounds: [Option<R>; 4],
     /// Optional parameter endpoints following the embedded reference curve.
-    #[serde(default)]
     pub reference_endpoints: [Option<R>; 2],
     /// Optional parameter endpoints following a second embedded curve, used
     /// by two-curve carriers such as `sum_spl_sur`.
-    #[serde(default)]
     pub second_endpoints: [Option<R>; 2],
     /// Carrier-specific boolean run preceding the shared tail.
-    #[serde(default)]
     pub flags: F,
     /// Approximation-cache form selected by the shared tail enum.
     pub cache: RevisionCacheForm<RevisionSurfaceParameterization<R>>,
     /// Six ordered discontinuity arrays following the fit tolerance.
-    #[serde(default)]
     pub discontinuities: [Vec<R>; 6],
     /// Boolean terminating the shared tail.
     pub tail_flag: bool,
     /// Boolean run following the shared tail.
-    #[serde(default)]
     pub trailing_flags: Vec<bool>,
 }
 
@@ -3526,11 +3551,9 @@ impl<R> VariableBlendCache<R> {
 pub struct RevisionSurfaceParameterization<R = f64> {
     /// U parameter interval, an ordered `[lo, hi]` pair of optional bounds.
     /// `None` is a false bound-presence flag.
-    #[serde(default)]
     pub u_interval: [Option<R>; 2],
     /// V parameter interval, an ordered `[lo, hi]` pair of optional bounds.
     /// `None` is a false bound-presence flag.
-    #[serde(default)]
     pub v_interval: [Option<R>; 2],
     /// U closure enum.
     pub u_closure: i64,
@@ -3630,7 +3653,7 @@ pub struct LoftSubdataRow<R = f64> {
 /// Native loft constraint table with structurally consistent dimensions.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "form", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 #[cfg_attr(feature = "schema", schemars(bound = "R: JsonSchema + Serialize"))]
 pub enum LoftSubdata<R = f64> {
     /// Type 211 stores exactly one leading pair and no column pairs.
@@ -3839,7 +3862,6 @@ pub enum LoftMemberForm<R = f64, V = Vector3> {
         surface: Option<SurfaceId>,
         /// Optional U/V bound fields following the support surface in the
         /// revision-gated encoding.
-        #[serde(default)]
         support_bounds: [Option<R>; 4],
         /// UV curve on the support, absent for `nullbs`.
         #[serde(
@@ -4021,15 +4043,12 @@ pub struct LoftRevisionForm<R = f64> {
     /// Positive serializer-revision integer following the subtype name.
     pub revision: PositiveI64,
     /// Four booleans following the parameter intervals.
-    #[serde(default)]
     pub flags: [bool; 4],
     /// Two integers preceding the shared tail.
-    #[serde(default)]
     pub ints: [i64; 2],
     /// Approximation-cache form selected by the shared tail enum.
     pub cache: RevisionCacheForm<RevisionSurfaceParameterization<R>>,
     /// Six ordered discontinuity arrays following the fit tolerance.
-    #[serde(default)]
     pub discontinuities: [Vec<R>; 6],
     /// Boolean terminating the shared tail.
     pub tail_flag: bool,
@@ -4200,7 +4219,11 @@ pub struct RollingBallSideExtension<P = PcurveGeometry> {
     /// Native integer introducing the clause.
     pub value: i64,
     /// Tertiary BS2 pcurve, absent for `nullbs`.
-    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_rolling_ball_side_extension_pcurve"
+    )]
     pub pcurve: Option<P>,
 }
 
@@ -4338,7 +4361,6 @@ pub struct RollingBallConstruction<R = f64, V = Vector3, P = Point3> {
     /// Stored slice or center curve.
     pub slice: CurveId,
     /// Optional native slice-curve parameter endpoints.
-    #[serde(default)]
     pub slice_range: [Option<R>; 2],
     /// Two signed support offsets in document length units.
     pub offsets: [R; 2],
@@ -4359,7 +4381,6 @@ pub struct RollingBallConstruction<R = f64, V = Vector3, P = Point3> {
     /// Six ordered ASM discontinuity arrays closing the shared tail.
     pub discontinuities: [Vec<R>; 6],
     /// Native Boolean closing the shared tail.
-    #[serde(default)]
     pub tail_flag: bool,
     /// Third side present only for `sss_blend_spl_sur`.
     #[serde(
@@ -4369,12 +4390,11 @@ pub struct RollingBallConstruction<R = f64, V = Vector3, P = Point3> {
     )]
     pub third: Option<Box<RollingBallThirdSide<V>>>,
     /// Three ASM integers preceding the subtype close.
-    #[serde(default)]
     pub tail_extensions: [i64; 3],
 }
 
 /// Geometry role selected by a variable-blend support-side discriminator.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -4392,7 +4412,7 @@ pub enum VariableBlendSupportKind {
 }
 
 /// Convexity selected for a variable-radius blend surface.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -4404,7 +4424,7 @@ pub enum VariableBlendConvexity {
 }
 
 /// Solved-surface representation selected for a variable-radius blend.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -4586,7 +4606,6 @@ pub enum VariableBlendValuePayload<R = f64, V = Vector3, P = Point3> {
         enum_count: i64,
         /// Whether the extension enum is stored as a `0x15` enum token
         /// (revision-gated streams) rather than a `0x04` integer.
-        #[serde(default)]
         enum_tagged: bool,
         /// Counted radius-point array: each control carries a parameter,
         /// radius, two derivative scalars, a position, and a vector.
@@ -4709,7 +4728,7 @@ pub enum VariableBlendCrossSection<R = f64, V = Vector3, P = Point3> {
 
 /// Native zero-width variable-blend cross-section selectors whose framing is
 /// established while their geometric laws remain unclassified.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[repr(i64)]
 #[serde(deny_unknown_fields)]
@@ -4751,7 +4770,7 @@ impl TryFrom<i64> for VariableBlendBareCrossSection {
 }
 
 /// Native variable-radius blend surface subtype.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -4784,7 +4803,6 @@ pub enum VariableBlendSurfaceSubtype {
 )]
 pub struct VariableBlendConstruction<R = f64, V = Vector3, P = Point3> {
     /// Native surface subtype selecting the variable-blend behavior class.
-    #[serde(default)]
     pub subtype: VariableBlendSurfaceSubtype,
     /// Positive serializer-revision integer following the subtype name.
     pub revision: PositiveI64,
@@ -4793,7 +4811,6 @@ pub struct VariableBlendConstruction<R = f64, V = Vector3, P = Point3> {
     /// Stored slice curve.
     pub slice: CurveId,
     /// Optional native slice-curve parameter endpoints.
-    #[serde(default)]
     pub slice_range: [Option<R>; 2],
     /// Two signed support offsets in document length units.
     pub offsets: [R; 2],
@@ -4911,7 +4928,6 @@ pub struct RevisionG2BlendConstructionWire {
     /// Stored center curve.
     pub center: CurveId,
     /// Optional native center-curve parameter endpoints.
-    #[serde(default)]
     pub center_range: [Option<f64>; 2],
     /// Two signed blend radii in document length units.
     pub radii: [f64; 2],
@@ -4932,7 +4948,6 @@ pub struct RevisionG2BlendConstructionWire {
     /// Approximation-cache form selected by the shared tail enum.
     pub cache: RevisionCacheForm,
     /// Six ordered discontinuity arrays following the fit tolerance.
-    #[serde(default)]
     pub discontinuities: [Vec<f64>; 6],
     /// Boolean terminating the shared tail.
     pub tail_flag: bool,
@@ -5153,7 +5168,6 @@ pub struct RevisionCompoundLoftConstructionWire {
     /// Approximation-cache form selected by the shared tail enum.
     pub cache: RevisionCacheForm,
     /// Six ordered discontinuity arrays following the fit tolerance.
-    #[serde(default)]
     pub discontinuities: [Vec<f64>; 6],
     /// Boolean terminating the shared tail.
     pub tail_flag: bool,
@@ -5413,7 +5427,7 @@ pub struct VertexBlendBoundary<R = f64, V = Vector3, P = Point3> {
 /// Twist payload selected by a vertex-blend circle form.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "form", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum VertexBlendTwists<P = Point3> {
     /// Native form zero: no twist entries.
@@ -5471,7 +5485,6 @@ pub enum VertexBlendBoundaryGeometry<R = f64, V = Vector3, P = Point3> {
         curve: CurveId,
         /// Optional native curve parameter endpoints stored by the
         /// revision-gated layout.
-        #[serde(default)]
         curve_endpoints: [Option<R>; 2],
         /// Twist payload. Pre-revision layouts store model-space locations;
         /// the revision-gated layout stores unscaled twist vectors.
@@ -5494,7 +5507,6 @@ pub enum VertexBlendBoundaryGeometry<R = f64, V = Vector3, P = Point3> {
         surface: SurfaceId,
         /// Optional U/V bound fields stored after the support by the
         /// revision-gated layout.
-        #[serde(default)]
         support_bounds: [Option<R>; 4],
         /// Native BS2 pcurve, absent for `nullbs`.
         #[serde(
@@ -5518,7 +5530,6 @@ pub enum VertexBlendBoundaryGeometry<R = f64, V = Vector3, P = Point3> {
         curve: CurveId,
         /// Optional native curve parameter endpoints stored by the
         /// revision-gated layout.
-        #[serde(default)]
         curve_endpoints: [Option<R>; 2],
     },
 }
@@ -6235,6 +6246,7 @@ pub struct NetSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
+#[serde(bound(deserialize = "R: Deserialize<'de>, V: Deserialize<'de>, P: Deserialize<'de>"))]
 #[cfg_attr(
     feature = "schema",
     schemars(
@@ -6262,7 +6274,11 @@ pub enum SweepSurfaceLayout<R = f64, V = Vector3, P = Point3> {
         /// Profile parameter interval.
         profile_range: [R; 2],
         /// Optional explicit profile frame.
-        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_profile_frame"
+        )]
         profile_frame: Option<(P, V)>,
         /// Sweep frame origin.
         origin: P,
@@ -6288,7 +6304,11 @@ pub enum SweepSurfaceLayout<R = f64, V = Vector3, P = Point3> {
         /// Profile parameter interval.
         profile_range: [R; 2],
         /// Optional explicit profile frame.
-        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_profile_frame"
+        )]
         profile_frame: Option<(P, V)>,
         /// Sweep frame origin.
         origin: P,
@@ -6320,7 +6340,11 @@ pub enum SweepSurfaceLayout<R = f64, V = Vector3, P = Point3> {
         /// Profile parameter interval.
         profile_range: [R; 2],
         /// Optional explicit profile frame.
-        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_profile_frame"
+        )]
         profile_frame: Option<(P, V)>,
         /// Sweep frame origin.
         origin: P,
@@ -6337,12 +6361,20 @@ pub enum SweepSurfaceLayout<R = f64, V = Vector3, P = Point3> {
         /// Support surface controlling the sweep.
         support_surface: SurfaceId,
         /// Optional auxiliary curve.
-        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_auxiliary_curve"
+        )]
         auxiliary_curve: Option<CurveId>,
         /// Native support-side boolean.
         support_flag: bool,
         /// Legacy pre-219 trailing boolean when present.
-        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_legacy_flag"
+        )]
         legacy_flag: Option<bool>,
     },
     /// Explicit-prefix sweep layout controlled by recursive laws.
@@ -6352,7 +6384,11 @@ pub enum SweepSurfaceLayout<R = f64, V = Vector3, P = Point3> {
         /// Profile parameter interval.
         profile_range: [R; 2],
         /// Optional explicit profile frame.
-        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_profile_frame"
+        )]
         profile_frame: Option<(P, V)>,
         /// Sweep frame origin.
         origin: P,
@@ -6399,10 +6435,8 @@ pub struct SweepRevisionForm<R = f64> {
     /// Boolean replacing the pre-revision primary enum.
     pub primary_flag: bool,
     /// Optional parameter endpoints following the embedded profile curve.
-    #[serde(default)]
     pub profile_endpoints: [Option<R>; 2],
     /// Optional parameter endpoints following the embedded path curve.
-    #[serde(default)]
     pub path_endpoints: [Option<R>; 2],
     /// Approximation-cache form selected by the shared tail enum.
     pub cache: RevisionCacheForm<RevisionSurfaceParameterization<R>>,
@@ -6424,7 +6458,6 @@ pub struct SweepSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
     pub primary_kind: i64,
     /// Cache contract: the revision-gated form, or the legacy solved-cache
     /// tolerance this construction states instead.
-    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     pub cache: CacheContract<SweepRevisionForm<R>>,
     /// Structurally selected sweep layout.
     pub layout: SweepSurfaceLayout<R, V, P>,
@@ -6435,7 +6468,7 @@ pub struct SweepSurfaceConstruction<R = f64, V = Vector3, P = Point3> {
 }
 
 /// Radius law for a procedural blend.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -6492,6 +6525,13 @@ pub struct ProceduralCurve {
     pub id: ProceduralCurveId,
     /// Neutral construction definition, which states its own cache contract.
     definition: ProceduralCurveDefinition,
+    /// The source record this construction projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 /// A parameter-space support curve and its optional affine parameter map.
@@ -7049,11 +7089,9 @@ pub struct CacheFirstCurveForm<R = f64> {
     /// Approximation-cache form selected by the shared context enum.
     pub cache: RevisionCacheForm<CacheFirstCurveParameterization<R>>,
     /// Optional U/V bound fields following each ordered support surface.
-    #[serde(default)]
     pub support_bounds: [[Option<R>; 4]; 2],
     /// Optional solved-curve interval endpoints; absent endpoints inherit the
     /// solved NURBS domain.
-    #[serde(default)]
     pub solved_range: [Option<R>; 2],
     /// Native integer ASM extension following the discontinuity arrays.
     pub extension: i64,
@@ -7107,7 +7145,11 @@ pub enum SpringLayout<R = f64, I = [f64; 2]> {
         /// First pcurve or its null replacement range.
         first_pcurve: Box<SpringPcurve<R>>,
         /// Nullable second pcurve slot.
-        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_second_pcurve"
+        )]
         second_pcurve: Option<PcurveGeometry>,
         /// Native solved-curve parameter interval.
         parameter_range: I,
@@ -7166,7 +7208,6 @@ impl<R, I> SpringLayout<R, I> {
 pub struct CacheFirstCurveParameterization<R = f64> {
     /// Curve interval, an ordered `[lo, hi]` pair of optional bounds. `None` is
     /// a false bound-presence flag.
-    #[serde(default)]
     pub interval: [Option<R>; 2],
     /// Closed-form enum following the interval.
     pub closed_form: i64,
@@ -7206,11 +7247,9 @@ struct SurfaceCurveTailWire {
     /// Approximation-cache form selected by the shared context enum.
     cache: RevisionCacheForm<CacheFirstCurveParameterization>,
     /// Optional U/V bound fields following each ordered support surface.
-    #[serde(default)]
     support_bounds: [[Option<f64>; 4]; 2],
     /// Optional solved-curve interval endpoints; absent endpoints inherit the
     /// solved NURBS domain.
-    #[serde(default)]
     solved_range: [Option<f64>; 2],
 }
 
@@ -7384,9 +7423,9 @@ impl<'de> Deserialize<'de> for ProjectionRole {
 
 /// Native surface-curve family with its support context and optional
 /// cache-first form.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "family", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SurfaceCurveFamily {
     /// Blend edge curve whose construction details live on its blend support.
     Blend {
@@ -7439,7 +7478,7 @@ pub enum SurfaceCurveFamily {
 }
 
 /// Discriminant of a native surface-curve family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -7522,7 +7561,7 @@ impl SurfaceCurveFamily {
 }
 
 /// Native silhouette construction family and its exclusive tail fields.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -7579,7 +7618,7 @@ pub enum DeformableCurveData<R = f64, V = Vector3, P = Point3> {
 }
 
 /// Source slot of a deformable native intcurve.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -7601,7 +7640,7 @@ pub enum DeformableCurveSource {
 /// Orientation carrier of a planar curve offset.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "side", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum OffsetSide<V = Vector3> {
     /// Unit plane normal defining the positive offset side.
     PlaneNormal {
@@ -7975,7 +8014,11 @@ impl ProceduralCurveDefinition {
 impl ProceduralCurve {
     /// Build a procedural curve from its construction definition.
     pub fn new(id: ProceduralCurveId, definition: ProceduralCurveDefinition) -> Self {
-        Self { id, definition }
+        Self {
+            id,
+            definition,
+            native_ref: None,
+        }
     }
 
     /// Borrow the neutral construction definition.
@@ -8062,6 +8105,13 @@ pub(crate) struct ProceduralSurfaceRow {
         deserialize_with = "deserialize_record_bounds"
     )]
     record_bounds: Option<RecordBounds>,
+    /// The source record this construction projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    native_ref: Option<String>,
 }
 
 /// One procedural-curve row: the construction and the carrier it produces.
@@ -8075,6 +8125,13 @@ pub(crate) struct ProceduralCurveRow {
     curve: CurveId,
     /// Neutral construction definition.
     definition: ProceduralCurveDefinition,
+    /// The source record this construction projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    native_ref: Option<String>,
 }
 
 impl ProceduralSurfaceRow {
@@ -8085,6 +8142,7 @@ impl ProceduralSurfaceRow {
             surface,
             definition: procedural.definition.clone(),
             record_bounds: procedural.record_bounds,
+            native_ref: procedural.native_ref.clone(),
         }
     }
 
@@ -8092,7 +8150,10 @@ impl ProceduralSurfaceRow {
     pub(crate) fn into_parts(self) -> (SurfaceId, ProceduralSurface) {
         (
             self.surface,
-            ProceduralSurface::new(self.id, self.definition, self.record_bounds),
+            ProceduralSurface {
+                native_ref: self.native_ref,
+                ..ProceduralSurface::new(self.id, self.definition, self.record_bounds)
+            },
         )
     }
 }
@@ -8104,6 +8165,7 @@ impl ProceduralCurveRow {
             id: procedural.id.clone(),
             curve,
             definition: procedural.definition.clone(),
+            native_ref: procedural.native_ref.clone(),
         }
     }
 
@@ -8114,13 +8176,14 @@ impl ProceduralCurveRow {
             ProceduralCurve {
                 id: self.id,
                 definition: self.definition,
+                native_ref: self.native_ref,
             },
         )
     }
 }
 
 /// Independent variable used by a curve-offset distance law.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -8266,6 +8329,7 @@ cadmpeg_core::named_optional_field!(
     "parameter_range"
 );
 cadmpeg_core::named_optional_field!(deserialize_tertiary, bool, "tertiary");
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_cache, LegacyCache, "cache");
 cadmpeg_core::named_optional_field!(deserialize_record, UnknownId, "record");
 cadmpeg_core::named_optional_field!(
@@ -8391,3 +8455,26 @@ mod identity_rewrite;
 mod serialization;
 
 mod support_reversal;
+
+cadmpeg_core::named_optional_field!(
+    deserialize_rolling_ball_side_extension_pcurve<P>,
+    P,
+    "pcurve"
+);
+cadmpeg_core::named_optional_field!(deserialize_separator, bool, "separator");
+cadmpeg_core::named_optional_field!(
+    deserialize_inline_t_spline_subtransform_wire_separator,
+    bool,
+    "separator"
+);
+cadmpeg_core::named_optional_field!(deserialize_version_value, i64, "version_value");
+cadmpeg_core::named_optional_field!(
+    deserialize_procedural_surface_record_bounds,
+    RecordBounds,
+    "record_bounds"
+);
+cadmpeg_core::named_optional_field!(deserialize_self_intersect, bool, "self_intersect");
+cadmpeg_core::named_optional_field!(deserialize_profile_frame<P, V>, (P, V), "profile_frame");
+cadmpeg_core::named_optional_field!(deserialize_auxiliary_curve, CurveId, "auxiliary_curve");
+cadmpeg_core::named_optional_field!(deserialize_legacy_flag, bool, "legacy_flag");
+cadmpeg_core::named_optional_field!(deserialize_second_pcurve, PcurveGeometry, "second_pcurve");

@@ -25,24 +25,12 @@ pub mod polyhedron;
 pub mod refusal;
 pub mod revolve;
 pub mod roundtrip;
+pub mod schema_sweep;
 pub mod solids;
+pub mod spelling;
 pub mod unknown_keys;
 pub mod wire;
 pub mod zip_fixture;
-
-/// A service-policy decode context for a test that creates native records
-/// without reading a source file.
-#[must_use]
-pub fn service_decode_context() -> cadmpeg_core::decode::DecodeContext<'static> {
-    let arena = Box::leak(Box::new(cadmpeg_core::decode::DecodeArena::new()));
-    cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        arena,
-        &cadmpeg_core::decode::DecodePolicy::service(),
-    )
-    .expect("empty test input fits the service policy")
-    .0
-}
 
 /// Editable parts of a consumed decode result for writer tests.
 ///

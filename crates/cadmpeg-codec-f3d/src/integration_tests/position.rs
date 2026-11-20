@@ -125,7 +125,7 @@ fn localized_position_decodes_dispatches_projects_and_binds_after_products() {
         .iter()
         .find(|occurrence| Some(&occurrence.id) == positions[0].occurrence.as_ref())
         .unwrap();
-    assert_eq!(occurrence.transform, Transform::identity());
+    assert_eq!(occurrence.transform, Some(Transform::identity()));
     assert!(positions[0]
         .selector
         .as_str()

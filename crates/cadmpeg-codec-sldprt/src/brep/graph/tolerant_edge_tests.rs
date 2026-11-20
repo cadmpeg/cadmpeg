@@ -16,7 +16,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Sense;
 
 fn ctx() -> cadmpeg_core::decode::DecodeContext<'static> {
-    cadmpeg_test_support::service_decode_context()
+    cadmpeg_core::decode::test_support::service_decode_context()
 }
 
 fn stream() -> StreamHandle {
@@ -118,6 +118,7 @@ fn plane(id: &str) -> Surface {
             )
             .expect("a plane"),
         )),
+        native_ref: None,
     }
 }
 
@@ -310,6 +311,7 @@ fn cylinder(id: &str) -> Surface {
             )
             .expect("a cylinder"),
         )),
+        native_ref: None,
     }
 }
 
@@ -399,6 +401,7 @@ fn a_bounded_sp_curve_on_a_b_surface_resolves_its_knot_lines() {
         id: SurfaceId::mint("sldprt:brep:surf#100").expect("identity grammar"),
         source_object: None,
         geometry: crate::test_support::surfaces::ridged(),
+        native_ref: None,
     });
     let emitted = HashMap::from([(200, 100)]);
     attach(&mut out, &carrier, &emitted);
@@ -494,7 +497,13 @@ fn an_edge_on_a_bare_sp_curve_runs_from_the_domain_low_end() {
     assert!(edge
         .curve()
         .is_some_and(|id| id.as_str().ends_with("curve#70")));
-    assert!(edge.start.as_str().ends_with("vertex#50"));
+    assert!(edge
+        .ends
+        .as_ref()
+        .unwrap()
+        .start
+        .as_str()
+        .ends_with("vertex#50"));
     assert!(brep.curves.iter().any(|curve| {
         curve.id.as_str().ends_with("curve#70")
             && matches!(curve.geometry, CurveGeometry::Procedural { .. })
@@ -506,8 +515,20 @@ fn an_edge_on_a_bare_sp_curve_runs_from_the_domain_low_end() {
         [1.0, 0.0],
         [0.0, 0.0],
     ));
-    assert!(edge.start.as_str().ends_with("vertex#51"));
-    assert!(edge.end.as_str().ends_with("vertex#50"));
+    assert!(edge
+        .ends
+        .as_ref()
+        .unwrap()
+        .start
+        .as_str()
+        .ends_with("vertex#51"));
+    assert!(edge
+        .ends
+        .as_ref()
+        .unwrap()
+        .end
+        .as_str()
+        .ends_with("vertex#50"));
 }
 
 #[test]

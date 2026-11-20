@@ -1,9 +1,14 @@
-use crate::layout::{move_face_marker_one_prologue as one, move_face_marker_zero_prologue as zero};
+use crate::layout::{
+    move_face_marker_one_prologue as one, move_face_marker_zero_prologue as zero,
+    move_face_typed_marker_one_prologue as typed_one,
+    move_face_typed_marker_zero_prologue as typed_zero,
+};
 use crate::test_support::{indexed_header, lp_utf16, push_marked_reference};
 use std::io::{Cursor, Write};
 
 pub(crate) const TRANSFORM_GUID: &str = "84E6245F-1CDC-4FB8-8048-163A85FAD3F0";
 pub(crate) const OTHER_GUID: &str = "00000000-0000-4000-8000-000000000001";
+pub(crate) const GROUP_GUID: &str = "2CA5A1CD-C99B-4C9B-91AF-57989148E841";
 pub(crate) const TRANSLATION: [[f64; 4]; 4] = [
     [1., 0., 0., 0.25],
     [0., 1., 0., -0.5],
@@ -37,6 +42,9 @@ impl Default for MoveFaceFrame {
 pub(crate) struct MoveFaceFixture {
     pub(crate) references: Vec<u32>,
     pub(crate) marker_one: bool,
+    /// The two marked prologue references and the ordered table use the
+    /// inline-typed spelling, with these transform and group type GUIDs.
+    pub(crate) typed: Option<(&'static str, &'static str)>,
     pub(crate) group_mark: Option<u32>,
     pub(crate) group_role: Option<u64>,
     pub(crate) prefix: u8,
@@ -50,6 +58,7 @@ impl Default for MoveFaceFixture {
         Self {
             references: vec![50, 60, 71],
             marker_one: false,
+            typed: None,
             group_mark: Some(50),
             group_role: Some(0x0000_0010_0000_0000),
             prefix: 0,
@@ -64,6 +73,15 @@ impl Default for MoveFaceFixture {
     }
 }
 
+/// A 51-byte inline-typed local reference.
+fn push_typed_reference(bytes: &mut Vec<u8>, target: u32, guid: &str) {
+    bytes.push(1);
+    bytes.extend_from_slice(&u64::from(target).to_le_bytes());
+    bytes.extend_from_slice(&36_u32.to_le_bytes());
+    bytes.extend_from_slice(guid.as_bytes());
+    bytes.extend_from_slice(&[0, 0]);
+}
+
 impl MoveFaceFixture {
     pub(crate) fn archive(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -75,29 +93,53 @@ impl MoveFaceFixture {
             bytes.extend_from_slice(&0_u32.to_le_bytes());
         }
         bytes.push(1);
-        push_marked_reference(&mut bytes, 71);
+        let push_reference = |bytes: &mut Vec<u8>, target: u32, guid: &str| {
+            if self.typed.is_some() {
+                push_typed_reference(bytes, target, guid);
+            } else {
+                push_marked_reference(bytes, target);
+            }
+        };
+        let (transform_guid, group_guid) = self.typed.unwrap_or((TRANSFORM_GUID, GROUP_GUID));
+        push_reference(&mut bytes, 71, transform_guid);
         bytes.extend_from_slice(&1_u32.to_le_bytes());
         if let Some(group) = self.group_mark {
-            push_marked_reference(&mut bytes, group);
+            push_reference(&mut bytes, group, group_guid);
         } else {
             bytes.extend_from_slice(&[0; 11]);
         }
         bytes.resize(
-            if self.marker_one {
-                one::REFERENCE_COUNT
-            } else {
-                zero::REFERENCE_COUNT
+            match (self.typed.is_some(), self.marker_one) {
+                (false, false) => zero::REFERENCE_COUNT,
+                (false, true) => one::REFERENCE_COUNT,
+                (true, false) => typed_zero::REFERENCE_COUNT,
+                (true, true) => typed_one::REFERENCE_COUNT,
             },
             0,
         );
         bytes.extend_from_slice(&u32::try_from(self.references.len()).unwrap().to_le_bytes());
         for &reference in &self.references {
-            push_marked_reference(&mut bytes, reference);
+            push_reference(&mut bytes, reference, OTHER_GUID);
         }
         bytes.extend_from_slice(&7_u32.to_le_bytes());
         lp_utf16(&mut bytes, "MoveFace");
         bytes.extend_from_slice(&1_u32.to_le_bytes());
-        bytes.extend_from_slice(&[0; 73]);
+        if self.typed.is_some() {
+            // The typed scope tail: three 51-byte references around the
+            // previous history state and the ordinal and scalar lane.
+            bytes.extend_from_slice(&[0; 15]);
+            push_typed_reference(&mut bytes, 18, OTHER_GUID);
+            bytes.extend_from_slice(&6_u32.to_le_bytes());
+            bytes.extend_from_slice(&64_u32.to_le_bytes());
+            bytes.extend_from_slice(&0.25_f64.to_le_bytes());
+            bytes.extend_from_slice(&64_u32.to_le_bytes());
+            push_typed_reference(&mut bytes, 19, OTHER_GUID);
+            bytes.extend_from_slice(&[0; 2]);
+            push_typed_reference(&mut bytes, 20, OTHER_GUID);
+            bytes.extend_from_slice(&[0; 2]);
+        } else {
+            bytes.extend_from_slice(&[0; 73]);
+        }
         indexed_header(&mut bytes, *b"259", 17);
         for frame in &self.frames {
             let start = bytes.len();

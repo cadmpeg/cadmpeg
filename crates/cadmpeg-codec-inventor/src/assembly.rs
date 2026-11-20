@@ -7,10 +7,9 @@ use std::num::NonZeroUsize;
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::ids::OccurrenceId;
+use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::products::{
-    AssemblyJoint, JointConnector, JointId, JointOperand, Occurrence, OccurrenceParent,
-    PrototypeReference,
+    AssemblyJoint, JointConnector, JointId, JointOperand, Occurrence, ProductDefinition, Storage,
 };
 use cadmpeg_ir::transform::Transform;
 
@@ -170,6 +169,8 @@ pub(crate) struct OccurrenceStates<'a> {
 
 #[derive(Debug)]
 pub(crate) struct AssemblyProjection {
+    /// One definition of external storage per document the occurrences place.
+    pub(crate) definitions: Vec<ProductDefinition>,
     pub(crate) occurrences: Vec<Occurrence>,
     pub(crate) joints: Vec<AssemblyJoint>,
     /// Hidden occurrences below a root occurrence; they stay in native records.
@@ -225,6 +226,7 @@ pub(crate) fn project_occurrences(
         )
     }));
     let mut emitted_ids = HashSet::new();
+    let mut definitions = BTreeMap::<u32, ProductDefinition>::new();
     let mut occurrences = Vec::new();
     let mut joints = Vec::new();
     let mut unresolved_placements = BTreeMap::new();
@@ -299,22 +301,25 @@ pub(crate) fn project_occurrences(
             &cadmpeg_ir::identity_namespace!("inventor", "assembly", "instance"),
             source.occurrence_id,
         );
-        occurrences.push(Occurrence {
-            id: id.clone(),
-            prototype: PrototypeReference::External {
-                document: reference.document(),
-                object: None,
-            },
-            parent: OccurrenceParent::Root {},
-            ordinal: source.ordinal,
-            transform,
-            linked_prototype: None,
-            scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
-            name: source.title.clone().filter(|title| !title.is_empty()),
-            visible,
-            link: None,
-            native_ref: Some(source.id.clone()),
-        });
+        let prototype = match definitions.entry(reference.ordinal()) {
+            std::collections::btree_map::Entry::Occupied(entry) => entry.get().id.clone(),
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                ctx.charge_entities(1, "project Inventor referenced document")?;
+                let definition = ProductDefinition::new(
+                    ProductDefinitionId::compose(
+                        &cadmpeg_ir::identity_namespace!("inventor", "assembly", "document"),
+                        reference.ordinal(),
+                    ),
+                    Storage::External(reference.document()),
+                );
+                entry.insert(definition).id.clone()
+            }
+        };
+        let mut occurrence = Occurrence::new(id.clone(), prototype, Some(transform));
+        occurrence.name = source.title.clone().filter(|title| !title.is_empty());
+        occurrence.visible = visible;
+        occurrence.native_ref = Some(source.id.clone());
+        occurrences.push(occurrence);
         if let Some(grounding) = grounded_record(occurrence_record, &grounding_records) {
             ctx.charge_entities(1, "project Inventor grounded joint")?;
             let object = source
@@ -340,6 +345,7 @@ pub(crate) fn project_occurrences(
     }
 
     Ok(AssemblyProjection {
+        definitions: definitions.into_values().collect(),
         occurrences,
         joints,
         nested_hidden,
@@ -841,8 +847,9 @@ mod tests {
     use crate::test_support::test_fixtures::push_u32;
     use crate::test_support::test_fixtures::push_utf16;
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy, ResourceDimension, View};
+    use cadmpeg_core::text::NonBlankString;
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::products::PrototypeReference;
+    use cadmpeg_ir::products::{ExternalDocument, Occurrence, Storage};
 
     use super::{
         inventory, parse_design_view_representation, parse_grounding, parse_occurrence,
@@ -873,6 +880,22 @@ mod tests {
             "ࠀ"
         );
         assert_eq!(cursor.source.position(), bytes.len());
+    }
+
+    /// The document that the definition an occurrence places names.
+    fn prototype_document<'p>(
+        projection: &'p super::AssemblyProjection,
+        occurrence: &Occurrence,
+    ) -> &'p ExternalDocument {
+        let definition = projection
+            .definitions
+            .iter()
+            .find(|definition| definition.id == occurrence.prototype)
+            .expect("the prototype definition");
+        let Storage::External(document) = &definition.storage else {
+            panic!("the persisted document reference must remain external");
+        };
+        document
     }
 
     fn project_under_service(
@@ -1186,32 +1209,15 @@ mod tests {
         let [projected] = projection.occurrences.as_slice() else {
             panic!("one occurrence must be projected");
         };
-        assert_eq!(projected.ordinal, 2);
-        assert_eq!(projected.transform.rows()[0][3], 12.5);
-        assert_eq!(projected.transform.rows()[1][3], -20.0);
-        let PrototypeReference::External { document, object } = &projected.prototype else {
-            panic!("the persisted file reference must remain external");
-        };
+        let rows = projected.transform.expect("a placed occurrence").rows();
+        assert_eq!(rows[0][3], 12.5);
+        assert_eq!(rows[1][3], -20.0);
+        let document = prototype_document(&projection, projected);
         assert_eq!(
-            (match &document {
-                cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()),
-                _ => None,
-            }),
+            document.path.as_ref().map(NonBlankString::as_str),
             Some("components/part.ipt")
         );
-        assert_eq!(
-            (match &document {
-                cadmpeg_ir::products::ExternalDocument::DocumentId { document_id } =>
-                    Some(document_id.as_str()),
-                _ => None,
-            }),
-            None
-        );
-        assert!(!matches!(
-            document,
-            cadmpeg_ir::products::ExternalDocument::Missing {}
-        ));
-        assert_eq!(object, &None);
+        assert_eq!(document.object, None);
     }
 
     #[test]
@@ -1256,14 +1262,11 @@ mod tests {
         let [projected] = projection.occurrences.as_slice() else {
             panic!("the referenced copy must be projected");
         };
-        let PrototypeReference::External { document, .. } = &projected.prototype else {
-            panic!("the prototype must remain external");
-        };
         assert_eq!(
-            (match &document {
-                cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()),
-                _ => None,
-            }),
+            prototype_document(&projection, projected)
+                .path
+                .as_ref()
+                .map(NonBlankString::as_str),
             Some("a\\Part.ipt")
         );
 
@@ -1299,7 +1302,7 @@ mod tests {
     }
 
     #[test]
-    fn path_identity_takes_precedence_on_external_prototypes() {
+    fn an_external_prototype_keeps_its_path_and_document_id() {
         let reference = external_reference_with_document_id(
             4,
             "components/part.ipt",
@@ -1316,23 +1319,15 @@ mod tests {
         let [projected] = projection.occurrences.as_slice() else {
             panic!("one occurrence must be projected");
         };
-        let PrototypeReference::External { document, .. } = &projected.prototype else {
-            panic!("the persisted document identity must remain external");
-        };
+        // The document keeps every identity the reference records (§8.1).
+        let document = prototype_document(&projection, projected);
         assert_eq!(
-            (match &document {
-                cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()),
-                _ => None,
-            }),
+            document.path.as_ref().map(NonBlankString::as_str),
             Some("components/part.ipt")
         );
         assert_eq!(
-            (match &document {
-                cadmpeg_ir::products::ExternalDocument::DocumentId { document_id } =>
-                    Some(document_id.as_str()),
-                _ => None,
-            }),
-            None
+            document.document_id.as_ref().map(NonBlankString::as_str),
+            Some(fixture_document_id(4).as_str())
         );
     }
 
@@ -1354,24 +1349,12 @@ mod tests {
         let [projected] = projection.occurrences.as_slice() else {
             panic!("one suppressed occurrence must be projected");
         };
-        assert_eq!(projected.transform, Transform::identity());
+        assert_eq!(projected.transform, Some(Transform::identity()));
         assert_eq!(projected.visible, Some(false));
-        let PrototypeReference::External { document, .. } = &projected.prototype else {
-            panic!("the persisted document identity must remain external");
-        };
+        let document = prototype_document(&projection, projected);
+        assert_eq!(document.path, None);
         assert_eq!(
-            (match &document {
-                cadmpeg_ir::products::ExternalDocument::Path { path } => Some(path.as_str()),
-                _ => None,
-            }),
-            None
-        );
-        assert_eq!(
-            (match &document {
-                cadmpeg_ir::products::ExternalDocument::DocumentId { document_id } =>
-                    Some(document_id.as_str()),
-                _ => None,
-            }),
+            document.document_id.as_ref().map(NonBlankString::as_str),
             Some(expected_document_id.as_str())
         );
     }

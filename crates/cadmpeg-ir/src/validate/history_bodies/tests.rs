@@ -22,24 +22,24 @@ fn nest_scope(id: &str) -> String {
 
 /// The cube of the examples as a nest in the history-body scope.
 fn cube_nest() -> BodyTopology {
-    let model = crate::examples::unit_cube().expect("cube").model;
-    let mut nest = BodyTopology::new(model.bodies[0].clone());
-    nest.regions = model.regions;
-    nest.shells = model.shells;
-    nest.faces = model.faces;
-    nest.loops = model.loops;
-    nest.coedges = model.coedges;
-    nest.edges = model.edges;
-    nest.vertices = model.vertices;
-    nest.surfaces = model.surfaces;
-    nest.curves = model.curves;
-    nest.pcurves = model.pcurves;
-    nest.points = model.points;
+    let geometry = crate::examples::unit_cube().expect("cube").geometry;
+    let mut nest = BodyTopology::new(geometry.bodies[0].clone());
+    nest.regions = geometry.regions;
+    nest.shells = geometry.shells;
+    nest.faces = geometry.faces;
+    nest.loops = geometry.loops;
+    nest.coedges = geometry.coedges;
+    nest.edges = geometry.edges;
+    nest.vertices = geometry.vertices;
+    nest.surfaces = geometry.surfaces;
+    nest.curves = geometry.curves;
+    nest.pcurves = geometry.pcurves;
+    nest.points = geometry.points;
     nest
 }
 
 fn scoped(nest: BodyTopology) -> BodyTopology {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut map = IdentityMap::new(|id: &str| Ok(nest_scope(id)));
     let rewritten =
         crate::schema::rewrite::typed::RewriteIdentities::rewrite_identities(nest, &ctx, &mut map)
@@ -83,7 +83,7 @@ fn feature(id: &str) -> Feature {
 }
 
 fn findings(ir: &CadIr) -> Vec<Finding> {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let index = crate::index::ModelIndex::build(ir);
     let mut findings = Vec::new();
     super::check_history_bodies(&ctx, ir, &index, &mut findings).expect("validation runs");
@@ -136,7 +136,7 @@ fn a_reference_that_leaves_the_nest_is_reported() {
 #[test]
 fn a_reference_into_the_top_level_arenas_is_not_a_closure() {
     let mut ir = crate::examples::unit_cube().expect("cube");
-    let top_surface = ir.model.surfaces[0].clone();
+    let top_surface = ir.geometry.surfaces[0].clone();
     let mut nest = scoped(cube_nest());
     let dropped = nest.surfaces.remove(0);
     for face in &mut nest.faces {
@@ -244,7 +244,7 @@ fn nest_records_are_not_seen_by_the_top_level_reference_check() {
         "{:?}",
         report.findings
     );
-    assert!(ir.model.bodies.is_empty());
+    assert!(ir.geometry.bodies.is_empty());
 }
 
 #[test]
@@ -257,5 +257,5 @@ fn a_document_with_a_nest_round_trips_through_json() {
     let back: CadIr = serde_json::from_str(&json).expect("deserialize");
     assert_eq!(back.model.history_bodies, ir.model.history_bodies);
     let empty = serde_json::to_value(CadIr::empty()).expect("serialize");
-    assert!(empty["model"].get("history_bodies").is_none());
+    assert_eq!(empty["model"]["history_bodies"], serde_json::json!([]));
 }

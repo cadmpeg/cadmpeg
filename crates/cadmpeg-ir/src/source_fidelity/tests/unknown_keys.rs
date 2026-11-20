@@ -12,6 +12,7 @@ const DIGEST: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f2
 // These objects are maps whose keys name records, fields, or declared measures.
 // Their values are still visited through the complete sidecar reader.
 const MAP_PATHS: &[&str] = &[
+    "/fidelity/file_digests",
     "/fidelity/retained_records",
     "/fidelity/annotations/provenance",
     "/fidelity/annotations/exactness",
@@ -19,6 +20,7 @@ const MAP_PATHS: &[&str] = &[
     "/fidelity/annotations/exactness/synthetic:source:record#digest/fields",
     "/report/coverage",
     "/report/identity/dialects/primary/declared",
+    "/report/identity/dialects/extra/0/declared",
 ];
 
 fn fixture() -> Value {
@@ -26,40 +28,43 @@ fn fixture() -> Value {
         "ir_version": crate::IR_VERSION,
         "ir_sha256": DIGEST,
         "report": {
-            "identity": {"classification": "unclassified", "format": "synthetic"},
-            "transfer": {"transfer": "full", "geometry_transferred": true},
+            "identity": {"kind": "unclassified", "format": "synthetic"},
+            "transfer": {"kind": "full", "geometry_transferred": true},
             "coverage": {"source_records": 2},
             "losses": [
                 {
-                    "code": {"scope": "shared", "kind": "pcurve_omitted"},
+                    "code": {"kind": "shared", "value": {"kind": "pcurve_omitted"}},
                     "severity": "warning", "message": "pcurve absent",
                     "provenance": {"format": "synthetic", "offset": 0}
                 },
                 {
-                    "code": {"scope": "namespaced", "namespace": "synthetic", "code": "geometry.pcurve-omitted", "kind": "pcurve_omitted", "strict_floor": "error"},
+                    "code": {"kind": "namespaced", "value": {"namespace": "synthetic", "code": "geometry.pcurve-omitted", "kind": "pcurve_omitted", "strict_floor": "error"}},
                     "severity": "warning", "message": "pcurve absent",
                     "provenance": {"format": "synthetic", "stream": "source", "offset": 7, "tag": "pcurve"}
                 }
             ],
             "notes": [],
             "transfer_ledger": {"entries": [
-                {"source": "one", "outcome": {"disposition": "emitted", "target": FIRST}},
-                {"source": "two", "outcome": {"disposition": "retained", "target": SECOND, "note": "retained"}},
-                {"source": "three", "outcome": {"disposition": "approximated", "target": FIRST, "note": "approximate"}},
-                {"source": "four", "outcome": {"disposition": "omitted", "note": "absent"}}
+                {"source": "one", "outcome": {"kind": "emitted", "target": FIRST}},
+                {"source": "two", "outcome": {"kind": "retained", "target": SECOND, "note": "retained"}},
+                {"source": "three", "outcome": {"kind": "approximated", "target": FIRST, "note": "approximate"}},
+                {"source": "four", "outcome": {"kind": "omitted", "note": "absent"}}
             ]}
         },
         "fidelity": {
+            "decode_digest": DIGEST,
+            "file_digests": {"synthetic:document:definition#component": DIGEST},
+            "unrepresented": ["model"],
             "annotations": {
                 "provenance": {FIRST: {"stream": "source", "offset": 7, "tag": "record"}},
                 "exactness": {
-                    FIRST: {"scope": "entity", "entity": "inferred", "fields": {"position": "byte_exact"}},
-                    SECOND: {"scope": "fields", "fields": {"position": "derived"}}
+                    FIRST: {"kind": "entity", "entity": "inferred", "fields": {"position": "byte_exact"}},
+                    SECOND: {"kind": "fields", "fields": {"position": "derived"}}
                 }
             },
             "retained_records": {
-                FIRST: {"stream": "", "offset": 0, "bytes": {"retention": "inline", "data": "YWJj"}},
-                SECOND: {"stream": "source", "offset": 7, "bytes": {"retention": "digest", "byte_len": 3, "sha256": DIGEST}}
+                FIRST: {"stream": "", "offset": 0, "bytes": {"kind": "inline", "data": "YWJj"}, "untyped": []},
+                SECOND: {"stream": "source", "offset": 7, "bytes": {"kind": "digest", "byte_len": 3, "sha256": DIGEST}, "untyped": ["model"]}
             }
         }
     })
@@ -87,20 +92,20 @@ fn object_paths(value: &Value, path: &str, paths: &mut Vec<String>) {
 fn complete_sidecar_refuses_unknown_fields_at_every_owned_object() {
     let mut fixtures = vec![fixture()];
     for admission in [
-        json!("admitted"),
-        json!("residual"),
-        json!("refused"),
-        json!({"unverified": {"using": "ap242-e1"}}),
+        json!({"kind": "admitted"}),
+        json!({"kind": "residual"}),
+        json!({"kind": "refused"}),
+        json!({"kind": "unverified", "using": "ap242-e1"}),
     ] {
         let mut classified = fixture();
         classified["report"]["identity"] = json!({
-            "classification": "classified",
+            "kind": "classified",
             "dialects": {
                 "primary": {"dialect": "step:ap242-e1", "declared": {"schema": "AP242"}, "admission": admission},
-                "extra": [{"dialect": "acis:asm-binaryfile-4", "instance": "body", "admission": "admitted"}]
+                "extra": [{"dialect": "acis:asm-binaryfile-4", "declared": {}, "instance": "body", "admission": {"kind": "admitted"}}]
             }
         });
-        classified["report"]["transfer"] = json!({"transfer": "container"});
+        classified["report"]["transfer"] = json!({"kind": "container"});
         fixtures.push(classified);
     }
     let mut visited = BTreeSet::new();
@@ -132,29 +137,15 @@ fn complete_sidecar_refuses_unknown_fields_at_every_owned_object() {
                 fields.insert("zz_bogus".into(), value);
                 let error = DecodeSidecar::from_json(&probe.to_string())
                     .expect_err(&format!("unknown field at {path}"));
-                // An externally tagged enum rejects a second tag before it
-                // inspects that tag's name. Its payload is still swept below.
-                let tag_count_refusal = path == "/report/identity/dialects/primary/admission"
-                    && error.to_string().contains("expected map with a single key");
-                assert!(
-                    error.to_string().contains("zz_bogus") || tag_count_refusal,
-                    "{path}: {error}"
-                );
-
-                if path == "/report/identity/dialects/primary/admission" {
-                    let fields = probe.pointer_mut(&path).unwrap().as_object_mut().unwrap();
-                    fields.remove("unverified").expect("known enum tag");
-                    let error = DecodeSidecar::from_json(&probe.to_string())
-                        .expect_err("unknown sole enum tag");
-                    assert!(error.to_string().contains("zz_bogus"), "{path}: {error}");
-                }
+                assert!(error.to_string().contains("zz_bogus"), "{path}: {error}");
             }
         }
     }
     for map in MAP_PATHS {
         assert!(visited.contains(*map), "unvisited map declaration {map}");
     }
-    assert!(visited.contains("/report/identity/dialects/primary/admission/unverified"));
+    assert!(visited.contains("/report/identity/dialects/primary/admission"));
+    assert!(visited.contains("/report/identity/dialects/extra/0/admission"));
 }
 
 #[test]

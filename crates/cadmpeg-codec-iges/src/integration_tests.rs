@@ -79,17 +79,17 @@ enum ExpectedArena {
 
 fn arena_count(result: &EditableDecodeResult, arena: ExpectedArena) -> usize {
     match arena {
-        ExpectedArena::ModelBodies => result.ir().model.bodies.len(),
-        ExpectedArena::ModelCoedges => result.ir().model.coedges.len(),
-        ExpectedArena::ModelCurves => result.ir().model.curves.len(),
-        ExpectedArena::ModelLoops => result.ir().model.loops.len(),
-        ExpectedArena::ModelPoints => result.ir().model.points.len(),
-        ExpectedArena::ModelPcurves => result.ir().model.pcurves.len(),
-        ExpectedArena::ModelProceduralCurves => result.ir().model.procedural_curves.len(),
-        ExpectedArena::ModelProceduralSurfaces => result.ir().model.procedural_surfaces.len(),
-        ExpectedArena::ModelRegions => result.ir().model.regions.len(),
-        ExpectedArena::ModelShells => result.ir().model.shells.len(),
-        ExpectedArena::ModelSurfaces => result.ir().model.surfaces.len(),
+        ExpectedArena::ModelBodies => result.ir().geometry.bodies.len(),
+        ExpectedArena::ModelCoedges => result.ir().geometry.coedges.len(),
+        ExpectedArena::ModelCurves => result.ir().geometry.curves.len(),
+        ExpectedArena::ModelLoops => result.ir().geometry.loops.len(),
+        ExpectedArena::ModelPoints => result.ir().geometry.points.len(),
+        ExpectedArena::ModelPcurves => result.ir().geometry.pcurves.len(),
+        ExpectedArena::ModelProceduralCurves => result.ir().geometry.procedural_curves.len(),
+        ExpectedArena::ModelProceduralSurfaces => result.ir().geometry.procedural_surfaces.len(),
+        ExpectedArena::ModelRegions => result.ir().geometry.regions.len(),
+        ExpectedArena::ModelShells => result.ir().geometry.shells.len(),
+        ExpectedArena::ModelSurfaces => result.ir().geometry.surfaces.len(),
         ExpectedArena::Native(name) => result
             .ir()
             .native
@@ -103,77 +103,77 @@ fn arena_ids(result: &EditableDecodeResult, arena: ExpectedArena) -> Vec<&str> {
     match arena {
         ExpectedArena::ModelBodies => result
             .ir()
-            .model
+            .geometry
             .bodies
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelCoedges => result
             .ir()
-            .model
+            .geometry
             .coedges
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelCurves => result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelLoops => result
             .ir()
-            .model
+            .geometry
             .loops
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelPoints => result
             .ir()
-            .model
+            .geometry
             .points
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelPcurves => result
             .ir()
-            .model
+            .geometry
             .pcurves
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelProceduralCurves => result
             .ir()
-            .model
+            .geometry
             .procedural_curves
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelProceduralSurfaces => result
             .ir()
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelRegions => result
             .ir()
-            .model
+            .geometry
             .regions
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelShells => result
             .ir()
-            .model
+            .geometry
             .shells
             .iter()
             .map(|item| item.id.as_str())
             .collect(),
         ExpectedArena::ModelSurfaces => result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .map(|item| item.id.as_str())
@@ -334,17 +334,17 @@ fn decode_matrix(
 
 fn matrix_destination(arena: ExpectedArena) -> &'static str {
     match arena {
-        ExpectedArena::ModelBodies => "model.bodies",
-        ExpectedArena::ModelCoedges => "model.coedges",
-        ExpectedArena::ModelCurves => "model.curves",
-        ExpectedArena::ModelLoops => "model.loops",
-        ExpectedArena::ModelPoints => "model.points",
-        ExpectedArena::ModelPcurves => "model.pcurves",
-        ExpectedArena::ModelProceduralCurves => "model.procedural_curves",
-        ExpectedArena::ModelProceduralSurfaces => "model.procedural_surfaces",
-        ExpectedArena::ModelRegions => "model.regions",
-        ExpectedArena::ModelShells => "model.shells",
-        ExpectedArena::ModelSurfaces => "model.surfaces",
+        ExpectedArena::ModelBodies => "geometry.bodies",
+        ExpectedArena::ModelCoedges => "geometry.coedges",
+        ExpectedArena::ModelCurves => "geometry.curves",
+        ExpectedArena::ModelLoops => "geometry.loops",
+        ExpectedArena::ModelPoints => "geometry.points",
+        ExpectedArena::ModelPcurves => "geometry.pcurves",
+        ExpectedArena::ModelProceduralCurves => "geometry.procedural_curves",
+        ExpectedArena::ModelProceduralSurfaces => "geometry.procedural_surfaces",
+        ExpectedArena::ModelRegions => "geometry.regions",
+        ExpectedArena::ModelShells => "geometry.shells",
+        ExpectedArena::ModelSurfaces => "geometry.surfaces",
         ExpectedArena::Native("directions") => "native.iges.entities",
         ExpectedArena::Native("units_data" | "properties") => "native.iges.properties",
         ExpectedArena::Native("primitive_solids" | "procedural_solids") => "native.iges.solids",
@@ -446,8 +446,8 @@ fn v4_outside_envelope_records_remain_native_without_neutral_projection() {
         global_v4,
     )));
 
-    assert!(result.ir().model.curves.is_empty());
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert!(result.ir().geometry.curves.is_empty());
+    assert_eq!(result.ir().geometry.points.len(), 1);
     let native = result.ir().native.namespace("iges").unwrap();
     assert_eq!(native.arenas()["entities"].len(), 2);
     assert!(result.report().losses.iter().any(|loss| {

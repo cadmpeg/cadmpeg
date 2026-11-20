@@ -109,7 +109,11 @@ fn complete_cadir_admission_checks_the_predecessor_against_current_feature_rows(
             }
             "tree ownership" => {
                 invalid["model"]["features"][0]["definition"] = serde_json::json!({
-                    "definition": "tree_node", "role": "history", "children": {"children": ["test:parent-wire:feature#1-child"]}
+                    "kind": "operation",
+                    "value": {
+                        "kind": "tree_node",
+                        "value": {"role": "history", "children": {"children": ["test:parent-wire:feature#1-child"]}}
+                    }
                 });
             }
             _ => unreachable!(),

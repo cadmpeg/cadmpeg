@@ -553,3 +553,63 @@ fn an_unselected_target_without_a_preceding_candidate_has_no_withdrawal_loss() {
     assert!(slots.is_empty());
     assert!(losses.is_empty());
 }
+
+#[test]
+fn a_target_cap_from_an_earlier_link_of_the_state_chain_selects_the_recipe_face() {
+    let (mut feature, sketch, mut scope, group, mut operand) = fixture();
+    scope
+        .try_edit(|draft| {
+            draft.previous_history_state_id = Some(6);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut before = AsmHistoricalTopology::default();
+    add_plane(&mut before, 3465, 0.0);
+    add_plane(&mut before, 3484, 20.0);
+    let mut middle = before.clone();
+    add_plane(&mut middle, 394, 18.5);
+    let mut after = middle.clone();
+    add_plane(&mut after, 395, 7.5);
+    let history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![state(22, after), state(14, middle), state(6, before)],
+    );
+    let last = history
+        .states()
+        .iter()
+        .find(|state| state.state_id == 22)
+        .and_then(|state| state.transition.as_ref())
+        .unwrap();
+    assert_eq!(last.previous_state_id, Some(14));
+    assert!(!last.topology.faces.inserted.contains(&394));
+    let losses = bind(
+        std::slice::from_mut(&mut feature),
+        &[sketch],
+        &mut Inputs {
+            scopes: &[scope],
+            groups: &[group],
+            operands: std::slice::from_mut(&mut operand),
+            histories: &[history],
+            scope_histories: &HashMap::new(),
+            linear_tolerance: LINEAR_TOLERANCE,
+            angular_tolerance: ANGULAR_TOLERANCE,
+        },
+    );
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        extent: ExtrudeExtent::OneSided { side },
+        ..
+    }) = feature.evaluation.definition()
+    else {
+        panic!("Extrude")
+    };
+    let LinearTermination::ToFace { face, .. } = &side.termination else {
+        panic!("face termination")
+    };
+    assert!(matches!(face, FaceSelection::Historical { .. }));
+    assert_eq!(selection_slots(face), Some(vec![3484]));
+    assert_eq!(operand.resolved_face_slots, [3484]);
+    assert!(losses.is_empty());
+}

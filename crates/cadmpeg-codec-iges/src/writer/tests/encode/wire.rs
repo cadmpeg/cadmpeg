@@ -27,7 +27,7 @@ fn reversed_composite_with_shared_vertex() -> EditableDecodeResult {
         };
         let mut ir = decoded.ir_mut();
         let curve = ir
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == "iges:model:curve#D3")
@@ -46,28 +46,32 @@ fn reversed_composite_with_shared_vertex() -> EditableDecodeResult {
             .map(|suffix| VertexId::mint(format!("test:model:vertex#child-{suffix}")).unwrap());
         for (index, position) in positions.into_iter().enumerate() {
             let point = PointId::mint(format!("test:model:point#child-{index}")).unwrap();
-            ir.model
+            ir.geometry
                 .points
                 .push(Point::new(point.clone(), position, None));
-            ir.model.vertices.push(Vertex {
+            ir.geometry.vertices.push(Vertex {
                 id: vertices[index].clone(),
                 point,
                 tolerance: None,
+                native_ref: None,
             });
         }
         let edge = EdgeId::mint("test:model:edge#child").unwrap();
-        ir.model.shells[0].add_wire_edge(edge.clone());
-        ir.model.edges.push(Edge {
+        ir.geometry.shells[0].add_wire_edge(edge.clone());
+        ir.geometry.edges.push(Edge {
             id: edge,
             carrier: EdgeCarrier::new(Some(curve_id), Some(range)).unwrap(),
-            start: vertices[0].clone(),
-            end: vertices[1].clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                vertices[0].clone(),
+                vertices[1].clone(),
+            )),
             tolerance: None,
+            native_ref: None,
         });
     }
     let second_start = decoded
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| {
@@ -75,12 +79,15 @@ fn reversed_composite_with_shared_vertex() -> EditableDecodeResult {
                 .is_some_and(|curve| curve.as_str() == "iges:model:curve#D3")
         })
         .expect("second Type 102 child edge")
+        .ends
+        .as_ref()
+        .unwrap()
         .start
         .clone();
     {
         let mut ir = decoded.ir_mut();
         let composite = ir
-            .model
+            .geometry
             .curves
             .iter_mut()
             .find(|curve| curve.id.as_str() == "iges:model:curve#D5")
@@ -92,7 +99,7 @@ fn reversed_composite_with_shared_vertex() -> EditableDecodeResult {
         };
         segments[1].same_sense = false;
         let composite_edge = ir
-            .model
+            .geometry
             .edges
             .iter_mut()
             .find(|edge| {
@@ -100,9 +107,9 @@ fn reversed_composite_with_shared_vertex() -> EditableDecodeResult {
                     .is_some_and(|curve| curve.as_str() == "iges:model:curve#D5")
             })
             .expect("Type 102 composite edge");
-        let previous_end = composite_edge.end.clone();
-        composite_edge.end = second_start;
-        ir.model.shells[0].add_free_vertex(previous_end);
+        let previous_end = composite_edge.ends.as_ref().unwrap().end.clone();
+        composite_edge.ends.as_mut().unwrap().end = second_start;
+        ir.geometry.shells[0].add_free_vertex(previous_end);
     }
     decoded
 }
@@ -123,9 +130,9 @@ fn encode_refuses_reversed_composite_with_shared_wire_vertex() {
 #[test]
 fn encode_reports_orphan_wire_vertex_as_malformed() {
     let mut decoded = reversed_composite_with_shared_vertex();
-    decoded.ir_mut().model.shells[0]
-        .edit_topology(|_, _, free_vertices| free_vertices.clear())
-        .expect("wire edge keeps shell nonempty");
+    decoded.ir_mut().geometry.shells[0]
+        .members
+        .retain(|member| !matches!(member, cadmpeg_ir::topology::ShellMember::FreeVertex { .. }));
     let Err(error) = plan_at(IgesVersion::V5_0, decoded.ir(), None) else {
         panic!("orphan vertex was accepted");
     };
@@ -142,7 +149,7 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
     {
         let mut ir = decoded.ir_mut();
         let source = ir
-            .model
+            .geometry
             .edges
             .iter()
             .find(|edge| {
@@ -150,10 +157,13 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
                     .is_some_and(|curve| curve.as_str() == "iges:model:curve#D5")
             })
             .expect("Type 102 composite edge")
+            .ends
+            .as_ref()
+            .unwrap()
             .end
             .clone();
         let mut detached = ir
-            .model
+            .geometry
             .vertices
             .iter()
             .find(|vertex| vertex.id == source)
@@ -163,8 +173,8 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
             .try_into()
             .expect("vertex ID");
         let detached_id = detached.id.clone();
-        ir.model.vertices.push(detached);
-        ir.model
+        ir.geometry.vertices.push(detached);
+        ir.geometry
             .edges
             .iter_mut()
             .find(|edge| {
@@ -172,6 +182,9 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
                     .is_some_and(|curve| curve.as_str() == "iges:model:curve#D5")
             })
             .expect("Type 102 composite edge")
+            .ends
+            .as_mut()
+            .unwrap()
             .end = detached_id;
     }
     let plan = plan_at(IgesVersion::V5_0, decoded.ir(), None)
@@ -181,7 +194,7 @@ fn encode_reverses_a_composite_constituent_as_a_directed_type_102_child() {
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
-    assert!(round_trip.ir().model.curves.iter().any(|curve| {
+    assert!(round_trip.ir().geometry.curves.iter().any(|curve| {
         matches!(curve.geometry.solved(), Some(SolvedCurveGeometry::Line(line_curve))
         if {
             let origin = line_curve.origin().get();
@@ -201,15 +214,20 @@ fn synthesized_wire_refuses_shared_vertex_identity() {
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .expect("source line");
     let mut ir = decoded.ir().clone();
-    let mut second = ir.model.edges[0].clone();
+    let mut second = ir.geometry.edges[0].clone();
     second.id = "cadir:model:edge#parallel".try_into().expect("edge ID");
-    ir.model.shells[0].add_wire_edge(second.id.clone());
-    ir.model.edges.push(second);
-    ir.model.edges.sort_by(|left, right| left.id.cmp(&right.id));
+    ir.geometry.shells[0].add_wire_edge(second.id.clone());
+    ir.geometry.edges.push(second);
+    ir.geometry
+        .edges
+        .sort_by(|left, right| left.id.cmp(&right.id));
     let validation =
         cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-    assert_eq!(ir.model.edges[0].start, ir.model.edges[1].start);
+    assert_eq!(
+        ir.geometry.edges[0].ends.as_ref().unwrap().start,
+        ir.geometry.edges[1].ends.as_ref().unwrap().start
+    );
 
     let error = crate::writer::synthesize(&ir, IgesVersion::V5_3)
         .err()
@@ -224,7 +242,7 @@ fn synthesized_owned_wire_refuses_unrepresented_body() {
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .expect("source line");
     let mut ir = decoded.ir().clone();
-    ir.model.bodies[0].name = Some("Owned wire".into());
+    ir.geometry.bodies[0].name = Some("Owned wire".into());
     let validation =
         cadmpeg_ir::validate_neutral(&ir, Vec::new()).expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -242,7 +260,7 @@ fn synthesized_wire_reports_missing_edge_as_malformed() {
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .expect("source line");
     let mut ir = decoded.ir().clone();
-    ir.model.edges.clear();
+    ir.geometry.edges.clear();
     let error = crate::writer::synthesize(&ir, IgesVersion::V5_3)
         .err()
         .expect("missing edge must be refused");
@@ -256,8 +274,8 @@ fn synthesized_free_geometry_reports_unowned_body_presentation() {
         .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .expect("source line");
     let mut ir = decoded.ir().clone();
-    ir.model.bodies[0].color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0);
-    ir.model.bodies[0].visible = Some(false);
+    ir.geometry.bodies[0].color = cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0);
+    ir.geometry.bodies[0].visible = Some(false);
     let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
     assert!(generated.losses.iter().any(|loss| {
         loss.code == IgesLossCode::WriterBodyColorNotRepresented.kind()
@@ -270,6 +288,6 @@ fn synthesized_free_geometry_reports_unowned_body_presentation() {
     let round_trip = IgesCodec
         .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
         .expect("generated IGES decodes");
-    assert_eq!(round_trip.ir().model.bodies[0].color, None);
-    assert_eq!(round_trip.ir().model.bodies[0].visible, None);
+    assert_eq!(round_trip.ir().geometry.bodies[0].color, None);
+    assert_eq!(round_trip.ir().geometry.bodies[0].visible, None);
 }

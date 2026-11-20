@@ -1,5 +1,5 @@
 use crate::math::portable::Portable;
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 use crate::examples::unit_cube;
 use crate::geometry::sampled::PolylineSamples;
@@ -42,15 +42,15 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
     );
 
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let curve_id = ir.model.edges[0].curve().cloned().unwrap();
-    ir.model
+    let curve_id = ir.geometry.edges[0].curve().cloned().unwrap();
+    ir.geometry
         .curves
         .iter_mut()
         .find(|curve| curve.id == curve_id)
         .unwrap()
         .geometry = geometry;
-    ir.model.edges[0].carrier =
-        crate::topology::EdgeCarrier::new(ir.model.edges[0].curve().cloned(), Some([0.5, 2.5]))
+    ir.geometry.edges[0].carrier =
+        crate::topology::EdgeCarrier::new(ir.geometry.edges[0].curve().cloned(), Some([0.5, 2.5]))
             .unwrap();
     assert!(!validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
@@ -58,8 +58,8 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
 
-    ir.model.edges[0].carrier = crate::topology::EdgeCarrier::new(
-        ir.model.edges[0].curve().cloned(),
+    ir.geometry.edges[0].carrier = crate::topology::EdgeCarrier::new(
+        ir.geometry.edges[0].curve().cloned(),
         Some([0.5, 2.500_001]),
     )
     .unwrap();
@@ -70,7 +70,7 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         .any(|finding| finding.check == Check::ParameterDomain));
 
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &mut ir
-        .model
+        .geometry
         .curves
         .iter_mut()
         .find(|curve| curve.id == curve_id)
@@ -91,8 +91,8 @@ fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
         })
         .unwrap();
     };
-    ir.model.edges[0].carrier =
-        crate::topology::EdgeCarrier::new(ir.model.edges[0].curve().cloned(), Some([0.5, 2.5]))
+    ir.geometry.edges[0].carrier =
+        crate::topology::EdgeCarrier::new(ir.geometry.edges[0].curve().cloned(), Some([0.5, 2.5]))
             .unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
@@ -199,7 +199,7 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
     ];
     let weights = [1.0, weight, 1.0];
     let interior = crate::eval::nurbs_pcurve_uv(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         2,
         &knots,
         &controls,
@@ -509,10 +509,11 @@ fn an_arena_surface_point_that_overflows_reports_the_non_finite_point() {
     let mut ir = crate::CadIr::empty();
     let surface_id = crate::ids::SurfaceId::mint("test:model:surface#overflow".to_string())
         .expect("valid identity");
-    ir.model.surfaces.push(crate::geometry::Surface {
+    ir.geometry.surfaces.push(crate::geometry::Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Solved(overflowing_plane()),
         source_object: None,
+        native_ref: None,
     });
     let index = crate::index::ModelIndex::build(&ir);
     let budget = cadmpeg_core::decode::WorkBudget::new(64);
@@ -920,21 +921,23 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
         .unwrap(),
     );
     let mut ir = crate::CadIr::empty();
-    ir.model.surfaces = vec![
+    ir.geometry.surfaces = vec![
         crate::geometry::Surface {
             id: base_id.clone(),
             geometry: SurfaceGeometry::Solved(plane.clone()),
             source_object: None,
+            native_ref: None,
         },
         crate::geometry::Surface {
             id: subset_id.clone(),
             geometry: SurfaceGeometry::Solved(plane),
             source_object: None,
+            native_ref: None,
         },
     ];
     // The u range runs down from 1e308 while its sense runs up, so the
     // support parameter at the far end of the span is 2e308.
-    ir.model
+    ir.geometry
         .add_procedural_surface(&subset_id, procedural_surface! {
                 id: subset_construction,
                 definition: crate::geometry::ProceduralSurfaceDefinition::Subset(crate::geometry::surface_payloads::SubsetSurfaceConstruction::try_new(base_id, [[1.0e308, 0.0], [0.0, 1.0]], Some(true), None, None).unwrap()),
@@ -975,4 +978,44 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
         .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(1.0e308, 0.5, 0.0))
     );
+}
+
+#[test]
+fn spindle_torus_parameters_return_points_on_both_sheets() {
+    use crate::eval::admission::EvaluationAdmission;
+    use crate::eval::analytic_surface_parameters_solved;
+    use crate::eval::decode::surface_point_solved;
+
+    // Major radius 0.4 below the tube radius 0.5: the inner sheet runs
+    // where `0.4 + 0.5 cos v < 0`, across the axis from its tube center.
+    let torus = SolvedSurfaceGeometry::Torus(
+        crate::geometry::analytic::TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            0.4,
+            0.5,
+        )
+        .unwrap(),
+    );
+    for (u, v) in [(0.7, 0.3), (2.0, 2.9), (4.0, 3.3), (5.5, -2.8)] {
+        let point = surface_point_solved(EvaluationAdmission::Standard, &torus, u, v)
+            .unwrap()
+            .get();
+        let parameters = analytic_surface_parameters_solved(&torus, point)
+            .unwrap()
+            .get();
+        let found = surface_point_solved(
+            EvaluationAdmission::Standard,
+            &torus,
+            parameters.u,
+            parameters.v,
+        )
+        .unwrap()
+        .get();
+        assert!(
+            found.distance(point) < 1.0e-12,
+            "({u}, {v}) -> {parameters:?}"
+        );
+    }
 }

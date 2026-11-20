@@ -111,7 +111,6 @@ fn project(
         components,
         body_bindings: &[],
         bodies: Some(&empty),
-        root_ordinal_start: 0,
         limits: cadmpeg_core::decode::ResourceLimits::default(),
     })
     .unwrap()
@@ -130,19 +129,42 @@ fn instance(carriers: &[DesignComponentOccurrence], chain: &[u32]) -> Occurrence
     let mut id =
         crate::ids::neutral_component_occurrence_id(&by_record(carriers, *first).occurrence_guid);
     for record in rest {
-        id = crate::ids::nested_component_occurrence_id(
+        id = crate::ids::nested_occurrence_id(
             &id,
-            &by_record(carriers, *record).occurrence_guid,
+            &crate::ids::neutral_component_occurrence_id(
+                &by_record(carriers, *record).occurrence_guid,
+            ),
         );
     }
     id
 }
 
+/// The world placement of the projected instance `id`: its placement under
+/// each instance it sits in, outermost first.
 fn world(projection: &super::super::LocalComponentProjection, id: &OccurrenceId) -> [[f64; 4]; 4] {
-    let graph = cadmpeg_ir::products::AssemblyGraph::new(&projection.occurrences).unwrap();
-    cadmpeg_test_support::assembly::resolved_transform(&graph, id)
-        .unwrap()
-        .rows()
+    let transform = |id: &OccurrenceId| {
+        projection
+            .occurrences
+            .iter()
+            .find(|occurrence| &occurrence.id == id)
+            .unwrap()
+            .transform
+            .unwrap()
+    };
+    let parent = |id: &OccurrenceId| {
+        projection
+            .placements
+            .iter()
+            .find(|(child, _)| child == id)
+            .and_then(|(_, parent)| parent.clone())
+    };
+    let mut world = transform(id);
+    let mut current = id.clone();
+    while let Some(above) = parent(&current) {
+        world = transform(&above).compose(world).unwrap();
+        current = above;
+    }
+    world.rows()
 }
 
 fn local(projection: &super::super::LocalComponentProjection, id: &OccurrenceId) -> [[f64; 4]; 4] {
@@ -152,6 +174,7 @@ fn local(projection: &super::super::LocalComponentProjection, id: &OccurrenceId)
         .find(|occurrence| &occurrence.id == id)
         .unwrap()
         .transform
+        .unwrap()
         .rows()
 }
 
@@ -1098,7 +1121,6 @@ fn versioned_joint_relations_preserve_saved_occurrence_poses() {
                 components: &components,
                 body_bindings: &[],
                 bodies: Some(&empty),
-                root_ordinal_start: 0,
                 limits: cadmpeg_core::decode::ResourceLimits::default(),
             },
             &[registration],

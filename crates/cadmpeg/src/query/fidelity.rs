@@ -9,11 +9,13 @@
 //! `--binary-stdout`). The view validates retained record identity, length,
 //! and digest before projecting or extracting.
 
+use std::collections::BTreeSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::application::artifact_store::{FileDestination, OptionalFileDestination};
 use anyhow::{bail, Context, Result};
+use cadmpeg_ir::source_fidelity::arena_class_name;
 use clap::Args;
 
 use super::{detect, print_json, read_input, Artifact};
@@ -114,10 +116,14 @@ pub(super) fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
                         "offset": record.offset(),
                         "byte_len": record.byte_len(),
                         "data_retained": record.data().is_some(),
+                        "untyped": class_names(record.untyped()),
                     })
                 })
                 .collect();
             let value = serde_json::json!({
+                "decode_digest": payload.decode_digest,
+                "file_digests": payload.file_digests,
+                "unrepresented": class_names(&payload.unrepresented()),
                 "annotations": {
                     "streams": payload.annotations.stream_count(),
                     "provenance": payload.annotations.provenance.len(),
@@ -129,20 +135,27 @@ pub(super) fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
             Ok(())
         }
         FidelityMode::Table => {
-            println!("stream\toffset\tbytes\tdata\tid");
+            println!("stream\toffset\tbytes\tdata\tuntyped\tid");
             for (id, record) in payload.retained_records() {
                 println!(
-                    "{}\t{}\t{}\t{}\t{}",
+                    "{}\t{}\t{}\t{}\t{}\t{}",
                     super::cell(record.stream()),
                     record.offset(),
                     record.byte_len(),
                     if record.data().is_some() { "yes" } else { "no" },
+                    class_list(record.untyped()),
                     super::cell(id.as_str()),
                 );
             }
             if payload.retained_records().is_empty() {
                 eprintln!("(this sidecar retains no source records)");
             }
+            eprintln!(
+                "decoded file sha256 {}; {} component file digest(s); unrepresented: {}",
+                payload.decode_digest,
+                payload.file_digests.len(),
+                class_list(&payload.unrepresented()),
+            );
             eprintln!(
                 "annotations: {} streams, {} provenance entries, {} exactness \
                  notes; extract retained bytes with `cadmpeg query fidelity \
@@ -154,6 +167,18 @@ pub(super) fn run(file: &Path, mode: FidelityMode<'_>) -> Result<()> {
             Ok(())
         }
     }
+}
+
+fn class_names(classes: &BTreeSet<cadmpeg_core::decode::ArenaClass>) -> Vec<&'static str> {
+    classes.iter().copied().map(arena_class_name).collect()
+}
+
+/// Comma-separated arena classes, or `-` for none.
+fn class_list(classes: &BTreeSet<cadmpeg_core::decode::ArenaClass>) -> String {
+    if classes.is_empty() {
+        return "-".to_owned();
+    }
+    class_names(classes).join(",")
 }
 
 /// Reassembles one stream's retained bytes and writes them byte-exactly.

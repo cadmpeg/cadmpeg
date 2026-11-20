@@ -52,7 +52,7 @@ pub(super) fn resolve(
 
 /// The region set the transition certifies in `sketch`, when each of
 /// `curves` bounds one of its regions.
-fn certified_regions_bounded_by(
+pub(super) fn certified_regions_bounded_by(
     sketch: &Sketch,
     curves: &[SketchEntityId],
     scoped: ScopedExtrudeProfileResolution<'_>,

@@ -483,7 +483,7 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         .unwrap();
     let body = result
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .find(|body| body.id.as_str() == "iges:model:body#D11")
@@ -495,7 +495,7 @@ fn decode_applies_standard_body_color_and_face_color_override() {
     assert_eq!(body.visible, Some(true));
     let face = result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "iges:model:face#D11:D9")
@@ -936,7 +936,7 @@ fn decode_binds_the_directory_color_to_a_curve_source_object() {
         .unwrap();
     let curve = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "iges:model:curve#D1")
@@ -1013,7 +1013,7 @@ fn decode_reports_conflicting_body_name_properties() {
         .expect("conflicting property file decodes");
     let body = decoded
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .find(|body| body.kind == cadmpeg_ir::topology::BodyKind::Sheet)
@@ -1062,7 +1062,7 @@ fn decode_keeps_unattached_name_property_in_native_records() {
         .expect("point property file decodes");
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .all(|body| body.name.as_deref() != Some("POINT")));

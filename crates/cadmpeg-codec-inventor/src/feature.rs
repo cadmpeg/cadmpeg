@@ -12,6 +12,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::sketches::Sketch;
+use cadmpeg_ir::CadIr;
 use cadmpeg_ir::{
     features::{
         edge_treatments::{ChamferGroup, FilletGroup, RadiusSpec},
@@ -190,8 +191,12 @@ pub(crate) struct FeatureInventory {
     pub(crate) pattern_operands: pattern::Operands,
     pub(crate) terminators: Vec<PmDcFeatureTerminator>,
     pub(crate) properties: Vec<PmDcFeatureProperty>,
+    pub(crate) sheet_metal_unfold_rules: Vec<sheet_metal::unfold::Rule>,
+    pub(crate) sheet_metal_unfold_selections: Vec<sheet_metal::unfold::Selection>,
     pub(crate) sheet_metal_styles: Vec<sheet_metal::style::Style>,
     pub(crate) sheet_metal_flanges: Vec<sheet_metal::flange::Flange>,
+    /// Segment major versions of sheet-metal style records without a field layout.
+    pub(crate) unread_style_versions: std::collections::BTreeSet<u8>,
     pub(crate) dimensions: Vec<revolve::Dimension>,
     pub(crate) labels: Vec<PmDcFeatureLabel>,
     pub(crate) thread_definitions: Vec<thread::Definition>,
@@ -414,6 +419,8 @@ pub(crate) enum PmDcFeatureReferenceFamily {
     SheetMetalAttachmentSelections,
     TransformList,
     BodySelection,
+    /// The slot-4 list of an Unfold or Refold.
+    SheetMetalFoldList,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -711,8 +718,12 @@ pub(crate) fn inventory(
                 continue;
             }
             let parsed = match record.type_id {
-                sheet_metal::style::TYPE if sheet_metal::style::prefix_len(version).is_some() => {
-                    sheet_metal::style::parse(ctx, record.payload, version).and_then(|style| {
+                sheet_metal::style::TYPE if sheet_metal::style::prefix_len(version).is_none() => {
+                    inventory.unread_style_versions.insert(version);
+                    Ok(())
+                }
+                sheet_metal::style::TYPE => sheet_metal::style::parse(ctx, record.payload, version)
+                    .and_then(|style| {
                         push_record(
                             ctx,
                             &mut inventory.sheet_metal_styles,
@@ -722,9 +733,8 @@ pub(crate) fn inventory(
                             record.ordinal,
                             "admit Inventor sheet-metal style",
                         )
-                    })
-                }
-                sheet_metal::flange::TYPE => {
+                    }),
+                sheet_metal::flange::TYPE | sheet_metal::flange::CONTOUR_TYPE => {
                     sheet_metal::flange::parse(ctx, record.payload, version).and_then(|flange| {
                         push_record(
                             ctx,
@@ -962,7 +972,15 @@ pub(crate) fn inventory(
             }
         }
     }
+    sheet_metal::unfold::admit(
+        ctx,
+        document,
+        &mut inventory.sheet_metal_unfold_rules,
+        &mut inventory.sheet_metal_unfold_selections,
+        &mut inventory.issues,
+    )?;
     mirror::admit_operands(ctx, document, &mut inventory)?;
+    sheet_metal::contour::read_attachments(ctx, document, &mut inventory)?;
     Ok(inventory)
 }
 
@@ -2142,7 +2160,7 @@ impl FeatureFamily {
 #[derive(Default)]
 pub(crate) struct ProjectionIndex<'a> {
     body_joins: Option<&'a HashMap<String, cadmpeg_ir::ids::BodyId>>,
-    result_model: Option<&'a cadmpeg_ir::document::Model>,
+    result_model: Option<&'a CadIr>,
     thread_definitions: &'a [thread::Definition],
     edge_names: HashMap<(String, u32), Option<cadmpeg_ir::features::GeneratedEdgeRef>>,
     dimensions: HashMap<(&'a str, u32), Option<&'a revolve::Dimension>>,
@@ -2175,7 +2193,7 @@ pub(crate) struct ProjectedSketches<'a> {
     pub(crate) entities: &'a [cadmpeg_ir::sketches::SketchEntity],
     /// The decoded profile bodies that extrusion profiles resolve through.
     pub(crate) profile_bodies: &'a [profile::ProfileBody],
-    pub(crate) result_model: Option<&'a cadmpeg_ir::document::Model>,
+    pub(crate) result_model: Option<&'a CadIr>,
 }
 
 pub(crate) fn project(
@@ -2220,7 +2238,15 @@ pub(crate) fn project(
             loft_losses: Vec::new(),
             split_losses: Vec::new(),
             thicken_losses: Vec::new(),
-            plate_losses: Vec::new(),
+            plate_losses: (!inventory.sheet_metal_flanges.is_empty())
+                .then(|| {
+                    crate::loss::InventorLossCode::FeatureSheetMetalNativeUnexplained.note(format!(
+                        "Retained every sheet-metal feature as native; the projection stage is segments: the feature records span {} PmDc segments.",
+                        feature_tokens.len()
+                    ))
+                })
+                .into_iter()
+                .collect(),
             mirror_losses: mirror::native_losses(&inventory.pattern_features, &[], &[]),
             added_profiles: HashMap::new(),
         });
@@ -2401,7 +2427,15 @@ pub(crate) fn project(
         Some(token) => history::build(ctx, token, inventory, design, &sketch.sketches)?,
         None => history::History::default(),
     };
-    index.edge_names = edge_selection::generated_names(inventory, &history, sketch);
+    let mut contours =
+        sheet_metal::contour::project_all(ctx, inventory, &index, |token, ordinal| {
+            labels
+                .get(&(token, Some(ordinal)))
+                .and_then(Option::as_ref)
+                .copied()
+        })?;
+    let consumed = contours.consumed();
+    index.edge_names = edge_selection::generated_names(inventory, &history, sketch, &consumed);
     let label_of = |ordinal: u32| {
         token.and_then(|token| {
             labels
@@ -2438,61 +2472,106 @@ pub(crate) fn project(
     let mut split_losses = Vec::new();
     let mut thicken_losses = Vec::new();
     let mut plate_refusals = sheet_metal::projection::Refusals::default();
+    let mut contour_refusals = sheet_metal::contour::Refusals::default();
+    let mut fold_refusals = sheet_metal::fold::Refusals::default();
+    let mut face_refusals = BTreeMap::<String, &'static str>::new();
     let mut neutral = 0_usize;
     for feature in &inventory.features {
-        let label = label_of(feature.identity.record_ordinal);
+        let token = feature.identity.segment_token.as_str();
+        if consumed.contains_key(&(token.to_owned(), feature.identity.record_ordinal)) {
+            // The projected contour flange represents its bend and corner.
+            continue;
+        }
+        let mut label = label_of(feature.identity.record_ordinal);
         let revolve_loss_count = revolve_losses.len();
-        let value = match label.and_then(|label| {
-            FeatureFamily::from_class_id(label.class_id()).map(|family| (label, family))
-        }) {
-            Some((label, family)) => match family {
-                FeatureFamily::Base => None,
-                FeatureFamily::Extrusion => {
-                    extrusion::project(ctx, feature, label, &index, &mut extrusion_losses)
+        let contour = contours.take(token, feature.identity.record_ordinal);
+        let value = if let Some(outcome) = contour {
+            match outcome {
+                Ok(projected) => {
+                    label = Some(projected.label);
+                    Some((projected.feature, Some(projected.result)))
                 }
-                FeatureFamily::SurfaceExtrusion => {
-                    extrusion::project_surface(ctx, feature, label, &index, &mut extrusion_losses)
-                }
-                FeatureFamily::Fillet => project_fillet(ctx, feature, label, &index),
-                FeatureFamily::Chamfer => project_chamfer(ctx, feature, label, &index),
-                FeatureFamily::Hole => project_hole(ctx, feature, label, &index),
-                FeatureFamily::Plate => project_plate(ctx, feature, label, &index).or_else(|| {
-                    match sheet_metal::projection::project_plate(
-                        ctx, feature, label, &index, inventory,
-                    ) {
-                        Ok(value) => Some(Ok(value)),
-                        Err(PlateError::Codec(error)) => Some(Err(error)),
-                        Err(PlateError::Refused(refusal)) => {
-                            if is_bent_plate(feature) {
-                                plate_refusals.insert(feature.id(), refusal);
-                            }
-                            None
-                        }
-                    }
-                }),
-                FeatureFamily::Bend => None,
-                FeatureFamily::Thicken => project_thicken(ctx, feature, label, &index, inventory),
-                FeatureFamily::Shell => project_shell(ctx, feature, label, &index),
-                FeatureFamily::Sweep | FeatureFamily::Loft => loft_sweep::projection::project(
-                    ctx,
-                    feature,
-                    label,
-                    &index,
-                    family,
-                    &mut loft_losses,
-                ),
-                FeatureFamily::Revolve => {
-                    project_revolve(ctx, feature, label, &index, &mut revolve_losses)
-                }
-                FeatureFamily::Motion => motion::project(ctx, feature, label, &index),
-                FeatureFamily::Combine => combine::project(ctx, feature, label, &index),
-                FeatureFamily::Split => {
-                    split::project(ctx, feature, label, &index, &history, &mut split_losses)
+                Err(refusal) => {
+                    contour_refusals.insert(feature.id(), refusal);
+                    None
                 }
             }
-            .map(|result| result.map(|(feature, result)| (feature, Some(result))))
-            .transpose()?,
-            None => None,
+        } else if let Some((label, kind)) = label.and_then(|label| {
+            sheet_metal::fold::FoldKind::of(label.class_id()).map(|kind| (label, kind))
+        }) {
+            match sheet_metal::fold::project(ctx, feature, label, kind, |reference| {
+                resolve_property(token, reference.index(), &index)
+            })? {
+                Ok(projected) => Some((projected, None)),
+                Err(refusal) => {
+                    fold_refusals.insert(feature.id(), refusal);
+                    None
+                }
+            }
+        } else {
+            match label.and_then(|label| {
+                FeatureFamily::from_class_id(label.class_id()).map(|family| (label, family))
+            }) {
+                Some((label, family)) => match family {
+                    FeatureFamily::Base => None,
+                    FeatureFamily::Extrusion => {
+                        extrusion::project(ctx, feature, label, &index, &mut extrusion_losses)
+                    }
+                    FeatureFamily::SurfaceExtrusion => extrusion::project_surface(
+                        ctx,
+                        feature,
+                        label,
+                        &index,
+                        &mut extrusion_losses,
+                    ),
+                    FeatureFamily::Fillet => project_fillet(ctx, feature, label, &index),
+                    FeatureFamily::Chamfer => project_chamfer(ctx, feature, label, &index),
+                    FeatureFamily::Hole => project_hole(ctx, feature, label, &index),
+                    FeatureFamily::Plate => {
+                        project_plate(ctx, feature, label, &index).or_else(|| {
+                            match sheet_metal::projection::project_plate(
+                                ctx, feature, label, &index, inventory,
+                            ) {
+                                Ok(value) => Some(Ok(value)),
+                                Err(PlateError::Codec(error)) => Some(Err(error)),
+                                Err(PlateError::Refused(refusal)) => {
+                                    if is_bent_plate(feature) {
+                                        plate_refusals.insert(feature.id(), refusal);
+                                    } else {
+                                        face_refusals
+                                            .insert(feature.id(), face_refusal(feature, &index));
+                                    }
+                                    None
+                                }
+                            }
+                        })
+                    }
+                    FeatureFamily::Bend => None,
+                    FeatureFamily::Thicken => {
+                        project_thicken(ctx, feature, label, &index, inventory)
+                    }
+                    FeatureFamily::Shell => project_shell(ctx, feature, label, &index),
+                    FeatureFamily::Sweep | FeatureFamily::Loft => loft_sweep::projection::project(
+                        ctx,
+                        feature,
+                        label,
+                        &index,
+                        family,
+                        &mut loft_losses,
+                    ),
+                    FeatureFamily::Revolve => {
+                        project_revolve(ctx, feature, label, &index, &mut revolve_losses)
+                    }
+                    FeatureFamily::Motion => motion::project(ctx, feature, label, &index),
+                    FeatureFamily::Combine => combine::project(ctx, feature, label, &index),
+                    FeatureFamily::Split => {
+                        split::project(ctx, feature, label, &index, &history, &mut split_losses)
+                    }
+                }
+                .map(|result| result.map(|(feature, result)| (feature, Some(result))))
+                .transpose()?,
+                None => None,
+            }
         };
         let value = match value {
             Some(value) => Some(value),
@@ -2727,6 +2806,17 @@ pub(crate) fn project(
         }
         keep
     });
+    // Each projected contour flange also stands for its bend and corner.
+    neutral += 2 * projected
+        .iter()
+        .filter(|item| {
+            item.neutral
+                && matches!(
+                    item.feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::SheetMetalContourFlange { .. })
+                )
+        })
+        .count();
     neutral -= sheet_metal::projection::reject_unresolved_inputs(
         ctx,
         &mut projected,
@@ -2815,7 +2905,22 @@ pub(crate) fn project(
         loft_losses,
         split_losses,
         thicken_losses,
-        plate_losses: plate_refusals.losses(&features),
+        plate_losses: plate_refusals
+            .losses(&features)
+            .into_iter()
+            .chain(contour_refusals.losses(&features))
+            .chain(fold_refusals.losses(&features))
+            .chain(sheet_metal::face_losses(&face_refusals, &features))
+            .chain(sheet_metal::unexplained_losses(
+                inventory,
+                &features,
+                |id| {
+                    plate_refusals.contains(id)
+                        || contour_refusals.contains(id)
+                        || face_refusals.contains_key(id)
+                },
+            ))
+            .collect(),
         mirror_losses: mirror::native_losses(
             &inventory.pattern_features,
             &features,
@@ -3032,6 +3137,37 @@ fn sketch_feature(
         ),
         native_ref: Some(native_id),
     })
+}
+
+/// One note for each feature-label class with no recognized family, with the
+/// number of its native features.
+pub(crate) fn unrecognized_class_losses(
+    features: &[Feature],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::NativeFeatureKind;
+    let derived = format!("InventorClass:{}", derived::CLASS_ID);
+    let mut classes = BTreeMap::<&str, usize>::new();
+    for feature in features {
+        if let FeatureDefinition::Operation(FeatureOperation::Native {
+            kind: NativeFeatureKind::Other(kind),
+            ..
+        }) = feature.evaluation.definition()
+        {
+            if let Some(class) = kind.strip_prefix("InventorClass:") {
+                if *kind != derived {
+                    *classes.entry(class).or_default() += 1;
+                }
+            }
+        }
+    }
+    classes
+        .into_iter()
+        .map(|(class, count)| {
+            crate::loss::InventorLossCode::FeatureNativeClassUnrecognized.note(format!(
+                "Retained {count} feature(s) of unrecognized feature-label class {class} as native."
+            ))
+        })
+        .collect()
 }
 
 /// Native family of a feature-label class identifier.
@@ -3591,6 +3727,37 @@ fn is_bent_plate(source: &PmDcFeature) -> bool {
     })
 }
 
+/// The first check that keeps a sheet-metal plate without a bend native, in
+/// the order [`project_plate`] evaluates them. The string is the pinned
+/// `detail` of the loss note.
+fn face_refusal(source: &PmDcFeature, index: &ProjectionIndex<'_>) -> &'static str {
+    let Some((_, normal)) = plate_profile(source, index) else {
+        return "profile";
+    };
+    let Some(direction) = resolve_direction(source, 1, index).and_then(|record| {
+        cadmpeg_ir::units::UnitVector3::normalized(Vector3::new(
+            record.direction[0].get(),
+            record.direction[1].get(),
+            record.direction[2].get(),
+        ))
+    }) else {
+        return "direction";
+    };
+    if direction.as_raw().dot(*normal.as_raw()) < 1.0 - EPS_FEATURE_PROJECT_HOLE_E10 {
+        return "direction-normal";
+    }
+    if plate_side(source, index).is_none() {
+        return "side";
+    }
+    if length_parameter(source, 3, index)
+        .and_then(|length| cadmpeg_ir::scalar::PositiveLength::try_from(length).ok())
+        .is_none()
+    {
+        return "thickness";
+    }
+    "result"
+}
+
 /// A sheet-metal plate without a bend: the profile of its face sketch,
 /// thickened by the slot-3 parameter from the sketch plane along the sketch
 /// normal, or against it when the slot-2 Boolean is true.
@@ -3644,8 +3811,8 @@ fn project_plate(
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
                 profile,
-                thickness,
-                side,
+                thickness: Some(thickness),
+                side: Some(side),
             }),
         ),
         native_ref: Some(source.id()),

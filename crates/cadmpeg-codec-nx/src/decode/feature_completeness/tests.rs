@@ -621,7 +621,7 @@ fn nx_loft_completeness_checks_native_point_sections_and_centerlines() {
     use cadmpeg_ir::math::Point3;
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let output = ir.model.bodies[0].id.clone();
+    let output = ir.geometry.bodies[0].id.clone();
     let definition = |sections, centerline: Option<PathRef>| {
         FeatureDefinition::Operation(FeatureOperation::Loft {
             sections,
@@ -781,7 +781,7 @@ fn nx_replace_face_completeness_requires_resolved_disjoint_operands() {
 
     assert_eq!(
         FeatureDefinition::Operation(FeatureOperation::ReplaceFace {
-            operands: cadmpeg_ir::features::ReplaceFaceOperands::new(
+            operands: cadmpeg_ir::features::replace_face::ReplaceFaceOperands::new(
                 complete_targets.clone(),
                 complete_replacements.clone(),
             )
@@ -804,7 +804,7 @@ fn nx_extrude_completeness_requires_direction_start_and_solid_state() {
     use cadmpeg_ir::ids::FeatureResultTopologyId;
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let output = ir.model.bodies[0].id.clone();
+    let output = ir.geometry.bodies[0].id.clone();
     let definition = |direction, start, solid| {
         FeatureDefinition::Operation(FeatureOperation::Extrude {
             profile: ProfileRef::Planar(PlanarProfileRef::Sketch(
@@ -922,8 +922,8 @@ fn nx_revolve_completeness_checks_construction_and_output_lineage() {
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let output = ir.model.bodies[0].id.clone();
-    let face = ir.model.faces[0].id.clone();
+    let output = ir.geometry.bodies[0].id.clone();
+    let face = ir.geometry.faces[0].id.clone();
     let complete = RevolveConstruction::Resolved {
         profile: cadmpeg_ir::features::PlanarProfileRef::Faces(vec![face]),
         axis: RevolutionAxis {
@@ -1270,7 +1270,7 @@ fn nx_arrangement_state_stays_unresolved_for_complete_part_state() {
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let bodies = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.clone())
@@ -1309,7 +1309,7 @@ fn nx_arrangement_state_stays_unresolved_for_complete_part_state() {
     assert!(losses[0].message.contains("1 NX arrangement(s)"));
 
     ir.model.configurations[0].active = true;
-    let output = ir.model.bodies[0].id.clone();
+    let output = ir.geometry.bodies[0].id.clone();
     let feature = Feature {
         product_definition: None,
         id: FeatureId::mint("test:test:feature#base").expect("identity grammar"),
@@ -1859,12 +1859,12 @@ fn nx_sew_completeness_does_not_invent_a_gap_tolerance() {
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let first = ir.model.bodies[0].id.clone();
-    let mut second_body = ir.model.bodies[0].clone();
+    let first = ir.geometry.bodies[0].id.clone();
+    let mut second_body = ir.geometry.bodies[0].clone();
     second_body.id =
         cadmpeg_ir::ids::BodyId::mint("test:model:body#second").expect("identity grammar");
     let second = second_body.id.clone();
-    ir.model.bodies.push(second_body);
+    ir.geometry.bodies.push(second_body);
     ir.model.features.push(Feature {
         product_definition: None,
         id: FeatureId::mint("test:test:feature#sew").expect("identity grammar"),

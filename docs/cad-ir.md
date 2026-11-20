@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"10"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"11"`, whose wire form [`cadir-v11.md`](cadir-v11.md) states. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -10,21 +10,29 @@ A product document has three semantic layers:
 
 ```text
 CadIr
-├── ir_version, decode_depth, source?, units, tolerances
-├── model
+├── ir_version, scope, source?, units, tolerances
+├── geometry
 │   ├── topology and geometry carriers
-│   ├── procedural constructions and neutral features
+│   └── subdivision surfaces and procedural constructions
+├── model
+│   ├── neutral features
 │   └── tessellation, appearance, and attributes
+├── design
+├── process
 └── native
 ```
 
-`model` is format-neutral. `native` is a map keyed by format ID. Each value is a map of arena name to arena. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores format-specific product records. Decode-time source locations, exactness, and retained source records belong to the `SourceFidelity` sidecar. Namespace retention is settled in [native-arena-disposition.md](native-arena-disposition.md): retain every listed arena.
+`geometry`, `model`, `design`, and `process` are format-neutral. `native` is a map keyed by format ID. Each value is a map of arena name to arena. Each arena is an ID-sorted array of records with a required string `id` and codec-owned fields. The reserved `unknowns` arena stores format-specific product records. Decode-time source locations, exactness, and retained source records belong to the `SourceFidelity` sidecar. Namespace retention is settled in [native-arena-disposition.md](native-arena-disposition.md): retain every listed arena.
 
-`decode_depth` is required. It records how much of the source the decode transferred: `container`, `geometry`, or `full`. Each model arena is classed as model or design. The design arenas are `features`, `feature_input_topologies`, `feature_result_topologies`, `configurations`, `parameters`, the six sketch arenas, and `spreadsheets`. A document below `full` holds no record in a design arena, and readers and writers refuse one that does. Configurations are design because they key parameter overrides and feature states by design IDs. `assets` is model because tessellation texture assignments reference assets.
+`scope` is required. It records the content classes the document holds, as the object `{ "model": bool, "design": bool, "process": bool }`. A decode at depth `container`, `geometry`, `design`, or `full` records `{}`, `{model}`, `{model, design}`, or all three classes; a class the request names and the decode does not deliver is absent from the scope and charges `decode/depth.not-delivered`. A scope with `design` holds `model`, and a scope with `process` holds `design`. Each neutral arena is classed as model, design, or process. The design arenas are every arena of `design` and, in this version, `features`, `feature_input_topologies`, `feature_result_topologies`, `configurations`, `parameters`, the six sketch arenas, `spreadsheets`, and `history_bodies` in `model`. The process arenas are every arena of `process`. A document holds no record in an arena whose class its scope excludes, and readers and writers refuse one that does. Configurations are design because they key parameter overrides and feature states by design IDs. `assets` is model because tessellation texture assignments reference assets.
 
 `source` is absent when the document has no source-container metadata. A present source block contains `format`, `attributes`, and `dialects`. `dialects` is always serialized. It is `null` for an unclassified source and otherwise contains the complete source `DialectLayers`, including the primary and every nested or carried layer. The primary dialect namespace equals `source.format`.
 
-The neutral model arenas, in serialization order, are `bodies`, `regions`, `shells`, `faces`, `loops`, `coedges`, `edges`, `vertices`, `points`, `surfaces`, `curves`, `subds`, `pcurves`, `procedural_surfaces`, `procedural_curves`, `assets`, `features`, `feature_input_topologies`, `feature_result_topologies`, `configurations`, `parameters`, `sketches`, `sketch_entities`, `sketch_constraints`, `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints`, `spreadsheets`, `product_definitions`, `occurrences`, `assembly_joints`, `drawings`, `semantic_annotations`, `presentation_documents`, `view_presentations`, `tessellations`, `appearances`, `appearance_bindings`, `attributes`, `pmi`, `presentation_layers`, `physical_materials`, `mass_properties`, `rigid_bodies`, `colliders`, `articulations`, `physics_scenes`, `solver_settings`, `declared_measures`, `point_clouds`, and `history_bodies`. References are string IDs. `ProductDefinition.sketches` lists owned planar sketch IDs. Each ID names a member of `model.sketches` and a sketch belongs to at most one product definition. An absent or empty list owns no sketches. A sketch with no product definition belongs to the design root. `subds` contains subdivision-surface control cages and is a free carrier arena.
+The `geometry` arenas, in serialization order, are `bodies`, `regions`, `shells`, `faces`, `loops`, `coedges`, `edges`, `vertices`, `points`, `surfaces`, `curves`, `subds`, `pcurves`, `procedural_surfaces`, and `procedural_curves`. The `model` arenas, in serialization order, are `assets`, `features`, `feature_input_topologies`, `feature_result_topologies`, `configurations`, `parameters`, `sketches`, `sketch_entities`, `sketch_constraints`, `spatial_sketches`, `spatial_sketch_entities`, `spatial_sketch_constraints`, `spreadsheets`, `product_definitions`, `occurrences`, `assembly_joints`, `drawings`, `semantic_annotations`, `presentation_documents`, `view_presentations`, `tessellations`, `appearances`, `appearance_bindings`, `attributes`, `pmi`, `presentation_layers`, `physical_materials`, `mass_properties`, `rigid_bodies`, `colliders`, `articulations`, `physics_scenes`, `solver_settings`, `declared_measures`, `point_clouds`, and `history_bodies`. References are string IDs. `ProductDefinition.sketches` lists owned planar sketch IDs. Each ID names a member of `model.sketches` and a sketch belongs to at most one product definition. An absent or empty list owns no sketches. A sketch with no product definition belongs to the design root. `subds` contains subdivision-surface control cages and is a free carrier arena.
+
+The `design` arenas, in serialization order, are `scopes`, `containers`, `features`, `parameters`, `spreadsheets`, `programs`, `configurations`, `arrangements`, `publications`, and `evaluations`, followed by `names`, the name table of the current geometry as `[entity, entry]` pairs sorted by entity. Their records are those of [cadir-v11.md](cadir-v11.md) §5; no decoder fills them in this version. A design record keeps the ID of the `model` record it restates, so the `design` arenas are an identity namespace of their own, and the census, `cadmpeg diff`, and `cadmpeg query` name them `design.<arena>`. While a document holds a record in a design arena of `model`, a writer that omits a `design` arena charges no loss for it.
+
+The `process` arenas, in serialization order, are `setups`, `operations`, `features`, `groups`, `tools`, `presets`, `machines`, `programs`, `parameters`, `toolpaths`, and `states`. Their records are those of [cadir-v11.md](cadir-v11.md) §7; no decoder fills them in this version. The census, `cadmpeg diff`, and `cadmpeg query` name them `process.<arena>`. A writer that omits a `process` arena that holds records charges `export/arena.omitted` with the taxonomy `process_record_omitted`. Reading a document walks each chain of process state bases, through the evaluations a `design` base names, under `max_state_chain_depth`.
 
 Pcurve geometry is a parameter-space line, angular circle, angular ellipse, parabola, hyperbola, first-order harmonic, first-order hyperbolic, polar harmonic, polar NURBS, NURBS, trimmed, or signed-offset curve. Circle and ellipse carriers store independent `x_axis` and `y_axis` parameter directions; a clockwise parameterization has a negated `y_axis`. General harmonic carriers evaluate `center + cosine*cos(t) + sine*sin(t)`; general hyperbolic carriers evaluate `center + cosine*cosh(t) + sine*sinh(t)`. A polar harmonic maps first-order radial-plane and axial harmonic coefficients to `(atan2(y, x), v)` without changing the spatial curve parameter. A polar NURBS evaluates radial-plane and axial control channels with one degree, knot vector, weight vector, and parameter, then maps the radial result through `atan2`. A signed offset adds its distance along the regular basis curve's left unit normal. Point evaluation requires a finite nonzero exact basis tangent; a nested signed offset has no point evaluation.
 
@@ -73,7 +81,7 @@ body → region → shell → face → loop → coedge → edge → vertex → p
                            └── surface
 ```
 
-`Body.kind` is `solid`, `sheet`, `wire`, or `general`. A body optionally records a display name, color, and `visible`. `visible` states whether the source document displays the body. Exporters omit bodies with `visible: false` from display-oriented formats. A body owns regions. A region is a connected component of a body and owns shells. A shell owns at least one of faces, wire edges, or free vertices. A face is an oriented bounded portion of one surface and owns loops. A loop's boundary role is `outer`, `inner`, or `unspecified`; a face has at most one explicit outer loop and may have only inner loops when the surface parameter domain supplies the exterior. An edge loop lists coedges in traversal order and may contain ordered pole-vertex uses anchored after a coedge. A vertex loop contains one unanchored vertex use and no coedges. A coedge and a pole-vertex use each own an ordered list of parameter-space curve uses. The uses of a coedge are in its traversal order, with its sense applied, and form one chain from its start to its end; the uses of a pole-vertex use follow the loop traversal. A use's optional parameter range states its interval in the traversal direction, so a decreasing range traverses the pcurve backward. Each pcurve use may record whether the source declared it isoparametric. An edge joins two vertices and optionally references a curve and canonical parameter range. A vertex references a point carrier. Point remains a separate carrier because it has independent identity and provenance.
+`Body.kind` is `solid`, `sheet`, `wire`, or `general`. A body optionally records a display name, color, and `visible`. `visible` states whether the source document displays the body. Exporters omit bodies with `visible: false` from display-oriented formats. Each record names its parent: `Region.body`, `Shell.region`, `Face.shell`, `Loop.face`, and `Coedge.owner_loop`. A body's regions and a shell's faces are the records whose parent pointer names them, and no list of them is stored. A region is a connected component of a body and lists its shells, the exterior first. A shell's `members` list its wire edges and free vertices, which name no parent. A face is an oriented bounded portion of one surface and owns loops. A loop's boundary role is `outer`, `inner`, or `unspecified`; a face has at most one explicit outer loop and may have only inner loops when the surface parameter domain supplies the exterior. An edge loop lists coedges in traversal order and may contain ordered pole-vertex uses anchored after a coedge. A vertex loop contains one unanchored vertex use and no coedges. A coedge and a pole-vertex use each own an ordered list of parameter-space curve uses. The uses of a coedge are in its traversal order, with its sense applied, and form one chain from its start to its end; the uses of a pole-vertex use follow the loop traversal. A use's optional parameter range states its interval in the traversal direction, so a decreasing range traverses the pcurve backward. Each pcurve use may record whether the source declared it isoparametric. An edge's `ends` names its start and end vertices; an edge with no `ends` is a closed edge with no vertex on a closed carrier curve. An edge optionally references a curve and canonical parameter range. A vertex references a point carrier. Point remains a separate carrier because it has independent identity and provenance.
 
 | cadmpeg IR | ACIS/ASM | Parasolid        | STEP AP242                                                            |
 | ---------- | -------- | ---------------- | --------------------------------------------------------------------- |
@@ -200,13 +208,17 @@ Each feature has an ID, source-history `ordinal`, optional name, suppression sta
 
 Neutral definitions include directly stored geometry, solid and surface construction, direct editing, body composition, sketches, datums, holes, and patterns. A stored-geometry feature identifies retained exact bodies as outputs. A body extraction identifies the source body selection independently of its copied outputs. One `unresolved` definition covers every operation kind that is established without its construction operands; its `family` field names the kind, such as `datum_plane`, `datum_coordinate_system`, `loft`, or `freeform_surface`. A Boolean combination whose operation or operand construction cannot be completed retains the `combine` family as an unresolved operation. An edge fillet consumes an edge selection; a face blend keeps its two support-face selections distinct. Both carry a constant, variable, or unresolved radius law. `sew_bodies` joins an ordered body selection and carries an optional nonnegative gap tolerance. It remains distinct from `knit_surface`, whose operands are selected faces. `unstitch_faces` separates each selected face from its body into an individual surface body. A historical body set is ordered when each resolved body corresponds to the native member at the same position. A historical unordered body set records the resolved body membership and the ordered native members separately when only collective membership is established. A surface trim retains independently resolved face, path, and inside-or-outside region semantics. A surface extension independently retains its face selection, positive distance, and natural, linear, or perpendicular continuation law. A surface untrim retains its face selection, all, interior, exterior or selected trim loops, and signed exterior-boundary extension. `trim_bodies` keeps target and tool body selections distinct and records a forward, reverse, or unresolved retained side. `native` holds a feature with no neutral definition and carries its source kind, parameter map, and non-parameter property map. Length wrappers are millimeters and angle wrappers are radians.
 
-A `form` operation owns one checked construction. Complete membership stores its ordered cage IDs in the `cages` array; a known empty session stores `[]`. Partial membership stores canonical `observations` and a `membership` object under `cages`. The membership states its known cardinality when available, its source, assumed, or unknown order, and its confirmed member positions. Decoded observations outside membership are candidates. Every decoded member and candidate references an existing subdivision cage.
+A `form` operation owns one checked construction. Complete membership stores its ordered cage IDs in the `value` array of the `cages` `complete` arm; a known empty session stores `[]`. Partial membership stores canonical `observations` and a `membership` object in the `value` of the `cages` `retained` arm. The membership states its known cardinality when available, its source, assumed, or unknown order, and its confirmed member positions. Decoded observations outside membership are candidates. Every decoded member and candidate references an existing subdivision cage.
 
-`inputs` retains exact native parameter expressions, ordered qualified references, and native counted lists with their original member positions. Each observation retains qualified native paths and its decoded cage or resource availability. Resource entries keep their literal archive spelling and a typed native anchor. Identity rewriting visits all typed cage and native references, including absent native endpoints. Parameter expressions and archive entry text retain their literal values.
+`inputs` retains exact native parameter expressions, ordered qualified references, and native counted lists with their original member positions. Reference evidence records its source, role, slot, optional run position, inline type, and local, segment, or document target. Document targets retain their asset, type, link and version text. Position and cardinality evidence retain conflicting claims without selecting a second cage list. A position source identifies the native list when its path establishes that association. Resource evidence retains independently named resources. Each observation retains qualified native paths and its decoded cage or resource availability. Resource entries keep their literal archive spelling and a typed native anchor. Identity rewriting visits all typed cage and native references, including absent native endpoints. Parameter expressions, foreign link text and archive entry text retain their literal values.
 
-Complete constructions with additional evidence carry `cage_inputs`. Its selected observation IDs agree with the `cages` array. The adapter checks that agreement and admits every construction through its membership invariants. The Rust owner is `cadmpeg_ir::features::form::FormConstruction`.
+Complete constructions with additional evidence carry `cage_inputs`. Its selected observation IDs agree with the `value` array in the `cages` complete arm. Complete cage arrays contain distinct IDs, and every supplemental position and cardinality claim agrees with complete membership. The adapter checks agreement, distinct observation IDs, resource availability and membership positions at admission. JSON Schema enforces array uniqueness and structural variants; cross-field agreement and indexed membership constraints remain admission checks. `FormConstruction::default()` represents unknown membership. `complete` admits an ordered cage array, and `try_new` checks explicit inputs, observations and membership. `committed_cages` returns selected decoded cages; `referenced_cages` also returns decoded candidates. The Rust owner is `cadmpeg_ir::features::form::FormConstruction`.
 
 Datum planes retain their operation family when placement is unresolved and carry a model-space frame when resolved. A solid primitive is defined in its feature frame: a cylinder or cone has its base centre at the frame origin and its axis along the frame z axis. Its optional `placement` is the rigid local-to-model transform of that frame; an absent placement leaves the frame unresolved. Extents are one-sided, two-sided, or symmetric around the profile plane. Planar extrusion starts and terminations carry an optional `source`: `work_plane`, `work_point`, or `face_surface`. A `face_surface` supplies the stored planar carrier with its native target reference; the selected body's face identity stays native. Each side carries a one-sided termination law: unresolved, blind, through-all, through-next, to-first, to-last, to-face, to-vertex, to-plane, offset-from-face, to-shape, or angular. A symmetric side is mirrored across the profile plane; its blind length or angular travel states the total travel split evenly around the plane. An extrusion side additionally carries an optional draft angle, measured from the profile plane outward along that side's travel, and an optional signed offset from its terminating geometry; an absent draft leaves that side's walls parallel. Revolution sides carry termination laws only. The fixed angles of a revolution total at most one turn. A total up to 1e-12 rad above 2π counts as one turn. Holes travel on one side only and state a bare termination law. Boolean operations are join, cut, intersect, or new-body. Profiles reference unresolved, native, sketch, or solved-face identity. Paths reference unresolved, native, sketch, edge, or curve identity. Projected curves retain unresolved directionality independently of an absent explicit direction vector. Draft faces, neutral plane, pull direction, angle, and side state resolve independently. Filled-surface boundaries, supports, continuity, and merge state also resolve independently. Continuity is a nonempty ordered list of boundary conditions. Each condition is `contact`, `tangent`, or `curvature`; tangent and curvature carry an optional positive dimensionless weight. Contact carries no weight. An absent weight means the source weight is unresolved. Conditions serialize as objects with `kind` and, when resolved, `weight`. Uniformity of the complete condition includes its weight. Boundary surfaces retain their operation family when their directional curve networks are unresolved. Surface-knit operands, entity merging, solid conversion, and tolerance resolve independently. Edge fillets use constant or sampled variable radii. Full-round fillets keep a center-face selection and two side-face selections; each side is explicit, automatic, or unresolved. Chamfers use distance, two distances, or distance-angle and retain reference-side reversal only when resolved. Hole entry and optional exit shapes are simple, chamfered, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
+
+A `replace_face` construction keeps target faces and replacement support faces in distinct operands. Its optional Boolean `tangent_chain` controls inclusion of faces tangent to the targets. Absence leaves that control unresolved; a present value is `true` or `false`.
+
+A `split_body` operation carries an optional `extend_tool` Boolean. A present value selects whether to extend the splitting geometry through the target bodies. An absent value leaves extension unknown.
 
 A `thicken` construction independently retains its selected faces, positive total thickness, travel side, tangent-chain setting and solid result. Missing result or tangent-chain fields leave those settings unresolved. `SolidFeatureResult` describes new-body construction or a Boolean operation with its target-body selection and is shared by coils and thickens. A symmetric Thicken splits its total thickness evenly across both sides.
 
@@ -254,7 +266,7 @@ Ordered resolved and historical body sets store nonempty member rows. Each row p
 
 A configuration feature evaluation is `suppressed` or `active`. A suppressed evaluation has no outputs. An active evaluation owns its output list, which may be empty. Dependencies and the feature definition remain present independently of the evaluation state.
 
-A sheet-metal base flange places its thickness along the profile plane's positive normal (`forward`), along its negative normal (`reverse`), or split equally across both sides of the plane (`symmetric`).
+A sheet-metal base flange places its thickness along the profile plane's positive normal (`forward`), along its negative normal (`reverse`), or split equally across both sides of the plane (`symmetric`). The operation omits unresolved `thickness` and `side` fields independently.
 
 `SheetMetalAttachedPlate` builds a flat plate from its profile, thickness, and side. Its attachment selects the existing sheet edge. It has no Boolean operation or bend dimensions. `SheetMetalBend` names that plate and selects the attachment edge in its own input topology. It builds the joining bend region with its inside radius, relief, and transition. Replay the plate first, then its bend. The pair transfers together; an unresolved member keeps both members native. Each historical attachment selection identifies its own feature's input topology row.
 
@@ -295,7 +307,7 @@ A declared measure names a quantity and its target bodies or product definition.
 
 ## Point clouds
 
-A point cloud holds measured or sampled points in the frame of its optional product definition. `positions` holds at least one point, in document length units. `normals` and `colors` are empty or hold one value for each point. Each channel has a name that is unique in its point cloud and one finite value for each point, in point order; channels hold per-point scalars such as intensity, confidence, or a classification code. `sensor` is the pose of the capturing sensor in the frame of the points.
+A point cloud holds measured or sampled points. `definition` names the product definition that holds it, in whose frame the points lie; that definition exists and its storage is not `external`. `positions` holds at least one point, in document length units. `normals` and `colors` are empty or hold one value for each point. Each channel has a name that is unique in its point cloud and one finite value for each point, in point order; channels hold per-point scalars such as intensity, confidence, or a classification code. `sensor` is the pose of the capturing sensor in the frame of the points.
 
 ## History bodies
 
@@ -373,7 +385,11 @@ supports only one normal domain.
 
 `triangle_groups` is empty or is an ordered partition of all triangle ordinals.
 Each group is nonempty, its ordinals are strictly increasing, and a nonempty
-`source_id` is unique within the tessellation. `texture_assignments` associates
+`source_id` is unique within the tessellation. A group's optional `face` names
+the B-rep face whose triangles the group holds. The face is a face of the
+tessellation's `body`, which is then present, and a member of `faces` when
+`faces` is not empty. Each face names at most one group of a tessellation.
+`texture_assignments` associates
 one source texture resource and asset with each nonempty, strictly increasing
 triangle subset. Nonempty texture-resource identities are unique. Anonymous
 assignments use an asset at most once. Distinct source resources can use the
@@ -420,11 +436,11 @@ Structural failures are errors. Same-sense two-member radial rings, unknown anno
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "10"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
+Readers accept exactly `ir_version: "11"` ([`cadir-v11.md`](cadir-v11.md) §3.6). The `geometry.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
 
 `Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
-JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`, which requires the crate's `schema` feature.
+JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`, which requires the crate's `schema` feature. `crates/cadmpeg-ir/schema/cadir.schema.json` is its committed output, and `cadmpeg_ir::CADIR_JSON_SCHEMA` embeds that file.
 
 ## Worked cube
 
@@ -434,16 +450,16 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "10",
-  "decode_depth": "full",
-  "units": { "length": "millimeter" },
+  "fragment": false,
+  "ir_version": "11",
+  "scope": { "model": true, "design": true, "process": true },
+  "units": { "length": "millimeter", "angle": "radian", "mass": "kilogram", "time": "second" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
-  "model": {
+  "geometry": {
     "bodies": [
       {
         "id": "body0",
         "kind": "solid",
-        "regions": ["region0"],
         "name": "unit cube"
       }
     ],
@@ -452,7 +468,7 @@ The generated document begins with this complete hierarchy and representative ra
       {
         "id": "shell0",
         "region": "region0",
-        "faces": ["f_bottom", "f_top", "f_front", "f_right", "f_back", "f_left"]
+        "members": []
       }
     ],
     "faces": [
@@ -495,10 +511,8 @@ The generated document begins with this complete hierarchy and representative ra
     "edges": [
       {
         "id": "e0",
-        "curve": "crv_e0",
-        "start": "v0",
-        "end": "v1",
-        "param_range": [0.0, 10.0]
+        "carrier": { "curve": "crv_e0", "param_range": [0.0, 10.0] },
+        "ends": { "start": "v0", "end": "v1" }
       }
     ],
     "vertices": [
@@ -531,11 +545,24 @@ The generated document begins with this complete hierarchy and representative ra
       }
     ]
   },
+  "model": { "features": [] },
+  "design": {
+    "scopes": [], "containers": [], "features": [], "sketches": [],
+    "sketch_entities": [], "sketch_constraints": [], "spatial_sketches": [],
+    "spatial_sketch_entities": [], "spatial_sketch_constraints": [], "parameters": [],
+    "spreadsheets": [], "sheet_metal_rules": [], "programs": [], "configurations": [],
+    "arrangements": [], "publications": [], "evaluations": [], "names": []
+  },
+  "process": {
+    "setups": [], "operations": [], "features": [], "groups": [], "tools": [],
+    "presets": [], "machines": [], "programs": [], "parameters": [], "toolpaths": [],
+    "states": []
+  },
   "native": {}
 }
 ```
 
-The extract omits repeated faces, loops, coedges, edges, vertices, points, surfaces, and curves. Regenerate the complete canonical artifact with:
+The extract omits repeated faces, loops, coedges, edges, vertices, points, surfaces, and curves, the empty topology arenas, and every model arena after `features`. Regenerate the complete canonical artifact with:
 
 ```sh
 cargo run -p cadmpeg-ir --example emit_cube > cube.cadir.json

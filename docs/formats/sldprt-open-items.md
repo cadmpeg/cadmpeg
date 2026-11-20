@@ -660,6 +660,14 @@ resolve a seed feature?
 
 **Need.** We must draw these points to type the relations that name them.
 
+### DI-70. Geometry of unresolved line-or-circle and arc handles
+
+**Question.** Which sketch records carry the geometry of a line-or-circle or arc handle that no marker layout in `sldprt.md` resolves?
+
+**Known.** `sldprt.md` gives coordinate-bearing marker codes `1` and `2` as line-or-circle and arc geometry handles. A handle whose record is a curve record of a framed `sgSketch` object with selector bit 0 clear takes its geometry from the point records its indices select (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). When that record is a line with an identifier trailer (open item EV-29), or when the handle's two read endpoints coincide, the entity takes that geometry and the decoder charges `sketch.handle-reading-assumed`. Three kinds of handle remain. In a record of the compact `ff ff 07 00 01` generation with no f32 `-1` at +13, the same endpoint, sense and centre cell stands 14 bytes earlier: endpoint indices at +42 and +44, f64 `-1` at +50, the sense at +58 and the centre index at +62; the 14-byte header and point-record bounds of its `sgSketch` object are not framed. A handle whose selector has bit 0 set is open item EV-27. A handle whose `sgSketch` header is not framed has no point-record list. After its last sketch-geometry pass, the decoder gives each remaining entity native kind `sldprt:line-or-circle-handle` or `sldprt:arc-handle`, keeps its identity and relations, and charges `sketch.handle-unresolved`. An arc handle whose inline center and endpoints define no minor arc joins its sketch after that pass, with native kind `sldprt:arc-handle`, its identity and relations, and the same loss. A line handle whose two read endpoints coincide, one of them read from a legacy 140-byte single-incidence profile-point record (`sldprt.md` §2), keeps native kind `sldprt:line-or-circle-handle` and charges `sketch.line-degenerate` when its curve record gives no geometry. A handle whose read values define no valid line, circle, or ellipse emits no entity, and neither does a kept handle that stores its own coordinates without the geometry locus `05 00 01 00` at marker +23.
+
+**Need.** We must read these handles to complete the sketch geometry and its profiles.
+
 
 ### DI-47. Relation-table framing
 
@@ -1066,6 +1074,40 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Note.** A full turn sweeps the same region in either sense, so it does not answer this question.
 
+### EV-27. Sketch curve records with selector bit 0 set
+
+**Question.** What do the endpoint and centre indices of a sketch curve record select when bit 0 of its selector (+37) is set?
+
+**Known.** The selector takes the values `4`, `5`, `12`, `13`, `68`, `69`, `132` and `133`. With bit 0 clear, the indices select point records of the same `sgSketch` object (`sldprt.md` §2.3 "In a curve record whose selector (+37) has bit 0 clear"). With bit 0 set, the centre index of a full circle can select the centre of a cylindrical face of the stored solid while its endpoint index selects a point record that is not on that face.
+
+**Need.** The field or list that gives such a record's curve, checked against the faces its feature produces.
+
+### EV-28. Sensed curve records whose endpoints differ from their marker endpoints
+
+**Question.** Which endpoints does a sketch curve record with sense `1` or `-1` join when its point-record positions and the `sldprt.md` §2 marker rules select different points?
+
+**Known.** A curve marker that the §2 rules read as a straight line is an arc when its framed `sgSketch` curve record has selector bit 0 clear, sense `1` or `-1`, and point records at the marker's two endpoints (`sldprt.md` §2 "A curve marker that these rules read as a straight line"). In other sensed records the endpoint indices select point records at other positions, or equal indices select a full circle, or the selected endpoints lie at different distances from the selected centre. In others the endpoint point records stand at the marker endpoints, and the arc about the centre point record, placed in the sketch, ends off one marker endpoint by more than the linear resolution. Placed through the point records, the arc of such a record can coincide with a circular B-rep edge of its feature that has the record's radius and sweep. The line that the §2 rules give meets the sketch's other curves at both ends more often than that arc. The decoder keeps the line and charges `sketch.arc-record-conflict` with the reason.
+
+**Need.** The field or index domain that relates these records' point-record positions to the §2 marker roster, checked against the edges and side faces their features produce.
+
+### EV-29. Endpoints of sketch curve lines with an identifier trailer
+
+**Question.** What do the endpoint values of an `sgSketch` curve-record line with an identifier trailer select?
+
+**Known.** The line has the eight zero bytes at +56 and selector (+37) bit 0 clear, and stores u32 `1` at +84, or u32 `0` at +84 and an identity other than `0` and `ff ff ff ff` at +88. `sldprt.md` §2 reads the trailer-`1` form as direct point-object identifiers ("A current-prefix 92-byte direct profile line") and the trailer-`0` form as one-based ordinals in the feature's coordinate-bearing marker roster ("The current, compact legacy, and extended marker prefixes have a solved curve"). Other curve records with selector bit 0 clear index the point records of their `sgSketch` object by zero-based position (§2.3). Read that way, trailer-`0` endpoints match the endpoints of a B-rep line edge more often than the one-based ordinals do. The decoder applies the §2 reading. A handle that reading leaves unread takes the line between the point records at its positions, and the decoder charges `sketch.handle-reading-assumed`.
+
+**Need.** For both trailer forms, the point pairs that each reading selects, compared with the B-rep line edges of the feature that consumes the sketch.
+
+**Conflict.** For one record, the §2 reading and the point-record positions can select different point pairs.
+
+### EV-30. Sketch curve records of curve type 2
+
+**Question.** What does curve type `2` select in an `sgSketch` curve record, and how does the decoder type its geometry?
+
+**Known.** `sldprt.md` §2.3 states the curve types `0`, `0x40`, `1` and `0xffff`. Records of curve type `2` occur, and each uses the legacy record layout. The decoder keeps the line another pass drew on such a marker, and charges `sketch.arc-record-conflict` with the reason that names the unknown sense word.
+
+**Need.** For each curve-type-2 record, its point records and fields against the B-rep edges of the feature that consumes the sketch.
+
 ### EV-24. Bytes after the last top-level object
 
 **Question.** What owns the four zero bytes some `ResolvedFeatures` streams write after their last top-level object, and the two zero bytes an in-context part writes after a top-level `moProfileFeature_c` whose sketch plane is written in place?
@@ -1113,3 +1155,22 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Need.** Establish the class-scoped operation carrier and the configuration-local state against producing-face orientation and body ownership.
 
 **Note.** Withheld operations retain their existing losses.
+
+### DI-71. Profile chains of marker sketches with dimensioned circles
+
+**Question.** Which feature-input records give the complete closed curve set of a marker-backed sketch whose only closed curve is a dimensioned circle?
+
+**Known.** A circular dimension on a point handle projects one circle with the dimension radius, centered on the handle. The sketch then has no profile chain, and an extrusion that names its sketch feature keeps the feature reference. The affected set has 36 extrusion and revolution features in 36 parts and 30 independent designs. Of 39 extrusions whose sketch has exactly one circle, 25 have a cylinder face that is coaxial with the circle and has its radius. In the other 14, no cylinder face has both the axis and the radius. Other coordinate handles of the same sketch lie at radii of further coaxial cylinder faces.
+
+**Need.** Establish the records that give every circle and curve of these sketches, so that a profile chain is admitted only when the sketch curve set is complete. Prove each chain against the produced side faces.
+
+**Conflict.** One dimensioned circle can be one of several concentric profile circles. A whole-sketch profile from that circle alone fills the region inside the outer circle.
+
+### DI-72. Length unit codes and the three-word unit base
+
+**Question.** Which length units do the codes other than `0`, `1` and `3` of the `moLengthUserUnits_c` unit word name, and is the u16 after a 44-byte base that word?
+
+**Known.** Code `0` is millimetre, `1` centimetre and `3` inch: each agrees with the quotient of a stored length and its Keywords display in every document that stores both. Some compound documents write three u32 words where the base holds four, so the base is 44 bytes, a u16 follows it, then the dual length unit object, whose first u32 is `2`; those documents store no length beside its display.
+
+**Need.** Documents of each form that store a length scalar beside its Keywords display, so the quotient names the unit.
+

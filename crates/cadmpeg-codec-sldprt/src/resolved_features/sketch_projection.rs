@@ -218,7 +218,7 @@ fn project_brep(
                 let Some(edge) = edges.get(&coedge.edge) else {
                     continue;
                 };
-                for vertex_id in [&edge.start, &edge.end] {
+                for vertex_id in edge.vertices() {
                     used_vertices.insert(vertex_id);
                 }
                 let (entity_id, start_aligned) = if let Some((id, start_aligned)) =
@@ -265,10 +265,11 @@ fn project_brep(
                     let Some((geometry, start_aligned)) = projected else {
                         continue;
                     };
-                    let Some(start_point) = vertices.get(&edge.start) else {
+                    let Some(start_point) = edge.start().and_then(|start| vertices.get(start))
+                    else {
                         continue;
                     };
-                    let Some(end_point) = vertices.get(&edge.end) else {
+                    let Some(end_point) = edge.end().and_then(|end| vertices.get(end)) else {
                         continue;
                     };
                     crate::annotations::note(
@@ -302,7 +303,12 @@ fn project_brep(
                     edge_entities.insert(&edge.id, (index_id, start_aligned));
                     (id, start_aligned)
                 };
-                if edge.curve().is_some() || edge.start != edge.end {
+                if edge.curve().is_some()
+                    || edge
+                        .ends
+                        .as_ref()
+                        .is_some_and(|ends| ends.start != ends.end)
+                {
                     profile.push(SketchEntityUse {
                         entity: entity_id,
                         reversed: (coedge.sense == Sense::Reversed) == start_aligned,
@@ -527,6 +533,7 @@ mod projected_brep_output_tests {
                     .expect("plane frame"),
                 )),
                 source_object: None,
+                native_ref: None,
             }],
             faces: vec![Face {
                 id: FaceId::mint("test:model:face#plane").expect("face ID"),
@@ -537,11 +544,13 @@ mod projected_brep_output_tests {
                 name: None,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             }],
             vertices: vec![Vertex {
                 id: VertexId::mint("test:model:vertex#free").expect("vertex ID"),
                 point: point_id.clone(),
                 tolerance: None,
+                native_ref: None,
             }],
             points: vec![Point::new(
                 point_id,
@@ -565,6 +574,7 @@ mod projected_brep_output_tests {
                 id: VertexId::mint(format!("test:model:vertex#{ordinal}")).unwrap(),
                 point: brep.points[0].id.clone(),
                 tolerance: None,
+                native_ref: None,
             });
         }
         // A missing point must not consume a projected entity ordinal.
@@ -574,6 +584,7 @@ mod projected_brep_output_tests {
                 id: VertexId::mint("test:model:vertex#missing").unwrap(),
                 point: PointId::mint("test:model:point#missing").unwrap(),
                 tolerance: None,
+                native_ref: None,
             },
         );
         let mut second_face = brep.faces[0].clone();
@@ -593,7 +604,7 @@ mod projected_brep_output_tests {
         let mut annotations = cadmpeg_ir::annotations::Annotations::default();
         let stream = cadmpeg_ir::stream_name!("test:sketch-projection");
         project_brep(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &brep,
             &BrepSketchSource {
                 block_offset: 7,
@@ -634,7 +645,7 @@ mod projected_brep_output_tests {
         let mut entities = Vec::new();
         let mut constraints = Vec::new();
         project_brep(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &brep,
             &BrepSketchSource {
                 block_offset: 0,

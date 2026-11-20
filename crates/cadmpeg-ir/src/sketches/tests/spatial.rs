@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 use crate::examples::unit_cube;
 use crate::math::{Point3, Vector3};
@@ -582,8 +582,7 @@ fn spatial_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
             "degree": 1,
             "knots": [0.0, 0.0, 1.0, 1.0],
             "poles": {
-                "form": "rational",
-                "points": [
+                "kind": "rational", "points": [
                     {"point": {"x": 2.0, "y": 3.0, "z": 4.0}, "weight": 1.0},
                     {"point": {"x": 5.0, "y": 6.0, "z": 7.0}, "weight": 0.5}
                 ]
@@ -598,13 +597,12 @@ fn spatial_nurbs_wire_preserves_flat_fields_and_checks_cardinality() {
         ("knots", serde_json::json!([0.0, 1.0])),
         (
             "poles",
-            serde_json::json!({"form": "polynomial", "points": []}),
+            serde_json::json!({"kind": "polynomial", "points": []}),
         ),
         (
             "poles",
             serde_json::json!({
-                "form": "rational",
-                "points": [{"point": {"x": 2.0, "y": 3.0, "z": 4.0}, "weight": 1.0}]
+                "kind": "rational", "points": [{"point": {"x": 2.0, "y": 3.0, "z": 4.0}, "weight": 1.0}]
             }),
         ),
     ] {

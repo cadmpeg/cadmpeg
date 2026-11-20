@@ -17,6 +17,7 @@ use crate::NxCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
+use std::collections::HashMap;
 use std::io::Cursor;
 
 fn body_write(group: u8, image: u8) -> Vec<u8> {
@@ -296,11 +297,11 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
     let body = cadmpeg_ir::topology::Body {
         id: BodyId::mint("nx:s4:body#8").expect("identity grammar"),
         kind: cadmpeg_ir::topology::BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     };
 
     let writes = [write_a, write_b];
@@ -316,6 +317,12 @@ fn group_partition_witness_projects_every_write_of_the_bound_body_identity() {
         assert_eq!(outputs.get("write-a"), Some(&body.id));
         assert_eq!(outputs.get("write-b"), Some(&body.id));
     });
+}
+
+fn member_index(
+    members: &[crate::native::parasolid::ParasolidGroupMember],
+) -> HashMap<&str, Option<&crate::native::parasolid::ParasolidGroupMember>> {
+    cadmpeg_core::decode::unique_index(members.iter().map(|member| (member.id.as_str(), member)))
 }
 
 fn group_member(
@@ -380,7 +387,7 @@ fn result_topology_uses_only_unique_current_group_members() {
         let result = feature_result_group_members(
             use_.partition_stream_ordinal,
             &use_.parasolid_group_members,
-            &members,
+            &member_index(&members),
         )
         .unwrap();
 
@@ -392,12 +399,14 @@ fn result_topology_uses_only_unique_current_group_members() {
             group_member("face", GroupNodeFamily::Face, Some(40)),
             group_member("face", GroupNodeFamily::Face, Some(40)),
         ];
-        assert!(
-            feature_result_group_members(4, &["face".into()], &duplicate_members)
-                .unwrap()
-                .faces
-                .is_empty()
-        );
+        assert!(feature_result_group_members(
+            4,
+            &["face".into()],
+            &member_index(&duplicate_members)
+        )
+        .unwrap()
+        .faces
+        .is_empty());
     });
 }
 
@@ -414,23 +423,27 @@ fn result_topology_accepts_either_partition_witness_and_rejects_disagreement() {
         "write",
         std::slice::from_ref(&image),
         &[],
-        &members,
+        &member_index(&members),
     )
     .unwrap();
     let from_direct = operation_body_write_result_group_members(
         "write",
         &[],
         std::slice::from_ref(&direct),
-        &members,
+        &member_index(&members),
     )
     .unwrap();
     assert_eq!(from_image.faces, ["nx:s4:face#40"]);
     assert_eq!(from_direct.faces, from_image.faces);
 
     let conflict = direct_group_use(&["edge"]);
-    let rejected =
-        operation_body_write_result_group_members("write", &[image], &[conflict], &members)
-            .unwrap();
+    let rejected = operation_body_write_result_group_members(
+        "write",
+        &[image],
+        &[conflict],
+        &member_index(&members),
+    )
+    .unwrap();
     assert!(rejected.faces.is_empty());
     assert!(rejected.edges.is_empty());
 }
@@ -475,7 +488,7 @@ fn repeated_body_identity_builds_output_lineage() {
 #[test]
 fn duplicate_result_member_claims_do_not_discard_recovered_geometry() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let original = ir.model.clone();
+    let original = ir.clone();
     let mut losses = Vec::new();
     crate::native::attach::append_feature_result_topology(
         &mut ir.model.feature_result_topologies,
@@ -494,7 +507,7 @@ fn duplicate_result_member_claims_do_not_discard_recovered_geometry() {
         },
         &mut losses,
     );
-    assert_eq!(ir.model, original);
+    assert_eq!(ir, original);
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,

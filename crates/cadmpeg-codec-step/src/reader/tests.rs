@@ -25,13 +25,14 @@ fn malformed_face_names_preserve_geometry_and_report_source_only_metadata() {
     let expected = StepCodec::default()
         .decode(&mut Cursor::new(original), &DecodeOptions::default())
         .unwrap();
-    assert!(!expected.ir().model.faces.is_empty());
+    assert!(!expected.ir().geometry.faces.is_empty());
     for name in ["7", "1.E999", "\"0ZZ\"", "<uri>"] {
         let changed = original.replace("ADVANCED_FACE('',", &format!("ADVANCED_FACE({name},"));
         assert_ne!(changed, original);
         let result = StepCodec::default()
             .decode(&mut Cursor::new(&changed), &DecodeOptions::default())
             .unwrap();
+        assert_eq!(result.ir().geometry, expected.ir().geometry);
         assert_eq!(result.ir().model, expected.ir().model);
         assert!(result
             .report()
@@ -39,8 +40,8 @@ fn malformed_face_names_preserve_geometry_and_report_source_only_metadata() {
             .iter()
             .any(|loss| loss.code == StepLossCode::MetadataStringInvalid.kind()));
         assert_eq!(
-            result.ir().source.as_ref().unwrap().attributes["bytes_unclassified"],
-            "0"
+            cadmpeg_test_support::wire::coverage_count(result.report(), "bytes_unclassified"),
+            0
         );
         assert!(cadmpeg_ir::validate_neutral(result.ir(), Vec::new())
             .unwrap()
@@ -54,10 +55,10 @@ fn byte_census_keeps_metadata_admission_after_an_omitted_record() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("bounded defect and unreadable metadata remain recoverable");
-    assert_eq!(decoded.ir().model.points.len(), 2);
+    assert_eq!(decoded.ir().geometry.points.len(), 2);
     assert_eq!(
-        decoded.ir().source.as_ref().expect("source").attributes["bytes_unclassified"],
-        "0"
+        cadmpeg_test_support::wire::coverage_count(decoded.report(), "bytes_unclassified"),
+        0
     );
 }
 
@@ -69,7 +70,7 @@ fn orphan_point_keeps_its_exact_record_when_no_carrier_owns_it() {
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("bounded standalone coordinate"),
     );
-    assert!(decoded.ir().model.points.is_empty());
+    assert!(decoded.ir().geometry.points.is_empty());
     let unknowns = decoded
         .ir()
         .native_unknowns("step")
@@ -101,7 +102,7 @@ fn opaque_reference_does_not_transfer_a_coordinate() {
             .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .expect("bounded opaque reference"),
     );
-    assert!(decoded.ir().model.points.is_empty());
+    assert!(decoded.ir().geometry.points.is_empty());
     let unknowns = decoded
         .ir()
         .native_unknowns("step")
@@ -125,6 +126,51 @@ fn opaque_reference_does_not_transfer_a_coordinate() {
         loss.code == StepLossCode::OpaqueRecordPreserved.kind()
             && loss.message.contains("CARTESIAN_POINT")
     }));
+}
+
+#[test]
+fn records_kept_without_decoding_are_marked_untyped_model_content() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(1.,2.,3.));#2=UNKNOWN_ITEM(#1);ENDSEC;END-ISO-10303-21;";
+    let decoded = EditableDecodeResult::from(
+        StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("bounded opaque reference"),
+    );
+    let fidelity = decoded.source_fidelity();
+    assert_eq!(
+        fidelity.decode_digest,
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(source)
+    );
+    for id in ["step:data:cartesian_point#1", "step:data:unknown_item#2"] {
+        let record = fidelity.retained_record(id).expect("retained source");
+        assert_eq!(
+            record.untyped().iter().copied().collect::<Vec<_>>(),
+            [cadmpeg_core::decode::ArenaClass::Model]
+        );
+    }
+    assert_eq!(
+        fidelity.unrepresented().into_iter().collect::<Vec<_>>(),
+        [cadmpeg_core::decode::ArenaClass::Model]
+    );
+}
+
+#[test]
+fn only_records_kept_without_decoding_carry_an_untyped_mark() {
+    let source = include_str!("../writer/tests/data/periodic_two_rims.p21");
+    let decoded = EditableDecodeResult::from(
+        StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
+    assert!(!decoded.ir().geometry.faces.is_empty());
+    let untyped = decoded
+        .source_fidelity()
+        .retained_records()
+        .iter()
+        .filter(|(_, record)| !record.untyped().is_empty())
+        .map(|(id, _)| id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(untyped, ["step:data:application_protocol_definition#41"]);
 }
 
 #[test]
@@ -155,6 +201,7 @@ fn byte_accounting_reports_an_unrecognized_suffix() {
         &[],
         super::DecodeMode::Decode(Packaging::Bare),
         &ctx,
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(&extended),
     )
     .expect("synthesized unknown record conversion")
     .decoded;
@@ -300,7 +347,7 @@ fn decode_user_defined_entities_as_named_opaque_records() {
             .expect("decode user-defined entity witness"),
     );
 
-    assert_eq!(result.ir().model.entity_count(), 0);
+    assert_eq!(result.ir().entity_count(), 1);
     let unknowns = result.ir().native_unknowns("step").unwrap();
     assert_eq!(unknowns.len(), 2);
 
@@ -381,7 +428,7 @@ fn opaque_links_retain_fallback_carrier_targets() {
     );
     assert!(result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .any(|curve| curve.id.as_str() == "step:data:curve#1"));
@@ -413,8 +460,7 @@ pub(crate) fn decode_accounts_for_every_part21_byte() {
     let result = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode byte-accounting fixture");
-    let attributes = &result.ir().source.as_ref().unwrap().attributes;
-    let count = |name: &str| attributes[name].parse::<usize>().unwrap();
+    let count = |name: &str| cadmpeg_test_support::wire::coverage_count(result.report(), name);
 
     assert!(count("bytes_structural") > 0);
     assert!(count("bytes_typed") > 0);
@@ -505,8 +551,7 @@ fn every_repository_step_fixture_has_complete_byte_accounting() {
         let result = StepCodec::default()
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("{name}: {error}"));
-        let attributes = &result.ir().source.as_ref().unwrap().attributes;
-        let count = |key: &str| attributes[key].parse::<usize>().unwrap();
+        let count = |key: &str| cadmpeg_test_support::wire::coverage_count(result.report(), key);
         assert_eq!(count("bytes_unclassified"), 0, "{name}");
         assert_eq!(
             count("bytes_structural")
@@ -554,7 +599,7 @@ fn unowned_pcurve_dependencies_are_retained_as_one_opaque_closure() {
         .is_some_and(|data| data.starts_with(b"#71=LINE")));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .all(|pcurve| pcurve.id.as_str() != "step:data:pcurve#69"));
@@ -577,7 +622,7 @@ fn a_protected_unowned_pcurve_stays_opaque() {
         .expect("decode protected unowned pcurve");
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .all(|pcurve| { pcurve.id.as_str() != "step:data:pcurve#69" }));
@@ -607,7 +652,7 @@ fn failed_mandatory_point_root_remains_opaque_and_unbound() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode source with unsupported mandatory vertex point");
 
-    assert!(decoded.ir().model.bodies.is_empty());
+    assert!(decoded.ir().geometry.bodies.is_empty());
     let unknowns = decoded
         .ir()
         .native_unknowns("step")
@@ -666,25 +711,25 @@ fn retention_reports_every_deleted_carrier_category() {
     }
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .all(|pcurve| pcurve.id.as_str() != "step:data:pcurve#69"));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .all(|curve| curve.id.as_str() != "step:data:curve#83"));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .all(|surface| surface.id.as_str() != "step:data:surface#78"));
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .points
         .iter()
         .all(|point| point.id.as_str() != "step:data:point#74"));
@@ -810,8 +855,8 @@ fn decode_salvages_noncanonical_complex_partial_order_with_provenance() {
     assert_eq!(provenance.tag.as_deref(), Some("complex_entity"));
     assert_eq!(result.ir().native_unknowns("step").unwrap().len(), 0);
     assert_eq!(
-        result.ir().source.as_ref().unwrap().attributes["bytes_named_opaque"],
-        "0"
+        cadmpeg_test_support::wire::coverage_count(result.report(), "bytes_named_opaque"),
+        0
     );
 }
 
@@ -918,10 +963,10 @@ fn omitted_geometry_names_preserve_intersection_curve_topology() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode omitted-name intersection curve");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
     let edge = decoded
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.id.as_str() == "step:data:edge#19")
@@ -930,7 +975,7 @@ fn omitted_geometry_names_preserve_intersection_curve_topology() {
         edge.curve().map(CurveId::as_str),
         Some("step:data:curve#16")
     );
-    assert!(decoded.ir().model.coedges.iter().any(|coedge| {
+    assert!(decoded.ir().geometry.coedges.iter().any(|coedge| {
         coedge
             .pcurves
             .iter()
@@ -1013,3 +1058,32 @@ fn byte_coverage_classifies_whitespace_as_structural() {
 }
 
 mod retention;
+
+/// An opaque entity type is reported once, with the type as its provenance
+/// tag, the offset of its first instance, and its instance count.
+#[test]
+fn an_opaque_entity_type_reports_its_type_offset_and_count() {
+    let source = b"ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=UNKNOWN_ITEM(1);#2=UNKNOWN_ITEM(2);#3=UNKNOWN_ITEM(3);ENDSEC;END-ISO-10303-21;";
+    let first = source
+        .windows(b"#1=".len())
+        .position(|window| window == b"#1=")
+        .expect("the first instance");
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(source.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .expect("opaque records decode");
+    let notes = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::OpaqueRecordPreserved.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(notes.len(), 1);
+    let note = notes[0];
+    assert_eq!(note.count, Some(3));
+    let provenance = note.provenance.as_ref().expect("provenance");
+    assert_eq!(provenance.tag.as_deref(), Some("UNKNOWN_ITEM"));
+    assert_eq!(provenance.offset, u64::try_from(first).expect("offset"));
+}

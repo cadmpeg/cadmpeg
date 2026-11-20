@@ -15,6 +15,7 @@ use cadmpeg_ir::ids::{
     PointId, ProductDefinitionId, SurfaceId, VertexId,
 };
 use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+use cadmpeg_ir::references::InstanceTarget;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::Fraction;
 use cadmpeg_ir::topology::Color;
@@ -37,40 +38,41 @@ pub(super) fn decode(
 ) -> Result<StageOutcome<()>, CodecError> {
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
-    let face_indices = collect_identity_indices(ir.model.faces.iter().map(|face| face.id.as_str()));
+    let face_indices =
+        collect_identity_indices(ir.geometry.faces.iter().map(|face| face.id.as_str()));
     let body_indices =
-        collect_identity_indices(ir.model.bodies.iter().map(|body| body.id.as_str()));
+        collect_identity_indices(ir.geometry.bodies.iter().map(|body| body.id.as_str()));
     let indices = PresentationIndices {
         faces: &face_indices,
         bodies: &body_indices,
     };
     let entity_ids = EntityIds {
         edges: ir
-            .model
+            .geometry
             .edges
             .iter()
             .map(|item| item.id.as_str())
             .collect::<std::collections::BTreeSet<_>>(),
         vertices: ir
-            .model
+            .geometry
             .vertices
             .iter()
             .map(|item| item.id.as_str())
             .collect::<std::collections::BTreeSet<_>>(),
         points: ir
-            .model
+            .geometry
             .points
             .iter()
             .map(|item| item.id.as_str())
             .collect::<std::collections::BTreeSet<_>>(),
         curves: ir
-            .model
+            .geometry
             .curves
             .iter()
             .map(|item| item.id.as_str())
             .collect::<std::collections::BTreeSet<_>>(),
         surfaces: ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .map(|item| item.id.as_str())
@@ -95,7 +97,7 @@ pub(super) fn decode(
             .map(|item| item.id.as_str())
             .collect::<std::collections::BTreeSet<_>>(),
     };
-    let mut appearance_ids = BTreeMap::<(u64, u32), AppearanceId>::new();
+    let mut appearance_ids = BTreeMap::<(u64, u64), AppearanceId>::new();
     let mut hidden_style_ids = BTreeSet::new();
     let mut hidden_layer_ids = BTreeSet::new();
     let mut deferred_invisibility = BTreeMap::<u64, (bool, BTreeSet<u64>, BTreeSet<u64>)>::new();
@@ -151,7 +153,7 @@ pub(super) fn decode(
             let mut hidden = false;
             for body_id in body_ids {
                 if let Some(index) = body_indices.get(body_id.as_str()) {
-                    ir.model.bodies[*index].visible = Some(false);
+                    ir.geometry.bodies[*index].visible = Some(false);
                     hidden = true;
                 }
             }
@@ -224,7 +226,7 @@ pub(super) fn decode(
             name,
             description,
             visible: hidden_layer_ids.contains(&layer_id).then_some(false),
-            items,
+            items: items.into_iter().map(InstanceTarget::new).collect(),
         });
         typed.insert(layer_id);
     }
@@ -352,7 +354,9 @@ pub(super) fn decode(
             name,
             ..
         } = color;
-        let appearance_key = (color_id, color.a().to_bits());
+        let alpha_bits = cadmpeg_core::convert::f32_from_f64(color.a())
+            .map_or_else(|| color.a().to_bits(), |alpha| u64::from(alpha.to_bits()));
+        let appearance_key = (color_id, alpha_bits);
         let appearance_id = if let Some(appearance_id) = appearance_ids.get(&appearance_key) {
             appearance_id.clone()
         } else {
@@ -361,7 +365,7 @@ pub(super) fn decode(
             } else {
                 IdentityKey::from(color_id)
                     .dash(key_word!("alpha"))
-                    .dash(color.a().to_bits())
+                    .dash(alpha_bits)
             };
             let id = AppearanceId::from(ids::presentation(kind!("appearance"), key));
             ir.model.appearances.push(Appearance {
@@ -400,7 +404,7 @@ pub(super) fn decode(
                             .dash(target_ordinal),
                     )
                     .into(),
-                    target,
+                    target: target.into(),
                     appearance: appearance_id.clone(),
                     source_entity_id: Some(format!("#{style_id}")),
                     object_type: None,
@@ -498,10 +502,10 @@ pub(super) fn decode(
             let slot = match &target {
                 AppearanceTarget::Face(face) => face_indices
                     .get(face.as_str())
-                    .map(|&index| &mut ir.model.faces[index].color),
+                    .map(|&index| &mut ir.geometry.faces[index].color),
                 AppearanceTarget::Body(body) => body_indices
                     .get(body.as_str())
-                    .map(|&index| &mut ir.model.bodies[index].color),
+                    .map(|&index| &mut ir.geometry.bodies[index].color),
                 _ => None,
             };
             if let Some(slot) = slot {
@@ -1393,13 +1397,6 @@ fn find_color(
                         .find(|partial| partial.name == "COLOUR_SPECIFICATION")
                         .and_then(|partial| partial.parameters.first())
                 };
-                let Some((r, g, b)) = cadmpeg_core::convert::f32_from_f64(r)
-                    .zip(cadmpeg_core::convert::f32_from_f64(g))
-                    .zip(cadmpeg_core::convert::f32_from_f64(b))
-                    .map(|((r, g), b)| (r, g, b))
-                else {
-                    return Ok(None);
-                };
                 let Some(color) = Color::new(r, g, b, 1.0) else {
                     return Ok(None);
                 };
@@ -1486,9 +1483,10 @@ fn find_color(
     if let Some(transparency) = transparency {
         match result.as_mut() {
             Some(ColorResolution::Candidate(candidate)) => {
-                if let Some(alpha) = cadmpeg_core::convert::f32_from_f64(1.0 - transparency.get()) {
-                    candidate.color = candidate.color.with_alpha(alpha).unwrap_or(candidate.color);
-                }
+                candidate.color = candidate
+                    .color
+                    .with_alpha(1.0 - transparency.get())
+                    .unwrap_or(candidate.color);
             }
             Some(ColorResolution::Ambiguous { .. }) => {}
             None => {}
@@ -1519,6 +1517,35 @@ fn surface_transparency(
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Fraction>, CodecError> {
+    // `surface_style_element_select` admits a transparency only through a
+    // rendering's properties.
+    for transparent_id in record
+        .partials
+        .iter()
+        .filter(|partial| partial.name == "SURFACE_SIDE_STYLE")
+        .flat_map(|partial| {
+            partial
+                .parameters
+                .iter()
+                .flat_map(|value| references(value, ctx))
+        })
+    {
+        let transparent_id = transparent_id?;
+        let misplaced = exchange
+            .records()
+            .get(&transparent_id)
+            .is_some_and(|style| {
+                style
+                    .partials
+                    .iter()
+                    .any(|partial| partial.name == "SURFACE_STYLE_TRANSPARENT")
+            });
+        if misplaced {
+            losses.push(StepLossCode::SurfaceTransparencyMisplaced.note(format!(
+                "SURFACE_SIDE_STYLE #{id} lists SURFACE_STYLE_TRANSPARENT #{transparent_id} outside a rendering; transparency omitted"
+            )));
+        }
+    }
     let mut candidates = Vec::new();
     for property_id in record
         .partials

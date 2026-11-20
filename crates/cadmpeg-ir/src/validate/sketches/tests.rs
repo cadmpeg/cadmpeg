@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 use super::sketch_curve_offset_matches;
 use crate::examples::unit_cube;
@@ -850,19 +850,15 @@ fn sketch_constraint_native_ref_must_resolve() {
         unreachable!("test constraint is native")
     };
     assert_eq!(native_properties.get("mode").map(String::as_str), Some("7"));
-    let mut legacy = serde_json::from_str::<serde_json::Value>(&serialized).unwrap();
-    legacy["model"]["sketch_constraints"][0]["definition"]
+    let mut without_properties = serde_json::from_str::<serde_json::Value>(&serialized).unwrap();
+    without_properties["model"]["sketch_constraints"][0]["definition"]
         .as_object_mut()
         .unwrap()
         .remove("native_properties");
-    let legacy = CadIr::from_json(&serde_json::to_string(&legacy).unwrap()).unwrap();
-    let crate::sketches::SketchConstraintDefinitionInput::Native {
-        native_properties, ..
-    } = legacy.model.sketch_constraints[0].definition.kind()
-    else {
-        unreachable!("test constraint is native")
-    };
-    assert!(native_properties.is_empty());
+    let error = CadIr::from_json(&serde_json::to_string(&without_properties).unwrap())
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("native_properties"), "{error}");
 }
 
 #[test]

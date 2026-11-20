@@ -2,14 +2,15 @@
 //! The tessellation of one face.
 
 use std::collections::BTreeSet;
+use std::f64::consts::TAU;
 
 use cadmpeg_ir::ids::{CoedgeId, FaceId};
 use cadmpeg_ir::index::StandardIndex;
 use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::topology::{LoopBoundary, Sense};
+use cadmpeg_ir::topology::{Face, FaceLoops, LoopBoundary, Sense};
 
-use crate::boundary::{trace, Sampler, Traced, TracedLoop};
-use crate::domain::{regions, reversed, Frame, Node, Ring};
+use crate::boundary::{trace, EdgeCache, Sampler, Traced, TracedLoop};
+use crate::domain::{clockwise_on_open_carrier, regions, reversed, Frame, Node, Region, Ring};
 use crate::plane::{cross, distance, dot, length, midpoint, scaled, sub, unit, Uv};
 use crate::refine::{Limits, Mesh};
 use crate::surface::Carrier;
@@ -22,6 +23,9 @@ use cadmpeg_core::decode::WorkBudget;
 const JUNCTION_RATIO: f64 = 1e-7;
 /// Evaluation work one face may spend.
 const FACE_WORK: usize = 1 << 28;
+/// Share of a mesh's area in triangles that face away from the surface
+/// above which a face whose evaluation work ran out is refused.
+const FOLDED_SHARE: f64 = 1e-3;
 /// Deepest bisection of one derived pcurve segment.
 const PCURVE_DEPTH: u32 = 24;
 /// Largest sample count of one derived pcurve.
@@ -29,26 +33,45 @@ const MAX_PCURVE_SAMPLES: usize = 1 << 16;
 /// Ratio of a triangle's model area to the squared surface size below which
 /// it is dropped as degenerate.
 const DEGENERATE_AREA_RATIO: f64 = 1e-20;
+/// Ratio of a triangle's spread along one parameter to its spread along
+/// the other, both in the surface metric, below which its corners lie on
+/// one line of constant parameter.
+const ISO_LINE_RATIO: f64 = 1e-9;
 
 /// Why a face has no tessellation.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Refusal(String);
+pub struct Refusal {
+    reason: String,
+    misoriented: bool,
+}
 
 impl Refusal {
     pub(crate) fn new(reason: impl Into<String>) -> Self {
-        Self(reason.into())
+        Self {
+            reason: reason.into(),
+            misoriented: false,
+        }
+    }
+
+    /// A refusal of loops whose orientation, taken from the face sense,
+    /// bounds no domain.
+    pub(crate) fn misoriented(reason: impl Into<String>) -> Self {
+        Self {
+            reason: reason.into(),
+            misoriented: true,
+        }
     }
 
     /// The reason.
     #[must_use]
     pub fn reason(&self) -> &str {
-        &self.0
+        &self.reason
     }
 }
 
 impl std::fmt::Display for Refusal {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(&self.0)
+        formatter.write_str(&self.reason)
     }
 }
 
@@ -98,7 +121,7 @@ fn ring(traced: &TracedLoop<'_>, left: bool) -> Ring {
             // A junction kept on both branches of a pole joins them along
             // the pole line.
             let jump = last
-                && position + 1 < count
+                && (position + 1 < count || traced.closes_at_pole)
                 && next.is_some_and(|next| {
                     let scale = 1.0 + uv[0].abs() + uv[1].abs();
                     (next[0] - uv[0]).abs().max((next[1] - uv[1]).abs()) > JUNCTION_RATIO * scale
@@ -129,77 +152,57 @@ pub(crate) fn tessellate(
     tessellator: &mut Tessellator<'_>,
     face_id: &FaceId,
 ) -> Result<FaceMesh, Refusal> {
+    tessellate_within(tessellator, face_id, FACE_WORK)
+}
+
+/// Tessellates `face_id` with `limit` units of evaluation work.
+pub(crate) fn tessellate_within(
+    tessellator: &mut Tessellator<'_>,
+    face_id: &FaceId,
+    limit: usize,
+) -> Result<FaceMesh, Refusal> {
     let index = &tessellator.index;
     let options = tessellator.options;
     let face = index
         .faces(face_id.as_str(), StandardIndex)
         .ok_or_else(|| Refusal::new(format!("the face {face_id} is not in the model")))?;
-    let work = WorkBudget::new(FACE_WORK);
+    let work = WorkBudget::new(limit);
     let carrier = Carrier::new(index, &work, &face.surface)?;
     let sense = if face.sense == Sense::Reversed {
         -1.0
     } else {
         1.0
     };
-    let orientation = sense * carrier.normal_sign;
-    let left = orientation > 0.0;
+    let mut orientation = sense * carrier.normal_sign;
     let sampler = Sampler {
         index,
         work: &work,
         chord: options.chord,
         angle: options.angle,
     };
-    let mut traced_loops = Vec::new();
-    let mut poles: Vec<(Uv, Option<Point3>)> = Vec::new();
-    for loop_id in &face.loops {
-        let loop_ = index
-            .loops(loop_id.as_str(), StandardIndex)
-            .ok_or_else(|| Refusal::new(format!("the loop {loop_id} is not in the model")))?;
-        match &loop_.boundary {
-            LoopBoundary::Vertex { vertex, .. } => {
-                let vertex = index
-                    .vertices(vertex.as_str(), StandardIndex)
-                    .and_then(|vertex| index.points(vertex.point.as_str(), StandardIndex));
-                if let Some(point) = vertex {
-                    let point = point.position().get();
-                    if let Some(uv) = carrier.invert(point, None)? {
-                        poles.push((uv, Some(point)));
-                    }
-                }
-            }
-            LoopBoundary::Ring(ring) => {
-                let coedges = ring
-                    .coedges()
-                    .iter()
-                    .map(|id| {
-                        index.coedges(id.as_str(), StandardIndex).ok_or_else(|| {
-                            Refusal::new(format!("the coedge {id} is not in the model"))
-                        })
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                traced_loops.push(trace(
-                    &sampler,
-                    &mut tessellator.edges,
-                    &carrier,
-                    &coedges,
-                    left,
-                )?);
-            }
+    // Loops that bound no domain in the orientation of the face sense, and
+    // bound one in the opposite orientation, orient the face.
+    let (traced_loops, regions) = match layout(
+        &sampler,
+        &mut tessellator.edges,
+        &carrier,
+        face,
+        orientation > 0.0,
+    ) {
+        Err(refusal) if refusal.misoriented => {
+            let laid = layout(
+                &sampler,
+                &mut tessellator.edges,
+                &carrier,
+                face,
+                orientation < 0.0,
+            )
+            .map_err(|_| refusal)?;
+            orientation = -orientation;
+            laid
         }
-    }
-    if let Some(apex) = carrier.apex {
-        poles.push(([0.0, apex], carrier.point([0.0, apex])?));
-    }
-    let frame = Frame {
-        periods: carrier.periods,
-        domain: carrier.domain,
-        poles,
+        laid => laid?,
     };
-    let rings = traced_loops
-        .iter()
-        .map(|traced| ring(traced, left))
-        .collect();
-    let regions = regions(rings, &frame)?;
     let mut mesh = Mesh {
         uv: Vec::new(),
         points: Vec::new(),
@@ -207,6 +210,7 @@ pub(crate) fn tessellate(
         scales: Vec::new(),
         triangles: Vec::new(),
         fixed: BTreeSet::new(),
+        anisotropy: [1.0, 1.0],
     };
     for region in regions {
         let mut rings_by_index = Vec::new();
@@ -248,11 +252,30 @@ pub(crate) fn tessellate(
         angle: options.angle,
         max_vertices: options.max_vertices,
     };
+    let unrefined = mesh.clone();
     if !carrier.planar() {
-        mesh.seed(&carrier, &limits)?;
+        mesh.seed(&carrier, &limits, true)?;
     }
     mesh.refine(&carrier, &limits)?;
     mesh.flip();
+    // Triangles stretched along a direction the surface turns out to bend
+    // in can fold the mesh over; the face then refines in the surface
+    // metric.
+    if mesh.stretched() && mesh.folded() {
+        mesh = unrefined;
+        if !carrier.planar() {
+            mesh.seed(&carrier, &limits, false)?;
+        }
+        mesh.refine(&carrier, &limits)?;
+        mesh.flip();
+    }
+    // Refinement reads a surface point that the spent budget withholds as
+    // one with no error; a mesh it left folded misses its surface.
+    if (work.exhausted() || work.remaining() == 0) && mesh.folded_share() > FOLDED_SHARE {
+        return Err(Refusal::new(
+            "the face's evaluation work ran out and left its mesh folded",
+        ));
+    }
     let mut coedges = Vec::new();
     let mut deviation = 0.0_f64;
     for traced in &traced_loops {
@@ -280,6 +303,81 @@ pub(crate) fn tessellate(
         }
     }
     Ok(finish(&carrier, mesh, orientation, coedges, deviation))
+}
+
+/// The traced loops of `face` and the regions they bound, with the face on
+/// the left of each loop when `left` holds.
+fn layout<'ir>(
+    sampler: &Sampler<'_, 'ir>,
+    cache: &mut EdgeCache,
+    carrier: &Carrier<'_, 'ir>,
+    face: &'ir Face,
+    left: bool,
+) -> Result<(Vec<TracedLoop<'ir>>, Vec<Region>), Refusal> {
+    let index = sampler.index;
+    let mut traced_loops = Vec::new();
+    let mut declared_outer = None;
+    let mut poles: Vec<(Uv, Option<Point3>)> = Vec::new();
+    for loop_id in &face.loops {
+        let loop_ = index
+            .loops(loop_id.as_str(), StandardIndex)
+            .ok_or_else(|| Refusal::new(format!("the loop {loop_id} is not in the model")))?;
+        match &loop_.boundary {
+            LoopBoundary::Vertex { vertex, .. } => {
+                let vertex = index
+                    .vertices(vertex.as_str(), StandardIndex)
+                    .and_then(|vertex| index.points(vertex.point.as_str(), StandardIndex));
+                if let Some(point) = vertex {
+                    let point = point.position().get();
+                    if let Some(uv) = carrier.invert(point, None)? {
+                        poles.push((uv, Some(point)));
+                    }
+                }
+            }
+            LoopBoundary::Ring(ring) => {
+                let coedges = ring
+                    .coedges()
+                    .iter()
+                    .map(|id| {
+                        index.coedges(id.as_str(), StandardIndex).ok_or_else(|| {
+                            Refusal::new(format!("the coedge {id} is not in the model"))
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                if matches!(&face.loops, FaceLoops::Classified { outer, .. } if outer == loop_id) {
+                    declared_outer = Some(traced_loops.len());
+                }
+                traced_loops.push(trace(sampler, cache, carrier, &coedges, left)?);
+            }
+        }
+    }
+    if let Some(apex) = carrier.apex {
+        poles.push(([0.0, apex], carrier.point([0.0, apex])?));
+    }
+    for &circle in &carrier.pole_circles {
+        let point = carrier.point([0.0, circle])?;
+        for turn in [-TAU, 0.0, TAU] {
+            poles.push(([0.0, circle + turn], point));
+        }
+    }
+    let frame = Frame {
+        periods: carrier.periods,
+        domain: carrier.domain,
+        poles,
+        narrow: sampler.chord,
+    };
+    let rings: Vec<Ring> = traced_loops
+        .iter()
+        .map(|traced| ring(traced, left))
+        .collect();
+    if let Some(outer) = declared_outer.and_then(|at| rings.get(at)) {
+        if clockwise_on_open_carrier(outer, &frame)? {
+            return Err(Refusal::misoriented(
+                "the declared outer loop runs clockwise around the face",
+            ));
+        }
+    }
+    Ok((traced_loops, regions(rings, &frame)?))
 }
 
 /// The derived pcurve of a coedge: its trace bisected until each segment
@@ -377,6 +475,27 @@ fn keep(b: (f64, Uv, Point3), out: &mut (Vec<Uv>, Vec<Point3>)) {
     out.1.push(b.2);
 }
 
+/// Whether the corners of triangle `corners` lie on one line of constant
+/// `u` or constant `v`, judged in the surface metric at those corners. On
+/// such a line the parameter chord is the line's own trace, so the triangle
+/// covers no part of the face, though its corners can span a curve on the
+/// surface, as along a seam.
+fn on_iso_line(uv: &[Uv], scales: &[[f64; 2]], corners: [usize; 3]) -> bool {
+    let mut spread = [0.0_f64; 2];
+    for (axis, width) in spread.iter_mut().enumerate() {
+        let metric = corners
+            .iter()
+            .map(|corner| scales[*corner][axis])
+            .sum::<f64>()
+            / 3.0;
+        let values = corners.map(|corner| uv[corner][axis] * metric);
+        let low = values.iter().copied().fold(f64::INFINITY, f64::min);
+        let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        *width = high - low;
+    }
+    (0..2).any(|axis| spread[axis] <= ISO_LINE_RATIO * spread[1 - axis])
+}
+
 /// The output mesh: triangles wound about the oriented normal, unit vertex
 /// normals, and no degenerate triangles.
 fn finish(
@@ -392,7 +511,7 @@ fn finish(
     for [a, b, c] in mesh.triangles.into_iter().flatten() {
         let (pa, pb, pc) = (mesh.points[a], mesh.points[b], mesh.points[c]);
         let normal = cross(sub(pb, pa), sub(pc, pa));
-        if length(normal) <= smallest {
+        if length(normal) <= smallest || on_iso_line(&mesh.uv, &mesh.scales, [a, b, c]) {
             continue;
         }
         let triangle = if orientation > 0.0 {

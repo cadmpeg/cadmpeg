@@ -480,11 +480,11 @@ fn current_body_writers_close_false_suppression_without_a_configuration() {
     let mut ir = CadIr::empty();
     let mut body_record = cadmpeg_ir::examples::unit_cube()
         .expect("unit cube fixture is admitted")
-        .model
+        .geometry
         .bodies
         .remove(0);
     body_record.id = body.clone();
-    ir.model.bodies.push(body_record);
+    ir.geometry.bodies.push(body_record);
     ir.model.features = vec![
         feature("synthetic:test:id#dependency", 1, Vec::new(), Vec::new()),
         feature(

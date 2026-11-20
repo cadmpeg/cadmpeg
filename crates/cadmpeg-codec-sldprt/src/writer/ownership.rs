@@ -16,31 +16,31 @@ pub(super) fn vertex_body_owners(
     body_attrs: &HashMap<BodyId, u16>,
 ) -> Result<HashMap<VertexId, u16>, CodecError> {
     let regions = ir
-        .model
+        .geometry
         .regions
         .iter()
         .map(|v| (&v.id, v))
         .collect::<HashMap<_, _>>();
     let shells = ir
-        .model
+        .geometry
         .shells
         .iter()
         .map(|v| (&v.id, v))
         .collect::<HashMap<_, _>>();
     let faces = ir
-        .model
+        .geometry
         .faces
         .iter()
         .map(|v| (&v.id, v))
         .collect::<HashMap<_, _>>();
     let edges = ir
-        .model
+        .geometry
         .edges
         .iter()
         .map(|v| (&v.id, v))
         .collect::<HashMap<_, _>>();
     let coedges = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .map(|v| (&v.id, v))
@@ -57,7 +57,7 @@ pub(super) fn vertex_body_owners(
         }
         Ok(())
     };
-    for boundary in &ir.model.loops {
+    for boundary in &ir.geometry.loops {
         let face = faces.get(&boundary.face).ok_or_else(missing)?;
         let shell = shells.get(&face.shell).ok_or_else(missing)?;
         let region = regions.get(&shell.region).ok_or_else(missing)?;
@@ -68,12 +68,13 @@ pub(super) fn vertex_body_owners(
         for coedge in boundary.coedges() {
             let coedge = coedges.get(coedge).ok_or_else(missing)?;
             let edge = edges.get(&coedge.edge).ok_or_else(missing)?;
-            assign(&edge.start, owner)?;
-            assign(&edge.end, owner)?;
+            for vertex in edge.vertices() {
+                assign(vertex, owner)?;
+            }
         }
     }
     if ir
-        .model
+        .geometry
         .vertices
         .iter()
         .any(|vertex| !owners.contains_key(&vertex.id))

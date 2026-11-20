@@ -9,7 +9,7 @@ fn partial_connector_operands_survive_standalone_and_archive_rebinding() {
         let (mut model, _) = standalone_joint_model(Vec::new());
         for (ordinal, connector) in model.assembly_joints[0].connectors_mut().enumerate() {
             connector.operand = JointOperand::external(
-                ExternalDocument::Missing {},
+                ExternalDocument::default(),
                 "f3d:scope#standalone",
                 vec![format!("construction-record#{}", ordinal + 10)],
             );
@@ -49,12 +49,12 @@ fn partial_connector_objects_follow_their_archive_source_scope() {
         Some("f3d:Design/BulkStream.dat:design-parameter-scope#30".to_owned());
     for connector in model.assembly_joints[0].connectors_mut() {
         connector.operand = JointOperand::external(
-            ExternalDocument::Missing {},
+            ExternalDocument::default(),
             "f3d:Design/BulkStream.dat:design-parameter-scope#30",
             vec!["construction-record#10".to_owned()],
         );
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for occurrence in ["first", "second"] {
         let expected =
             format!("f3d:xref/{occurrence}/Design/BulkStream.dat:design-parameter-scope#30");
@@ -109,6 +109,7 @@ fn form_occurrences_rewrite_every_typed_identity_with_absent_native_targets() {
                     reference: native.clone(),
                 }],
             }],
+            ..FormInputs::default()
         },
         vec![
             FormCageObservation {
@@ -130,7 +131,12 @@ fn form_occurrences_rewrite_every_typed_identity_with_absent_native_targets() {
             FormCageObservation {
                 paths: Vec::new(),
                 binding: FormCageBinding::Undecoded {
-                    resource,
+                    resource: FormResource {
+                        source: resource.source,
+                        entry: cadmpeg_core::nonblank_literal!(
+                            "Design/TSplines.BlobParts/other.tsm"
+                        ),
+                    },
                     availability: FormResourceAvailability::ActiveUndecoded,
                 },
             },
@@ -151,7 +157,7 @@ fn form_occurrences_rewrite_every_typed_identity_with_absent_native_targets() {
             .try_into()
             .unwrap(),
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for occurrence in ["left", "right"] {
         let rewritten = OccurrenceScope {
             ctx: &ctx,

@@ -32,7 +32,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
             .unwrap(),
         );
     }
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("synthetic:test:id#polygonal").unwrap(),
         geometry: SurfaceGeometry::Solved(placed),
         source_object: Some(SourceObjectAssociation {
@@ -45,6 +45,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
             layer: Some("Layer".into()),
             instance_path: vec!["Outer".into(), "Inner".into()],
         }),
+        native_ref: None,
     });
     for rational in [false, true] {
         let axis = || NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false);
@@ -60,14 +61,15 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
             false,
         )
         .unwrap();
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: cadmpeg_ir::ids::SurfaceId::mint(format!("synthetic:test:id#nurbs-{rational}"))
                 .unwrap(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(geometry)),
             source_object: None,
+            native_ref: None,
         });
     }
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("synthetic:test:id#procedural").unwrap(),
         geometry: SurfaceGeometry::Procedural {
             construction: cadmpeg_ir::ids::ProceduralSurfaceId::mint(
@@ -79,6 +81,7 @@ fn carrier_model() -> cadmpeg_ir::CadIr {
             }),
         },
         source_object: None,
+        native_ref: None,
     });
     let mut configuration = design_configuration("carriers", 0, Some(0), None);
     configuration.bodies = None;

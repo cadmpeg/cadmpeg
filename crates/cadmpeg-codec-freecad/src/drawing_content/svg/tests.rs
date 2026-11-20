@@ -8,8 +8,8 @@ fn parse_svg(body: &str) -> (TemplateGeometry, Vec<LossNote>) {
     );
     let xml = Document::parse(&source).unwrap();
     let size = DrawingSheet {
-        width_mm: PositiveReal::new(210.0).unwrap(),
-        height_mm: PositiveReal::new(297.0).unwrap(),
+        width_mm: PositiveLength::new(210.0).unwrap(),
+        height_mm: PositiveLength::new(297.0).unwrap(),
         fields: Vec::new(),
     };
     let editable = BTreeMap::from([("Title", "Resolved title")]);
@@ -122,8 +122,8 @@ fn stylesheet_effects_refuse_the_whole_template() {
     let source = r#"<svg xmlns="http://www.w3.org/2000/svg" width="210mm" height="297mm" viewBox="0 0 210 297"><style>line { transform: translate(10px,10px) }</style><line x2="10"/></svg>"#;
     let xml = Document::parse(source).unwrap();
     let size = DrawingSheet {
-        width_mm: PositiveReal::new(210.0).unwrap(),
-        height_mm: PositiveReal::new(297.0).unwrap(),
+        width_mm: PositiveLength::new(210.0).unwrap(),
+        height_mm: PositiveLength::new(297.0).unwrap(),
         fields: Vec::new(),
     };
     assert!(parse(&xml, &size, &BTreeMap::new(), "Template", &mut Vec::new()).is_err());

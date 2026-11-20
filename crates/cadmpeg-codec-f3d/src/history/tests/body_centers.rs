@@ -219,13 +219,17 @@ fn spline_pillow(cached: bool) -> AsmHistoricalTopology {
             geometry,
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
         brep.edges.push(Edge {
             id: EdgeId::mint(format!("f3d:test:edge#{edge}")).unwrap(),
             carrier: EdgeCarrier::new(Some(id), Some([0., 1.])).unwrap(),
-            start: VertexId::mint("f3d:test:vertex#1").unwrap(),
-            end: VertexId::mint("f3d:test:vertex#2").unwrap(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint("f3d:test:vertex#1").unwrap(),
+                VertexId::mint("f3d:test:vertex#2").unwrap(),
+            )),
             tolerance: None,
+            native_ref: None,
         });
     }
     topology.edge_samples = crate::history::edge_samples::historical_edge_samples(&brep).unwrap();

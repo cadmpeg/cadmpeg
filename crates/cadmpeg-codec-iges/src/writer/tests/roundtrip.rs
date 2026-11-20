@@ -10,6 +10,7 @@ use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use std::io::Cursor;
 
+use super::super::records::TopologyIndex;
 use cadmpeg_ir::codec::write::{EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
@@ -45,11 +46,11 @@ fn construction_owns_surface(
     construction: &ProceduralSurface,
     surface: &SurfaceId,
 ) -> bool {
-    ir.model.procedural_surface_owner(&construction.id) == Some(surface)
+    ir.geometry.procedural_surface_owner(&construction.id) == Some(surface)
 }
 
 fn surface_construction<'a>(ir: &'a CadIr, surface: &SurfaceId) -> Option<&'a ProceduralSurface> {
-    ir.model
+    ir.geometry
         .procedural_surfaces
         .iter()
         .find(|construction| construction_owns_surface(ir, construction, surface))
@@ -155,7 +156,7 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
             .expect("line revolution output decodes");
         let procedural = round_trip
             .ir()
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .find(|procedural| {
@@ -179,13 +180,13 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
         assert_eq!(*parameter_interval, [0.0, 1.0]);
         let source_surface = original
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| {
                 original
                     .ir()
-                    .model
+                    .geometry
                     .procedural_surfaces
                     .iter()
                     .any(|procedural| {
@@ -210,7 +211,7 @@ fn semantic_writer_round_trips_a_normalized_line_generatrix() {
         assert!((source_carrier_end - round_carrier_end).abs() < EPS_LINE_REVOLUTION_ROUND_TRIP);
         let round_surface = round_trip
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| construction_owns_surface(round_trip.ir(), procedural, &surface.id))
@@ -262,13 +263,13 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             .expect("line extrusion fixture decodes");
         let source_surface = original
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| {
                 original
                     .ir()
-                    .model
+                    .geometry
                     .procedural_surfaces
                     .iter()
                     .any(|procedural| {
@@ -306,7 +307,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
             .expect("line extrusion output decodes");
         let round_procedural = round_trip
             .ir()
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .find(|procedural| {
@@ -333,7 +334,7 @@ fn semantic_writer_round_trips_a_normalized_line_directrix() {
         assert_eq!(parameter_interval.get(), [0.0, 1.0]);
         let round_surface = round_trip
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| {
@@ -386,11 +387,11 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
         .expect("procedural line generatrix fixture decodes");
     let pcurve = original
         .ir()
-        .model
+        .geometry
         .pcurves
         .first()
         .expect("procedural line generatrix pcurve");
-    let source = super::super::source_pcurve(original.ir(), pcurve)
+    let source = super::super::source_pcurve(&TopologyIndex::new(original.ir()), pcurve)
         .expect("procedural pcurve source-domain mapping");
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &source.geometry else {
         panic!("expected a NURBS source pcurve");
@@ -399,7 +400,7 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
     assert!((nurbs.control_points()[0].v - 0.3).abs() < EPS_PCURVE_SOURCE_DOMAIN);
 
     let mut source_without_record_bounds = original.ir().clone();
-    for procedural in &mut source_without_record_bounds.model.procedural_surfaces {
+    for procedural in &mut source_without_record_bounds.geometry.procedural_surfaces {
         {
             let replacement: Option<[Option<f64>; 4]> = None;
             edit::replace(procedural, |previous| {
@@ -418,12 +419,13 @@ fn semantic_writer_maps_a_normalized_line_generatrix_pcurve_to_source_domain() {
         .expect("clearing record bounds");
     }
     let pcurve = source_without_record_bounds
-        .model
+        .geometry
         .pcurves
         .first()
         .expect("procedural line generatrix pcurve without record bounds");
-    let source = super::super::source_pcurve(&source_without_record_bounds, pcurve)
-        .expect("derive the line carrier interval from its edge");
+    let source =
+        super::super::source_pcurve(&TopologyIndex::new(&source_without_record_bounds), pcurve)
+            .expect("derive the line carrier interval from its edge");
     let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &source.geometry else {
         panic!("expected a NURBS source pcurve");
     };
@@ -464,19 +466,19 @@ fn semantic_writer_round_trips_a_degree_zero_bspline_curve() {
             .decode(&mut Cursor::new(produced), &DecodeOptions::default())
             .expect("degree-zero output decodes");
         let Some(SolvedCurveGeometry::Nurbs(nurbs)) =
-            round_trip.ir().model.curves[0].geometry.solved()
+            round_trip.ir().geometry.curves[0].geometry.solved()
         else {
             panic!("{version:?}: expected a NURBS carrier");
         };
         assert_eq!(nurbs.degree(), 0, "{version:?}");
         assert_eq!(nurbs.control_points().len(), 1, "{version:?}");
         assert_eq!(
-            round_trip.ir().model.curves[0].geometry,
-            original.ir().model.curves[0].geometry,
+            round_trip.ir().geometry.curves[0].geometry,
+            original.ir().geometry.curves[0].geometry,
             "{version:?}"
         );
         assert_eq!(
-            round_trip.ir().model.edges[0]
+            round_trip.ir().geometry.edges[0]
                 .param_range()
                 .map(cadmpeg_ir::units::FiniteVector::get),
             Some([0.0, 1.0])
@@ -527,7 +529,7 @@ fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (usize
             .decode(&mut Cursor::new(produced), &DecodeOptions::default())
             .expect("degree-zero surface output decodes");
         let Some(SolvedSurfaceGeometry::Nurbs(surface)) =
-            round_trip.ir().model.surfaces[0].geometry.solved()
+            round_trip.ir().geometry.surfaces[0].geometry.solved()
         else {
             panic!("{version:?}: expected a NURBS surface carrier");
         };
@@ -542,8 +544,8 @@ fn assert_degree_zero_surface_round_trip(input: Vec<u8>, expected_counts: (usize
             "{version:?}"
         );
         assert_eq!(
-            round_trip.ir().model.surfaces[0].geometry,
-            original.ir().model.surfaces[0].geometry,
+            round_trip.ir().geometry.surfaces[0].geometry,
+            original.ir().geometry.surfaces[0].geometry,
             "{version:?}"
         );
         assert!(
@@ -623,13 +625,13 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
         );
         let source_surface = original
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| {
                 original
                     .ir()
-                    .model
+                    .geometry
                     .procedural_surfaces
                     .iter()
                     .any(|procedural| {
@@ -643,13 +645,13 @@ fn semantic_writer_emits_type122_for_cacheless_hyperbola_extrusion() {
             .expect("source extrusion surface");
         let round_surface = round_trip
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| {
                 round_trip
                     .ir()
-                    .model
+                    .geometry
                     .procedural_surfaces
                     .iter()
                     .any(|procedural| {
@@ -759,13 +761,13 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
             .expect("placed Type 122 output decodes");
         let source_surface = original
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| {
                 original
                     .ir()
-                    .model
+                    .geometry
                     .procedural_surfaces
                     .iter()
                     .any(|procedural| {
@@ -779,13 +781,13 @@ fn semantic_writer_round_trips_a_placed_type122_directrix() {
             .expect("source placed extrusion surface");
         let round_surface = round_trip
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| {
                 round_trip
                     .ir()
-                    .model
+                    .geometry
                     .procedural_surfaces
                     .iter()
                     .any(|procedural| {
@@ -900,7 +902,7 @@ fn semantic_writer_writes_a_placed_nurbs_type122_directrix() {
         assert!(
             round_trip
                 .ir()
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .any(|surface| matches!(
@@ -969,13 +971,13 @@ fn assert_type120_round_trip(version: IgesVersion) {
     );
     let source_surface = original
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| {
             original
                 .ir()
-                .model
+                .geometry
                 .procedural_surfaces
                 .iter()
                 .any(|procedural| {
@@ -987,10 +989,10 @@ fn assert_type120_round_trip(version: IgesVersion) {
                 })
         })
         .expect("source revolution surface");
-    let Some(round_surface) = round_trip.ir().model.surfaces.iter().find(|surface| {
+    let Some(round_surface) = round_trip.ir().geometry.surfaces.iter().find(|surface| {
         round_trip
             .ir()
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .any(|procedural| {

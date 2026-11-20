@@ -7,6 +7,7 @@ use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
 use crate::scalar::{FiniteReal, NonNegativeReal, PositiveReal};
 use crate::units::UnitVector3;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -29,6 +30,13 @@ pub struct SubdSurface {
         deserialize_with = "deserialize_source_object"
     )]
     pub source_object: Option<SourceObjectAssociation>,
+    /// The source record this surface projects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 /// Admission error in a subdivision control cage.
@@ -66,7 +74,6 @@ pub struct SubdCage {
     vertices: Vec<SubdVertex>,
     edges: Vec<SubdEdge>,
     faces: Vec<SubdFace>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     symmetries: Vec<SubdSymmetry>,
 }
 
@@ -81,7 +88,6 @@ struct SubdCageWire {
     /// Control faces in cage order.
     faces: Vec<SubdFace>,
     /// Editor symmetry blocks in cage order.
-    #[serde(default)]
     symmetries: Vec<SubdSymmetry>,
 }
 
@@ -94,6 +100,35 @@ impl TryFrom<SubdCageWire> for SubdCage {
 }
 
 impl SubdCage {
+    #[doc = "Scale control points, secondary grips and symmetry origins in document units."]
+    pub fn scale_lengths(&mut self, scale: PositiveReal) -> Result<(), SubdError> {
+        for vertex in &mut self.vertices {
+            vertex.point = vertex.point.scaled(scale).ok_or_else(|| {
+                SubdError::Admission("scaled subdivision vertex is not finite".into())
+            })?;
+            if let Some(layout) = &mut vertex.secondary_grips {
+                for wedge in &mut layout.wedges {
+                    if let SubdGripWedge::Slot {
+                        spokes, sectors, ..
+                    } = wedge
+                    {
+                        for grip in spokes.iter_mut().chain(sectors.iter_mut()).flatten() {
+                            grip.point = grip.point.scaled(scale).ok_or_else(|| {
+                                SubdError::Admission("scaled subdivision grip is not finite".into())
+                            })?;
+                        }
+                    }
+                }
+            }
+        }
+        for symmetry in &mut self.symmetries {
+            symmetry.plane.origin = symmetry.plane.origin.scaled(scale).ok_or_else(|| {
+                SubdError::Admission("scaled subdivision symmetry origin is not finite".into())
+            })?;
+        }
+        Ok(())
+    }
+
     /// Construct a cage with closed directed rings and valid local payloads.
     pub fn new(
         vertices: Vec<SubdVertex>,
@@ -131,6 +166,12 @@ impl SubdCage {
         &self.edges
     }
 
+    /// Control faces in cage order.
+    #[must_use]
+    pub fn faces(&self) -> &[SubdFace] {
+        &self.faces
+    }
+
     /// Atomically edit edge copies while preserving cage invariants.
     /// A present user-knot extension gives every unannotated edge an inherited value.
     pub fn edit_edges(
@@ -159,7 +200,7 @@ impl SubdCage {
             let mut first = None;
             let mut previous = None;
             let mut closed = true;
-            for use_ in &face.edges {
+            for use_ in face.edge_uses() {
                 let Some(edge) = self
                     .edges
                     .get(cadmpeg_core::decode::index_from_u32(use_.edge))
@@ -259,7 +300,7 @@ impl SubdCage {
                         )));
                     };
                     let mut incident = false;
-                    for use_ in &face.edges {
+                    for use_ in face.edge_uses() {
                         for owner in
                             self.edges[cadmpeg_core::decode::index_from_u32(use_.edge)].vertices
                         {
@@ -273,7 +314,9 @@ impl SubdCage {
                         }
                     }
                     if !incident {
-                        return Err(SubdError::Admission(format!("vertices[{index}].secondary_grips sector_face is not incident to its owner")));
+                        return Err(SubdError::Admission(format!(
+                            "vertices[{index}].secondary_grips sector_face is not incident to its owner"
+                        )));
                     }
                 }
                 for grip in spokes.iter().chain(sectors) {
@@ -361,7 +404,7 @@ impl SubdPlaneFrame {
 }
 
 /// Kind-specific controls for a T-spline symmetry block.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SubdSymmetryKind {
@@ -378,7 +421,6 @@ pub enum SubdSymmetryKind {
 pub struct SubdRadialSymmetry {
     segments: std::num::NonZeroU32,
     sweep: crate::scalar::FiniteReal,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     radial_maps: Vec<SubdRadialSymmetryMap>,
 }
 
@@ -391,7 +433,6 @@ struct SubdRadialSymmetryWire {
     /// Finite native radial sweep.
     sweep: f64,
     /// Native maps with distinct selectors and distinct sources within each map.
-    #[serde(default)]
     radial_maps: Vec<SubdRadialSymmetryMap>,
 }
 
@@ -467,7 +508,7 @@ impl SubdSymmetryKind {
 }
 
 /// Selector of one native radial-symmetry map.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -524,13 +565,10 @@ struct SubdSymmetryWire {
     /// Geometric symmetry-plane frame.
     plane: SubdPlaneFrame,
     /// Forward face correspondences for a topology-addressed symmetry block.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     face_pairs: Vec<[u32; 2]>,
     /// Forward edge correspondences for a topology-addressed symmetry block.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     edge_pairs: Vec<[u32; 2]>,
     /// Forward vertex correspondences for a topology-addressed symmetry block.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     vertex_pairs: Vec<[u32; 2]>,
 }
 
@@ -583,13 +621,16 @@ impl TryFrom<SubdSymmetryWire> for SubdSymmetry {
 }
 
 /// Subdivision scheme used by a control cage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum SubdScheme {
     /// Catmull-Clark subdivision.
     CatmullClark,
+    /// T-spline evaluation with the NURCCS rule at extraordinary points, star
+    /// smoothness 0, G1 caps, and degree 3.
+    TSpline,
 }
 
 /// A control-cage vertex and its subdivision tag.
@@ -668,7 +709,7 @@ impl SubdVertex {
 }
 
 /// Compass direction of the root edge in a control-cage grid frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -743,7 +784,7 @@ impl SubdVertexGripLayout {
 }
 
 /// One wedge in a secondary-grip layout.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum SubdGripWedge {
@@ -752,10 +793,18 @@ pub enum SubdGripWedge {
     /// One topology and grip slot in the vertex fan.
     Slot {
         /// IR edge for this fan slot.
-        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_edge"
+        )]
         edge: Option<u32>,
         /// Face in the sector following this slot, or `None` for a boundary gap.
-        #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            deserialize_with = "deserialize_sector_face"
+        )]
         sector_face: Option<u32>,
         /// Spoke grips ordered nearest-first from the owning vertex.
         spokes: Vec<Option<SubdSecondaryGrip>>,
@@ -827,7 +876,7 @@ impl SubdSecondaryGrip {
 }
 
 /// A control-cage vertex tag.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -906,6 +955,12 @@ impl TryFrom<SubdEdgeWire> for SubdEdge {
 }
 
 impl SubdEdge {
+    /// The knot interval the edge states, before any user value.
+    #[must_use]
+    pub const fn knot_interval(&self) -> Option<PositiveReal> {
+        self.knot_interval
+    }
+
     /// Effective knot interval, with an explicit user value taking precedence.
     #[must_use]
     pub fn effective_knot_interval(&self) -> Option<f64> {
@@ -1015,7 +1070,7 @@ impl SubdEdge {
 }
 
 /// A user-supplied knot interval layered over an edge's base interval.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
@@ -1025,13 +1080,14 @@ impl SubdEdge {
 )]
 pub enum SubdUserKnot {
     /// Use the edge's base knot interval.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
     Inherit,
     /// Use this finite nonnegative interval, including explicit zero.
     Override(NonNegativeReal),
 }
 
 /// A control-cage edge tag.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -1044,40 +1100,78 @@ pub enum SubdEdgeTag {
     Crease,
 }
 
-/// A subdivision face bounded by a directed edge ring.
+/// A subdivision face bounded by a directed edge ring, listed as its sides in
+/// boundary order.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(try_from = "SubdFaceWire")]
 pub struct SubdFace {
-    edges: Vec<SubdEdgeUse>,
+    sides: Vec<SubdFaceSide>,
 }
 
 #[derive(Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 struct SubdFaceWire {
-    /// Directed edge uses in boundary order.
-    edges: Vec<SubdEdgeUse>,
+    /// Sides in boundary order.
+    sides: Vec<SubdFaceSide>,
 }
 
 impl TryFrom<SubdFaceWire> for SubdFace {
     type Error = SubdError;
 
     fn try_from(wire: SubdFaceWire) -> Result<Self, Self::Error> {
-        Self::new(wire.edges)
+        Self::new(wire.sides)
     }
 }
 
 impl SubdFace {
-    /// Construct a face with at least three directed edge uses.
-    pub fn new(edges: Vec<SubdEdgeUse>) -> Result<Self, SubdError> {
-        if edges.len() < 3 {
+    /// Construct a face with at least three sides, each of at least one
+    /// directed edge use.
+    pub fn new(sides: Vec<SubdFaceSide>) -> Result<Self, SubdError> {
+        if sides.len() < 3 {
             return Err(SubdError::Admission(
-                "edges must contain at least three uses".into(),
+                "sides must contain at least three sides".into(),
             ));
         }
-        Ok(Self { edges })
+        if sides.iter().any(|side| side.edges.is_empty()) {
+            return Err(SubdError::Admission(
+                "each side must contain at least one edge use".into(),
+            ));
+        }
+        Ok(Self { sides })
     }
+
+    /// Construct a face whose every directed edge use is one side.
+    pub fn from_edge_uses(edges: Vec<SubdEdgeUse>) -> Result<Self, SubdError> {
+        Self::new(
+            edges
+                .into_iter()
+                .map(|edge| SubdFaceSide { edges: vec![edge] })
+                .collect(),
+        )
+    }
+
+    /// Sides in boundary order.
+    #[must_use]
+    pub fn sides(&self) -> &[SubdFaceSide] {
+        &self.sides
+    }
+
+    /// Directed edge uses in boundary order, across every side.
+    pub fn edge_uses(&self) -> impl Iterator<Item = &SubdEdgeUse> {
+        self.sides.iter().flat_map(|side| &side.edges)
+    }
+}
+
+/// One side of a subdivision face: its directed edge uses in boundary order.
+/// Each joint between two uses of one side is a T-junction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct SubdFaceSide {
+    /// Directed edge uses in boundary order.
+    pub edges: Vec<SubdEdgeUse>,
 }
 
 /// One directed use of a subdivision edge in a face ring.
@@ -1106,8 +1200,12 @@ cadmpeg_core::named_optional_field!(
     "secondary_grips"
 );
 cadmpeg_core::named_optional_field!(deserialize_knot_interval, f64, "knot_interval");
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
 cadmpeg_core::named_optional_field!(deserialize_user_knot, SubdUserKnot, "user_knot");
 
 mod identity_rewrite;
 
 mod serialization;
+
+cadmpeg_core::named_optional_field!(deserialize_sector_face, u32, "sector_face");
+cadmpeg_core::named_optional_field!(deserialize_edge, u32, "edge");

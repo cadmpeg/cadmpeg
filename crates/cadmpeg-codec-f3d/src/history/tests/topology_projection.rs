@@ -60,6 +60,7 @@ fn historical_coedge_neighbors_follow_ring_order() {
         id: owner.clone(),
         face: FaceId::mint("test:brep:face#2").unwrap(),
         boundary: LoopBoundary::Ring(LoopRing::new(ids.clone(), Vec::new()).unwrap()),
+        native_ref: None,
     });
     for id in &ids {
         brep.coedges.push(Coedge {
@@ -70,6 +71,7 @@ fn historical_coedge_neighbors_follow_ring_order() {
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         });
     }
     let topology = historical_topology(&brep).unwrap().unwrap();
@@ -100,6 +102,7 @@ fn appended_tolerant_coedge_curves_join_the_curve_family_in_key_order() {
                 LineCurve::try_new(Point3::new(x, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
     }
     let topology = historical_topology(&brep).unwrap().unwrap();

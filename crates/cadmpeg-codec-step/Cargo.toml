@@ -29,6 +29,7 @@ serde_json.workspace = true
 # fixtures out of the normal library build.
 cadmpeg-ir = { workspace = true, features = ["examples"] }
 cadmpeg-measure = { workspace = true, features = ["test-support"] }
+cadmpeg-tessellate.workspace = true
 cadmpeg-test-support = { workspace = true }
 serde_json.workspace = true
 roxmltree.workspace = true

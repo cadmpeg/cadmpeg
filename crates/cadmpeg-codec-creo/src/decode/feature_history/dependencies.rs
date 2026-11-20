@@ -4,6 +4,7 @@
 use super::super::surfaces::prototypes::unique_surface_prototype_associations;
 use super::knit::surface_transition_dependencies;
 use crate::container::ContainerScan;
+use crate::decode::build::ir_features::commit_regeneration_edges;
 use crate::decode::sketch_transfer::recipe::{
     admitted_feature_recipe, admitted_feature_recipe_parent, current_feature_recipe_parent,
 };
@@ -344,7 +345,7 @@ pub(in super::super) fn surface_prototype_feature_dependencies(
     scan: &ContainerScan,
 ) -> Result<BTreeMap<u32, Vec<u32>>, cadmpeg_core::CodecError> {
     let mut dependencies = BTreeMap::new();
-    for (prototype, row, _) in unique_surface_prototype_associations(scan)? {
+    for (prototype, row, _, _) in unique_surface_prototype_associations(scan)? {
         let prototype = prototype.record();
         let mut fields = prototype
             .parameters
@@ -412,7 +413,9 @@ pub(in super::super) fn reconcile_feature_links(
     scan: &ContainerScan,
     ir: &mut CadIr,
     prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let output_index = super::outputs::FeatureOutputIndex::new(scan, ir);
     let mut output_updates = Vec::new();
     for (index, feature) in ir.model.features.iter().enumerate() {
         let Some(feature_id) = feature
@@ -424,7 +427,7 @@ pub(in super::super) fn reconcile_feature_links(
             continue;
         };
         let outputs = cadmpeg_ir::features::DistinctMembers::try_from(
-            super::outputs::feature_output_bodies(ctx, scan, ir, feature_id)?,
+            output_index.output_bodies(ctx, feature_id)?,
         )
         .map_err(cadmpeg_core::CodecError::from)?;
         output_updates.push((index, outputs));
@@ -498,16 +501,22 @@ pub(in super::super) fn reconcile_feature_links(
         if let Some(parent_id) = admitted_feature_recipe_parent(scan, feature_id) {
             let text = format!("creo:model:feature#{parent_id}");
             let parent = IrFeatureId::mint(text).map_err(cadmpeg_core::CodecError::malformed)?;
-            if parent != feature.id && emitted.contains(&parent) {
+            if parent == feature.id {
+                losses.push(
+                    crate::loss::CreoLossCode::FeatureRegenerationParentDropped.note(format!(
+                        "feature {} names itself as its recipe parent",
+                        feature.id
+                    )),
+                );
+            } else if emitted.contains(&parent) {
                 let child = IrFeatureId::mint(feature.id.as_str().to_owned())
                     .map_err(cadmpeg_core::CodecError::malformed)?;
                 regeneration_edges.push((child, parent));
             }
         }
     }
-    for (child, parent) in regeneration_edges {
-        ir.model.set_feature_regeneration_parent(&child, &parent)?;
-    }
+    let pending_parents: BTreeMap<IrFeatureId, IrFeatureId> =
+        regeneration_edges.iter().cloned().collect();
     let mut remaining = Vec::new();
     remaining.extend(0..ir.model.features.len());
     let mut ordered = Vec::new();
@@ -519,6 +528,7 @@ pub(in super::super) fn reconcile_feature_links(
                 .dependencies
                 .iter()
                 .chain(ir.model.feature_parent(&feature.id))
+                .chain(pending_parents.get(&feature.id))
                 .all(|required| !emitted.contains(required) || preceding.contains(required))
         }) else {
             break;
@@ -530,6 +540,13 @@ pub(in super::super) fn reconcile_feature_links(
     ordered.extend(remaining);
     for (ordinal, index) in ordered.into_iter().enumerate() {
         ir.model.features[index].ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
+    }
+    for (child, parent, reason) in commit_regeneration_edges(ir, regeneration_edges) {
+        losses.push(
+            crate::loss::CreoLossCode::FeatureRegenerationParentDropped.note(format!(
+                "feature {child} keeps no regeneration parent {parent}: {reason}"
+            )),
+        );
     }
     Ok(())
 }

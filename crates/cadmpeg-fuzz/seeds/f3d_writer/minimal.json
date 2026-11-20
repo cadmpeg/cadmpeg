@@ -1,14 +1,22 @@
 {
-  "ir_version": "10",
-  "decode_depth": "full",
+  "ir_version": "11",
+  "fragment": false,
+  "scope": {
+    "model": true,
+    "design": true,
+    "process": true
+  },
   "units": {
-    "length": "millimeter"
+    "length": "millimeter",
+    "angle": "radian",
+    "mass": "kilogram",
+    "time": "second"
   },
   "tolerances": {
     "linear": 1e-6,
     "angular": 1e-10
   },
-  "model": {
+  "geometry": {
     "bodies": [],
     "regions": [],
     "shells": [],
@@ -23,15 +31,22 @@
     "subds": [],
     "pcurves": [],
     "procedural_surfaces": [],
-    "procedural_curves": [],
+    "procedural_curves": []
+  },
+  "model": {
+    "assets": [],
     "features": [],
+    "feature_input_topologies": [],
+    "feature_result_topologies": [],
     "configurations": [],
     "parameters": [],
     "sketches": [],
+    "tessellations": [],
     "sketch_entities": [],
     "sketch_constraints": [],
     "spatial_sketches": [],
     "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
     "spreadsheets": [],
     "product_definitions": [],
     "occurrences": [],
@@ -45,7 +60,50 @@
     "appearance_bindings": [],
     "attributes": [],
     "pmi": [],
-    "presentation_layers": []
+    "presentation_layers": [],
+    "physical_materials": [],
+    "mass_properties": [],
+    "rigid_bodies": [],
+    "colliders": [],
+    "articulations": [],
+    "physics_scenes": [],
+    "solver_settings": [],
+    "declared_measures": [],
+    "point_clouds": [],
+    "history_bodies": []
+  },
+  "design": {
+    "scopes": [],
+    "containers": [],
+    "features": [],
+    "sketches": [],
+    "sketch_entities": [],
+    "sketch_constraints": [],
+    "spatial_sketches": [],
+    "spatial_sketch_entities": [],
+    "spatial_sketch_constraints": [],
+    "parameters": [],
+    "spreadsheets": [],
+    "sheet_metal_rules": [],
+    "programs": [],
+    "configurations": [],
+    "arrangements": [],
+    "publications": [],
+    "evaluations": [],
+    "names": []
+  },
+  "process": {
+    "setups": [],
+    "operations": [],
+    "features": [],
+    "groups": [],
+    "tools": [],
+    "presets": [],
+    "machines": [],
+    "programs": [],
+    "parameters": [],
+    "toolpaths": [],
+    "states": []
   },
   "native": {}
 }

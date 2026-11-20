@@ -8,8 +8,8 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compression": "deflate",
       "expanded": 26518,
+      "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
       "stored": 3051
@@ -21,8 +21,8 @@
         "data_offset": "3136",
         "header_offset": "3093"
       },
-      "compression": "deflate",
       "expanded": 4842,
+      "kind": "deflate",
       "name": "PartShape.brp",
       "role": "brep",
       "stored": 601
@@ -34,8 +34,8 @@
         "data_offset": "3781",
         "header_offset": "3737"
       },
-      "compression": "deflate",
       "expanded": 2463,
+      "kind": "deflate",
       "name": "PartShape1.brp",
       "role": "brep",
       "stored": 346
@@ -47,8 +47,8 @@
         "data_offset": "4171",
         "header_offset": "4127"
       },
-      "compression": "deflate",
       "expanded": 3398,
+      "kind": "deflate",
       "name": "PartShape2.brp",
       "role": "brep",
       "stored": 516
@@ -60,19 +60,20 @@
         "data_offset": "4731",
         "header_offset": "4687"
       },
-      "compression": "deflate",
       "expanded": 3620,
+      "kind": "deflate",
       "name": "PartShape3.brp",
       "role": "brep",
       "stored": 523
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_version": "1",
           "program_version": "0.21R33771 (Git)",
@@ -80,8 +81,10 @@
         },
         "dialect": "fcstd:schema-4"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",

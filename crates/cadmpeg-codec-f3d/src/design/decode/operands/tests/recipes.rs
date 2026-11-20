@@ -48,6 +48,7 @@ fn parse_face_operand(
         bytes,
         records,
         crate::design::decode::operands::FaceOperandFrame {
+            registered_frame: None,
             scope,
             scope_reference_ordinal: ordinal,
             group_ownership,

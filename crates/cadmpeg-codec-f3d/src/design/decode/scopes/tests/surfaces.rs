@@ -1380,3 +1380,5 @@ mod base_feature_legacy;
 mod base_feature_unclassed;
 mod surface_extend;
 mod surface_untrim;
+
+mod replace_face;

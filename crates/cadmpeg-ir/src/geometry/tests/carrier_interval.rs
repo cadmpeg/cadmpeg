@@ -3,7 +3,11 @@
 
 #[test]
 fn carrier_interval_round_trips_and_rejects_invalid_endpoints() {
-    let mut curve = crate::examples::unit_cube().unwrap().model.curves.remove(0);
+    let mut curve = crate::examples::unit_cube()
+        .unwrap()
+        .geometry
+        .curves
+        .remove(0);
     curve.parameter_range = crate::topology::IncreasingParameterInterval::new([2.0, 5.0]);
     let mut value = serde_json::to_value(&curve).unwrap();
     let recovered: crate::geometry::Curve = serde_json::from_value(value.clone()).unwrap();
@@ -28,12 +32,12 @@ fn carrier_interval_round_trips_and_rejects_invalid_endpoints() {
 fn carrier_interval_survives_complete_document_serialization() {
     let mut document = crate::examples::unit_cube().unwrap();
     let interval = crate::topology::IncreasingParameterInterval::new([2.0, 5.0]);
-    document.model.curves[0].parameter_range = interval;
+    document.geometry.curves[0].parameter_range = interval;
     let value = serde_json::to_value(&document).unwrap();
     assert_eq!(
-        value["model"]["curves"][0]["parameter_range"],
+        value["geometry"]["curves"][0]["parameter_range"],
         serde_json::json!([2.0, 5.0])
     );
     let recovered: crate::CadIr = serde_json::from_value(value).unwrap();
-    assert_eq!(recovered.model.curves[0].parameter_range, interval);
+    assert_eq!(recovered.geometry.curves[0].parameter_range, interval);
 }

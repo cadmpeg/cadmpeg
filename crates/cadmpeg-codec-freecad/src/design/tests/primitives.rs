@@ -466,6 +466,7 @@ fn applies_legacy_partdesign_chamfer_flip_migration() {
                 )
                 .unwrap();
             assert_eq!(flip_direction(&recovered), expected);
+            assert_eq!(recovered.ir().geometry, result.ir().geometry);
             assert_eq!(recovered.ir().model, result.ir().model);
             assert!(recovered.report().losses.iter().any(|loss| loss.code
                 == crate::loss::FreecadLossCode::ProgramVersionNoncanonical

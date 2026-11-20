@@ -16,32 +16,26 @@ use crate::report::check::{Check, Finding};
 use crate::report::Severity;
 use crate::schema::EntitySchema;
 
-use super::geometry_consistency::check_edge_endpoint_consistency;
-use super::identity_order::check_identity_and_order;
 use super::record_finding;
-use super::referential_integrity::check_typed_references;
-use super::topology::graphs::{
-    check_coedge_pairing, check_shell_connectivity, check_wire_topology,
-};
-use super::topology::{check_references, check_topology_tolerances};
+use super::topology::nested;
 
 /// Identities of every record of a nest.
-fn nest_identities(model: &crate::document::Model) -> Vec<&str> {
+fn nest_identities(geometry: &crate::document::Topology) -> Vec<&str> {
     fn ids<T: EntitySchema>(records: &[T]) -> impl Iterator<Item = &str> {
         records.iter().map(EntitySchema::identity)
     }
-    ids(&model.bodies)
-        .chain(ids(&model.regions))
-        .chain(ids(&model.shells))
-        .chain(ids(&model.faces))
-        .chain(ids(&model.loops))
-        .chain(ids(&model.coedges))
-        .chain(ids(&model.edges))
-        .chain(ids(&model.vertices))
-        .chain(ids(&model.surfaces))
-        .chain(ids(&model.curves))
-        .chain(ids(&model.pcurves))
-        .chain(ids(&model.points))
+    ids(&geometry.bodies)
+        .chain(ids(&geometry.regions))
+        .chain(ids(&geometry.shells))
+        .chain(ids(&geometry.faces))
+        .chain(ids(&geometry.loops))
+        .chain(ids(&geometry.coedges))
+        .chain(ids(&geometry.edges))
+        .chain(ids(&geometry.vertices))
+        .chain(ids(&geometry.surfaces))
+        .chain(ids(&geometry.curves))
+        .chain(ids(&geometry.pcurves))
+        .chain(ids(&geometry.points))
         .collect()
 }
 
@@ -52,18 +46,8 @@ fn check_nest(
     body: &HistoryBody,
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
-    let mut nest = CadIr::empty();
-    nest.model = body.topology.to_model();
-    let index = ModelIndex::build(&nest);
     let mut nested = Vec::new();
-    check_identity_and_order(&index, &mut nested)?;
-    check_references(ctx, &nest, &index, &mut nested)?;
-    check_typed_references(ctx, &nest, &index, &mut nested)?;
-    check_coedge_pairing(&nest, &mut nested)?;
-    check_shell_connectivity(&nest, &mut nested);
-    check_wire_topology(&nest, &mut nested);
-    check_edge_endpoint_consistency(ctx, &nest, &mut nested)?;
-    check_topology_tolerances(&nest, &mut nested);
+    nested::check(ctx, body.topology.to_topology(), &mut nested)?;
     for mut finding in nested {
         finding.message = format!("history body nest: {}", finding.message);
         finding.related.insert(0, body.id.as_str().to_owned());
@@ -116,8 +100,8 @@ pub(super) fn check_history_bodies(
             }
         }
         check_nest(ctx, body, findings)?;
-        let model = body.topology.to_model();
-        for id in nest_identities(&model) {
+        let geometry = body.topology.to_topology();
+        for id in nest_identities(&geometry) {
             if IdentitySet::contains(ids, id) {
                 record_finding(
                     findings,

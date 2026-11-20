@@ -10,7 +10,7 @@ use crate::native::{
 };
 use crate::object_graph::{ObjectPayload, PayloadField};
 use crate::test_support::with_service_context;
-use cadmpeg_ir::document::Model;
+use cadmpeg_ir::document::Topology;
 
 const PROGRAM: [u8; 19] = [
     0xfe, 0x9a, 0xdc, 0x72, 0xe8, 0xd4, 0x08, 0x37, 0x82, 0xfe, 0x94, 0xe2, 0xe5, 0xe8, 0xc0, 0x1c,
@@ -125,7 +125,7 @@ fn set_suffix(entity: &mut CatiaEntityRecord, bytes: Vec<u8>) {
 
 struct Fixture {
     native: CatiaNative,
-    model: Model,
+    geometry: Topology,
 }
 impl Fixture {
     fn new(modern: bool) -> Self {
@@ -149,8 +149,8 @@ impl Fixture {
                     width: 1,
                 },
                 slots: Some([
-                    RangeIntervalSlot::Unset { offset: 20 },
-                    RangeIntervalSlot::Unset { offset: 21 },
+                    RangeIntervalSlot::ZeroLiteral { offset: 20 },
+                    RangeIntervalSlot::ZeroLiteral { offset: 21 },
                 ]),
             },
             nominal: Some(CatiaRangeNominal {
@@ -219,19 +219,19 @@ impl Fixture {
             }],
             ..CatiaNative::default()
         };
-        let mut model = Model::default();
+        let mut geometry = Topology::default();
         for i in 0..2 {
-            model.surfaces.push(serde_json::from_value(serde_json::json!({"id":format!("synthetic:test:surface#{i}"),"geometry":{"kind":"cylinder","origin":{"x":2.,"y":3.,"z":-100.},"axis":{"x":0.,"y":0.,"z":1.},"ref_direction":{"x":1.,"y":0.,"z":0.},"radius":3.}})).expect("valid fixture"));
-            model.faces.push(serde_json::from_value(serde_json::json!({"id":format!("synthetic:test:face#{i}"),"shell":"synthetic:test:shell#0","surface":format!("synthetic:test:surface#{i}"),"sense":"forward","loops":{"classification":"unspecified","loops":[]}})).expect("valid fixture"));
+            geometry.surfaces.push(serde_json::from_value(serde_json::json!({"id":format!("synthetic:test:surface#{i}"),"geometry":{"kind": "solved", "value": {"kind":"cylinder","origin":{"x":2.,"y":3.,"z":-100.},"axis":{"x":0.,"y":0.,"z":1.},"ref_direction":{"x":1.,"y":0.,"z":0.},"radius":3.}}})).expect("valid fixture"));
+            geometry.faces.push(serde_json::from_value(serde_json::json!({"id":format!("synthetic:test:face#{i}"),"shell":"synthetic:test:shell#0","surface":format!("synthetic:test:surface#{i}"),"sense":"forward","loops":{"kind":"unspecified","loops":[]}})).expect("valid fixture"));
         }
-        Self { native, model }
+        Self { native, geometry }
     }
     fn bind(&mut self) {
         with_service_context(|ctx| {
             bind(
                 ctx,
                 &mut self.native,
-                &self.model,
+                &self.geometry,
                 &ModelingGraphScope::Unscoped,
             )
         })
@@ -388,22 +388,22 @@ fn geometry_requires_one_axis_two_carriers_and_one_face_per_carrier() {
         let mut f = Fixture::new(false);
         match mutation {
             0 => {
-                f.model.surfaces.pop();
+                f.geometry.surfaces.pop();
             }
             1 => {
-                let mut s = f.model.surfaces[0].clone();
+                let mut s = f.geometry.surfaces[0].clone();
                 s.id = cadmpeg_ir::ids::SurfaceId::mint("synthetic:test:surface#extra")
                     .expect("valid fixture");
-                f.model.surfaces.push(s);
+                f.geometry.surfaces.push(s);
             }
             2 => {
-                f.model.faces[1].surface = f.model.faces[0].surface.clone();
+                f.geometry.faces[1].surface = f.geometry.faces[0].surface.clone();
             }
             3 => {
-                f.model.faces.pop();
+                f.geometry.faces.pop();
             }
             4 => {
-                f.model.faces[1].id = f.model.faces[0].id.clone();
+                f.geometry.faces[1].id = f.geometry.faces[0].id.clone();
             }
             _ => unreachable!(),
         }
@@ -440,7 +440,7 @@ fn wrong_radius_displaced_axis_and_intersecting_axes_do_not_bind() {
             ),
             _ => unreachable!(),
         };
-        f.model.surfaces[1].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+        f.geometry.surfaces[1].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             CylinderSurface::try_new(point, axis, reference, radius).expect("valid fixture"),
         ));
         f.bind();
@@ -493,7 +493,7 @@ fn two_nearby_parallel_axes_are_not_one_target_axis() {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
     let mut f = Fixture::new(false);
-    for (surface, x) in f.model.surfaces.iter_mut().zip([2.00009, 1.99991]) {
+    for (surface, x) in f.geometry.surfaces.iter_mut().zip([2.00009, 1.99991]) {
         surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
             CylinderSurface::try_new(
                 Point3::new(x, 3., 4.),
@@ -515,7 +515,7 @@ fn unresolved_and_other_graph_scopes_leave_the_range_native() {
         ModelingGraphScope::Scoped("other".into()),
     ] {
         let mut f = Fixture::new(false);
-        with_service_context(|ctx| bind(ctx, &mut f.native, &f.model, &scope))
+        with_service_context(|ctx| bind(ctx, &mut f.native, &f.geometry, &scope))
             .expect("valid fixture");
         assert!(f.target().is_none());
     }

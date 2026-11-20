@@ -223,7 +223,7 @@ fn an_unknown_flag_three_unit_name_suppresses_geometry_and_charges_one_length_lo
         result.ir().source.as_ref().unwrap().attributes["native_units"],
         "furlong"
     );
-    assert!(result.ir().model.points.is_empty());
+    assert!(result.ir().geometry.points.is_empty());
     assert!(!result.report().geometry_transferred());
     assert!(!result
         .ir()
@@ -276,7 +276,7 @@ fn an_unknown_flag_three_unit_name_suppresses_geometry_and_charges_one_length_lo
         report_code_count(container.report(), IgesLossCode::GlobalLengthUnitUnresolved),
         1
     );
-    assert!(container.ir().model.points.is_empty());
+    assert!(container.ir().geometry.points.is_empty());
 }
 
 #[test]
@@ -286,7 +286,7 @@ fn a_zero_model_scale_suppresses_geometry_and_charges_one_length_loss() {
     let result = IgesCodec
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
         .unwrap();
-    assert!(result.ir().model.points.is_empty());
+    assert!(result.ir().geometry.points.is_empty());
     assert_eq!(
         report_code_count(result.report(), IgesLossCode::GlobalLengthUnitUnresolved),
         1,

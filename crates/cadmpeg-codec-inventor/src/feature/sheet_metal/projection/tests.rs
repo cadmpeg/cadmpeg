@@ -461,6 +461,25 @@ fn the_first_refusal_of_a_plate_is_kept_and_other_operations_have_none() {
 }
 
 #[test]
+fn a_native_plate_reports_the_first_direction_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    let fixture = Fixture::new();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    let feature =
+        crate::feature::native_feature(&ctx, &fixture.plate.identity, None, fixture.plate.id())
+            .expect("native plate");
+    let mut refusals = Refusals::default();
+    refusals.insert(fixture.plate.id(), PlateRefusal::FirstDirection);
+    let notes = refusals.losses(&[feature]);
+    assert_eq!(notes.len(), 1);
+    let wire = serde_json::to_string(&notes).expect("notes");
+    assert!(wire.contains("feature.sheet-metal-plate-refused"));
+    assert!(wire.contains("first-direction"));
+}
+
+#[test]
 fn the_result_slot_follows_the_plate_form() {
     use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
     let arena = DecodeArena::new();
@@ -589,6 +608,14 @@ fn selecting_fixture() -> Fixture {
     fixture
 }
 
+/// The attachment result with its refusal; a decode error fails the test.
+fn refusal(result: Result<EdgeSelection, PlateError>) -> Result<EdgeSelection, PlateRefusal> {
+    result.map_err(|error| match error {
+        PlateError::Refused(refusal) => refusal,
+        PlateError::Codec(error) => panic!("attachment decode: {error}"),
+    })
+}
+
 fn named_edge() -> cadmpeg_ir::features::GeneratedEdgeRef {
     GeneratedEdgeRef {
         feature: FeatureId::compose(
@@ -615,7 +642,11 @@ fn the_attachment_names_a_missing_list_before_a_missing_edge_name() {
         &[],
     );
     assert_eq!(
-        attachment(&fixture.plate, &index),
+        refusal(attachment(
+            &fixture.plate,
+            &index,
+            &FeatureInventory::default()
+        )),
         Err(PlateRefusal::SelectionList)
     );
     // The list resolves, but the edge source has no generated name.
@@ -631,21 +662,32 @@ fn the_attachment_names_a_missing_list_before_a_missing_edge_name() {
         &[],
     );
     assert_eq!(
-        attachment(&fixture.plate, &index),
+        refusal(attachment(
+            &fixture.plate,
+            &index,
+            &FeatureInventory::default()
+        )),
         Err(PlateRefusal::EdgeName)
     );
     // The source has an unnamed entry.
     index.edge_names.insert(("fixture".to_owned(), 61), None);
     assert_eq!(
-        attachment(&fixture.plate, &index),
+        refusal(attachment(
+            &fixture.plate,
+            &index,
+            &FeatureInventory::default()
+        )),
         Err(PlateRefusal::EdgeName)
     );
     index
         .edge_names
         .insert(("fixture".to_owned(), 61), Some(named_edge()));
-    let EdgeSelection::Generated { edges, .. } =
-        attachment(&fixture.plate, &index).expect("generated")
-    else {
+    let EdgeSelection::Generated { edges, .. } = refusal(attachment(
+        &fixture.plate,
+        &index,
+        &FeatureInventory::default(),
+    ))
+    .expect("generated") else {
         panic!("generated selection");
     };
     assert_eq!(edges.as_slice(), [named_edge()]);
@@ -701,7 +743,11 @@ fn the_attachment_requires_wrappers_over_edge_collections() {
             .edge_names
             .insert(("fixture".to_owned(), 61), Some(named_edge()));
         assert_eq!(
-            attachment(&fixture.plate, &index),
+            refusal(attachment(
+                &fixture.plate,
+                &index,
+                &FeatureInventory::default()
+            )),
             Err(PlateRefusal::SelectionList),
             "property {slot}"
         );
@@ -737,7 +783,215 @@ fn a_repeated_generated_edge_is_refused_as_an_edge_name() {
         .edge_names
         .insert(("fixture".to_owned(), 61), Some(named_edge()));
     assert_eq!(
-        attachment(&fixture.plate, &index),
+        refusal(attachment(
+            &fixture.plate,
+            &index,
+            &FeatureInventory::default()
+        )),
         Err(PlateRefusal::EdgeName)
+    );
+}
+
+fn stored_edge(item: u32) -> historical::SelectedEdge {
+    let point = |x| {
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(x, 0.0, 0.0))
+            .expect("point")
+    };
+    historical::SelectedEdge {
+        owner: 7,
+        owners: 1,
+        generators: 1,
+        item,
+        geometry: crate::feature::edge_selection::geometry::EdgeGeometry {
+            start: point(0.0),
+            end: point(2.0),
+            interior: point(1.0),
+            tangent: cadmpeg_ir::units::UnitVector3::X_AXIS,
+        },
+        faces: None,
+    }
+}
+
+#[test]
+fn an_unnamed_attachment_edge_selects_its_stored_input_revision() {
+    let fixture = selecting_fixture();
+    let index = crate::feature::tests::test_projection_index(
+        &fixture.properties,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    );
+    let mut inventory = FeatureInventory::default();
+    assert_eq!(
+        refusal(attachment(&fixture.plate, &index, &inventory)),
+        Err(PlateRefusal::EdgeName)
+    );
+    // Edge item 53 has record ordinal 52 and names selector source 61.
+    let key = ("fixture".to_owned(), 61);
+    inventory
+        .edge_inputs
+        .historical_generators
+        .insert(key.clone(), vec![5]);
+    // A revision selected through another edge item does not select this item.
+    inventory
+        .edge_inputs
+        .historical
+        .insert(key.clone(), stored_edge(99));
+    assert_eq!(
+        refusal(attachment(&fixture.plate, &index, &inventory)),
+        Err(PlateRefusal::EdgeName)
+    );
+    inventory
+        .edge_inputs
+        .historical
+        .insert(key.clone(), stored_edge(52));
+    // A revision without its selector generators has no producer.
+    inventory.edge_inputs.historical_generators.remove(&key);
+    assert_eq!(
+        refusal(attachment(&fixture.plate, &index, &inventory)),
+        Err(PlateRefusal::EdgeName)
+    );
+    inventory
+        .edge_inputs
+        .historical_generators
+        .insert(key, vec![5]);
+    let EdgeSelection::Historical {
+        state,
+        edges,
+        native,
+    } = refusal(attachment(&fixture.plate, &index, &inventory)).expect("historical")
+    else {
+        panic!("historical selection");
+    };
+    assert_eq!(state, historical::state_id(&fixture.plate).expect("state"));
+    assert_eq!(
+        edges.iter().cloned().collect::<Vec<_>>(),
+        [historical::edge_id("fixture", 61).expect("edge")]
+    );
+    assert_eq!(native.as_str(), "inventor:pmdc:feature-property#fixture-10");
+    // A generated name, when present, proves the edge first.
+    let mut index = index;
+    index
+        .edge_names
+        .insert(("fixture".to_owned(), 61), Some(named_edge()));
+    assert!(matches!(
+        refusal(attachment(&fixture.plate, &index, &inventory)),
+        Ok(EdgeSelection::Generated { .. })
+    ));
+}
+
+#[test]
+fn a_historical_attachment_requires_preceding_projected_generators() {
+    use cadmpeg_core::decode::{DecodeArena, DecodePolicy};
+    let fixture = selecting_fixture();
+    let generator = crate::test_support::sheet_metal::feature(90, &[]);
+    assert_ne!(
+        generator.header.source_index,
+        fixture.plate.header.source_index
+    );
+    let mut plate = attached(&fixture);
+    plate.evaluation.edit(|definition, _| {
+        if let FeatureDefinition::Operation(FeatureOperation::SheetMetalAttachedPlate {
+            attachment,
+            ..
+        }) = definition
+        {
+            *attachment = EdgeSelection::historical(
+                historical::state_id(&fixture.plate).expect("state"),
+                vec![historical::edge_id("fixture", 61).expect("edge")],
+                "inventor:pmdc:feature-property#fixture-10".to_owned(),
+            )
+            .expect("historical");
+        }
+    });
+    let mut producer = plate.clone();
+    producer.id = crate::feature::history_feature_id(&generator.identity).expect("producer");
+    producer.native_ref = Some(generator.id());
+    producer.ordinal = 0;
+    producer.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+        FeatureOperation::Native {
+            kind: cadmpeg_ir::features::NativeFeatureKind::Other("base".into()),
+            parameters: BTreeMap::default(),
+        },
+    ));
+    let result = FeatureResultTopology::new(
+        cadmpeg_ir::ids::FeatureResultTopologyId::mint("test:model:feature-result#producer")
+            .expect("result"),
+        producer.id.clone(),
+        cadmpeg_ir::features::FeatureResultMembers::new(
+            vec![cadmpeg_core::text::NonBlankString::new("body").expect("body")],
+            vec![],
+            vec![],
+            vec![],
+        )
+        .expect("members"),
+        None,
+    );
+    let items = |neutral: bool| {
+        vec![
+            HistoryItem {
+                record: 90,
+                kind: crate::feature::history::HistoryNodeKind::Feature,
+                flags: 0,
+                label: None,
+                feature: producer.clone(),
+                result: neutral.then(|| result.clone()),
+                neutral,
+            },
+            HistoryItem {
+                record: 100,
+                kind: crate::feature::history::HistoryNodeKind::Feature,
+                flags: 0,
+                label: None,
+                feature: plate.clone(),
+                result: None,
+                neutral: true,
+            },
+        ]
+    };
+    let mut inventory = FeatureInventory {
+        features: vec![fixture.plate.clone(), generator.clone()],
+        properties: fixture.properties.clone(),
+        ..FeatureInventory::default()
+    };
+    inventory.edge_inputs.historical_generators.insert(
+        ("fixture".to_owned(), 61),
+        vec![generator.header.source_index],
+    );
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("context");
+    // The generating feature is a preceding neutral producer.
+    let mut accepted = items(true);
+    let mut refusals = Refusals::default();
+    assert_eq!(
+        reject_unresolved_inputs(&ctx, &mut accepted, &inventory, &mut refusals).expect("accepted"),
+        0
+    );
+    assert!(accepted[1].neutral);
+    // A native generator leaves the plate native.
+    let mut rejected = items(false);
+    assert_eq!(
+        reject_unresolved_inputs(&ctx, &mut rejected, &inventory, &mut refusals).expect("rejected"),
+        1
+    );
+    assert!(!rejected[1].neutral);
+    let wire =
+        serde_json::to_string(&refusals.losses(&[rejected[1].feature.clone()])).expect("notes");
+    assert!(wire.contains("input-producer"));
+    // A generator that names no feature record of the segment leaves it native.
+    inventory
+        .edge_inputs
+        .historical_generators
+        .insert(("fixture".to_owned(), 61), vec![u32::MAX]);
+    let mut unknown = items(true);
+    assert_eq!(
+        reject_unresolved_inputs(&ctx, &mut unknown, &inventory, &mut Refusals::default())
+            .expect("unknown"),
+        1
     );
 }

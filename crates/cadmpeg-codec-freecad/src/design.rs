@@ -152,8 +152,21 @@ pub(crate) fn transfer(
         sketch_ids.insert(object.id().as_str(), id);
     }
     let mut body_ids = Vec::new();
-    for body in &ir.model.bodies {
+    for body in &ir.geometry.bodies {
         body_ids.push(body.id.clone());
+    }
+    let mut sorted_body_ids = body_ids
+        .iter()
+        .enumerate()
+        .map(|(index, body)| (body.as_str(), index))
+        .collect::<Vec<_>>();
+    sorted_body_ids.sort_unstable();
+    let mut payloads_by_property = HashMap::<&str, Vec<usize>>::new();
+    for (index, payload) in payloads.iter().enumerate() {
+        payloads_by_property
+            .entry(payload.property.as_str())
+            .or_default()
+            .push(index);
     }
     let (feature_ordinals, mut cycle_affected) = feature_ordinals(
         objects,
@@ -172,7 +185,7 @@ pub(crate) fn transfer(
         objects,
         &properties_by_owner,
         payloads,
-        &ir.model.bodies,
+        &ir.geometry.bodies,
         ProfileFeatureOrder {
             feature_ids: &feature_ids,
             ordinals: &feature_ordinals,
@@ -444,19 +457,26 @@ pub(crate) fn transfer(
         }
         let definition = post_processed_definition(ctx, definition, &object.type_name, &owned)?;
         append_operation_parameters(ctx, &mut ir.model.parameters, object, &owned)?;
+        let mut shape_payloads = owned
+            .iter()
+            .filter(|property| property.name == "Shape")
+            .filter_map(|property| payloads_by_property.get(property.id.as_str()))
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>();
+        shape_payloads.sort_unstable();
+        shape_payloads.dedup();
         let mut outputs = Vec::new();
-        for payload in payloads.iter().filter(|payload| {
-            owned
+        for payload in shape_payloads {
+            let prefix = crate::native::model_id("body", &payloads[payload].id, "");
+            let start = sorted_body_ids.partition_point(|(body, _)| *body < prefix.as_str());
+            let mut matched = sorted_body_ids[start..]
                 .iter()
-                .any(|property| property.name == "Shape" && property.id == payload.property)
-        }) {
-            let prefix = crate::native::model_id("body", &payload.id, "");
-            for body in body_ids
-                .iter()
-                .filter(|body| body.as_str().starts_with(&prefix))
-            {
-                outputs.push(body.clone());
-            }
+                .take_while(|(body, _)| body.starts_with(&prefix))
+                .map(|(_, index)| *index)
+                .collect::<Vec<_>>();
+            matched.sort_unstable();
+            outputs.extend(matched.into_iter().map(|index| body_ids[index].clone()));
         }
         let cycle_affected = cycle_affected.contains(object.id().as_str());
         let dependencies = if cycle_affected {
@@ -3798,7 +3818,7 @@ fn constraint_operands(node: roxmltree::Node<'_, '_>) -> Result<Vec<(i64, i64)>,
             _ => {
                 return Err(CodecError::malformed(
                     "constraint entity and position must both be present",
-                ))
+                ));
             }
         }
     }
@@ -5860,13 +5880,13 @@ pub(crate) fn resolve_operation_selections(
         (!ids.is_empty()).then_some(ids)
     };
     let face_ids = ir
-        .model
+        .geometry
         .faces
         .iter()
         .map(|face| face.id.as_str().to_owned())
         .collect::<HashSet<_>>();
     let edge_ids = ir
-        .model
+        .geometry
         .edges
         .iter()
         .map(|edge| edge.id.as_str().to_owned())
@@ -5942,7 +5962,7 @@ pub(crate) fn resolve_operation_selections(
         };
     };
     let body_ids = ir
-        .model
+        .geometry
         .bodies
         .iter()
         .map(|body| body.id.as_str())
@@ -7068,10 +7088,10 @@ fn datum_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Featur
         "PartDesign::Plane" => FeatureDefinition::Operation(FeatureOperation::DatumPlane {
             frame: cadmpeg_ir::features::FeatureDatumPlaneFrame::new(origin, z_axis, x_axis)?,
         }),
-        "PartDesign::Line" => FeatureDefinition::Operation(FeatureOperation::DatumAxis {
-            origin: cadmpeg_ir::features::FinitePoint3::new(origin)?,
-            direction: cadmpeg_ir::features::FeatureDirection3::new(z_axis)?,
-        }),
+        "PartDesign::Line" => FeatureDefinition::Operation(FeatureOperation::datum_axis(
+            cadmpeg_ir::features::FinitePoint3::new(origin)?,
+            cadmpeg_ir::features::FeatureDirection3::new(z_axis)?,
+        )),
         "PartDesign::Point" => FeatureDefinition::Operation(FeatureOperation::DatumPoint {
             position: cadmpeg_ir::features::FinitePoint3::new(origin)?,
             construction: None,
@@ -9216,13 +9236,23 @@ pub(crate) fn hide_intermediate_bodies(
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
 ) {
+    let mut properties_by_owner = HashMap::<&str, Vec<&PropertyRecord>>::new();
+    let mut property_by_id = HashMap::<&str, &PropertyRecord>::new();
+    for property in properties {
+        properties_by_owner
+            .entry(property.owner.as_str())
+            .or_default()
+            .push(property);
+        property_by_id
+            .entry(property.id.as_str())
+            .or_insert(property);
+    }
     let mut members = std::collections::HashSet::new();
     for object in objects.iter().filter(|object| is_body(&object.type_name)) {
-        let owned = properties
-            .iter()
-            .filter(|property| property.owner == *object.id())
-            .collect::<Vec<_>>();
-        if let Some(group) = body_membership_property(&owned) {
+        let owned = properties_by_owner
+            .get(object.id().as_str())
+            .map_or(&[][..], Vec::as_slice);
+        if let Some(group) = body_membership_property(owned) {
             members.extend(
                 group
                     .links()
@@ -9233,16 +9263,14 @@ pub(crate) fn hide_intermediate_bodies(
         }
     }
     let hidden = payloads.iter().filter_map(|payload| {
-        let property = properties
-            .iter()
-            .find(|property| property.id == payload.property)?;
+        let property = property_by_id.get(payload.property.as_str())?;
         (property.name != "Shape" || members.contains(&property.owner))
             .then_some(payload.id.as_str())
     });
     let hidden = crate::gui::select_shape_bodies(ir, hidden)
         .into_iter()
         .collect::<std::collections::HashSet<_>>();
-    for body in &mut ir.model.bodies {
+    for body in &mut ir.geometry.bodies {
         if hidden.contains(&body.id) {
             body.visible = Some(false);
         }
@@ -9315,14 +9343,14 @@ pub(crate) fn census(
             FeatureDefinition::PostProcess { operation, .. } => (operation, true),
             FeatureDefinition::Operation(operation) => (operation, false),
         };
-        let value = serde_json::to_value(definition).map_err(|error| {
+        let value = cadmpeg_ir::hash::finite_json::to_json_value(definition).map_err(|error| {
             CodecError::malformed(format_args!(
                 "cannot classify design feature {}: {error}",
                 feature.id
             ))
         })?;
         let semantic_kind = value
-            .get("definition")
+            .get("kind")
             .and_then(serde_json::Value::as_str)
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(

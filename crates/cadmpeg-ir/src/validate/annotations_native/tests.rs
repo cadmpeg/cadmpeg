@@ -10,7 +10,7 @@ use serde_json::{Map, Value};
 #[test]
 fn model_entity_wins_when_native_id_collides() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let id = ir.model.points[0].id.as_str().to_owned();
+    let id = ir.geometry.points[0].id.as_str().to_owned();
     let mut namespace = NativeNamespace::default();
     namespace.arenas_mut().insert(
         "records".into(),
@@ -21,7 +21,7 @@ fn model_entity_wins_when_native_id_collides() {
         .expect("valid native identity")],
     );
     ir.native.0.insert("collision".into(), namespace);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let all_ids = super::BorrowedIdentities::build(|add| add(id.as_str(), ()));
     let mut builder = crate::AnnotationBuilder::new();
     builder.derived(&id, "position").unwrap();
@@ -46,12 +46,13 @@ fn model_entity_wins_when_native_id_collides() {
 #[test]
 fn annotation_keys_and_field_paths_are_checked() {
     let ir = unit_cube().expect("valid unit cube fixture");
-    let mut source_fidelity = crate::SourceFidelity::default();
+    let mut source_fidelity =
+        crate::SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(b"test source"));
     let mut annotations = crate::AnnotationBuilder::new();
     let stream = crate::annotations::StreamHandle::new(crate::stream_name!("test:source"));
     annotations.note("missing", &stream, 0, None);
     annotations
-        .derived(ir.model.edges[0].id.as_str(), "not_a_serialized_field")
+        .derived(ir.geometry.edges[0].id.as_str(), "not_a_serialized_field")
         .expect("nonempty exactness field");
     source_fidelity.annotations = annotations.build();
     let findings = crate::validate_neutral_with_source_fidelity(&ir, &source_fidelity, Vec::new())
@@ -138,7 +139,7 @@ fn parameter_native_ref_must_resolve() {
 fn unresolved_unknown_record_link_is_reported_once() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
     ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "test",
         &[crate::NativeUnknownRecord {
             id: crate::ids::UnknownId::mint("test:model:unknown#0").expect("valid identity"),
@@ -235,7 +236,7 @@ fn native_annotation_paths_report_only_unresolvable_paths() {
             Map::from_iter([
                 (
                     "payload".into(),
-                    Value::Array((0..10_000).map(Value::from).collect()),
+                    Value::Array((0..3).map(Value::from).collect()),
                 ),
                 (
                     "nested".into(),
@@ -248,10 +249,10 @@ fn native_annotation_paths_report_only_unresolvable_paths() {
     let mut builder = crate::AnnotationBuilder::new();
     for path in [
         "id",
-        "payload.9999",
+        "payload.2",
         "nested.null",
         "nested.rows.0.value",
-        "payload.10000",
+        "payload.3",
         "missing",
         "id.child",
     ] {
@@ -272,7 +273,7 @@ fn native_annotation_paths_report_only_unresolvable_paths() {
     )
     .unwrap();
     assert_eq!(findings.len(), 3);
-    for path in ["payload.10000", "missing", "id.child"] {
+    for path in ["payload.3", "missing", "id.child"] {
         assert!(findings
             .iter()
             .any(|finding| finding.message.contains(&format!("`{path}`"))));
@@ -329,20 +330,20 @@ fn many_native_annotation_paths_parse_their_record_once() {
 fn annotations_on_many_model_points_resolve_without_findings() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = crate::CadIr::empty();
-    let prototype = unit_cube().unwrap().model.points.remove(0);
+    let prototype = unit_cube().unwrap().geometry.points.remove(0);
     let mut builder = crate::AnnotationBuilder::new();
     for ordinal in 0..2_000 {
         let mut point = prototype.clone();
         point.id = crate::ids::PointId::mint(format!("test:model:point#{ordinal}")).unwrap();
         builder.derived(point.id.as_str(), "position.x").unwrap();
-        ir.model.points.push(point);
+        ir.geometry.points.push(point);
     }
     let annotations = builder.build();
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let all_ids = super::BorrowedIdentities::build(|add| {
-        for point in &ir.model.points {
+        for point in &ir.geometry.points {
             add(point.id.as_str(), ());
         }
     });

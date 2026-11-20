@@ -2,10 +2,12 @@
 //! Rewrite the identities owned by these fields.
 
 use super::{
-    AssemblyJoint, CopyOnChange, CopyOnChangePolicy, DriveAxis, DriveMode, ExternalDocument,
-    FrameAxis, JointConnector, JointDrive, JointLimitRange, JointLimits, JointOperand,
-    JointOperands, LinkState, Occurrence, OccurrenceParent, OperandContainer, PairedJointKind,
-    PlaneSense, ProductDefinition, ProductDefinitionKind, PrototypeReference, TangentContact,
+    AngularGeneral, AssemblyJoint, DriveAxis, DriveMode, ExternalDocument, FrameAxis,
+    GeneralTolerance, GeneratedFrom, InstanceBodies, JointConnector, JointDrive, JointLimitRange,
+    JointLimits, JointOperand, JointOperands, LinearGeneral, LinearGeneralClass, MemberAction,
+    MemberRule, NestedOverride, Occurrence, OperandContainer, PairedJointKind, PlaneSense,
+    ProductDefinition, ProductDefinitionKind, Representation, RepresentationContent,
+    RepresentationDetail, RepresentationMember, Storage, TangentContact,
 };
 
 rewrite_record!(AssemblyJoint, []; {id, operands, suppressed, driving_parameter, drives, native_ref});
@@ -13,19 +15,7 @@ rewrite_scalar!(FrameAxis);
 rewrite_scalar!(DriveAxis);
 rewrite_scalar!(DriveMode);
 rewrite_record!(JointDrive, []; {axis, mode, target_position, target_velocity, stiffness, damping, max_force});
-rewrite_record!(CopyOnChange, []; {policy, source, group, touched});
-rewrite_enum!(CopyOnChangePolicy, []; {
-    Disabled,
-    Enabled,
-    Owned,
-    Tracking,
-    Native(field0),
-});
-rewrite_enum!(ExternalDocument, []; {
-    Path {path},
-    DocumentId {document_id},
-    Missing {},
-});
+rewrite_scalar!(ExternalDocument);
 rewrite_record!(JointConnector, []; {operand, frame, detached});
 rewrite_scalar!(JointLimitRange);
 rewrite_enum!(JointLimits, []; {
@@ -38,12 +28,9 @@ rewrite_enum!(JointOperands, []; {
     Grounded {connector, offset_frame},
     Pair {kind, connectors, offset_frames, frame_sense},
 });
-rewrite_record!(LinkState, []; {linked_subelements, element_component, claim_child, copy_on_change});
-rewrite_record!(Occurrence, []; {id, prototype, parent, ordinal, transform, linked_prototype, scale, name, visible, link, native_ref});
-rewrite_enum!(OccurrenceParent, []; {
-    Root {},
-    Occurrence {occurrence},
-});
+rewrite_record!(Occurrence, []; {id, prototype, transform, suppressed, visible, representation, overrides, name, native_ref});
+rewrite_record!(NestedOverride, []; {path, transform, suppressed, visible, representation});
+rewrite_record!(InstanceBodies, []; {occurrence, bodies});
 rewrite_enum!(OperandContainer, []; {
     Root {},
     Occurrence {occurrence, occurrence_path},
@@ -78,15 +65,33 @@ rewrite_enum!(TangentContact, []; {
     Outside,
     Inside,
 });
-rewrite_record!(ProductDefinition, []; {id, kind, source_name, label, description, part_number, bom_properties, bodies, sketches, native_ref});
-rewrite_enum!(ProductDefinitionKind, []; {
-    Part,
-    Group,
-    LinkGroup,
-    Object,
+rewrite_record!(ProductDefinition, []; {id, kind, source_name, label, description, part_number, bom_properties, generated_from, storage, bodies, tessellations, occurrences, instance_bodies, representations, sketches, units, general_tolerance, active, native_ref});
+rewrite_scalar!(ProductDefinitionKind);
+rewrite_record!(GeneratedFrom, []; {definition, configuration});
+rewrite_enum!(Storage, []; {
+    Embedded,
+    File {document, source},
+    External(field0),
 });
-rewrite_enum!(PrototypeReference, []; {
-    Local {definition},
-    External {document, object},
-    Unresolved {},
+rewrite_scalar!(GeneralTolerance);
+rewrite_scalar!(LinearGeneral);
+rewrite_scalar!(AngularGeneral);
+rewrite_scalar!(LinearGeneralClass);
+rewrite_record!(Representation, []; {name, content, features, default, native_ref});
+rewrite_enum!(RepresentationContent, []; {
+    Bodies(field0),
+    Members(field0),
+    Document(field0),
+    Unread,
 });
+rewrite_record!(MemberRule, []; {unlisted, members});
+rewrite_record!(RepresentationMember, []; {path, action});
+rewrite_enum!(MemberAction, []; {
+    Include,
+    Exclude,
+    Substitute(field0),
+    ReplaceBy(field0),
+    Detail(field0),
+    Native(field0),
+});
+rewrite_scalar!(RepresentationDetail);

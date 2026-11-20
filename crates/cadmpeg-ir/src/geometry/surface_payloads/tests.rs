@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 use super::{OffsetSurfaceConstruction, SubSurfaceConstruction, SubsetSurfaceConstruction};
 use crate::geometry::{LegacyExtensionFlags, OffsetExtension, ProceduralSurfaceDefinition};
@@ -147,17 +147,17 @@ fn an_offset_extension_layout_carries_only_the_keys_its_own_arm_owns() {
 
     let legacy_wire = serde_json::to_value(&legacy).unwrap();
     assert_eq!(
-        legacy_wire["extension"]["layout"],
+        legacy_wire["extension"]["kind"],
         serde_json::json!("legacy")
     );
     assert_eq!(
         legacy_wire["extension"]["flags"],
-        serde_json::json!({"state": "enabled", "secondary": true})
+        serde_json::json!({"kind": "enabled", "secondary": true})
     );
     assert!(legacy_wire.get("extension_flags").is_none());
     let revision_wire = serde_json::to_value(&revision).unwrap();
     assert_eq!(
-        revision_wire["extension"]["layout"],
+        revision_wire["extension"]["kind"],
         serde_json::json!("revision")
     );
     assert!(revision_wire.get("extension_flags").is_none());
@@ -172,7 +172,7 @@ fn an_offset_extension_layout_carries_only_the_keys_its_own_arm_owns() {
     );
 
     let mut legacy_with_form = legacy_wire;
-    legacy_with_form["extension"]["flags"] = serde_json::json!({"state": "absent"});
+    legacy_with_form["extension"]["flags"] = serde_json::json!({"kind": "absent"});
     legacy_with_form["extension"]["form"] = serde_json::to_value(&form).unwrap();
     let error = serde_json::from_value::<OffsetSurfaceConstruction>(legacy_with_form)
         .unwrap_err()
@@ -180,17 +180,17 @@ fn an_offset_extension_layout_carries_only_the_keys_its_own_arm_owns() {
     assert!(error.contains("form"), "{error}");
 
     let error = serde_json::from_value::<LegacyExtensionFlags>(
-        serde_json::json!({"state": "disabled", "secondary": true}),
+        serde_json::json!({"kind": "disabled", "secondary": true}),
     )
     .unwrap_err()
     .to_string();
     assert!(error.contains("unknown field `secondary`"), "{error}");
 
     for wire in [
-        serde_json::json!({"state": "absent"}),
-        serde_json::json!({"state": "disabled"}),
-        serde_json::json!({"state": "enabled", "secondary": false}),
-        serde_json::json!({"state": "enabled", "secondary": false, "tertiary": true}),
+        serde_json::json!({"kind": "absent"}),
+        serde_json::json!({"kind": "disabled"}),
+        serde_json::json!({"kind": "enabled", "secondary": false}),
+        serde_json::json!({"kind": "enabled", "secondary": false, "tertiary": true}),
     ] {
         let flags = serde_json::from_value::<LegacyExtensionFlags>(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(flags).unwrap(), wire);
@@ -248,12 +248,12 @@ fn an_exact_spline_layout_carries_only_the_keys_its_own_arm_owns() {
     .unwrap();
 
     let legacy_wire = serde_json::to_value(&legacy).unwrap();
-    assert_eq!(legacy_wire["spline"]["layout"], serde_json::json!("legacy"));
+    assert_eq!(legacy_wire["spline"]["kind"], serde_json::json!("legacy"));
     assert!(legacy_wire.get("parameters").is_none());
     assert!(legacy_wire.get("revision_form").is_none());
     let revision_wire = serde_json::to_value(&revision).unwrap();
     assert_eq!(
-        revision_wire["spline"]["layout"],
+        revision_wire["spline"]["kind"],
         serde_json::json!("revision")
     );
     assert!(revision_wire["spline"].get("form").is_some());

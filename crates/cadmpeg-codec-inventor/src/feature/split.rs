@@ -196,6 +196,7 @@ pub(crate) fn definition<'a>(
         _ => return Err(NativeReason::Tool),
     };
     Ok(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+        extend_tool: None,
         targets: BodySelection::Native(target),
         tool,
     }))
@@ -792,6 +793,7 @@ pub(crate) mod tests {
             assert_eq!(
                 decode(&plane_split(), &properties),
                 Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                    extend_tool: None,
                     targets: BodySelection::Native(properties[7].id()),
                     tool: SplitBodyTool::Plane { plane: plane_id() },
                 }))
@@ -800,6 +802,7 @@ pub(crate) mod tests {
             assert_eq!(
                 decode(&surface_split(), &properties),
                 Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                    extend_tool: None,
                     targets: BodySelection::Native(properties[7].id()),
                     tool: SplitBodyTool::Faces(FaceSelection::Native(properties[10].id())),
                 }))
@@ -856,6 +859,7 @@ pub(crate) mod tests {
             assert_eq!(
                 projected.0.evaluation.definition(),
                 &FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                    extend_tool: None,
                     targets: BodySelection::Native(properties[7].id()),
                     tool: SplitBodyTool::Faces(FaceSelection::Native(properties[10].id())),
                 }),

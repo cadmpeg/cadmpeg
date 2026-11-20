@@ -274,6 +274,8 @@ fn run_bytes(
             feature: &feature,
             state: 12,
             slot: 1,
+            capture_current: false,
+            consumed: false,
         })
         .collect::<Vec<_>>();
     let mut bodies = Vec::new();
@@ -504,8 +506,8 @@ fn an_invalid_history_body_nest_reports_the_undecoded_body() {
         .unwrap();
         let mut scratch = CadIr::empty();
         cadmpeg_asm::brep::transfer::transfer_into_ir(&ctx, &mut scratch, "f3d", brep).unwrap();
-        let body = &scratch.model.bodies[0];
-        let Extract::Nest(topology) = extract(&ctx, &scratch.model, body.id.as_str()).unwrap()
+        let body = &scratch.geometry.bodies[0];
+        let Extract::Nest(topology) = extract(&ctx, &scratch.geometry, body.id.as_str()).unwrap()
         else {
             panic!("reference-closed historical nest")
         };
@@ -513,8 +515,8 @@ fn an_invalid_history_body_nest_reports_the_undecoded_body() {
         assert_eq!(topology.vertices.len(), 1);
         for shell in &topology.shells {
             assert_eq!(
-                shell.free_vertices(),
-                std::slice::from_ref(&topology.vertices[0].id)
+                shell.free_vertices().collect::<Vec<_>>(),
+                [&topology.vertices[0].id]
             );
         }
         let candidate = HistoryBody {
@@ -545,6 +547,445 @@ fn an_unchanged_body_needs_no_history_body() {
     let (bodies, losses) = run(false, RefWidth::Eight, 1, MAX_HISTORY_BODY_WORK);
     assert!(bodies.is_empty());
     assert!(losses.is_empty());
+}
+
+fn changed_surface_bytes(width: RefWidth) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    put_header(&mut bytes, width);
+    put_plain(&mut bytes, width, "asmheader", &[]);
+    put_sphere_solid(&mut bytes, width, 1, 7, -1, [10.0, 0.0, 0.0]);
+    put_state(&mut bytes, width, (13, -1, 1, 0), &[(6, 5)]);
+    put_surface(&mut bytes, width, [0.0, 0.0, 0.0]);
+    put_state(
+        &mut bytes,
+        width,
+        (12, 0, -1, 1),
+        &[(-1, 1), (-1, 2), (-1, 3), (-1, 4), (-1, 5)],
+    );
+    bytes
+}
+
+#[test]
+fn a_consumed_snapshot_keeps_the_input_geometry_and_consumer() {
+    const MILLIMETERS_PER_CENTIMETER: f64 = 10.0;
+    for width in [RefWidth::Four, RefWidth::Eight] {
+        for (case, (mut bytes, expected_x)) in [
+            (
+                carrier_bytes(width, false),
+                10.0 * MILLIMETERS_PER_CENTIMETER,
+            ),
+            (carrier_bytes(width, true), 0.0),
+            (changed_surface_bytes(width), 0.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let flags = match width {
+                RefWidth::Four => 27,
+                RefWidth::Eight => 39,
+            };
+            bytes[flags] = 1;
+            put_name(&mut bytes, "End-of-ASM-data");
+            let arena = DecodeArena::new();
+            let (ctx, _) =
+                DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+            let mut allowance = u64::MAX;
+            let history = super::super::decode(
+                &ctx,
+                &bytes,
+                "test",
+                width,
+                &mut allowance,
+                &WorkBudget::new(1 << 20),
+            )
+            .unwrap()
+            .unwrap();
+            let cut = feature("cut");
+            let mut bodies = Vec::new();
+            let mut losses = Vec::new();
+            fill_history(
+                &ctx,
+                &bytes,
+                &history,
+                &[Want {
+                    feature: &cut,
+                    state: 12,
+                    slot: 1,
+                    consumed: true,
+                    capture_current: false,
+                }],
+                &mut bodies,
+                &WorkBudget::new(MAX_HISTORY_BODY_WORK),
+                &mut losses,
+            )
+            .unwrap();
+            assert!(losses.is_empty(), "{losses:?}");
+            let [body] = bodies.as_slice() else {
+                panic!(
+                    "one input snapshot: {width:?}, case {case}, states {:?}",
+                    history.states()
+                )
+            };
+            assert_eq!(body.produced_by, None);
+            assert_eq!(body.consumed_by.as_ref(), Some(&cut.id));
+            assert_eq!(body.state.identifier, 12);
+            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere)) =
+                &body.topology.surfaces[0].geometry
+            else {
+                panic!("sphere")
+            };
+            assert_eq!(
+                sphere.center().get(),
+                cadmpeg_ir::math::Point3::new(expected_x, 0.0, 0.0)
+            );
+        }
+    }
+}
+
+fn consumed_fixture(
+    bytes: &[u8],
+    features: Vec<Feature>,
+    scope: &DesignParameterScope,
+    history: &AsmHistory,
+) -> (Model, Vec<cadmpeg_ir::report::loss::LossNote>) {
+    use std::io::{Cursor, Write};
+    let name = "FusionAssetName[Active]/Breps.BlobParts/BREP.a.smbh";
+    let mut blob = bytes.to_vec();
+    blob[39..47].copy_from_slice(&1_u64.to_le_bytes());
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, options);
+    zip.start_file(name, options).unwrap();
+    zip.write_all(&blob).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let mut history = history.clone();
+    history.id = format!("f3d:{name}:asm-history#0");
+    let native = F3dNative {
+        asm_histories: vec![history],
+        design_parameter_scopes: vec![scope.clone()],
+        ..F3dNative::default()
+    };
+    let mut model = Model::default();
+    model.features = features;
+    let mut losses = Vec::new();
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        assert_eq!(container::history_breps(scan).count(), 1);
+        fill_consumed(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            scan,
+            &mut model,
+            &native,
+            Some(name),
+            &ConsumerContext {
+                remaining_work: MAX_HISTORY_BODY_WORK,
+                ..ConsumerContext::default()
+            },
+            &mut losses,
+        )
+        .unwrap();
+    });
+    (model, losses)
+}
+
+#[test]
+fn initial_cut_snapshot_requires_one_input_body_and_an_unbuilt_component() {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    use cadmpeg_ir::features::{
+        ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
+        PlanarProfileRef, ProfileRef,
+    };
+    let bytes = carrier_bytes(RefWidth::Eight, true);
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let mut allowance = u64::MAX;
+    let history = super::super::decode(
+        &ctx,
+        &bytes,
+        "Breps.BlobParts/BREP.a.smbh",
+        RefWidth::Eight,
+        &mut allowance,
+        &WorkBudget::new(1 << 20),
+    )
+    .unwrap()
+    .unwrap();
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#1",
+        DesignFeatureKind::Extrude,
+        1,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.history_state_id = Some(13);
+            draft.previous_history_state_id = Some(12);
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    let mut cut = feature("cut");
+    cut.native_ref = Some(scope.id.clone());
+    cut.product_definition =
+        Some(cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:component#target").unwrap());
+    cut.ordinal = 1;
+    let output = cadmpeg_ir::ids::BodyId::mint("f3d:brep/a.smbh/brep:entity#1").unwrap();
+    cut.evaluation = FeatureEvaluation::new(
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::Native("native:profile".into())),
+            direction: ExtrudeDirection::ProfileNormal {},
+            start: ExtrudeStart::ProfilePlane {},
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: LinearTermination::Blind {
+                        length: cadmpeg_ir::scalar::NonZeroLength::new(1.0).unwrap(),
+                    },
+                    draft: None,
+                },
+            },
+            op: BooleanOp::Cut,
+            solid: Some(true),
+            face_maker: None,
+            inner_wire_taper: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
+        }),
+        DistinctMembers::try_from(vec![output.clone()]).unwrap(),
+    );
+    let scopes = [scope];
+    let histories = [history];
+    let bindings = HashMap::new();
+    let mut earlier = feature("earlier");
+    earlier.product_definition = cut.product_definition.clone();
+    for (built, same_product, suppressed, expected) in [
+        (false, true, false, true),
+        (true, true, false, false),
+        (true, false, false, true),
+        (true, true, true, true),
+    ] {
+        earlier.product_definition = if same_product {
+            cut.product_definition.clone()
+        } else {
+            Some(cadmpeg_ir::ids::ProductDefinitionId::mint("test:model:component#other").unwrap())
+        };
+        earlier.suppressed = Some(suppressed);
+        earlier.evaluation.set_outputs(if built {
+            DistinctMembers::try_from(vec![output.clone()]).unwrap()
+        } else {
+            DistinctMembers::default()
+        });
+        let features = [earlier.clone(), cut.clone()];
+        let inputs = Inputs {
+            features: &features,
+            scopes: &scopes,
+            histories: &histories,
+            bindings: &bindings,
+            primary_brep: None,
+        };
+        let mut losses = Vec::new();
+        let wanted = initial_cut_body(&features[1], inputs, &mut losses);
+        assert_eq!(losses.len(), usize::from(!expected));
+        if !expected {
+            assert_eq!(
+                losses[0].code,
+                F3dLossCode::FeatureHistoryBodyConsumedWithheld.kind()
+            );
+            assert!(losses[0].message.contains(cut.id.as_str()));
+            assert!(losses[0].message.contains("previous state 12"));
+        }
+        assert_eq!(wanted.is_some(), expected);
+        let (model, filled_losses) =
+            consumed_fixture(&bytes, features.to_vec(), &scopes[0], &histories[0]);
+        assert_eq!(filled_losses, losses);
+        assert_eq!(model.history_bodies.len(), usize::from(expected));
+        if expected {
+            let body = &model.history_bodies[0];
+            assert_eq!(body.consumed_by.as_ref(), Some(&cut.id));
+            assert_eq!(body.state.identifier, 12);
+            let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere)) =
+                &body.topology.surfaces[0].geometry
+            else {
+                panic!("sphere")
+            };
+            assert_eq!(
+                sphere.center().get(),
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
+            );
+        }
+        if let Some((index, want)) = wanted {
+            assert_eq!(
+                (index, want.state, want.slot, want.consumed),
+                (0, 12, 1, true)
+            );
+        }
+    }
+    for (outputs, withheld) in [
+        (
+            vec![
+                output.clone(),
+                cadmpeg_ir::ids::BodyId::mint("f3d:brep/a.smbh/brep:entity#10").unwrap(),
+            ],
+            true,
+        ),
+        (
+            vec![cadmpeg_ir::ids::BodyId::mint("f3d:brep/a.smbh/brep:entity#10").unwrap()],
+            false,
+        ),
+        (
+            vec![cadmpeg_ir::ids::BodyId::mint("f3d:brep/b/brep:entity#1").unwrap()],
+            false,
+        ),
+    ] {
+        let mut candidate = cut.clone();
+        candidate
+            .evaluation
+            .set_outputs(DistinctMembers::try_from(outputs).unwrap());
+        let inputs = Inputs {
+            features: std::slice::from_ref(&candidate),
+            scopes: &scopes,
+            histories: &histories,
+            bindings: &bindings,
+            primary_brep: None,
+        };
+        let mut losses = Vec::new();
+        assert!(initial_cut_body(&candidate, inputs, &mut losses).is_none());
+        assert_eq!(losses.len(), usize::from(withheld));
+        let (model, filled_losses) =
+            consumed_fixture(&bytes, vec![candidate], &scopes[0], &histories[0]);
+        assert!(model.history_bodies.is_empty());
+        assert_eq!(filled_losses, losses);
+        if withheld {
+            assert_eq!(
+                losses[0].code,
+                F3dLossCode::FeatureHistoryBodyConsumedWithheld.kind()
+            );
+            assert!(losses[0].message.contains(cut.id.as_str()));
+            assert!(losses[0].message.contains("previous state 12"));
+        }
+    }
+    let mut join = earlier.clone();
+    join.product_definition = cut.product_definition.clone();
+    join.suppressed = Some(false);
+    let mut definition = cut.evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = &mut definition else {
+        panic!("Extrude")
+    };
+    *op = BooleanOp::Join;
+    join.evaluation = FeatureEvaluation::new(
+        definition,
+        DistinctMembers::try_from(vec![output.clone()]).unwrap(),
+    );
+    let (model, losses) =
+        consumed_fixture(&bytes, vec![join, cut.clone()], &scopes[0], &histories[0]);
+    assert!(model.history_bodies.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        F3dLossCode::FeatureHistoryBodyConsumedWithheld.kind()
+    );
+    let record = histories[0]
+        .states()
+        .iter()
+        .flat_map(|state| &state.records)
+        .find(|record| record.revision_id.is_some())
+        .unwrap();
+    let mut malformed = bytes.clone();
+    malformed[usize::try_from(record.byte_offset).unwrap()] ^= 1;
+    let (model, losses) =
+        consumed_fixture(&malformed, vec![cut.clone()], &scopes[0], &histories[0]);
+    assert!(model.history_bodies.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        F3dLossCode::FeatureHistoryBodyUndecoded.kind()
+    );
+    assert!(losses[0].message.contains("incomplete record archive"));
+    let mut unowned = cut.clone();
+    unowned.product_definition = None;
+    let inputs = Inputs {
+        features: std::slice::from_ref(&unowned),
+        scopes: &scopes,
+        histories: &histories,
+        bindings: &bindings,
+        primary_brep: None,
+    };
+    assert!(initial_cut_body(&unowned, inputs, &mut Vec::new()).is_none());
+    let previous = histories[0]
+        .states()
+        .iter()
+        .find(|state| state.state_id == 12)
+        .unwrap();
+    let mut topology = histories[0].topology(previous).unwrap().clone();
+    topology.bodies.push(10);
+    let ambiguous = crate::test_support::history::history(
+        histories[0].id.clone(),
+        0,
+        None,
+        false,
+        histories[0]
+            .states()
+            .iter()
+            .map(|state| (state.clone(), Some(topology.clone()), Vec::new()))
+            .collect(),
+    );
+    let inputs = Inputs {
+        features: std::slice::from_ref(&cut),
+        scopes: &scopes,
+        histories: std::slice::from_ref(&ambiguous),
+        bindings: &bindings,
+        primary_brep: None,
+    };
+    assert!(initial_cut_body(&cut, inputs, &mut Vec::new()).is_none());
+}
+
+#[test]
+fn a_captured_derived_result_preserves_the_current_body() {
+    let bytes = carrier_bytes(RefWidth::Eight, true);
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let mut allowance = u64::MAX;
+    let history = super::super::decode(
+        &ctx,
+        &bytes,
+        "test",
+        RefWidth::Eight,
+        &mut allowance,
+        &WorkBudget::new(1 << 20),
+    )
+    .unwrap()
+    .unwrap();
+    let feature = feature("derived");
+    let mut bodies = Vec::new();
+    let mut losses = Vec::new();
+    fill_history(
+        &ctx,
+        &bytes,
+        &history,
+        &[Want {
+            feature: &feature,
+            state: 13,
+            slot: 1,
+            capture_current: true,
+            consumed: false,
+        }],
+        &mut bodies,
+        &WorkBudget::new(MAX_HISTORY_BODY_WORK),
+        &mut losses,
+    )
+    .unwrap();
+    assert!(losses.is_empty(), "{losses:?}");
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(bodies[0].state.identifier, 13);
+    assert_eq!(bodies[0].produced_by.as_ref(), Some(&feature.id));
+    assert_eq!(bodies[0].topology.faces.len(), 1);
+    assert_eq!(bodies[0].topology.surfaces.len(), 1);
+    let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere)) =
+        &bodies[0].topology.surfaces[0].geometry
+    else {
+        panic!("sphere")
+    };
+    assert_eq!(
+        sphere.center().get(),
+        cadmpeg_ir::math::Point3::new(10.0 * 10.0, 0.0, 0.0)
+    );
 }
 
 #[test]
@@ -641,7 +1082,7 @@ fn subtype_references_follow_archive_byte_order_across_revisions() {
     }
     let archive = HashMap::from([(20, definition(9, 100, 0.0)), (10, definition(1, 200, 1.0))]);
     let table = archive_subtypes(&archive, None);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (reference, expected_z) in [(0, 0.0), (1, 10.0)] {
         let tokens = [
             Token::SubtypeOpen,
@@ -657,10 +1098,10 @@ fn subtype_references_follow_archive_byte_order_across_revisions() {
 }
 
 fn cube_candidate() -> HistoryBody {
-    let model = cadmpeg_ir::examples::unit_cube().expect("cube").model;
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let geometry = cadmpeg_ir::examples::unit_cube().expect("cube").geometry;
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let Extract::Nest(mut topology) =
-        extract(&ctx, &model, model.bodies[0].id.as_str()).expect("extract cube")
+        extract(&ctx, &geometry, geometry.bodies[0].id.as_str()).expect("extract cube")
     else {
         panic!("closed cube")
     };
@@ -679,7 +1120,7 @@ fn cube_candidate() -> HistoryBody {
 
 #[test]
 fn admission_preserves_a_valid_nest_and_its_producer() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let candidate = cube_candidate();
     let expected = candidate.clone();
     assert_eq!(
@@ -690,7 +1131,7 @@ fn admission_preserves_a_valid_nest_and_its_producer() {
 
 #[test]
 fn admission_rejects_a_reference_closed_nest_with_a_radial_ring_crossing_edges() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut candidate = cube_candidate();
     let first_edge = candidate.topology.coedges[0].edge.clone();
     let other = candidate
@@ -710,7 +1151,7 @@ fn admission_rejects_a_reference_closed_nest_with_a_radial_ring_crossing_edges()
 
 #[test]
 fn admission_rejects_a_reference_closed_nest_with_displaced_endpoints() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut candidate = cube_candidate();
     candidate.topology.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(10.0, 10.0, 10.0))

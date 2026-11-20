@@ -51,12 +51,12 @@ impl Builder<'_> {
         let shell = self.shells.get(face.shell.as_str())?;
         let region = self
             .ir
-            .model
+            .geometry
             .regions
             .iter()
             .find(|region| region.id == shell.region)?;
         let body = self.bodies.get(region.body.as_str())?;
-        if shell.faces().len() != 1
+        if self.children.shell_faces(&shell.id).len() != 1
             || body.kind != BodyKind::Solid
             || region.shells.first() != Some(&shell.id)
         {

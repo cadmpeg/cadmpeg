@@ -53,8 +53,8 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
         let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
         let surface = result
             .ir()
-            .model
-            .procedural_surface_owner(&result.ir().model.procedural_surfaces[0].id)
+            .geometry
+            .procedural_surface_owner(&result.ir().geometry.procedural_surfaces[0].id)
             .expect("offset surface owner")
             .clone();
         let expected = Point2::new(12.0, 7.0);
@@ -75,7 +75,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
         assert!((actual.v - expected.v).abs() < 1.0e-8);
 
         let mut translated = result.ir().clone();
-        for carrier in &mut translated.model.surfaces {
+        for carrier in &mut translated.geometry.surfaces {
             if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane_surface)) =
                 &mut carrier.geometry
             {
@@ -120,7 +120,7 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
         )
         .expect("identity grammar");
         translated
-            .model
+            .geometry
             .surfaces
             .push(cadmpeg_ir::geometry::Surface {
                 id: nested_surface.clone(),
@@ -129,9 +129,10 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             });
         translated
-            .model
+            .geometry
             .procedural_surfaces
             .push(cadmpeg_ir::geometry::ProceduralSurface::new(
                 nested_construction,
@@ -176,29 +177,30 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
 
 #[test]
 fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
+    let stream = offset_surface_topology_partition_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let surface = result
+        .ir()
+        .geometry
+        .procedural_surface_owner(&result.ir().geometry.procedural_surfaces[0].id)
+        .expect("offset surface owner")
+        .clone();
+    let index = cadmpeg_ir::index::ModelIndex::build(result.ir());
+    let seed = Point2::new(12.0, 7.0);
+    let mut point = cadmpeg_ir::eval::model_surface_point_by_id(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface,
+        seed.u,
+        seed.v,
+    )
+    .unwrap()
+    .get();
+    point.x += 0.01;
+
     for work_limit in [256, 32768] {
         crate::test_support::with_decode_context(|geometry_ctx| {
-            let stream = offset_surface_topology_partition_stream();
-            let mut cur = Cursor::new(prt_with_partition(&stream));
-            let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-            let surface = result
-                .ir()
-                .model
-                .procedural_surface_owner(&result.ir().model.procedural_surfaces[0].id)
-                .expect("offset surface owner")
-                .clone();
-            let seed = Point2::new(12.0, 7.0);
-            let mut point = cadmpeg_ir::eval::model_surface_point_by_id(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &cadmpeg_ir::index::ModelIndex::build(result.ir()),
-                &surface,
-                seed.u,
-                seed.v,
-            )
-            .unwrap()
-            .get();
-            point.x += 0.01;
-
             let actual = offset_surface_parameters_with_tolerance(
                 geometry_ctx,
                 result.ir(),
@@ -211,7 +213,6 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
 
             assert_eq!(actual, seed);
 
-            let index = cadmpeg_ir::index::ModelIndex::build(result.ir());
             let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
                 geometry_ctx,
                 work_limit,
@@ -260,7 +261,7 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
             ProceduralSurfaceId::mint("test:model:entity#synthetic:wavy-offset-construction")
                 .expect("identity grammar");
         let mut ir = cadmpeg_ir::document::CadIr::empty();
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: support.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                 NurbsSurface::from_lanes(
@@ -288,16 +289,18 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
                 .expect("valid wavy support"),
             )),
             source_object: None,
+            native_ref: None,
         });
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: offset.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: construction.clone(),
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             construction,
             ProceduralSurfaceDefinition::Offset(
                 cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
@@ -345,15 +348,16 @@ fn offset_surface_parameter_solver_retries_a_bad_continuation_seed() {
             "test:model:entity#synthetic:wavy-nested-offset-construction",
         )
         .expect("identity grammar");
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: nested.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: nested_construction.clone(),
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
-        ir.model.procedural_surfaces.push(ProceduralSurface::new(
+        ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
             nested_construction,
             ProceduralSurfaceDefinition::Offset(
                 cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
@@ -403,7 +407,7 @@ fn decode_tracks_fully_extended_offset_common_header() {
 
     let procedural = result
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .first()
         .expect("offset surface");
@@ -415,11 +419,11 @@ fn decode_tracks_fully_extended_offset_common_header() {
     assert_eq!(distance.get(), 2.5);
     let owner = result
         .ir()
-        .model
+        .geometry
         .procedural_surface_owner(&procedural.id)
         .expect("offset owner");
     assert_ne!(owner, support);
-    assert_eq!(&result.ir().model.faces[0].surface, owner);
+    assert_eq!(&result.ir().geometry.faces[0].surface, owner);
 }
 
 #[test]
@@ -450,11 +454,11 @@ fn decode_tracks_fully_extended_compact_geometry_headers() {
     fully_extend_common_header(&mut bspline, [0, 134, 0, 50]);
     let mut cur = Cursor::new(prt_with_partition(&bspline));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert!(result.ir().model.surfaces.iter().any(|surface| matches!(
+    assert!(result.ir().geometry.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
     )));
-    assert!(result.ir().model.curves.iter().any(|curve| matches!(
+    assert!(result.ir().geometry.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
     )));
@@ -477,12 +481,12 @@ fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let carrier = result.ir().model.edges[0]
+    let carrier = result.ir().geometry.edges[0]
         .curve()
         .and_then(|id| {
             result
                 .ir()
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| &curve.id == id)
@@ -491,13 +495,13 @@ fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
     assert!(matches!(carrier.geometry, CurveGeometry::Procedural { .. }));
     let ProceduralCurveDefinition::SurfaceCurve {
         family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric { context, .. },
-    } = &result.ir().model.procedural_curves[0].definition()
+    } = &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("parametric surface curve");
     };
     assert_eq!(
         context.sides()[0].surface,
-        Some(result.ir().model.faces[0].surface.clone())
+        Some(result.ir().geometry.faces[0].surface.clone())
     );
     assert!(context.sides()[0].pcurve.is_some());
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(result.ir());
@@ -509,7 +513,7 @@ fn decode_lifts_pcurve_only_fin_carrier_to_its_surface() {
     )
     .expect("the decoded pcurve evaluates on its support surface")
     .get();
-    let vertex = &result.ir().model.vertices[0];
+    let vertex = &result.ir().geometry.vertices[0];
     let vertex_point = index
         .points(vertex.point.as_str(), cadmpeg_ir::index::StandardIndex)
         .expect("vertex point")
@@ -532,13 +536,13 @@ fn decode_emits_blend_with_extended_support_reference() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 1);
     assert_eq!(
-        result.ir().model.faces[0].surface,
+        result.ir().geometry.faces[0].surface,
         *result
             .ir()
-            .model
-            .procedural_surface_owner(&result.ir().model.procedural_surfaces[0].id)
+            .geometry
+            .procedural_surface_owner(&result.ir().geometry.procedural_surfaces[0].id)
             .expect("blend owner")
     );
 }
@@ -550,7 +554,7 @@ fn decode_binds_blend_ball_centre_spine() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let ProceduralSurfaceDefinition::Blend(definition_payload) =
-        &result.ir().model.procedural_surfaces[0].definition()
+        &result.ir().geometry.procedural_surfaces[0].definition()
     else {
         panic!("blend definition");
     };
@@ -560,8 +564,8 @@ fn decode_binds_blend_ball_centre_spine() {
         spine.as_ref(),
         result
             .ir()
-            .model
-            .procedural_curve_owner(&result.ir().model.procedural_curves[0].id)
+            .geometry
+            .procedural_curve_owner(&result.ir().geometry.procedural_curves[0].id)
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
@@ -576,9 +580,9 @@ fn decode_resolves_forward_blend_support_reference() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 2);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 2);
     let ProceduralSurfaceDefinition::Blend(definition_payload) =
-        &result.ir().model.procedural_surfaces[0].definition()
+        &result.ir().geometry.procedural_surfaces[0].definition()
     else {
         panic!("blend definition");
     };
@@ -588,8 +592,8 @@ fn decode_resolves_forward_blend_support_reference() {
         supports[0].as_ref().map(|support| &support.surface),
         result
             .ir()
-            .model
-            .procedural_surface_owner(&result.ir().model.procedural_surfaces[1].id)
+            .geometry
+            .procedural_surface_owner(&result.ir().geometry.procedural_surfaces[1].id)
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
@@ -606,14 +610,14 @@ fn decode_derives_analytic_support_uv_without_serialized_values() {
 
     let carrier = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| {
             result
                 .ir()
-                .model
-                .procedural_curve_owner(&result.ir().model.procedural_curves[0].id)
+                .geometry
+                .procedural_curve_owner(&result.ir().geometry.procedural_curves[0].id)
                 == Some(&curve.id)
         })
         .expect("intersection carrier");
@@ -622,7 +626,7 @@ fn decode_derives_analytic_support_uv_without_serialized_values() {
         Some(SolvedCurveGeometry::Nurbs(_))
     ));
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().model.procedural_curves[0].definition()
+        &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("intersection definition");
     };
@@ -642,14 +646,14 @@ fn decode_accepts_intersection_terms_within_chart_tolerance() {
 
     let carrier = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| {
             result
                 .ir()
-                .model
-                .procedural_curve_owner(&result.ir().model.procedural_curves[0].id)
+                .geometry
+                .procedural_curve_owner(&result.ir().geometry.procedural_curves[0].id)
                 == Some(&curve.id)
         })
         .expect("intersection carrier");
@@ -678,8 +682,8 @@ fn unselected_ext11_deltas_do_not_assign_primary_uv_lanes() {
         )
         .unwrap();
     assert_eq!(
-        serde_json::to_value(&result.ir().model).unwrap(),
-        serde_json::to_value(&baseline.ir().model).unwrap()
+        serde_json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
+        serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
     );
     assert!(
         cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
@@ -698,10 +702,10 @@ fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
         let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
         let mut result = EditableDecodeResult::from(result);
         let surfaces = [
-            result.ir().model.surfaces[0].id.clone(),
-            result.ir().model.surfaces[1].id.clone(),
+            result.ir().geometry.surfaces[0].id.clone(),
+            result.ir().geometry.surfaces[1].id.clone(),
         ];
-        result.ir_mut().model.surfaces[1].geometry =
+        result.ir_mut().geometry.surfaces[1].geometry =
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
         let lanes = [
             crate::intersection::SupportUvLane::new(vec![[0.0, 0.0], [0.01, 0.0]], 2),
@@ -733,7 +737,7 @@ fn decode_replaces_ambiguous_ext11_uv_lanes_from_analytic_supports() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().model.procedural_curves[0].definition()
+        &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("typed intersection");
     };
@@ -754,7 +758,7 @@ fn decode_completes_one_non_sentinel_ext11_uv_lane_analytically() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-        &result.ir().model.procedural_curves[0].definition()
+        &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("typed intersection");
     };
@@ -783,13 +787,13 @@ fn assert_completed_intersection_support_lane(present_fin: bool) {
         let edge =
             cadmpeg_ir::ids::EdgeId::mint("synthetic:cube:edge#0").expect("identity grammar");
         let target_index = ir
-            .model
+            .geometry
             .coedges
             .iter()
             .position(|coedge| coedge.edge == edge && coedge.id.as_str().contains("bottom"))
             .expect("bottom coedge index");
         let target = ir
-            .model
+            .geometry
             .coedges
             .iter_mut()
             .find(|coedge| coedge.edge == edge && coedge.id.as_str().contains("bottom"))
@@ -798,12 +802,12 @@ fn assert_completed_intersection_support_lane(present_fin: bool) {
         target.pcurves.clear();
         let owner_loop = target.owner_loop.clone();
         let surface = ir
-            .model
+            .geometry
             .loops
             .iter()
             .find(|loop_| loop_.id == owner_loop)
             .and_then(|loop_| {
-                ir.model
+                ir.geometry
                     .faces
                     .iter()
                     .find(|face| face.id == loop_.face)
@@ -811,19 +815,19 @@ fn assert_completed_intersection_support_lane(present_fin: bool) {
             })
             .expect("bottom support");
         let curve = ir
-            .model
+            .geometry
             .edges
             .iter()
             .find(|candidate| candidate.id == edge)
             .and_then(|edge| edge.curve().cloned())
             .expect("edge curve");
         let edge_tolerance = ir
-            .model
+            .geometry
             .edges
             .iter()
             .find(|candidate| candidate.id == edge)
             .and_then(|edge| edge.tolerance);
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.geometry.add_procedural_curve(
             &curve,
             cadmpeg_ir::geometry::ProceduralCurve::new(
                 cadmpeg_ir::ids::ProceduralCurveId::mint("nx:test:intersection#0")
@@ -895,7 +899,7 @@ fn assert_completed_intersection_support_lane(present_fin: bool) {
         )
         .expect("valid exactness fields");
         assert!(!ir
-            .model
+            .geometry
             .pcurves
             .iter()
             .any(|pcurve| pcurve.id.as_str().contains("intersection-pcurve-completed")));
@@ -916,7 +920,7 @@ fn assert_completed_intersection_support_lane(present_fin: bool) {
         .expect("valid exactness fields");
 
         let completed = ir
-            .model
+            .geometry
             .pcurves
             .iter()
             .find(|pcurve| pcurve.id.as_str().contains("intersection-pcurve-completed"))
@@ -927,7 +931,7 @@ fn assert_completed_intersection_support_lane(present_fin: bool) {
                 .map(cadmpeg_ir::geometry::FitTolerance::get),
             edge_tolerance.map(cadmpeg_ir::scalar::PositiveReal::get)
         );
-        assert!(ir.model.coedges.iter().any(|coedge| coedge
+        assert!(ir.geometry.coedges.iter().any(|coedge| coedge
             .pcurves
             .iter()
             .any(|pcurve| pcurve.pcurve == completed.id)));
@@ -958,7 +962,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
     let first = Point3::new(1.0, 2.0, 3.0);
     let last = Point3::new(4.0, 5.0, 6.0);
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+    ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
         parameter_range: None,
         id: curve_id.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
@@ -972,6 +976,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
             .expect("valid clamped witness curve"),
         )),
         source_object: None,
+        native_ref: None,
     });
     let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
 
@@ -980,7 +985,7 @@ fn linear_intersection_endpoint_witness_requires_a_clamped_linear_curve() {
         Some([first, last])
     );
 
-    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+    ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
             1,
             vec![0.0, 0.5, 1.0, 1.0],
@@ -1006,10 +1011,10 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
         let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
         let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
         let mut result = EditableDecodeResult::from(result);
-        let procedural_id = result.ir().model.procedural_curves[0].id.clone();
+        let procedural_id = result.ir().geometry.procedural_curves[0].id.clone();
         {
             let mut ir = result.ir_mut();
-            ir.model.procedural_curves[0].edit_definition(|definition| {
+            ir.geometry.procedural_curves[0].edit_definition(|definition| {
                 let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection {
                     context, ..
                 } = definition
@@ -1059,7 +1064,7 @@ fn ext11_uv_completion_runs_after_support_incidence_resolution() {
             .expect("support-uv lanes pair");
 
         let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
-            &result.ir().model.procedural_curves[0].definition()
+            &result.ir().geometry.procedural_curves[0].definition()
         else {
             panic!("typed intersection");
         };
@@ -1081,10 +1086,10 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
         let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
         let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
         let mut result = EditableDecodeResult::from(result);
-        let procedural_id = result.ir().model.procedural_curves[0].id.clone();
+        let procedural_id = result.ir().geometry.procedural_curves[0].id.clone();
         {
             let mut ir = result.ir_mut();
-            ir.model.procedural_curves[0].edit_definition(|definition| {
+            ir.geometry.procedural_curves[0].edit_definition(|definition| {
                 let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                     panic!("typed intersection");
                 };
@@ -1132,7 +1137,7 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
         .unwrap();
 
         let ProceduralCurveDefinition::Intersection { context, .. } =
-            &result.ir().model.procedural_curves[0].definition()
+            &result.ir().geometry.procedural_curves[0].definition()
         else {
             panic!("typed intersection");
         };
@@ -1166,7 +1171,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                 ProceduralCurveId::mint("test:model:entity#synthetic:serialized-seed-intersection")
                     .expect("identity grammar");
             let mut ir = cadmpeg_ir::document::CadIr::empty();
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: surface_id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(
                     NurbsSurface::from_lanes(
@@ -1192,8 +1197,9 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                     .expect("valid serialized-seed surface"),
                 )),
                 source_object: None,
+                native_ref: None,
             });
-            ir.model.curves.push(Curve {
+            ir.geometry.curves.push(Curve {
                 parameter_range: None,
                 id: curve_id.clone(),
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
@@ -1204,8 +1210,9 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             });
-            let _attached = ir.model.add_procedural_curve(
+            let _attached = ir.geometry.add_procedural_curve(
                 &curve_id,
                 ProceduralCurve::new(
                     procedural_id.clone(),
@@ -1287,7 +1294,7 @@ fn support_uv_completion_uses_a_finite_serialized_lane_as_a_nurbs_seed() {
             assert!(geometry_ctx.resource_refusal().is_none());
 
             let ProceduralCurveDefinition::Intersection { context, .. } =
-                ir.model.procedural_curves[0].definition()
+                ir.geometry.procedural_curves[0].definition()
             else {
                 panic!("intersection");
             };
@@ -1330,7 +1337,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                 .expect("identity grammar"),
         ];
         let mut ir = cadmpeg_ir::document::CadIr::empty();
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: base_surfaces[0].clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -1342,6 +1349,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: base_surfaces[1].clone(),
@@ -1354,18 +1362,20 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
         ]);
         for (side, surface) in procedural_surfaces.iter().enumerate() {
-            ir.model.surfaces.push(Surface {
+            ir.geometry.surfaces.push(Surface {
                 id: surface.clone(),
                 geometry: SurfaceGeometry::Procedural {
                     construction: constructions[side].clone(),
                     cache: None,
                 },
                 source_object: None,
+                native_ref: None,
             });
-            ir.model.procedural_surfaces.push(ProceduralSurface::new(
+            ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
                 constructions[side].clone(),
                 ProceduralSurfaceDefinition::Offset(
                     cadmpeg_ir::geometry::surface_payloads::OffsetSurfaceConstruction::try_new(
@@ -1390,13 +1400,14 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
                 .expect("identity grammar");
         let carrier =
             CurveId::mint("test:model:entity#synthetic:coupled-carrier").expect("identity grammar");
-        ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        ir.geometry.curves.push(cadmpeg_ir::geometry::Curve {
             parameter_range: None,
             id: carrier.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: None,
+            native_ref: None,
         });
-        let _attached = ir.model.add_procedural_curve(
+        let _attached = ir.geometry.add_procedural_curve(
             &carrier,
             ProceduralCurve::new(
                 procedural_id.clone(),
@@ -1440,7 +1451,7 @@ fn coupled_uv_completion_fills_both_missing_procedural_lanes_from_the_chart() {
             &pending,
         );
 
-        let procedural = &ir.model.procedural_curves[0];
+        let procedural = &ir.geometry.procedural_curves[0];
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
         else {
             panic!("intersection");
@@ -1485,15 +1496,15 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
         let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
         let mut result = EditableDecodeResult::from(result);
-        let spine_id = result.ir().model.procedural_curves[0].id.clone();
+        let spine_id = result.ir().geometry.procedural_curves[0].id.clone();
         let spine_curve = result
             .ir()
-            .model
-            .procedural_curve_owner(&result.ir().model.procedural_curves[0].id)
+            .geometry
+            .procedural_curve_owner(&result.ir().geometry.procedural_curves[0].id)
             .expect("spine owner")
             .clone();
         let ProceduralCurveDefinition::Intersection { context, .. } =
-            &result.ir().model.procedural_curves[0].definition()
+            &result.ir().geometry.procedural_curves[0].definition()
         else {
             panic!("typed intersection");
         };
@@ -1505,7 +1516,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         let offset_surfaces = [0usize, 1usize].map(|side| {
             let support = result
                 .ir()
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| surface.id == spine_surfaces[side])
@@ -1519,7 +1530,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
             let u_axis = *plane_surface.frame().reference().as_raw();
             let id = SurfaceId::mint(format!("test:model:entity#synthetic:offset-support-{side}"))
                 .expect("identity grammar");
-            result.ir_mut().model.surfaces.push(Surface {
+            result.ir_mut().geometry.surfaces.push(Surface {
                 id: id.clone(),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                     cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1534,6 +1545,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
                     .unwrap(),
                 )),
                 source_object: None,
+                native_ref: None,
             });
             id
         });
@@ -1542,17 +1554,18 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         let blend_construction =
             ProceduralSurfaceId::mint("test:model:entity#synthetic:dependent-blend-definition")
                 .expect("identity grammar");
-        result.ir_mut().model.surfaces.push(Surface {
+        result.ir_mut().geometry.surfaces.push(Surface {
             id: blend.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: blend_construction.clone(),
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
         result
             .ir_mut()
-            .model
+            .geometry
             .procedural_surfaces
             .push(ProceduralSurface::new(
                 blend_construction,
@@ -1576,7 +1589,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         let parameters = vec![0.0, 0.01];
         let spine_carrier = result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id == spine_curve)
@@ -1603,7 +1616,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         let dependent_id =
             ProceduralCurveId::mint("test:model:entity#synthetic:dependent-intersection")
                 .expect("identity grammar");
-        let mut dependent = result.ir().model.procedural_curves[0].clone();
+        let mut dependent = result.ir().geometry.procedural_curves[0].clone();
         dependent.id = dependent_id.clone();
         dependent.edit_definition(|definition| {
             let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
@@ -1629,8 +1642,8 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         });
         {
             let mut ir = result.ir_mut();
-            ir.model.procedural_curves.insert(0, dependent);
-            ir.model.procedural_curves[1].edit_definition(|definition| {
+            ir.geometry.procedural_curves.insert(0, dependent);
+            ir.geometry.procedural_curves[1].edit_definition(|definition| {
                 let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                     unreachable!()
                 };
@@ -1690,7 +1703,7 @@ fn support_uv_completion_closes_blend_spine_dependencies_to_a_fixed_point() {
         .unwrap();
 
         let ProceduralCurveDefinition::Intersection { context, .. } =
-            &result.ir().model.procedural_curves[0].definition()
+            &result.ir().geometry.procedural_curves[0].definition()
         else {
             unreachable!()
         };
@@ -1710,7 +1723,7 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
         let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
         let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
         let mut result = EditableDecodeResult::from(result);
-        let template = result.ir().model.procedural_curves[0].clone();
+        let template = result.ir().geometry.procedural_curves[0].clone();
         let mut successful = template.clone();
         let successful_id =
             ProceduralCurveId::mint("test:model:entity#synthetic:support-uv-success")
@@ -1748,11 +1761,11 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
         {
             let mut ir = result.ir_mut();
             let owner = ir
-                .model
-                .procedural_curve_owner(&ir.model.procedural_curves[0].id)
+                .geometry
+                .procedural_curve_owner(&ir.geometry.procedural_curves[0].id)
                 .unwrap();
             let template = ir
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == *owner)
@@ -1767,8 +1780,8 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
                     panic!("procedural carrier");
                 };
                 *construction = procedural.id.clone();
-                ir.model.curves.push(carrier);
-                ir.model.procedural_curves.push(procedural);
+                ir.geometry.curves.push(carrier);
+                ir.geometry.procedural_curves.push(procedural);
             }
         }
 
@@ -1815,7 +1828,7 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
 
         let successful = result
             .ir()
-            .model
+            .geometry
             .procedural_curves
             .iter()
             .find(|procedural| {
@@ -1824,7 +1837,7 @@ fn support_uv_completion_does_not_retry_unchanged_failed_lanes() {
             .unwrap();
         let failed = result
             .ir()
-            .model
+            .geometry
             .procedural_curves
             .iter()
             .find(|procedural| {

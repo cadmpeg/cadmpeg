@@ -19,6 +19,7 @@ use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::tessellation::{TessellationChannel, TessellationMesh};
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_ir::units::OrthonormalFrame3;
+use cadmpeg_ir::CadIr;
 use std::collections::HashMap;
 
 use crate::layout::display_lists_compact_face_header as compact_face;
@@ -49,9 +50,13 @@ const TESSELLATION_OWNER_WORK_PER_ROW: usize = 1 << 17;
 /// The rows that size the surface-owner work, or `None` past `usize`. Tables
 /// that face keys or persistent identities already own still count, so
 /// owning them first leaves the remaining tables the same budget.
-fn tessellation_owner_rows(model: &cadmpeg_ir::document::Model) -> Option<usize> {
-    let mut rows = model.faces.len().checked_add(model.coedges.len())?;
-    for mesh in &model.tessellations {
+fn tessellation_owner_rows(ir: &CadIr) -> Option<usize> {
+    let mut rows = ir
+        .geometry
+        .faces
+        .len()
+        .checked_add(ir.geometry.coedges.len())?;
+    for mesh in &ir.model.tessellations {
         rows = rows
             .checked_add(mesh.vertex_count())?
             .checked_add(mesh.triangle_count())?;
@@ -1272,20 +1277,20 @@ impl MeshSamples {
 /// remaining tables stay unassigned and one loss counts them.
 pub(crate) fn assign_unique_surface_owners(
     ctx: &DecodeContext<'_>,
-    model: &mut cadmpeg_ir::document::Model,
+    ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
-    let work_limit = tessellation_owner_work_limit(tessellation_owner_rows(model));
-    assign_unique_surface_owners_within(ctx, model, losses, work_limit)
+    let work_limit = tessellation_owner_work_limit(tessellation_owner_rows(ir));
+    assign_unique_surface_owners_within(ctx, ir, losses, work_limit)
 }
 
 fn assign_unique_surface_owners_within(
     ctx: &DecodeContext<'_>,
-    model: &mut cadmpeg_ir::document::Model,
+    ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
     work_limit: usize,
 ) -> Result<Vec<String>, cadmpeg_core::CodecError> {
-    for face in &model.faces {
+    for face in &ir.geometry.faces {
         if let Some(stated) = face.tolerance {
             if stated.get() < EPS_DISPLAY_QUANTIZATION {
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
@@ -1297,55 +1302,65 @@ fn assign_unique_surface_owners_within(
             }
         }
     }
-    if !model.tessellations.iter().any(needs_surface_owner) {
+    if !ir.model.tessellations.iter().any(needs_surface_owner) {
         return Ok(Vec::new());
     }
-    let surfaces = model
+    let surfaces = ir
+        .geometry
         .surfaces
         .iter()
         .map(|surface| (&surface.id, &surface.geometry))
         .collect::<HashMap<_, _>>();
-    let regions = model
+    let regions = ir
+        .geometry
         .regions
         .iter()
         .map(|region| (&region.id, &region.body))
         .collect::<HashMap<_, _>>();
-    let shell_bodies = model
+    let shell_bodies = ir
+        .geometry
         .shells
         .iter()
         .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?)))
         .collect::<HashMap<_, _>>();
-    let body_transforms = model
+    let body_transforms = ir
+        .geometry
         .bodies
         .iter()
         .map(|body| (&body.id, body.transform))
         .collect::<HashMap<_, _>>();
-    let loops = model
+    let loops = ir
+        .geometry
         .loops
         .iter()
         .map(|loop_| (&loop_.id, loop_))
         .collect::<HashMap<_, _>>();
-    let coedges = model
+    let coedges = ir
+        .geometry
         .coedges
         .iter()
         .map(|coedge| (&coedge.id, coedge))
         .collect::<HashMap<_, _>>();
-    let edges = model
+    let edges = ir
+        .geometry
         .edges
         .iter()
         .map(|edge| (&edge.id, edge))
         .collect::<HashMap<_, _>>();
-    let vertices = model
+    let vertices = ir
+        .geometry
         .vertices
         .iter()
         .map(|vertex| (&vertex.id, vertex))
         .collect::<HashMap<_, _>>();
-    let points = model
+    let points = ir
+        .geometry
         .points
         .iter()
         .map(|point| (&point.id, point.position().get()))
         .collect::<HashMap<_, _>>();
-    let curves = model
+    let curves = ir
+        .geometry
         .curves
         .iter()
         .map(|curve| (&curve.id, &curve.geometry))
@@ -1361,7 +1376,7 @@ fn assign_unique_surface_owners_within(
     };
     let work = WorkBudget::new(work_limit);
     let mut candidates = Vec::new();
-    for face in &model.faces {
+    for face in &ir.geometry.faces {
         let candidate = (|| {
             let body = *shell_bodies.get(&face.shell)?;
             let inverse = match body_transforms.get(body).copied().flatten() {
@@ -1391,7 +1406,7 @@ fn assign_unique_surface_owners_within(
 
     let mut assigned = Vec::new();
     let mut capped = 0usize;
-    for mesh in &mut model.tessellations {
+    for mesh in &mut ir.model.tessellations {
         if !needs_surface_owner(mesh) {
             continue;
         }
@@ -1670,7 +1685,7 @@ fn contains_nurbs_surface(surface: &SolvedSurfaceGeometry) -> bool {
 /// geometric coincidence test. A repeated key with different B-rep targets or
 /// repeated table IDs with different identities is rejected as ambiguous.
 pub(crate) fn assign_persistent_owners(
-    model: &mut cadmpeg_ir::document::Model,
+    ir: &mut CadIr,
     face_identities: &[(FaceId, PersistentFaceIdentity)],
     bindings: &[PersistentFaceBinding],
 ) -> Vec<String> {
@@ -1688,7 +1703,7 @@ pub(crate) fn assign_persistent_owners(
         }
     }
 
-    let face_bodies = face_bodies(model);
+    let face_bodies = face_bodies(&ir.geometry);
 
     let mut bindings_by_mesh = HashMap::<&str, Option<&PersistentFaceIdentity>>::new();
     for binding in bindings {
@@ -1707,7 +1722,7 @@ pub(crate) fn assign_persistent_owners(
     }
 
     let mut assigned = Vec::new();
-    for mesh in &mut model.tessellations {
+    for mesh in &mut ir.model.tessellations {
         if mesh.body.is_some() || !mesh.faces.is_empty() {
             continue;
         }
@@ -1733,7 +1748,7 @@ pub(crate) fn assign_persistent_owners(
 /// A key binds only when exactly one table and exactly one emitted face carry
 /// it, so a repeated key on either side binds nothing.
 pub(crate) fn assign_face_key_owners(
-    model: &mut cadmpeg_ir::document::Model,
+    ir: &mut CadIr,
     face_keys: &[(FaceId, u32)],
     bindings: &[FaceKeyBinding],
 ) -> Vec<String> {
@@ -1743,7 +1758,7 @@ pub(crate) fn assign_face_key_owners(
             .iter()
             .map(|binding| (binding.key, binding.tessellation.as_str())),
     );
-    let face_bodies = face_bodies(model);
+    let face_bodies = face_bodies(&ir.geometry);
     let mut owners = HashMap::new();
     for (key, table) in &tables_by_key {
         let (Some(table), Some(Some(face))) = (table, faces_by_key.get(key)) else {
@@ -1754,7 +1769,7 @@ pub(crate) fn assign_face_key_owners(
         }
     }
     let mut assigned = Vec::new();
-    for mesh in &mut model.tessellations {
+    for mesh in &mut ir.model.tessellations {
         if mesh.body.is_some() || !mesh.faces.is_empty() {
             continue;
         }
@@ -1793,18 +1808,20 @@ fn unique_by_key<K: Eq + std::hash::Hash, V: PartialEq>(
 }
 
 /// The body of every face whose shell and region resolve.
-fn face_bodies(model: &cadmpeg_ir::document::Model) -> HashMap<FaceId, cadmpeg_ir::ids::BodyId> {
-    let regions = model
+fn face_bodies(
+    geometry: &cadmpeg_ir::document::Topology,
+) -> HashMap<FaceId, cadmpeg_ir::ids::BodyId> {
+    let regions = geometry
         .regions
         .iter()
         .map(|region| (&region.id, &region.body))
         .collect::<HashMap<_, _>>();
-    let shell_bodies = model
+    let shell_bodies = geometry
         .shells
         .iter()
         .filter_map(|shell| Some((&shell.id, *regions.get(&shell.region)?)))
         .collect::<HashMap<_, _>>();
-    model
+    geometry
         .faces
         .iter()
         .filter_map(|face| Some((face.id.clone(), (*shell_bodies.get(&face.shell)?).clone())))
@@ -2199,8 +2216,8 @@ fn closed_planar_circle(
     let center = circle_curve.center().get();
     let axis = *circle_curve.frame().axis().as_raw();
     let radius = circle_curve.radius().get();
-    let boundary_point = *points.get(&vertices.get(&edge.start)?.point)?;
-    let end_point = *points.get(&vertices.get(&edge.end)?.point)?;
+    let boundary_point = *points.get(&vertices.get(edge.start()?)?.point)?;
+    let end_point = *points.get(&vertices.get(edge.end()?)?.point)?;
     if radius <= tolerance
         || axis.dot(frame.normal).abs() < 1.0 - EPS_AXIS_ALIGNMENT
         || analytic_surface_residual(surface.solved()?, center)? > tolerance
@@ -2504,9 +2521,10 @@ fn planar_trim(
             if coedge.owner_loop != loop_.id {
                 return None;
             }
+            let ends = edge.ends.as_ref()?;
             let (start, end) = match coedge.sense {
-                Sense::Forward => (&edge.start, &edge.end),
-                Sense::Reversed => (&edge.end, &edge.start),
+                Sense::Forward => (&ends.start, &ends.end),
+                Sense::Reversed => (&ends.end, &ends.start),
             };
             let start = *points.get(&vertices.get(start)?.point)?;
             let end = *points.get(&vertices.get(end)?.point)?;
@@ -2742,7 +2760,7 @@ fn cylindrical_trim(
             }
             _ => return None,
         }
-        for vertex_id in [&edge.start, &edge.end] {
+        for vertex_id in edge.vertices() {
             let vertex = vertices.get(vertex_id)?;
             let point = *points.get(&vertex.point)?;
             if analytic_surface_residual(surface.solved()?, point)? > tolerance {
@@ -2763,7 +2781,7 @@ fn cylindrical_trim(
     for coedge_id in loop_.coedges() {
         let coedge = coedges.get(coedge_id)?;
         let edge = edges.get(&coedge.edge)?;
-        for vertex_id in [&edge.start, &edge.end] {
+        for vertex_id in edge.vertices() {
             let vertex = vertices.get(vertex_id)?;
             let point = *points.get(&vertex.point)?;
             let angle = cylinder_angle(point, origin, &frame)?;
@@ -2900,7 +2918,7 @@ fn conical_trim(
             }
             _ => return None,
         }
-        for vertex_id in [&edge.start, &edge.end] {
+        for vertex_id in edge.vertices() {
             let vertex = vertices.get(vertex_id)?;
             let point = *points.get(&vertex.point)?;
             if analytic_surface_residual(surface.solved()?, point)? > tolerance {

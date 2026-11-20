@@ -35,6 +35,7 @@ impl PairWork {
     fn charge(&mut self) -> Result<(), ResourceLimit> {
         if self.used >= self.allowance {
             return Err(ResourceLimit {
+                scope: cadmpeg_core::decode::LimitScope::for_dimension(ResourceDimension::Entities),
                 dimension: ResourceDimension::Entities,
                 reason: ResourceFailure::BudgetExceeded,
                 limit: u64_from_index(self.allowance),

@@ -305,7 +305,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         };
 
         let chart: Outcome<Chart<'ir>> = match &carrier {
-            Ok(carrier) => settle(carrier.chart().copied())?,
+            Ok(carrier) => settle(carrier.chart().map(|chart| chart.collapsing_within(tau)))?,
             Err(missing) => Err(missing.clone()),
         };
         let boundary: Outcome<Boundary<'ir>> = match (&chart, &self.placement) {
