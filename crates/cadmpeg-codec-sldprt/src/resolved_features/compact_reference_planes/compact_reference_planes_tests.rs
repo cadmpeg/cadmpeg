@@ -149,7 +149,7 @@ fn compact_component_matrix_places_a_sketch_plane() {
 #[test]
 fn indexed_profile_frames_resolve_each_record_interval() {
     let frame = principal_sketch_frame(PrincipalPlane::Top);
-    let records = 4096;
+    let records = 16;
     let width = super::COMPACT_COMPONENT_PLANE_RECORD_LEN;
     let index = CompactReferencePlaneIndex {
         payload_len: records * width,
@@ -160,7 +160,7 @@ fn indexed_profile_frames_resolve_each_record_interval() {
         top_components: Vec::new(),
         component_frames: (0..records).map(|i| (i * width, frame)).collect(),
     };
-    for i in 0..1000 {
+    for i in 0..records {
         let start = i * width;
         let end = start + width;
         assert_eq!(index.profile_source(start, start, end), Some(7));

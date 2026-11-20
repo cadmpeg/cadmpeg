@@ -35,5 +35,6 @@ comparison as `cadmpeg diff A B --geometry`.
 Writer tests take `cadmpeg_measure::test_support::round_trip` through the
 `test-support` feature in `[dev-dependencies]`: `measures_agree` compares a
 document with its written and decoded copy, and `measures_decide` selects the
-fixtures whose self-comparison agrees. Each returns a `RoundTripError` whose
-text names no decoded value; the test calls `expect`.
+fixtures whose self-comparison agrees and returns their report, which
+`measures_agree_with` takes in place of a second measurement. Each returns a
+`RoundTripError` whose text names no decoded value; the test calls `expect`.

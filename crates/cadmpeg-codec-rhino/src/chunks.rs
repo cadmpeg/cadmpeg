@@ -25,7 +25,8 @@ pub(crate) const TCODE_CRC: u32 = token::TCODE_CRC;
 /// The short marker that terminates an `OpenNURBS` class child stream.
 pub(crate) const TCODE_CLASS_END: u32 = 0x8002_7fff;
 
-const CHECKSUM_CHILD_CAP: usize = 1 << 20;
+/// The most nested chunks that one class-end checksum stream frames.
+pub(crate) const CHECKSUM_CHILD_CAP: usize = 1 << 20;
 
 // The first strict boolean reader version in the encoded openNURBS version
 // form: 6.0.2017-08-24. Older files also store this value as YYYYMMDDn.
@@ -843,11 +844,13 @@ pub(crate) fn direct_checksum_ranges<'a>(
     })
 }
 
-/// Frames complete nested chunks through a short zero class-end marker.
+/// Frames at most `child_cap` complete nested chunks through a short zero
+/// class-end marker.
 pub(crate) fn checksum_children_through_class_end(
     data: &[u8],
     body: std::ops::Range<usize>,
     archive: ArchiveVersion,
+    child_cap: usize,
     context: &str,
 ) -> Result<Vec<std::ops::Range<usize>>, FramingError> {
     let mut reader = BoundedReader::new(data, body.start, body.end)?;
@@ -862,7 +865,7 @@ pub(crate) fn checksum_children_through_class_end(
         let start = reader.position();
         let child = chunk_at(data, start, reader.end(), archive, false)?;
         // The child cap leaves this checksum unverified; the caller reports it.
-        if children.len() >= CHECKSUM_CHILD_CAP {
+        if children.len() >= child_cap {
             return Err(FramingError::InvalidLength {
                 offset: start,
                 value: i128::from(cadmpeg_core::decode::u64_from_index(children.len())),

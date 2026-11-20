@@ -4,7 +4,7 @@
 
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 pub(super) fn domains_have_distinct_matching<'a>(
     ctx: &DecodeContext<'_>,
@@ -517,19 +517,25 @@ pub(crate) fn unique_coordinate_bijection(
     {
         return Ok(None);
     }
-    let mut representatives = Vec::<usize>::new();
+    let mut class_count = 0usize;
+    let mut classes_by_position = HashMap::new();
     let mut point_classes = Vec::new();
-    for (point, position) in points.iter().enumerate() {
-        let class = if let Some(class) = representatives
-            .iter()
-            .position(|representative| points[*representative] == *position)
-        {
-            class
+    for position in points {
+        // A NaN coordinate equals no point and -0.0 equals 0.0, so these keys
+        // give the classes of `==` on coordinates.
+        let class = if position.iter().copied().any(f64::is_nan) {
+            class_count
         } else {
-            let class = representatives.len();
-            representatives.push(point);
-            class
+            *classes_by_position
+                .entry(position.map(|coordinate| {
+                    let coordinate = if coordinate == 0.0 { 0.0 } else { coordinate };
+                    coordinate.to_bits()
+                }))
+                .or_insert(class_count)
         };
+        if class == class_count {
+            class_count += 1;
+        }
         point_classes.push(class);
     }
     let mut class_domains = Vec::new();
@@ -544,8 +550,7 @@ pub(crate) fn unique_coordinate_bijection(
         classes.dedup();
         class_domains.push(classes);
     }
-    let mut capacities =
-        ctx.alloc_filled(representatives.len(), 0usize, "catia_bijection_capacities")?;
+    let mut capacities = ctx.alloc_filled(class_count, 0usize, "catia_bijection_capacities")?;
     for class in &point_classes {
         capacities[*class] += 1;
     }
@@ -578,11 +583,7 @@ pub(crate) fn unique_coordinate_bijection(
             }
         }
     }
-    let mut available = ctx.alloc_filled(
-        representatives.len(),
-        Vec::new(),
-        "catia_bijection_available",
-    )?;
+    let mut available = ctx.alloc_filled(class_count, Vec::new(), "catia_bijection_available")?;
     for (point, class) in point_classes.into_iter().enumerate() {
         available[class].push(point);
     }

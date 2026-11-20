@@ -174,7 +174,7 @@ fn analytic_membership_preserves_radial_distance_at_large_axial_offsets() {
     for axial in [0.0, 1e8, 1e200] {
         assert_eq!(
             point_on_surface_if_supported(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 Point3::new(1.0, 0.0, axial),
                 &cylinder
             ),
@@ -182,7 +182,7 @@ fn analytic_membership_preserves_radial_distance_at_large_axial_offsets() {
         );
         assert_eq!(
             point_on_surface_if_supported(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 Point3::new(2.0, 0.0, axial),
                 &cylinder
             ),

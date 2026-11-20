@@ -21,7 +21,7 @@ fn design_boolean_scalar_keeps_case_insensitive_values_without_copy() {
         };
         assert_eq!(
             super::super::bool_property(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &[&property],
                 "Flag"
             )

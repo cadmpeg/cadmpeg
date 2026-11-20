@@ -85,7 +85,7 @@ fn sourced_ir(dialect: &'static str) -> CadIr {
         std::collections::BTreeMap::new(),
     ));
     ir.state_root_definition(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         crate::decode::root_definition_id(),
         cadmpeg_ir::products::ExternalDocument::default(),
     )
