@@ -10,10 +10,9 @@ use crate::report::{
 };
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use serde_value::Value;
 
 enum AnnotatedEntity<'ir> {
-    Projected(crate::schema::structural::Projection),
+    Projected(serde_json::Value),
     Product(&'ir crate::native::NativeRecord),
     Source(&'ir crate::unknown::UnknownRecord),
 }
@@ -212,36 +211,20 @@ fn source_field_path_resolves(record: &crate::unknown::UnknownRecord, path: &str
         .is_some_and(|index| index < record.links().len())
 }
 
-fn field_path_resolves(mut value: &Value, path: &str) -> bool {
+fn field_path_resolves(mut value: &serde_json::Value, path: &str) -> bool {
     for component in path.split('.') {
-        while let Value::Option(Some(inner)) | Value::Newtype(inner) = value {
-            value = inner;
-        }
-        match value {
-            Value::Map(object) => {
-                let mut next = None;
-                for (key, child) in object {
-                    if matches!(key, Value::String(key) if key == component) {
-                        next = Some(child);
-                        break;
-                    }
-                }
-                let Some(child) = next else {
-                    return false;
-                };
-                value = child;
-            }
-            Value::Seq(array) => {
-                let Ok(index) = component.parse::<usize>() else {
-                    return false;
-                };
-                let Some(next) = array.get(index) else {
-                    return false;
-                };
-                value = next;
-            }
-            _ => return false,
-        }
+        let next = match value {
+            serde_json::Value::Object(object) => object.get(component),
+            serde_json::Value::Array(array) => component
+                .parse::<usize>()
+                .ok()
+                .and_then(|index| array.get(index)),
+            _ => None,
+        };
+        let Some(next) = next else {
+            return false;
+        };
+        value = next;
     }
     true
 }
