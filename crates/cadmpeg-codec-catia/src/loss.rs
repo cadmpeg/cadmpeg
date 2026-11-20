@@ -71,6 +71,8 @@ pub(crate) enum CatiaLossCode {
     TopologyAffineVertexReconciled,
     /// A planar shared-edge lift uses a native parameter-map fit tolerance.
     GeometryParameterMapAccuracyInferred,
+    /// Extended rational weight-row controls use an inferred expansion.
+    GeometrySurfaceWeightsInferred,
     /// A model-space curve supplies a bounded plane projection.
     GeometryPlanePcurveProjected,
     /// A witnessed conic branch exceeds the incident face bounds.
@@ -184,6 +186,7 @@ impl CatiaLossCode {
         Self::GeometryRollingSheetExtended,
         Self::TopologyAffineVertexReconciled,
         Self::GeometryParameterMapAccuracyInferred,
+        Self::GeometrySurfaceWeightsInferred,
         Self::GeometryPlanePcurveProjected,
         Self::GeometryConicBranchBoundsInferred,
         Self::GeometrySheetSurfaceFitted,
@@ -252,6 +255,7 @@ impl CatiaLossCode {
             Self::GeometryParameterMapAccuracyInferred => {
                 "geometry.parameter-map-accuracy-inferred"
             }
+            Self::GeometrySurfaceWeightsInferred => "geometry.surface-weights-inferred",
             Self::GeometryPlanePcurveProjected => "geometry.plane-pcurve-projected",
             Self::GeometrySheetSurfaceFitted => "geometry.sheet-surface-fitted",
             Self::GeometryRollingBallRailsAdjusted => "geometry.rolling-ball-rails-adjusted",
@@ -346,6 +350,7 @@ impl CatiaLossCode {
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryRollingSheetExtended
             | Self::GeometryParameterMapAccuracyInferred
+            | Self::GeometrySurfaceWeightsInferred
             | Self::GeometryPlanePcurveProjected
             | Self::GeometryConicBranchBoundsInferred
             | Self::GeometrySheetSurfaceFitted
@@ -441,6 +446,7 @@ mod tests {
                 "geometry.rolling-sheet-extended",
                 "topology.affine-vertex-reconciled",
                 "geometry.parameter-map-accuracy-inferred",
+                "geometry.surface-weights-inferred",
                 "geometry.plane-pcurve-projected",
                 "geometry.conic-branch-bounds-inferred",
                 "geometry.sheet-surface-fitted",
