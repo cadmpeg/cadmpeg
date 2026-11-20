@@ -1401,7 +1401,6 @@ fn an_inactive_symmetric_direction_one_keeps_direction_two_and_drops_the_flag() 
         crate::loss::F3dLossCode::FeatureRectangularPatternInactiveSymmetricDropped.kind();
     let placement =
         crate::loss::F3dLossCode::FeatureRectangularPatternPlacementNotTransferred.kind();
-    let unresolved = crate::loss::F3dLossCode::FeatureRectangularPatternDirectionUnresolved.kind();
     let assumed =
         crate::loss::F3dLossCode::FeatureRectangularPatternDirectionOneRecordAssumed.kind();
     let codes = |losses: &[cadmpeg_ir::report::loss::LossNote]| {
@@ -1430,7 +1429,7 @@ fn an_inactive_symmetric_direction_one_keeps_direction_two_and_drops_the_flag() 
     assert!(!symmetric);
     assert_eq!(
         codes(&losses),
-        [dropped.clone(), assumed.clone(), placement.clone()]
+        [dropped.clone(), assumed, placement.clone()]
     );
     assert!(losses[2]
         .message
@@ -1447,14 +1446,13 @@ fn an_inactive_symmetric_direction_one_keeps_direction_two_and_drops_the_flag() 
     )
     .expect("direction two without a payload vector");
     let (direction, spacing, count, symmetric) = linear_parts(&definition);
-    assert!(direction.is_none());
+    let direction = direction.expect("record direction");
+    assert!((direction.x - 1.0).abs() < EPS_SPACING);
+    assert!(direction.y.abs() < EPS_SPACING && direction.z.abs() < EPS_SPACING);
     assert!((spacing - 15.0).abs() < EPS_SPACING);
     assert_eq!(count, 2);
     assert!(!symmetric);
-    assert_eq!(
-        codes(&losses),
-        [dropped, assumed, unresolved, placement.clone()]
-    );
+    assert_eq!(codes(&losses), [dropped, placement.clone()]);
 
     let mut losses = Vec::new();
     let definition = project_rectangular_pattern_scalars(

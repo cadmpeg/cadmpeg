@@ -7662,8 +7662,7 @@ fn project_rectangular_pattern_scalars(
             )),
         );
     }
-    let payload_names_direction_one =
-        construction.secondary_direction().is_some() || distribution.is_some();
+    let payload_names_direction_one = construction.secondary_direction().is_some();
     if symmetric && !adjacent {
         losses.push(
             crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricTotalExtentAssumed.note(format!(
