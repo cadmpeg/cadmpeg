@@ -294,6 +294,111 @@ pub(super) fn analytic_surface_foot(
     None
 }
 
+/// Share of a NURBS direction's domain by which a Newton step may pass its
+/// end and be held to it: rounding, not extrapolation.
+const DOMAIN_SLACK_RELATIVE: f64 = 1.0e-9;
+
+/// One direction's domain of a NURBS surface, `[knots[degree], knots[count]]`.
+fn nurbs_axis_domain(knots: &[f64], degree: u32, count: usize) -> Option<[f64; 2]> {
+    let degree = usize::try_from(degree).ok()?;
+    let (&low, &high) = (knots.get(degree)?, knots.get(count)?);
+    (low < high).then_some([low, high])
+}
+
+/// `parameter` moved into `[low, high]`: by whole periods in a periodic
+/// direction, else held to the domain from within its rounding slack.
+/// `None` beyond the slack.
+fn into_nurbs_domain(parameter: f64, [low, high]: [f64; 2], periodic: bool) -> Option<f64> {
+    if periodic {
+        return Some(low + (parameter - low).rem_euclid(high - low));
+    }
+    let slack = (high - low) * DOMAIN_SLACK_RELATIVE;
+    (parameter >= low - slack && parameter <= high + slack).then(|| parameter.clamp(low, high))
+}
+
+/// The point of a NURBS surface nearest `point` inside its stored domain,
+/// the unit natural normal there and its parameters: a perpendicular foot
+/// found by Gauss-Newton steps from the nearest grid or `seed` candidate.
+/// `None` where the steps leave the domain, which puts the perpendicular
+/// foot beyond the stored surface, or do not converge.
+///
+/// # Errors
+///
+/// Propagates the evaluator's resource refusal.
+pub(super) fn nurbs_surface_foot(
+    ctx: &DecodeContext<'_>,
+    surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
+    point: cadmpeg_ir::math::Point3,
+    seed: Option<cadmpeg_ir::math::Point2>,
+) -> Result<
+    Option<(
+        cadmpeg_ir::math::Point3,
+        cadmpeg_ir::math::Vector3,
+        cadmpeg_ir::math::Point2,
+    )>,
+    CodecError,
+> {
+    let (Some(u_domain), Some(v_domain)) = (
+        nurbs_axis_domain(
+            surface.u_knots().as_slice(),
+            surface.u_degree(),
+            surface.u_count(),
+        ),
+        nurbs_axis_domain(
+            surface.v_knots().as_slice(),
+            surface.v_degree(),
+            surface.v_count(),
+        ),
+    ) else {
+        return Ok(None);
+    };
+    let Some(start) = nurbs_surface_parameter_near_point(ctx, surface, point, seed)? else {
+        return Ok(None);
+    };
+    let tolerance = FOOT_STEP_TOLERANCE_MM.max(rounding_scale(point));
+    let [mut u, mut v] = [start.get().u, start.get().v];
+    for _ in 0..MAX_FOOT_STEPS {
+        let Some(partials) = nurbs_surface_partials(ctx, surface, u, v)? else {
+            return Ok(None);
+        };
+        let (at, du, dv) = (partials.point.get(), partials.du.get(), partials.dv.get());
+        let residual = point.vector_from(at);
+        let (uu, uv, vv) = (du.dot(du), du.dot(dv), dv.dot(dv));
+        let determinant = uu * vv - uv * uv;
+        let normal = du.cross(dv);
+        let length = normal.norm();
+        if !(determinant > 0.0 && determinant.is_finite() && length > 0.0 && length.is_finite()) {
+            return Ok(None);
+        }
+        let (ru, rv) = (du.dot(residual), dv.dot(residual));
+        let step_u = (ru * vv - rv * uv) / determinant;
+        let step_v = (rv * uu - ru * uv) / determinant;
+        let moved = (du.x * step_u + dv.x * step_v)
+            .hypot(du.y * step_u + dv.y * step_v)
+            .hypot(du.z * step_u + dv.z * step_v);
+        if moved <= tolerance {
+            return Ok(Some((
+                at,
+                cadmpeg_ir::math::Vector3::new(
+                    normal.x / length,
+                    normal.y / length,
+                    normal.z / length,
+                ),
+                cadmpeg_ir::math::Point2::new(u, v),
+            )));
+        }
+        let (Some(next_u), Some(next_v)) = (
+            into_nurbs_domain(u + step_u, u_domain, surface.u_periodic()),
+            into_nurbs_domain(v + step_v, v_domain, surface.v_periodic()),
+        ) else {
+            return Ok(None);
+        };
+        u = next_u;
+        v = next_v;
+    }
+    Ok(None)
+}
+
 /// The rounding of a plain floating-point step near `point`.
 pub(super) fn rounding_scale(point: cadmpeg_ir::math::Point3) -> f64 {
     ROUNDING_RELATIVE * point.x.abs().max(point.y.abs()).max(point.z.abs())
@@ -522,5 +627,54 @@ mod tests {
         .is_none());
         assert!(capped);
         assert!(ctx.finish_session().is_ok());
+    }
+
+    /// The flat bilinear patch z = 0 over x in [0, 1] and y in [0, 2].
+    fn flat_patch() -> NurbsSurface {
+        NurbsSurface::from_lanes(
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            NurbsSurfaceLanes::new(
+                vec![
+                    vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 2.0, 0.0)],
+                    vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 2.0, 0.0)],
+                ],
+                None,
+            ),
+            false,
+        )
+        .expect("flat patch")
+    }
+
+    #[test]
+    fn a_nurbs_foot_is_the_perpendicular_foot_inside_the_domain() {
+        let surface = flat_patch();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let (foot, normal, parameters) =
+            super::nurbs_surface_foot(&ctx, &surface, Point3::new(0.25, 1.5, 3.0), None)
+                .unwrap()
+                .expect("the foot is inside the patch");
+        assert!(
+            foot.distance(Point3::new(0.25, 1.5, 0.0)) < 1.0e-12,
+            "{foot:?}"
+        );
+        assert!((normal.z.abs() - 1.0).abs() < 1.0e-12, "{normal:?}");
+        assert!((parameters.u - 0.25).abs() < 1.0e-12, "{parameters:?}");
+        assert!((parameters.v - 0.75).abs() < 1.0e-12, "{parameters:?}");
+    }
+
+    #[test]
+    fn a_nurbs_foot_beyond_the_stored_domain_is_no_foot() {
+        // The nearest point of the patch to (2, 1, 3) is on its edge x = 1,
+        // which is not a perpendicular foot: the plane's foot is beyond it.
+        let surface = flat_patch();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let foot =
+            super::nurbs_surface_foot(&ctx, &surface, Point3::new(2.0, 1.0, 3.0), None).unwrap();
+        assert!(foot.is_none(), "{foot:?}");
     }
 }
