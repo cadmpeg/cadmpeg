@@ -5,21 +5,6 @@ on:
 permissions:
   contents: read
 jobs:
-  passes:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: ./.github/actions/pinned-rust
-      - name: Build dependencies of cadmpeg-ir
-        run: CARGO_BUILD_JOBS=4 cargo build -q -p cadmpeg-core -p cadmpeg-derive --features cadmpeg-core/schema,cadmpeg-core/test-support
-      - name: Compile cadmpeg-ir with time-passes
-        env:
-          RUSTC_BOOTSTRAP: "1"
-          CARGO_BUILD_JOBS: "1"
-        run: |
-          (while sleep 10; do free -m | awk 'NR==2 {print "mem used " $3 " MiB"}'; done) &
-          cargo rustc -p cadmpeg-ir --lib --features schema,examples -- -Z time-passes 2>&1 | grep --line-buffered -v '^\s*$'
   lines:
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -41,4 +26,4 @@ jobs:
       - name: Largest functions in cadmpeg-ir LLVM IR
         run: |
           ll=$(ls -S target/debug/deps/cadmpeg_ir-*.ll | head -1); ls -la $ll
-          python3 .github/measure/llvm_lines.py "$ll"
+          python3 .github/measure/llvm_categories.py "$ll"
