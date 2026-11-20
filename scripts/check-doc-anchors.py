@@ -16,8 +16,9 @@ heading of the open-items document it cites. A citation resolves against the
 open-items document named right after the ID (``DR-904 in f3d-open-items.md``),
 else the last one the line names before the ID, else the document's own
 open-items document (``f3d.md`` and ``f3d-coverage.md`` cite
-``f3d-open-items.md``), else the only open-items document the file names. An ID whose prefix the target does not use (``UTF-8``)
-is no citation. ``former SE-08`` names a deleted item and is no citation.
+``f3d-open-items.md``), else the only open-items document the file names. Known
+non-item prefixes (such as ``UTF`` and ``FTC``) and ``former SE-08`` are not
+citations.
 
 Usage: scripts/check-doc-anchors.py [doc.md ...]
 With no arguments it checks every docs/formats/*-open-items.md file for
@@ -42,8 +43,22 @@ ITEM_HEADING = re.compile(r"^### ([A-Z]{1,3}-\d+[A-Z]?)\.")
 FIELD = re.compile(r"^\*\*([A-Za-z][A-Za-z0-9 ./-]*)\.\*\*")
 CONFIDENCE_TAG = re.compile(r"\bConfidence:")
 OPEN_ITEMS_NAME = re.compile(r"[\w.-]+-open-items\.md")
-CITATION = re.compile(r"(?<!former )\b[A-Z]{1,4}-\d+[A-Z]?\b")
+CITATION = re.compile(r"(?<!former )(?<![A-Za-z0-9-])[A-Z]{2,4}-\d+[A-Z]?(?![A-Za-z0-9-])(?!\.\d)")
 NAMED_AFTER = re.compile(r"\s+in\s+\[?`?([\w.-]+-open-items\.md)")
+FORMAT_BEFORE = re.compile(r"\b([A-Za-z0-9_]+)\s+$")
+NON_ITEM_PREFIXES = frozenset({
+    "CRC",
+    "CTC",
+    "FTC",
+    "ID",
+    "IEEE",
+    "ISO",
+    "SHA",
+    "STC",
+    "STD",
+    "UTF",
+    "XOR",
+})
 
 ALLOWED_FIELDS = frozenset({"Question", "Known", "Need", "Conflict", "Note"})
 REQUIRED_FIELDS = ("Question", "Known", "Need")
@@ -197,10 +212,6 @@ def check_citations(documents: list[Path]) -> list[str]:
         path.name: {identifier for identifier, _, _ in items(path.read_text(encoding="utf-8"))}
         for path in DOCS.glob("*-open-items.md")
     }
-    prefixes = {
-        name: {identifier.split("-")[0] for identifier in ids}
-        for name, ids in headings.items()
-    }
     failures: list[str] = []
     for path in documents:
         text = path.read_text(encoding="utf-8")
@@ -213,9 +224,20 @@ def check_citations(documents: list[Path]) -> list[str]:
             for citation in CITATION.finditer(line):
                 after = NAMED_AFTER.match(line, citation.end())
                 before = [name for start, name in mentions if start < citation.start()]
-                target = after.group(1) if after else (before[-1:] or [default])[0]
+                format_match = FORMAT_BEFORE.search(line[: citation.start()])
+                format_target = (
+                    f"{format_match.group(1).lower()}-open-items.md"
+                    if format_match
+                    else None
+                )
+                if after:
+                    target = after.group(1)
+                elif format_target in headings:
+                    target = format_target
+                else:
+                    target = (before[-1:] or [default])[0]
                 identifier = citation.group()
-                if target not in headings or identifier.split("-")[0] not in prefixes[target]:
+                if target not in headings or identifier.split("-")[0] in NON_ITEM_PREFIXES:
                     continue
                 if identifier not in headings[target]:
                     failures.append(

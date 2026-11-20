@@ -88,6 +88,21 @@ class CitationCheck(unittest.TestCase):
         self.write("f3d.md", "The former DR-12 question is tracked in DR-88.\n")
         self.assertEqual(self.findings(), [])
 
+    def test_deleting_sole_heading_of_a_prefix_fails(self) -> None:
+        self.write("asm-open-items.md", open_items("GC-01. Other prefix"))
+        self.write("asm.md", "# ASM\n\nSee HS-01.\n")
+        self.assertEqual(
+            self.findings(),
+            ["asm.md:3: HS-01 names no item heading in asm-open-items.md"],
+        )
+
+    def test_non_item_token_ftc_in_catia_open_items_passes(self) -> None:
+        self.write(
+            "catia-open-items.md",
+            open_items("GC-01. Item") + "**Known.** FTC-07 has one FBB group.\n",
+        )
+        self.assertEqual(self.findings(), [])
+
     def test_main_fails_on_a_dangling_citation(self) -> None:
         self.write("f3d.md", "Open item DR-89 holds the role.\n")
         output = io.StringIO()
