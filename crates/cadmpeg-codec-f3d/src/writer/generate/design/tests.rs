@@ -443,12 +443,22 @@ struct DesignStream {
 impl DesignStream {
     fn read(archive: &[u8]) -> Self {
         let mut zip = zip::ZipArchive::new(Cursor::new(archive)).expect("a ZIP archive");
+        let folder = ["FusionDesignSegmentType1", "Design1"]
+            .into_iter()
+            .find(|folder| {
+                zip.by_name(&format!(
+                    "{}/{folder}/BulkStream.dat",
+                    crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
+                ))
+                .is_ok()
+            })
+            .expect("a Design segment");
         let mut entry = |name: &str| {
             let mut bytes = Vec::new();
             std::io::Read::read_to_end(
                 &mut zip
                     .by_name(&format!(
-                        "{}/Design1/{name}",
+                        "{}/{folder}/{name}",
                         crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
                     ))
                     .expect("the Design stream"),
@@ -529,7 +539,7 @@ fn the_cube_is_one_base_feature_item_of_the_timeline() {
         panic!("one timeline");
     };
     assert_eq!(timeline.frame().items().len(), 1);
-    assert!(loss(&report, "export/record.residual-unavailable")
+    assert!(!loss(&report, "export/record.residual-unavailable")
         .iter()
         .any(|message| message.contains("component aggregate")));
 }
@@ -760,3 +770,5 @@ fn an_integer_parameter_is_written_as_a_real_with_a_note() {
     assert!(notes[0].message.contains(parameter_id("count").as_str()));
     assert!(!notes[0].message.contains(parameter_id("width").as_str()));
 }
+
+mod roster;
