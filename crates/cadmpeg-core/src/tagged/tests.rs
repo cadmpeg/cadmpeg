@@ -212,15 +212,14 @@ const INTERNAL: &[&str] = &[
     r#"{"kind":"count","count":3,"count":4}"#,
     r#"{"kind":"count","kind":"count","count":3}"#,
     r#"{"count":3}"#,
-    r#"{}"#,
+    r"{}",
     r#"{"kind":"bogus"}"#,
     r#"{"kind":3}"#,
     r#"{"kind":{"count":null},"count":3}"#,
     r#"{"kind":null}"#,
     r#"["count",3]"#,
     r#"["count",3,null]"#,
-    r#"["count"]"#,
-    r#"[]"#,
+    r"[]",
     r#""count""#,
     "null",
     "3",
@@ -286,10 +285,10 @@ const ADJACENT: &[&str] = &[
     r#"{"kind":"number","value":5,"value":6}"#,
     r#"{"value":5,"value":6}"#,
     r#"{"value":5}"#,
-    r#"{}"#,
+    r"{}",
     r#"["number",5]"#,
     r#"["number"]"#,
-    r#"[]"#,
+    r"[]",
     r#"["bogus",5]"#,
     r#"[{"number":null},5]"#,
     r#"{"kind":{"number":null},"value":5}"#,
@@ -356,6 +355,16 @@ fn a_refusal_inside_adjacent_content_states_the_position_after_the_object() {
     assert_eq!(
         read::<tagged_form::Adjacent>(r#"{"kind":"number","value":"x"}"#),
         "refused invalid type: string \"x\", expected u32 at line 1 column 29"
+    );
+}
+
+#[test]
+fn a_short_sequence_form_states_the_struct_variant_alone() {
+    let input = r#"["count"]"#;
+    assert!(read::<serde_form::Internal>(input).starts_with("refused invalid length 0"));
+    assert_eq!(
+        read::<tagged_form::Internal>(input),
+        "refused invalid length 0, expected struct variant Internal::Count"
     );
 }
 

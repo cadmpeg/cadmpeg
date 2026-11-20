@@ -384,7 +384,7 @@ impl<'de> DeserializeSeed<'de> for Key<'_> {
 
 struct KeyText<'o>(&'o mut String);
 
-impl<'de> Visitor<'de> for KeyText<'_> {
+impl Visitor<'_> for KeyText<'_> {
     type Value = ();
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -409,7 +409,7 @@ impl<'de> DeserializeSeed<'de> for Identifier<'_> {
     }
 }
 
-impl<'de> Visitor<'de> for Identifier<'_> {
+impl Visitor<'_> for Identifier<'_> {
     type Value = ();
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -479,7 +479,7 @@ impl<'de> DeserializeSeed<'de> for MemberKey<'_> {
     }
 }
 
-impl<'de> Visitor<'de> for MemberKey<'_> {
+impl Visitor<'_> for MemberKey<'_> {
     type Value = Member;
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -604,7 +604,7 @@ impl FieldKey<'_> {
     }
 }
 
-impl<'de> Visitor<'de> for FieldKey<'_> {
+impl Visitor<'_> for FieldKey<'_> {
     type Value = Option<Field>;
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -740,7 +740,7 @@ struct UnitContent<'e> {
     expecting: &'e str,
 }
 
-impl<'de> Visitor<'de> for UnitContent<'_> {
+impl Visitor<'_> for UnitContent<'_> {
     type Value = ();
 
     fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
