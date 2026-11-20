@@ -65,6 +65,7 @@ use crate::records::{
         historical_context::AsmFaceBoundary,
     },
 };
+use std::collections::HashMap;
 
 /// Everything phase 2 reads.
 pub(super) struct DesignInputs<'a> {
@@ -451,7 +452,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         scan,
         &prereqs.design_record_headers,
     )?;
-    let (untyped_tracking_paths, profile_losses) =
+    let (untyped_tracking_paths, profile_losses, owner_sources) =
         extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
     losses.extend(profile_losses);
     losses.extend(
@@ -792,12 +793,6 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.asm_histories,
         &mut losses,
     );
-    let owner_sources = crate::design::decode::operands::compact_owner::source_selectors(
-        scan,
-        &design.design_construction_operand_groups,
-        &design.design_construction_operand_identities,
-        &prereqs.design_body_bindings,
-    )?;
     let _lineage_scopes = crate::history::compact_lineage::bind(
         crate::history::compact_lineage::Inputs {
             scopes: &design.design_parameter_scopes,
@@ -1574,7 +1569,7 @@ fn extend_related_design_records(
     timelines: &[DesignFeatureTimeline],
     geometry: &DesignGeometry<'_>,
     design: &mut DesignNative,
-) -> Result<(usize, Vec<LossNote>), CodecError> {
+) -> Result<(usize, Vec<LossNote>, HashMap<String, Vec<String>>), CodecError> {
     let indices = collect_related_indices(design.sketch_relations.iter().flat_map(|relation| {
         let scope = crate::ids::native_stream(&relation.id).unwrap_or(crate::ids::DEFAULT_STREAM);
         relation
@@ -2184,5 +2179,5 @@ fn extend_related_design_records(
         &design.design_edge_operands,
     );
     profile_losses.extend(edge_selection_notes);
-    Ok((untyped_tracking_paths, profile_losses))
+    Ok((untyped_tracking_paths, profile_losses, owner_sources))
 }
