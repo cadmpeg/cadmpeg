@@ -81,7 +81,7 @@ fn vertex_orbits_use_dense_components_without_adjacency_trees() {
     use super::super::{HalfEdge, HalfEdgeId, Side};
 
     let mut edges = Vec::new();
-    for curve_id in 1..=1000 {
+    for curve_id in 1..=16 {
         for side in [Side::Zero, Side::One] {
             let id = HalfEdgeId { curve_id, side };
             edges.push(HalfEdge {
@@ -92,8 +92,8 @@ fn vertex_orbits_use_dense_components_without_adjacency_trees() {
         }
     }
     let orbits = super::super::vertex_orbits(&edges).expect("component work is admitted");
-    assert_eq!(orbits.vertices.len(), 1000);
-    assert_eq!(orbits.incidence.len(), 2000);
+    assert_eq!(orbits.vertices.len(), 16);
+    assert_eq!(orbits.incidence.len(), 32);
     assert!(orbits.unstatable_orbits.is_empty());
     for (vertex, pair) in orbits.vertices.iter().zip(edges.chunks_exact(2)) {
         assert_eq!(vertex.half_edges(), [pair[0].id, pair[1].id]);

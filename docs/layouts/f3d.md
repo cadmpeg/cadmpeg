@@ -241,7 +241,7 @@ Parsed by:
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Ten zero bytes occupy scope offsets 11 through 20 |
 | 21 | 5 | `asset_reference` | `bytes[5]` | little | spec | A marked image-asset record reference occurs at offset 21 |
 | 26 | 6 | `asset_reference_zero_run` | `bytes[6]` | little | spec | with six trailing zero bytes |
-| 32 | 1 | `mapping_mode` | `u8` | little | spec | Mapping mode `0x60` at offset 32 |
+| 32 | 1 | `scope_code` | `u8` | little | spec | A u8 scope code occurs at offset 32 |
 | 33 | 5 | `target_group_reference` | `bytes[5]` | little | spec | A marked target-group reference occurs at offset 33 |
 | 38 | 6 | `target_reference_zero_run` | `bytes[6]` | little | spec | with six trailing zero bytes |
 
@@ -258,10 +258,10 @@ Parsed by:
 | 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | The extended Decal prefix stores nine zero bytes at offsets 11 through 19 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 20 | 4 | `extra_code` | `u32` | little | spec | u32 value `1` at offset 20 · value `1` |
 | 24 | 1 | `zero` | `u8` | little | spec | a zero byte at offset 24 · value `0` |
-| 25 | 5 | `asset_reference` | `bytes[5]` | little | spec | image-asset reference, mapping mode, and target-group reference occur at offsets 25, 36, and 37 |
+| 25 | 5 | `asset_reference` | `bytes[5]` | little | spec | image-asset reference, scope code, and target-group reference occur at offsets 25, 36, and 37 |
 | 30 | 6 | `asset_reference_zero_run` | `bytes[6]` | little | spec | Both references keep their six trailing zero bytes · value `[0, 0, 0, 0, 0, 0]` |
-| 36 | 1 | `mapping_mode` | `u8` | little | spec | image-asset reference, mapping mode, and target-group reference occur at offsets 25, 36, and 37 |
-| 37 | 5 | `target_group_reference` | `bytes[5]` | little | spec | image-asset reference, mapping mode, and target-group reference occur at offsets 25, 36, and 37 |
+| 36 | 1 | `scope_code` | `u8` | little | spec | image-asset reference, scope code, and target-group reference occur at offsets 25, 36, and 37 |
+| 37 | 5 | `target_group_reference` | `bytes[5]` | little | spec | image-asset reference, scope code, and target-group reference occur at offsets 25, 36, and 37 |
 | 42 | 6 | `target_reference_zero_run` | `bytes[6]` | little | spec | Both references keep their six trailing zero bytes · value `[0, 0, 0, 0, 0, 0]` |
 
 ## `design_decal_scope_typed_prefix`
@@ -276,7 +276,7 @@ Parsed by:
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The typed Decal prefix stores each reference as a 51-byte typed local reference |
 | 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Ten zero bytes occupy scope offsets 11 through 20 |
 | 21 | 51 | `asset_reference` | `bytes[51]` | little | spec | the image-asset reference at offset 21 has target type GUID |
-| 72 | 1 | `mapping_mode` | `u8` | little | spec | the mapping mode is at offset 72 |
+| 72 | 1 | `scope_code` | `u8` | little | spec | the scope code is at offset 72 |
 | 73 | 51 | `target_group_reference` | `bytes[51]` | little | spec | the target-group reference at offset 73 has target type GUID |
 
 ## `design_decal_scope_typed_extended_prefix`
@@ -292,9 +292,25 @@ Parsed by:
 | 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | The extended Decal prefix stores nine zero bytes at offsets 11 through 19 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 20 | 4 | `extra_code` | `u32` | little | spec | u32 value `1` at offset 20 · value `1` |
 | 24 | 1 | `zero` | `u8` | little | spec | a zero byte at offset 24 · value `0` |
-| 25 | 51 | `asset_reference` | `bytes[51]` | little | spec | its image-asset reference, mapping mode, and target-group reference occur at offsets 25, 76, and 77 |
-| 76 | 1 | `mapping_mode` | `u8` | little | spec | its image-asset reference, mapping mode, and target-group reference occur at offsets 25, 76, and 77 |
-| 77 | 51 | `target_group_reference` | `bytes[51]` | little | spec | its image-asset reference, mapping mode, and target-group reference occur at offsets 25, 76, and 77 |
+| 25 | 51 | `asset_reference` | `bytes[51]` | little | spec | its image-asset reference, scope code, and target-group reference occur at offsets 25, 76, and 77 |
+| 76 | 1 | `scope_code` | `u8` | little | spec | its image-asset reference, scope code, and target-group reference occur at offsets 25, 76, and 77 |
+| 77 | 51 | `target_group_reference` | `bytes[51]` | little | spec | its image-asset reference, scope code, and target-group reference occur at offsets 25, 76, and 77 |
+
+## `design_decal_placement_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 36 B
+
+Fixed prefix through the vertex count. The counted f32 pairs start at byte 36.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/decal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The image-asset record index also names a Decal placement record |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Ten zero bytes occupy placement offsets 11 through 20 |
+| 21 | 11 | `leading_reference` | `bytes[11]` | little | spec | a marked record reference occurs at offset 21 |
+| 32 | 4 | `vertex_count` | `u32` | little | spec | A u32 vertex count at offset 32 |
 
 ## `design_decal_image_asset_record`
 
@@ -469,7 +485,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 11 B
 
-This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0, 5 or 6.
+This trailer is relative to the end of the variable LP-UTF16 expression of a wide discriminated parameter with discriminator 0, 4, 5 or 6.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
@@ -3602,6 +3618,25 @@ Spec §3.1 · layout: byte offsets · size: 32 B
 | 26 | 4 | `operation` | `u32` | little | spec | the result-operation u32 at offset 26 |
 | 30 | 2 | `opaque_post_operation` | `bytes[2]` | little | spec | two opaque bytes at offsets 30 and 31 |
 
+## `legacy_extrude_sketch_profile_tail`
+
+Spec §3.1 · layout: byte offsets · size: 93 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 27 | 4 | `role` | `u32` | little | spec | stores the u32 profile role `0x41` at offset 27 · value `65` |
+| 57 | 11 | `empty_record_reference` | `bytes[11]` | little | spec | The first tail reference at offset 57 |
+| 68 | 2 | `zero_flags` | `bytes[2]` | little | spec | Two zero flag bytes start at offset 68 |
+
+Unstated regions:
+
+- `0..27` (27 B): The compact tail prefix precedes the profile role.
+- `31..57` (26 B): The repeated ordinal and its scalar precede the first tail reference.
+- `70..93` (23 B): The compact tail closes with the next record reference and owning scope reference.
+
 ## `sketch_profile_region_selection_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 40 B
@@ -5463,6 +5498,25 @@ Parsed by:
 Unstated regions:
 
 - `0..20` (20 B): The indexed header and the preceding scope envelope are outside this fixed prefix.
+
+## `legacy_class_330_symmetric_extrude_frame`
+
+Spec §3.1 · layout: byte offsets · size: 420 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/records/feature/scope.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 106 | 4 | `first_side_extent` | `u32` | little | spec | The two extent words are `[1, 0]` at offsets 106 and 110 |
+| 110 | 4 | `second_side_extent` | `u32` | little | spec | The two extent words are `[1, 0]` at offsets 106 and 110 |
+| 252 | 4 | `reference_count` | `u32` | little | spec | The reference count is at offset 252 · value `5` |
+
+Unstated regions:
+
+- `0..106` (106 B): The shifted prologue and local reference slots precede the extent words.
+- `114..252` (138 B): The remainder of the scope prefix precedes the ordered reference table.
+- `256..420` (164 B): The ordered references and common scope tail precede the paired header.
 
 ## `shifted_reference_aware_extrude_class_323_tail`
 
