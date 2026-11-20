@@ -1842,9 +1842,16 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             } else {
                 false
             };
+            // An empty label with no extra references is the 78-byte fixed
+            // tail byte for byte, so it reads as that tail whatever its epoch.
+            let named_form = if tail_length == named_tail::LEN {
+                ScopeTailForm::Fixed
+            } else {
+                ScopeTailForm::Named
+            };
             if named_tail
                 && named_candidate
-                    .replace((at, kind_end, tail_length, ScopeTailForm::Named))
+                    .replace((at, kind_end, tail_length, named_form))
                     .is_some()
             {
                 named_ambiguous = true;
@@ -2463,8 +2470,8 @@ fn exact_canvas_scope_tail(tail: &[u8], record_index: u32) -> bool {
 
 /// Largest repeated lane value of a named-scope lane block with a nonempty
 /// label: the high byte of the three descending 16-bit field targets. An empty
-/// label takes only the values zero and one with class word 252, because that
-/// tail is also the 78-byte fixed tail.
+/// label takes only the values zero and one with epoch 252; that match ranks
+/// the candidate, and the tail reads as the 78-byte fixed tail.
 const NAMED_LANE_VALUE_MAX: u64 = 0xff;
 /// Three-digit dynamic class numbers admitted for the two equal class words of
 /// a named-scope lane block.
