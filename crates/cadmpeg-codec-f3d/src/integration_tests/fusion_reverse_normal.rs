@@ -114,15 +114,15 @@ fn reverse_normals(ir: &Value) -> Vec<&Value> {
     features
 }
 
-/// The historical bodies that a Reverse Normal feature reverses.
+/// The model bodies that a Reverse Normal feature reverses.
 fn reversed_bodies(feature: &Value) -> Vec<&str> {
     let definition = &feature["definition"]["value"];
     assert_eq!(definition["kind"], "reverse_shape", "{definition}");
     let source = &definition["value"]["source"];
-    assert_eq!(source["kind"], "historical", "{source}");
+    assert_eq!(source["kind"], "resolved", "{source}");
     source["value"]["bodies"]
         .as_array()
-        .expect("historical bodies")
+        .expect("resolved bodies")
         .iter()
         .filter_map(Value::as_str)
         .collect()
@@ -181,17 +181,19 @@ fn each_linked_scope_of_a_two_component_reverse_normal_reverses_its_own_body() {
         features[0]["product_definition"],
         features[1]["product_definition"]
     );
+    let model_bodies = ir["geometry"]["bodies"]
+        .as_array()
+        .expect("bodies")
+        .iter()
+        .filter_map(|body| body["id"].as_str())
+        .collect::<std::collections::HashSet<_>>();
+    let mut reversed = std::collections::HashSet::new();
     for feature in features {
         let bodies = reversed_bodies(feature);
         assert_eq!(bodies.len(), 1, "{feature}");
-        // The reversed body is a body of the feature's own input state.
-        let state = feature["definition"]["value"]["value"]["source"]["value"]["state"]
-            .as_str()
-            .expect("input state");
-        assert!(
-            bodies[0].starts_with(&state.replace(":state#", ":body#")),
-            "{state} {bodies:?}"
-        );
+        // Each linked scope reverses a different model body.
+        assert!(model_bodies.contains(bodies[0]), "{bodies:?}");
+        assert!(reversed.insert(bodies[0]), "{bodies:?}");
     }
 }
 
