@@ -120,15 +120,21 @@ fn labeled_77_byte_tail_reads_its_preceding_state() {
 }
 
 #[test]
-fn labeled_tail_admits_any_record_index_epoch_and_flag_state() {
+fn labeled_tail_admits_any_record_index_and_epoch_and_keeps_zero_flags() {
     for long_form in [true, false] {
         assert_labeled_with_previous(&PlainTail {
             long_form,
             references: [0x0001_0100, 0x0002_00ff, 0x0001_0000],
             epochs: (64, 89),
-            flags: (1, 1),
+            flags: (0, 0),
             previous: 70_000,
         });
+        let (nonzero, _) = plain_labeled_frame(&PlainTail {
+            long_form,
+            flags: (1, 0),
+            ..PlainTail::default()
+        });
+        assert!(parse_plain(&nonzero).is_none());
     }
 }
 
@@ -180,9 +186,11 @@ fn labeled_scope_admits_its_shifted_preceding_state_offset_or_none() {
     let scope = parse_plain(&bytes).expect("labeled scope");
     let offset = scope.previous_history_state_id_offset().unwrap();
     let mut unshifted = scope.clone();
-    assert!(unshifted
-        .try_edit(|draft| draft.previous_history_state_id_offset = Some(offset - 1))
-        .is_err());
+    assert!(
+        unshifted
+            .try_edit(|draft| draft.previous_history_state_id_offset = Some(offset - 1))
+            .is_err()
+    );
     let mut absent = scope;
     absent
         .try_edit(|draft| {

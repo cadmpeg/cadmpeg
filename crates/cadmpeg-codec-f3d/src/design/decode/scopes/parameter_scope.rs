@@ -10,8 +10,8 @@ use super::assembly_alignment::exact_assembly_alignment_with_types;
 use super::axial_assembly::bind_axial_assembly_operand_targets;
 use super::axial_assembly::bind_joint_origin_frames_from_assemblies;
 use super::base_feature::{
-    exact_base_feature_construction, timeline_body_owners, timeline_owned_base_feature,
-    TimelineBodyOwner,
+    TimelineBodyOwner, exact_base_feature_construction, timeline_body_owners,
+    timeline_owned_base_feature,
 };
 use super::chamfer_set::chamfer_set_list;
 use super::coil::bind_coil_extent_from_parameters;
@@ -68,13 +68,13 @@ use super::work_geometry::{
 };
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
+use crate::design::DesignFeatureFamily;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
 use crate::design::decode::canvas::typed_canvas_reference;
 use crate::design::decode::operands::RecordFrame;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::design_record_id;
 use crate::design::design_feature_family;
-use crate::design::DesignFeatureFamily;
 use crate::ids;
 use crate::ids::native_stream;
 use crate::layout::canvas_scope_tail_98 as canvas_tail;
@@ -88,9 +88,9 @@ use crate::records::feature::coil;
 use crate::records::feature::direct_face;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
+use cadmpeg_core::CodecError;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 use std::collections::{HashMap, HashSet};
 
 /// Design records that parameter-scope decoding reads.
@@ -2556,7 +2556,7 @@ fn named_scope_tail(bytes: &[u8], kind_end: usize, paired_at: usize) -> Option<N
         .checked_add(named_tail::SECOND_REFERENCE - named_tail::SECOND_EVALUATION_EPOCH)?;
     named_scope_reference(bytes, &mut cursor)?.into_local()?;
     let flags = named_tail::THIRD_REFERENCE - named_tail::LANE_FLAGS;
-    let flag = |at: usize| bytes.get(at).is_some_and(|flag| *flag <= 1);
+    let flag = |at: usize| bytes.get(at) == Some(&0);
     let close = |mut at: usize| {
         named_scope_reference(bytes, &mut at)?.into_local()?;
         let closing = named_scope_reference(bytes, &mut at)?.into_local();
