@@ -277,9 +277,9 @@ impl BaseFeaturePlan<'_> {
         if let Some(item) = &indices.item {
             writer.item(&mut out, item)?;
         }
-        writer.components(&mut out);
+        writer.components(&mut out)?;
         writer.origin(&mut out);
-        writer.collection(&mut out, &parameter_indices);
+        writer.collection(&mut out, &parameter_indices)?;
         writer.body_references(&mut out)?;
         Ok((parameter_bytes, out, residual_losses(&indices, &bodies)))
     }
@@ -587,7 +587,7 @@ impl Writer<'_> {
             false,
             &[],
             item.result_owner,
-        );
+        )?;
 
         out.record(&classes.tracked_results, item.tracked_results)
             .zeros(10)
@@ -617,20 +617,20 @@ impl Writer<'_> {
             true,
             &[indices.component, item.scope],
             item.scope,
-        );
+        )?;
         Ok(())
     }
 
     /// The owner collection, the component record and the records the
     /// timeline context names.
-    fn components(&self, out: &mut DesignRecords) {
+    fn components(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
         let (indices, classes) = (self.indices, self.classes);
         let members = indices.members();
         out.record(&classes.owner_collection, indices.owner_collection)
             .zeros(10)
             .header(&classes.collection_base, indices.owner_collection)
             .zeros(8)
-            .u32(count_small(members.len()));
+            .u32(count(members.len())?);
         for member in &members {
             out.reference(*member);
         }
@@ -654,7 +654,7 @@ impl Writer<'_> {
             true,
             &[],
             indices.component,
-        );
+        )?;
 
         out.record(&classes.component_link, indices.component_link)
             .zeros(22)
@@ -674,7 +674,7 @@ impl Writer<'_> {
             .zeros(10)
             .reference(indices.context)
             .byte(1)
-            .u32(count_small(members.len()));
+            .u32(count(members.len())?);
         for member in &members {
             out.reference(*member);
         }
@@ -715,6 +715,7 @@ impl Writer<'_> {
             }
         }
         out.u32(0).reference(indices.context);
+        Ok(())
     }
 
     /// The origin container and the records it names.
@@ -742,9 +743,9 @@ impl Writer<'_> {
 
     /// The parameter collection, its companion, and the component
     /// aggregate.
-    fn collection(&self, out: &mut DesignRecords, parameters: &[u32]) {
+    fn collection(&self, out: &mut DesignRecords, parameters: &[u32]) -> Result<(), CodecError> {
         let (indices, classes) = (self.indices, self.classes);
-        let parameter_count = count_small(parameters.len());
+        let parameter_count = count(parameters.len())?;
         out.record(&classes.collection, indices.collection)
             .zeros(19)
             .u32(parameter_count)
@@ -762,6 +763,7 @@ impl Writer<'_> {
             .reference(indices.collection)
             .zeros(9);
         out.record(&classes.aggregate, indices.aggregate);
+        Ok(())
     }
 
     /// Each result body's design and parameter body-reference records, each
@@ -803,17 +805,18 @@ fn timestamp_table(
     table: bool,
     entries: &[u32],
     owner: u32,
-) {
+) -> Result<(), CodecError> {
     let prefix = u8::from(table);
     out.record(class, record)
         .zeros(14)
         .byte(prefix)
         .byte(prefix)
-        .u32(count_small(entries.len()));
+        .u32(count(entries.len())?);
     for entry in entries.iter().chain([&owner]) {
         out.reference(*entry).u64(0);
     }
     out.zeros(8);
+    Ok(())
 }
 
 /// One dependency-table entry with one edge.
@@ -823,11 +826,6 @@ fn dependency(out: &mut DesignRecords, record: u32, edge: u32, flag: u32) {
 
 fn count(length: usize) -> Result<u32, CodecError> {
     u32::try_from(length).map_err(|_| CodecError::NotImplemented("Design run exceeds u32".into()))
-}
-
-/// The length of a run the writer bounds itself.
-fn count_small(length: usize) -> u32 {
-    u32::try_from(length).unwrap_or(u32::MAX)
 }
 
 /// The records whose bytes the specification does not state in full.
