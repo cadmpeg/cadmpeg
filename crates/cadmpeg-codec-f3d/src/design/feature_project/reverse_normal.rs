@@ -2,7 +2,7 @@
 
 use super::{native_stream, single_operand_group};
 use crate::loss::F3dLossCode;
-use crate::records::entity_header::SegmentType;
+use crate::records::entity_header::{DesignFeatureTimeline, SegmentType};
 use crate::records::feature::path_features::pipe::BODY_GUID;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::topology::construction::DesignConstructionOperandGroup;
@@ -152,6 +152,67 @@ pub(crate) fn unplaced_linked_scopes<'a>(
                 scope_id: scope.id.clone(),
                 link: link.to_owned(),
                 shared: placed_links.contains(&(stream_of(scope), link)),
+            })
+        })
+        .collect()
+}
+
+/// A placed linked Reverse Normal scope that the timeline does not name and
+/// that shares its timeline item with another such scope.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RecordOrderedLinkedScope {
+    pub(crate) scope_id: String,
+    pub(crate) link: String,
+}
+
+/// The linked scopes that take their timeline position by record order, in
+/// scope order: the placed linked scopes that are not timeline items, where
+/// a timeline item carries their link and two or more of them share it.
+pub(crate) fn record_ordered_linked_scopes<'a>(
+    scopes: &'a [DesignParameterScope],
+    timelines: &[DesignFeatureTimeline],
+    ordinals: &std::collections::HashMap<(&'a str, u32), u64>,
+) -> Vec<RecordOrderedLinkedScope> {
+    let stream_of = |id: &'a str| native_stream(id).unwrap_or(crate::ids::DEFAULT_STREAM);
+    let items = timelines
+        .iter()
+        .flat_map(|timeline| {
+            let stream = native_stream(timeline.id()).unwrap_or(crate::ids::DEFAULT_STREAM);
+            timeline
+                .frame()
+                .items()
+                .iter()
+                .map(move |item| (stream, item.value))
+        })
+        .collect::<std::collections::HashSet<_>>();
+    let is_item = |scope: &'a DesignParameterScope| {
+        items.contains(&(stream_of(&scope.id), u64::from(scope.record_index)))
+    };
+    let item_links = scopes
+        .iter()
+        .filter(|scope| is_item(scope))
+        .filter_map(|scope| Some((stream_of(&scope.id), timeline_link(scope)?)))
+        .collect::<std::collections::HashSet<_>>();
+    let follower = |scope: &'a DesignParameterScope| {
+        let key = (stream_of(&scope.id), timeline_link(scope)?);
+        (ordinals.contains_key(&(key.0, scope.record_index))
+            && !is_item(scope)
+            && item_links.contains(&key))
+        .then_some(key)
+    };
+    let mut followers = std::collections::HashMap::<_, usize>::new();
+    for key in scopes.iter().filter_map(follower) {
+        *followers.entry(key).or_default() += 1;
+    }
+    scopes
+        .iter()
+        .filter_map(|scope| {
+            let key = follower(scope)?;
+            (followers.get(&key).copied().unwrap_or_default() > 1).then(|| {
+                RecordOrderedLinkedScope {
+                    scope_id: scope.id.clone(),
+                    link: key.1.to_owned(),
+                }
             })
         })
         .collect()

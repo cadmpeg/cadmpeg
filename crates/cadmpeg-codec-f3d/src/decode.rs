@@ -403,6 +403,8 @@ struct DesignProjectionGaps {
     unrepaired_lost_edge_references: usize,
     unplaced_linked_scopes:
         Vec<crate::design::feature_project::reverse_normal::UnplacedLinkedScope>,
+    record_ordered_linked_scopes:
+        Vec<crate::design::feature_project::reverse_normal::RecordOrderedLinkedScope>,
 }
 
 /// Returns whether a face selection supplies the operation's neutral faces.
@@ -1480,8 +1482,19 @@ fn design_projection_gaps(
             )
         })
         .unwrap_or_default();
+    let record_ordered_linked_scopes = authored_scopes
+        .as_ref()
+        .map(|ordinals| {
+            crate::design::feature_project::reverse_normal::record_ordered_linked_scopes(
+                &native.design_parameter_scopes,
+                &native.design_feature_timelines,
+                ordinals,
+            )
+        })
+        .unwrap_or_default();
     let mut gaps = DesignProjectionGaps {
         unplaced_linked_scopes,
+        record_ordered_linked_scopes,
         assumed_reference_image_flags: native
             .design_canvas_images
             .iter()
@@ -2743,6 +2756,16 @@ fn report_design_projection_gaps(
             format_args!(
                 "Reverse Normal scope {} with link {} takes no timeline position: {reason}.",
                 unplaced.scope_id, unplaced.link
+            ),
+        )?;
+    }
+    for ordered in &gaps.record_ordered_linked_scopes {
+        push(
+            F3dLossCode::FeatureReverseNormalLinkOrderAssumed,
+            1,
+            format_args!(
+                "Reverse Normal scope {} with link {} takes its timeline position by record order among the linked scopes of its timeline item.",
+                ordered.scope_id, ordered.link
             ),
         )?;
     }

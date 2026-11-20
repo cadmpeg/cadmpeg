@@ -200,13 +200,24 @@ fn linked_scopes_take_the_timeline_positions_after_their_timeline_item() {
         linked(300, Some(LINK)),
         linked(400, Some(OTHER_LINK)),
     ];
-    let mut ordinals = authored_scope_ordinals(&scopes, &[timeline(&[100, 200])])
-        .unwrap()
-        .into_iter()
-        .map(|((_, record_index), ordinal)| (record_index, ordinal))
+    let timelines = [timeline(&[100, 200])];
+    let authored = authored_scope_ordinals(&scopes, &timelines).unwrap();
+    let mut ordinals = authored
+        .iter()
+        .map(|((_, record_index), ordinal)| (*record_index, *ordinal))
         .collect::<Vec<_>>();
     ordinals.sort_unstable();
     assert_eq!(ordinals, [(100, 0), (200, 3), (250, 1), (300, 2)]);
+    let ordered = crate::design::feature_project::reverse_normal::record_ordered_linked_scopes(
+        &scopes, &timelines, &authored,
+    );
+    assert_eq!(
+        ordered
+            .iter()
+            .map(|scope| (scope.scope_id.as_str(), scope.link.as_str()))
+            .collect::<Vec<_>>(),
+        [(scopes[2].id.as_str(), LINK), (scopes[3].id.as_str(), LINK),]
+    );
 }
 
 #[test]
@@ -239,5 +250,24 @@ fn a_link_that_two_timeline_items_carry_leaves_its_followers_unplaced() {
             (scopes[3].id.as_str(), LINK, true),
             (scopes[4].id.as_str(), OTHER_LINK, false),
         ]
+    );
+}
+
+#[test]
+fn placed_linked_scopes_without_a_timeline_item_for_their_link_are_not_record_ordered() {
+    const LINK: &str = "180f14e0-154e-434b-acff-8bfbd101803c";
+    let scopes = [linked(100, Some(LINK)), linked(200, Some(LINK))];
+    let ordinals: std::collections::HashMap<(&str, u32), u64> = scopes
+        .iter()
+        .zip(0..)
+        .map(|(scope, ordinal)| ((STREAM, scope.record_index), ordinal))
+        .collect();
+    assert!(
+        crate::design::feature_project::reverse_normal::record_ordered_linked_scopes(
+            &scopes,
+            &[],
+            &ordinals
+        )
+        .is_empty()
     );
 }

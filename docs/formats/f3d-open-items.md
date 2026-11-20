@@ -775,6 +775,18 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Note.** When several timeline items carry one link GUID, the decoder leaves the linked scopes that are not timeline items without a timeline position and reports `feature.reverse-normal-link-shared` for each. A linked scope whose link GUID no timeline item carries takes no position and is reported as `feature.reverse-normal-link-unplaced`.
 
+### DR-894. Order of the linked Reverse Normal scopes after their timeline item
+
+**Question.** In what order do the linked scopes of a `Reverse Normal` timeline item that the timeline does not name follow the named scope?
+
+**Known.** `f3d.md` §3.1 "A `Reverse Normal` scope reverses" gives the timeline positions directly after the named scope to the other linked scopes of the item. Each linked scope selects the bodies of its own component.
+
+**Need.** A save with a Reverse Normal of three or more components, and the order of the linked scopes that Fusion applies or shows.
+
+**Conflict.** None.
+
+**Note.** The decoder places these scopes in record order and reports `feature.reverse-normal-link-order-assumed` for each scope when an item has two or more of them.
+
 ### DR-308. Canvas flag byte before the second boundary
 
 **Question.** What does the flag byte before the second boundary segment of a Canvas geometry record select, and does a zero value change the image placement or display?

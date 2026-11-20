@@ -255,3 +255,30 @@ fn the_linked_scopes_of_a_two_plus_one_reverse_normal_charge_the_inferred_histor
     ));
     assert!(inferred);
 }
+
+#[test]
+fn each_linked_scope_after_another_follower_charges_the_assumed_order() {
+    for (bytes, count) in [
+        (
+            &include_bytes!("../../../../corpus/f3d/reverse_normal_two_plus_one.f3d")[..],
+            0,
+        ),
+        (
+            &include_bytes!("../../../../corpus/f3d/reverse_normal_three_components.f3d")[..],
+            2,
+        ),
+    ] {
+        let result = F3dCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode the corpus file");
+        assert_eq!(
+            result
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code == F3dLossCode::FeatureReverseNormalLinkOrderAssumed.kind())
+                .count(),
+            count
+        );
+    }
+}
