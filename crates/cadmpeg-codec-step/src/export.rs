@@ -2268,6 +2268,7 @@ impl<'a> Builder<'a> {
         let curve_bounded = |face: &&Face| {
             face.sense == Sense::Forward
                 && face.name.is_none()
+                && !self.implicit_outer_bounds.contains_key(face.id.as_str())
                 && self.bounded_by_its_boundaries(face)
                 && !self.pmi_targets_topology_of(face)
         };

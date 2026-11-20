@@ -789,3 +789,105 @@ fn curve_bounded_faces_that_share_an_edge_keep_the_sheet_a_shell() {
         .count();
     assert_eq!(shared, 1, "{:#?}", geometry.coedges);
 }
+
+/// The implicit-outer sheet of `support`, with its four hole lines as the
+/// segments of one composite boundary and no coedge pcurves, so its face
+/// pairs its one loop with that boundary.
+fn implicit_outer_composite_sheet(support: cadmpeg_ir::geometry::SolvedSurfaceGeometry) -> CadIr {
+    use cadmpeg_ir::geometry::{
+        CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, Curve,
+        CurveGeometry, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    };
+    use cadmpeg_ir::ids::CurveId;
+    use cadmpeg_ir::topology::Sense;
+    let mut ir = crate::test_support::curve_bounded::implicit_outer_sheet(support, Sense::Forward);
+    let composite = CurveId::mint("test:surface-set:curve#hole").unwrap();
+    let [procedural] = ir.geometry.procedural_surfaces.as_mut_slice() else {
+        panic!("one procedural surface");
+    };
+    let segments = procedural.edit_definition(|definition| {
+        let ProceduralSurfaceDefinition::CurveBounded {
+            boundaries,
+            boundary_pcurves,
+            ..
+        } = definition
+        else {
+            panic!("a curve-bounded surface: {definition:#?}");
+        };
+        boundary_pcurves.clear();
+        std::mem::replace(boundaries, vec![composite.clone()])
+    });
+    ir.geometry.curves.push(Curve {
+        parameter_range: None,
+        id: composite,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+            segments: CompositeCurveSegments::try_from(
+                segments
+                    .into_iter()
+                    .map(|curve| CompositeCurveSegment {
+                        curve,
+                        same_sense: true,
+                        transition: CompositeCurveTransition::Continuous,
+                    })
+                    .collect::<Vec<_>>(),
+            )
+            .unwrap(),
+            self_intersect: None,
+        }),
+        source_object: None,
+        native_ref: None,
+    });
+    for coedge in &mut ir.geometry.coedges {
+        coedge.pcurves.clear();
+    }
+    ir.geometry.pcurves.clear();
+    ir
+}
+
+/// A set member states its implicit outer boundary as the support's
+/// natural boundary, which the writer states for a face only through the
+/// face's own bounds. A face whose outer boundary is implicit keeps the
+/// sheet a shell of faces: on an unbounded plane the writer omits the face
+/// with a loss, and on a NURBS patch it writes the parameter rectangle as
+/// the face's outer bound.
+#[test]
+fn an_implicit_outer_curve_bounded_face_keeps_the_sheet_a_shell() {
+    use crate::loss::StepLossCode;
+    use crate::test_support::curve_bounded::{unbounded_plane, unit_square_patch};
+    let write = |ir: &CadIr| {
+        let mut output = Vec::new();
+        let report = write_step(
+            ir,
+            &mut output,
+            StepSchema::Ap214,
+            &StepWriteOptions::default(),
+        )
+        .unwrap();
+        (String::from_utf8(output).unwrap(), report.losses)
+    };
+
+    let (text, losses) = write(&implicit_outer_composite_sheet(unbounded_plane()));
+    assert_eq!(text.matches("= GEOMETRIC_SET(").count(), 0, "{text}");
+    assert_eq!(text.matches("= ADVANCED_FACE(").count(), 0, "{text}");
+    assert!(
+        losses.iter().any(|loss| {
+            loss.code == StepLossCode::FaceImplicitOuterBoundUnwritable.kind()
+                && loss.severity == cadmpeg_ir::report::Severity::Error
+                && loss.message.contains("the support is unbounded")
+        }),
+        "{losses:#?}"
+    );
+
+    let (text, losses) = write(&implicit_outer_composite_sheet(unit_square_patch()));
+    assert_eq!(text.matches("= GEOMETRIC_SET(").count(), 0, "{text}");
+    assert_eq!(text.matches("= OPEN_SHELL(").count(), 1, "{text}");
+    assert_eq!(text.matches("= ADVANCED_FACE(").count(), 1, "{text}");
+    assert_eq!(text.matches("= FACE_OUTER_BOUND(").count(), 1, "{text}");
+    assert_eq!(text.matches("= FACE_BOUND(").count(), 1, "{text}");
+    assert!(
+        !losses
+            .iter()
+            .any(|loss| loss.code == StepLossCode::FaceImplicitOuterBoundUnwritable.kind()),
+        "{losses:#?}"
+    );
+}
