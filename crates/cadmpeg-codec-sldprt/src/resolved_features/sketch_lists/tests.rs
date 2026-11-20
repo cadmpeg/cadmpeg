@@ -548,3 +548,164 @@ fn a_curve_after_a_projected_record_belongs_to_the_preceding_sketch() {
         })
     );
 }
+
+/// The reading of the record at `offset` against the chord from `start` to
+/// `end`, in sketch millimetres.
+fn chord(payload: &[u8], offset: usize, start: Point2, end: Point2) -> Option<ChordRecord> {
+    let lists = SketchRecordLists::new(payload);
+    chord_record(payload, &lists, offset, [start, end], &millimetres)
+}
+
+#[test]
+fn a_sensed_record_between_the_chord_endpoints_is_its_arc_in_either_order() {
+    let sample = sample();
+    let arc = geometry(&sample, sample.arc).expect("arc record did not read");
+    let (first, second) = (Point2::new(10.0, 0.0), Point2::new(0.0, 10.0));
+    assert_eq!(
+        chord(&sample.payload, sample.arc, first, second),
+        Some(ChordRecord::Arc(arc.clone()))
+    );
+    assert_eq!(
+        chord(&sample.payload, sample.arc, second, first),
+        Some(ChordRecord::Arc(arc))
+    );
+}
+
+#[test]
+fn a_sensed_record_between_other_points_conflicts_with_the_chord() {
+    let sample = sample();
+    assert_eq!(
+        chord(
+            &sample.payload,
+            sample.arc,
+            Point2::new(10.0, 0.0),
+            Point2::new(20.0, 0.0)
+        ),
+        Some(ChordRecord::Conflict(ChordConflict::OtherEndpoints))
+    );
+}
+
+/// A projection that stretches the sketch's v axis by `stretch` moves the
+/// record's end point record off the circle through its start, so the arc
+/// ends on the chord only when the stretch moves that end by at most the
+/// linear resolution.
+#[test]
+fn a_sensed_record_whose_arc_misses_a_chord_endpoint_conflicts_with_the_chord() {
+    let sample = sample();
+    let reading = |stretch: f64| {
+        let project = |[u, v]: [f64; 2]| Some(Point2::new(u * 1000.0, v * 1000.0 * stretch));
+        let chord = [Point2::new(10.0, 0.0), Point2::new(0.0, 10.0 * stretch)];
+        let lists = SketchRecordLists::new(&sample.payload);
+        chord_record(&sample.payload, &lists, sample.arc, chord, &project)
+    };
+    let within = 1.0 + 0.5 * LINEAR_RESOLUTION_MM / 10.0;
+    assert!(matches!(reading(within), Some(ChordRecord::Arc(_))));
+    for beyond in [1.0 + 2.0 * LINEAR_RESOLUTION_MM / 10.0, 2.0] {
+        assert_eq!(
+            reading(beyond),
+            Some(ChordRecord::Conflict(ChordConflict::MissesChord))
+        );
+    }
+    assert!(ChordConflict::MissesChord
+        .to_string()
+        .contains("arc misses the line's endpoints"));
+}
+
+#[test]
+fn a_full_circle_record_conflicts_and_a_line_record_leaves_the_chord() {
+    let sample = sample();
+    let (first, second) = (Point2::new(10.0, 0.0), Point2::new(0.0, 10.0));
+    assert_eq!(
+        chord(&sample.payload, sample.circle, first, second),
+        Some(ChordRecord::Conflict(ChordConflict::FullCircle))
+    );
+    assert_eq!(chord(&sample.payload, sample.line, first, second), None);
+}
+
+#[test]
+fn unequal_radii_and_an_index_past_the_points_conflict_with_the_chord() {
+    let mut payload = vec![0; 7];
+    header(&mut payload, 3);
+    point(&mut payload, 0.0, 0.0);
+    point(&mut payload, 0.01, 0.0);
+    point(&mut payload, 0.0, 0.02);
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    let unequal = curve(&mut payload, 1, 2, -1, Some(0));
+    let past = curve(&mut payload, 1, 5, 1, Some(0));
+    let (first, second) = (Point2::new(10.0, 0.0), Point2::new(0.0, 20.0));
+    assert_eq!(
+        chord(&payload, unequal, first, second),
+        Some(ChordRecord::Conflict(ChordConflict::NoArc))
+    );
+    assert_eq!(
+        chord(&payload, past, first, second),
+        Some(ChordRecord::Conflict(ChordConflict::PointUnread))
+    );
+}
+
+/// The chord from the first to the second endpoint point record of
+/// [`sample`], in sketch millimetres.
+fn sample_chord() -> [Point2; 2] {
+    [Point2::new(10.0, 0.0), Point2::new(0.0, 10.0)]
+}
+
+#[test]
+fn an_arc_sense_with_selector_bit_zero_set_conflicts_with_the_chord() {
+    let mut sample = sample();
+    sample.payload[sample.arc + SELECTOR] = 5;
+    let [first, second] = sample_chord();
+    let conflict = ChordConflict::OpenSelector;
+    assert_eq!(
+        chord(&sample.payload, sample.arc, first, second),
+        Some(ChordRecord::Conflict(conflict))
+    );
+    assert!(conflict.to_string().contains("EV-27"));
+}
+
+#[test]
+fn an_arc_sense_without_the_minus_two_cells_is_an_ellipse_that_conflicts_with_the_chord() {
+    let (mut payload, arc) = quarter_points_arc(2, 1, -1);
+    let cells = arc + CURRENT_FIELDS + CENTER + 2;
+    payload[cells..cells + 4].copy_from_slice(&3u32.to_le_bytes());
+    let conflict = ChordConflict::Ellipse;
+    assert_eq!(
+        chord(
+            &payload,
+            arc,
+            Point2::new(0.0, 10.0),
+            Point2::new(-10.0, 0.0)
+        ),
+        Some(ChordRecord::Conflict(conflict))
+    );
+    assert!(conflict.to_string().contains("ellipse"));
+}
+
+#[test]
+fn a_sense_word_that_is_neither_a_line_nor_an_arc_conflicts_with_the_chord() {
+    let mut sample = sample();
+    let sense = sample.arc + CURRENT_FIELDS + SENSE;
+    sample.payload[sense..sense + 4].copy_from_slice(&2i32.to_le_bytes());
+    let [first, second] = sample_chord();
+    let conflict = ChordConflict::OtherSense(2);
+    assert_eq!(
+        chord(&sample.payload, sample.arc, first, second),
+        Some(ChordRecord::Conflict(conflict))
+    );
+    assert!(conflict.to_string().contains("sense word 2"));
+}
+
+/// A line that a reading other than [`chord_record`] gives conflicts with
+/// every arc record, the full circle included, and with no line record.
+#[test]
+fn an_arc_record_conflicts_with_a_line_no_chord_test_compared() {
+    let sample = sample();
+    let lists = SketchRecordLists::new(&sample.payload);
+    let conflict = |offset| unchecked_record_conflict(&sample.payload, &lists, offset);
+    assert_eq!(conflict(sample.arc), Some(ChordConflict::Unchecked));
+    assert_eq!(conflict(sample.circle), Some(ChordConflict::Unchecked));
+    assert_eq!(conflict(sample.line), None);
+    assert_eq!(conflict(sample.points[0]), None);
+    assert!(ChordConflict::Unchecked
+        .to_string()
+        .contains("does not compare the record"));
+}

@@ -1082,6 +1082,14 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Need.** The field or list that gives such a record's curve, checked against the faces its feature produces.
 
+### EV-28. Sensed curve records whose endpoints differ from their marker endpoints
+
+**Question.** Which endpoints does a sketch curve record with sense `1` or `-1` join when its point-record positions and the `sldprt.md` §2 marker rules select different points?
+
+**Known.** A curve marker that the §2 rules read as a straight line is an arc when its framed `sgSketch` curve record has selector bit 0 clear, sense `1` or `-1`, and point records at the marker's two endpoints (`sldprt.md` §2 "A curve marker that these rules read as a straight line"). In other sensed records the endpoint indices select point records at other positions, or equal indices select a full circle, or the selected endpoints lie at different distances from the selected centre. In others the endpoint point records stand at the marker endpoints, and the arc about the centre point record, placed in the sketch, ends off one marker endpoint by more than the linear resolution. Placed through the point records, the arc of such a record can coincide with a circular B-rep edge of its feature that has the record's radius and sweep. The line that the §2 rules give meets the sketch's other curves at both ends more often than that arc. The decoder keeps the line and charges `sketch.arc-record-conflict` with the reason.
+
+**Need.** The field or index domain that relates these records' point-record positions to the §2 marker roster, checked against the edges and side faces their features produce.
+
 ### EV-29. Endpoints of sketch curve lines with an identifier trailer
 
 **Question.** What do the endpoint values of an `sgSketch` curve-record line with an identifier trailer select?
@@ -1091,6 +1099,14 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 **Need.** For both trailer forms, the point pairs that each reading selects, compared with the B-rep line edges of the feature that consumes the sketch.
 
 **Conflict.** For one record, the §2 reading and the point-record positions can select different point pairs.
+
+### EV-30. Sketch curve records of curve type 2
+
+**Question.** What does curve type `2` select in an `sgSketch` curve record, and how does the decoder type its geometry?
+
+**Known.** `sldprt.md` §2.3 states the curve types `0`, `0x40`, `1` and `0xffff`. Records of curve type `2` occur, and each uses the legacy record layout. The decoder keeps the line another pass drew on such a marker, and charges `sketch.arc-record-conflict` with the reason that names the unknown sense word.
+
+**Need.** For each curve-type-2 record, its point records and fields against the B-rep edges of the feature that consumes the sketch.
 
 ### EV-24. Bytes after the last top-level object
 

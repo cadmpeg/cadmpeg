@@ -9,6 +9,11 @@
 //! selects a line, a counterclockwise arc or a clockwise arc.
 
 use super::SKETCH_ANGLE_TOLERANCE;
+use crate::brep::graph::LINEAR_RESOLUTION_MM;
+use crate::layout::{
+    sketch_arc_record as arc, sketch_arc_record_legacy as legacy_arc, sketch_line_record as line,
+    sketch_record_head as head,
+};
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::scalar::{Angle, Length};
@@ -33,23 +38,27 @@ const SKETCH_HEADER_LEN: usize = 14;
 /// The largest point count read as an `sgSketch` header.
 const MAX_SKETCH_POINTS: usize = 4096;
 /// Where a record's fields start after a head with its eight zero bytes.
-const CURRENT_FIELDS: usize = 64;
+const CURRENT_FIELDS: usize = arc::START;
 /// Where a record's fields start in files before `swVersion` 11000.
-const LEGACY_FIELDS: usize = 56;
+const LEGACY_FIELDS: usize = legacy_arc::START;
 /// Where a record's u16 selector stands.
-const SELECTOR: usize = 37;
+const SELECTOR: usize = head::SELECTOR;
 /// The selector bit of the curve records of open item EV-27.
 const SELECTOR_OPEN_BIT: u16 = 1;
 /// The selectors of the curve records that [`ListedReading::Roster`] reads.
 const ROSTER_SELECTORS: [u16; 2] = [4, 12];
 /// Where a current-layout line record stores its trailer u32.
-const LINE_TRAILER: usize = 84;
+const LINE_TRAILER: usize = line::TRAILER;
 /// Where a current-layout line record stores its identity.
-const LINE_IDENTITY: usize = 88;
+const LINE_IDENTITY: usize = line::RECORD_ID;
+/// Where a curve record's f64 `-1` stands after its fields start.
+const MINUS_ONE: usize = arc::MINUS_ONE - arc::START;
 /// Where a curve record's sense word stands after its fields start.
-const SENSE: usize = 16;
+const SENSE: usize = arc::SENSE - arc::START;
 /// Where an arc record's centre index stands after its fields start.
-const CENTER: usize = 20;
+const CENTER: usize = arc::CENTER - arc::START;
+/// Where an arc record's four i32 `-2` start after its fields start.
+const MINUS_TWO: usize = arc::MINUS_TWO - arc::START;
 /// The sense word of a counterclockwise arc.
 const COUNTERCLOCKWISE: i32 = 1;
 /// The sense word of a clockwise arc.
@@ -251,15 +260,15 @@ fn record_head(payload: &[u8], offset: usize) -> bool {
         let start = offset.checked_add(start)?;
         payload.get(start..start.checked_add(len)?)
     };
-    matches!(at(2, 2), Some([0x1f | 0x07, 0x00]))
-        && at(13, 4) == Some(&F32_MINUS_ONE[..])
-        && at(31, 4) == Some(&F32_MINUS_ONE[..])
+    matches!(at(head::SCHEMA, 2), Some([0x1f | 0x07, 0x00]))
+        && at(head::ATTRIBUTE_MINUS_ONE, 4) == Some(&F32_MINUS_ONE[..])
+        && at(head::MINUS_ONE, 4) == Some(&F32_MINUS_ONE[..])
 }
 
 /// Whether the record at `offset` writes an `sgExtEnt_c` object at +35.
 fn external_record(payload: &[u8], offset: usize) -> bool {
     offset
-        .checked_add(35)
+        .checked_add(head::OBJECT_POINTER)
         .and_then(|at| View::u16_le_at(payload, at))
         .is_some_and(|pointer| pointer != 0)
 }
@@ -271,7 +280,7 @@ fn record_fields(payload: &[u8], offset: usize, current: bool) -> Option<usize> 
         return None;
     }
     if current {
-        let zeros = offset.checked_add(LEGACY_FIELDS)?;
+        let zeros = offset.checked_add(head::ZERO_PAD)?;
         (payload.get(zeros..zeros.checked_add(8)?)? == [0; 8])
             .then(|| offset.checked_add(CURRENT_FIELDS))
             .flatten()
@@ -295,7 +304,7 @@ fn point_fields(payload: &[u8], offset: usize) -> Option<(usize, u16)> {
 fn curve_fields(payload: &[u8], offset: usize) -> Option<usize> {
     [true, false].into_iter().find_map(|current| {
         let fields = record_fields(payload, offset, current)?;
-        let minus_one = fields.checked_add(8)?;
+        let minus_one = fields.checked_add(MINUS_ONE)?;
         (payload.get(minus_one..minus_one.checked_add(8)?)? == F64_MINUS_ONE).then_some(fields)
     })
 }
@@ -350,7 +359,7 @@ pub(super) fn curve_form(
     let sense = View::i32_le_at(payload, fields.checked_add(SENSE)?)?;
     if sense == COUNTERCLOCKWISE || sense == CLOCKWISE {
         let center_at = fields.checked_add(CENTER)?;
-        let tail = center_at.checked_add(2)?;
+        let tail = fields.checked_add(MINUS_TWO)?;
         if payload.get(tail..tail.checked_add(4)?)? != I32_MINUS_TWO {
             return None;
         }
@@ -374,6 +383,195 @@ fn identifier_trailer_line(payload: &[u8], offset: usize) -> Option<bool> {
     let trailer = View::u32_le_at(payload, offset.checked_add(LINE_TRAILER)?)?;
     let identity = View::u32_le_at(payload, offset.checked_add(LINE_IDENTITY)?)?;
     Some(trailer == 1 || (trailer == 0 && identity != 0 && identity != u32::MAX))
+}
+
+/// What the `sgSketch` curve record of a marker gives in place of the
+/// straight chord a marker reading gave it.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum ChordRecord {
+    /// The record's arc, which runs between the chord's two endpoints.
+    Arc(SketchGeometry),
+    /// The record states an arc that the chord's endpoints do not carry.
+    Conflict(ChordConflict),
+}
+
+/// Why the curve record of a marker leaves the line a marker reading gave it
+/// in place.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ChordConflict {
+    /// A point record the record indexes writes no planar coordinates.
+    PointUnread,
+    /// The two endpoint indices are equal.
+    FullCircle,
+    /// The record's endpoint point records stand at other positions.
+    OtherEndpoints,
+    /// The record's endpoints and centre define no arc.
+    NoArc,
+    /// The record's arc does not pass through both endpoints of the chord.
+    MissesChord,
+    /// The record has sense `1` or `-1` and selector bit 0 set (open item
+    /// EV-27).
+    OpenSelector,
+    /// The record has sense `1` or `-1` and no four i32 `-2` after its
+    /// centre index: an ellipse.
+    Ellipse,
+    /// The record's sense word has a curve type other than `0` and is not
+    /// `1` or `-1`.
+    OtherSense(i32),
+    /// The record is an arc, and the line comes from a reading that does not
+    /// compare the two.
+    Unchecked,
+}
+
+impl std::fmt::Display for ChordConflict {
+    /// What the record states, as the predicate of a sentence about it.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PointUnread => f.write_str("states an arc whose point records are not all read"),
+            Self::FullCircle => {
+                f.write_str("states an arc whose equal endpoint indices make a full circle")
+            }
+            Self::OtherEndpoints => f.write_str("states an arc between point records at other positions"),
+            Self::NoArc => f.write_str("states an arc whose endpoints and centre define no arc"),
+            Self::MissesChord => f.write_str(
+                "states an arc between the line's endpoint point records, but the arc misses the line's endpoints",
+            ),
+            Self::OpenSelector => f.write_str(
+                "states an arc sense with selector bit 0 set, whose indices are open item EV-27",
+            ),
+            Self::Ellipse => f.write_str(
+                "states an ellipse: sense `1` or `-1` without the four i32 `-2` after its centre index",
+            ),
+            Self::OtherSense(sense) => write!(
+                f,
+                "has sense word {sense}, which reads as neither a line nor an arc"
+            ),
+            Self::Unchecked => f.write_str(
+                "states an arc, and the line comes from a reading that does not compare the record with it",
+            ),
+        }
+    }
+}
+
+/// The reading of the listed curve record at `offset` when a marker reading
+/// gave it the straight chord `chord`: for an arc record, the record's arc
+/// when its two endpoint point records project onto the chord's endpoints in
+/// either order and the arc itself ends at both chord endpoints, each within
+/// the linear resolution, and the conflict otherwise; for a record whose form
+/// [`curve_form`] does not read, the conflict its sense and selector give.
+/// `None` when the offset starts no listed curve record or the record states
+/// a line.
+pub(super) fn chord_record(
+    payload: &[u8],
+    lists: &SketchRecordLists,
+    offset: usize,
+    chord: [Point2; 2],
+    project: &impl Fn([f64; 2]) -> Option<Point2>,
+) -> Option<ChordRecord> {
+    let ListedRecord::Curve { sketch, .. } = lists.record(offset)? else {
+        return None;
+    };
+    let (start, end, center, counterclockwise) =
+        match curve_form(payload, offset, ListedReading::Complete) {
+            Some(CurveForm::Arc {
+                start,
+                end,
+                center,
+                counterclockwise,
+            }) => (start, end, center, counterclockwise),
+            Some(CurveForm::Line { .. }) => return None,
+            None => return unread_form_conflict(payload, offset).map(ChordRecord::Conflict),
+        };
+    if start == end {
+        return Some(ChordRecord::Conflict(ChordConflict::FullCircle));
+    }
+    let point = |index: usize| point_coordinates(payload, sketch.point(index)?);
+    let (Some(start_m), Some(end_m), Some(center_m)) = (point(start), point(end), point(center))
+    else {
+        return Some(ChordRecord::Conflict(ChordConflict::PointUnread));
+    };
+    let (Some(start_ir), Some(end_ir)) = (project(start_m), project(end_m)) else {
+        return Some(ChordRecord::Conflict(ChordConflict::PointUnread));
+    };
+    let joins_chord = |first: Point2, second: Point2| {
+        let near = |left: Point2, right: Point2| {
+            (left.u - right.u).hypot(left.v - right.v) <= LINEAR_RESOLUTION_MM
+        };
+        (near(first, chord[0]) && near(second, chord[1]))
+            || (near(first, chord[1]) && near(second, chord[0]))
+    };
+    if !joins_chord(start_ir, end_ir) {
+        return Some(ChordRecord::Conflict(ChordConflict::OtherEndpoints));
+    }
+    let sweep = if counterclockwise {
+        ArcSweep::Counterclockwise
+    } else {
+        ArcSweep::Clockwise
+    };
+    let Some(arc) = arc_geometry(center_m, start_m, end_m, sweep, project) else {
+        return Some(ChordRecord::Conflict(ChordConflict::NoArc));
+    };
+    let SketchGeometryDefinition::Arc {
+        center,
+        radius,
+        start_angle,
+        end_angle,
+    } = *arc.definition()
+    else {
+        return Some(ChordRecord::Conflict(ChordConflict::NoArc));
+    };
+    let (center, radius) = (center.get(), radius.get());
+    let at = |angle: f64| {
+        Point2::new(
+            center.u + radius * angle.cos(),
+            center.v + radius * angle.sin(),
+        )
+    };
+    Some(if joins_chord(at(start_angle.get()), at(end_angle.get())) {
+        ChordRecord::Arc(arc)
+    } else {
+        ChordRecord::Conflict(ChordConflict::MissesChord)
+    })
+}
+
+/// The conflict of the listed curve record at `offset` with a line that a
+/// reading other than [`chord_record`] gave its marker: [`ChordConflict::Unchecked`]
+/// for an arc record and the form conflict for a record whose form
+/// [`curve_form`] does not read. `None` when the offset starts no listed
+/// curve record or the record states a line.
+pub(super) fn unchecked_record_conflict(
+    payload: &[u8],
+    lists: &SketchRecordLists,
+    offset: usize,
+) -> Option<ChordConflict> {
+    let ListedRecord::Curve { .. } = lists.record(offset)? else {
+        return None;
+    };
+    match curve_form(payload, offset, ListedReading::Complete) {
+        Some(CurveForm::Arc { .. }) => Some(ChordConflict::Unchecked),
+        Some(CurveForm::Line { .. }) => None,
+        None => unread_form_conflict(payload, offset),
+    }
+}
+
+/// The conflict of a curve record that [`curve_form`] does not read: `None`
+/// when the low half of its sense word is `0`, and otherwise by its sense
+/// word and selector.
+fn unread_form_conflict(payload: &[u8], offset: usize) -> Option<ChordConflict> {
+    let fields = curve_fields(payload, offset)?;
+    let sense = View::i32_le_at(payload, fields.checked_add(SENSE)?)?;
+    if sense & LINE_TYPE_MASK == 0 {
+        return None;
+    }
+    if sense != COUNTERCLOCKWISE && sense != CLOCKWISE {
+        return Some(ChordConflict::OtherSense(sense));
+    }
+    let selector = View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?;
+    Some(if selector & SELECTOR_OPEN_BIT != 0 {
+        ChordConflict::OpenSelector
+    } else {
+        ChordConflict::Ellipse
+    })
 }
 
 /// Whether the record at `offset` is a current-layout line with an

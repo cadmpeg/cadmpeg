@@ -120,6 +120,9 @@ pub(crate) enum SldprtLossCode {
     /// A sketch line handle keeps its marker role because its two read
     /// endpoints coincide.
     SketchLineDegenerate,
+    /// A sketch line keeps the chord its marker reading gives although its
+    /// `sgSketch` curve record states an arc or another form.
+    SketchArcRecordConflict,
     /// A sketch handle takes its `sgSketch` curve record's geometry by
     /// point-record position, a reading the format does not establish for a
     /// line with an identifier trailer and that the handle's own read
@@ -380,6 +383,7 @@ impl SldprtLossCode {
         Self::SketchNativeGeometry,
         Self::SketchHandleUnresolved,
         Self::SketchLineDegenerate,
+        Self::SketchArcRecordConflict,
         Self::SketchHandleReadingAssumed,
         Self::SketchProfileRejected,
         Self::SketchRelationUnprojected,
@@ -515,6 +519,7 @@ impl SldprtLossCode {
             Self::SketchProfileRejected => "sketch.profile-rejected",
             Self::SketchHandleUnresolved => "sketch.handle-unresolved",
             Self::SketchLineDegenerate => "sketch.line-degenerate",
+            Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
             Self::SketchHandleReadingAssumed => "sketch.handle-reading-assumed",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
@@ -683,6 +688,7 @@ impl SldprtLossCode {
             | Self::SketchNativeGeometry
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
+            | Self::SketchArcRecordConflict
             | Self::SketchHandleReadingAssumed
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
@@ -893,6 +899,7 @@ impl SldprtLossCode {
             | Self::SketchNativeGeometry
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
+            | Self::SketchArcRecordConflict
             | Self::SketchHandleReadingAssumed
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
@@ -1120,6 +1127,7 @@ mod tests {
                 "sketch.native-geometry",
                 "sketch.handle-unresolved",
                 "sketch.line-degenerate",
+                "sketch.arc-record-conflict",
                 "sketch.handle-reading-assumed",
                 "sketch.profile-rejected",
                 "sketch.relation-unprojected",
