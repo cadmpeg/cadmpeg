@@ -66,7 +66,7 @@ pub(crate) fn normalize(ir: &mut CadIr, policy: &DecodePolicy) -> Result<Vec<Str
 fn normalize_in(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<Vec<String>, CodecError> {
     let states = States::new(&ir.design);
     states.normalize_design(&mut ir.design);
-    states.normalize_model(&ir.design, &mut ir.model);
+    states.normalize_model(&mut ir.model);
     states.normalize_process(&mut ir.process);
     let facts = Facts::new(ir);
     let mut records = Records {
