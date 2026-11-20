@@ -43924,9 +43924,9 @@ anchor = "and the 96-byte analytic payload"
 name = "sketch_item_curve_tail_one_point"
 kind = "byte"
 section = "Records of a Sketch item"
-anchor = "The tail is 44 bytes after one point reference"
+anchor = "the tail is 44 bytes after one point reference"
 size = 44
-note = "Offsets are relative to the end of the one point reference (`p = 5`). The sketch container reference follows."
+note = "The common form; DR-901 gives the 46- and 53-byte tails. Offsets are relative to the end of the one point reference (`p = 5`). The sketch container reference follows."
 
 [[record.field]]
 name = "pad"
@@ -44024,7 +44024,7 @@ kind = "byte"
 section = "Records of a Sketch item"
 anchor = "and 42 bytes after two or three"
 size = 42
-note = "Offsets are relative to the end of the two or three point references (`p = 3`). The sketch container reference follows."
+note = "The common form; DR-901 gives the 46- and 53-byte tails. Offsets are relative to the end of the two or three point references (`p = 3`). The sketch container reference follows."
 
 [[record.field]]
 name = "pad"

@@ -13322,7 +13322,7 @@ Offsets are relative to the curve's indexed header. The point references follow.
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 44 B
 
-Offsets are relative to the end of the one point reference (`p = 5`). The sketch container reference follows.
+The common form; DR-901 gives the 46- and 53-byte tails. Offsets are relative to the end of the one point reference (`p = 5`). The sketch container reference follows.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -13343,7 +13343,7 @@ Offsets are relative to the end of the one point reference (`p = 5`). The sketch
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 42 B
 
-Offsets are relative to the end of the two or three point references (`p = 3`). The sketch container reference follows.
+The common form; DR-901 gives the 46- and 53-byte tails. Offsets are relative to the end of the two or three point references (`p = 3`). The sketch container reference follows.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
