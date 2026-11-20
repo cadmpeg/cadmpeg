@@ -17,6 +17,7 @@ use cadmpeg_ir::topology::{Shell, ShellMember};
 use super::frames::DesignRecords;
 use super::history::{HEAD_STATE, ROOT_STATE};
 use super::parameters::ParameterPlan;
+use super::roster::sketches::SketchRecords;
 use super::roster::values::Timestamps;
 use super::roster::{self, Context, RosterBody};
 use super::types;
@@ -29,15 +30,18 @@ use crate::writer::generate::presentation::{
     deterministic_guid, BrowserNodeTail, GeneratedDesignRegistry, TypeRow,
 };
 
-/// The persistent identity of the one `Base Feature`: the first value of the
-/// identity counter.
-const PERSISTENT_ID: u64 = 300;
+/// The first value of the persistent-identity counter: a `Sketch` scope
+/// owns one identity and the `Base Feature` scope the next, in timeline
+/// order (f3d.md §3.1, "Design records of Sketch items").
+const FIRST_IDENTITY: u64 = 300;
 /// The feature-family name of the scope.
 const FAMILY: &str = "Base Feature";
 /// The GUID the scope frame stores before its scope-reference count.
 const NULL_GUID: &str = "00000000-0000-0000-0000-000000000000";
 /// The counter the timeline context keeps for the `Base Feature` family.
 const FAMILY_COUNTER: &str = "DcBaseFeatureMetaType";
+/// The counter the timeline context keeps for the `Sketch` family.
+const SKETCH_COUNTER: &str = "DcSketchMetaType";
 /// The flag of a dependency-table edge to the component record.
 const COMPONENT_EDGE: u32 = 0x1000;
 /// The flag of every other dependency-table edge.
@@ -45,15 +49,17 @@ const EDGE: u32 = 1;
 /// The evaluation epoch of the item tail: `250`, below the `252` Fusion
 /// writes, until the decoder reads an epoch-252 tail beside record indices
 /// 209 to 212 (interim, F3D-EPOCH).
-const EPOCH: u32 = 250;
+pub(super) const EPOCH: u32 = 250;
 /// The evaluation duration of the item tail, the median of Fusion's Base
 /// Feature items (DR-913).
-const DURATION: f64 = 0.000_631;
+pub(super) const DURATION: f64 = 0.000_631;
 
 /// The bodies the `Base Feature` stores, in body order, each with its faces
 /// in the order of its lump, shell and face chains.
 pub(super) struct BaseFeaturePlan<'a> {
     bodies: Vec<PlannedBody<'a>>,
+    /// The scope's persistent identity: the one after the `Sketch` items'.
+    persistent_id: u64,
 }
 
 struct PlannedBody<'a> {
@@ -62,8 +68,26 @@ struct PlannedBody<'a> {
     edges: usize,
 }
 
-/// The bodies of `target`'s B-rep stream as one `Base Feature` stores them.
-pub(super) fn plan(target: &CadIr) -> BaseFeaturePlan<'_> {
+/// The persistent identity of the `Base Feature` after `sketches` `Sketch`
+/// items.
+fn persistent_id(sketches: usize) -> Result<u64, CodecError> {
+    u64::try_from(sketches)
+        .ok()
+        .and_then(|sketches| FIRST_IDENTITY.checked_add(sketches))
+        .ok_or_else(|| CodecError::NotImplemented("persistent identity overflow".into()))
+}
+
+/// The next value of the persistent-identity counter after `sketches`
+/// `Sketch` items and the `Base Feature`.
+pub(super) fn next_identity(sketches: usize) -> Result<u64, CodecError> {
+    persistent_id(sketches)?
+        .checked_add(1)
+        .ok_or_else(|| CodecError::NotImplemented("persistent identity overflow".into()))
+}
+
+/// The bodies of `target`'s B-rep stream as one `Base Feature` after
+/// `sketches` `Sketch` items stores them.
+pub(super) fn plan(target: &CadIr, sketches: usize) -> Result<BaseFeaturePlan<'_>, CodecError> {
     let geometry = &target.geometry;
     let children = geometry.child_lists();
     let shells = geometry
@@ -105,7 +129,7 @@ pub(super) fn plan(target: &CadIr) -> BaseFeaturePlan<'_> {
             bodies[body].2.insert(&coedge.edge);
         }
     }
-    BaseFeaturePlan {
+    Ok(BaseFeaturePlan {
         bodies: bodies
             .into_iter()
             .map(|(body, faces, edges)| PlannedBody {
@@ -114,7 +138,8 @@ pub(super) fn plan(target: &CadIr) -> BaseFeaturePlan<'_> {
                 edges: edges.len(),
             })
             .collect(),
-    }
+        persistent_id: persistent_id(sketches)?,
+    })
 }
 
 /// The record indices of one result body.
@@ -202,12 +227,13 @@ impl BaseFeaturePlan<'_> {
 
     /// Name each result body and each face it stores in the B-rep stream
     /// (f3d.md §3.1, "Names in the B-rep of a Base Feature"): the body group
-    /// `(3, "300", j, 0, 0)` and the face group `(digits(t), t, [-300])`.
+    /// `(3, "I", j, 0, 0)` and the face group `(digits(t), t, [-I])` of the
+    /// scope's persistent identity `I`.
     /// Returns the losses of the face numbering of later bodies.
     pub(super) fn stamp(&self, native: &mut F3dNative) -> Result<Vec<LossNote>, CodecError> {
-        let design_id = DesignPersistentIdText::try_from(PERSISTENT_ID.to_string())
+        let design_id = DesignPersistentIdText::try_from(self.persistent_id.to_string())
             .map_err(CodecError::Malformed)?;
-        let reference = i64::try_from(PERSISTENT_ID)
+        let reference = i64::try_from(self.persistent_id)
             .map_err(|_| CodecError::Malformed("Base Feature identity".into()))?;
         let mut first = 0u64;
         for (ordinal, body) in self.bodies.iter().enumerate() {
@@ -282,8 +308,10 @@ impl BaseFeaturePlan<'_> {
             bodies: &bodies,
             stamps: Timestamps::FIXED,
             act_component: None,
+            sketches: &[],
+            persistent_id: self.persistent_id,
         };
-        writer.timeline(&mut out);
+        writer.timeline(&mut out)?;
         writer.context(&mut out)?;
         if let Some(item) = &indices.item {
             writer.item(&mut out, item)?;
@@ -349,8 +377,10 @@ impl BaseFeaturePlan<'_> {
             bodies: &bodies,
             stamps: ctx.values.stamps,
             act_component: Some(roster::ACT_COMPONENT),
+            sketches: &ctx.roster.sketches.items,
+            persistent_id: persistent_id(ctx.roster.sketches.items.len())?,
         };
-        writer.timeline(out);
+        writer.timeline(out)?;
         writer.context(out)?;
         if let Some(item) = &indices.item {
             writer.item(out, item)?;
@@ -490,16 +520,6 @@ impl Indices {
             aggregate: registry.allocate()?,
         })
     }
-
-    /// The members of the owner collection and of the `B65B5682` record: the
-    /// component record, then the scope and the result owner.
-    fn members(&self) -> Vec<u32> {
-        let mut members = vec![self.component];
-        if let Some(item) = &self.item {
-            members.extend([item.scope, item.result_owner]);
-        }
-        members
-    }
 }
 
 impl Classes {
@@ -615,24 +635,58 @@ struct Writer<'a> {
     /// The ACT component record the `549FBB80` record names, where the
     /// archive holds an ACT segment.
     act_component: Option<u32>,
+    /// The records of the `Sketch` items before the `Base Feature`.
+    sketches: &'a [SketchRecords],
+    /// The `Base Feature` scope's persistent identity.
+    persistent_id: u64,
 }
 
 impl Writer<'_> {
     /// The feature timeline: ten zero bytes, the timeline context, and the
     /// item references.
-    fn timeline(&self, out: &mut DesignRecords) {
+    fn timeline(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
         let indices = self.indices;
+        let scopes = self
+            .sketches
+            .iter()
+            .map(|sketch| sketch.scope)
+            .chain(indices.item.as_ref().map(|item| item.scope))
+            .collect::<Vec<_>>();
         out.record(&self.classes.timeline, indices.timeline)
             .zeros(10)
-            .reference(indices.context);
-        match &indices.item {
-            Some(item) => {
-                out.u32(1).reference(item.scope);
-            }
-            None => {
-                out.u32(0);
-            }
+            .reference(indices.context)
+            .u32(count(scopes.len())?);
+        for scope in scopes {
+            out.reference(scope);
         }
+        Ok(())
+    }
+
+    /// The members of the owner collection: the component record, each
+    /// `Sketch` item's scope, placement path and placement, then the
+    /// `Base Feature` scope and its result owner.
+    fn owner_members(&self) -> Vec<u32> {
+        let mut members = vec![self.indices.component];
+        for sketch in self.sketches {
+            members.extend([sketch.scope, sketch.path, sketch.placement]);
+        }
+        if let Some(item) = &self.indices.item {
+            members.extend([item.scope, item.result_owner]);
+        }
+        members
+    }
+
+    /// The members of the `B65B5682` record: the owner collection's, with
+    /// each `Sketch` item's placement path and placement before its scope.
+    fn context_members(&self) -> Vec<u32> {
+        let mut members = vec![self.indices.component];
+        for sketch in self.sketches {
+            members.extend([sketch.path, sketch.placement, sketch.scope]);
+        }
+        if let Some(item) = &self.indices.item {
+            members.extend([item.scope, item.result_owner]);
+        }
+        members
     }
 
     /// The timeline context: the browser nodes of the result bodies, the
@@ -646,10 +700,21 @@ impl Writer<'_> {
         for body in self.bodies {
             out.reference(body.node);
         }
+        let mut counters = Vec::new();
         if indices.item.is_some() {
-            out.u32(1).lp_ascii(FAMILY_COUNTER)?.u64(1);
-        } else {
-            out.u32(0);
+            counters.push((FAMILY_COUNTER, 1));
+        }
+        if !self.sketches.is_empty() {
+            counters.push((
+                SKETCH_COUNTER,
+                u64::try_from(self.sketches.len()).map_err(|_| {
+                    CodecError::NotImplemented("Sketch item count exceeds u64".into())
+                })?,
+            ));
+        }
+        out.u32(count(counters.len())?);
+        for (name, value) in counters {
+            out.lp_ascii(name)?.u64(value);
         }
         out.u64(0).u32(1).reference(indices.component_link);
         for record in [
@@ -783,7 +848,7 @@ impl Writer<'_> {
     /// timeline context names.
     fn components(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
         let (indices, classes) = (self.indices, self.classes);
-        let members = indices.members();
+        let members = self.owner_members();
         out.record(&classes.owner_collection, indices.owner_collection)
             .zeros(10)
             .header(&classes.collection_base, indices.owner_collection)
@@ -831,52 +896,98 @@ impl Writer<'_> {
         out.record(&classes.context_016d8c93, indices.context_016d8c93)
             .zeros(14)
             .reference(indices.context);
+        let context_members = self.context_members();
         out.record(&classes.context_members, indices.context_members)
             .zeros(10)
             .reference(indices.context)
             .byte(1)
-            .u32(count(members.len())?);
-        for member in &members {
+            .u32(count(context_members.len())?);
+        for member in &context_members {
             out.reference(*member);
         }
 
         // The dependency table: the input map, the context, and the
         // dependent map of the same edges by the record read.
+        let (inputs, dependents) = self.dependencies();
         out.record(&classes.dependencies, indices.dependencies)
-            .zeros(10);
-        match &indices.item {
-            Some(item) => {
-                out.byte(1).u32(2);
-                dependency(out, item.scope, indices.component, COMPONENT_EDGE);
-                dependency(out, item.result_owner, item.scope, EDGE);
-                out.reference(indices.context).u32(2);
-                dependency(out, indices.component, item.scope, COMPONENT_EDGE);
-                dependency(out, item.scope, item.result_owner, EDGE);
-            }
-            None => {
-                out.byte(0).u32(0).reference(indices.context).u32(0);
-            }
-        }
+            .zeros(10)
+            .byte(u8::from(!inputs.is_empty()))
+            .u32(count(inputs.len())?);
+        dependency_entries(out, &inputs)?;
+        out.reference(indices.context).u32(count(dependents.len())?);
+        dependency_entries(out, &dependents)?;
 
-        // The persistent-id table in the forward form: `Base Feature -> 300`.
+        // The persistent-id table in the forward form: each scope with its
+        // identity, in ascending record index, then the pairs in ascending
+        // identity.
+        let identities = self.identities();
+        let mut forward = identities.clone();
+        forward.sort_unstable_by_key(|&(_, scope)| scope);
         out.record(&classes.persistent_ids, indices.persistent_ids)
-            .zeros(10);
-        match &indices.item {
-            Some(item) => {
-                out.u32(1)
-                    .u64(u64::from(item.scope))
-                    .u32(1)
-                    .u64(PERSISTENT_ID)
-                    .u32(1)
-                    .u64(PERSISTENT_ID)
-                    .u64(u64::from(item.scope));
-            }
-            None => {
-                out.u32(0).u32(0);
-            }
+            .zeros(10)
+            .u32(count(forward.len())?);
+        for (identity, scope) in &forward {
+            out.u64(u64::from(*scope)).u32(1).u64(*identity);
+        }
+        out.u32(count(identities.len())?);
+        for (identity, scope) in &identities {
+            out.u64(*identity).u64(u64::from(*scope));
         }
         out.u32(0).reference(indices.context);
         Ok(())
+    }
+
+    /// `(identity, scope)` of every timeline item in timeline order: the
+    /// `Sketch` items from `300`, then the `Base Feature`.
+    fn identities(&self) -> Vec<(u64, u32)> {
+        let mut identities = Vec::new();
+        for (identity, sketch) in (FIRST_IDENTITY..).zip(self.sketches) {
+            identities.push((identity, sketch.scope));
+        }
+        if let Some(item) = &self.indices.item {
+            identities.push((self.persistent_id, item.scope));
+        }
+        identities
+    }
+
+    /// The input and dependent maps of the dependency table, each in
+    /// ascending record index: a scope depends on the component record and
+    /// a `Sketch` scope on its placement, which depends on its placement
+    /// path; the result owner depends on the `Base Feature` scope.
+    fn dependencies(&self) -> (Vec<Dependency>, Vec<Dependency>) {
+        let component = self.indices.component;
+        let mut inputs = Vec::new();
+        let mut dependents = Vec::new();
+        let mut scopes = Vec::new();
+        for sketch in self.sketches {
+            inputs.push((
+                sketch.scope,
+                vec![(component, COMPONENT_EDGE), (sketch.placement, EDGE)],
+            ));
+            inputs.push((sketch.placement, vec![(sketch.path, EDGE)]));
+            dependents.push((sketch.path, vec![(sketch.placement, EDGE)]));
+            dependents.push((sketch.placement, vec![(sketch.scope, EDGE)]));
+            scopes.push(sketch.scope);
+        }
+        if let Some(item) = &self.indices.item {
+            inputs.push((item.scope, vec![(component, COMPONENT_EDGE)]));
+            inputs.push((item.result_owner, vec![(item.scope, EDGE)]));
+            dependents.push((item.scope, vec![(item.result_owner, EDGE)]));
+            scopes.push(item.scope);
+        }
+        if !scopes.is_empty() {
+            scopes.sort_unstable();
+            dependents.push((
+                component,
+                scopes
+                    .into_iter()
+                    .map(|scope| (scope, COMPONENT_EDGE))
+                    .collect(),
+            ));
+        }
+        inputs.sort_by_key(|&(record, _)| record);
+        dependents.sort_by_key(|&(record, _)| record);
+        (inputs, dependents)
     }
 
     /// The origin container and the header of each record it names.
@@ -968,7 +1079,7 @@ impl Writer<'_> {
 /// A record-timestamp table: fourteen zero bytes, `01 01` for the scope's
 /// table and `00 00` for the others, the `(record, timestamp)` entries, the
 /// owner entry and eight zero bytes.
-fn timestamp_table(
+pub(super) fn timestamp_table(
     out: &mut DesignRecords,
     class: &DesignClassTag,
     record: u32,
@@ -989,9 +1100,18 @@ fn timestamp_table(
     Ok(())
 }
 
-/// One dependency-table entry with one edge.
-fn dependency(out: &mut DesignRecords, record: u32, edge: u32, flag: u32) {
-    out.reference(record).u32(1).reference(edge).u32(flag);
+/// A dependency-table entry: a record and its `(record, flag)` edges.
+type Dependency = (u32, Vec<(u32, u32)>);
+
+/// Dependency-table entries, each the record, its edge count and its edges.
+fn dependency_entries(out: &mut DesignRecords, entries: &[Dependency]) -> Result<(), CodecError> {
+    for (record, edges) in entries {
+        out.reference(*record).u32(count(edges.len())?);
+        for (edge, flag) in edges {
+            out.reference(*edge).u32(*flag);
+        }
+    }
+    Ok(())
 }
 
 fn count(length: usize) -> Result<u32, CodecError> {

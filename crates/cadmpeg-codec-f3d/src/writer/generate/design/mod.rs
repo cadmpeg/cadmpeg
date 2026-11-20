@@ -14,6 +14,7 @@ pub(super) mod frames;
 pub(super) mod history;
 pub(super) mod parameters;
 mod roster;
+mod sketch;
 #[cfg(test)]
 mod tests;
 mod types;
@@ -37,6 +38,7 @@ use crate::native::F3dNative;
 use base_feature::BaseFeaturePlan;
 use frames::DesignRecords;
 use parameters::ParameterPlan;
+use sketch::SketchPlan;
 
 #[cfg(test)]
 thread_local! {
@@ -56,15 +58,26 @@ pub(super) fn requested_test_failure() -> Option<cadmpeg_core::CodecError> {
 /// What the writer writes of the root definition's design scope.
 pub(super) struct NeutralDesign<'a> {
     parameters: ParameterPlan,
+    sketches: SketchPlan<'a>,
     base_feature: BaseFeaturePlan<'a>,
     losses: Vec<LossNote>,
 }
 
 /// The plan for the root definition's design scope; `None` when the
 /// document holds none.
-pub(super) fn plan(target: &CadIr) -> Option<NeutralDesign<'_>> {
-    let scope = root_scope(target)?;
+pub(super) fn plan(target: &CadIr) -> Result<Option<NeutralDesign<'_>>, CodecError> {
+    let Some(scope) = root_scope(target) else {
+        return Ok(None);
+    };
     let parameters = parameters::plan(target, &scope.definition);
+    let features = scope_features(target, scope);
+    // The `Sketch` items precede the `Base Feature`, which a design with no
+    // body does not write.
+    let sketches = if target.geometry.bodies.is_empty() {
+        SketchPlan::default()
+    } else {
+        sketch::plan(target, &features)
+    };
     let written = parameters.written().collect::<BTreeSet<_>>();
     let mut owned = BTreeMap::<&FeatureId, Vec<String>>::new();
     for parameter in &target.design.parameters {
@@ -77,16 +90,26 @@ pub(super) fn plan(target: &CadIr) -> Option<NeutralDesign<'_>> {
             }
         }
     }
-    let unwritten =
-        scope_features(target, scope)
-            .into_iter()
-            .map(|feature| match owned.get(feature) {
-                Some(parameters) => format!(
-                    "{feature} (its parameters are written as user parameters: {})",
+    let unwritten = features
+        .iter()
+        .filter(|feature| !sketches.writes(feature))
+        .map(|feature| {
+            let mut notes = Vec::new();
+            if let Some(reason) = sketches.unwritten.get(*feature) {
+                notes.push(format!("its sketch {reason}"));
+            }
+            if let Some(parameters) = owned.get(*feature) {
+                notes.push(format!(
+                    "its parameters are written as user parameters: {}",
                     parameters.join(" ")
-                ),
-                None => feature.to_string(),
-            });
+                ));
+            }
+            if notes.is_empty() {
+                feature.to_string()
+            } else {
+                format!("{feature} ({})", notes.join("; "))
+            }
+        });
     let losses = evaluation_missing(
         "F3D",
         "stores the current bodies as one Base Feature and no timeline item for these features of the design",
@@ -94,11 +117,13 @@ pub(super) fn plan(target: &CadIr) -> Option<NeutralDesign<'_>> {
     )
     .into_iter()
     .collect();
-    Some(NeutralDesign {
+    let base_feature = base_feature::plan(target, sketches.items.len())?;
+    Ok(Some(NeutralDesign {
         parameters,
-        base_feature: base_feature::plan(target),
+        sketches,
+        base_feature,
         losses,
-    })
+    }))
 }
 
 impl NeutralDesign<'_> {
@@ -141,12 +166,17 @@ impl NeutralDesign<'_> {
         let scope = root_scope(target)
             .ok_or_else(|| CodecError::Malformed("the design has no root scope".into()))?;
         let bodies = self.base_feature.roster_bodies(target);
-        let roster = roster::Roster::new(bodies.len(), self.parameters.written_count())?;
+        let roster = roster::Roster::new(
+            bodies.len(),
+            self.parameters.written_count(),
+            &self.sketches.items,
+        )?;
         let ctx = roster::Context {
             table: roster::type_table(&roster, bodies.iter().any(|body| body.sheet))?,
             roster,
             values: roster::values::Values::new(target, &scope.definition, smbh),
             bodies,
+            sketches: &self.sketches.items,
         };
         let mut records = DesignRecords::default();
         BaseFeaturePlan::roster_records(&ctx, &self.parameters, &mut records)?;
@@ -155,9 +185,15 @@ impl NeutralDesign<'_> {
         Ok(members)
     }
 
+    /// Whether the design writes a `Sketch` item.
+    pub(super) fn writes_sketches(&self) -> bool {
+        !self.sketches.items.is_empty()
+    }
+
     pub(super) fn into_losses(self) -> Vec<LossNote> {
         let mut losses = self.losses;
         losses.extend(self.parameters.into_losses());
+        losses.extend(self.sketches.into_losses());
         losses
     }
 }
