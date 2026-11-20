@@ -144,6 +144,16 @@ fn f3z_archive_merges_identity_occurrences() {
         .losses
         .iter()
         .any(|loss| loss.code == crate::loss::F3dLossCode::SourcePreservedImageUnavailable.kind()));
+    assert_eq!(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &report,
+            "identity/target"
+        )
+        .as_ref()
+        .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some(crate::dialect::TARGETS[0].id.as_str()),
+        "the report names the row the bytes are written as"
+    );
 
     // An explicit request for the F3Z row is written as the single-document
     // row, with the request's displacement charged.

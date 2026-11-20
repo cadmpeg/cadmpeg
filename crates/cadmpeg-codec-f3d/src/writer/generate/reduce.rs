@@ -19,7 +19,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{native_records_omitted, output_empty};
+use cadmpeg_ir::codec::write::{native_records_omitted, output_empty, record_invalid};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
@@ -31,6 +31,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::ids::{EdgeId, PointId, ShellId, VertexId};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
+use cadmpeg_ir::schema::EntityKind;
 use cadmpeg_ir::topology::{
     BodyKind, Color, EdgeCarrier, EdgeEnds, FaceLoops, LoopBoundary, Point, Shell, ShellMember,
     Vertex,
@@ -177,6 +178,22 @@ impl<'a> Reduction<'a> {
             self.losses.push(output_empty(
                 "the F3D design is written with no body: the document holds no geometry the writer can encode",
             ));
+        }
+        let geometry = &self.ir.geometry;
+        if geometry.bodies.is_empty()
+            && geometry.regions.is_empty()
+            && geometry.shells.is_empty()
+            && geometry.faces.is_empty()
+        {
+            let unwritten = geometry_records_by_arena(geometry);
+            if !unwritten.is_empty() {
+                self.losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
+                    "the design holds no body, region, shell or face, so its B-rep stream is the ASM header alone and these geometry records were not written: {}",
+                    unwritten.join("; ")
+                )));
+            }
+        } else {
+            self.losses.extend(unranged_open_edges(geometry));
         }
         self.losses
     }
@@ -951,10 +968,22 @@ impl<'a> Reduction<'a> {
         {
             return;
         }
+        let mut allocated = Vec::new();
         for appearance in &mut self.ir.to_mut().model.appearances {
             if appearance.visual_guid.is_none() && appearance.asset_guid.is_none() {
-                appearance.asset_guid = Some(allocated_guid(appearance.id.as_str()));
+                let guid = allocated_guid(appearance.id.as_str());
+                appearance.asset_guid = Some(guid.clone());
+                if crate::materials::encode_protein(appearance).is_ok() {
+                    allocated.push(format!("{} as {guid}", appearance.id));
+                }
             }
+        }
+        if !allocated.is_empty() {
+            self.losses.push(F3dLossCode::WriterAppearanceGuidAllocated.note(format!(
+                "{} appearance(s) state no asset GUID; each Protein asset is written under a GUID the writer allocates from the appearance id: {}",
+                allocated.len(),
+                allocated.join(", ")
+            )));
         }
     }
 
@@ -1021,16 +1050,27 @@ impl<'a> Reduction<'a> {
             return;
         }
         let appearances = &mut self.ir.to_mut().model.appearances;
+        let mut replaced = Vec::new();
         for index in separate {
             let Some(appearance) = appearances.get_mut(index) else {
                 continue;
             };
             let guid = allocated_guid(appearance.id.as_str());
-            if appearance.visual_guid.is_some() {
-                appearance.visual_guid = Some(guid);
+            let slot = if appearance.visual_guid.is_some() {
+                &mut appearance.visual_guid
             } else {
-                appearance.asset_guid = Some(guid);
+                &mut appearance.asset_guid
+            };
+            if let Some(stated) = slot.replace(guid.clone()) {
+                replaced.push(format!("{} from {stated} to {guid}", appearance.id));
             }
+        }
+        if !replaced.is_empty() {
+            self.losses.push(F3dLossCode::WriterAppearanceGuidAllocated.note(format!(
+                "{} appearance(s) state a GUID that an earlier appearance holds for a different asset; each is written under a GUID the writer allocates from its id: {}",
+                replaced.len(),
+                replaced.join(", ")
+            )));
         }
     }
 
@@ -1617,12 +1657,13 @@ fn component_root(parents: &mut [usize], mut node: usize) -> usize {
 /// A hyphenated GUID allocated from `id`: the first 16 bytes of its SHA-256.
 fn allocated_guid(id: &str) -> String {
     use sha2::Digest as _;
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let digest = sha2::Sha256::digest(id.as_bytes());
-    let hex = digest[..16].iter().fold(String::new(), |mut hex, byte| {
-        use std::fmt::Write as _;
-        write!(hex, "{byte:02x}").expect("a String takes every write");
-        hex
-    });
+    let hex = digest[..16]
+        .iter()
+        .flat_map(|byte| [byte >> 4, byte & 0x0f])
+        .map(|nibble| char::from(DIGITS[usize::from(nibble)]))
+        .collect::<String>();
     format!(
         "{}-{}-{}-{}-{}",
         &hex[..8],
@@ -1821,6 +1862,60 @@ macro_rules! for_each_geometry_arena {
             procedural_curves
         )
     };
+}
+
+/// Each non-empty geometry arena: its name, row count and record ids.
+fn geometry_records_by_arena(geometry: &cadmpeg_ir::document::Topology) -> Vec<String> {
+    let mut arenas = Vec::new();
+    macro_rules! list {
+        ($($field:ident),*) => {$(
+            if !geometry.$field.is_empty() {
+                arenas.push(format!(
+                    "{} {}: {}",
+                    geometry.$field.len(),
+                    stringify!($field),
+                    geometry
+                        .$field
+                        .iter()
+                        .map(|row| row.id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+        )*};
+    }
+    for_each_geometry_arena!(list);
+    arenas
+}
+
+/// The F3D edge record stores a parameter range, and an open edge on a curve
+/// with none is written with `[0, 1]`: a range its vertices do not fix, which
+/// the output's validation finds.
+fn unranged_open_edges(geometry: &cadmpeg_ir::document::Topology) -> Option<LossNote> {
+    let edges = geometry
+        .edges
+        .iter()
+        .filter(|edge| {
+            edge.param_range().is_none()
+                && edge.curve().is_some()
+                && edge
+                    .ends
+                    .as_ref()
+                    .is_some_and(|ends| ends.start != ends.end)
+        })
+        .map(|edge| edge.id.as_str())
+        .collect::<Vec<_>>();
+    if edges.is_empty() {
+        return None;
+    }
+    Some(record_invalid(
+        EntityKind::Edge,
+        format!(
+            "{} open edge(s) are written with the parameter range [0, 1]: the writer finds no range on the curve from the start vertex to the end vertex: {}",
+            edges.len(),
+            edges.join(", ")
+        ),
+    ))
 }
 
 impl Reach {

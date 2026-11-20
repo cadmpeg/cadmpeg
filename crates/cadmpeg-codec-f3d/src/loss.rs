@@ -1140,6 +1140,9 @@ pub(crate) enum F3dLossCode {
     WriterAppearanceOmitted,
     /// The retained source could not carry an edit; the file was regenerated.
     WriterPatchDeclined,
+    /// An appearance's Protein asset was written under a GUID the writer
+    /// allocated, in place of a missing or shared source GUID.
+    WriterAppearanceGuidAllocated,
     /// An embedded kernel carrier was read with an unverified ACIS grammar.
     KernelDialectUnverified,
     /// An embedded kernel carrier could not be framed for dialect inspection.
@@ -1889,6 +1892,7 @@ impl F3dLossCode {
         Self::WriterGeometryOmitted,
         Self::WriterAppearanceOmitted,
         Self::WriterPatchDeclined,
+        Self::WriterAppearanceGuidAllocated,
         Self::KernelDialectUnverified,
         Self::KernelCarrierUnparseable,
         Self::DialectLayerCollision,
@@ -2960,6 +2964,7 @@ impl F3dLossCode {
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
             Self::WriterPatchDeclined => "writer.patch-declined",
+            Self::WriterAppearanceGuidAllocated => "writer.appearance-guid-allocated",
             Self::KernelDialectUnverified => "source.kernel-dialect-unverified",
             Self::KernelCarrierUnparseable => "source.kernel-carrier-unparseable",
             Self::DialectLayerCollision => "source.dialect-layer-collision",
@@ -3062,6 +3067,7 @@ impl F3dLossCode {
             Self::WriterGeometryOmitted => Severity::Warning,
             Self::WriterAppearanceOmitted => Severity::Warning,
             Self::WriterPatchDeclined => Severity::Warning,
+            Self::WriterAppearanceGuidAllocated => Severity::Warning,
             Self::ScopeOwnerUnresolved
             | Self::ScopeOutputOwnerUnresolved
             | Self::OperationPoseApplied
@@ -3799,6 +3805,7 @@ impl F3dLossCode {
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
+            Self::WriterAppearanceGuidAllocated => LossTaxonomy::MetadataNotTransferred,
             Self::DimensionCompanionUntyped
             | Self::BodyReferenceTailUntyped
             | Self::PlacementConstructionUntyped
@@ -5213,6 +5220,7 @@ mod tests {
                 "writer.geometry-omitted",
                 "writer.appearance-omitted",
                 "writer.patch-declined",
+                "writer.appearance-guid-allocated",
                 "source.kernel-dialect-unverified",
                 "source.kernel-carrier-unparseable",
                 "source.dialect-layer-collision",
