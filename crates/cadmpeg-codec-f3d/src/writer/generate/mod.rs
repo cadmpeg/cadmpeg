@@ -57,6 +57,7 @@ pub(super) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<Genera
             reduction.ir(),
             reduction.writes_design(),
             reduction.writes_neutral_design(),
+            reduction.sketch_failure(),
             &mut staged,
         ) {
             Ok((coverage, losses)) => break (staged, coverage, losses),
@@ -78,9 +79,14 @@ fn writes_alone(target: &CadIr, native: &crate::native::F3dNative, stage: Stage)
             let attributes = attributes::AttributeIndex::new(target, native);
             encode_brep(target, native, &attributes).is_ok()
         }
-        Stage::Design | Stage::NeutralDesign | Stage::Archive => {
-            attempt(target, false, false, &mut std::io::Cursor::new(Vec::new())).is_ok()
-        }
+        Stage::Design | Stage::NeutralDesign | Stage::Archive => attempt(
+            target,
+            false,
+            false,
+            None,
+            &mut std::io::Cursor::new(Vec::new()),
+        )
+        .is_ok(),
     }
 }
 
@@ -96,13 +102,15 @@ fn encode_brep(
 }
 
 /// Write `target` once. `write_design` states whether its native Design
-/// records are written, and `write_neutral` whether its design scope is; a
-/// failure names the stage that failed. Returns the arena coverage and the
-/// losses of the design scope's records.
+/// records are written, and `write_neutral` whether its design scope is;
+/// `sketch_failure` is why the design scope is written without its `Sketch`
+/// items. A failure names the stage that failed. Returns the arena coverage
+/// and the losses of the design scope's records.
 fn attempt<W: Write + Seek>(
     target: &CadIr,
     write_design: bool,
     write_neutral: bool,
+    sketch_failure: Option<&str>,
     staged: W,
 ) -> Result<(ArenaDispositions, Vec<LossNote>), Failure> {
     #[cfg(test)]
@@ -110,7 +118,7 @@ fn attempt<W: Write + Seek>(
         return Err(Failure::neutral_design(error));
     }
     let mut neutral = if write_neutral {
-        design::plan(target, None).map_err(Failure::neutral_design)?
+        design::plan(target, sketch_failure, None).map_err(Failure::neutral_design)?
     } else {
         None
     };

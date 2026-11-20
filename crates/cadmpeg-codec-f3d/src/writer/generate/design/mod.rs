@@ -5,8 +5,9 @@
 //!
 //! It runs where no native Design record is written and the document holds a
 //! design scope for its root definition. A failure here is a
-//! [`super::reduce::Stage::NeutralDesign`] failure, whose only fallback is to
-//! write no design: it never drops a body.
+//! [`super::reduce::Stage::NeutralDesign`] failure. Its fallbacks write the
+//! design without its `Sketch` items, then write no design: they never drop
+//! a body.
 
 mod base_feature;
 mod expression;
@@ -49,6 +50,23 @@ thread_local! {
     static FAIL_NEXT_PLAN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Makes the next attempt that writes a `Sketch` item on this thread
+    /// fail in the sketch records.
+    static FAIL_NEXT_SKETCHES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The failure [`FAIL_NEXT_SKETCHES`] requests, once.
+#[cfg(test)]
+fn requested_sketch_failure() -> Option<cadmpeg_core::CodecError> {
+    FAIL_NEXT_SKETCHES
+        .with(|fail| fail.replace(false))
+        .then(|| {
+            cadmpeg_core::CodecError::NotImplemented("a test failure of the sketch records".into())
+        })
+}
+
 /// The failure [`FAIL_NEXT_PLAN`] requests, once.
 #[cfg(test)]
 pub(super) fn requested_test_failure() -> Option<cadmpeg_core::CodecError> {
@@ -69,11 +87,13 @@ pub(super) struct NeutralDesign<'a> {
 }
 
 /// The plan for the root definition's design scope; `None` when the
-/// document holds none. `extrude_failure` is the error of an earlier attempt
-/// that wrote the scope's extrude as an `Extrude` item; the plan then writes
-/// it in the Base Feature.
+/// document holds none. With `sketch_failure`, the reason a design with
+/// its sketches failed, the plan writes no `Sketch` item. `extrude_failure`
+/// is the error of an earlier attempt that wrote the scope's extrude as an
+/// `Extrude` item; the plan then writes it in the Base Feature.
 pub(super) fn plan<'a>(
     target: &'a CadIr,
+    sketch_failure: Option<&str>,
     extrude_failure: Option<&str>,
 ) -> Result<Option<NeutralDesign<'a>>, CodecError> {
     let Some(scope) = root_scope(target) else {
@@ -81,14 +101,11 @@ pub(super) fn plan<'a>(
     };
     let mut parameters = parameters::plan(target, &scope.definition);
     let features = scope_features(target, scope);
-    // The `Sketch` items precede the `Base Feature`, which a design with no
-    // body does not write.
-    let sketches = if target.geometry.bodies.is_empty() {
-        SketchPlan::default()
-    } else {
-        sketch::plan(target, &features)
-    };
-    let extrude = if sketches.items.is_empty() {
+    let mut sketches = sketch_plan(target, &features);
+    if let Some(reason) = sketch_failure {
+        sketches.drop_items(reason);
+    }
+    let extrude = if target.geometry.bodies.is_empty() {
         Decision::None
     } else {
         extrude::plan(
@@ -233,6 +250,25 @@ impl NeutralDesign<'_> {
         losses.extend(self.parameters.into_losses());
         losses.extend(self.sketches.into_losses());
         losses
+    }
+}
+
+/// Whether the root definition's design scope writes a `Sketch` item.
+pub(super) fn writes_sketches(target: &CadIr) -> bool {
+    root_scope(target).is_some_and(|scope| {
+        !sketch_plan(target, &scope_features(target, scope))
+            .items
+            .is_empty()
+    })
+}
+
+/// The plan of the sketches among `features`. The `Sketch` items precede
+/// the `Base Feature`, which a design with no body does not write.
+fn sketch_plan<'a>(target: &'a CadIr, features: &[&'a FeatureId]) -> SketchPlan<'a> {
+    if target.geometry.bodies.is_empty() {
+        SketchPlan::default()
+    } else {
+        sketch::plan(target, features)
     }
 }
 
