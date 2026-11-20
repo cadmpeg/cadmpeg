@@ -4051,7 +4051,7 @@ This subsection gives the records of one `WorkPlane` timeline item that offsets 
 |---|---|---|---|---|
 | `D869265F-F339-4751-A066-91D30F81FF08` | `3CE194E6-A591-44AB-9AF1-C695B3DCF486` | 3 | `Fusion` | `WorkPlane` scope |
 
-**Records of the item.** An offset `WorkPlane` item has these records. `L` is the code-unit count of the plane entity's name.
+**Records of the item.** An offset `WorkPlane` item has these records. `L` is the length of the plane entity's name in UTF-16 code units.
 
 | Record | Type | Version | Bytes |
 |---|---|---|---|
