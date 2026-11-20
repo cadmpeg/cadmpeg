@@ -102,6 +102,11 @@ pub(crate) enum SldprtLossCode {
     PmiSwiftFaceDocumentTailAssumed,
     /// Feature history record has duplicate identity or unresolved references.
     HistoryIncompleteReferences,
+    /// The stored marks do not fix the rollback position of the feature tree.
+    HistoryRollbackUnread,
+    /// The `moPMarkRecord_c` class index of a configuration is the class
+    /// token whose records name the most main-line marks.
+    HistoryRollbackMarkClassInferred,
     /// Feature record has missing, repeated, or non-preceding tree edges.
     FeatureIncoherentEdges,
     /// Feature record has inconsistent source-content references.
@@ -375,6 +380,8 @@ impl SldprtLossCode {
         Self::PmiSwiftFaceDocumentLayoutAssumed,
         Self::PmiSwiftFaceDocumentTailAssumed,
         Self::HistoryIncompleteReferences,
+        Self::HistoryRollbackUnread,
+        Self::HistoryRollbackMarkClassInferred,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
         Self::FeatureUnresolvedOutputScope,
@@ -510,6 +517,8 @@ impl SldprtLossCode {
             Self::PmiSwiftFaceDocumentLayoutAssumed => "pmi.swift-face-document-layout-assumed",
             Self::PmiSwiftFaceDocumentTailAssumed => "pmi.swift-face-document-tail-assumed",
             Self::HistoryIncompleteReferences => "history.incomplete-references",
+            Self::HistoryRollbackUnread => "history.rollback-unread",
+            Self::HistoryRollbackMarkClassInferred => "history.rollback-mark-class-inferred",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
             Self::FeatureUnresolvedOutputScope => "feature.unresolved-output-scope",
@@ -680,6 +689,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::PmiSwiftFaceDocumentTailAssumed
             | Self::HistoryIncompleteReferences
+            | Self::HistoryRollbackUnread
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
             | Self::FeatureUnresolvedOutputScope
@@ -771,7 +781,8 @@ impl SldprtLossCode {
             | Self::AssemblySuppressedComponentsOmitted
             | Self::AssemblyConfigurationsNotTransferred
             | Self::AssemblyBomExclusionNotTransferred
-            | Self::DesignFeatureUnresolved => Severity::Info,
+            | Self::DesignFeatureUnresolved
+            | Self::HistoryRollbackMarkClassInferred => Severity::Info,
         }
     }
 
@@ -872,7 +883,8 @@ impl SldprtLossCode {
             | Self::PmiSwiftInternalFlatnessSymbolAssumed
             | Self::PmiSwiftPresentationUnframed
             | Self::PmiSwiftFaceDocumentLayoutAssumed
-            | Self::PmiSwiftFaceDocumentTailAssumed => LossTaxonomy::DecodeDiagnostic,
+            | Self::PmiSwiftFaceDocumentTailAssumed
+            | Self::HistoryRollbackMarkClassInferred => LossTaxonomy::DecodeDiagnostic,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -891,6 +903,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftAnnotationUnsupported
             | Self::PmiSwiftFeatureWalkCapped
             | Self::HistoryIncompleteReferences
+            | Self::HistoryRollbackUnread
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
             | Self::FeatureUnresolvedOutputScope
@@ -1119,6 +1132,8 @@ mod tests {
                 "pmi.swift-face-document-layout-assumed",
                 "pmi.swift-face-document-tail-assumed",
                 "history.incomplete-references",
+                "history.rollback-unread",
+                "history.rollback-mark-class-inferred",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",
                 "feature.unresolved-output-scope",

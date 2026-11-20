@@ -14834,3 +14834,33 @@ offset = 36
 type = "bytes[4]"
 source = "spec"
 anchor = "four zero tail bytes"
+
+[[record]]
+name = "pmark_record_head"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/rollback.rs"
+kind = "byte"
+section = "3.4"
+anchor = "The first twelve bytes of a `moPMarkRecord_c` body (§2.3) are its head"
+size = 12
+endianness = "little"
+
+[[record.field]]
+name = "mark"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "the mark, a little-endian u32 at +0"
+
+[[record.field]]
+name = "form"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "the form, a little-endian u32 at +4"
+
+[[record.field]]
+name = "form_word"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "the form word, a little-endian u32 at +8"

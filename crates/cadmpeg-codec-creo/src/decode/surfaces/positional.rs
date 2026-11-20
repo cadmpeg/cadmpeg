@@ -26,9 +26,7 @@ use crate::decode::sketch_transfer::recipe::FeatureSchemaClasses;
 use crate::decode::source_carriers::SourceUnitCarriers;
 use crate::vecmath::cross;
 
-use super::prototypes::{
-    prototype_scalar, surface_prototype_frame_bounds, unique_surface_prototype_associations,
-};
+use super::prototypes::{prototype_scalar, unique_surface_prototype_associations};
 
 pub(in super::super) fn transfer_paired_envelope_spheres(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -41,14 +39,10 @@ pub(in super::super) fn transfer_paired_envelope_spheres(
         return Ok(0);
     }
     let mut transferred = 0;
-    let mut associations = Vec::new();
-    for (prototype, associated_row, section) in unique_surface_prototype_associations(scan)? {
-        let prototype = prototype.record();
-        let Some(frame) = surface_prototype_frame_bounds(scan, section, prototype.offset)? else {
-            continue;
-        };
-        associations.push((prototype, associated_row, section, frame));
-    }
+    let associations = unique_surface_prototype_associations(scan)?
+        .into_iter()
+        .map(|(prototype, row, section, frame)| (prototype.record(), row, section, frame))
+        .collect::<Vec<_>>();
     for (prototype, associated_row, section, (frame_start, frame_end)) in &associations {
         if !matches!(
             prototype.family,

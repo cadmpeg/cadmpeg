@@ -3441,8 +3441,11 @@ fn build_geometry_ir(
     let mut annotations = std::mem::take(&mut brep.annotations);
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles) =
+    let (mut lanes, exact_profiles, mark_owners) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let rollback = part
+        .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
+        .transpose()?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
@@ -4257,7 +4260,7 @@ fn build_geometry_ir(
     stamp_configuration_baseline(ctx, &mut ir)?;
     snapshot_active_configuration(&mut ir)?;
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
-    if part {
+    if let Some(rollback) = rollback {
         project_design(
             ctx,
             &mut ir,
@@ -4270,6 +4273,7 @@ fn build_geometry_ir(
                     bodies: &brep.native_body_identities,
                 },
                 length: length_unit,
+                rollback,
             },
             &mut pmi_losses,
         )?;
@@ -4282,7 +4286,8 @@ fn build_geometry_ir(
     Ok((ir, annotations, unknowns, retention, pmi_losses))
 }
 
-/// State the v11 design of a part document beside its v10 records.
+/// State the v11 design of a part document beside its v10 records, with the
+/// rollback position its stored marks give.
 fn project_design(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
@@ -4695,8 +4700,11 @@ fn build_metadata_ir(
     let mut annotations = Annotations::default();
     let mut pmi_losses = Vec::new();
     let mut histories = crate::history::histories(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    let (mut lanes, exact_profiles) =
+    let (mut lanes, exact_profiles, mark_owners) =
         crate::resolved_features::assembly::lanes(ctx, scan, &mut annotations, &mut pmi_losses)?;
+    let rollback = part
+        .then(|| crate::rollback::read(ctx, scan, &mark_owners, &mut pmi_losses))
+        .transpose()?;
     let mut supplemental_config_lanes =
         crate::resolved_features::assembly::supplemental_config_lanes(ctx, scan, &mut annotations)?;
     crate::resolved_features::classes::bind_history_classes(&mut histories, &lanes);
@@ -5138,7 +5146,7 @@ fn build_metadata_ir(
     stamp_configuration_baseline(ctx, &mut ir)?;
     snapshot_active_configuration(&mut ir)?;
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
-    if part {
+    if let Some(rollback) = rollback {
         let bodies = ir
             .geometry
             .bodies
@@ -5157,6 +5165,7 @@ fn build_metadata_ir(
                     bodies: &[],
                 },
                 length: length_unit,
+                rollback,
             },
             &mut pmi_losses,
         )?;
