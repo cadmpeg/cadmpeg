@@ -256,7 +256,7 @@ fn inherited_writer_keeps_the_saved_carrier_and_names_a_changed_unit_mirror() {
 }
 
 /// A document with no source states saved properties no carrier holds: the
-/// part is written without them, and each is named.
+/// part is written without them, and the loss names each.
 #[test]
 fn source_less_writer_writes_the_part_and_names_its_saved_properties() {
     let mut ir = crate::test_support::ir::source_less_cube();
@@ -268,17 +268,20 @@ fn source_less_writer_writes_the_part_and_names_its_saved_properties() {
         values: vec![Some(AttributeValue::Integer(7))],
         native_ref: None,
     });
-    let mut bytes = Vec::new();
-    let output = crate::writer::write_semantic_with_records(
-        &ir,
-        &cadmpeg_ir::annotations::Annotations::default(),
-        &[],
-        &mut bytes,
+    let plan = crate::test_support::plan_fixture_with_native_envelope(
+        cadmpeg_ir::codec::write::EncodeInput::new(&ir, None),
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
     )
     .unwrap();
+    let omitted = plan
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.message.clone())
+        .collect::<Vec<_>>();
+    let loss = saved_property_loss(&omitted);
+    assert!(loss.contains(id), "{loss}");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
     assert!(!bytes.is_empty());
-    assert_eq!(
-        output.unwritten.reason(id),
-        Some(crate::writer::Unwritten::SavedProperty)
-    );
 }
