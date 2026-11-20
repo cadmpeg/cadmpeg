@@ -389,8 +389,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert_eq!(shape_payloads.len(), 1);
     assert_eq!(shape_payloads[0].payload.topology_version(), Some(1));
     assert!(result.report().geometry_transferred());
-    assert_eq!(result.ir().model.curves.len(), 8);
-    match &result.ir().model.curves[0].geometry {
+    assert_eq!(result.ir().geometry.curves.len(), 8);
+    match &result.ir().geometry.curves[0].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(line_curve)) => {
             let origin = line_curve.origin().get();
             let direction = *line_curve.direction().as_raw();
@@ -399,7 +399,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
         other => panic!("unexpected curve {other:?}"),
     }
-    match &result.ir().model.curves[1].geometry {
+    match &result.ir().geometry.curves[1].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             assert_eq!(nurbs.degree(), 2);
             assert_eq!(nurbs.control_points().len(), 3);
@@ -408,15 +408,15 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
         other => panic!("unexpected curve {other:?}"),
     }
-    assert_eq!(result.ir().model.procedural_curves.len(), 2);
-    match result.ir().model.procedural_curves[0].definition() {
+    assert_eq!(result.ir().geometry.procedural_curves.len(), 2);
+    match result.ir().geometry.procedural_curves[0].definition() {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(definition_payload) => {
             let parameter_range = definition_payload.parameter_range();
             assert_eq!(parameter_range.endpoints(), [0.0, 5.0]);
         }
         other => panic!("unexpected trimmed construction {other:?}"),
     }
-    match result.ir().model.procedural_curves[1].definition() {
+    match result.ir().geometry.procedural_curves[1].definition() {
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(payload) => {
             let distance = wire::field::<f64>(&payload, "distance");
             let cadmpeg_ir::geometry::OffsetSide::Direction {
@@ -431,8 +431,8 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
         other => panic!("unexpected offset construction {other:?}"),
     }
-    assert_eq!(result.ir().model.surfaces.len(), 7);
-    match &result.ir().model.surfaces[0].geometry {
+    assert_eq!(result.ir().geometry.surfaces.len(), 7);
+    match &result.ir().geometry.surfaces[0].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             plane_surface,
         )) => {
@@ -445,20 +445,20 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
         other => panic!("unexpected surface {other:?}"),
     }
-    assert_eq!(result.ir().model.procedural_surfaces.len(), 4);
+    assert_eq!(result.ir().geometry.procedural_surfaces.len(), 4);
     assert!(matches!(
-        result.ir().model.procedural_surfaces[0].definition(),
+        result.ir().geometry.procedural_surfaces[0].definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
     ));
     assert!(
-        match result.ir().model.procedural_surfaces[1].definition() {
+        match result.ir().geometry.procedural_surfaces[1].definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution(matched_payload) =>
                 matches!((&matched_payload.parameter_interval(),), (None,)),
             _ => false,
         }
     );
     assert!(
-        match result.ir().model.procedural_surfaces[2].definition() {
+        match result.ir().geometry.procedural_surfaces[2].definition() {
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(matched_payload) => matches!(
                 (matched_payload.u_sense(), matched_payload.v_sense(),),
                 (None, None,)
@@ -467,10 +467,10 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
     );
     assert!(matches!(
-        result.ir().model.procedural_surfaces[3].definition(),
+        result.ir().geometry.procedural_surfaces[3].definition(),
         cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset(_)
     ));
-    match &result.ir().model.surfaces[1].geometry {
+    match &result.ir().geometry.surfaces[1].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
             assert_eq!((nurbs.u_degree(), nurbs.v_degree()), (1, 1));
             assert_eq!((nurbs.u_count(), nurbs.v_count()), (2, 2));
@@ -566,7 +566,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .native
         .namespace_mut("fcstd")
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "logical_ledger",
             &missing_payload,
         )
@@ -690,7 +690,7 @@ fn native_validation_rejects_duplicate_extension_identity() {
         .native
         .namespace_mut("fcstd")
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "extensions",
             &extensions,
         )
@@ -824,4 +824,138 @@ fn external_file_links_do_not_become_archive_side_entry_requirements() {
         )
         .unwrap();
     assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
+}
+
+#[test]
+fn an_unreadable_entry_outside_the_direct_part_carrier_drops_no_exact_shape() {
+    let property = r#"<Property name="Shape" type="Part::PropertyPartShape"><Part file="Box.Shape.brp"/><X file="Note.bin"/></Property>"#;
+    let document = format!(
+        "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"1\">{property}</Properties></Object></ObjectData></Document>"
+    );
+    for (unreadable, dropped) in [("Note.bin", false), ("Box.Shape.brp", true)] {
+        let (drops, remaining) =
+            crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+                let mut graph = parse(document.as_bytes(), "4", ctx).expect("exact-shape document");
+                let drops = super::drop_unreadable(
+                    ctx,
+                    &mut graph,
+                    &std::collections::BTreeSet::from([unreadable.to_owned()]),
+                )
+                .expect("bounded exact-shape carrier");
+                (drops, graph.properties.len())
+            });
+        assert_eq!(drops.contains_key(unreadable), dropped, "{unreadable}");
+        assert_eq!(remaining, usize::from(!dropped), "{unreadable}");
+    }
+}
+
+#[test]
+fn only_the_direct_part_entry_of_an_exact_shape_must_resolve() {
+    let property = r#"<Property name="Shape" type="Part::PropertyPartShape"><Part file="Box.Shape.brp"/><X file="Note.bin"/></Property>"#;
+    let document = format!(
+        "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"1\">{property}</Properties></Object></ObjectData></Document>"
+    );
+    let payload = b"brep".to_vec();
+    for (present, resolves) in [("Box.Shape.brp", true), ("Note.bin", false)] {
+        let (result, losses) =
+            crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+                let mut graph = parse(document.as_bytes(), "4", ctx).expect("exact-shape document");
+                let entries = std::collections::BTreeMap::from([(
+                    present.to_owned(),
+                    cadmpeg_core::decode::View::over_retained(&payload),
+                )]);
+                let mut losses = Vec::new();
+                let result =
+                    super::resolve_side_entries(ctx, &mut graph.properties, &entries, &mut losses);
+                (result.is_ok(), losses)
+            });
+        assert_eq!(result, resolves, "{present}");
+        if resolves {
+            assert!(losses.iter().any(|loss| {
+                loss.code
+                    == crate::loss::FreecadLossCode::PersistenceSideEntryUnresolved
+                        .note("")
+                        .code
+                    && loss.message.contains("Note.bin")
+            }));
+        }
+    }
+}
+
+#[test]
+fn only_a_payload_entry_drops_or_requires_its_geometry_property() {
+    let cases = [
+        (
+            r#"<Property name="Shape" type="Part::PropertyPartShape"><Wrap><Part file="Box.Shape.brp"/></Wrap></Property>"#,
+            "Box.Shape.brp",
+            false,
+        ),
+        (
+            r#"<Property name="Shape" type="Part::PropertyPartShape"><Part File="Box.Shape.brp"/></Property>"#,
+            "Box.Shape.brp",
+            false,
+        ),
+        (
+            r#"<Property name="Mesh" type="Mesh::PropertyMeshKernel"><Mesh file="MeshKernel.bms"/><X file="Note.bin"/></Property>"#,
+            "Note.bin",
+            false,
+        ),
+        (
+            r#"<Property name="Mesh" type="Mesh::PropertyMeshKernel"><Mesh file="MeshKernel.bms"/></Property>"#,
+            "MeshKernel.bms",
+            true,
+        ),
+        (
+            r#"<Property name="Points" type="Points::PropertyPointKernel"><Points file="PointKernel.bin"/></Property>"#,
+            "PointKernel.bin",
+            true,
+        ),
+        (
+            r#"<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/><X file="Note.bin"/></Property>"#,
+            "Note.bin",
+            false,
+        ),
+    ];
+    for (property, entry, needed) in cases {
+        let document = format!(
+            "<Document SchemaVersion=\"4\"><Objects Count=\"1\"><Object name=\"A\" type=\"T\"/></Objects><ObjectData Count=\"1\"><Object name=\"A\"><Properties Count=\"1\">{property}</Properties></Object></ObjectData></Document>"
+        );
+        let (dropped, resolves) =
+            crate::test_support::with_service_context(document.as_bytes(), |ctx| {
+                let mut graph = parse(document.as_bytes(), "4", ctx).expect("geometry document");
+                let mut absent = parse(document.as_bytes(), "4", ctx).expect("geometry document");
+                let drops = super::drop_unreadable(
+                    ctx,
+                    &mut graph,
+                    &std::collections::BTreeSet::from([entry.to_owned()]),
+                )
+                .expect("bounded geometry property");
+                let payload = b"payload".to_vec();
+                let present = [
+                    "Box.Shape.brp",
+                    "MeshKernel.bms",
+                    "PointKernel.bin",
+                    "Note.bin",
+                ]
+                .into_iter()
+                .filter(|name| *name != entry)
+                .map(|name| {
+                    (
+                        name.to_owned(),
+                        cadmpeg_core::decode::View::over_retained(&payload),
+                    )
+                })
+                .collect();
+                let resolves = super::resolve_side_entries(
+                    ctx,
+                    &mut absent.properties,
+                    &present,
+                    &mut Vec::new(),
+                )
+                .is_ok();
+                (drops.contains_key(entry), resolves)
+            });
+        assert_eq!(dropped, needed, "{property}");
+        assert_eq!(resolves, !needed, "{property}");
+    }
 }

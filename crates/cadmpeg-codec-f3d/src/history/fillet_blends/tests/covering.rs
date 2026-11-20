@@ -46,6 +46,7 @@ fn two_along(span_17: [f64; 2], span_18: [f64; 2]) -> AsmHistoricalTopology {
     two.edge_samples.retain(|sample| sample.edge != 18);
     two.curve_axes.retain(|axis| axis.curve != 118);
     two.edge_samples.push(AsmHistoricalEdgeSample {
+        bounds: None,
         edge: 18,
         interior: Point3::new(0.0, 0.0, 0.0),
         tangent: Some(z()),
@@ -66,6 +67,7 @@ fn spanned_output() -> AsmHistoricalTopology {
     let mut output = output();
     for (edge, height) in [(30, 0.0), (31, 4.0), (32, 2.0)] {
         output.edge_samples.push(AsmHistoricalEdgeSample {
+            bounds: None,
             edge,
             interior: Point3::new(0.0, 0.0, height),
             tangent: Some(x()),
@@ -351,6 +353,7 @@ fn torus(shared_18: bool) -> (AsmHistoricalTopology, AsmHistoricalTopology) {
             direction: z(),
         });
         input.edge_samples.push(AsmHistoricalEdgeSample {
+            bounds: None,
             edge,
             interior: Point3::new(1.0, 0.0, 0.0),
             tangent: Some(y()),

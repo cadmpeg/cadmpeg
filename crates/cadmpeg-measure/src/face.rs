@@ -8,6 +8,7 @@ use cadmpeg_core::decode::ResourceLimit;
 use cadmpeg_ir::source_fidelity::SourceFidelity;
 use cadmpeg_ir::topology::Face;
 
+mod pole;
 mod readings;
 
 use crate::boundary::{FaceFrame, LoopKind, ResolvedFace, ResolvedLoop};
@@ -304,7 +305,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         };
 
         let chart: Outcome<Chart<'ir>> = match &carrier {
-            Ok(carrier) => settle(carrier.chart().copied())?,
+            Ok(carrier) => settle(carrier.chart().map(|chart| chart.collapsing_within(tau)))?,
             Err(missing) => Err(missing.clone()),
         };
         let boundary: Outcome<Boundary<'ir>> = match (&chart, &self.placement) {
@@ -642,7 +643,9 @@ impl<'ir> FaceInput<'_, 'ir> {
             | (Some(_), None, _, Err(missing), _)
             | (Some(_), None, _, _, Err(missing)) => Some(Err(missing.clone())),
         };
-        let natural = region.as_ref().is_ok_and(|region| region.exterior != 0.0);
+        let closed_domain = matches!((&chart, &region), (Ok(Chart::Nurbs(nurbs)), Ok(region))
+            if region.rule == RegionRule::WholeSurface && nurbs.closed_domain(tau));
+        let natural = region.as_ref().is_ok_and(|region| region.exterior != 0.0) && !closed_domain;
         let mut result = FaceResult {
             row,
             aabb: aabbs[0],
@@ -660,11 +663,33 @@ impl<'ir> FaceInput<'_, 'ir> {
             surface_tau,
             trims,
         };
-        let witness = matches!(verdict, Verdict::Confirmed | Verdict::Conflict).then(|| Witness {
-            kind: WitnessKind::EmptyReading,
-            entity: id.to_owned(),
-            agrees: verdict == Verdict::Confirmed,
-        });
+        let mut witness =
+            matches!(verdict, Verdict::Confirmed | Verdict::Conflict).then(|| Witness {
+                kind: WitnessKind::EmptyReading,
+                entity: id.to_owned(),
+                agrees: verdict == Verdict::Confirmed,
+            });
+        let mut verdict = verdict;
+        if let (Verdict::Unconfirmed, Ok(chart), Ok(region), Ok(placement)) =
+            (verdict, &chart, &region, &self.placement)
+        {
+            let frame = FaceFrame {
+                owners,
+                edges: self.edges,
+                face,
+                chart,
+                body: *placement,
+                alpha: alpha.max(tau_b),
+            };
+            if let Ok(Some(found)) = settle(pole::witness(&frame, &coedges, region, eval))? {
+                verdict = if found.agrees {
+                    Verdict::Confirmed
+                } else {
+                    Verdict::Contradicted
+                };
+                witness = Some(found);
+            }
+        }
         result.settle_reading(verdict, witness);
         Ok(result)
     }

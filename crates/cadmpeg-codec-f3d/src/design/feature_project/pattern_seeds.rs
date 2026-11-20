@@ -175,7 +175,7 @@ pub(super) fn pattern_group_seeds(
 /// Feature seeds named by a face-role group whose members are all compact
 /// entity selections. Each compact identity is the record index of a
 /// modelling feature scope in the same stream other than `scope`.
-fn entity_selection_feature_seeds(
+pub(super) fn entity_selection_feature_seeds(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
     entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
@@ -211,4 +211,75 @@ fn entity_selection_feature_seeds(
             ))
         })
         .collect()
+}
+
+/// The loss a rectangular-pattern payload charges when its seed kind or its
+/// body references break the distribution-block rules, or disagree with the
+/// face, feature, or body seeds of the pattern. The pattern keeps its seeds.
+pub(super) fn distribution_seed_conflict(
+    scope: &DesignParameterScope,
+    distribution: &crate::records::feature::patterns::DesignRectangularPatternDistribution,
+    seeds: &[cadmpeg_ir::features::patterns::PatternSeed],
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::patterns::PatternSeed;
+    /// Seed kinds of the distribution block.
+    const FACE_SEED: u32 = 0;
+    const FEATURE_SEED: u32 = 1;
+    const BODY_SEED: u32 = 2;
+
+    let name = |kind: u32| match kind {
+        FACE_SEED => "faces",
+        FEATURE_SEED => "features",
+        _ => "bodies",
+    };
+    let kinds = seeds
+        .iter()
+        .map(|seed| match seed {
+            PatternSeed::Faces(_) => Some(FACE_SEED),
+            PatternSeed::Feature(_) => Some(FEATURE_SEED),
+            PatternSeed::Bodies(_) => Some(BODY_SEED),
+            PatternSeed::Native(_) | PatternSeed::Occurrences(_) => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .unwrap_or_default();
+    let seed_kind = match kinds.as_slice() {
+        [first, rest @ ..] if rest.iter().all(|kind| kind == first) => Some(*first),
+        _ => None,
+    };
+    let stored = distribution.seed_kind.value;
+    let mut conflicts = Vec::new();
+    if stored > BODY_SEED {
+        conflicts.push(format!(
+            "stores seed kind {stored} at byte {}, above the last seed kind {BODY_SEED}",
+            distribution.seed_kind.offset
+        ));
+    }
+    if let Some(kind) = seed_kind.filter(|kind| *kind != stored) {
+        conflicts.push(format!(
+            "stores seed kind {stored} at byte {} where its seeds are {}",
+            distribution.seed_kind.offset,
+            name(kind)
+        ));
+    }
+    let face_or_body = stored != FEATURE_SEED || seed_kind.is_some_and(|kind| kind != FEATURE_SEED);
+    if face_or_body && distribution.body_references.value != 0 {
+        conflicts.push(format!(
+            "stores {} body references at byte {} with a face or body seed",
+            distribution.body_references.value, distribution.body_references.offset
+        ));
+    }
+    if distribution.untyped_body_references != 0 {
+        conflicts.push(format!(
+            "names {} records of a type other than the body browser node type among its {} body references",
+            distribution.untyped_body_references, distribution.body_references.value
+        ));
+    }
+    (!conflicts.is_empty()).then(|| {
+        crate::loss::F3dLossCode::FeaturePatternPayloadSeedUnconfirmed.note(format!(
+            "RectangularPattern scope {}: pattern payload record {} {}; the pattern keeps its seeds.",
+            scope.id,
+            distribution.record_index,
+            conflicts.join(", and ")
+        ))
+    })
 }

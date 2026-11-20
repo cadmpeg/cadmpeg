@@ -11,7 +11,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, ParseError, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::OccurrenceId;
-use cadmpeg_ir::products::OccurrenceParent;
 use cadmpeg_ir::report::loss::LossNote;
 use serde::{Deserialize, Serialize};
 
@@ -113,7 +112,7 @@ pub(crate) struct DisplayPose {
     pub(crate) stream: String,
     pub(crate) byte_offset: u64,
     pub(crate) path: ScenePath,
-    /// First element of the tagged path suffix.
+    /// First tagged element; zero means that the complete path is tagged.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -227,12 +226,12 @@ fn row(
         match high {
             UNTAGGED_HIGH_WORD if tagged_from.is_none() => {}
             TAGGED_HIGH_WORD if tagged_from.is_some() => {}
-            TAGGED_HIGH_WORD if position > 0 && position.is_multiple_of(2) => {
+            TAGGED_HIGH_WORD if position.is_multiple_of(2) => {
                 tagged_from = Some(u64_from_index(position));
             }
             _ => {
                 return Err(RowError::Grammar(
-                    "override element requires a record index in an untagged prefix or tagged pair suffix",
+                    "override element requires a record index in an untagged path, tagged path, or tagged pair suffix",
                 ));
             }
         }
@@ -359,6 +358,7 @@ pub(crate) fn bind(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     sources: &Sources,
+    instance_scopes: &BTreeMap<OccurrenceId, String>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     let Some(native) = ir.native.namespace("f3d") else {
@@ -368,14 +368,48 @@ pub(crate) fn bind(
     if rows.is_empty() {
         return Ok(());
     }
-    let occurrences = ir
-        .model
+    // Expand shared definitions so that each insertion has its own path,
+    // and bind each path to the occurrence the definition owns.
+    // A refused expansion binds on the unexpanded tree, as before expansion.
+    let expanded = match crate::tree::expand(
+        &ctx.policy().limits,
+        &ir.model.product_definitions,
+        &ir.model.occurrences,
+        instance_scopes,
+    ) {
+        Ok(expanded) => expanded,
+        Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+        Err(_) => crate::tree::Expanded {
+            definitions: ir.model.product_definitions.clone(),
+            parents: crate::tree::parent_ids(&ir.model.product_definitions, &ir.model.occurrences),
+            occurrences: ir.model.occurrences.clone(),
+            occurrence_of: ir
+                .model
+                .occurrences
+                .iter()
+                .map(|record| (record.id.clone(), record.id.clone()))
+                .collect(),
+        },
+    };
+    let occurrences = expanded
         .occurrences
         .iter()
         .map(|record| (record.id.as_str(), record))
         .collect::<BTreeMap<_, _>>();
+    let parents = &expanded.parents;
     let mut paths = BTreeMap::<Vec<u64>, Option<OccurrenceId>>::new();
-    for occurrence in &ir.model.occurrences {
+    for occurrence in &expanded.occurrences {
+        let Some(target) = expanded.occurrence_of.get(&occurrence.id) else {
+            continue;
+        };
+        // The final path pair is the occurrence's own carrier.
+        if !occurrence
+            .native_ref
+            .as_ref()
+            .is_some_and(|reference| sources.contains_key(reference))
+        {
+            continue;
+        }
         let mut chain = Vec::new();
         let mut seen = BTreeSet::new();
         let mut current = Some(occurrence);
@@ -393,9 +427,9 @@ pub(crate) fn bind(
                     break;
                 }
             }
-            current = match &record.parent {
-                OccurrenceParent::Root {} => None,
-                OccurrenceParent::Occurrence { occurrence: parent } => {
+            current = match parents.get(&record.id) {
+                None => None,
+                Some(parent) => {
                     let parent = occurrences.get(parent.as_str()).copied();
                     if parent.is_none() {
                         valid = false;
@@ -409,13 +443,13 @@ pub(crate) fn bind(
             paths
                 .entry(path)
                 .and_modify(|id| *id = None)
-                .or_insert_with(|| Some(occurrence.id.clone()));
+                .or_insert_with(|| Some(target.clone()));
         }
     }
     let mut unbound = 0;
     let mut ambiguous = 0;
     for record in &mut rows {
-        if record.tagged_from.is_some() {
+        if record.tagged_from.is_some_and(|first| first != 0) {
             unbound += 1;
             record.binding = SceneBinding::Unbound {};
             continue;
@@ -446,6 +480,36 @@ pub(crate) fn bind(
     Ok(())
 }
 
+/// Renames the occurrence each bound display pose names by `renamed`. A
+/// pose's row keeps its full path, so a pose of one instance of a shared
+/// occurrence names that occurrence.
+pub(crate) fn rename_bound(
+    ctx: &DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+    renamed: &std::collections::HashMap<String, String>,
+) -> Result<(), CodecError> {
+    let Some(native) = ir.native.namespace("f3d") else {
+        return Ok(());
+    };
+    let mut rows: Vec<DisplayPose> = native.arena_as_for_decode(ctx, "display_poses")?;
+    let mut changed = false;
+    for row in &mut rows {
+        let SceneBinding::Bound { occurrence } = &mut row.binding else {
+            continue;
+        };
+        if let Some(to) = renamed.get(occurrence.as_str()) {
+            *occurrence = OccurrenceId::mint(to.clone()).map_err(CodecError::malformed)?;
+            changed = true;
+        }
+    }
+    if changed {
+        ir.native
+            .namespace_mut("f3d")
+            .set_arena(ctx, "display_poses", &rows)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn validate(
     rows: &[DisplayPose],
     model: &cadmpeg_ir::document::Model,
@@ -458,12 +522,12 @@ pub(crate) fn validate(
     rows.iter()
         .filter_map(|row| {
             let tagged_valid = row.tagged_from.is_none_or(|first| {
-                first > 0 && first.is_multiple_of(2) && first < u64_from_index(row.path.0.len())
+                first.is_multiple_of(2) && first < u64_from_index(row.path.0.len())
             });
             let message = if !tagged_valid {
                 "Fusion displayed pose has an invalid tagged path suffix"
             } else if let SceneBinding::Bound { occurrence } = &row.binding {
-                if row.tagged_from.is_some() {
+                if row.tagged_from.is_some_and(|first| first != 0) {
                     "Fusion displayed pose binds a tagged path"
                 } else if occurrences.contains(occurrence) {
                     return None;

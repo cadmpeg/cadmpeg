@@ -97,7 +97,7 @@ pub fn lower_subset_curves(
     lower: impl Fn(&Curve) -> bool,
 ) -> Result<Cow<'_, CadIr>, CodecError> {
     let lowerings = ir
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .filter_map(|procedural| lowering(ir, procedural, &lower).transpose())
@@ -119,9 +119,9 @@ fn subset_owner<'ir>(
     let ProceduralCurveDefinition::Subset(subset) = procedural.definition() else {
         return None;
     };
-    let owner = ir.model.procedural_curve_owner(&procedural.id)?;
+    let owner = ir.geometry.procedural_curve_owner(&procedural.id)?;
     Some((
-        ir.model.curves.iter().find(|curve| curve.id == *owner)?,
+        ir.geometry.curves.iter().find(|curve| curve.id == *owner)?,
         subset,
     ))
 }
@@ -142,7 +142,7 @@ fn lowering(
     let mut visited = BTreeSet::from([&curve.id]);
     let mut source = subset.source();
     let root = loop {
-        let Some(candidate) = ir.model.curves.iter().find(|item| item.id == *source) else {
+        let Some(candidate) = ir.geometry.curves.iter().find(|item| item.id == *source) else {
             return Ok(None);
         };
         if !visited.insert(&candidate.id) {
@@ -155,7 +155,7 @@ fn lowering(
             .geometry
             .procedural_construction()
             .and_then(|construction| {
-                ir.model
+                ir.geometry
                     .procedural_curves
                     .iter()
                     .find(|item| item.id == *construction)
@@ -206,7 +206,7 @@ fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
         definition,
     } = lowering;
     let carrier = ir
-        .model
+        .geometry
         .curves
         .iter_mut()
         .find(|carrier| carrier.id == curve)
@@ -218,7 +218,7 @@ fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
         .parameter_range
         .map_or([0.0, span], IncreasingParameterInterval::endpoints);
     carrier.parameter_range = IncreasingParameterInterval::new(map.interval(range)?.endpoints());
-    for procedural in &mut ir.model.procedural_curves {
+    for procedural in &mut ir.geometry.procedural_curves {
         if procedural.id == construction {
             *procedural = ProceduralCurve::new(
                 construction.clone(),
@@ -227,7 +227,7 @@ fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
         }
     }
     let mut reversed = BTreeSet::new();
-    for edge in &mut ir.model.edges {
+    for edge in &mut ir.geometry.edges {
         if edge.curve() != Some(&curve) {
             continue;
         }
@@ -235,11 +235,13 @@ fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
             edge.set_param_range(Some(map.interval(range.get())?));
         }
         if !map.forward {
-            std::mem::swap(&mut edge.start, &mut edge.end);
+            if let Some(ends) = &mut edge.ends {
+                std::mem::swap(&mut ends.start, &mut ends.end);
+            }
             reversed.insert(edge.id.clone());
         }
     }
-    for coedge in &mut ir.model.coedges {
+    for coedge in &mut ir.geometry.coedges {
         if reversed.contains(&coedge.edge) {
             coedge.sense = match coedge.sense {
                 Sense::Forward => Sense::Reversed,
@@ -255,7 +257,7 @@ fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
         }
     }
     if !map.forward {
-        for carrier in &mut ir.model.curves {
+        for carrier in &mut ir.geometry.curves {
             let (CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. })
             | CurveGeometry::Procedural {
                 cache: Some(SolvedCurveGeometry::Composite { segments, .. }),

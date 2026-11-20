@@ -72,7 +72,7 @@ fn historical_vertex_selection_requires_input_state_membership() {
     let mut references = Vec::new();
     ir.model.features[0]
         .visit_references(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut |reference| {
                 references.push(reference.to_owned());
                 Ok(())
@@ -1213,7 +1213,7 @@ fn decals_require_valid_assets_faces_and_opacity() {
     let asset_id = AssetId::mint("synthetic:test:asset#decal").expect("identity grammar");
     let feature_id = FeatureId::mint("synthetic:test:feature#decal").expect("identity grammar");
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let face_id = ir.model.faces[0].id.clone();
+    let face_id = ir.geometry.faces[0].id.clone();
     ir.model.assets.push(
         Asset::try_new(
             asset_id.clone(),
@@ -1382,7 +1382,7 @@ fn revolve_validator_limits_fixed_angles_and_two_side_sum() {
     ] {
         let mut ir = CadIr::empty();
         let mut construction: RevolveConstruction = serde_json::from_value(serde_json::json!({
-            "state": "unresolved", "missing": "profile"
+            "kind": "unresolved", "value": {"kind": "profile"}
         }))
         .unwrap();
         if let RevolveConstruction::Unresolved(PartialRevolveConstruction::Profile {

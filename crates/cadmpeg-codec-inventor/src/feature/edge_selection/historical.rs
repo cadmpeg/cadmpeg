@@ -22,8 +22,8 @@ use crate::pmdc::{state_content_header, u32_list_with_context, Cursor, PmDcRefer
 /// The largest generator array that a direct edge selector stores.
 const MAX_SELECTOR_GENERATORS: usize = 4;
 
-pub(super) struct StoredSelector {
-    pub(super) source: u32,
+pub(in crate::feature) struct StoredSelector {
+    pub(in crate::feature) source: u32,
     pub(super) generators: Vec<u32>,
     pub(super) secondary: Vec<u32>,
     pub(super) key: u32,
@@ -33,7 +33,7 @@ pub(super) struct StoredSelector {
     context: PmDcReference,
 }
 
-pub(super) fn parse(
+pub(in crate::feature) fn parse(
     ctx: &DecodeContext<'_>,
     payload: View<'_>,
     version: u8,
@@ -105,11 +105,11 @@ pub(super) fn secondary_names_known(selector: &StoredSelector, features: &HashSe
         .all(|name| features.contains(name))
 }
 
-pub(super) fn source(payload: View<'_>, version: u8) -> Result<u32, CodecError> {
+pub(in crate::feature) fn source(payload: View<'_>, version: u8) -> Result<u32, CodecError> {
     Ok(state_content_header(&mut Cursor::new(payload), version)?.source_index)
 }
 
-pub(super) fn links(
+pub(in crate::feature) fn links(
     selector: &StoredSelector,
     type_at: impl Fn(u32) -> Option<[u8; 16]>,
     body_source_at: impl Fn(u32) -> Option<u32>,
@@ -148,7 +148,7 @@ pub(crate) const fn supported_schema(schema: u32) -> bool {
     matches!(schema, 38 | 40 | 42 | 43 | 44)
 }
 
-pub(super) fn selected(
+pub(in crate::feature) fn selected(
     ctx: &DecodeContext<'_>,
     records: &[Record],
     selectors: &[StoredSelector],
@@ -500,6 +500,17 @@ fn selections(feature: &Feature) -> Vec<&EdgeSelection> {
     }
 }
 
+fn loss_selections(feature: &Feature) -> impl Iterator<Item = &EdgeSelection> {
+    let attachment = match feature.evaluation.definition() {
+        FeatureDefinition::Operation(
+            FeatureOperation::SheetMetalAttachedPlate { attachment, .. }
+            | FeatureOperation::SheetMetalBend { attachment, .. },
+        ) => Some(attachment),
+        _ => None,
+    };
+    selections(feature).into_iter().chain(attachment)
+}
+
 pub(crate) fn valid<'a>(
     feature: &Feature,
     source: &crate::feature::PmDcFeature,
@@ -568,7 +579,7 @@ pub(crate) fn valid<'a>(
     })
 }
 
-/// One note counting the edge-treatment features that use a selected input
+/// One note counting the features that use a selected input
 /// edge with several matched owners of identical geometry.
 pub(super) fn ambiguous_owner_losses(
     inventory: &crate::feature::FeatureInventory,
@@ -584,7 +595,7 @@ pub(super) fn ambiguous_owner_losses(
     let count = features
         .iter()
         .filter(|feature| {
-            selections(feature).iter().any(|selection| {
+            loss_selections(feature).any(|selection| {
                 matches!(selection, EdgeSelection::Historical { edges, .. }
                     if edges.iter().any(|edge| ambiguous.contains(edge)))
             })
@@ -593,7 +604,7 @@ pub(super) fn ambiguous_owner_losses(
     if count == 0 {
         Vec::new()
     } else {
-        vec![crate::loss::InventorLossCode::FeatureEdgeOwnerIdenticalGeometry.note(format!("{count} edge-treatment feature(s) select an input edge with several matched owner edges that agree at the start, end, interval midpoint, and midpoint tangent; agreement at these samples is taken as the same edge, the stored body state of the edge is not proven, and the owner with the lowest record index is used."))]
+        vec![crate::loss::InventorLossCode::FeatureEdgeOwnerIdenticalGeometry.note(format!("{count} feature(s) select an input edge with several matched owner edges that agree at the start, end, interval midpoint, and midpoint tangent; agreement at these samples is taken as the same edge, the stored body state of the edge is not proven, and the owner with the lowest record index is used."))]
     }
 }
 
@@ -601,7 +612,7 @@ pub(super) fn ambiguous_owner_losses(
 /// generators.
 const PLAIN_SELECTOR_GENERATORS: usize = 2;
 
-/// One note counting the edge-treatment features that select an edge through a
+/// One note counting the features that select an edge through a
 /// selector with more than two generators.
 pub(super) fn generator_losses(
     inventory: &crate::feature::FeatureInventory,
@@ -617,7 +628,7 @@ pub(super) fn generator_losses(
     let count = features
         .iter()
         .filter(|feature| {
-            selections(feature).iter().any(|selection| {
+            loss_selections(feature).any(|selection| {
                 matches!(selection, EdgeSelection::Historical { edges, .. }
                     if edges.iter().any(|edge| long.contains(edge)))
             })
@@ -626,7 +637,7 @@ pub(super) fn generator_losses(
     if count == 0 {
         Vec::new()
     } else {
-        vec![crate::loss::InventorLossCode::FeatureEdgeSelectorGeneratorsAssumed.note(format!("{count} edge-treatment feature(s) select an input edge through a selector with three or four generators; the selection assumes that the extra generators do not change the matched edge."))]
+        vec![crate::loss::InventorLossCode::FeatureEdgeSelectorGeneratorsAssumed.note(format!("{count} feature(s) select an input edge through a selector with three or four generators; the selection assumes that the extra generators do not change the matched edge."))]
     }
 }
 

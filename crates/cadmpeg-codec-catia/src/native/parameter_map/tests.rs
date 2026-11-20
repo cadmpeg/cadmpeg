@@ -42,7 +42,10 @@ fn native_a8_sampled_map_retains_exact_payload_and_checked_wire() {
     let mut owned = cadmpeg_ir::NativeNamespace::default();
     native
         .clone()
-        .store_owned(&cadmpeg_test_support::service_decode_context(), &mut owned)
+        .store_owned(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &mut owned,
+        )
         .expect("owned store");
     assert_eq!(owned, namespace);
     assert_eq!(
@@ -90,10 +93,10 @@ fn unresolved_a8_maps_create_no_neutral_geometry() {
     let decoded = crate::CatiaCodec
         .decode(&mut std::io::Cursor::new(input), &DecodeOptions::default())
         .expect("decode unresolved sampled map");
-    let model = &decoded.ir().model;
-    assert!(model.curves.is_empty() && model.procedural_curves.is_empty());
-    assert!(model.surfaces.is_empty() && model.procedural_surfaces.is_empty());
-    assert!(model.edges.is_empty() && model.faces.is_empty());
+    let geometry = &decoded.ir().geometry;
+    assert!(geometry.curves.is_empty() && geometry.procedural_curves.is_empty());
+    assert!(geometry.surfaces.is_empty() && geometry.procedural_surfaces.is_empty());
+    assert!(geometry.edges.is_empty() && geometry.faces.is_empty());
     assert_eq!(
         decoded
             .ir()

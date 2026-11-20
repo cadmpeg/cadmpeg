@@ -36,6 +36,7 @@ fn midpoint_history(id: &str, x: f64) -> crate::history_records::AsmHistory {
     let input = AsmHistoricalTopology {
         edges: vec![10],
         edge_samples: vec![AsmHistoricalEdgeSample {
+            bounds: None,
             edge: 10,
             interior: cadmpeg_ir::math::Point3::new(x, 0.0, 0.0),
             tangent: None,
@@ -72,7 +73,8 @@ fn edge_midpoints_use_named_input_state_and_bound_history() {
             &owners,
             None,
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         assert_eq!(
             feature
                 .source_properties
@@ -111,7 +113,8 @@ fn edge_midpoints_refuse_missing_or_ambiguous_input_history() {
             &owners,
             None,
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         assert!(!feature
             .source_properties
             .contains_key(&cadmpeg_core::nonblank_literal!("edge_midpoints")));
@@ -141,7 +144,8 @@ fn edge_midpoints_refuse_a_truncated_state_chain() {
         &owners,
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert!(!feature
         .source_properties
         .contains_key(&cadmpeg_core::nonblank_literal!("edge_midpoints")));
@@ -174,7 +178,8 @@ fn edge_midpoints_keep_features_with_equal_state_numbers_separate() {
         &owners,
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     for (feature, expected) in features.iter().zip(["1,0,0", "2,0,0"]) {
         assert_eq!(
             feature
@@ -206,7 +211,8 @@ fn edge_midpoints_report_a_missing_input_carrier() {
         &owners,
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert!(!feature
         .source_properties
         .contains_key(&cadmpeg_core::nonblank_literal!("edge_midpoints")));
@@ -273,7 +279,8 @@ fn edge_midpoints_refuse_endpoint_average_without_carrier_sample() {
         &owners,
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert!(!feature
         .source_properties
         .contains_key(&cadmpeg_core::nonblank_literal!("edge_midpoints")));
@@ -329,7 +336,8 @@ fn edge_midpoints_refuse_endpoint_average_for_curved_edge() {
         &owners,
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert!(!feature
         .source_properties
         .contains_key(&cadmpeg_core::nonblank_literal!("edge_midpoints")));
@@ -350,6 +358,7 @@ fn edge_midpoints_preserve_explicit_edge_selections_without_deleted_edge_fallbac
     crate::test_support::history::edit(&mut history, 2, |topology, _| {
         topology.edges = vec![99];
         topology.edge_samples = vec![crate::history_records::AsmHistoricalEdgeSample {
+            bounds: None,
             edge: 99,
             interior: cadmpeg_ir::math::Point3::new(5.0, 0.0, 0.0),
             tangent: None,
@@ -365,7 +374,8 @@ fn edge_midpoints_preserve_explicit_edge_selections_without_deleted_edge_fallbac
         &owners,
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert!(!feature
         .source_properties
         .contains_key(&cadmpeg_core::nonblank_literal!("edge_midpoints")));

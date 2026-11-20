@@ -140,3 +140,71 @@ fn compact_coil_requires_unique_checked_local_carriers() {
     foreign.id = "f3d:Other/BulkStream.dat:design-record-header#0".into();
     assert!(resolved_placement(&bytes, &scope, &[foreign], &[placement]).is_none());
 }
+
+#[test]
+fn short_compact_coil_binds_version_nine_at_its_ordered_references() {
+    let (bytes, mut scope, header, _) = fixture();
+    scope
+        .try_edit(|draft| {
+            draft.frame_length = 454;
+            draft.paired_byte_offset = 454;
+            draft.reference_count_offset = 228;
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                300, 301, 100, 41, 302, 303, 304, 305, 306, 307,
+            ]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    if let DesignScopePayloadMut::CoilPrimitive(slot) = scope.payload_mut() {
+        slot.get_or_insert_with(Default::default).operation =
+            Some(crate::records::identity::RecordedValue {
+                value: crate::records::feature::extrude::DesignExtrudeOperation::Cut,
+                offset: 26,
+            });
+    }
+    let placement = crate::test_support::placement_construction::grammar_placement(9, 0);
+    let resolved = resolved_placement(
+        &bytes,
+        &scope,
+        std::slice::from_ref(&header),
+        std::slice::from_ref(&placement),
+    )
+    .unwrap();
+    assert_eq!(resolved.selection_record_index, 100);
+    assert_eq!(resolved.transform_record_index, 41);
+    assert_eq!(
+        resolved.transform().rows(),
+        crate::test_support::placement_construction::GRAMMAR_FRAME_ROWS
+    );
+    let mut wrong_version = placement.clone();
+    wrong_version.type_version = 8;
+    let mut foreign = placement.clone();
+    foreign.id = "f3d:Other/BulkStream.dat:design-placement-construction#0".into();
+    let mut inferred = placement.clone();
+    inferred.fields.inferred_x_axis.value = 1;
+    for placements in [
+        vec![],
+        vec![wrong_version],
+        vec![foreign],
+        vec![inferred],
+        vec![placement.clone(), placement.clone()],
+    ] {
+        assert!(
+            resolved_placement(&bytes, &scope, std::slice::from_ref(&header), &placements)
+                .is_none()
+        );
+    }
+    for end in 0..bytes.len() {
+        if end < 232 {
+            assert!(resolved_placement(
+                &bytes[..end],
+                &scope,
+                std::slice::from_ref(&header),
+                std::slice::from_ref(&placement)
+            )
+            .is_none());
+        }
+    }
+    assert!(resolved_placement(&bytes, &scope, &[header.clone(), header], &[placement]).is_none());
+}

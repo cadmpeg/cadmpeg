@@ -124,10 +124,7 @@ fn a_non_integer_directory_field_quarantines_the_two_card_pair() {
         .expect("quarantined directory ledger row");
     assert_eq!(row.target(), Some("iges:quarantine:directory#3"));
     assert_eq!(
-        wire::field::<cadmpeg_ir::report::decode::TransferDisposition>(
-            &(row.outcome),
-            "disposition"
-        ),
+        wire::field::<cadmpeg_ir::report::decode::TransferDisposition>(&(row.outcome), "kind"),
         TransferDisposition::Retained
     );
 

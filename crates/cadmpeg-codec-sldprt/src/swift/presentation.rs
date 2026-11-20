@@ -1,6 +1,7 @@
 //! SWIFT presentation archive: geometric-tolerance displays, their feature
 //! paths, and the semantic annotations they depict.
 
+use cadmpeg_ir::design::options::NativeOptions;
 use std::collections::{BTreeSet, HashMap};
 use std::num::NonZeroU32;
 
@@ -37,6 +38,7 @@ const FRAME_TEMPLATE_TOKEN: &str = "<Gtol>";
 const MODIFIER_PREFIX: &str = "<MOD-";
 const COMPOSITE_LOWER_TIER_SUFFIX: &str = ":lower-tier";
 const EPS_TIER_RATIO_E9: f64 = 1.0e-9;
+const EPS_INTERNAL_FLATNESS_UNIT_RELATIVE: f64 = 1.0e-9;
 
 mod faces;
 use faces::{DocumentLayout, FaceIdentity, IdentityReference};
@@ -592,6 +594,7 @@ pub(super) fn annotations(
     let mut unresolved = 0usize;
     let mut short = 0usize;
     let mut tail = 0usize;
+    let mut internal_flatness = 0usize;
     let tail_is_stated = DocumentLayout::tail_is_stated(sw_version);
     let mut presentations = Vec::new();
     for (display, semantics) in archive.gtols.iter().zip(links) {
@@ -606,6 +609,14 @@ pub(super) fn annotations(
                 tail = tail.checked_add(1).ok_or_else(overflow)?;
             }
         }
+        if semantics.is_some()
+            && display
+                .characteristics
+                .iter()
+                .any(|token| token == "IGTOL-FLAT")
+        {
+            internal_flatness = internal_flatness.checked_add(1).ok_or_else(overflow)?;
+        }
         let id = PmiId::mint(format!("sldprt:model:pmi#display-{:x}", display.offset))
             .map_err(|_| CodecError::malformed("invalid SWIFT display ID"))?;
         presentations.push(PmiAnnotation {
@@ -618,11 +629,19 @@ pub(super) fn annotations(
                 placement: None,
                 semantics: semantics.unwrap_or_default(),
             },
+            native_ref: None,
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
         });
     }
     if short > 0 {
         losses.push(SldprtLossCode::PmiSwiftFaceDocumentLayoutAssumed.note(format!(
             "{short} SWIFT geometric-tolerance display(s) select faces through a document written in place with one or two strings, read as the document layout of sldprt.md section 2.3 with one or two of its three strings"
+        )));
+    }
+    if internal_flatness > 0 {
+        losses.push(SldprtLossCode::PmiSwiftInternalFlatnessSymbolAssumed.note(format!(
+            "{internal_flatness} SWIFT display(s) use IGTOL-FLAT as flatness through their owner or face references and one common magnitude unit factor; the internal prefix semantics remain native"
         )));
     }
     if tail > 0 {
@@ -678,6 +697,9 @@ fn apply_datum_systems(
             visible: None,
             targets: Vec::new(),
             definition: PmiDefinition::DatumSystem { references },
+            native_ref: None,
+            native_options: NativeOptions::new(),
+            source_settings: NativeOptions::new(),
         });
     }
     Ok(())
@@ -755,7 +777,7 @@ impl<'a> SemanticIndex<'a> {
                     faces: annotation
                         .targets
                         .iter()
-                        .filter_map(|target| match target {
+                        .filter_map(|target| match &target.entity {
                             PmiTarget::Face { face } => Some(face),
                             _ => None,
                         })
@@ -851,12 +873,58 @@ impl<'a> SemanticIndex<'a> {
         let order = |kind: &GeometricToleranceKind| format!("{kind:?}");
         expected.sort_by_key(order);
         kinds.sort_by_key(order);
-        (!depicted.is_empty() && expected == kinds).then(|| {
+        if depicted.is_empty() || expected != kinds {
+            return None;
+        }
+        if display
+            .characteristics
+            .iter()
+            .any(|token| token == "IGTOL-FLAT")
+        {
+            if !display
+                .characteristics
+                .iter()
+                .all(|token| token == "IGTOL-FLAT")
+                || display.rows.len() < 2
+                || display.rows.len() != depicted.len()
+            {
+                return None;
+            }
+            let mut displayed = display
+                .rows
+                .iter()
+                .map(|row| {
+                    row.tolerance
+                        .as_deref()?
+                        .trim()
+                        .parse::<f64>()
+                        .ok()
+                        .filter(|value| value.is_finite() && *value > 0.0)
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let mut stored = depicted
+                .iter()
+                .map(|tolerance| tolerance.magnitude)
+                .collect::<Vec<_>>();
+            displayed.sort_by(f64::total_cmp);
+            stored.sort_by(f64::total_cmp);
+            let scale = stored.first()? / displayed.first()?;
+            if !scale.is_finite()
+                || scale <= 0.0
+                || !stored.iter().zip(displayed).all(|(stored, displayed)| {
+                    (stored - displayed * scale).abs()
+                        <= EPS_INTERNAL_FLATNESS_UNIT_RELATIVE * stored.abs()
+                })
+            {
+                return None;
+            }
+        }
+        Some(
             depicted
                 .iter()
                 .map(|tolerance| tolerance.id.clone())
-                .collect()
-        })
+                .collect(),
+        )
     }
 
     /// The tolerances of every semantic annotation that directly references a
@@ -1037,7 +1105,7 @@ fn row_kind(token: &str) -> Option<GeometricToleranceKind> {
         "PERP" => GeometricToleranceKind::Perpendicularity,
         "PARA" => GeometricToleranceKind::Parallelism,
         "ANGULAR" => GeometricToleranceKind::Angularity,
-        "FLAT" => GeometricToleranceKind::Flatness,
+        "FLAT" | "IGTOL-FLAT" => GeometricToleranceKind::Flatness,
         "STRAIGHT" => GeometricToleranceKind::Straightness,
         "CIRC" => GeometricToleranceKind::Roundness,
         "CYL" => GeometricToleranceKind::Cylindricity,

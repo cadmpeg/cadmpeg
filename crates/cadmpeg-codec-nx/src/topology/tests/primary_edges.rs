@@ -487,3 +487,67 @@ fn terminated_vertices_that_share_an_identity_are_both_refused() {
         );
     });
 }
+
+/// A base-schema FIN: the nine references, then the sense byte.
+fn fin(xmt: u32, references: [u32; 9], sense: u8) -> Vec<u8> {
+    let mut bytes = u16::from(NodeKind::Fin.code()).to_be_bytes().to_vec();
+    bytes.extend(encoded_xmt(xmt));
+    for reference in references {
+        bytes.extend(encoded_xmt(reference));
+    }
+    bytes.push(sense);
+    bytes
+}
+
+#[test]
+fn terminated_vertex_loop_fin_is_admitted() {
+    with_decode_context(|_ctx| {
+        let mut bytes = header(13006, false);
+        bytes.extend(fin(49, [1, 50, 49, 49, 13, 1, 1, 1, 1], b'?'));
+        bytes.extend(END);
+        let graph = parse(&bytes);
+        assert!(graph.primary_node_refusals().is_empty());
+        let node = graph.get(NodeKind::Fin, 49).expect("vertex-loop FIN");
+        assert!(node.fin_fields().is_none());
+        let fields = node.vertex_loop_fin_fields().expect("vertex-loop fields");
+        assert_eq!(
+            (fields.loop_xmt.map(u32::from), fields.vertex.map(u32::from)),
+            (Some(50), Some(13))
+        );
+    });
+}
+
+#[test]
+fn terminated_query_sense_fin_of_another_form_reports_its_unresolved_projection() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    for references in [
+        [1, 50, 51, 49, 13, 1, 1, 1, 1],
+        [1, 50, 49, 51, 13, 1, 1, 1, 1],
+        [1, 50, 49, 49, 13, 52, 1, 1, 1],
+        [1, 50, 49, 49, 13, 1, 53, 1, 1],
+    ] {
+        let mut bytes = header(13006, false);
+        let start = bytes.len();
+        bytes.extend(fin(49, references, b'?'));
+        bytes.extend(END);
+        with_decode_context(|_ctx| {
+            let graph = parse(&bytes);
+            assert_eq!(graph.kind_count(NodeKind::Fin), 0, "{references:?}");
+            assert_eq!(graph.primary_node_refusals(), [(NodeKind::Fin, start)]);
+        });
+        let file = crate::test_support::test_prt::prt_with_partition(&bytes);
+        let decoded = crate::NxCodec
+            .decode(&mut std::io::Cursor::new(file), &DecodeOptions::default())
+            .expect("retained FIN Source");
+        let code = crate::loss::NxLossCode::PrimaryNodeUnresolved.kind();
+        assert_eq!(
+            decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code == code)
+                .count(),
+            1
+        );
+    }
+}

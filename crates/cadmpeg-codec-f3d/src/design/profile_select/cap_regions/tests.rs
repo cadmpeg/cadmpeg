@@ -11,7 +11,7 @@ use cadmpeg_ir::sketches::{
     SketchPlacement,
 };
 
-use crate::design::geometry::AtomicSketchRegion;
+use crate::design::geometry::{AtomicSketchRegion, ProfileGeometryWork};
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCurveAxis,
     AsmHistoricalCylinder, AsmHistoricalEdge, AsmHistoricalEdgeSample,
@@ -21,8 +21,10 @@ use crate::history_records::{
 
 use super::{
     changed_planes, face_cap, face_cap_reading, face_outlines_cover_caps, outlines_agree,
-    polygon_area, Agreement, PlaneFrame, Sampled,
+    polygon_area, sample_regions, trimmed_selection, Agreement, PlaneFrame, Sampled,
 };
+use crate::design::profile_select::ResolvedProfileSelection;
+use cadmpeg_ir::features::SketchProfileRegion;
 
 const TOLERANCE: f64 = 1e-6;
 /// The cap face every test topology draws.
@@ -168,6 +170,7 @@ fn square_with_unproven_edge(bulge: Option<f64>) -> AsmHistoricalTopology {
     topology.curve_axes.remove(2);
     if let Some(bulge) = bulge {
         topology.edge_samples.push(AsmHistoricalEdgeSample {
+            bounds: None,
             edge: 402,
             interior: Point3::new(0.5, 1.0 + bulge, 2.0),
             tangent: None,
@@ -246,6 +249,7 @@ fn rows_that_contradict_an_edge_reading_read_no_cap() {
     let mut topology = loop_topology(&unit_square_corners(), &[(0, 1), (1, 2), (2, 3), (3, 0)]);
     straight_carriers(&mut topology);
     topology.edge_samples.push(AsmHistoricalEdgeSample {
+        bounds: None,
         edge: 402,
         interior: Point3::new(0.5, 1.25, 2.0),
         tangent: None,
@@ -317,6 +321,7 @@ fn circle_topology(center: (f64, f64), radius: f64, axis: Vector3) -> AsmHistori
         radius,
     });
     topology.edge_samples.push(AsmHistoricalEdgeSample {
+        bounds: None,
         edge: 400,
         interior: Point3::new(center.0 - radius, center.1, 2.0),
         tangent: None,
@@ -362,7 +367,7 @@ fn a_closed_edge_is_a_circle_only_on_a_cylinder_about_the_cap_normal() {
 }
 
 fn ctx() -> cadmpeg_core::decode::DecodeContext<'static> {
-    cadmpeg_test_support::service_decode_context()
+    cadmpeg_core::decode::test_support::service_decode_context()
 }
 
 fn line(id: &str, start: (f64, f64), end: (f64, f64)) -> SketchEntity {
@@ -585,12 +590,15 @@ fn a_cut_plane_compares_the_faces_it_deleted_with_the_faces_it_inserted() {
 
 /// A planar face parallel to the XY sketch: its slot, its height, and its
 /// loops as corner rings.
-type PlaneFace = (i64, f64, Vec<Vec<(f64, f64)>>);
+pub(super) type PlaneFace = (i64, f64, Vec<Vec<(f64, f64)>>);
 
 /// Faces whose edges all have straight carriers.
-fn plane_faces(faces: &[PlaneFace]) -> AsmHistoricalTopology {
+pub(super) fn plane_faces(faces: &[PlaneFace]) -> AsmHistoricalTopology {
+    plane_faces_from(faces, 10_000)
+}
+
+fn plane_faces_from(faces: &[PlaneFace], mut next: i64) -> AsmHistoricalTopology {
     let mut topology = AsmHistoricalTopology::default();
-    let mut next = 10_000;
     let mut mint = || {
         next += 1;
         next
@@ -785,7 +793,7 @@ fn cut_selection(
     let before = plane_faces(&[(1, 0.0, vec![plate.clone()]), (2, -5.0, vec![plate])]);
     let after = plane_faces(&[(3, 0.0, holed.clone()), (4, -5.0, holed)]);
     let history = cut_history(before, after);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let resolution = super::super::ScopedExtrudeProfileResolution {
         entities: &window.entities,
         spatial_entities: &[],
@@ -894,6 +902,7 @@ fn a_curve_that_is_not_a_line_or_arc_agrees_with_its_cap_at_samples() {
     topology.curve_axes.remove(0);
     topology.edge_curves.remove(0);
     topology.edge_samples.push(AsmHistoricalEdgeSample {
+        bounds: None,
         edge: 400,
         interior: Point3::new(0.0, 1.0, 2.0),
         tangent: None,
@@ -1018,7 +1027,7 @@ fn a_far_face_over_material_the_plane_already_held_selects_nothing() {
     let after = || plane_faces(&[(3, 0.0, opening.clone()), (4, -5.0, opening.clone())]);
     let select = |before| {
         let history = cut_history(before, after());
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let work = crate::design::geometry::ProfileGeometryWork::new();
         let resolution = super::super::ScopedExtrudeProfileResolution {
             entities: &window.entities,
@@ -1069,7 +1078,7 @@ fn a_cut_whose_regions_use_curves_outside_the_stored_profile_takes_the_proven_re
     let before = plane_faces(&[(1, 0.0, vec![plate.clone()]), (2, -5.0, vec![plate])]);
     let after = plane_faces(&[(3, 0.0, holed.clone()), (4, -5.0, holed)]);
     let history = cut_history(before, after);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let work = crate::design::geometry::ProfileGeometryWork::new();
     let resolution = super::super::ScopedExtrudeProfileResolution {
         entities: &window.entities,
@@ -1121,4 +1130,293 @@ fn a_cut_whose_regions_use_curves_outside_the_stored_profile_takes_the_proven_re
         F3dLossCode::FeatureProfileCutRegionsAssumed.kind()
     );
     assert!(loss.message.contains("curves outside the stored profile"));
+}
+#[test]
+fn compact_cut_certificate_checks_region_side_carriers_and_stored_travel() {
+    use cadmpeg_ir::features::{
+        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, LinearTermination,
+        PlanarProfileRef, ProfileRef,
+    };
+    use cadmpeg_ir::sketches::SketchEntityUse;
+    let plate = vec![(-2.0, -2.0), (5.0, -2.0), (5.0, 5.0), (-2.0, 5.0)];
+    let square = unit_square_corners();
+    let other: Vec<_> = square.iter().map(|(x, y)| (x + 3.0, *y)).collect();
+    let mut sketch = xy_sketch();
+    let mut entities = Vec::new();
+    let mut profiles = Vec::new();
+    let inner = vec![(0.25, 0.25), (0.75, 0.25), (0.75, 0.75), (0.25, 0.75)];
+    for ring in [&square, &other, &plate, &inner] {
+        let mut profile = Vec::new();
+        for k in 0..ring.len() {
+            let id =
+                SketchEntityId::mint(format!("synthetic:test:line#{}", entities.len())).unwrap();
+            entities.push(SketchEntity::new(
+                id.clone(),
+                sketch.id.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                    start: Point2::new(ring[k].0, ring[k].1),
+                    end: Point2::new(ring[(k + 1) % ring.len()].0, ring[(k + 1) % ring.len()].1),
+                })
+                .unwrap(),
+            ));
+            profile.push(SketchEntityUse {
+                entity: id,
+                reversed: false,
+            });
+        }
+        profiles.push(profile);
+    }
+    sketch.profiles = cadmpeg_ir::sketches::SketchProfiles::try_from(profiles).unwrap();
+    let before = plane_faces_from(
+        &[
+            (1, 0.0, vec![plate.clone()]),
+            (2, -2.0, vec![plate.clone()]),
+        ],
+        50_000,
+    );
+    let side = vec![(0.0, 0.0), (1.0, 0.0), (1.0, -2.0), (0.0, -2.0)];
+    let holed = vec![plate.clone(), square];
+    let mut after = plane_faces(&[
+        (11, 0.0, holed.clone()),
+        (12, -2.0, holed),
+        (13, 0.0, vec![side.clone()]),
+        (14, 0.0, vec![side.clone()]),
+        (15, 0.0, vec![side.clone()]),
+        (16, 0.0, vec![side]),
+    ]);
+    for (face, fixed_x, offset) in [
+        (13, true, 0.0),
+        (14, true, 1.0),
+        (15, false, 0.0),
+        (16, false, 1.0),
+    ] {
+        let transform = |point: Point3| {
+            if fixed_x {
+                Point3::new(offset, point.x, point.y)
+            } else {
+                Point3::new(point.x, offset, point.y)
+            }
+        };
+        let transform_vector = |vector: Vector3| {
+            if fixed_x {
+                Vector3::new(0.0, vector.x, vector.y)
+            } else {
+                Vector3::new(vector.x, 0.0, vector.y)
+            }
+        };
+        let loops = super::relation(&after.face_loops, face).unwrap();
+        let coedges: Vec<_> = loops
+            .iter()
+            .flat_map(|loop_| super::relation(&after.loop_coedges, *loop_).unwrap())
+            .copied()
+            .collect();
+        let edges: Vec<_> = after
+            .coedge_topology
+            .iter()
+            .filter(|row| coedges.contains(&row.coedge))
+            .map(|row| row.edge)
+            .collect();
+        let vertices: Vec<_> = after
+            .edge_vertices
+            .iter()
+            .filter(|row| edges.contains(&row.edge))
+            .flat_map(|row| [row.start_vertex, row.end_vertex])
+            .collect();
+        let points: Vec<_> = after
+            .vertex_points
+            .iter()
+            .filter(|row| vertices.contains(&row.entity))
+            .map(|row| row.carrier)
+            .collect();
+        for point in &mut after.point_positions {
+            if points.contains(&point.point) {
+                point.position = transform(point.position);
+            }
+        }
+        let curves: Vec<_> = after
+            .edge_curves
+            .iter()
+            .filter(|row| edges.contains(&row.entity))
+            .filter_map(|row| row.carrier)
+            .collect();
+        for axis in &mut after.curve_axes {
+            if curves.contains(&axis.curve) {
+                axis.origin = transform(axis.origin);
+                axis.direction = transform_vector(axis.direction);
+            }
+        }
+        let surface = after
+            .face_surfaces
+            .iter()
+            .find(|row| row.entity == face)
+            .unwrap()
+            .carrier;
+        let plane = after
+            .surface_planes
+            .iter_mut()
+            .find(|row| row.surface == surface)
+            .unwrap();
+        plane.origin = transform(Point3::new(0.0, 0.0, 0.0));
+        plane.normal = if fixed_x {
+            Vector3::new(1.0, 0.0, 0.0)
+        } else {
+            Vector3::new(0.0, 1.0, 0.0)
+        };
+    }
+    let selected =
+        ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch.id.clone(), vec![0]).unwrap());
+    let wrong =
+        ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch.id.clone(), vec![1]).unwrap());
+    let complement = ProfileRef::Planar(
+        PlanarProfileRef::sketch_regions(
+            sketch.id.clone(),
+            vec![cadmpeg_ir::features::SketchProfileRegion::loops(2, vec![0]).unwrap()],
+        )
+        .unwrap(),
+    );
+    let certify = |before: AsmHistoricalTopology,
+                   after: AsmHistoricalTopology,
+                   candidate: &ProfileRef,
+                   length: f64| {
+        let history = cut_history(before, after);
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+        let work = crate::design::geometry::ProfileGeometryWork::new();
+        let resolution = super::super::ScopedExtrudeProfileResolution {
+            entities: &entities,
+            spatial_entities: &[],
+            histories: std::slice::from_ref(&history),
+            linear_tolerance: TOLERANCE,
+            angular_tolerance: 1e-9,
+            profile_work: &work,
+            ctx: &ctx,
+        };
+        let extent = ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: LinearTermination::Blind {
+                    length: cadmpeg_ir::scalar::NonZeroLength::new(length).unwrap(),
+                },
+                draft: None,
+            },
+        };
+        super::compact::selection_agrees(
+            &sketch,
+            resolution,
+            candidate,
+            (2, 1),
+            super::compact::Sweep {
+                operation: &BooleanOp::Cut,
+                start: &ExtrudeStart::ProfilePlane {},
+                direction: &ExtrudeDirection::ReversedProfileNormal {},
+                extent: &extent,
+            },
+        )
+        .unwrap()
+    };
+    assert!(certify(before.clone(), after.clone(), &selected, 3.0));
+    let annular_before = plane_faces_from(
+        &[
+            (1, 0.0, vec![plate.clone(), inner.clone()]),
+            (2, -2.0, vec![plate, inner]),
+        ],
+        50_000,
+    );
+    let annulus = ProfileRef::Planar(
+        PlanarProfileRef::sketch_regions(
+            sketch.id.clone(),
+            vec![cadmpeg_ir::features::SketchProfileRegion::loops(0, vec![3]).unwrap()],
+        )
+        .unwrap(),
+    );
+    assert!(certify(
+        annular_before.clone(),
+        after.clone(),
+        &annulus,
+        3.0
+    ));
+    assert!(!certify(annular_before, after.clone(), &selected, 3.0));
+
+    assert!(!certify(before.clone(), after.clone(), &wrong, 3.0));
+    assert!(!certify(before.clone(), after.clone(), &complement, 3.0));
+    assert!(!certify(before.clone(), after.clone(), &selected, 1.0));
+    assert!(!certify(before.clone(), before.clone(), &selected, 3.0));
+    let surface = after
+        .face_surfaces
+        .iter()
+        .find(|row| row.entity == 13)
+        .unwrap()
+        .carrier;
+    after
+        .surface_planes
+        .iter_mut()
+        .find(|row| row.surface == surface)
+        .unwrap()
+        .origin
+        .x = 9.0;
+    assert!(!certify(before, after, &selected, 3.0));
+}
+
+/// The hole-ring counts of the trimmed regions that `selected` makes from a
+/// square face with a circle face nested directly in it.
+fn square_and_nested_circle_holes(selected: &[usize]) -> Vec<usize> {
+    let square = polygon("square", &[(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)]);
+    let disk = circle("disk", (2.0, 2.0), 1.0);
+    let outer = region(&square, &[[0.0, 1.0]; 4]);
+    let inner = region(std::slice::from_ref(&disk), &[[0.0, TAU]]);
+    let sampled = vec![
+        Sampled {
+            region: &outer,
+            point: Point2::new(0.5, 0.5),
+            nested: vec![1],
+        },
+        Sampled {
+            region: &inner,
+            point: Point2::new(2.0, 2.0),
+            nested: Vec::new(),
+        },
+    ];
+    let Some(ResolvedProfileSelection::Regions(regions)) = trimmed_selection(&sampled, selected)
+    else {
+        panic!("trimmed regions");
+    };
+    regions
+        .iter()
+        .map(|region| match region {
+            SketchProfileRegion::Trimmed {
+                hole_boundaries, ..
+            } => hole_boundaries.len(),
+            SketchProfileRegion::Loops { .. } => panic!("a trimmed region"),
+        })
+        .collect()
+}
+
+#[test]
+fn a_selected_region_keeps_a_selected_nested_region_as_a_hole() {
+    // Both faces selected: the square face excludes the disk, which is its
+    // own region, so the two regions do not overlap.
+    assert_eq!(square_and_nested_circle_holes(&[0, 1]), [1, 0]);
+    // Controls: either face alone.
+    assert_eq!(square_and_nested_circle_holes(&[0]), [1]);
+    assert_eq!(square_and_nested_circle_holes(&[1]), [0]);
+}
+
+#[test]
+fn each_sketch_region_is_sampled_at_its_grid_point_farthest_from_its_boundary() {
+    let work = ProfileGeometryWork::new();
+    for side in [10.0, 20.0, 10.0] {
+        let regions = [AtomicSketchRegion {
+            boundary: Vec::new(),
+            polyline: vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(side, 0.0),
+                Point2::new(side, side),
+                Point2::new(0.0, side),
+            ],
+            encloses_island: false,
+            island_absence_assumed: false,
+        }];
+        let sampled = sample_regions(&regions, TOLERANCE, &work).unwrap();
+        assert_eq!(sampled.len(), 1);
+        assert_eq!(sampled[0].point, Point2::new(side / 2.0, side / 2.0));
+        assert!(sampled[0].nested.is_empty());
+    }
 }

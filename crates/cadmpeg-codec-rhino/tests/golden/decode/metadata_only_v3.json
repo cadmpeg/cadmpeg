@@ -1,44 +1,95 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
-      "bodies": [],
-      "coedges": [],
+    "design": {
+      "arrangements": [],
       "configurations": [],
-      "curves": [],
-      "drawings": [],
-      "edges": [],
-      "faces": [],
+      "containers": [],
+      "evaluations": [],
       "features": [],
-      "loops": [],
-      "occurrences": [],
+      "names": [],
       "parameters": [],
-      "pcurves": [],
-      "pmi": [],
-      "points": [],
-      "presentation_documents": [],
-      "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
-      "product_definitions": [],
-      "regions": [],
-      "semantic_annotations": [],
-      "shells": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "rhino:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -87,12 +138,31 @@
         "texture_mappings": [],
         "unknowns": [
           {
-            "id": "rhino:object:record#000000"
+            "id": "rhino:object:record#000000",
+            "links": []
           }
         ],
         "views": [],
         "windows_bitmaps": []
       }
+    },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
     },
     "source": {
       "attributes": {
@@ -100,17 +170,19 @@
         "container_kind": "3dm-chunks"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "archive_version": "3"
             },
             "dialect": "rhino:archive-3"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -118,40 +190,50 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "archive_version": "3"
           },
           "dialect": "rhino:archive-3"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "object.record-census",
-          "kind": "object_records_untransferred",
-          "namespace": "rhino",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "object.record-census",
+            "kind": "object_records_untransferred",
+            "namespace": "rhino"
+          }
         },
         "message": "decoded 0/1 Rhino object records",
         "severity": "info"
       },
       {
         "code": {
-          "code": "object.family-not-transferred",
-          "kind": "unsupported_object_family",
-          "namespace": "rhino",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "object.family-not-transferred",
+            "kind": "unsupported_object_family",
+            "namespace": "rhino"
+          }
         },
         "message": "retained 1 object record(s) for class c3101a1d-f157-11d3-bfe7-0010830122f0; geometry is not decoded",
         "provenance": {
@@ -163,31 +245,37 @@
       },
       {
         "code": {
-          "code": "container.integrity-failure",
-          "kind": "integrity_failure",
-          "namespace": "rhino",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.integrity-failure",
+            "kind": "integrity_failure",
+            "namespace": "rhino",
+            "strict_floor": "warning"
+          }
         },
         "message": "CRC mismatch at offset 87 for typecode 0x20008070: expected 0x0, got 0x75b2f733",
         "severity": "error"
       },
       {
         "code": {
-          "code": "container.scan-diagnostic",
-          "kind": "decode_diagnostic",
-          "namespace": "rhino",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "container.scan-diagnostic",
+            "kind": "decode_diagnostic",
+            "namespace": "rhino"
+          }
         },
         "message": "object at 87 has nil object UUID",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "object.decode-diagnostic",
-          "kind": "decode_diagnostic",
-          "namespace": "rhino",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "object.decode-diagnostic",
+            "kind": "decode_diagnostic",
+            "namespace": "rhino"
+          }
         },
         "message": "c3101a1d-f157-11d3-bfe7-0010830122f0: simple geometry retained because the document has no physical millimetre binding (unavailable)",
         "severity": "warning"
@@ -198,20 +286,30 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {},
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "9ac2cacbc0541662c298c335497d5e511bfc61c10beb12db57de94027ecbb8cb",
+    "file_digests": {},
     "retained_records": {
       "rhino:object:record#000000": {
         "bytes": {
           "data": "cIAAIGUAAABxAACCAQAAAPp/AgBJAAAA+/8CABQAAAAdGhDDV/HTEb/nABCDASLwTFQHpPz/AgAdAAAAEAAAAAAAAPA/AAAAAAAAAEAAAAAAAAAIQOULPEn/fwKAAAAAAH8AAIIAAAAAM/eydQ==",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 87,
-        "stream": ""
+        "stream": "",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

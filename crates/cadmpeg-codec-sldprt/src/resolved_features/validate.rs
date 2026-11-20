@@ -17,10 +17,18 @@ pub(crate) fn validate_native(
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Ok(Vec::new());
     };
+    let profile_data = super::profile_data::FeatureProfileData::new(&ir.model);
+    let mut findings = profile_data.missing_extrudes(&ir.model).map(|feature| Finding {
+        related: Vec::new(),
+        check: Check::NativeLinks,
+        severity: Severity::Warning,
+        message: "SolidWorks extrusion feature-reference profile lacks decoded non-construction curves".into(),
+        entity: Some(feature.id.to_string()),
+    }).collect::<Vec<_>>();
     let native = match crate::native::SldprtNative::load_with_context(ctx, namespace) {
         Ok(native) => native,
         Err(error) => {
-            let findings = invalid_namespace(&error);
+            findings.extend(invalid_namespace(&error));
             // A session refusal inside the namespace load fails validation;
             // only a malformed namespace becomes a finding.
             if let CodecError::ResourceLimit(limit) = CodecError::from(error) {
@@ -29,7 +37,6 @@ pub(crate) fn validate_native(
             return Ok(findings);
         }
     };
-    let mut findings = Vec::new();
     for history in &native.feature_histories {
         if let Err(error) = crate::writer::validate_feature_graph(&history.features) {
             findings.push(Finding {

@@ -7,7 +7,7 @@ use crate::swift::{
 };
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
-use cadmpeg_ir::pmi::{DimensionKind, PmiDefinition, PmiTarget};
+use cadmpeg_ir::pmi::{PmiDefinition, PmiDimensionKind as DimensionKind, PmiTarget};
 use cadmpeg_ir::topology::{Face, FaceLoops, Sense};
 use std::collections::BTreeMap;
 
@@ -120,6 +120,7 @@ fn face(attribute: u32) -> Face {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     }
 }
 
@@ -236,15 +237,15 @@ fn unique_counted_diameter_adds_the_second_sphere_targets() {
     let PmiDefinition::Dimension(dimension) = &annotation.definition else {
         panic!("spherical diameter dimension")
     };
-    assert_eq!(dimension.kind(), &DimensionKind::SphericalDiameter);
+    assert_eq!(dimension.dimension, DimensionKind::SphericalDiameter);
     assert!(approximately_equal(
-        dimension.nominal().unwrap().value.get(),
+        dimension.literal_nominal().unwrap().value.get(),
         1.25 * MM_PER_INCH
     ));
     let face_targets = annotation
         .targets
         .iter()
-        .filter_map(|target| match target {
+        .filter_map(|target| match &target.entity {
             PmiTarget::Face { face } => Some(face.as_str()),
             _ => None,
         })
@@ -277,14 +278,14 @@ fn zero_nominal_uses_the_existing_implicit_sphere_diameter() {
         panic!("spherical diameter dimension")
     };
     assert!(approximately_equal(
-        dimension.nominal().unwrap().value.get(),
+        dimension.literal_nominal().unwrap().value.get(),
         1.25 * MM_PER_INCH
     ));
     assert_eq!(
         annotation
             .targets
             .iter()
-            .filter(|target| matches!(target, PmiTarget::Face { .. }))
+            .filter(|target| matches!(&target.entity, PmiTarget::Face { .. }))
             .count(),
         2
     );

@@ -4,14 +4,17 @@
 use crate::ids::kind;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
+use cadmpeg_core::decode::ArenaClass;
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_core::dialect::DialectMatch;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::{DecodeBody, Decoded};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::hash::digest::Sha256Digest;
 use cadmpeg_ir::ids::{Identity, UnknownId};
 use cadmpeg_ir::report::loss::LossNote;
+use cadmpeg_ir::unknown::part::{DecodeParts, GivenUpPart, Part};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{SourceFidelity, SourceObjectAssociation};
 
@@ -25,12 +28,14 @@ use self::closure_ids::ClosureIds;
 
 mod claims;
 mod closure_ids;
+mod csg;
 pub(crate) mod dependencies;
 mod drawing;
 pub(crate) mod geometry;
 mod groups;
 mod index;
 mod ownership;
+mod plant_dimensions;
 pub(crate) mod pmi;
 pub(crate) mod presentation;
 pub(crate) mod product;
@@ -38,6 +43,7 @@ mod reference;
 mod representation;
 pub(crate) mod tessellation;
 pub(crate) mod topology;
+mod torus_sheet;
 mod validation;
 
 /// Container facts available when the STEP source identity is authored.
@@ -139,14 +145,6 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
             cadmpeg_core::nonblank_literal!("schema"),
             exchange.joined_schema_identifiers(),
         );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("data_sections"),
-            exchange.data().len().to_string(),
-        );
-        attributes.insert(
-            cadmpeg_core::nonblank_literal!("entity_instances"),
-            exchange.records().len().to_string(),
-        );
         if let DecodeMode::Decode(packaging) = mode {
             packaging.add_source_attributes(&mut attributes);
         }
@@ -154,6 +152,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         // and retiring the ad-hoc attribute keys is a later phase.
         let primary = StepDialect::classify(exchange);
         let dialect_loss = crate::dialect::dialect_loss(&primary);
+        let schema_edition_loss = crate::dialect::schema_edition_loss(exchange, &primary);
         let ir = CadIr::empty();
 
         let mut body = DecodeBody::new(if ctx.container_only() {
@@ -161,15 +160,18 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
         } else {
             cadmpeg_ir::report::decode::DecodeTransfer::full(false)
         });
+        body.coverage
+            .record(crate::coverage::DATA_SECTIONS, exchange.data().len());
+        body.coverage
+            .record(crate::coverage::ENTITY_INSTANCES, exchange.records().len());
         for entry in exchange.references() {
             body.notes.push(format!(
                 "external reference {} -> {}",
                 entry.name, entry.uri
             ));
         }
-        if let Some(loss) = dialect_loss {
-            body.losses.push(loss);
-        }
+        body.losses.extend(dialect_loss);
+        body.losses.extend(schema_edition_loss);
         for diagnostic in diagnostics {
             let (code, tag) = match diagnostic.kind {
                 crate::parse::ParseDiagnosticKind::RecordOmitted => {
@@ -235,7 +237,7 @@ impl<'ctx, 'arena> StepDecodeSession<'ctx, 'arena> {
     }
 
     fn charge_pending_ir_entities(&mut self, operation: &'static str) -> Result<(), CodecError> {
-        let current_entities = u64_from_index(self.ir.model.entity_count());
+        let current_entities = u64_from_index(self.ir.entity_count());
         if current_entities < self.admitted_ir_entities {
             self.admitted_ir_entities = current_entities;
             return Ok(());
@@ -295,7 +297,8 @@ pub(crate) fn decode(
     packaging: Packaging,
 ) -> Result<Decoded, CodecError> {
     let (exchange, diagnostics) = parse::parse(input, ctx)?;
-    decode_exchange(input, exchange, &diagnostics, ctx, packaging)
+    let decode_digest = Sha256Digest::digest(input);
+    decode_exchange(input, exchange, &diagnostics, ctx, packaging, decode_digest)
 }
 
 pub(crate) fn decode_exchange(
@@ -304,6 +307,7 @@ pub(crate) fn decode_exchange(
     diagnostics: &[ParseDiagnostic],
     ctx: &DecodeContext<'_>,
     packaging: Packaging,
+    decode_digest: Sha256Digest,
 ) -> Result<Decoded, CodecError> {
     decode_exchange_mode(
         input,
@@ -311,6 +315,7 @@ pub(crate) fn decode_exchange(
         diagnostics,
         DecodeMode::Decode(packaging),
         ctx,
+        decode_digest,
     )
     .map(|result| result.decoded)
 }
@@ -326,7 +331,15 @@ pub(crate) fn analyze_exchange(
     diagnostics: &[ParseDiagnostic],
     ctx: &DecodeContext<'_>,
 ) -> Result<AnalyzedExchange, CodecError> {
-    decode_exchange_mode(input, exchange, diagnostics, DecodeMode::Inspect, ctx)
+    let decode_digest = Sha256Digest::digest(input);
+    decode_exchange_mode(
+        input,
+        exchange,
+        diagnostics,
+        DecodeMode::Inspect,
+        ctx,
+        decode_digest,
+    )
 }
 
 fn decode_exchange_mode(
@@ -335,10 +348,16 @@ fn decode_exchange_mode(
     diagnostics: &[ParseDiagnostic],
     mode: DecodeMode,
     ctx: &DecodeContext<'_>,
+    decode_digest: Sha256Digest,
 ) -> Result<AnalyzedExchange, CodecError> {
     let mut session = StepDecodeSession::new(exchange, diagnostics, ctx, mode);
+    let given_up = give_up_statements(input, exchange, ctx)?;
+    session
+        .body
+        .losses
+        .extend(given_up.iter().map(GivenUpPart::loss));
     if ctx.container_only() {
-        return Ok(session.into_result(SourceFidelity::default(), BTreeSet::new()));
+        return Ok(session.into_result(SourceFidelity::new(decode_digest), BTreeSet::new()));
     }
 
     let mut header_spans = Vec::new();
@@ -350,13 +369,19 @@ fn decode_exchange_mode(
                 | crate::parse::ParseDiagnosticKind::ImplementationLevelUnverified
                 | crate::parse::ParseDiagnosticKind::SchemaObjectIdentifierOutOfRange
         )
-    }) {
+    }) || exchange
+        .given_up()
+        .iter()
+        .any(|statement| statement.kind == "header_record")
+    {
         for record in exchange.header() {
             header_spans.push(record.offset..record.end);
         }
     }
     session.charge_pending_ir_entities("step_geometry_decode")?;
     let (mut geometry, carrier_index) = geometry::decode(exchange, &mut session.ir, session.ctx)?;
+    let mut unit_contradictions = plant_dimensions::check(exchange, session.ctx)?;
+    geometry.losses.append(&mut unit_contradictions);
     session.charge_pending_ir_entities("step_dependency_decode")?;
     let mut dependencies = dependencies::decode(exchange)?;
     session.charge_pending_ir_entities("step_carrier_index")?;
@@ -364,6 +389,8 @@ fn decode_exchange_mode(
 
     let mut topology = topology::decode(exchange, &mut session.ir, &carrier_index, session.ctx)?;
     geometry::infer_edge_parameter_ranges(&mut session.ir, session.ctx, &mut geometry.losses)?;
+    session.charge_pending_ir_entities("step_torus_sheet_selection")?;
+    torus_sheet::select_spindle_sheets(&mut session.ir, session.ctx, &mut geometry.losses)?;
     let owned_carriers = geometry::topology_owned_carriers(&session.ir, &carrier_index);
     session.charge_pending_ir_entities("step_topology_association")?;
     geometry::associate_topology_carriers(
@@ -411,6 +438,23 @@ fn decode_exchange_mode(
     )?;
     session.charge_pending_ir_entities("step_source_ownership")?;
     ownership::mark_supports(exchange, &mut session.ir, session.ctx)?;
+    session.charge_pending_ir_entities("step_csg_decode")?;
+    let mut csg = csg::decode(
+        exchange,
+        &geometry.value,
+        &mut topology.value,
+        &mut session.ir,
+        session.ctx,
+    )?;
+    // After `csg::decode`, so the bodies derived from CSG solids are in
+    // `body_by_root` and take their context's uncertainty too.
+    topology::tolerances::carry_context_uncertainties(
+        exchange,
+        &mut session.ir,
+        &geometry.value.uncertainties,
+        &topology.value,
+        &mut geometry.losses,
+    );
     session.charge_pending_ir_entities("step_product_decode")?;
     let mut product = product::decode(
         exchange,
@@ -419,12 +463,22 @@ fn decode_exchange_mode(
         &mut session.ir,
         session.ctx,
         &mut session.admitted_ir_entities,
+        product::MAX_OCCURRENCES,
     )?;
+    session.charge_pending_ir_entities("step_csg_design")?;
+    let mut design_losses = csg::attach_design(
+        &csg.value,
+        exchange,
+        &product.value.product_definition_ids_by_shape,
+        &mut session.ir,
+    );
+    csg.losses.append(&mut design_losses);
     session.charge_pending_ir_entities("step_tessellation_decode")?;
     let mut tessellation = tessellation::decode(
         exchange,
         &geometry.value,
         &topology.value,
+        &product.value.product_definition_ids_by_shape,
         &mut session.ir,
         session.ctx,
     )?;
@@ -453,10 +507,10 @@ fn decode_exchange_mode(
         &mut session.ir,
         session.ctx,
     )?;
-    if !session.ir.model.points.is_empty()
-        || !session.ir.model.curves.is_empty()
-        || !session.ir.model.surfaces.is_empty()
-        || !session.ir.model.bodies.is_empty()
+    if !session.ir.geometry.points.is_empty()
+        || !session.ir.geometry.curves.is_empty()
+        || !session.ir.geometry.surfaces.is_empty()
+        || !session.ir.geometry.bodies.is_empty()
         || !session.ir.model.tessellations.is_empty()
     {
         session.body.transfer = cadmpeg_ir::report::decode::DecodeTransfer::full(true);
@@ -469,6 +523,7 @@ fn decode_exchange_mode(
     session.absorb(&mut product);
     session.absorb(&mut tessellation);
     session.absorb(&mut topology);
+    session.absorb(&mut csg);
     session.absorb(&mut geometry);
     session.absorb(&mut pmi);
     session.absorb(&mut validation);
@@ -513,11 +568,19 @@ fn decode_exchange_mode(
         DecodeMode::Decode(_) => BTreeSet::new(),
         DecodeMode::Inspect => inspect_opaque_offsets(exchange, &session.typed_records),
     };
-    let mut counts = BTreeMap::<String, usize>::new();
+    let mut counts = BTreeMap::<String, OpaqueKind>::new();
     let mut opaque_ids = BTreeMap::new();
     let mut source_targets = BTreeMap::new();
     let mut opaque_sources = Vec::new();
-    let mut source_fidelity = SourceFidelity::default();
+    let mut source_fidelity = SourceFidelity::new(decode_digest);
+    if !csg.value.derived.is_empty() {
+        let mut annotations =
+            cadmpeg_ir::AnnotationBuilder::resume(std::mem::take(&mut source_fidelity.annotations));
+        for identity in &csg.value.derived {
+            annotations.exactness(identity, cadmpeg_ir::Exactness::Derived);
+        }
+        source_fidelity.annotations = annotations.build();
+    }
     if matches!(mode, DecodeMode::Decode(_)) {
         let metadata_offsets = diagnostics
             .iter()
@@ -599,6 +662,7 @@ fn decode_exchange_mode(
         let omitted_spans = exchange.omitted_spans().to_vec();
         let signature_spans = exchange.release_source_graph();
         let mut opaque = Vec::new();
+        let mut untyped_ids = Vec::new();
         for (span, omitted) in header_spans
             .iter()
             .map(|span| (span, false))
@@ -618,7 +682,9 @@ fn decode_exchange_mode(
             } else {
                 ids::header(span.start)
             };
-
+            if omitted {
+                untyped_ids.push(id.clone());
+            }
             opaque.push(UnknownRecord::retained(
                 id,
                 u64_from_index(span.start),
@@ -627,6 +693,7 @@ fn decode_exchange_mode(
             ));
         }
         for source in opaque_sources {
+            untyped_ids.push(source.unknown_id.clone());
             let bytes = retained_source_copy(
                 session.ctx,
                 &input[source.span.clone()],
@@ -656,9 +723,10 @@ fn decode_exchange_mode(
                 &input[signature.clone()],
                 "step_signature_record",
             )?;
-            let signature_kind = String::from("SIGNATURE");
-
-            *counts.entry(signature_kind).or_default() += 1;
+            counts
+                .entry(String::from("SIGNATURE"))
+                .or_default()
+                .add(signature.start);
             opaque.push(UnknownRecord::retained(
                 ids::signature(index),
                 u64_from_index(signature.start),
@@ -672,23 +740,19 @@ fn decode_exchange_mode(
             opaque,
             session.ctx,
         )?;
+        for part in given_up {
+            // discarded-value: each part's loss is reported with the parse diagnostics.
+            let _ = part.commit(session.ctx, &mut session.ir, &mut source_fidelity)?;
+        }
+        for id in untyped_ids {
+            source_fidelity.mark_untyped(id.as_str(), [ArenaClass::Model])?;
+        }
     }
-    session.source_attributes.insert(
-        cadmpeg_core::nonblank_literal!("bytes_structural"),
-        accounting.structural.to_string(),
-    );
-    session.source_attributes.insert(
-        cadmpeg_core::nonblank_literal!("bytes_typed"),
-        accounting.typed.to_string(),
-    );
-    session.source_attributes.insert(
-        cadmpeg_core::nonblank_literal!("bytes_named_opaque"),
-        accounting.opaque.to_string(),
-    );
-    session.source_attributes.insert(
-        cadmpeg_core::nonblank_literal!("bytes_unclassified"),
-        accounting.unclassified.to_string(),
-    );
+    let coverage = &mut session.body.coverage;
+    coverage.record(crate::coverage::BYTES_STRUCTURAL, accounting.structural);
+    coverage.record(crate::coverage::BYTES_TYPED, accounting.typed);
+    coverage.record(crate::coverage::BYTES_NAMED_OPAQUE, accounting.opaque);
+    coverage.record(crate::coverage::BYTES_UNCLASSIFIED, accounting.unclassified);
     if accounting.unclassified > 0 {
         session
             .body
@@ -704,15 +768,58 @@ fn decode_exchange_mode(
     );
 
     session.body.notes.push(accounting_note);
-    for (name, count) in counts {
-        let message = format!("preserved {count} {name} instance(s) as named opaque STEP records");
-        session
-            .body
-            .losses
-            .push(StepLossCode::OpaqueRecordPreserved.note(message));
+    for (name, kind) in counts {
+        let message = format!(
+            "preserved {} {name} instance(s) as named opaque STEP records",
+            kind.count
+        );
+        let provenance =
+            cadmpeg_ir::SourceProvenance::root(crate::dialect::FORMAT, u64_from_index(kind.first))
+                .with_tag(name);
+        session.body.losses.push(
+            StepLossCode::OpaqueRecordPreserved
+                .note(message)
+                .with_provenance(provenance)
+                .with_count(u64_from_index(kind.count)),
+        );
     }
     session.charge_pending_ir_entities("step_admit_ir_entities")?;
     Ok(session.into_result(source_fidelity, opaque_offsets))
+}
+
+/// Gives up each statement the parser could not read as one part that names
+/// the records dropped because they need it.
+fn give_up_statements(
+    input: &[u8],
+    exchange: &Exchange,
+    ctx: &DecodeContext<'_>,
+) -> Result<Vec<GivenUpPart>, CodecError> {
+    let mut parts = Vec::new();
+    for statement in exchange.given_up() {
+        let bytes = input
+            .get(statement.span.clone())
+            .ok_or_else(|| CodecError::malformed("given-up STEP statement escapes the exchange"))?;
+        let dropped = statement
+            .dropped
+            .iter()
+            .map(|&offset| Identity::from(ids::omitted_record(offset)));
+        let part = Part::at(
+            crate::dialect::FORMAT,
+            statement.kind,
+            u64_from_index(statement.span.start),
+            bytes,
+            [ArenaClass::Model],
+        )
+        .dropping(dropped)
+        .losing_entries(
+            statement
+                .lost
+                .iter()
+                .map(|(record, entry)| format!("#{record} entry #{entry}")),
+        );
+        parts.push(ctx.give_up_part(part, statement.cause.clone().into_error())?);
+    }
+    Ok(parts)
 }
 
 /// Copy source bytes that the decoded document keeps as an opaque record.
@@ -741,17 +848,17 @@ fn retain_unowned_carriers(
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let mut owned = BTreeSet::new();
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         for use_ in &coedge.pcurves {
             insert_retained_identity(&mut owned, use_.pcurve.as_str());
         }
     }
-    for loop_ in &ir.model.loops {
+    for loop_ in &ir.geometry.loops {
         for pcurve in loop_.vertex_pcurves() {
             insert_retained_identity(&mut owned, pcurve.pcurve.as_str());
         }
     }
-    for surface in &ir.model.procedural_surfaces {
+    for surface in &ir.geometry.procedural_surfaces {
         let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
             boundary_pcurves,
             ..
@@ -781,27 +888,27 @@ fn retain_unowned_carriers(
         let transferred = carrier_index
             .points
             .get(&id)
-            .and_then(|carrier| ir.model.points.get(carrier.index.0))
+            .and_then(|carrier| ir.geometry.points.get(carrier.index.0))
             .is_some_and(|point| point.source_object.is_some());
         if !transferred && !referenced.get(&id).copied().unwrap_or_default() {
             typed_records.remove(id);
         }
     }
     let direct_carriers = ir
-        .model
+        .geometry
         .points
         .iter()
         .filter(|point| point.source_object.is_none())
         .map(|point| point.id.as_str())
         .chain(
-            ir.model
+            ir.geometry
                 .curves
                 .iter()
                 .filter(|curve| curve.source_object.is_none())
                 .map(|curve| curve.id.as_str()),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .surfaces
                 .iter()
                 .filter(|surface| surface.source_object.is_none())
@@ -818,32 +925,32 @@ fn retain_unowned_carriers(
         return Ok(());
     }
     let protected_roots = ir
-        .model
+        .geometry
         .vertices
         .iter()
         .map(|vertex| vertex.point.as_str())
         .chain(
-            ir.model
+            ir.geometry
                 .edges
                 .iter()
                 .filter_map(|edge| edge.curve().map(cadmpeg_ir::ids::CurveId::as_str)),
         )
-        .chain(ir.model.faces.iter().map(|face| face.surface.as_str()))
+        .chain(ir.geometry.faces.iter().map(|face| face.surface.as_str()))
         .chain(
-            ir.model
+            ir.geometry
                 .coedges
                 .iter()
                 .filter_map(|coedge| coedge.use_curve.as_ref().map(|use_| use_.curve.as_str())),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .pcurves
                 .iter()
                 .filter(|pcurve| owned.contains(pcurve.id.as_str()))
                 .map(|pcurve| pcurve.id.as_str()),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .points
                 .iter()
                 .filter(|point| {
@@ -854,7 +961,7 @@ fn retain_unowned_carriers(
                 .map(|point| point.id.as_str()),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .curves
                 .iter()
                 .filter(|curve| {
@@ -865,7 +972,7 @@ fn retain_unowned_carriers(
                 .map(|curve| curve.id.as_str()),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .surfaces
                 .iter()
                 .filter(|surface| {
@@ -876,13 +983,13 @@ fn retain_unowned_carriers(
                 .map(|surface| surface.id.as_str()),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .procedural_curves
                 .iter()
                 .map(|curve| curve.id.as_str()),
         )
         .chain(
-            ir.model
+            ir.geometry
                 .procedural_surfaces
                 .iter()
                 .map(|surface| surface.id.as_str()),
@@ -892,57 +999,57 @@ fn retain_unowned_carriers(
     let protected = record_closure(protected_roots, exchange, ctx)?;
     let removed_closure = record_closure(unowned_pcurves.iter().copied(), exchange, ctx)?;
     let deleted_pcurves = ir
-        .model
+        .geometry
         .pcurves
         .iter()
         .filter(|pcurve| !retains_carrier(pcurve.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_points = ir
-        .model
+        .geometry
         .points
         .iter()
         .filter(|point| !retains_carrier(point.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_curves = ir
-        .model
+        .geometry
         .curves
         .iter()
         .filter(|curve| !retains_carrier(curve.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_surfaces = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .filter(|surface| !retains_carrier(surface.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_procedural_curves = ir
-        .model
+        .geometry
         .procedural_curves
         .iter()
         .filter(|curve| !retains_carrier(curve.id.as_str(), &removed_closure, &protected))
         .count();
     let deleted_procedural_surfaces = ir
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .filter(|surface| !retains_carrier(surface.id.as_str(), &removed_closure, &protected))
         .count();
-    ir.model
+    ir.geometry
         .pcurves
         .retain(|pcurve| owned.contains(pcurve.id.as_str()));
-    ir.model
+    ir.geometry
         .points
         .retain(|point| retains_carrier(point.id.as_str(), &removed_closure, &protected));
-    ir.model
+    ir.geometry
         .curves
         .retain(|curve| retains_carrier(curve.id.as_str(), &removed_closure, &protected));
-    ir.model
+    ir.geometry
         .surfaces
         .retain(|surface| retains_carrier(surface.id.as_str(), &removed_closure, &protected));
-    ir.model
+    ir.geometry
         .procedural_curves
         .retain(|curve| retains_carrier(curve.id.as_str(), &removed_closure, &protected));
-    ir.model
+    ir.geometry
         .procedural_surfaces
         .retain(|surface| retains_carrier(surface.id.as_str(), &removed_closure, &protected));
     typed_records.retain(&mut |id| {
@@ -960,7 +1067,7 @@ fn retain_unowned_carriers(
 }
 
 fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
-    for point in &mut ir.model.points {
+    for point in &mut ir.geometry.points {
         let Some(id) = step_instance_id(point.id.as_str()) else {
             continue;
         };
@@ -968,7 +1075,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
             point.source_object = Some(step_source_association(id, None));
         }
     }
-    for curve in &mut ir.model.curves {
+    for curve in &mut ir.geometry.curves {
         let Some(id) = step_instance_id(curve.id.as_str()) else {
             continue;
         };
@@ -976,7 +1083,7 @@ fn associate_unowned_direct_carriers(ir: &mut CadIr, ids: &BTreeSet<u64>) {
             curve.source_object = Some(step_source_association(id, None));
         }
     }
-    for surface in &mut ir.model.surfaces {
+    for surface in &mut ir.geometry.surfaces {
         let Some(id) = step_instance_id(surface.id.as_str()) else {
             continue;
         };
@@ -1083,17 +1190,17 @@ fn referenced_record_ids(
         let point = carrier_index
             .points
             .get(&id)
-            .and_then(|carrier| ir.model.points.get(carrier.index.0));
+            .and_then(|carrier| ir.geometry.points.get(carrier.index.0));
         point.is_some_and(|point| point.source_object.is_none())
             || carrier_index
                 .curves
                 .get(&id)
-                .and_then(|index| ir.model.curves.get(index.0))
+                .and_then(|index| ir.geometry.curves.get(index.0))
                 .is_some_and(|curve| curve.source_object.is_none())
             || carrier_index
                 .surfaces
                 .get(&id)
-                .and_then(|index| ir.model.surfaces.get(index.0))
+                .and_then(|index| ir.geometry.surfaces.get(index.0))
                 .is_some_and(|surface| surface.source_object.is_none())
             || (point.is_none_or(|point| point.source_object.is_none())
                 && exchange
@@ -1162,14 +1269,33 @@ fn collect_source_references(
     Ok(())
 }
 
-fn count_unknown_kind(counts: &mut BTreeMap<String, usize>, record: &parse::RawRecord) {
+/// The instances of one opaque entity type: how many, and the byte offset of
+/// the first.
+#[derive(Default)]
+struct OpaqueKind {
+    count: usize,
+    first: usize,
+}
+
+impl OpaqueKind {
+    fn add(&mut self, offset: usize) {
+        self.first = if self.count == 0 {
+            offset
+        } else {
+            self.first.min(offset)
+        };
+        self.count += 1;
+    }
+}
+
+fn count_unknown_kind(counts: &mut BTreeMap<String, OpaqueKind>, record: &parse::RawRecord) {
     let kind = record
         .partials
         .iter()
         .map(|partial| partial.name.as_str())
         .collect::<Vec<_>>()
         .join("+");
-    *counts.entry(kind).or_default() += 1;
+    counts.entry(kind).or_default().add(record.span.start);
 }
 
 fn opaque_record_id(id: u64, record: &RawRecord) -> Result<UnknownId, CodecError> {
@@ -1245,7 +1371,10 @@ fn byte_accounting(
 ) -> Result<ByteAccounting, CodecError> {
     let mut classes =
         ctx.alloc_filled(input.len(), ByteClass::Unclassified, "step byte classes")?;
-    for span in header_spans.iter().chain(exchange.omitted_spans()) {
+    for span in header_spans
+        .iter()
+        .chain(exchange.retained_statement_spans())
+    {
         claim_range(
             &mut classes,
             span,
@@ -1279,9 +1408,10 @@ fn byte_accounting(
     // spans of bounded source literals, including unreadable metadata.
     lexer.set_literal_admission(crate::lex::LiteralAdmission::Metadata);
     let draft = lexer.is_draft();
-    let mut omitted = (0..exchange.omitted_spans().len())
-        .map(|index| Ok(exchange.omitted_spans()[index].clone()))
-        .collect::<Result<Vec<_>, CodecError>>()?;
+    let mut omitted = exchange
+        .retained_statement_spans()
+        .cloned()
+        .collect::<Vec<_>>();
     omitted.sort_unstable_by_key(|left| left.start);
     let mut cursor = 0;
     loop {

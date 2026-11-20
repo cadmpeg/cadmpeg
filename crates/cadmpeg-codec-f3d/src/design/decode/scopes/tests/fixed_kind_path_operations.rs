@@ -2,7 +2,7 @@
 
 use cadmpeg_core::decode::u64_from_index;
 
-use crate::design::decode::dimension_frames::companion_owned_interval;
+use crate::design::decode::dimension_frames::CompanionBounds;
 use crate::design::decode::parameters::bind_parameter_companion_payloads;
 use crate::design::decode::scopes::path_feature::exact_path_feature_construction;
 use crate::design::test_support::parameter_record;
@@ -243,6 +243,7 @@ pub(super) fn fixed_kind_path_operations(
         let value = Some(
             crate::records::topology::sketch_profile::DesignSketchProfileOperand::try_new(
                 crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+                    sketch_absent: false,
                     scope_reference_ordinal: 3,
                     record_index: 2795,
                     byte_offset: 32_000,
@@ -405,14 +406,8 @@ pub(super) fn fixed_kind_path_operations(
         })
         .unwrap();
     assert_eq!(
-        companion_owned_interval(
-            &companion,
-            std::iter::empty(),
-            &[],
-            &[scope.clone()],
-            &[],
-            100
-        ),
+        CompanionBounds::new(std::iter::empty(), &[], &[scope.clone()], &[])
+            .interval(&companion, 100),
         Some((58, 58))
     );
     scope
@@ -427,14 +422,8 @@ pub(super) fn fixed_kind_path_operations(
         })
         .unwrap();
     assert_eq!(
-        companion_owned_interval(
-            &companion,
-            std::iter::empty(),
-            &[],
-            &[scope.clone()],
-            &[],
-            100
-        ),
+        CompanionBounds::new(std::iter::empty(), &[], &[scope.clone()], &[])
+            .interval(&companion, 100),
         Some((58, 80))
     );
     scope
@@ -455,14 +444,8 @@ pub(super) fn fixed_kind_path_operations(
         byte_offset: 70,
     };
     assert_eq!(
-        companion_owned_interval(
-            &companion,
-            std::iter::empty(),
-            &[],
-            &[scope.clone()],
-            &[foreign_header],
-            100
-        ),
+        CompanionBounds::new(std::iter::empty(), &[], &[scope.clone()], &[foreign_header])
+            .interval(&companion, 100),
         Some((58, 70))
     );
 
@@ -475,7 +458,7 @@ pub(super) fn fixed_kind_path_operations(
     .expect("located parameter");
     parameter.id = "f3d:native:design-parameter#65".into();
     assert_eq!(
-        companion_owned_interval(&companion, std::iter::once(&parameter), &[], &[], &[], 100),
+        CompanionBounds::new(std::iter::once(&parameter), &[], &[], &[]).interval(&companion, 100),
         Some((58, 65))
     );
     let recipe = ConstructionRecipe {

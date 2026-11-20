@@ -20,8 +20,6 @@ use crate::history_records::{AsmHistoricalCylinder, AsmHistoricalTopology};
 
 /// How strongly `C × F_in` must agree with the cylinder's radial direction.
 const OUTWARD_AGREEMENT: f64 = 0.9;
-/// A radial direction this close to the XY plane has no Z either way around.
-const FLAT_RADIAL_Z: f64 = 1e-6;
 
 #[derive(Clone, Copy)]
 struct FaceSense {
@@ -302,9 +300,7 @@ fn cylinder_outward(
             }
         }
     }
-    // A wall whose radial direction has no Z cannot win or lose the up-most
-    // test, so the sign of the normal does not change the chamfer.
-    (radial.z.abs() <= FLAT_RADIAL_Z).then_some(radial)
+    None
 }
 
 fn radial_unit(point: Point3, origin: Point3, axis: Vector3) -> Option<Vector3> {
@@ -405,3 +401,6 @@ fn vertex_position(topology: &AsmHistoricalTopology, vertex: i64) -> Option<Poin
         .find(|item| item.point == point)
         .map(|item| item.position)
 }
+
+#[cfg(test)]
+mod tests;

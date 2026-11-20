@@ -38,6 +38,7 @@ enum ImplicitOuter<'a> {
 /// The STEP outer bound of a face whose outer boundary is implicit.
 #[derive(Clone)]
 pub(super) enum OuterBound {
+    Closed(Box<super::closed_surfaces::ClosedBound>),
     /// The parameter rectangle of the support.
     Rectangle(Box<ParameterRectangle>),
     /// STEP has no bound for the natural boundary, for the stated reason.
@@ -68,6 +69,10 @@ impl<'a> Builder<'a> {
     ) -> Result<HashMap<&'a str, OuterBound>, ResourceLimit> {
         let mut bounds = HashMap::new();
         for (id, face) in &self.faces {
+            if let Some(bound) = self.whole_closed_bound(face)? {
+                bounds.insert(*id, OuterBound::Closed(Box::new(bound)));
+                continue;
+            }
             let bound = match self.implicit_outer(face) {
                 ImplicitOuter::Stated => continue,
                 ImplicitOuter::Rectangle(nurbs) => match self.parameter_rectangle(face, nurbs)? {

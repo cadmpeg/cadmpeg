@@ -298,6 +298,7 @@ mod tests {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         };
         let chart = CurveChart::new(&curve, Placement::identity()).expect("chart");
         let ir = cadmpeg_ir::CadIr::empty();
@@ -463,6 +464,7 @@ mod tests {
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         };
         let chart = CurveChart::new(&curve, Placement::identity()).unwrap();
         let ir = cadmpeg_ir::CadIr::empty();

@@ -63,6 +63,8 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
 
             op: BooleanKind::Cut,
             keep_tools: false,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         })
     );
     assert_eq!(
@@ -85,6 +87,8 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
 
             op: BooleanKind::Cut,
             keep_tools: false,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         })
     );
 
@@ -120,6 +124,8 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
 
             op: BooleanKind::Cut,
             keep_tools: false,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         })
     );
 
@@ -156,6 +162,8 @@ fn nx_boolean_keeps_body_namespace_proofs_atomic() {
 
             op: BooleanKind::Join,
             keep_tools: false,
+
+            destination: cadmpeg_ir::features::CombineDestination::default(),
         })
     );
 }
@@ -971,6 +979,8 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
 
                 op,
                 keep_tools: false,
+
+                destination: cadmpeg_ir::features::CombineDestination::default(),
             })
         );
     }
@@ -1151,6 +1161,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             faces: FaceSelection::Unresolved,
             thickness: None,
             side: None,
+            ..
         })
     ));
     for kind in [
@@ -1184,7 +1195,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         let dimensions = [10.0, 20.0, 30.0];
         for axis in 0..3 {
             let mut surfaces = ir
-                .model
+                .geometry
                 .surfaces
                 .iter_mut()
                 .filter_map(|surface| {
@@ -1221,7 +1232,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
                         .unwrap();
             }
         }
-        let output = ir.model.bodies[0].id.clone();
+        let output = ir.geometry.bodies[0].id.clone();
         let block = |ir: &CadIr, dimensions, outputs: &[BodyId]| {
             let index = FeatureProjectionIndex::new(ProjectionArenas::of(ir));
             block_placement(&index, &ir.tolerances, dimensions, outputs)
@@ -1253,7 +1264,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
 
         let mut repeated = ir.clone();
         let high_y = repeated
-            .model
+            .geometry
             .surfaces
             .iter_mut()
             .find_map(|surface| {
@@ -1281,7 +1292,7 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
 
         let mut stepped = ir.clone();
         let mut intermediate_surface = stepped
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| {
@@ -1309,23 +1320,22 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         *plane_surface =
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(origin, *normal, *u_axis)
                 .unwrap();
-        stepped.model.surfaces.push(intermediate_surface);
-        let mut intermediate_face = stepped.model.faces.first().expect("cube face").clone();
+        stepped.geometry.surfaces.push(intermediate_surface);
+        let mut intermediate_face = stepped.geometry.faces.first().expect("cube face").clone();
         intermediate_face.id = cadmpeg_ir::ids::FaceId::mint("test:model:entity#intermediate-face")
             .expect("identity grammar");
         intermediate_face.surface =
             cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#intermediate-plane")
                 .expect("identity grammar");
         intermediate_face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
-        stepped.model.shells[0].add_face(intermediate_face.id.clone());
-        stepped.model.faces.push(intermediate_face);
+        stepped.geometry.faces.push(intermediate_face);
         assert_eq!(
             placement(&stepped, dimensions, std::slice::from_ref(&output)),
             None
         );
 
         let mut nonplanar = ir.clone();
-        nonplanar.model.surfaces[0].geometry =
+        nonplanar.geometry.surfaces[0].geometry =
             SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
                 cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                     cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -1341,16 +1351,20 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
         );
 
         let mut missing_surface = ir.clone();
-        let removed = missing_surface.model.surfaces.pop().expect("cube surface");
+        let removed = missing_surface
+            .geometry
+            .surfaces
+            .pop()
+            .expect("cube surface");
         assert!(missing_surface
-            .model
+            .geometry
             .faces
             .iter()
             .any(|face| face.surface == removed.id));
         assert_eq!(placement(&missing_surface, dimensions, &[]), None);
 
         let mut curved_feature = ir.clone();
-        let mut curved_surface = curved_feature.model.surfaces[0].clone();
+        let mut curved_surface = curved_feature.geometry.surfaces[0].clone();
         curved_surface.id =
             cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#later-curved-surface")
                 .expect("identity grammar");
@@ -1363,37 +1377,33 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
             )
             .unwrap(),
         ));
-        curved_feature.model.surfaces.push(curved_surface);
-        let mut curved_face = curved_feature.model.faces[0].clone();
+        curved_feature.geometry.surfaces.push(curved_surface);
+        let mut curved_face = curved_feature.geometry.faces[0].clone();
         curved_face.id = cadmpeg_ir::ids::FaceId::mint("test:model:entity#later-curved-face")
             .expect("identity grammar");
         curved_face.surface =
             cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#later-curved-surface")
                 .expect("identity grammar");
         curved_face.loops = cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new());
-        curved_feature.model.shells[0].add_face(curved_face.id.clone());
-        curved_feature.model.faces.push(curved_face);
+        curved_feature.geometry.faces.push(curved_face);
         assert_eq!(
             placement(&curved_feature, dimensions, &[]),
             Some(cadmpeg_ir::transform::Transform::identity())
         );
 
         let mut sheet = ir.clone();
-        sheet.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
+        sheet.geometry.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
         assert_eq!(
             placement(&sheet, dimensions, std::slice::from_ref(&output)),
             None
         );
 
         let mut disconnected = ir.clone();
-        let mut second_region = disconnected.model.regions[0].clone();
+        let mut second_region = disconnected.geometry.regions[0].clone();
         second_region.id = cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
             .expect("identity grammar");
         second_region.shells.clear();
-        disconnected.model.bodies[0]
-            .regions
-            .push(second_region.id.clone());
-        disconnected.model.regions.push(second_region);
+        disconnected.geometry.regions.push(second_region);
         assert_eq!(
             placement(&disconnected, dimensions, std::slice::from_ref(&output),),
             None
@@ -1405,21 +1415,14 @@ fn nx_block_placement_requires_native_dimensions_and_unique_axes() {
 fn nx_sphere_projection_requires_one_complete_spherical_body() {
     ({
         let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-        let body = ir.model.bodies[0].id.clone();
-        let face = ir.model.faces[0].id.clone();
-        let surface = ir.model.faces[0].surface.clone();
-        {
-            let members = vec![face];
-            ir.model.shells[0].edit_topology(|faces, _, _| *faces = members)
-        }
-        .unwrap();
-        ir.model
-            .faces
-            .retain(|candidate| candidate.id == ir.model.shells[0].faces()[0]);
-        ir.model
+        let body = ir.geometry.bodies[0].id.clone();
+        let face = ir.geometry.faces[0].id.clone();
+        let surface = ir.geometry.faces[0].surface.clone();
+        ir.geometry.faces.retain(|candidate| candidate.id == face);
+        ir.geometry
             .surfaces
             .retain(|candidate| candidate.id == surface);
-        ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+        ir.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
             cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
                 Point3::new(1.0, 2.0, 3.0),
                 Vector3::new(0.0, 0.0, 1.0),
@@ -1456,24 +1459,19 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
             ))
         );
         let mut shadowed = ir.clone();
-        let mut shadow = shadowed.model.surfaces[0].clone();
+        let mut shadow = shadowed.geometry.surfaces[0].clone();
         shadow.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
-        shadowed.model.surfaces.push(shadow);
+        shadowed.geometry.surfaces.push(shadow);
         assert_eq!(
             sphere(&shadowed, std::slice::from_ref(&body)),
             sphere(&ir, std::slice::from_ref(&body))
         );
-        shadowed.model.surfaces.swap(0, 1);
+        shadowed.geometry.surfaces.swap(0, 1);
         assert!(sphere(&shadowed, std::slice::from_ref(&body)).is_none());
 
-        let mut second_body = ir.model.bodies[0].clone();
+        let mut second_body = ir.geometry.bodies[0].clone();
         second_body.id = BodyId::mint("test:model:entity#second-body").expect("identity grammar");
-        second_body.regions =
-            vec![
-                cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
-                    .expect("identity grammar"),
-            ];
-        let mut second_region = ir.model.regions[0].clone();
+        let mut second_region = ir.geometry.regions[0].clone();
         second_region.id = cadmpeg_ir::ids::RegionId::mint("test:model:entity#second-region")
             .expect("identity grammar");
         second_region.body = second_body.id.clone();
@@ -1482,31 +1480,23 @@ fn nx_sphere_projection_requires_one_complete_spherical_body() {
                 cadmpeg_ir::ids::ShellId::mint("test:model:entity#second-shell")
                     .expect("identity grammar"),
             ];
-        let mut second_shell = ir.model.shells[0].clone();
+        let mut second_shell = ir.geometry.shells[0].clone();
         second_shell.id = cadmpeg_ir::ids::ShellId::mint("test:model:entity#second-shell")
             .expect("identity grammar");
         second_shell.region = second_region.id.clone();
-        {
-            let members = vec![
-                cadmpeg_ir::ids::FaceId::mint("test:model:entity#second-face")
-                    .expect("identity grammar"),
-            ];
-            second_shell.edit_topology(|faces, _, _| *faces = members)
-        }
-        .unwrap();
-        let mut second_face = ir.model.faces[0].clone();
+        let mut second_face = ir.geometry.faces[0].clone();
         second_face.id = cadmpeg_ir::ids::FaceId::mint("test:model:entity#second-face")
             .expect("identity grammar");
         second_face.shell = second_shell.id.clone();
         second_face.surface = cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#second-surface")
             .expect("identity grammar");
-        let mut second_surface = ir.model.surfaces[0].clone();
+        let mut second_surface = ir.geometry.surfaces[0].clone();
         second_surface.id = second_face.surface.clone();
-        ir.model.bodies.push(second_body);
-        ir.model.regions.push(second_region);
-        ir.model.shells.push(second_shell);
-        ir.model.faces.push(second_face);
-        ir.model.surfaces.push(second_surface);
+        ir.geometry.bodies.push(second_body);
+        ir.geometry.regions.push(second_region);
+        ir.geometry.shells.push(second_shell);
+        ir.geometry.faces.push(second_face);
+        ir.geometry.surfaces.push(second_surface);
 
         assert!(sphere(&ir, &[]).is_none());
         assert!(sphere(

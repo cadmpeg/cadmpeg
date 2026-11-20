@@ -78,14 +78,14 @@ pub(super) fn bind_counted_owner_surfaces(
     }
     let vertex_positions = face_vertices(ir);
     let surface_indices = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .enumerate()
         .map(|(index, surface)| (surface.id.as_str(), index))
         .collect::<HashMap<_, _>>();
     let unknown_faces = ir
-        .model
+        .geometry
         .faces
         .iter()
         .enumerate()
@@ -98,7 +98,7 @@ pub(super) fn bind_counted_owner_surfaces(
                 .ok()?;
             let surface = *surface_indices.get(face.surface.as_str())?;
             matches!(
-                ir.model.surfaces[surface].geometry,
+                ir.geometry.surfaces[surface].geometry,
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. })
             )
             .then_some((index, ordinal, surface))
@@ -166,10 +166,10 @@ pub(super) fn bind_counted_owner_surfaces(
     let mut count = 0;
     for ((_, _, surface), carrier) in unknown_faces.into_iter().zip(bindings) {
         let Some(carrier) = carrier else { continue };
-        ir.model.surfaces[surface].geometry = SurfaceGeometry::Solved(
+        ir.geometry.surfaces[surface].geometry = SurfaceGeometry::Solved(
             SolvedSurfaceGeometry::Nurbs(carriers[carrier].geometry.clone()),
         );
-        annotations.derived(&ir.model.surfaces[surface].id, "geometry")?;
+        annotations.derived(&ir.geometry.surfaces[surface].id, "geometry")?;
         count += 1;
     }
     Ok(count)
@@ -197,36 +197,36 @@ fn contains_face(owner: CountedOwnerBounds, face: StandardFaceBounds) -> bool {
 
 fn face_vertices(ir: &CadIr) -> Vec<Option<Vec<Point3>>> {
     let points = ir
-        .model
+        .geometry
         .points
         .iter()
         .map(|point| (point.id.as_str(), point.position().get()))
         .collect::<HashMap<_, _>>();
     let vertices = ir
-        .model
+        .geometry
         .vertices
         .iter()
         .filter_map(|vertex| Some((vertex.id.as_str(), *points.get(vertex.point.as_str())?)))
         .collect::<HashMap<_, _>>();
     let edges = ir
-        .model
+        .geometry
         .edges
         .iter()
         .map(|edge| (edge.id.as_str(), edge))
         .collect::<HashMap<_, _>>();
     let coedges = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .map(|coedge| (coedge.id.as_str(), coedge))
         .collect::<HashMap<_, _>>();
     let loops = ir
-        .model
+        .geometry
         .loops
         .iter()
         .map(|item| (item.id.as_str(), item))
         .collect::<HashMap<_, _>>();
-    ir.model
+    ir.geometry
         .faces
         .iter()
         .map(|face| {
@@ -248,7 +248,7 @@ fn face_vertices(ir: &CadIr) -> Vec<Option<Vec<Point3>>> {
                 for coedge_id in boundary.coedges() {
                     let coedge = coedges.get(coedge_id.as_str())?;
                     let edge = edges.get(coedge.edge.as_str())?;
-                    for id in [&edge.start, &edge.end] {
+                    for id in edge.vertices() {
                         add_vertex(id)?;
                     }
                 }
@@ -277,25 +277,27 @@ mod tests {
         let vertex_id = VertexId::mint("catia:test:vertex#pole").expect("vertex id");
         let point_id = PointId::mint("catia:test:point#pole").expect("point id");
         let mut ir = CadIr::empty();
-        ir.model.points.push(Point::new(
+        ir.geometry.points.push(Point::new(
             point_id.clone(),
             FinitePoint3::new(Point3::new(1.0, 2.0, 3.0)).expect("finite point"),
             None,
         ));
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
             tolerance: None,
+            native_ref: None,
         });
-        ir.model.loops.push(Loop {
+        ir.geometry.loops.push(Loop {
             id: loop_id.clone(),
             face: face_id.clone(),
             boundary: LoopBoundary::Vertex {
                 vertex: vertex_id,
                 pcurves: Vec::new(),
             },
+            native_ref: None,
         });
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: face_id,
             shell: ShellId::mint("catia:test:shell#pole").expect("shell id"),
             surface: SurfaceId::mint("catia:test:surface#pole").expect("surface id"),
@@ -304,6 +306,7 @@ mod tests {
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         });
         let witnesses = face_vertices(&ir);
         let [Some(points)] = witnesses.as_slice() else {
@@ -311,7 +314,7 @@ mod tests {
         };
         assert_eq!(points.len(), 1);
         assert!((points[0].z - 3.0).abs() < 1.0e-12);
-        ir.model.points.clear();
+        ir.geometry.points.clear();
         assert!(face_vertices(&ir)[0].is_none());
     }
 }

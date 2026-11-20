@@ -326,3 +326,98 @@ fn assert_arc_overflow_malformed(values: [f64; 12]) {
     assert!(matches!(decode_circular_arc(&payload, 17),
         Err(cadmpeg_core::CodecError::Malformed(message)) if message == expected));
 }
+
+/// A tail of `references` marked references, the pad, three opaque bytes, and
+/// `marker`, placed after a 96-byte payload at `offset`.
+fn planar_tail(offset: usize, references: usize, marker: u8) -> Vec<u8> {
+    let mut bytes = vec![0xAA; offset + 96];
+    for index in 0..references {
+        bytes.push(1);
+        bytes.extend_from_slice(&u32::try_from(index + 10).unwrap().to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend(std::iter::repeat_n(0, if references == 1 { 5 } else { 3 }));
+    bytes.extend_from_slice(&[7, 8, 9, marker]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.push(0);
+    bytes
+}
+
+#[test]
+fn the_planar_tail_marker_follows_the_pad_and_three_opaque_bytes() {
+    for references in 1..=3 {
+        for marker in [0, 1] {
+            let bytes = planar_tail(133, references, marker);
+            assert_eq!(
+                crate::design::decode::sketch::planar_curve_tail(&bytes, 133)
+                    .map(|tail| tail.marker),
+                Some(marker)
+            );
+        }
+    }
+}
+
+#[test]
+fn a_planar_tail_with_a_nonzero_pad_or_no_reference_run_has_no_marker() {
+    let mut bytes = planar_tail(133, 2, 1);
+    let pad = 133 + 96 + 22;
+    bytes[pad] = 1;
+    assert_eq!(
+        crate::design::decode::sketch::planar_curve_tail(&bytes, 133),
+        None
+    );
+    assert_eq!(
+        crate::design::decode::sketch::planar_curve_tail(&[0; 300], 133),
+        None
+    );
+}
+
+/// A tail of two marked references, the pad, `opaque`, a zero marker, the u32
+/// `lane`, and flag byte `1`.
+fn lane_tail(opaque: &[u8], lane: u32) -> Vec<u8> {
+    let mut bytes = vec![0xAA; 133 + 96];
+    for index in 0..2u32 {
+        bytes.push(1);
+        bytes.extend_from_slice(&(index + 10).to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&[0; 3]);
+    bytes.extend_from_slice(opaque);
+    bytes.push(0);
+    bytes.extend_from_slice(&lane.to_le_bytes());
+    bytes.extend_from_slice(&[1, 0, 0]);
+    bytes
+}
+
+#[test]
+fn a_planar_tail_with_two_opaque_bytes_moves_its_lane_one_byte_earlier() {
+    use crate::design::decode::sketch::{planar_curve_tail, PlanarCurveTail};
+    for (lane, construction) in [(0, false), (1, true)] {
+        assert_eq!(
+            planar_curve_tail(&lane_tail(&[1, 0, 0], lane), 133),
+            Some(PlanarCurveTail {
+                marker: 0,
+                construction,
+                short: false
+            })
+        );
+        assert_eq!(
+            planar_curve_tail(&lane_tail(&[1, 0], lane), 133),
+            Some(PlanarCurveTail {
+                marker: 0,
+                construction,
+                short: true
+            })
+        );
+    }
+    let mut marked = lane_tail(&[1, 0], 1);
+    marked[133 + 96 + 22 + 3 + 2] = 1;
+    assert_eq!(
+        planar_curve_tail(&marked, 133),
+        Some(PlanarCurveTail {
+            marker: 1,
+            construction: true,
+            short: true
+        })
+    );
+}

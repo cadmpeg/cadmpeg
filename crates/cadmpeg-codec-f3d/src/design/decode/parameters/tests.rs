@@ -1012,6 +1012,22 @@ fn compact_scalar_parameter_owner_can_carry_a_two_byte_variant_slot() {
 }
 
 #[test]
+fn compact_scalar_parameter_owner_can_set_the_final_trailer_byte() {
+    let plain = parse_parameter_owner(&compact_parameter_owner_frame()).expect("owner");
+    assert!(!plain.trailer_flag);
+    let mut frame = compact_parameter_owner_frame();
+    frame[78..80].copy_from_slice(&[0, 1]);
+    let parsed = parse_parameter_owner(&frame).expect("flagged compact scalar owner");
+    assert!(parsed.trailer_flag);
+    assert_eq!(parsed.variant, None);
+    assert_eq!(parsed.frame_length, 103);
+    assert_eq!(parsed.parameter_record_index, 6654);
+    assert_eq!(parsed.companion_record_index, 6655);
+    frame[78..80].copy_from_slice(&[0, 2]);
+    assert!(parse_parameter_owner(&frame).is_none());
+}
+
+#[test]
 fn parameter_companion_prefix_has_owner_backlink_and_timestamp() {
     let mut prefix = vec![0; 58];
     prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -1881,6 +1897,14 @@ fn wide_owned_parameter_accepts_eleven_zero_bytes_after_expression() {
     assert!(parse_design_parameter_record(&scale).is_some());
     let expression_end = 50 + 4 + 2;
     scale.splice(expression_end..expression_end, [0; 2]);
+    let parameter = parse_design_parameter_record(&scale).expect("discriminator-5 wide parameter");
+    assert_eq!(parameter.source_kind(), "ScaleFactor");
+    assert_eq!(parameter.owner_record_index(), Some(1));
+    scale[26..30].copy_from_slice(&4u32.to_le_bytes());
+    let parameter = parse_design_parameter_record(&scale).expect("discriminator-4 wide parameter");
+    assert_eq!(parameter.source_kind(), "ScaleFactor");
+    assert_eq!(parameter.owner_record_index(), Some(1));
+    scale[26..30].copy_from_slice(&3u32.to_le_bytes());
     assert!(parse_design_parameter_record(&scale).is_none());
 }
 

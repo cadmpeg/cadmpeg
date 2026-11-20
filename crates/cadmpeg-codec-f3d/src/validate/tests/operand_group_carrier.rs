@@ -168,6 +168,7 @@ fn native_profile(
 ) -> crate::records::topology::sketch_profile::DesignSketchProfileOperand {
     crate::records::topology::sketch_profile::DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+            sketch_absent: false,
             scope_reference_ordinal: 0,
             record_index,
             byte_offset: 1_900 + u64::from(record_index),

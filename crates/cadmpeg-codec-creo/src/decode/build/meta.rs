@@ -52,26 +52,6 @@ pub(super) fn source_meta(
         }
         insert_source_attribute(
             &mut attributes,
-            "legacy_ascii_declaration_count",
-            legacy.persistence.declaration_count(),
-        );
-        insert_source_attribute(
-            &mut attributes,
-            "legacy_ascii_scope_count",
-            legacy.persistence.scopes.len(),
-        );
-        insert_source_attribute(
-            &mut attributes,
-            "legacy_ascii_value_count",
-            legacy.persistence.value_count(),
-        );
-        insert_source_attribute(
-            &mut attributes,
-            "legacy_ascii_continuation_count",
-            legacy.persistence.continuation_count(),
-        );
-        insert_source_attribute(
-            &mut attributes,
             "legacy_ascii_unresolved_value_count",
             legacy.persistence.unresolved_value_count(),
         );
@@ -81,12 +61,6 @@ pub(super) fn source_meta(
             legacy.persistence.conflicting_declaration_count(),
         );
     }
-    insert_source_attribute(&mut attributes, "file_size", scan.framing.data.len());
-    insert_source_attribute(
-        &mut attributes,
-        "section_count",
-        scan.framing.sections.len(),
-    );
     for (index, section) in scan.framing.sections.iter().enumerate() {
         insert_source_attribute(
             &mut attributes,
@@ -103,22 +77,6 @@ pub(super) fn source_meta(
             format_args!("section.{index}.role"),
             cadmpeg_core::container::ContainerRole::from(section.role()),
         );
-        insert_source_attribute(
-            &mut attributes,
-            format_args!("section.{index}.offset"),
-            section.offset(),
-        );
-        insert_source_attribute(
-            &mut attributes,
-            format_args!("section.{index}.length"),
-            section.length(),
-        );
-    }
-    if let Some(c) = scan.framing.census.srf_array_count {
-        insert_source_attribute(&mut attributes, "srf_array_count", c);
-    }
-    if let Some(c) = scan.framing.census.crv_array_count {
-        insert_source_attribute(&mut attributes, "crv_array_count", c);
     }
     if let Some(unit) = &scan.framing.principal_unit {
         insert_source_attribute(&mut attributes, "principal_unit", unit);
@@ -457,20 +415,6 @@ pub(super) fn source_meta(
     coverage.record(
         crate::coverage::DECODED_CURVE_EXPRESSION_RECORD_COUNT,
         scan.curves.expressions.len(),
-    );
-    insert_source_attribute(
-        &mut attributes,
-        "expanded_section_count",
-        scan.framing.expanded_sections.len(),
-    );
-    insert_source_attribute(
-        &mut attributes,
-        "expanded_section_byte_count",
-        scan.framing
-            .expanded_sections
-            .iter()
-            .map(|section| section.data.len())
-            .sum::<usize>(),
     );
     if let Some(family_table) = scan.framing.family_table {
         match family_table.pointer {

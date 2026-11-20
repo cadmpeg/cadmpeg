@@ -64,8 +64,8 @@ fn decode_clean(bytes: &[u8], exact: &[PvzLossCode]) -> CadIr {
 /// The measured body row of the one solid body of `ir`. The solid has no
 /// orientation finding.
 fn measured_solid(ir: &CadIr) -> BodyMeasures {
-    assert_eq!(ir.model.bodies.len(), 1);
-    assert_eq!(ir.model.bodies[0].kind, BodyKind::Solid);
+    assert_eq!(ir.geometry.bodies.len(), 1);
+    assert_eq!(ir.geometry.bodies[0].kind, BodyKind::Solid);
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
@@ -125,14 +125,14 @@ fn a_cylinder_with_a_seam_decodes_to_a_closed_solid() {
         PI * r * r * h,
         2.0 * PI * r * r + 2.0 * PI * r * h,
     );
-    let model = &ir.model;
-    assert_eq!((model.edges.len(), model.vertices.len()), (3, 2));
-    let seam = model
+    let geometry = &ir.geometry;
+    assert_eq!((geometry.edges.len(), geometry.vertices.len()), (3, 2));
+    let seam = geometry
         .edges
         .iter()
-        .find(|edge| edge.start != edge.end)
+        .find(|edge| edge.ends.as_ref().unwrap().start != edge.ends.as_ref().unwrap().end)
         .unwrap();
-    let uses: Vec<_> = model
+    let uses: Vec<_> = geometry
         .coedges
         .iter()
         .filter(|coedge| coedge.edge == seam.id)
@@ -152,15 +152,15 @@ fn a_cone_with_a_singular_apex_decodes_to_a_closed_solid() {
         PI * r * r * h / 3.0,
         PI * r * r + PI * r * r.hypot(h),
     );
-    let model = &ir.model;
-    let apex = model
+    let geometry = &ir.geometry;
+    let apex = geometry
         .edges
         .iter()
         .find(|edge| {
             let EdgeCarrier::Curve(curve) = &edge.carrier else {
                 return false;
             };
-            model.curves.iter().any(|candidate| {
+            geometry.curves.iter().any(|candidate| {
                 candidate.id == *curve
                     && matches!(
                         candidate.geometry,
@@ -169,7 +169,10 @@ fn a_cone_with_a_singular_apex_decodes_to_a_closed_solid() {
             })
         })
         .expect("apex edge on a degenerate curve");
-    assert_eq!(apex.start, apex.end);
+    assert_eq!(
+        apex.ends.as_ref().unwrap().start,
+        apex.ends.as_ref().unwrap().end
+    );
 }
 
 #[test]
@@ -193,17 +196,17 @@ fn a_face_with_secondary_pcurves_keeps_its_plane_carrier() {
     let s = CUBE_SIZE * MM;
     assert_solid(&ir, &[(SurfaceKind::Plane, 6)], s * s * s, 6.0 * s * s);
     let face = ir
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.id.as_str() == "pvz:model:face#part.ol:1:0")
         .expect("face 1");
     let pcurves = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .filter(|coedge| {
-            ir.model
+            ir.geometry
                 .loops
                 .iter()
                 .any(|loop_| loop_.id == coedge.owner_loop && loop_.face == face.id)
@@ -225,7 +228,7 @@ fn inner_loops_nest_in_the_faces_of_a_holed_block() {
         2.0 * face_area + 4.0 * (side + hole) * thickness,
     );
     let nested: Vec<usize> = ir
-        .model
+        .geometry
         .faces
         .iter()
         .filter_map(|face| match &face.loops {

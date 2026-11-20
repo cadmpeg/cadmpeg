@@ -55,15 +55,21 @@ fn profile_selection_members_are_checked_at_construction_and_on_wire() {
             serde_json::from_value::<ProfileRef>(wire.clone()).unwrap(),
             profile
         );
-        let first = wire["value"][field][0].clone();
+        let payload = if profile.planar().is_some() {
+            "/value/value"
+        } else {
+            "/value"
+        };
+        let first = wire.pointer(payload).unwrap()[field][0].clone();
         for invalid in [serde_json::json!([]), serde_json::json!([first, first])] {
             let mut invalid_wire = wire.clone();
-            invalid_wire["value"][field] = invalid;
+            invalid_wire.pointer_mut(payload).unwrap()[field] = invalid;
             assert!(serde_json::from_value::<ProfileRef>(invalid_wire.clone()).is_err());
             if profile.planar().is_some() {
-                let message = serde_json::from_value::<PlanarProfileRef>(invalid_wire)
-                    .unwrap_err()
-                    .to_string();
+                let message =
+                    serde_json::from_value::<PlanarProfileRef>(invalid_wire["value"].clone())
+                        .unwrap_err()
+                        .to_string();
                 assert!(message.contains(field), "{message}");
             }
         }
@@ -201,7 +207,10 @@ fn generated_profiles_require_references_and_preserve_repeated_curves() {
         PlanarProfileRef::generated(vec![curve.clone(), curve.clone()], "group".into()).unwrap(),
     );
     let wire = serde_json::to_value(&profile).unwrap();
-    assert_eq!(wire["value"]["curves"], serde_json::json!([curve, curve]));
+    assert_eq!(
+        wire["value"]["value"]["curves"],
+        serde_json::json!([curve, curve])
+    );
     assert_eq!(
         serde_json::from_value::<ProfileRef>(wire.clone()).unwrap(),
         profile
@@ -211,12 +220,14 @@ fn generated_profiles_require_references_and_preserve_repeated_curves() {
         ("native", serde_json::json!(" \t")),
     ] {
         let mut invalid = wire.clone();
-        invalid["value"][field] = value;
+        invalid["value"]["value"][field] = value;
         assert!(serde_json::from_value::<ProfileRef>(invalid.clone()).is_err());
-        assert!(serde_json::from_value::<PlanarProfileRef>(invalid)
-            .unwrap_err()
-            .to_string()
-            .contains(field));
+        assert!(
+            serde_json::from_value::<PlanarProfileRef>(invalid["value"].clone())
+                .unwrap_err()
+                .to_string()
+                .contains(field)
+        );
     }
 }
 

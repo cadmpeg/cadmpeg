@@ -37,7 +37,7 @@ fn placement_admission_preserves_existing_identity_and_omits_only_new_mixed_rows
         );
         let result = decode(archive.clone());
         assert_eq!(
-            result.ir().model.bodies.len(),
+            result.ir().geometry.bodies.len(),
             usize::from(merged),
             "admitted={admitted} {:?}",
             result.report()
@@ -64,7 +64,7 @@ fn placement_admission_preserves_existing_identity_and_omits_only_new_mixed_rows
         );
         if merged {
             assert!(result.ir().model.occurrences.iter().all(|occurrence| {
-                occurrence.transform == cadmpeg_ir::transform::Transform::identity()
+                occurrence.transform == Some(cadmpeg_ir::transform::Transform::identity())
             }));
         } else {
             assert_eq!(
@@ -109,7 +109,7 @@ fn unadmitted_existing_references_report_one_identity_warning_each() {
         &[("first.f3d", "role"), ("second.f3d", "role")],
     ));
     assert_eq!(result.ir().model.occurrences.len(), 2);
-    assert!(result.ir().model.bodies.is_empty());
+    assert!(result.ir().geometry.bodies.is_empty());
     assert!(result.ir().model.assembly_joints.is_empty());
     assert_eq!(f3d_native(result.ir()).xref_references.len(), 2);
     assert_eq!(

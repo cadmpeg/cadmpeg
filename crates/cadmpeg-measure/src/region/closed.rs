@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Regions on closed domains: spheres and ring tori.
+//! Regions on closed domains: spheres, ring tori and selected spindle-torus
+//! sheets.
 //!
 //! - A face with no ring loop, or whose ring loops hold only seam pieces
 //!   and synthesized pieces, covers the whole carrier (`whole_surface`).
@@ -8,14 +9,16 @@
 //!   reversed when the declared normal is reversed (`declared_orientation`).
 //!
 //! The domain is the strip `u ∈ [0, 2π)` by `v ∈ [base, base + span]`. On a
-//! sphere `base = −π/2` and both ends are poles. A torus is cut at the level
-//! `base` midway in the widest gap of the loops' `v` values; each piece is
-//! split where it crosses the cut and its `v` is taken in
-//! `[base, base + 2π)`. Green's theorem on the strip adds the parts of the
-//! upper edge in the region to the loops' integrals: on a sphere the whole
-//! edge when the region reaches the north pole beyond every boundary point;
-//! on a torus the cut-circle intervals that the crossing directions bound. A
-//! crossing in `−v` starts an interval in `+u`, a crossing in `+v` ends it.
+//! sphere `base = −π/2`; on a selected spindle-torus sheet `[base, base +
+//! span]` is the sheet's `v` range. Both ends of these strips are poles on
+//! the axis. A ring torus is cut at the level `base` midway in the widest
+//! gap of the loops' `v` values; each piece is split where it crosses the
+//! cut and its `v` is taken in `[base, base + 2π)`. Green's theorem on the
+//! strip adds the parts of the upper edge in the region to the loops'
+//! integrals: on a sphere or sheet the whole edge when the region reaches
+//! the upper pole beyond every boundary point; on a ring torus the
+//! cut-circle intervals that the crossing directions bound. A crossing in
+//! `−v` starts an interval in `+u`, a crossing in `+v` ends it.
 
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
@@ -53,7 +56,7 @@ struct Crossing {
     downward: bool,
 }
 
-/// The region of a face on a sphere or ring torus.
+/// The region of a face on a sphere, a ring torus or a spindle sheet.
 pub(super) fn classify(
     face: &Face,
     chart: &Chart<'_>,
@@ -65,11 +68,17 @@ pub(super) fn classify(
         return Err(MeasureFailure::unavailable(
             UnavailableReason::RegionDomainUnsupported,
             Some(face.id.as_str()),
-            "regions on horn and spindle tori are not classified",
+            "regions on horn tori and on spindle tori without a selected sheet are not classified",
         ));
     }
-    let torus = matches!(chart, Chart::Torus(_));
-    let lower = if torus { -PI } else { -FRAC_PI_2 };
+    let (ring, poles) = match chart {
+        Chart::Torus(torus) => match torus.sheet_domain() {
+            Some(range) => (false, range),
+            None => (true, [-PI, PI]),
+        },
+        _ => (false, [-FRAC_PI_2, FRAC_PI_2]),
+    };
+    let lower = poles[0];
     let mut loops = vec![
         LoopRegion {
             role: LoopRole::Vertex,
@@ -137,7 +146,7 @@ pub(super) fn classify(
             *total += ring.resolved.net_shift[axis];
         }
     }
-    if torus && shift != [0, 0] {
+    if ring && shift != [0, 0] {
         return Err(invalid("the loops do not bound a region on the torus"));
     }
     let oriented: Vec<Oriented> = active
@@ -153,8 +162,8 @@ pub(super) fn classify(
             }
         })
         .collect();
-    let indicator = reference(chart, &oriented, torus)?;
-    let (base, top, wrap) = if torus {
+    let indicator = reference(chart, &oriented, (!ring).then_some(poles))?;
+    let (base, top, wrap) = if ring {
         let level = cut_level(&oriented);
         let cut = Cut {
             level,
@@ -203,8 +212,14 @@ fn size(points: &[[f64; 2]]) -> f64 {
 /// The region indicator, referenced at a point just left of one of the
 /// longest loop segments. A reference whose indicator does not read 0 or 1
 /// beyond the loops is rejected and the next segment is tried. A segment
-/// whose lifts are refused refuses every reference.
-fn reference(chart: &Chart<'_>, oriented: &[Oriented], torus: bool) -> Measure<Indicator> {
+/// whose lifts are refused refuses every reference. `poles` is the `v` range
+/// between the poles of a sphere or spindle sheet, and `None` on a ring
+/// torus.
+fn reference(
+    chart: &Chart<'_>,
+    oriented: &[Oriented],
+    poles: Option<[f64; 2]>,
+) -> Measure<Indicator> {
     let mut segments: Vec<([f64; 2], [f64; 2], f64, f64)> = Vec::new();
     for polyline in oriented {
         let offset = MEMBER_OFFSET_RELATIVE * size(&polyline.points);
@@ -222,7 +237,7 @@ fn reference(chart: &Chart<'_>, oriented: &[Oriented], torus: bool) -> Measure<I
             a[0].midpoint(b[0]) + left[0] * offset,
             a[1].midpoint(b[1]) + left[1] * offset,
         ];
-        if !torus && point[1].abs() >= FRAC_PI_2 {
+        if poles.is_some_and(|[low, high]| point[1] <= low || point[1] >= high) {
             continue;
         }
         let indicator = Indicator {
@@ -231,10 +246,10 @@ fn reference(chart: &Chart<'_>, oriented: &[Oriented], torus: bool) -> Measure<I
             reference: point,
         };
         let readable = |value: i64| value == 0 || value == 1;
-        let accepted = if torus {
-            readable(indicator.at([point[0], point[1] + PI])?)
-        } else {
+        let accepted = if poles.is_some() {
             readable(indicator.beyond(1.0)?) && readable(indicator.beyond(-1.0)?)
+        } else {
+            readable(indicator.at([point[0], point[1] + PI])?)
         };
         if accepted {
             return Ok(indicator);

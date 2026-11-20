@@ -38,6 +38,7 @@ fn extrude(
             side_extent_discriminator_offsets: [77, 90],
             first_side_target_ordinal: None,
             distance_tail: None,
+            opaque_distance_word: None,
             extent: DesignExtrudeExtent::OneSidedToFace,
             direction_face_extend_offsets: [32, 36],
             direction_reversed: false,
@@ -59,7 +60,7 @@ fn conflicts(native: &crate::native::F3dNative) -> bool {
         let ir = cadmpeg_ir::examples::unit_cube().unwrap();
         let ctx = super::super::Ctx::new(&ir, native, service_ctx);
         let mut findings = Vec::new();
-        super::super::validate_extrude_parameter_operands(&ctx, &mut findings);
+        super::super::extrude_operands::validate_extrude_parameter_operands(&ctx, &mut findings);
         findings.iter().any(|finding| finding.message == CONFLICT)
     })
 }

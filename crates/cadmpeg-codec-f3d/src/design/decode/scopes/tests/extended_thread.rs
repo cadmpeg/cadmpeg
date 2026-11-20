@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::decode::scopes::thread::exact_thread_construction;
+use crate::design::decode::scopes::thread::{
+    exact_thread_construction, thread_modeled_entries_loss, thread_modeled_flag_loss,
+};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::thread::{
     DesignThreadConstruction, DesignThreadExtended, DesignThreadForm,
@@ -14,6 +16,8 @@ const LENGTH_OWNER: u32 = 123;
 
 #[derive(Clone)]
 struct Fixture {
+    owner_marked: bool,
+    compact_owned: Option<u8>,
     external: u8,
     entries: u32,
     class: &'static str,
@@ -27,6 +31,8 @@ struct Fixture {
 impl Fixture {
     fn cosmetic() -> Self {
         Self {
+            owner_marked: false,
+            compact_owned: None,
             external: 1,
             entries: 0,
             class: "6g",
@@ -50,7 +56,11 @@ impl Fixture {
         let mut references = (0..self.faces)
             .flat_map(|face| [101 + 4 * face, 102 + 4 * face])
             .collect::<Vec<_>>();
-        references.extend([OFFSET_OWNER, LENGTH_OWNER]);
+        if self.compact_owned == Some(1) {
+            references.splice(..0, [OFFSET_OWNER, LENGTH_OWNER]);
+        } else {
+            references.extend([OFFSET_OWNER, LENGTH_OWNER]);
+        }
         references
     }
 
@@ -60,20 +70,39 @@ impl Fixture {
             bytes.extend_from_slice(&record.to_le_bytes());
             bytes.extend_from_slice(&[0; 6]);
         }
-        let mut bytes = vec![0; 30];
-        bytes[21..29].copy_from_slice(&60.0f64.to_le_bytes());
-        bytes[29] = self.external;
-        bytes.extend_from_slice(&self.entries.to_le_bytes());
-        for _ in 0..self.entries {
-            bytes.extend_from_slice(&1u64.to_le_bytes());
-            bytes.extend_from_slice(&0x130u64.to_le_bytes());
+        let mut bytes = if self.owner_marked || self.compact_owned.is_some() {
+            let mut bytes = vec![0; 25];
+            bytes[20] = 1;
+            bytes.extend_from_slice(&60.0f64.to_le_bytes());
+            bytes
+        } else {
+            let mut bytes = vec![0; 21];
+            bytes.extend_from_slice(&60.0f64.to_le_bytes());
+            bytes
+        };
+        if self.compact_owned.is_some() {
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+            bytes.extend_from_slice(&[0, 2, 0, 0, 0, 0x36, 0, 0x48, 0]);
+        } else {
+            bytes.push(self.external);
+            bytes.extend_from_slice(&self.entries.to_le_bytes());
+            for _ in 0..self.entries {
+                bytes.extend_from_slice(&1u64.to_le_bytes());
+                bytes.extend_from_slice(&0x130u64.to_le_bytes());
+            }
+            lp_utf16(&mut bytes, self.class);
+            lp_utf16(&mut bytes, self.copy);
         }
-        lp_utf16(&mut bytes, self.class);
-        lp_utf16(&mut bytes, self.copy);
         lp_utf16(&mut bytes, "M10x1.5");
         lp_utf16(&mut bytes, "10.0");
         lp_utf16(&mut bytes, "ISO Metric profile");
-        bytes.extend_from_slice(&[self.full_length, 1, 0, 0, 0]);
+        bytes.extend_from_slice(
+            &self
+                .compact_owned
+                .map_or([self.full_length, 1, 0, 0, 0], |control| {
+                    [0, control, 0, 0, 0]
+                }),
+        );
         bytes.extend_from_slice(&0.985f64.to_le_bytes());
         bytes.extend_from_slice(&0.814f64.to_le_bytes());
         bytes.push(self.modeled_flag);
@@ -92,8 +121,19 @@ impl Fixture {
     }
 
     fn decode(&self) -> Option<DesignThreadConstruction> {
-        let bytes = self.bytes();
-        let references = self.references();
+        self.decode_bytes(&self.bytes())
+    }
+
+    fn decode_bytes(&self, bytes: &[u8]) -> Option<DesignThreadConstruction> {
+        self.decode_bytes_with_references(bytes, self.references(), 0.0)
+    }
+
+    fn decode_bytes_with_references(
+        &self,
+        bytes: &[u8],
+        references: Vec<u32>,
+        offset: f64,
+    ) -> Option<DesignThreadConstruction> {
         let mut scope = DesignParameterScope::empty(
             "f3d:test:extended-thread#100",
             crate::records::feature::scope::DesignFeatureKind::Thread,
@@ -101,6 +141,10 @@ impl Fixture {
         );
         scope
             .try_edit(|draft| {
+                if self.compact_owned.is_some() {
+                    draft.class_tag = "326".to_owned().try_into().unwrap();
+                    draft.paired_class_tag = "263".to_owned().try_into().unwrap();
+                }
                 draft.frame_length = 600;
                 draft.paired_byte_offset = 600;
                 draft.reference_members =
@@ -109,7 +153,7 @@ impl Fixture {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let owners = [(OFFSET_OWNER, 0u32, 0.0), (LENGTH_OWNER, 1, 2.0)]
+        let owners = [(OFFSET_OWNER, 0u32, offset), (LENGTH_OWNER, 1, 2.0)]
             .into_iter()
             .map(|(index, ordinal, value)| {
                 let owner = crate::design::decode::parameters::parse_parameter_owner(
@@ -128,7 +172,54 @@ impl Fixture {
                 crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap()
             })
             .collect::<Vec<_>>();
-        exact_thread_construction(&bytes, &scope, &owners)
+        exact_thread_construction(bytes, &scope, &owners)
+    }
+}
+
+#[test]
+fn owned_hole_thread_reads_its_hole_length_and_offset_references() {
+    use crate::layout::thread_extended_standard_trailer as standard_trailer;
+    use crate::layout::thread_standard_construction_tail as scalar;
+
+    let direct = Fixture {
+        compact_owned: Some(1),
+        ..Fixture::cosmetic()
+    };
+    let references = direct.references();
+    let extended = Fixture {
+        external: 0,
+        class: "6H",
+        full_length: 0,
+        ..Fixture::modeled()
+    };
+    for (fixture, omit_prefix_word) in [(&direct, false), (&direct, true), (&extended, false)] {
+        let mut bytes = fixture.bytes();
+        let trailer_at = bytes.len() - (standard_trailer::RIGHT_HANDED + 1);
+        let marker_at = trailer_at - scalar::STANDARD_TRAILER;
+        bytes[marker_at + 1] = 2;
+        bytes[trailer_at] = 1;
+        let hole_reference = trailer_at + 1;
+        bytes.splice(
+            hole_reference..hole_reference,
+            94u32.to_le_bytes().into_iter().chain([0; 6]),
+        );
+        if fixture.compact_owned.is_some() {
+            bytes.drain(20..24);
+            if omit_prefix_word {
+                bytes.drain(29..33);
+            }
+        }
+        let construction = fixture
+            .decode_bytes_with_references(&bytes, references.clone(), 0.25)
+            .expect("owned Hole thread");
+        assert_eq!(construction.form.hole_reference().unwrap().value.get(), 94);
+        assert_eq!(construction.face_group_record_indices, [101]);
+        assert_eq!(construction.modeled, fixture.entries != 0);
+        let length_marker = bytes.len() - 23;
+        bytes[length_marker] = 0;
+        assert!(fixture
+            .decode_bytes_with_references(&bytes, references.clone(), 0.25)
+            .is_none());
     }
 }
 
@@ -146,13 +237,14 @@ fn the_extended_prefix_reads_its_class_designation_copy_and_sense() {
         u64_from_index(34 + (4 + 4) + (4 + 14))
     );
     assert_eq!(construction.face_group_record_indices, [101]);
+    assert!(!construction.modeled);
     assert_eq!(
         extended(&construction),
         &DesignThreadExtended {
             class: "6g".into(),
             external: true,
-            modeled: false,
             full_length: Some(true),
+            right_handed: Some(true),
         }
     );
 
@@ -190,21 +282,58 @@ fn the_extended_prefix_reads_its_class_designation_copy_and_sense() {
 #[test]
 fn the_entry_count_and_the_tail_flag_state_a_modeled_thread() {
     let construction = Fixture::modeled().decode().expect("modeled thread");
-    assert!(extended(&construction).modeled);
+    assert!(construction.modeled);
     assert_eq!(
         construction.designation_offset,
         u64_from_index(34 + 16 + (4 + 4) + (4 + 14))
     );
-    let mut cases = Vec::new();
+    // A modeled thread whose scope has no result stores result flag 0.
     let mut unflagged = Fixture::modeled();
     unflagged.modeled_flag = 0;
-    cases.push(("entry without flag", unflagged));
+    let unflagged = unflagged.decode().expect("modeled thread without a result");
+    assert!(unflagged.modeled);
+    let scope = DesignParameterScope::empty(
+        "f3d:test:extended-thread#100",
+        crate::records::feature::scope::DesignFeatureKind::Thread,
+        SCOPE,
+    );
+    assert!(thread_modeled_flag_loss(&scope, &unflagged).is_none());
+    let cosmetic = Fixture::cosmetic().decode().expect("cosmetic thread");
+    assert!(!cosmetic.modeled);
+    assert!(thread_modeled_flag_loss(&scope, &cosmetic).is_none());
     let mut flagged = Fixture::cosmetic();
     flagged.modeled_flag = 1;
-    cases.push(("flag without entry", flagged));
+    let flagged_construction = flagged.decode().expect("flag without entry");
+    assert!(flagged_construction.modeled);
+    assert_eq!(
+        flagged_construction.form,
+        DesignThreadForm::StandardExtended
+    );
+    let mut framed_scope = scope.clone();
+    framed_scope
+        .try_edit(|draft| {
+            draft.frame_length = 600;
+            draft.paired_byte_offset = 600;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert_eq!(
+        thread_modeled_entries_loss(&flagged.bytes(), &framed_scope, &flagged_construction)
+            .expect("entries-absent loss")
+            .code,
+        crate::loss::F3dLossCode::ThreadModeledEntriesAbsent.kind()
+    );
+    assert!(
+        thread_modeled_entries_loss(&Fixture::modeled().bytes(), &framed_scope, &construction)
+            .is_none()
+    );
+    let mut cases = Vec::new();
     let mut two = Fixture::modeled();
     two.entries = 2;
     cases.push(("two entries", two));
+    let mut invalid = Fixture::modeled();
+    invalid.modeled_flag = 2;
+    cases.push(("flag 2", invalid));
     for (name, fixture) in cases {
         assert!(fixture.decode().is_none(), "{name}");
     }
@@ -235,4 +364,106 @@ fn the_owners_follow_every_face_selection_pair() {
     let mut swapped_three = three.clone();
     swapped_three.swapped_owners = true;
     assert!(swapped_three.decode().is_none());
+}
+
+#[test]
+fn owner_marked_extended_thread_retains_sense_modeled_state_and_face_pairs() {
+    for (modeled, copy, copy_bytes) in [
+        (false, "", 0),
+        (false, "M10x1.5", 14),
+        (true, "", 0),
+        (true, "M10x1.5", 14),
+    ] {
+        let fixture = Fixture {
+            owner_marked: true,
+            external: 0,
+            class: "6H",
+            copy,
+            faces: 2,
+            entries: if modeled { 2 } else { 0 },
+            ..if modeled {
+                Fixture::modeled()
+            } else {
+                Fixture::cosmetic()
+            }
+        };
+        let construction = fixture.decode().expect("owner-marked extended Thread");
+        assert_eq!(construction.form, DesignThreadForm::StandardExtended);
+        assert_eq!(
+            construction.designation_offset,
+            38 + u64::from(modeled) * 2 * 16 + 8 + 4 + copy_bytes
+        );
+        assert_eq!(construction.face_group_record_indices, [101, 105]);
+        assert_eq!(construction.modeled, modeled);
+        assert_eq!(
+            extended(&construction),
+            &DesignThreadExtended {
+                class: "6H".into(),
+                external: false,
+                full_length: Some(true),
+                right_handed: Some(true),
+            }
+        );
+    }
+}
+
+#[test]
+fn compact_owned_thread_binds_both_owner_orders() {
+    for (control, form) in [
+        (1, DesignThreadForm::CompactOwnersLeading),
+        (2, DesignThreadForm::CompactOwnersTrailing),
+    ] {
+        let fixture = Fixture {
+            compact_owned: Some(control),
+            faces: 2,
+            ..Fixture::cosmetic()
+        };
+        let construction = fixture.decode().expect("compact owned Thread");
+        assert_eq!(construction.form, form);
+        assert_eq!(construction.designation_offset, 46);
+        assert_eq!(construction.face_group_record_indices, [101, 105]);
+        assert_eq!(construction.diameters.major(), 0.985);
+        assert_eq!(construction.diameters.minor(), 0.814);
+        assert_eq!(construction.pitch.get(), 0.15);
+        assert!(construction.extended.is_none());
+        let swapped = Fixture {
+            swapped_owners: true,
+            ..fixture
+        };
+        assert!(swapped.decode().is_none());
+    }
+    let invalid = Fixture {
+        compact_owned: Some(3),
+        ..Fixture::cosmetic()
+    };
+    assert!(invalid.decode().is_none());
+}
+
+#[test]
+fn compact_owned_thread_validates_prefix_scalar_marker_and_trailer() {
+    for control in [1, 2] {
+        let fixture = Fixture {
+            compact_owned: Some(control),
+            ..Fixture::cosmetic()
+        };
+        let bytes = fixture.bytes();
+        for offset in [20, 24, 33, 37, 38, 42, bytes.len() - 1] {
+            let mut damaged = bytes.clone();
+            damaged[offset] ^= 1;
+            assert!(fixture.decode_bytes(&damaged).is_none(), "offset {offset}");
+        }
+        let modeled_flag_at = bytes.len() - 41;
+        for (flag, modeled) in [(0, Some(false)), (1, Some(true)), (2, None)] {
+            let mut flagged = bytes.clone();
+            flagged[modeled_flag_at] = flag;
+            assert_eq!(
+                fixture
+                    .decode_bytes(&flagged)
+                    .map(|construction| construction.modeled),
+                modeled,
+                "modeled flag {flag}"
+            );
+        }
+        assert!(fixture.decode_bytes(&bytes[..bytes.len() - 1]).is_none());
+    }
 }

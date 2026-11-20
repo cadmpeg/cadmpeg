@@ -34,7 +34,7 @@ fn numerical_0922_contact_inverse_ignores_knot_units() {
     crate::test_support::with_decode_context(|geometry_ctx| {
         let mut ir = cadmpeg_ir::CadIr::empty();
         let id = SurfaceId::mint("nx:test:surface#1").unwrap();
-        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: id.clone(),
             geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(
                 cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(
@@ -47,6 +47,7 @@ fn numerical_0922_contact_inverse_ignores_knot_units() {
                 ),
             ),
             source_object: None,
+            native_ref: None,
         });
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&ir);
         for d in [1., 1e9] {
@@ -288,7 +289,7 @@ fn numerical_audit_pcurve_newton_converges_on_small_chart() {
             .unwrap(),
         };
         let t = closest_pcurve_parameter_from_seed(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &p,
             Point2::new(0.25, 0.),
             0.9 * d,
@@ -349,7 +350,7 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
                 .unwrap(),
             };
             let t = closest_pcurve_parameter_from_coarse_grid(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &p,
                 Point2::new(0.3, 0.),
             )
@@ -388,10 +389,11 @@ fn overflowing_plane_model() -> (cadmpeg_ir::CadIr, SurfaceId, SurfaceGeometry) 
         .expect("valid PlaneSurface fixture"),
     ));
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+    ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: surface_id.clone(),
         geometry: geometry.clone(),
         source_object: None,
+        native_ref: None,
     });
     (ir, surface_id, geometry)
 }
@@ -451,10 +453,11 @@ fn a_decoded_placed_surface_point_that_overflows_is_returned_without_a_fallback(
             .expect("valid PlacedSurface fixture"),
         ));
         let mut ir = cadmpeg_ir::CadIr::empty();
-        ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+        ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
             id: surface_id.clone(),
             geometry: geometry.clone(),
             source_object: None,
+            native_ref: None,
         });
         let index = cadmpeg_ir::index::ModelIndex::build(&ir);
         let budget = GeometryWorkBudget::from_context(geometry_ctx, 1024);

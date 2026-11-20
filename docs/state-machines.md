@@ -48,25 +48,25 @@ Evidence is current as of `t3/state-machine-audit` on `origin/main`. Confirmed r
 | start | resolve target / destination | existing output and no `--force` | refused before decode | continue |
 | open | `load_artifact` | native / CADIR / sidecar | `Decoded` / `Restored` / `Neutral` | operational error |
 | decoded | `--reject-lossy` decode | any decode loss | `decode_loss_rejected` | continue |
-| decoded | `validate_loaded` | error findings and no `--allow-errors` | `check_failed` | continue |
-| checked | `encoder.plan` | plan `Err` and carried errors | `check_failed` preferred | plan refusal |
+| decoded | `validate_loaded` | `--reject-errors` and error findings in the payload | `check_failed` | continue |
+| checked | `encoder.plan` | plan `Err`, `--reject-errors`, and error findings | `check_failed` preferred | plan refusal |
 | planned | export losses and reject-lossy | nonempty export losses | `export_loss_rejected` | write |
 | write | `NamedTempFile` then rename | persist fails | operational error | `ok` |
 
-`--allow-errors` writes after check errors. CADIR and sidecar use two independent renames; a crash between them leaves a digest mismatch and the next load fails closed.
+Convert writes after check errors and reports them; `--reject-errors` refuses. CADIR and sidecar use two independent renames; a crash between them leaves a digest mismatch and the next load fails closed.
 
 No CLI retry loop exists.
 
 ### Decode session (`DecodeContext`)
 
-**Implicit** session plus explicit `DecodeDepth` (`Container` < `Geometry` < `Full`) and `DecodeTransfer`. Sites: `crates/cadmpeg-core/src/decode/`, `crates/cadmpeg-ir/src/codec.rs`.
+**Implicit** session plus explicit `DecodeDepth` (`Container` < `Geometry` < `Design` < `Full`) and `DecodeTransfer`. Sites: `crates/cadmpeg-core/src/decode/`, `crates/cadmpeg-ir/src/codec.rs`.
 
 **Invariants**
 
 - Requested depth is immutable for the session.
 - Budget fuse is sticky. `finish_session` resurfaces it.
 - `DecodeContext` is `!Sync`. Parallel work snapshots a `DecodeCheckpoint`, resumes on a private arena, and commits with `accept_trace` on the owning thread.
-- `DecodeResult::new` stamps `CadIr.decode_depth` from the transfer and refuses design arenas below `Full`.
+- `DecodeResult::new` records `CadIr.scope` from the transfer and the request, and refuses a record in an arena whose class the scope excludes. Each requested class the scope lacks charges `decode/depth.not-delivered`.
 
 | From | Event | To | Else |
 | --- | --- | --- | --- |
@@ -156,7 +156,7 @@ Measurement `RowStatus` is derived (`Measured` \| `Partial` \| `Unavailable`). F
 
 ## Codec session machines
 
-Each codec owns a decode route. Depth cuts skip design projection below `Full` unless noted. Write paths follow the export machine above.
+Each codec owns a decode route. Depth cuts skip design projection below `Design` unless noted. Write paths follow the export machine above.
 
 | Codec | Machine | Notes |
 | --- | --- | --- |
@@ -167,8 +167,8 @@ Each codec owns a decode route. Depth cuts skip design projection below `Full` u
 | NX | OM payload classify; `BodyCensusEvaluation`; `nx_profile` CLI dual-worker | CLI statuses are tooling. |
 | CATIA | variant identify → dialect → ordered routes → metadata fallback | V5 only. `Unknown` is residual. |
 | Creo | layout/dialect; `PcurveCarrierStatus` | Residual layout recovers. |
-| Inventor | RSe pair/meta/bulk; design skip below Full | Container keeps non-design arenas (depth harness). |
-| F3D | geometry-depth cut with promotion to Full; three write paths | Archive, Canvas/Decal, bodyless-without-source promote. |
+| Inventor | RSe pair/meta/bulk; design skip below Design | Container keeps non-design arenas (depth harness). |
+| F3D | geometry-depth cut with promotion to Design; three write paths | Archive, Canvas/Decal, bodyless-without-source promote. |
 | FreeCAD | depth cut without promotion; always `Patched` write | `ProgramVersion` is metadata. |
 | Rhino | `ChecksumStatus`; object `TrailerState`; table-scan recovery | Soft checksum/object framing; ranked tables hard-order. |
 | USD | layer BFS load; stage compose; 4 variant-selection passes | Unsettled selection keeps last sites. |

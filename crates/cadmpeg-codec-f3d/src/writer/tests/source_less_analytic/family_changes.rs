@@ -28,7 +28,7 @@ fn generated_f3d_rewrites_plane_frame() {
         )
         .unwrap(),
     ));
-    edited.model.surfaces[0].geometry = expected.clone();
+    edited.geometry.surfaces[0].geometry = expected.clone();
 
     let mut regenerated = Vec::new();
     crate::test_support::plan_inherited_write(&edited, decoded.source_fidelity(), &mut regenerated)
@@ -36,11 +36,11 @@ fn generated_f3d_rewrites_plane_frame() {
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated plane decode");
-    assert_eq!(round_trip.ir().model.surfaces[0].geometry, expected);
+    assert_eq!(round_trip.ir().geometry.surfaces[0].geometry, expected);
 }
 
 #[test]
-fn generated_f3d_rejects_analytic_surface_family_changes() {
+fn generated_f3d_regenerates_on_analytic_surface_family_changes() {
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 
     let decoded = EditableDecodeResult::from(
@@ -52,7 +52,7 @@ fn generated_f3d_rejects_analytic_surface_family_changes() {
             .expect("generated planar triangle decode"),
     );
     let mut edited = decoded.ir().clone();
-    edited.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+    edited.geometry.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -62,13 +62,12 @@ fn generated_f3d_rejects_analytic_surface_family_changes() {
         .unwrap(),
     ));
 
-    let error = crate::test_support::plan_inherited_write(
+    crate::test_support::assert_written_with_loss(
         &edited,
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .expect_err("native plane record cannot silently retain a sphere edit");
-    assert!(error
-        .to_string()
-        .contains("does not support edits to surface"));
+        Some(decoded.source_fidelity()),
+        &crate::loss::F3dLossCode::WriterPatchDeclined
+            .kind()
+            .to_string(),
+        "does not support edits to surface",
+    );
 }

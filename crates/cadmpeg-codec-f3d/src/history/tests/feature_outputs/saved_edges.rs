@@ -31,7 +31,8 @@ fn saved_edges_are_recorded_apart_from_feature_outputs_in_both_brep_namespaces()
             &Default::default(),
             Some("BREP.selected.smbh"),
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         assert!(feature.evaluation.outputs().is_empty());
         assert_eq!(
             feature
@@ -60,7 +61,8 @@ fn saved_edge_outside_the_declared_brep_source_keeps_the_unbound_loss() {
             &Default::default(),
             primary,
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         assert!(feature.evaluation.outputs().is_empty());
         assert!(!feature
             .source_properties
@@ -81,7 +83,8 @@ fn bind_slot_one(bodies: &[Body], primary: Option<&str>) -> (cadmpeg_ir::feature
         &Default::default(),
         primary,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     let unbound = losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::FeatureOutputBodyUnbound.kind());

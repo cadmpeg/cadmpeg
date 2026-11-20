@@ -11,6 +11,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+mod edge_recipe_faces;
 mod treatment;
 
 use crate::history::bind_scope_histories;
@@ -21,9 +22,9 @@ use crate::history::edge_changes_across_state_chain;
 use crate::history::edge_recipe_reference_context;
 use crate::history::effective_scope_previous_history_state_id;
 use crate::history::face_changes_across_state_chain;
+use crate::history::face_support::historical_face_support_contexts;
 use crate::history::header_scope_previous_history_state_id;
 use crate::history::historical_edge_axis;
-use crate::history::historical_face_support_contexts;
 use crate::history::historical_loop_boundary;
 use crate::history::historical_topology;
 use crate::history::preceding_support_face_slots;
@@ -254,8 +255,16 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
     })
     .unwrap();
     let scopes = vec![scope.clone(), next_scope];
-    let bindings =
-        { bind_scope_histories(&scopes, std::slice::from_ref(&binding), &[], &histories) };
+    let bindings = {
+        bind_scope_histories(
+            &scopes,
+            std::slice::from_ref(&binding),
+            &[],
+            Default::default(),
+            &histories,
+            &mut Vec::new(),
+        )
+    };
     assert_eq!(bindings[&scope.id], histories[1].id);
     assert_eq!(
         bound_scope_history(&scope.id, &bindings, &histories)
@@ -310,8 +319,16 @@ fn ambiguous_scope_histories_use_exact_result_body_sources() {
         },
     )
     .unwrap();
-    let bindings =
-        { bind_scope_histories(&scopes, &[], std::slice::from_ref(&operand), &histories) };
+    let bindings = {
+        bind_scope_histories(
+            &scopes,
+            &[],
+            std::slice::from_ref(&operand),
+            Default::default(),
+            &histories,
+            &mut Vec::new(),
+        )
+    };
     assert_eq!(bindings[&scope.id], histories[1].id);
 }
 
@@ -398,13 +415,21 @@ fn state_pairs_use_raw_next_links_before_transitions_are_derived() {
         })
         .unwrap();
     let scopes = vec![root, successor];
-    let bindings = bind_scope_histories(&scopes, &[], &[], &histories);
+    let bindings = bind_scope_histories(
+        &scopes,
+        &[],
+        &[],
+        Default::default(),
+        &histories,
+        &mut Vec::new(),
+    );
     assert_eq!(bindings.len(), 2);
     assert_eq!(bindings["f3d:native:scope#1"], "history");
     assert_eq!(bindings["f3d:native:scope#2"], "history");
 
     let mut inconsistent = histories[0].clone();
     inconsistent.states_mut()[0].transition = Some(AsmHistoricalTransition {
+        geometry_unchanged: false,
         record_revisions: Vec::new(),
         rows: crate::history_records::AsmHistoricalRowsDelta::default(),
         previous_state_id: Some(4),
@@ -890,6 +915,7 @@ fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
             selector: 1,
             selector_offset: 0,
             token: "1".into(),
+            token_integer: 0,
             token_offset: 0,
             design_reference: 1,
             design_reference_offset: 0,
@@ -1136,6 +1162,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
                 preceding_face_slots: vec![4, 5],
                 preceding_face_boundaries: Vec::new(),
                 changed_preceding_face_slots: vec![5],
+                preceding_surface: None,
             }
         ]
     );
@@ -1159,6 +1186,7 @@ fn active_face_support_retains_invariant_preceding_owners() {
                 preceding_face_slots: vec![4, 5],
                 preceding_face_boundaries: Vec::new(),
                 changed_preceding_face_slots: vec![5],
+                preceding_surface: None,
             }
         ]
     );
@@ -1275,21 +1303,21 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
     brep.bodies.push(Body {
         id: BodyId::mint(id(1)).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: vec![RegionId::mint(id(2)).expect("identity grammar")],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     });
     brep.regions.push(Region {
         id: RegionId::mint(id(2)).expect("identity grammar"),
         body: BodyId::mint(id(1)).expect("identity grammar"),
         shells: vec![ShellId::mint(id(3)).expect("identity grammar")],
+        native_ref: None,
     });
-    brep.shells.push(Shell::with_face(
+    brep.shells.push(Shell::new(
         ShellId::mint(id(3)).expect("identity grammar"),
         RegionId::mint(id(2)).expect("identity grammar"),
-        FaceId::mint(id(4)).expect("identity grammar"),
     ));
     brep.faces.push(Face {
         id: FaceId::mint(id(4)).expect("identity grammar"),
@@ -1302,6 +1330,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     brep.loops.push(Loop {
         id: LoopId::mint(id(5)).expect("identity grammar"),
@@ -1313,6 +1342,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
             )
             .expect("fixture ring admission"),
         ),
+        native_ref: None,
     });
     brep.coedges.push(Coedge {
         id: CoedgeId::mint(id(6)).expect("identity grammar"),
@@ -1322,21 +1352,26 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         sense: Sense::Forward,
         pcurves: Vec::new(),
         use_curve: None,
+        native_ref: None,
     });
     brep.edges.push(Edge {
         id: EdgeId::mint(id(7)).expect("identity grammar"),
         carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(
             CurveId::mint(id(21)).expect("identity grammar"),
         )),
-        start: VertexId::mint(id(8)).expect("identity grammar"),
-        end: VertexId::mint(id(9)).expect("identity grammar"),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            VertexId::mint(id(8)).expect("identity grammar"),
+            VertexId::mint(id(9)).expect("identity grammar"),
+        )),
         tolerance: None,
+        native_ref: None,
     });
     for slot in [8, 9] {
         brep.vertices.push(Vertex {
             id: VertexId::mint(id(slot)).expect("identity grammar"),
             point: PointId::mint(id(slot + 20)).expect("identity grammar"),
             tolerance: None,
+            native_ref: None,
         });
     }
 
@@ -1507,6 +1542,7 @@ fn historical_topology_retains_ordered_ownership_and_incidence() {
         selector: 1,
         selector_offset: 0,
         token: "1".into(),
+        token_integer: 0,
         token_offset: 0,
         design_reference: 1,
         design_reference_offset: 1,
@@ -1756,4 +1792,179 @@ fn change_state(state_id: i64) -> crate::history_records::AsmDeltaState {
         records: Vec::new(),
         transition: None,
     }
+}
+
+fn edge_recipe_scope_binding(
+    sources: &[&str],
+) -> (
+    std::collections::HashMap<String, String>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    edge_recipe_scope_binding_with_peer(sources, false)
+}
+
+/// A scope with the same state pair and no edge recipes of its own.
+fn state_pair_peer() -> crate::records::feature::scope::DesignParameterScope {
+    use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope};
+    let mut peer = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#99",
+        DesignFeatureKind::BaseFeature,
+        2,
+    );
+    peer.try_edit(|draft| {
+        draft.history_state_id = Some(3);
+        draft.previous_history_state_id = Some(2);
+        draft.layout_fixture_tail();
+    })
+    .unwrap();
+    peer
+}
+
+fn edge_recipe_scope_binding_with_peer(
+    sources: &[&str],
+    with_peer: bool,
+) -> (
+    std::collections::HashMap<String, String>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let scope = super::feature_outputs::scope_between(3, 2);
+    let histories = ["first", "second"].map(|source| {
+        let id = format!("f3d:Breps.BlobParts/BREP.{source}.smbh:asm-history#1");
+        crate::test_support::history::history(
+            id,
+            0,
+            None,
+            false,
+            vec![
+                super::feature_outputs::state(3, 3, Some(2), AsmHistoricalTopology::default()),
+                super::feature_outputs::state(2, 2, None, AsmHistoricalTopology::default()),
+            ],
+        )
+    });
+    let stream = crate::ids::native_stream(&scope.id).unwrap();
+    let mut operands: Vec<crate::records::topology::edge_identity::DesignEdgeOperand> = sources
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            serde_json::from_value(serde_json::json!({
+                "id": format!("{stream}:design-edge-operand#{}", index + 20),
+                "scope_record_index": scope.record_index,
+                "scope_reference_ordinal": index,
+                "record_index": index + 20,
+                "byte_offset": 0,
+                "class_tag": "297",
+                "paired_byte_offset": 16,
+                "paired_class_tag": "259",
+                "recipe_record_index": index + 23,
+                "recipe_record_byte_offset": 32,
+                "recipe_id": format!("{stream}:construction-recipe#{}", index + 23),
+                "recipe_prefix_offset": 43,
+                "recipe_prefix_bytes": "",
+                "recipe_references": [],
+                "recipe_program_offset": 0,
+                "recipe_program": [],
+                "candidate_faces": [crate::history::historical_face_id(1).unwrap()],
+                "next_record_index": index + 24,
+                "next_byte_offset": 160
+            }))
+            .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let tags = sources
+        .iter()
+        .enumerate()
+        .map(|(index, source)| {
+            let reference = i64::try_from(index + 1).unwrap();
+            operands[index].recipe_references.push(
+                crate::records::dimensions::DesignRecipeReference {
+                    selector: 1,
+                    selector_offset: 0,
+                    token: "1".into(),
+                    token_integer: 0,
+                    token_offset: 0,
+                    design_reference: reference,
+                    design_reference_offset: 0,
+                    candidate_faces: vec![crate::history::historical_face_id(1).unwrap()],
+                    candidate_edges: Vec::new(),
+                    alternate_selector_faces: Vec::new(),
+                    alternate_selector_edges: Vec::new(),
+                    operand_offset: None,
+                },
+            );
+            crate::records::sketch_links::PersistentSubentityTag {
+                id: format!("{stream}:persistent-subentity-tag#{index}"),
+                target: cadmpeg_ir::attributes::AttributeTarget::Face(
+                    cadmpeg_ir::ids::FaceId::mint(format!("f3d:brep/{source}.smbh/brep:entity#1"))
+                        .unwrap(),
+                ),
+                selector: 1,
+                token: cadmpeg_core::nonblank_literal!("1"),
+                token_integer: 0,
+                design_references: vec![reference],
+                ordinal: u32::try_from(index).unwrap(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut notes = Vec::new();
+    let scopes = if with_peer {
+        vec![scope, state_pair_peer()]
+    } else {
+        vec![scope]
+    };
+    let bindings = bind_scope_histories(
+        &scopes,
+        &[],
+        &[],
+        crate::history::edge_recipe_scope::Sources {
+            operands: &operands,
+            recipes: &[],
+            tags: &tags,
+        },
+        &histories,
+        &mut notes,
+    );
+    (bindings, notes)
+}
+
+#[test]
+fn edge_recipe_faces_bind_the_unique_agreeing_history() {
+    let (bindings, notes) = edge_recipe_scope_binding(&["second", "second"]);
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(
+        bindings.values().next().unwrap(),
+        "f3d:Breps.BlobParts/BREP.second.smbh:asm-history#1"
+    );
+    assert_eq!(notes.len(), 1);
+    assert_eq!(
+        notes[0].code,
+        crate::loss::F3dLossCode::HistoricalEdgeRecipeHistoryInferred.kind()
+    );
+}
+
+#[test]
+fn edge_recipe_faces_outside_candidate_histories_leave_the_scope_unbound() {
+    let (bindings, notes) = edge_recipe_scope_binding(&["third", "third"]);
+    assert!(bindings.is_empty());
+    assert!(notes.is_empty());
+}
+
+#[test]
+fn edge_recipe_faces_must_all_agree_with_one_history() {
+    let (bindings, notes) = edge_recipe_scope_binding(&["first", "second"]);
+    assert!(bindings.is_empty());
+    assert!(notes.is_empty());
+}
+
+#[test]
+fn elimination_after_an_edge_recipe_binding_reports_the_inference() {
+    let (bindings, notes) = edge_recipe_scope_binding_with_peer(&["second", "second"], true);
+    assert_eq!(bindings.len(), 2);
+    assert_eq!(
+        bindings["f3d:Design/BulkStream.dat:design-parameter-scope#99"],
+        "f3d:Breps.BlobParts/BREP.first.smbh:asm-history#1"
+    );
+    assert_eq!(notes.len(), 2);
+    assert!(notes.iter().all(|note| {
+        note.code == crate::loss::F3dLossCode::HistoricalEdgeRecipeHistoryInferred.kind()
+    }));
 }

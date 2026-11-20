@@ -4,6 +4,7 @@
 use super::record_finding;
 use crate::index::identities::IdentitySet;
 
+use crate::document::design_records::DesignRecords;
 use crate::document::CadIr;
 use crate::report::{
     check::{Check, Finding},
@@ -11,10 +12,14 @@ use crate::report::{
 };
 
 pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &mut Vec<Finding>) {
+    let records = DesignRecords::of(ir);
     let mut orders = std::collections::BTreeSet::new();
     for drawing in &ir.model.drawings {
-        let mut refs_valid =
-            all_ids.contains(&drawing.object) && all_ids.contains(&drawing.native_ref);
+        let mut refs_valid = all_ids.contains(&drawing.object)
+            && drawing
+                .native_ref
+                .as_deref()
+                .is_none_or(|native| all_ids.contains(native));
         if refs_valid {
             if let Some(id) = &drawing.template {
                 refs_valid = all_ids.contains(id.as_str());
@@ -31,11 +36,9 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &dyn IdentitySet, findings: &m
         if refs_valid {
             'groups: for targets in drawing.relationships.values() {
                 for target in targets {
-                    if let Some(id) = target.local_target() {
-                        if !all_ids.contains(id) {
-                            refs_valid = false;
-                            break 'groups;
-                        }
+                    if !target.target.resolves(&records, |id| all_ids.contains(id)) {
+                        refs_valid = false;
+                        break 'groups;
                     }
                 }
             }
@@ -73,7 +76,8 @@ mod tests {
             ir.model.drawings.push(
                 serde_json::from_value(serde_json::json!({
                     "id": id, "object": "test:source:unknown#record", "kind": "page",
-                    "runtime_type": "Test", "order": 7, "native_ref": "test:source:unknown#record"
+                    "runtime_type": "Test", "order": 7, "native_ref": "test:source:unknown#record",
+                    "relationships": {}, "curves": [], "parameters": {}, "assets": []
                 }))
                 .unwrap(),
             );
@@ -151,6 +155,77 @@ mod tests {
             check_drawings(&ir, &ids, &mut findings);
             assert!(findings.is_empty());
         }
+    }
+
+    #[test]
+    fn a_drawing_resolves_a_feature_in_either_home() {
+        use crate::features::FeatureId;
+        use crate::references::{ReferenceSelection, ReferenceTarget};
+
+        let id = FeatureId::mint("test:design:feature#cut").unwrap();
+        let ids = crate::index::identities::BorrowedIdentities::build(|add| {
+            add("test:source:unknown#record", ());
+        });
+        let findings = |ir: &CadIr| {
+            let mut findings = Vec::new();
+            check_drawings(ir, &ids, &mut findings);
+            findings.len()
+        };
+        let mut ir = fixture();
+        ir.model.drawings.truncate(1);
+        ir.model.drawings[0].relationships.insert(
+            cadmpeg_core::text::NonBlankString::new("Source".to_owned()).unwrap(),
+            vec![ReferenceSelection::new(ReferenceTarget::Feature(
+                id.clone(),
+            ))],
+        );
+        assert_eq!(findings(&ir), 1);
+
+        let mut model = ir.clone();
+        model.model.features.push(crate::features::Feature {
+            product_definition: None,
+            id: id.clone(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: crate::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: crate::features::FeatureContent::default(),
+            evaluation: crate::features::FeatureEvaluation::from_definition(
+                crate::features::FeatureDefinition::Operation(
+                    crate::features::FeatureOperation::Native {
+                        kind: "Cut".into(),
+                        parameters: std::collections::BTreeMap::new(),
+                    },
+                ),
+            ),
+            native_ref: None,
+        });
+        assert_eq!(findings(&model), 0);
+
+        let mut design = ir;
+        design
+            .design
+            .features
+            .push(crate::design::feature::Feature {
+                id,
+                name: None,
+                suppressed: None,
+                definition: crate::design::feature::FeatureDefinition {
+                    operation: crate::design::feature::FeatureOperation::Unresolved {
+                        family: crate::design::feature::OperationFamily::Extrude,
+                    },
+                    refine: None,
+                    fuzzy_tolerance: None,
+                },
+                placement: None,
+                component: None,
+                driven_by: None,
+                native_ref: None,
+            });
+        assert_eq!(findings(&design), 0);
     }
 
     #[test]

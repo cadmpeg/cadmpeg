@@ -362,6 +362,7 @@ impl AsmHistoricalTransition {
             })
             .collect::<Option<_>>()?;
         Some(Self {
+            geometry_unchanged: false,
             previous_state_id: older.map(|state| state.state_id),
             records,
             record_revisions,
@@ -431,6 +432,10 @@ impl AsmHistoricalTransition {
                 shell_free_vertices: AsmHistoricalRowDelta::between(
                     &old_topology.shell_free_vertices,
                     &new.shell_free_vertices,
+                )?,
+                body_design_links: AsmHistoricalRowDelta::between(
+                    &old_topology.body_design_links,
+                    &new.body_design_links,
                 )?,
                 face_loops: AsmHistoricalRowDelta::between(
                     &old_topology.face_loops,
@@ -560,6 +565,9 @@ impl AsmHistoricalTransition {
         self.rows
             .shell_free_vertices
             .apply(&mut topology.shell_free_vertices)?;
+        self.rows
+            .body_design_links
+            .apply(&mut topology.body_design_links)?;
         self.rows.face_loops.apply(&mut topology.face_loops)?;
         self.rows.loop_coedges.apply(&mut topology.loop_coedges)?;
         self.rows
@@ -814,6 +822,7 @@ impl AsmHistoricalRowsDelta {
         self.shell_faces = AsmHistoricalRowDelta::default();
         self.shell_wire_edges = AsmHistoricalRowDelta::default();
         self.shell_free_vertices = AsmHistoricalRowDelta::default();
+        self.body_design_links = AsmHistoricalRowDelta::default();
         self.edge_vertices = AsmHistoricalRowDelta::default();
         self.vertex_points = AsmHistoricalRowDelta::default();
         self.point_positions = AsmHistoricalRowDelta::default();

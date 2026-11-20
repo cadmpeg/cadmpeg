@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Axis extremes of circular edges in historical body bounds.
 
-use crate::history::circle_arc_extremes;
+use crate::history::arc_extremes::circle_arc_extremes;
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn close(a: Point3, b: Point3) -> bool {

@@ -49,10 +49,11 @@ struct CircularArcWitness<'a> {
 pub(super) enum SketchPlaneUAxisSource {
     Native,
     ConstructedMidPlane,
+    ResolvedSupportPlane,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct SketchPlaneFrame {
+pub(crate) struct SketchPlaneFrame {
     pub(super) origin: Point3,
     pub(super) normal: Vector3,
     pub(super) u_axis: Vector3,
@@ -81,7 +82,7 @@ impl SketchPlaneFrame {
         }
     }
 
-    pub(super) fn as_tuple(self) -> (Point3, Vector3, Vector3) {
+    pub(crate) fn as_tuple(self) -> (Point3, Vector3, Vector3) {
         (self.origin, self.normal, self.u_axis)
     }
 }
@@ -1325,19 +1326,29 @@ pub(super) fn sketch_plane_frames(
             .filter(|feature| !frames_by_feature.contains_key(feature.id.as_str()))
         {
             let Some(frame) = (|| {
-                let cadmpeg_ir::features::FeatureDefinition::Operation(
-                    cadmpeg_ir::features::FeatureOperation::DatumOffsetPlane {
-                        reference:
-                            Some(cadmpeg_ir::features::DatumPlaneReference::Feature {
-                                feature: reference,
-                            }),
-                        distance,
-                    },
-                ) = feature.evaluation.definition()
+                let FeatureDefinition::Operation(FeatureOperation::DatumOffsetPlane {
+                    reference: Some(reference),
+                    distance,
+                }) = feature.evaluation.definition()
                 else {
                     return None;
                 };
-                let frame = *frames_by_feature.get(reference.as_str())?;
+                let frame = match reference {
+                    cadmpeg_ir::features::DatumPlaneReference::Feature { feature } => {
+                        *frames_by_feature.get(feature.as_str())?
+                    }
+                    cadmpeg_ir::features::DatumPlaneReference::ResolvedPlane { frame } => {
+                        SketchPlaneFrame::from_frame(
+                            (
+                                frame.origin().get(),
+                                frame.normal().get(),
+                                frame.u_axis().get(),
+                            ),
+                            SketchPlaneUAxisSource::ResolvedSupportPlane,
+                        )
+                    }
+                    cadmpeg_ir::features::DatumPlaneReference::Face { .. } => return None,
+                };
                 Some(SketchPlaneFrame {
                     origin: Point3::new(
                         frame.origin.x + frame.normal.x * distance.get(),
@@ -1368,7 +1379,7 @@ pub(super) fn sketch_plane_frames(
     frames
 }
 
-pub(super) fn lane_sketch_plane_frames(
+pub(crate) fn lane_sketch_plane_frames(
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,

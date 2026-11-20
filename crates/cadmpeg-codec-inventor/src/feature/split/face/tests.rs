@@ -77,6 +77,7 @@ fn face_split_preserves_both_controls_and_uses_the_input_body_as_result() {
                 tool: SplitFaceTool::Plane {
                     plane: plane_id.clone()
                 },
+                method: cadmpeg_ir::features::surfaces::SplitFaceMethod::default(),
             })
         );
         assert_eq!(feature.dependencies.as_slice(), &[plane_id]);

@@ -3,11 +3,11 @@
   "entries": [
     {
       "attributes": {},
-      "compression": "none",
+      "kind": "none",
       "name": "HEADER",
       "role": "metadata",
       "size": {
-        "form": "unreported"
+        "kind": "unreported"
       }
     },
     {
@@ -15,78 +15,102 @@
         "entity_count": "52",
         "unknown_entities": "PRESENTATION_STYLE_ASSIGNMENT:1,STYLED_ITEM:1"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "DATA[0]",
       "role": "entity-records",
       "size": {
-        "form": "unreported"
+        "kind": "unreported"
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_schema_identifier": "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF",
           "implementation_level": "2;1"
         },
         "dialect": "step:ap242"
       }
-    }
+    },
+    "kind": "classified"
   },
   "losses": [
     {
       "code": {
-        "code": "decode.warning",
-        "kind": "decode_diagnostic",
-        "namespace": "step",
-        "scope": "namespaced"
+        "kind": "namespaced",
+        "value": {
+          "code": "decode.warning",
+          "kind": "decode_diagnostic",
+          "namespace": "step"
+        }
       },
       "message": "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #51 has no indexed surface member; set dropped",
       "severity": "warning"
     },
     {
       "code": {
-        "code": "geometry.document-angle-unit-unresolved",
-        "kind": "geometry_not_transferred",
-        "namespace": "step",
-        "scope": "namespaced",
-        "strict_floor": "warning"
+        "kind": "namespaced",
+        "value": {
+          "code": "geometry.document-angle-unit-unresolved",
+          "kind": "geometry_not_transferred",
+          "namespace": "step",
+          "strict_floor": "warning"
+        }
       },
       "message": "the document plane-angle unit did not resolve; angles are unscaled and reported as radians",
       "severity": "error"
     },
     {
       "code": {
-        "code": "decode.warning",
-        "kind": "decode_diagnostic",
-        "namespace": "step",
-        "scope": "namespaced"
+        "kind": "namespaced",
+        "value": {
+          "code": "decode.warning",
+          "kind": "decode_diagnostic",
+          "namespace": "step"
+        }
       },
       "message": "B_SPLINE_SURFACE_WITH_KNOTS V direction #21 has UNKNOWN periodicity; decoded as non-periodic",
       "severity": "warning"
     },
     {
       "code": {
-        "code": "decode.opaque-record-preserved",
-        "kind": "record_not_typed",
-        "namespace": "step",
-        "scope": "namespaced"
+        "kind": "namespaced",
+        "value": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step"
+        }
       },
+      "count": 1,
       "message": "preserved 1 PRESENTATION_STYLE_ASSIGNMENT instance(s) as named opaque STEP records",
+      "provenance": {
+        "format": "step",
+        "offset": 2448,
+        "tag": "PRESENTATION_STYLE_ASSIGNMENT"
+      },
       "severity": "warning"
     },
     {
       "code": {
-        "code": "decode.opaque-record-preserved",
-        "kind": "record_not_typed",
-        "namespace": "step",
-        "scope": "namespaced"
+        "kind": "namespaced",
+        "value": {
+          "code": "decode.opaque-record-preserved",
+          "kind": "record_not_typed",
+          "namespace": "step"
+        }
       },
+      "count": 1,
       "message": "preserved 1 STYLED_ITEM instance(s) as named opaque STEP records",
+      "provenance": {
+        "format": "step",
+        "offset": 2505,
+        "tag": "STYLED_ITEM"
+      },
       "severity": "warning"
     }
   ],

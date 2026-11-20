@@ -66,7 +66,7 @@ pub(super) fn native_tolerant_coedge_extension(
             ..
         }) => {
             let model_coedge = target
-                .model
+                .geometry
                 .coedges
                 .iter()
                 .find(|candidate| candidate.id == *coedge)
@@ -75,7 +75,7 @@ pub(super) fn native_tolerant_coedge_extension(
                 CodecError::malformed(format_args!("tolerant coedge {coedge} has no use curve"))
             })?;
             let curve = target
-                .model
+                .geometry
                 .curves
                 .iter()
                 .find(|curve| curve.id == use_curve.curve)
@@ -134,6 +134,7 @@ pub(super) fn encode_design_bulkstream(
             decode_ctx,
             &crate::design::feature_project::ProjectInputs {
                 native: &native.design_parameters,
+                source_parameters: &native.design_parameters,
                 owners: &native.design_parameter_owners,
                 scopes: &native.design_parameter_scopes,
                 timelines: &native.design_feature_timelines,
@@ -146,13 +147,17 @@ pub(super) fn encode_design_bulkstream(
                 design_types: &native.design_types,
                 curve_identities: &native.sketch_curve_identities,
                 face_operands: &native.design_face_operands,
+                face_source_groups: &native.design_face_source_groups,
                 body_recipe_operands: &native.design_body_recipe_operands,
                 placements: &native.design_sketch_placements,
+                placement_constructions: &native.design_placement_constructions,
                 body_bindings: &native.design_body_bindings,
                 component_naming_spaces: &native.design_component_naming_spaces,
                 histories: &native.asm_histories,
                 face_boundaries: &native.asm_face_boundaries,
                 sheet_metal_settings: &native.design_sheet_metal_settings,
+                construction_recipes: &native.construction_recipes,
+                persistent_subentity_tags: &native.persistent_subentity_tags,
             },
         )?
         .parameters;
@@ -182,7 +187,7 @@ pub(super) fn encode_design_bulkstream(
         ));
     }
     let has_body_visibility = target
-        .model
+        .geometry
         .bodies
         .iter()
         .any(|body| body.visible.is_some());

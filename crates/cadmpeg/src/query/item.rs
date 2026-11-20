@@ -10,6 +10,7 @@ use std::fmt;
 
 use anyhow::{bail, Context, Result};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_ir::{ArenaHome, ArenaName};
 use clap::Args;
 use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -25,8 +26,9 @@ use crate::selection::{ambiguous_message, miss_id_message, resolve_one, ResolveE
 pub(crate) struct ItemArgs {
     /// JSON file, or `-` for standard input.
     file: std::path::PathBuf,
-    /// Arena address: `model.<arena>`, `native.<codec>.<arena>`, or bare
-    /// `<arena>` as shorthand for `model.<arena>`. Same dotted names as
+    /// Arena address: `<home>.<arena>` with home `geometry`, `model`,
+    /// `design`, or `process`, `native.<codec>.<arena>`, or bare `<arena>` as
+    /// shorthand for the arena in its home. Same dotted names as
     /// `query counts --json`.
     arena: String,
     /// Which records of the arena to print.
@@ -40,42 +42,52 @@ pub(crate) struct ItemArgs {
 /// Where the requested arena lives in the document.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ArenaTarget {
-    Model { arena: String },
+    Neutral { home: ArenaHome, arena: String },
     Native { codec: String, arena: String },
 }
 
 impl ArenaTarget {
     pub(super) fn parse(spec: &str) -> Result<Self> {
         if !spec.contains('.') {
-            return Ok(Self::Model {
+            return Ok(Self::Neutral {
+                home: ArenaName::parse(spec).map_or(ArenaHome::Model, ArenaName::home),
                 arena: spec.to_owned(),
             });
         }
         let parts: Vec<&str> = spec.split('.').collect();
         match parts.as_slice() {
-            ["model", arena] if !arena.is_empty() => Ok(Self::Model {
-                arena: (*arena).to_owned(),
-            }),
+            [home, arena] if !arena.is_empty() => match ArenaHome::parse(home) {
+                Some(home) => Ok(Self::Neutral {
+                    home,
+                    arena: (*arena).to_owned(),
+                }),
+                None => bail!(unaddressable(spec)),
+            },
             ["native", codec, arena] if !codec.is_empty() && !arena.is_empty() => {
                 Ok(Self::Native {
                     codec: (*codec).to_owned(),
                     arena: (*arena).to_owned(),
                 })
             }
-            _ => bail!(
-                "arena name {spec:?} is not addressable; use `model.<arena>`, \
-                 `native.<codec>.<arena>`, or a bare `<arena>` shorthand for \
-                 `model.<arena>` (same names as `cadmpeg query counts --json`)"
-            ),
+            _ => bail!(unaddressable(spec)),
         }
     }
 
     pub(super) fn dotted(&self) -> String {
         match self {
-            Self::Model { arena } => format!("model.{arena}"),
+            Self::Neutral { home, arena } => format!("{home}.{arena}"),
             Self::Native { codec, arena } => format!("native.{codec}.{arena}"),
         }
     }
+}
+
+fn unaddressable(spec: &str) -> String {
+    format!(
+        "arena name {spec:?} is not addressable; use `<home>.<arena>` with home \
+         `geometry`, `model`, `design`, or `process`, `native.<codec>.<arena>`, or a \
+         bare `<arena>` shorthand for the arena in its home (same names as \
+         `cadmpeg query counts --json`)"
+    )
 }
 
 /// Result of one targeted deserialize of a CADIR document.
@@ -284,7 +296,7 @@ fn empty_fields_message(values: &[serde_json::Value], empty_paths: &[String]) ->
     }
     parts.push(
         "list fields with `cadmpeg query schema file FILE ARENA` (native records) or \
-         `cadmpeg query schema types model.<arena>` (IR types)"
+         `cadmpeg query schema types <home>.<arena>` (IR types)"
             .to_owned(),
     );
     parts.join("\n")
@@ -412,15 +424,16 @@ impl<'de> Visitor<'de> for DocumentVisitor<'_> {
             addressable: Vec::new(),
         };
         while let Some(key) = map.next_key::<String>()? {
-            match key.as_str() {
-                "model" => {
-                    map.next_value_seed(ModelSeed {
+            match (ArenaHome::parse(&key), key.as_str()) {
+                (Some(home), _) => {
+                    map.next_value_seed(HomeSeed {
+                        home,
                         target: self.target,
                         mode: self.mode,
                         capture: &mut capture,
                     })?;
                 }
-                "native" => {
+                (None, "native") => {
                     map.next_value_seed(NativeRootSeed {
                         target: self.target,
                         mode: self.mode,
@@ -437,17 +450,19 @@ impl<'de> Visitor<'de> for DocumentVisitor<'_> {
     }
 }
 
-struct ModelSeed<'a> {
+struct HomeSeed<'a> {
+    home: ArenaHome,
     target: &'a ArenaTarget,
     mode: &'a RecordSelection,
     capture: &'a mut Capture,
 }
 
-impl<'de> DeserializeSeed<'de> for ModelSeed<'_> {
+impl<'de> DeserializeSeed<'de> for HomeSeed<'_> {
     type Value = ();
 
     fn deserialize<D: Deserializer<'de>>(self, deserializer: D) -> Result<(), D::Error> {
-        deserializer.deserialize_map(ArenasVisitor::Model {
+        deserializer.deserialize_map(ArenasVisitor::Neutral {
+            home: self.home,
             target: self.target,
             mode: self.mode,
             capture: self.capture,
@@ -520,7 +535,8 @@ impl<'de> DeserializeSeed<'de> for NativeCodecSeed<'_> {
 }
 
 enum ArenasVisitor<'a> {
-    Model {
+    Neutral {
+        home: ArenaHome,
         target: &'a ArenaTarget,
         mode: &'a RecordSelection,
         capture: &'a mut Capture,
@@ -542,11 +558,13 @@ impl<'de> Visitor<'de> for ArenasVisitor<'_> {
 
     fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<(), A::Error> {
         match self {
-            Self::Model {
+            Self::Neutral {
+                home,
                 target,
                 mode,
                 capture,
-            } => visit_arenas(map, target, mode, capture, |arena| ArenaTarget::Model {
+            } => visit_arenas(map, target, mode, capture, |arena| ArenaTarget::Neutral {
+                home,
                 arena,
             }),
             Self::Native {
@@ -700,20 +718,33 @@ impl<'de> Visitor<'de> for ArenaValueVisitor<'_> {
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_ir::ArenaHome;
+
     use super::{field_cell, ArenaTarget};
 
     #[test]
     fn arena_target_parses_shorthand_and_dotted() {
-        match ArenaTarget::parse("faces").unwrap() {
-            ArenaTarget::Model { arena } => assert_eq!(arena, "faces"),
-            ArenaTarget::Native { .. } => panic!("expected model"),
-        }
+        assert_eq!(
+            ArenaTarget::parse("faces").unwrap(),
+            ArenaTarget::Neutral {
+                home: ArenaHome::Geometry,
+                arena: "faces".to_owned(),
+            }
+        );
+        assert_eq!(
+            ArenaTarget::parse("features").unwrap(),
+            ArenaTarget::Neutral {
+                home: ArenaHome::Model,
+                arena: "features".to_owned(),
+            }
+        );
+        assert!(ArenaTarget::parse("topology.faces").is_err());
         match ArenaTarget::parse("native.creo.curve_parameters").unwrap() {
             ArenaTarget::Native { codec, arena } => {
                 assert_eq!(codec, "creo");
                 assert_eq!(arena, "curve_parameters");
             }
-            ArenaTarget::Model { .. } => panic!("expected native"),
+            ArenaTarget::Neutral { .. } => panic!("expected native"),
         }
     }
 

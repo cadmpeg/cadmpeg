@@ -23,10 +23,10 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
         let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
         let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
         let mut result = EditableDecodeResult::from(result);
-        let procedural_id = result.ir().model.procedural_curves[0].id.clone();
+        let procedural_id = result.ir().geometry.procedural_curves[0].id.clone();
         {
             let mut ir = result.ir_mut();
-            ir.model.procedural_curves[0].edit_definition(|definition| {
+            ir.geometry.procedural_curves[0].edit_definition(|definition| {
                 let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                     panic!("typed intersection");
                 };
@@ -90,7 +90,7 @@ fn analytic_uv_completion_replaces_a_sentinel_contaminated_support_lane() {
         .unwrap();
 
         let ProceduralCurveDefinition::Intersection { context, .. } =
-            &result.ir().model.procedural_curves[0].definition()
+            &result.ir().geometry.procedural_curves[0].definition()
         else {
             panic!("typed intersection");
         };
@@ -121,10 +121,10 @@ fn analytic_uv_completion_replaces_a_finite_mismatched_support_lane() {
         let mut cur = Cursor::new(prt_with_ext11_intersection(&partition, &stream));
         let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
         let mut result = EditableDecodeResult::from(result);
-        let procedural_id = result.ir().model.procedural_curves[0].id.clone();
+        let procedural_id = result.ir().geometry.procedural_curves[0].id.clone();
         {
             let mut ir = result.ir_mut();
-            ir.model.procedural_curves[0].edit_definition(|definition| {
+            ir.geometry.procedural_curves[0].edit_definition(|definition| {
                 let ProceduralCurveDefinition::Intersection { context, .. } = definition else {
                     panic!("typed intersection");
                 };

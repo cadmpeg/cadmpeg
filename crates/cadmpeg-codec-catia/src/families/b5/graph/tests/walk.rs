@@ -1586,7 +1586,7 @@ mod topology_walk;
 #[test]
 fn populations_split_each_logical_stream_run() {
     let triangle = crate::test_support::test_b5::b5_closed_triangle_stream();
-    let mut bytes = vec![0; 1_048_576];
+    let mut bytes = vec![0; 16];
     for _ in 0..16 {
         bytes.extend_from_slice(&triangle);
         bytes.extend_from_slice(&[0; 16]);

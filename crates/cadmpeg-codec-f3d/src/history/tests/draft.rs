@@ -19,6 +19,7 @@ fn face_transition_requires_one_changed_surface_geometry() {
         selector: 2,
         selector_offset: 0,
         token: "1".into(),
+        token_integer: 0,
         token_offset: 0,
         design_reference: 303,
         design_reference_offset: 0,

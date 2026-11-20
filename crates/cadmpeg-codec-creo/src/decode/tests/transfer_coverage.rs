@@ -66,6 +66,7 @@ fn surface_coverage_separates_transferred_unique_rows_from_ambiguous_ids() {
             layer: None,
             instance_path: Vec::new(),
         }),
+        native_ref: None,
     };
     let mut surfaces = vec![
         plane("derived-id-independent-of-native-id", 41),
@@ -151,12 +152,14 @@ fn curve_coverage_excludes_unknown_carriers_and_ambiguous_ids() {
                 .expect("valid LineCurve fixture"),
             )),
             source_object: Some(source(41)),
+            native_ref: None,
         },
         Curve {
             parameter_range: None,
             id: CurveId::mint("test:model:entity#opaque".to_string()).expect("identity grammar"),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None }),
             source_object: Some(source(42)),
+            native_ref: None,
         },
     ];
 

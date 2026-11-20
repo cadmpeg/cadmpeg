@@ -13,8 +13,10 @@ mod deflate;
 mod depth;
 mod error;
 mod input;
+mod part;
 mod policy;
 mod probe;
+mod scope;
 mod space;
 #[cfg(feature = "test-support")]
 #[doc(hidden)]
@@ -35,9 +37,10 @@ pub use budget::{work_units, BudgetExhausted, DepthGuard, WorkBudget, WorkBudget
 pub use companion::{Companion, CompanionLoad, Companions};
 pub use context::{DecodeContext, ExpandSpec, ExpandWriter};
 pub use depth::DecodeDepth;
-pub use error::{ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation};
+pub use error::{LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation};
 pub use policy::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use probe::{ParseError, ParseErrorKind};
+pub use scope::{ArenaClass, ArenaClasses, ContentScope, ScopeDependency};
 pub use space::{ByteRange, SpaceId};
 pub use transaction::{DecodeCheckpoint, DecodeSpaceRebinding, DecodeTrace};
 pub use unique::unique_index;

@@ -90,6 +90,7 @@ pub fn transfer_into_ir<'ir>(
         unknowns,
         stats,
         annotation_records,
+        chain_order: _,
     } = brep;
     super::subsets::localize_subsets(&mut curves, &mut edges, &mut coedges, &procedural_curves)?;
 
@@ -117,22 +118,22 @@ pub fn transfer_into_ir<'ir>(
             .ok_or_else(|| cadmpeg_core::CodecError::malformed("ASM entity count overflows u64"))
     })?;
     ctx.charge_entities(entity_count, "admit ASM entities")?;
-    ir.model.bodies.extend(bodies);
-    ir.model.regions.extend(regions);
-    ir.model.shells.extend(shells);
-    ir.model.faces.extend(faces);
-    ir.model.loops.extend(loops);
-    ir.model.coedges.extend(coedges);
-    ir.model.edges.extend(edges);
-    ir.model.vertices.extend(vertices);
-    ir.model.points.extend(points);
-    ir.model.surfaces.extend(surfaces);
-    ir.model.curves.extend(curves);
-    ir.model.pcurves.extend(pcurves);
-    ir.model
+    ir.geometry.bodies.extend(bodies);
+    ir.geometry.regions.extend(regions);
+    ir.geometry.shells.extend(shells);
+    ir.geometry.faces.extend(faces);
+    ir.geometry.loops.extend(loops);
+    ir.geometry.coedges.extend(coedges);
+    ir.geometry.edges.extend(edges);
+    ir.geometry.vertices.extend(vertices);
+    ir.geometry.points.extend(points);
+    ir.geometry.surfaces.extend(surfaces);
+    ir.geometry.curves.extend(curves);
+    ir.geometry.pcurves.extend(pcurves);
+    ir.geometry
         .add_procedural_surfaces(procedural_surfaces)?
         .map_err(CodecError::malformed)?;
-    ir.model
+    ir.geometry
         .add_procedural_curves(procedural_curves)?
         .map_err(CodecError::malformed)?;
     ir.model.attributes.extend(attributes);
@@ -206,6 +207,7 @@ mod tests {
             id: RegionId::mint("sat:brep:region#1").unwrap(),
             body: BodyId::mint("sat:brep:body#1").unwrap(),
             shells: Vec::new(),
+            native_ref: None,
         });
         let mut ir = CadIr::empty();
         let error = transfer_into_ir(&ctx, &mut ir, "test", brep)
@@ -216,8 +218,8 @@ mod tests {
         };
         assert_eq!(limit.dimension, ResourceDimension::Entities);
         assert_eq!(limit.operation, "admit ASM entities");
-        assert_eq!(ir.model.entity_count(), 0);
-        assert!(ir.model.regions.is_empty());
+        assert_eq!(ir.entity_count(), 0);
+        assert!(ir.geometry.regions.is_empty());
         assert!(ir.native.namespace("test").is_none());
     }
 

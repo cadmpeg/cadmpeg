@@ -132,7 +132,7 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
             );
     });
     assert!(crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir()
     )
     .unwrap()
@@ -163,7 +163,7 @@ fn semantic_writer_rejects_edited_sketch_marker_object_index() {
             );
     });
     assert!(crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir()
     )
     .unwrap()

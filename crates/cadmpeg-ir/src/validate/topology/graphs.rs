@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Radial-ring, wire ownership and shell connectivity checks.
+//! Radial-ring, child-list, wire ownership and shell connectivity checks.
 
 use cadmpeg_core::CodecError;
 
@@ -23,12 +23,12 @@ pub(in crate::validate) fn check_coedge_pairing(
     findings: &mut Vec<Finding>,
 ) -> Result<(), CodecError> {
     let by_id = BorrowedIdentities::build(|add| {
-        for coedge in &ir.model.coedges {
+        for coedge in &ir.geometry.coedges {
             add(coedge.id.as_str(), coedge);
         }
     });
     let mut statuses = BorrowedIdentities::new();
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         let start = coedge.id.as_str();
         if statuses.contains(start) {
             continue;
@@ -82,7 +82,7 @@ pub(in crate::validate) fn check_coedge_pairing(
             current = next.id.as_str();
         }
     }
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         let owner = Some(coedge.id.as_str());
         let status = statuses
             .get(coedge.id.as_str())
@@ -135,38 +135,39 @@ pub(in crate::validate) fn check_coedge_pairing(
 
 pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
     let coedge_edges = BorrowedIdentities::build(|add| {
-        for coedge in &ir.model.coedges {
+        for coedge in &ir.geometry.coedges {
             add(coedge.edge.as_str(), ());
         }
     });
     let edge_vertices = BorrowedIdentities::build(|add| {
-        for edge in &ir.model.edges {
-            add(edge.start.as_str(), ());
-            add(edge.end.as_str(), ());
+        for edge in &ir.geometry.edges {
+            for vertex in edge.vertices() {
+                add(vertex.as_str(), ());
+            }
         }
     });
     let loop_vertices = BorrowedIdentities::build(|add| {
-        for loop_ in &ir.model.loops {
+        for loop_ in &ir.geometry.loops {
             for vertex in loop_.vertices() {
                 add(vertex.as_str(), ());
             }
         }
     });
     let wire_owners = BorrowedIdentities::build(|add| {
-        for shell in &ir.model.shells {
+        for shell in &ir.geometry.shells {
             for edge in shell.wire_edges() {
                 add(edge.as_str(), ());
             }
         }
     });
     let free_owners = BorrowedIdentities::build(|add| {
-        for shell in &ir.model.shells {
+        for shell in &ir.geometry.shells {
             for vertex in shell.free_vertices() {
                 add(vertex.as_str(), ());
             }
         }
     });
-    for shell in &ir.model.shells {
+    for shell in &ir.geometry.shells {
         for edge in shell.wire_edges() {
             if coedge_edges.contains(edge.as_str()) {
                 record_finding(
@@ -190,7 +191,7 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
             }
         }
     }
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         if !coedge_edges.contains(edge.id.as_str())
             && wire_owners.match_count(edge.id.as_str()) != 1
         {
@@ -203,7 +204,7 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
             );
         }
     }
-    for vertex in &ir.model.vertices {
+    for vertex in &ir.geometry.vertices {
         let owner_count = free_owners.match_count(vertex.id.as_str());
         if owner_count > 1
             || (!edge_vertices.contains(vertex.id.as_str())
@@ -219,44 +220,210 @@ pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Fi
             );
         }
     }
-    let regions = BorrowedIdentities::build(|add| {
-        for region in &ir.model.regions {
-            add(region.id.as_str(), region);
+    let region_bodies = BorrowedIdentities::build(|add| {
+        for region in &ir.geometry.regions {
+            add(region.id.as_str(), region.body.as_str());
         }
     });
-    let shells = BorrowedIdentities::build(|add| {
-        for shell in &ir.model.shells {
-            add(shell.id.as_str(), shell);
+    let shell_bodies = BorrowedIdentities::build(|add| {
+        for shell in &ir.geometry.shells {
+            if let Some(body) = region_bodies.get(shell.region.as_str()) {
+                add(shell.id.as_str(), body);
+            }
         }
     });
-    for body in &ir.model.bodies {
-        if body.kind != crate::topology::BodyKind::Wire {
-            continue;
-        }
-        let mut contains_faces = false;
-        for region_id in &body.regions {
-            if let Some(region) = regions.get(region_id.as_str()) {
-                for shell_id in &region.shells {
-                    if shells
-                        .get(shell_id.as_str())
-                        .is_some_and(|shell| !shell.faces().is_empty())
-                    {
-                        contains_faces = true;
-                        break;
-                    }
-                }
-            }
-            if contains_faces {
-                break;
+    let bodies_with_faces = BorrowedIdentities::build(|add| {
+        for face in &ir.geometry.faces {
+            if let Some(body) = shell_bodies.get(face.shell.as_str()) {
+                add(body, ());
             }
         }
-        if contains_faces {
+    });
+    for body in &ir.geometry.bodies {
+        if body.kind == crate::topology::BodyKind::Wire
+            && bodies_with_faces.contains(body.id.as_str())
+        {
             record_finding(
                 findings,
                 Check::WireTopology,
                 Severity::Error,
                 Some(body.id.as_str()),
                 format_args!("wire body contains faces"),
+            );
+        }
+    }
+}
+
+/// Each stored child list names children whose parent pointer names its
+/// owner, and each child is listed by the owner its parent pointer names: a
+/// region's `shells`, a face's `loops`, and a loop ring's `coedges` (D29). A
+/// shell's `members` name each wire edge and free vertex once.
+pub(in crate::validate) fn check_child_list_reciprocity(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let shell_regions = BorrowedIdentities::build(|add| {
+        for shell in &ir.geometry.shells {
+            add(shell.id.as_str(), shell.region.as_str());
+        }
+    });
+    let loop_faces = BorrowedIdentities::build(|add| {
+        for loop_ in &ir.geometry.loops {
+            add(loop_.id.as_str(), loop_.face.as_str());
+        }
+    });
+    let coedge_loops = BorrowedIdentities::build(|add| {
+        for coedge in &ir.geometry.coedges {
+            add(coedge.id.as_str(), coedge.owner_loop.as_str());
+        }
+    });
+    let mut listed_shells = BorrowedIdentities::new();
+    for region in &ir.geometry.regions {
+        for shell in &region.shells {
+            listed_shells.insert(shell.as_str(), region.id.as_str());
+            if shell_regions
+                .get(shell.as_str())
+                .is_some_and(|owner| *owner != region.id.as_str())
+            {
+                reciprocity_error(findings, region.id.as_str(), "shell", shell.as_str());
+            }
+        }
+    }
+    let mut listed_loops = BorrowedIdentities::new();
+    for face in &ir.geometry.faces {
+        let mut seen = BorrowedIdentities::new();
+        for loop_ in &face.loops {
+            listed_loops.insert(loop_.as_str(), face.id.as_str());
+            if seen.insert(loop_.as_str(), ()).is_some() {
+                record_finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    Severity::Error,
+                    Some(face.id.as_str()),
+                    format_args!("face lists loop `{}` more than once", loop_.as_str()),
+                );
+            }
+            if loop_faces
+                .get(loop_.as_str())
+                .is_some_and(|owner| *owner != face.id.as_str())
+            {
+                reciprocity_error(findings, face.id.as_str(), "loop", loop_.as_str());
+            }
+        }
+    }
+    let mut listed_coedges = BorrowedIdentities::new();
+    for loop_ in &ir.geometry.loops {
+        for coedge in loop_.coedges() {
+            listed_coedges.insert(coedge.as_str(), loop_.id.as_str());
+            if coedge_loops
+                .get(coedge.as_str())
+                .is_some_and(|owner| *owner != loop_.id.as_str())
+            {
+                reciprocity_error(findings, loop_.id.as_str(), "coedge", coedge.as_str());
+            }
+        }
+    }
+    for shell in &ir.geometry.shells {
+        if listed_shells.get(shell.id.as_str()) != Some(&shell.region.as_str()) {
+            unlisted_error(findings, shell.id.as_str(), "region", shell.region.as_str());
+        }
+        let mut seen = BorrowedIdentities::new();
+        for member in shell
+            .wire_edges()
+            .map(crate::ids::EdgeId::as_str)
+            .chain(shell.free_vertices().map(crate::ids::VertexId::as_str))
+        {
+            if seen.insert(member, ()).is_some() {
+                record_finding(
+                    findings,
+                    Check::WireTopology,
+                    Severity::Error,
+                    Some(shell.id.as_str()),
+                    format_args!("shell lists member `{member}` more than once"),
+                );
+            }
+        }
+    }
+    for loop_ in &ir.geometry.loops {
+        if listed_loops.get(loop_.id.as_str()) != Some(&loop_.face.as_str()) {
+            unlisted_error(findings, loop_.id.as_str(), "face", loop_.face.as_str());
+        }
+    }
+    for coedge in &ir.geometry.coedges {
+        if listed_coedges.get(coedge.id.as_str()) != Some(&coedge.owner_loop.as_str()) {
+            unlisted_error(
+                findings,
+                coedge.id.as_str(),
+                "loop",
+                coedge.owner_loop.as_str(),
+            );
+        }
+    }
+}
+
+fn reciprocity_error(findings: &mut Vec<Finding>, owner: &str, kind: &str, child: &str) {
+    record_finding(
+        findings,
+        Check::ReferentialIntegrity,
+        Severity::Error,
+        Some(owner),
+        format_args!("lists {kind} `{child}`, whose parent is another record"),
+    );
+}
+
+fn unlisted_error(findings: &mut Vec<Finding>, child: &str, kind: &str, parent: &str) {
+    record_finding(
+        findings,
+        Check::ReferentialIntegrity,
+        Severity::Error,
+        Some(child),
+        format_args!("is not listed by its {kind} `{parent}`"),
+    );
+}
+
+/// An edge with no vertex has a carrier curve and no `param_range`, and each
+/// of its coedges is the only coedge of its loop. The carrier's closure is
+/// checked with the edge endpoints.
+pub(in crate::validate) fn check_closed_edges(ir: &CadIr, findings: &mut Vec<Finding>) {
+    if ir.geometry.edges.iter().all(|edge| edge.ends.is_some()) {
+        return;
+    }
+    let vertexless_edges = BorrowedIdentities::build(|add| {
+        for edge in &ir.geometry.edges {
+            if edge.ends.is_none() {
+                add(edge.id.as_str(), ());
+            }
+        }
+    });
+    for edge in &ir.geometry.edges {
+        if edge.ends.is_none() && (edge.curve().is_none() || edge.param_range().is_some()) {
+            record_finding(
+                findings,
+                Check::GeometricConsistency,
+                Severity::Error,
+                Some(edge.id.as_str()),
+                format_args!(
+                    "edge with no vertex must have a carrier curve and no parameter range"
+                ),
+            );
+        }
+    }
+    let ring_lengths = BorrowedIdentities::build(|add| {
+        for loop_ in &ir.geometry.loops {
+            add(loop_.id.as_str(), loop_.coedges().len());
+        }
+    });
+    for coedge in &ir.geometry.coedges {
+        if vertexless_edges.contains(coedge.edge.as_str())
+            && ring_lengths
+                .get(coedge.owner_loop.as_str())
+                .is_some_and(|length| *length != 1)
+        {
+            record_finding(
+                findings,
+                Check::RingOrder,
+                Severity::Error,
+                Some(coedge.id.as_str()),
+                format_args!(
+                    "coedge of an edge with no vertex must be the only coedge of its loop"
+                ),
             );
         }
     }
@@ -316,37 +483,29 @@ fn faces_connected<'ir>(
 }
 
 pub(in crate::validate) fn check_shell_connectivity(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let faces = BorrowedIdentities::build(|add| {
-        for face in &ir.model.faces {
-            add(face.id.as_str(), face);
-        }
-    });
     let loop_faces = BorrowedIdentities::build(|add| {
-        for loop_ in &ir.model.loops {
+        for loop_ in &ir.geometry.loops {
             add(loop_.id.as_str(), loop_.face.as_str());
         }
     });
     let edges = BorrowedIdentities::build(|add| {
-        for edge in &ir.model.edges {
+        for edge in &ir.geometry.edges {
             add(edge.id.as_str(), edge);
         }
     });
     let mut incidences = BorrowedIdentities::new();
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         let Some(face) = loop_faces.get(coedge.owner_loop.as_str()).copied() else {
             continue;
         };
         insert_incidence(&mut incidences, face, Incidence::Edge(coedge.edge.as_str()));
         if let Some(edge) = edges.get(coedge.edge.as_str()) {
-            insert_incidence(
-                &mut incidences,
-                face,
-                Incidence::Vertex(edge.start.as_str()),
-            );
-            insert_incidence(&mut incidences, face, Incidence::Vertex(edge.end.as_str()));
+            for vertex in edge.vertices() {
+                insert_incidence(&mut incidences, face, Incidence::Vertex(vertex.as_str()));
+            }
         }
     }
-    for loop_ in &ir.model.loops {
+    for loop_ in &ir.geometry.loops {
         let Some(face) = loop_faces.get(loop_.id.as_str()).copied() else {
             continue;
         };
@@ -365,25 +524,14 @@ pub(in crate::validate) fn check_shell_connectivity(ir: &CadIr, findings: &mut V
             }
         }
     }
-    for shell in &ir.model.shells {
-        if shell.faces().len() < 2 {
-            continue;
-        }
-        let mut skips = false;
-        for face in shell.faces() {
-            if faces
-                .get(face.as_str())
-                .is_none_or(|face| face.loops.is_empty())
-            {
-                skips = true;
-                break;
-            }
-        }
-        if skips {
+    let child_lists = ir.geometry.child_lists();
+    for shell in &ir.geometry.shells {
+        let shell_faces = child_lists.shell_faces(&shell.id);
+        if shell_faces.len() < 2 || shell_faces.iter().any(|face| face.loops.is_empty()) {
             continue;
         }
         let mut owned = BorrowedIdentities::new();
-        owned.extend_unique(shell.faces().iter().map(crate::ids::FaceId::as_str));
+        owned.extend_unique(shell_faces.iter().map(|face| face.id.as_str()));
         if !faces_connected(&owned, &incidences) {
             record_finding(
                 findings,

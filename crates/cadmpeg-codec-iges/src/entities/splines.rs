@@ -193,28 +193,30 @@ fn add_edge(
     let edge = crate::ids::edge(&stem);
 
     ctx.charge_entities(2, "iges_geometry_splines")?;
-    ir.model.points.extend([
+    ir.geometry.points.extend([
         Point::new(start_point.clone(), start, None),
         Point::new(end_point.clone(), end, None),
     ]);
 
     ctx.charge_entities(2, "iges_geometry_splines")?;
-    ir.model.vertices.extend([
+    ir.geometry.vertices.extend([
         Vertex {
             id: start_vertex.clone(),
             point: start_point,
             tolerance: None,
+            native_ref: None,
         },
         Vertex {
             id: end_vertex.clone(),
             point: end_point,
             tolerance: None,
+            native_ref: None,
         },
     ]);
     sequences.record_curve(&curve, entry.sequence);
 
     ctx.charge_entities(1, "iges_geometry_splines")?;
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         parameter_range: None,
         id: curve.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
@@ -225,15 +227,19 @@ fn add_edge(
                 return Ok(None);
             }
         }),
+        native_ref: None,
     });
 
     ctx.charge_entities(1, "iges_geometry_splines")?;
-    ir.model.edges.push(Edge {
+    ir.geometry.edges.push(Edge {
         id: edge.clone(),
         carrier: cadmpeg_ir::topology::EdgeCarrier::Bounded(curve, parameter_range.into()),
-        start: start_vertex,
-        end: end_vertex,
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            start_vertex,
+            end_vertex,
+        )),
         tolerance: None,
+        native_ref: None,
     });
     Ok(Some(edge))
 }
@@ -953,10 +959,11 @@ pub(super) fn project(
         );
 
         ctx.charge_entities(1, "iges_geometry_splines")?;
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: crate::ids::surface(&crate::ids::Stem::directory(entry.sequence)),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)),
             source_object: Some(source_object(entry)?),
+            native_ref: None,
         });
         if placeholders_truncated {
             super::push_attributed_loss(&mut losses, entry, IgesLossCode::SplineClaimRecovered,

@@ -105,7 +105,7 @@ fn dispatcher_projects_datum_feature_scopes() {
 }
 
 #[test]
-fn revolve_and_thread_scopes_without_a_construction_keep_their_family() {
+fn operation_scopes_without_construction_keep_their_family() {
     use cadmpeg_ir::features::UnresolvedFamily;
 
     let revolve = DesignParameterScope::empty(
@@ -118,21 +118,26 @@ fn revolve_and_thread_scopes_without_a_construction_keep_their_family() {
         crate::records::feature::scope::DesignFeatureKind::Thread,
         2,
     );
-    let scopes = vec![revolve, thread];
-    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
-        crate::test_support::with_decode_context(|ctx| {
-            let scopes = &scopes;
-            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
-            project_parameter_design_with_edge_identities(
-                ctx,
-                &crate::design::feature_project::ProjectInputs {
-                    scopes,
-                    timelines: &timelines,
-                    ..Default::default()
-                },
-            )
-            .expect("test projection has a synthetic exact timeline")
-        });
+    let combine = DesignParameterScope::empty(
+        "f3d:native/BulkStream.dat:parameter-scope#3",
+        crate::records::feature::scope::DesignFeatureKind::Combine,
+        3,
+    );
+    let scopes = vec![revolve, thread, combine];
+    let projected = crate::test_support::with_decode_context(|ctx| {
+        let scopes = &scopes;
+        let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+        project_parameter_design_with_edge_identities(
+            ctx,
+            &crate::design::feature_project::ProjectInputs {
+                scopes,
+                timelines: &timelines,
+                ..Default::default()
+            },
+        )
+        .expect("test projection has a synthetic exact timeline")
+    });
+    let features = &projected.features;
 
     let definition = |kind: &str| {
         features
@@ -152,6 +157,16 @@ fn revolve_and_thread_scopes_without_a_construction_keep_their_family() {
             family: UnresolvedFamily::Thread,
         }))
     );
+    assert_eq!(
+        definition("Combine"),
+        Some(FeatureDefinition::Operation(FeatureOperation::Unresolved {
+            family: UnresolvedFamily::Combine,
+        }))
+    );
+    assert!(projected
+        .projection_losses
+        .iter()
+        .any(|loss| { loss.code.local_code() == "feature.combine-definition-unresolved" }));
 }
 
 #[test]
@@ -170,9 +185,12 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
                 value: crate::test_support::reals([1.25, -2.5, 3.75]),
                 offset: 40,
             }),
-            uniform_factor: cadmpeg_ir::scalar::PositiveReal::new(2.5)
-                .expect("checked fixture value"),
-            uniform_factor_offset: 20,
+            further_body_group_record_indices: Vec::new(),
+            factors: crate::records::feature::body_ops::DesignScaleFactors::Uniform {
+                factor: cadmpeg_ir::scalar::PositiveReal::new(2.5).expect("checked fixture value"),
+                offset: 20,
+            },
+            matrix_offset: None,
         });
     }
 
@@ -212,6 +230,70 @@ fn dispatcher_projects_scale_point_center_in_neutral_units() {
         factors,
         cadmpeg_ir::features::ScaleFactors::Uniform { factor: uniform }
             if (uniform.get() - 2.5).abs() < f64::EPSILON
+    ));
+}
+
+#[test]
+fn dispatcher_projects_per_axis_scale_point_center_in_neutral_units() {
+    let mut scale = DesignParameterScope::empty(
+        "f3d:native/BulkStream.dat:parameter-scope#4",
+        crate::records::feature::scope::DesignFeatureKind::Scale,
+        4,
+    );
+    if let crate::records::feature::scope::DesignScopePayloadMut::Scale(slot) = scale.payload_mut()
+    {
+        *slot = Some(DesignScaleOperation {
+            body_group_record_index: 5,
+            center_record_index: 6,
+            center_position: Some(crate::records::identity::Located {
+                value: crate::test_support::reals([1.25, -2.5, 3.75]),
+                offset: 40,
+            }),
+            further_body_group_record_indices: Vec::new(),
+            factors: crate::records::feature::body_ops::DesignScaleFactors::PerAxis {
+                factors: [1.0, 2.0, 3.0].map(|v| cadmpeg_ir::scalar::PositiveReal::new(v).unwrap()),
+                offsets: [20, 60, 100],
+            },
+            matrix_offset: None,
+        });
+    }
+
+    let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
+        crate::test_support::with_decode_context(|ctx| {
+            let scopes = &[scale];
+            let timelines = crate::design::test_support::synthetic_feature_timelines(scopes);
+            crate::design::feature_project::project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes,
+                    timelines: &timelines,
+                    ..Default::default()
+                },
+            )
+            .expect("test projection has a synthetic exact timeline")
+        });
+    let FeatureDefinition::Operation(FeatureOperation::Scale {
+        bodies,
+        center: Some(cadmpeg_ir::features::ScaleCenter::Point(center)),
+        factors,
+    }) = features[0].evaluation.definition()
+    else {
+        panic!("scale feature with explicit center");
+    };
+    assert!(matches!(
+        bodies,
+        cadmpeg_ir::features::BodySelection::Unresolved
+    ));
+    for (actual, expected) in [center.x, center.y, center.z]
+        .into_iter()
+        .zip([12.5, -25.0, 37.5])
+    {
+        assert!((actual - expected).abs() < f64::EPSILON);
+    }
+    assert!(matches!(
+        factors,
+        cadmpeg_ir::features::ScaleFactors::PerAxis { factors }
+            if factors.map(cadmpeg_ir::scalar::NonZeroReal::get) == [1.0, 2.0, 3.0]
     ));
 }
 
@@ -692,6 +774,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         let value = Some(
             DesignSketchProfileOperand::try_new(
                 crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+                    sketch_absent: false,
                     scope_reference_ordinal: 1,
                     record_index: 101,
                     byte_offset: 0,
@@ -851,6 +934,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         base_feature.payload_mut()
     {
         *slot = Some(DesignBaseFeatureConstruction::ResultBodies {
+            null_reference_flag_offset: None,
+            repeats_body_suffixes: false,
             bodies: crate::records::feature::base_feature::DesignBaseFeatureResults::WithoutRepeatedFields(vec![
                 crate::records::feature::base_feature::DesignBaseFeatureResultBody {
                     entity: crate::records::feature::base_feature::DesignBaseFeatureEntry {
@@ -885,6 +970,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         thread.payload_mut()
     {
         *slot = Some(DesignThreadConstruction {
+            angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
             form: DesignThreadForm::Compact(None),
             designation_offset: 0,
             designation: cadmpeg_core::text::NonBlankString::new("M3.5x0.6").unwrap(),
@@ -899,11 +985,12 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                 0.35995, 0.293, 0.3166,
             )
             .unwrap(),
+            modeled: true,
             extended: Some(crate::records::feature::thread::DesignThreadExtended {
                 class: "6g".into(),
                 external: true,
-                modeled: true,
                 full_length: Some(true),
+                right_handed: Some(true),
             }),
         });
     }
@@ -934,6 +1021,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         group(70, 0, 701, &[702], DesignOperandRole::ROLE_0X10),
     ];
     let placement = DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,
@@ -997,7 +1085,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     assert!(ruled_projection.unruled_flange_thickness_loss().is_none());
     assert!(ruled_projection.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { thickness, .. })
+        FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange { thickness: Some(thickness), .. })
             if thickness.get() == 2.5
     )));
     let definition = |kind: &str| {
@@ -1014,8 +1102,8 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
         definition("BaseFlange"),
         FeatureDefinition::Operation(FeatureOperation::SheetMetalBaseFlange {
             profile: cadmpeg_ir::features::PlanarProfileRef::Sketch(neutral_sketch_id(&placement)),
-            thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0).unwrap(),
-            side: SheetMetalThicknessSide::Forward,
+            thickness: cadmpeg_ir::scalar::PositiveLength::new(2.0),
+            side: Some(SheetMetalThicknessSide::Forward),
         })
     );
     assert_eq!(
@@ -1097,7 +1185,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
     else {
         panic!("the Thread scope carries its construction");
     };
-    cosmetic.extended.as_mut().expect("extended fields").modeled = false;
+    cosmetic.modeled = false;
     let cosmetic = project(&cosmetic_scopes, &[]);
     assert!(cosmetic.features.iter().any(|feature| matches!(
         feature.evaluation.definition(),
@@ -1220,13 +1308,13 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
         scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
         source_object: None,
         cage: cadmpeg_ir::subd::SubdCage::default(),
+        native_ref: None,
     }];
 
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         crate::design::test_support::with_test_decode_context(|ctx| {
-            crate::design::feature_project::form_cages::bind_form_cages(
+            crate::design::feature_project::form_cages::FormProjection::new(scan).project(
                 ctx,
-                scan,
                 std::slice::from_ref(&scope),
                 &mut features,
                 &cages,
@@ -1235,15 +1323,14 @@ fn form_dispatcher_retains_a_result_owner_without_a_cage_identity_join() {
         })
     })
     .expect("retained Form result owner");
-    assert_eq!(
-        *features[0].evaluation.definition(),
-        cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Native {
-                kind: "Form".into(),
-                parameters: Default::default(),
-            }
-        )
-    );
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Form(construction),
+    ) = features[0].evaluation.definition()
+    else {
+        panic!("neutral Form");
+    };
+    assert!(!construction.membership_is_complete());
+    assert_eq!(construction.inputs().references.len(), 1);
 }
 
 #[test]
@@ -1364,13 +1451,13 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
             scheme: cadmpeg_ir::subd::SubdScheme::CatmullClark,
             source_object: None,
             cage: cadmpeg_ir::subd::SubdCage::default(),
+            native_ref: None,
         }];
 
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             crate::design::test_support::with_test_decode_context(|ctx| {
-                crate::design::feature_project::form_cages::bind_form_cages(
+                crate::design::feature_project::form_cages::FormProjection::new(scan).project(
                     ctx,
-                    scan,
                     std::slice::from_ref(&scope),
                     &mut features,
                     &cages,
@@ -1379,14 +1466,114 @@ fn form_dispatcher_retains_a_group_without_a_cage_identity_join() {
             })
         })
         .expect("long Form cage binding");
+        let cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::Form(construction),
+        ) = features[0].evaluation.definition()
+        else {
+            panic!("neutral Form");
+        };
+        assert!(!construction.membership_is_complete());
+        assert_eq!(construction.inputs().references.len(), 1);
+    }
+}
+
+#[test]
+fn matrix_scale_selects_listed_groups_and_names_additional_group_assumption() {
+    for additional in [false, true] {
+        let mut scope = DesignParameterScope::empty(
+            "f3d:native/BulkStream.dat:scope#12",
+            crate::records::feature::scope::DesignFeatureKind::Scale,
+            12,
+        );
+        let crate::records::feature::scope::DesignScopePayloadMut::Scale(slot) =
+            scope.payload_mut()
+        else {
+            panic!("Scale payload");
+        };
+        *slot = Some(DesignScaleOperation {
+            body_group_record_index: 54,
+            further_body_group_record_indices: vec![56],
+            center_record_index: 70,
+            center_position: None,
+            factors: crate::records::feature::body_ops::DesignScaleFactors::Uniform {
+                factor: cadmpeg_ir::scalar::PositiveReal::new(2.0).unwrap(),
+                offset: 100,
+            },
+            matrix_offset: Some(100),
+        });
+        let indices = if additional {
+            vec![50, 52, 54, 56]
+        } else {
+            vec![54, 56]
+        };
+        let groups = indices
+            .into_iter()
+            .map(|index| {
+                serde_json::from_value::<DesignConstructionOperandGroup>(serde_json::json!({
+                    "id": format!("f3d:native/BulkStream.dat:group#{index}"),
+                    "scope_record_index": 12,
+                    "scope_reference_ordinal": 0,
+                    "record_index": index,
+                    "byte_offset": 1000,
+                    "class_tag": "359",
+                    "members": [71],
+                    "member_offsets": [1026],
+                    "frame": {
+                        "member_count_offset": 1021,
+                        "opaque_index": 1,
+                        "opaque_index_offset": 1072,
+                        "opaque_scalar": 0.0,
+                        "opaque_scalar_offset": 1076,
+                        "variant": false
+                    },
+                    "role": DesignOperandRole::BODIES_A.raw(),
+                    "role_offset": 1054,
+                    "paired_class_tag": "261",
+                    "paired_byte_offset": 1125
+                }))
+                .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let projected = crate::test_support::with_decode_context(|ctx| {
+            let scopes = [scope];
+            let timelines = crate::design::test_support::synthetic_feature_timelines(&scopes);
+            project_parameter_design_with_edge_identities(
+                ctx,
+                &crate::design::feature_project::ProjectInputs {
+                    scopes: &scopes,
+                    timelines: &timelines,
+                    construction_groups: &groups,
+                    ..Default::default()
+                },
+            )
+            .unwrap()
+        });
+        let FeatureDefinition::Operation(FeatureOperation::Scale { bodies, .. }) =
+            projected.features[0].evaluation.definition()
+        else {
+            panic!("Scale feature");
+        };
         assert_eq!(
-            *features[0].evaluation.definition(),
-            cadmpeg_ir::features::FeatureDefinition::Operation(
-                cadmpeg_ir::features::FeatureOperation::Native {
-                    kind: "Form".into(),
-                    parameters: Default::default(),
-                }
+            *bodies,
+            cadmpeg_ir::features::BodySelection::NativeSet(
+                vec![
+                    "f3d:native/BulkStream.dat:group#54".to_owned(),
+                    "f3d:native/BulkStream.dat:group#56".to_owned()
+                ]
+                .try_into()
+                .unwrap()
             )
         );
+        let assumptions = projected
+            .projection_losses
+            .iter()
+            .filter(|loss| {
+                loss.code == crate::loss::F3dLossCode::FeatureScaleUnlistedGroupsAssumed.kind()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(assumptions.len(), usize::from(additional));
+        if additional {
+            assert_eq!(assumptions[0].message, "Scale scope f3d:native/BulkStream.dat:scope#12 scales the bodies of its listed body groups [54, 56]; its unlisted body groups [50, 52] are assumed to select the same bodies (DR-464).");
+        }
     }
 }

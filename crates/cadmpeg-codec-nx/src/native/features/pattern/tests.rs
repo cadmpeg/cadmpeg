@@ -169,7 +169,7 @@ fn assert_pattern_content_admits(bytes: &[u8], route: PatternContentRoute) {
         }
         PatternContentRoute::Fixed => {
             crate::native::features::pattern::feature_pattern_construction_binary64_lanes(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &container,
                 payloads,
             )
@@ -277,11 +277,11 @@ fn pattern_transform_lane_preserves_wire_and_requires_complete_rows() {
         "selector_source_offsets",
     ];
     check_lane_wire::<FeaturePatternTransformLane>(
-        r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":3,"encodings":["binary32","binary64"],"values":[2.5,4.0],"raw_values":["50200000","3010000000000000"],"selectors":[7,8],"raw_selectors":["07","08"],"source_offset":100,"value_source_offsets":[110,120],"selector_source_offsets":[114,128]}"#,
+        r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":3,"encodings":["binary32","binary64"],"values":[2.0,1.0],"raw_values":["50200000","3010000000000000"],"selectors":[7,8],"raw_selectors":["07","08"],"source_offset":100,"value_source_offsets":[110,120],"selector_source_offsets":[114,128]}"#,
         columns,
     );
     check_lane_wire::<FeaturePatternTransformLane>(
-        r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"wide_rows","declared_count":2,"encodings":["binary64","binary64","binary64","binary64","exact_one"],"values":[2.5,4.0,5.0,6.0,1.0],"raw_values":["3004000000000000","3010000000000000","3014000000000000","3018000000000000","01"],"selectors":[7],"raw_selectors":["07"],"source_offset":100,"value_source_offsets":[110,118,126,134,142],"selector_source_offsets":[143]}"#,
+        r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"wide_rows","declared_count":2,"encodings":["binary64","binary64","binary64","binary64","exact_one"],"values":[0.625,1.0,1.25,1.5,1.0],"raw_values":["3004000000000000","3010000000000000","3014000000000000","3018000000000000","01"],"selectors":[7],"raw_selectors":["07"],"source_offset":100,"value_source_offsets":[110,118,126,134,142],"selector_source_offsets":[143]}"#,
         columns,
     );
 }
@@ -290,7 +290,7 @@ fn pattern_transform_lane_preserves_wire_and_requires_complete_rows() {
 fn pattern_rows_reject_scalar_families_outside_their_layout() {
     let narrow = r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":2,"encodings":["exact_one"],"values":[1.0],"raw_values":["01"],"selectors":[7],"raw_selectors":["07"],"source_offset":100,"value_source_offsets":[110],"selector_source_offsets":[111]}"#;
     assert!(serde_json::from_str::<FeaturePatternTransformLane>(narrow).is_err());
-    let wide = r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"wide_rows","declared_count":2,"encodings":["binary64","binary64","binary64","binary64","exact_one"],"values":[2.5,4.0,5.0,6.0,1.0],"raw_values":["3004000000000000","3010000000000000","3014000000000000","3018000000000000","01"],"selectors":[7],"raw_selectors":["07"],"source_offset":100,"value_source_offsets":[110,118,126,134,142],"selector_source_offsets":[143]}"#;
+    let wide = r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"wide_rows","declared_count":2,"encodings":["binary64","binary64","binary64","binary64","exact_one"],"values":[0.625,1.0,1.25,1.5,1.0],"raw_values":["3004000000000000","3010000000000000","3014000000000000","3018000000000000","01"],"selectors":[7],"raw_selectors":["07"],"source_offset":100,"value_source_offsets":[110,118,126,134,142],"selector_source_offsets":[143]}"#;
     let mut wrong_first: serde_json::Value = serde_json::from_str(wide).unwrap();
     wrong_first["encodings"][0] = serde_json::json!("binary32");
     wrong_first["raw_values"][0] = serde_json::json!("50200000");
@@ -324,8 +324,16 @@ fn pattern_counted_references_preserve_wire_and_reject_token_disagreement() {
 }
 
 #[test]
+fn pattern_transform_values_follow_the_quarter_scaled_atom_reading() {
+    let json = r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":2,"encodings":["binary32"],"values":[2.0],"raw_values":["50200000"],"selectors":[7],"raw_selectors":["07"],"source_offset":100,"value_source_offsets":[110],"selector_source_offsets":[114]}"#;
+    check_lane_wire::<FeaturePatternTransformLane>(json, &[]);
+    let binary32_reading = json.replace("\"values\":[2.0]", "\"values\":[2.5]");
+    assert!(serde_json::from_str::<FeaturePatternTransformLane>(&binary32_reading).is_err());
+}
+
+#[test]
 fn pattern_transform_selectors_require_matching_compact_tokens() {
-    let json = r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":2,"encodings":["binary32"],"values":[2.5],"raw_values":["50200000"],"selectors":[4096],"raw_selectors":["9000"],"source_offset":100,"value_source_offsets":[110],"selector_source_offsets":[114]}"#;
+    let json = r#"{"id":"lane","operation_label":"operation","row_schema_index":3,"layout":"scalar_rows","declared_count":2,"encodings":["binary32"],"values":[2.0],"raw_values":["50200000"],"selectors":[4096],"raw_selectors":["9000"],"source_offset":100,"value_source_offsets":[110],"selector_source_offsets":[114]}"#;
     check_lane_wire::<FeaturePatternTransformLane>(json, &[]);
     for (field, value) in [
         ("selectors", serde_json::json!([4097])),

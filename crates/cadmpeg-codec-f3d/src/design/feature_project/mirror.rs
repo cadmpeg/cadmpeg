@@ -83,6 +83,9 @@ pub(super) fn project_mirror(
             let plane_scope_record_index = construction
                 .plane_scope_record_index
                 .map(|value| value.value)
+                .or(construction
+                    .construction_plane_scope
+                    .map(|selected| selected.scope_record_index))
                 .or(assumed_plane_scope.map(|assumed| assumed.scope_record_index))?;
             let plane = unique_feature_match(scopes.iter().filter(|candidate| {
                 native_stream(&candidate.id) == Some(stream)

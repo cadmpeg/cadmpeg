@@ -52,10 +52,14 @@ pub(in crate::feature) fn project(
         else {
             continue;
         };
-        let EdgeSelection::Generated { native, .. } = attachment else {
-            return Err(CodecError::malformed(
-                "Inventor attached plate lost its proven input edges",
-            ));
+        let (native, historical) = match attachment {
+            EdgeSelection::Generated { native, .. } => (native.as_str().to_owned(), false),
+            EdgeSelection::Historical { native, .. } => (native.as_str().to_owned(), true),
+            _ => {
+                return Err(CodecError::malformed(
+                    "Inventor attached plate lost its proven input edges",
+                ))
+            }
         };
         let source = features[position]
             .native_ref
@@ -74,13 +78,19 @@ pub(in crate::feature) fn project(
         let mut edges = Vec::new();
         let mut geometry = Vec::new();
         for source in selected {
-            let sample = inventory
-                .edge_inputs
-                .geometry
-                .get(&(token.to_owned(), source))
-                .ok_or_else(|| {
-                    CodecError::malformed("Inventor attachment has no stored edge geometry")
-                })?;
+            let key = (token.to_owned(), source);
+            let sample = if historical {
+                inventory
+                    .edge_inputs
+                    .historical
+                    .get(&key)
+                    .map(|edge| &edge.geometry)
+            } else {
+                inventory.edge_inputs.geometry.get(&key)
+            }
+            .ok_or_else(|| {
+                CodecError::malformed("Inventor attachment has no stored edge geometry")
+            })?;
             let edge = HistoricalEdgeId::mint(format!("inventor:input-edge#{token}-{source}"))
                 .map_err(CodecError::malformed)?;
             geometry.push(HistoricalEdgeGeometry {
@@ -94,7 +104,6 @@ pub(in crate::feature) fn project(
             });
             edges.push(edge);
         }
-        let native = native.as_str().to_owned();
         let plate_id = features[position].id.clone();
         let targets = std::iter::once(position).chain(features.iter().enumerate().filter_map(|(index,feature)| {
             matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::SheetMetalBend { plate,.. }) if plate==&plate_id).then_some(index)
