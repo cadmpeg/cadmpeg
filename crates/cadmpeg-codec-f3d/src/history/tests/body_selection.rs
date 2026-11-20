@@ -816,7 +816,7 @@ fn a_slot_that_only_another_history_inserts_falls_back_with_a_history_loss() {
     assert!(matches!(
         pattern.evaluation.definition(),
         FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern { seeds, .. })
-            if matches!(seeds.as_slice(), [PatternSeed::Bodies(BodySelection::Generated(_))])
+            if matches!(seeds.as_slice(), [PatternSeed::Bodies(BodySelection::Generated { .. })])
     ));
     assert!(pattern
         .dependencies
