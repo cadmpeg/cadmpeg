@@ -1084,6 +1084,22 @@ pub(super) fn validate_source_less_design_links(
 pub(super) fn validate_source_less_body_kinds(
     geometry: &cadmpeg_ir::document::Topology,
 ) -> Result<(), CodecError> {
+    for (body, derived) in geometry.bodies.iter().zip(derived_body_kinds(geometry)) {
+        if body.kind != derived {
+            return Err(CodecError::InvalidInput(format!(
+                "body {} declares {:?} but its incidence graph is {:?}",
+                body.id, body.kind, derived
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The kind each body's incidence graph derives, in body order: the kind a
+/// decoder reads back from the written body.
+pub(super) fn derived_body_kinds(
+    geometry: &cadmpeg_ir::document::Topology,
+) -> Vec<cadmpeg_ir::topology::BodyKind> {
     let edges = geometry
         .edges
         .iter()
@@ -1111,7 +1127,7 @@ pub(super) fn validate_source_less_body_kinds(
                 })
         })
     };
-    for body in &geometry.bodies {
+    let derive = |body: &cadmpeg_ir::topology::Body| {
         let shell_ids = geometry
             .regions
             .iter()
@@ -1143,7 +1159,7 @@ pub(super) fn validate_source_less_body_kinds(
             .filter(|loop_| loop_ids.contains(&loop_.id))
             .flat_map(cadmpeg_ir::topology::Loop::coedges)
             .collect::<BTreeSet<_>>();
-        let derived = if face_ids.is_empty() {
+        if face_ids.is_empty() {
             cadmpeg_ir::topology::BodyKind::Wire
         } else if has_wires {
             cadmpeg_ir::topology::BodyKind::General
@@ -1156,15 +1172,9 @@ pub(super) fn validate_source_less_body_kinds(
                     .map(|coedge| (&coedge.edge, coedge.sense)),
                 collapsed,
             )
-        };
-        if body.kind != derived {
-            return Err(CodecError::InvalidInput(format!(
-                "body {} declares {:?} but its incidence graph is {:?}",
-                body.id, body.kind, derived
-            )));
         }
-    }
-    Ok(())
+    };
+    geometry.bodies.iter().map(derive).collect()
 }
 
 /// Resolved wire-ownership ordinals of one body.
