@@ -807,17 +807,15 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Note.** The decoder places a Canvas with a zero byte in a non-legacy layout by its boundary segments and payload frame, keeps the byte in the native `second_boundary_flag` field, and reports `appearance.reference-image-flag-assumed`.
 
-### DR-879. Empty-label named tails and 78-byte fixed tails
+### DR-879. Preceding history-state identity of a labeled tail
 
-**Question.** How does a reader tell an empty-label named parameter-scope tail from a 78-byte fixed tail?
+**Question.** Does a named parameter-scope tail with a label of positive length `L` store a preceding history-state identity, and at which tail offset?
 
-**Known.** `f3d.md` "A named `Combine` tail also has a marked-reference form" gives the named tail. The fixed tail table gives the 78-byte fixed tail, with the preceding history-state identity at tail offset 31. With an empty label, the two readings cover the same bytes. The named field identity and first lane value are the bytes of the first record reference of the fixed form, and the named opaque u32 is the preceding history-state identity of the fixed form. Three `Combine` saves (`combine_tools_n1.f3d`, `combine_tools_n2.f3d`, `combine_tools_n3.f3d`) store the same tail layout. In the first two, the first tail reference names record `0x199` or `0x1fe`. The named first lane value is then `1`, and the scope reads as named with no preceding history state. In the third, the reference names record `0x263`, the lane value is `2`, and the scope reads as fixed.
+**Known.** `f3d.md` §3.1 states that a tail whose label is empty is the 78-byte fixed tail, with the preceding history-state identity at tail offset 31 and the evaluation epoch at tail offsets 35 and 47. The feature item tail paragraph moves each later offset by `2L` after a custom label of `L` code units, which places a preceding history-state identity at tail offset `31 + 2L`. The decoder reads none for a labeled tail.
 
-**Need.** A save whose `Combine` tail of this layout has a label, to tell whether the named form also stores a preceding history-state identity at the opaque u32.
+**Need.** Labeled tails whose preceding identity can be checked against the current identity of another scope, to settle whether offset `31 + 2L` holds it.
 
 **Conflict.** None.
-
-**Note.** When a `Combine` scope stores no preceding history state, the decoder binds its operands in the predecessor that the history header names. An operand that this binding leaves native binds through its direct body recipe.
 
 ### DR-881. Tracked-entry record variants
 
