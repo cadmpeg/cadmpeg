@@ -424,7 +424,7 @@ fn combine_side_binding(
         .count();
     let natives = |count: usize| -> Vec<String> {
         if side.single_native {
-            vec![side.natives[0].clone(); count]
+            std::iter::repeat_n(side.natives[0].clone(), count).collect()
         } else {
             side.natives.clone()
         }

@@ -237,7 +237,10 @@ fn a_live_target_names_its_model_body_beside_a_generated_tool() {
         panic!("resolved target: {:?}", operands(&combine).target());
     };
     assert_eq!(
-        bodies.iter().map(|body| body.as_str()).collect::<Vec<_>>(),
+        bodies
+            .iter()
+            .map(cadmpeg_ir::ids::BodyId::as_str)
+            .collect::<Vec<_>>(),
         ["f3d:brep/root.smbh/brep:entity#1"]
     );
     assert_eq!(native, TARGET_NATIVE);
