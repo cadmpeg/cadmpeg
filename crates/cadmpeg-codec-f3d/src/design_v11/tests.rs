@@ -93,6 +93,100 @@ fn members(container: &Container) -> &[Member] {
 }
 
 #[test]
+fn an_unresolved_coordinate_frame_keeps_the_next_timeline_item() {
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+        &format!("{STREAM}:design-parameter-scope#200"),
+        crate::records::feature::scope::DesignFeatureKind::JointOrigin,
+        20,
+    );
+    scope.with_joint_origin_transform(
+        [
+            [0.0, -1.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0, -2.0],
+            [0.0, 0.0, 1.0, 3.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]
+        .try_into()
+        .unwrap(),
+    );
+    let frame = crate::design::feature_project::joint_origin_frame(&scope).unwrap();
+    let features = [
+        legacy(
+            "joint-origin:10",
+            0,
+            None,
+            LegacyOperation::Native {
+                kind: "JointOrigin".into(),
+                parameters: BTreeMap::default(),
+            },
+        ),
+        legacy(
+            "joint-origin:20",
+            1,
+            Some(false),
+            LegacyOperation::DatumCoordinateSystem { frame },
+        ),
+    ];
+    let mut losses = Vec::new();
+    let documents = crate::test_support::with_decode_context(|ctx| {
+        super::timeline::project(
+            ctx,
+            &features,
+            &[timeline(STREAM, 0, &[10, 20])],
+            &[],
+            &BTreeSet::new(),
+            &mut losses,
+        )
+    })
+    .unwrap();
+    let projected = &documents[""];
+    assert_eq!(projected.features.len(), 2);
+    assert!(matches!(
+        projected.features[0].definition.operation,
+        FeatureOperation::Native { .. }
+    ));
+    let FeatureOperation::Datum(datum) = &projected.features[1].definition.operation else {
+        panic!("datum frame")
+    };
+    let cadmpeg_ir::design::ops::datum::DatumElement::Frame(construction) = &datum.element else {
+        panic!("coordinate frame")
+    };
+    let resolved = construction.resolved.as_ref().unwrap();
+    assert_eq!(
+        resolved.origin.get(),
+        cadmpeg_ir::math::Point3::new(10.0, -20.0, 30.0)
+    );
+    assert_eq!(
+        *resolved.x_axis.as_raw(),
+        cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+    );
+    assert_eq!(
+        *resolved.y_axis.as_raw(),
+        cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0)
+    );
+    assert_eq!(
+        *resolved.z_axis.as_raw(),
+        cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+    );
+    assert_eq!(projected.features[1].native_ref, features[1].native_ref);
+    assert_eq!(
+        projected.features[1].suppressed,
+        Some(Dimension::Literal(false))
+    );
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| loss.code.local_code())
+            .collect::<Vec<_>>(),
+        [
+            "feature.coordinate-system-frame-unresolved",
+            "feature.coordinate-system-construction-native",
+            "history.rollback-unread",
+        ]
+    );
+}
+
+#[test]
 fn each_item_of_a_listing_timeline_is_one_feature_in_item_order() {
     let features = [
         legacy(

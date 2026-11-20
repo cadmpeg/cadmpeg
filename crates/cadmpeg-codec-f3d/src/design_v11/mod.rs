@@ -22,6 +22,7 @@
 //! of its own belong to no scope here, and a loss names each of them.
 
 mod configurations;
+mod datum;
 mod operation;
 mod parameters;
 #[cfg(test)]
