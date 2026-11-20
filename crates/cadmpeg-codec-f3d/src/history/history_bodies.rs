@@ -879,7 +879,15 @@ fn fill_history(
                                 };
                                 &resolved
                             }
-                            Ok(None) => continue,
+                            Ok(None) => {
+                                losses.push(F3dLossCode::FeatureHistoryBodyUndecoded.note(
+                                    format!(
+                                        "{} state {state_id} has an unresolved body identity",
+                                        want.origin.id
+                                    ),
+                                ));
+                                continue;
+                            }
                             Err(error) => {
                                 failure = Some(error);
                                 break;

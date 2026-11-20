@@ -1481,6 +1481,135 @@ fn a_body_identity_names_the_one_revised_body_that_carries_the_design_link() {
     );
 }
 
+#[test]
+fn a_split_identity_that_matches_two_bodies_reports_the_undecoded_input() {
+    let width = RefWidth::Eight;
+    let mut bytes = Vec::new();
+    put_header(&mut bytes, width);
+    bytes[39] = 1;
+    put_plain(&mut bytes, width, "asmheader", &[]);
+    for slot in [1, 2] {
+        put_plain(
+            &mut bytes,
+            width,
+            "body",
+            &[
+                (REF, slot + 2),
+                (INT, slot),
+                (REF, -1),
+                (REF, -1),
+                (REF, -1),
+                (REF, -1),
+            ],
+        );
+    }
+    for _ in 0..2 {
+        put_fields(&mut bytes, width, "ATTRIB_CUSTOM-attrib", &[(REF, -1)]);
+        for value in link_attribute(1, "626", 1).values {
+            match value {
+                cadmpeg_ir::attributes::AttributeValue::String(value) => {
+                    bytes.extend_from_slice(&[
+                        0x07,
+                        u8::try_from(value.len()).expect("short fixture string"),
+                    ]);
+                    bytes.extend_from_slice(value.as_bytes());
+                }
+                cadmpeg_ir::attributes::AttributeValue::Integer(value) => {
+                    put_ref(&mut bytes, width, INT, value);
+                }
+                _ => panic!("identity fixture value"),
+            }
+        }
+        bytes.push(0x11);
+    }
+    put_state(&mut bytes, width, (13, -1, 1, 0), &[]);
+    put_state(
+        &mut bytes,
+        width,
+        (12, 0, -1, 1),
+        &[(-1, 1), (-1, 2), (-1, 3), (-1, 4)],
+    );
+    put_name(&mut bytes, "End-of-ASM-data");
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::default()).unwrap();
+    let mut allowance = u64::MAX;
+    let history = super::super::decode(
+        &ctx,
+        &bytes,
+        "test",
+        width,
+        &mut allowance,
+        &WorkBudget::new(1 << 20),
+    )
+    .unwrap()
+    .unwrap();
+    let archive = super::super::decode_record_archive(&ctx, history.states(), &bytes, width)
+        .unwrap()
+        .unwrap();
+    let versions = (0..5).map(|slot| (slot, slot)).collect();
+    let table =
+        cadmpeg_asm::history::materialize_record_table(&versions, |id| archive.get(&id)).unwrap();
+    let header = cadmpeg_asm::asm_header::parse(&bytes).unwrap();
+    let subtypes = archive_subtypes(&archive, header.metadata.save_format_version);
+    let brep = cadmpeg_asm::brep::decode_with_table(
+        &ctx,
+        &table,
+        &bytes,
+        (Some(&header.metadata), &subtypes),
+        "f3d:history",
+        crate::ids::ID_FORMAT,
+        cadmpeg_asm::brep::DecodePurpose::Model,
+    )
+    .unwrap();
+    let identity = identity(&[1, 2]);
+    assert_eq!(brep.bodies.len(), 2);
+    assert_eq!(identity_slot(&brep, &identity).unwrap(), None);
+    for slot in [1, 2] {
+        let single = cadmpeg_asm::brep::AsmBrep {
+            attributes: brep
+                .attributes
+                .iter()
+                .filter(|attribute| {
+                    matches!(&attribute.target.entity, AttributeTarget::Body(body)
+                        if super::super::stable_ref(body.as_str()) == Some(slot))
+                })
+                .cloned()
+                .collect(),
+            ..cadmpeg_asm::brep::AsmBrep::default()
+        };
+        assert_eq!(identity_slot(&single, &identity).unwrap(), Some(slot));
+    }
+    let feature = feature("split");
+    let mut bodies = Vec::new();
+    let mut losses = Vec::new();
+    fill_history(
+        &ctx,
+        &bytes,
+        &history,
+        &[Want {
+            origin: &feature,
+            producer: None,
+            consumer: Some(&feature),
+            state: 12,
+            slot: -1,
+            identity: Some(identity),
+            capture_current: false,
+            consumed: true,
+        }],
+        &mut bodies,
+        &WorkBudget::new(MAX_HISTORY_BODY_WORK),
+        &mut losses,
+    )
+    .unwrap();
+    assert!(bodies.is_empty());
+    assert_eq!(
+        losses,
+        vec![F3dLossCode::FeatureHistoryBodyUndecoded
+            .note("f3d:model:feature#split state 12 has an unresolved body identity")]
+    );
+}
+
 fn nest(id: &str, produced_by: Option<&str>, consumed_by: Option<&str>, state: i64) -> HistoryBody {
     HistoryBody {
         produced_by: produced_by.map(|native| feature(native).id),
