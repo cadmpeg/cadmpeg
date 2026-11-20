@@ -107,18 +107,20 @@ pub(crate) fn bind_body_recipe_operand_history_candidates(
                     }
                 }
                 resolve_body_recipe_operand_preceding_body(operand);
-                // When every face clause reaches a body of this state, or the
-                // faces of every clause are outside it, the body whose last
-                // persistent design link is the recipe's design pair is the
-                // selected body.
-                let reaching = operand
-                    .references()
-                    .iter()
-                    .filter(|reference| !reference.preceding_body_slots.is_empty())
-                    .count();
+                // When every face clause reaches a body of this state, or every
+                // clause has candidate faces and all of them are outside it, the
+                // body whose last persistent design link is the recipe's design
+                // pair is the selected body.
+                let references = operand.references();
                 let design_link_applies = closures_read
-                    && !operand.references().is_empty()
-                    && (reaching == 0 || reaching == operand.references().len());
+                    && !references.is_empty()
+                    && (references
+                        .iter()
+                        .all(|reference| !reference.preceding_body_slots.is_empty())
+                        || references.iter().all(|reference| {
+                            !reference.candidate_faces.is_empty()
+                                && reference.preceding_candidate_faces.is_empty()
+                        }));
                 if let Some(body) = design_link_applies
                     .then(|| design_linked_body_slot(operand, &recipes_by_id, topology))
                     .flatten()
