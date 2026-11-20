@@ -6,9 +6,9 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
-use cadmpeg_ir::sketches::{SketchEntity, SketchGeometryDefinition};
+use cadmpeg_ir::sketches::{SketchEntity, SketchGeometry, SketchGeometryDefinition};
 
-use super::project_marker_backed_sketches;
+use super::{marker_is_construction, project_marker_backed_sketches, SketchRecordLists};
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputLane, FeatureSource, SketchInputKind,
 };
@@ -236,4 +236,82 @@ fn a_curve_record_with_another_selector_keeps_its_relation_kind() {
     let (payload, curve) = sketch_with_line(CODE_FOUR, 68, [0, 1], 0, u32::MAX);
     let (kind, _) = projected_curve(payload, curve);
     assert!(matches!(kind, SketchInputKind::Relation(_)));
+}
+
+#[test]
+fn selector_twelve_role_one_circle_construction_agrees_between_projection_paths() {
+    let (mut payload, curve) = sketch_with_line(1, 12, [1, 1], 0, 0);
+    payload.truncate(curve);
+    head(&mut payload, 1, 12);
+    payload.extend_from_slice(&1u16.to_le_bytes());
+    payload.extend_from_slice(&1u16.to_le_bytes());
+    payload.extend_from_slice(&1u32.to_le_bytes());
+    payload.extend_from_slice(&F64_MINUS_ONE);
+    payload.extend_from_slice(&1u16.to_le_bytes());
+    payload.extend_from_slice(&0u16.to_le_bytes());
+    payload.extend_from_slice(&0u16.to_le_bytes());
+    for _ in 0..4 {
+        payload.extend_from_slice(&(-2i32).to_le_bytes());
+    }
+    payload.extend_from_slice(&[0; 10]);
+    let lists = SketchRecordLists::new(&payload);
+    assert!(lists.readable_curve(&payload, curve));
+    let (_, entity) = projected_curve(payload.clone(), curve);
+    let entity = entity.expect("the listed circle is projected");
+    assert!(matches!(
+        entity.geometry.definition(),
+        SketchGeometryDefinition::Circle { .. }
+    ));
+    assert!(!entity.construction);
+    let held = SketchGeometry::native(cadmpeg_core::nonblank_const!("sldprt:synthetic-circle"));
+    for geometry in [&entity.geometry, &held] {
+        assert_eq!(
+            marker_is_construction(&payload, &lists, curve, geometry),
+            entity.construction
+        );
+    }
+}
+
+#[test]
+fn selector_twelve_roster_line_is_construction() {
+    let (mut payload, curve) = sketch_with_line(CODE_FOUR, 12, [0, 1], 0, u32::MAX);
+    let role = curve + crate::layout::current_extended_zero_tail_92_profile_curve::ROLE;
+    payload[role..role + 2].copy_from_slice(&0u16.to_le_bytes());
+    let lists = SketchRecordLists::new(&payload);
+    let (_, entity) = projected_curve(payload.clone(), curve);
+    let entity = entity.expect("the listed line is projected");
+    assert!(matches!(
+        entity.geometry.definition(),
+        SketchGeometryDefinition::Line { .. }
+    ));
+    assert!(entity.construction);
+    assert!(marker_is_construction(
+        &payload,
+        &lists,
+        curve,
+        &entity.geometry
+    ));
+}
+
+#[test]
+fn selector_twelve_role_one_line_is_construction_on_both_paths() {
+    for code in [CODE_FOUR, 2] {
+        for (trailer, identity) in [(0, u32::MAX), (0, 7), (1, 7)] {
+            let (mut payload, curve) = sketch_with_line(code, 12, [0, 1], trailer, identity);
+            if code == 2 {
+                let prefix = crate::resolved_features::LEGACY_EXTENDED_SKETCH_MARKER;
+                payload[curve..curve + prefix.len()].copy_from_slice(prefix);
+            }
+            let lists = SketchRecordLists::new(&payload);
+            let (_, entity) = projected_curve(payload.clone(), curve);
+            let entity = entity.expect("the listed line keeps an entity");
+            assert!(entity.construction);
+            assert!(marker_is_construction(
+                &payload,
+                &lists,
+                curve,
+                &entity.geometry
+            ));
+        }
+    }
 }

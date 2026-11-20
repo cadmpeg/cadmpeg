@@ -1149,11 +1149,13 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 ### DI-72. The +17 value of a sketch curve record
 
-**Question.** What does the little-endian u32 at +17 of a curve record in an `sgSketch` curve list hold?
+**Question.** What does the little-endian u32 at +17 of a curve record in an `sgSketch` curve list hold? Which construction state does selector `12` declare for a full circle with role u16 `1` at +27?
 
-**Known.** For current-layout list curves with selector `4` or `12`, `framed_curve` decides type `0` as a line and type `1` as an arc or circle when u16 `0` follows the type and four i32 `-2` words follow the centre index (`sldprt.md` §2 and §2.3). Lines and arcs in these cases both carry +17 values `1`, `2` and `4`. A line with value `4` (the horizontal relation code) or `5` (the vertical relation code) can run in any direction in its sketch. The decoder selects the geometry kind from the curve type for these cases. Other list curves keep their current layout-selected reading of +17, including relation kinds, and remain open under DI-72. These include current-layout selector-4 style splines of type `0x40` and selector-68 list curves.
+**Known.** For current-layout list curves with selector `4` or `12`, `framed_curve` decides type `0` as a line and type `1` as an arc or circle when u16 `0` follows the type and four i32 `-2` words follow the centre index (`sldprt.md` §2 and §2.3). Lines and arcs in these cases both carry +17 values `1`, `2` and `4`. A line with value `4` (the horizontal relation code) or `5` (the vertical relation code) can run in any direction in its sketch. The decoder selects the geometry kind from the curve type for these cases. Other list curves keep their current layout-selected reading of +17, including relation kinds, and remain open under DI-72. These include current-layout selector-4 style splines of type `0x40` and selector-68 list curves. Selector bit 3 marks construction geometry. The decoder reads a full circle with role u16 `1` at +27 as profile geometry on every projection path; no selector-12 list curve is such a circle. Of 86 current-layout selector-12 list lines with role `1`, 29 have resolved geometry to compare with the edges of the final solid.
 
-**Need.** The value compared with the relation and dimension groups of the same `sgSketch` object and with the record's handles.
+**Need.** The value compared with the relation and dimension groups of the same `sgSketch` object and with the record's handles. For the construction state, selector-12 role-1 circles and lines with a known construction state and profile-to-face binding.
+
+**Conflict.** Two of the 29 compared selector-12 role-1 lines, one with ordinal endpoints and one with roster indices, lie on edges of faces of the final solid; the other 27 lie on none.
 
 ### DI-73. Sketch plane of profile sketches whose curves fit another principal plane
 

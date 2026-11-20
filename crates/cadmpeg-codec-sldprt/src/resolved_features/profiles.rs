@@ -47,7 +47,9 @@ use super::reference_geometry::reference_plane_frame_key;
 use super::relation_geometry::{declared_entity_handle_circular_marker, owned_relation_parameters};
 use super::relation_loci::same_dimension_length;
 use super::scalars::FeatureObjectNames;
-use super::sketch_lists::{construction_record, listed_record_geometry, SketchRecordLists};
+use super::sketch_lists::{
+    construction_record, listed_record_geometry, FramedCurve, SketchRecordLists,
+};
 use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
@@ -1206,6 +1208,28 @@ impl<'a> TerminalRelationCarriers<'a> {
     }
 }
 
+/// Whether the sketch marker at `offset` with `geometry` is construction
+/// geometry: a selected construction line, a selected compact roster axis, or
+/// a list curve with selector bit 3, except a full circle with profile role
+/// `1` (DI-72). Both marker projection paths use this one predicate.
+fn marker_is_construction(
+    payload: &[u8],
+    record_lists: &SketchRecordLists,
+    offset: usize,
+    geometry: &SketchGeometry,
+) -> bool {
+    let listed_kind = record_lists.listed_curve_kind(payload, offset);
+    let role_one_circle = marker_profile_curve_role(payload, offset) == Some(1)
+        && (matches!(
+            geometry.definition(),
+            SketchGeometryDefinition::Circle { .. }
+        ) || listed_kind == Some(FramedCurve::Circle));
+    !role_one_circle
+        && (marker_is_selected_construction_line(payload, offset)
+            || current_compact_roster_selected_axis(payload, offset)
+            || (listed_kind.is_some() && construction_record(payload, offset)))
+}
+
 pub(crate) fn project_marker_backed_sketches(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
@@ -1527,11 +1551,12 @@ pub(crate) fn project_marker_backed_sketches(
                                 offset,
                                 &project_coordinates,
                             )?;
-                            let construction = construction_record(&lane.native_payload, offset)
-                                || marker_is_selected_construction_line(
-                                    &lane.native_payload,
-                                    offset,
-                                );
+                            let construction = marker_is_construction(
+                                &lane.native_payload,
+                                &record_lists,
+                                offset,
+                                &geometry,
+                            );
                             Some((geometry, construction))
                         })
                     {
@@ -2180,17 +2205,12 @@ pub(crate) fn project_marker_backed_sketches(
                         geometry
                     };
                     let construction = index_from_u64(marker.offset()).is_some_and(|offset| {
-                        (marker_is_selected_construction_line(&lane.native_payload, offset)
-                            || current_compact_roster_selected_axis(&lane.native_payload, offset)
-                            || (record_lists
-                                .listed_curve_kind(&lane.native_payload, offset)
-                                .is_some()
-                                && construction_record(&lane.native_payload, offset)))
-                            && !(matches!(
-                                geometry.definition(),
-                                SketchGeometryDefinition::Circle { .. }
-                            ) && marker_profile_curve_role(&lane.native_payload, offset)
-                                == Some(1))
+                        marker_is_construction(
+                            &lane.native_payload,
+                            &record_lists,
+                            offset,
+                            &geometry,
+                        )
                     });
                     Ok((geometry, construction))
                 })();
