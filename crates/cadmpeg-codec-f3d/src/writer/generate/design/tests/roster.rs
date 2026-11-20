@@ -584,13 +584,11 @@ fn the_act_segment_is_stated() {
         reader.utf16()
     };
     assert_eq!(name(act.record(2), 57), name(design.record(3), 888));
-    assert!(
-        design_aspects
-            .iter()
-            .chain(&component)
-            .chain(&instance)
-            .all(|(_, guid)| guid.chars().all(|c| !c.is_ascii_uppercase()))
-    );
+    assert!(design_aspects
+        .iter()
+        .chain(&component)
+        .chain(&instance)
+        .all(|(_, guid)| guid.chars().all(|c| !c.is_ascii_uppercase())));
 }
 
 #[test]
@@ -759,10 +757,8 @@ fn a_design_with_no_written_parameter_is_written_as_its_roster() {
     assert_eq!(design.record(17).len(), 61);
     assert_eq!(design.primary.len(), 214);
     assert!(decoded.model.parameters.is_empty());
-    assert!(
-        !report
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("stores no design for these features"))
-    );
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("stores no design for these features")));
 }

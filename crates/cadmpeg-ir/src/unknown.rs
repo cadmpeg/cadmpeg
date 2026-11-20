@@ -37,7 +37,7 @@ pub struct NativeUnknownRecord {
 
 /// Raw source retention facts. Digest text and extents are producer evidence;
 /// authoritative sidecar admission checks them before recovery or replay.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, cadmpeg_derive::DeserializeTagged)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum RawRetainedBytes {

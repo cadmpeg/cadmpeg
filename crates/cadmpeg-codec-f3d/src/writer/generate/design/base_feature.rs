@@ -26,7 +26,7 @@ use crate::records::sketch_links::{
     DesignPersistentIdText, PersistentDesignLink, PersistentSubentityTag,
 };
 use crate::writer::generate::presentation::{
-    BrowserNodeTail, GeneratedDesignRegistry, TypeRow, deterministic_guid,
+    deterministic_guid, BrowserNodeTail, GeneratedDesignRegistry, TypeRow,
 };
 
 /// The persistent identity of the one `Base Feature`: the first value of the
