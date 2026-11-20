@@ -19122,7 +19122,7 @@ name = "fixed_scalar"
 offset = 21
 type = "f64"
 source = "spec"
-anchor = "f64 `60.0` at offset 21"
+anchor = "the f64 thread angle at offset 21"
 
 [[record.field]]
 name = "standard_marker"
@@ -19163,7 +19163,7 @@ name = "fixed_scalar"
 offset = 21
 type = "f64"
 source = "spec"
-anchor = "f64 `60.0` at offset 21"
+anchor = "the f64 thread angle at offset 21"
 
 [[record.field]]
 name = "compact_marker"
@@ -19220,7 +19220,7 @@ name = "fixed_scalar"
 offset = 25
 type = "f64"
 source = "spec"
-anchor = "f64 `60.0` at offset 25"
+anchor = "the f64 thread angle at offset 25"
 
 [[record.field]]
 name = "form_marker"
@@ -35452,7 +35452,7 @@ name = "thread_extended_scope_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/thread.rs"
 kind = "byte"
 section = "3.1"
-anchor = "The extended Thread prefix stores ten zero bytes at offsets 11 through 20 and f64 `60.0` at offset 21."
+anchor = "The extended Thread prefix stores ten zero bytes at offsets 11 through 20 and the f64 thread angle at offset 21."
 size = 34
 note = "Offsets are relative to the primary Thread indexed header. The 16-byte entries start at offset 34, and the LP-UTF16 thread class follows them."
 
@@ -35466,14 +35466,14 @@ name = "zero_run_10"
 offset = 11
 type = "bytes[10]"
 source = "spec"
-anchor = "The extended Thread prefix stores ten zero bytes at offsets 11 through 20 and f64 `60.0` at offset 21."
+anchor = "The extended Thread prefix stores ten zero bytes at offsets 11 through 20 and the f64 thread angle at offset 21."
 
 [[record.field]]
 name = "fixed_scalar"
 offset = 21
 type = "f64"
 source = "spec"
-anchor = "The extended Thread prefix stores ten zero bytes at offsets 11 through 20 and f64 `60.0` at offset 21."
+anchor = "The extended Thread prefix stores ten zero bytes at offsets 11 through 20 and the f64 thread angle at offset 21."
 
 [[record.field]]
 name = "external_flag"

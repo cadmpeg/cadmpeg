@@ -6,7 +6,8 @@ use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope_with_type_guid;
 use crate::design::decode::scopes::thread::ThreadPrefix;
 use crate::design::decode::scopes::thread::{
-    exact_thread_construction, parse_thread_payload, thread_modeled_flag_loss,
+    exact_thread_construction, parse_thread_payload, thread_modeled_entries_loss,
+    thread_modeled_flag_loss,
 };
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::scope::DesignParameterScope;
@@ -37,6 +38,7 @@ fn thread_scope_decodes_standard_size_and_face_group() {
     bytes[146..148].copy_from_slice(&[0, 1]);
 
     let expected = DesignThreadConstruction {
+        angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
         form: DesignThreadForm::Standard,
         designation_offset: 38,
         designation: cadmpeg_core::text::NonBlankString::new("M30x3.5").unwrap(),
@@ -129,6 +131,7 @@ fn thread_scope_decodes_class_334_legacy_standard_tail() {
     bytes[138..142].copy_from_slice(&[0, 0, 0, 1]);
 
     let expected = DesignThreadConstruction {
+        angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
         form: DesignThreadForm::StandardLegacy,
         designation_offset: 38,
         designation: cadmpeg_core::text::NonBlankString::new("M7x1").unwrap(),
@@ -210,6 +213,7 @@ fn standard_compact_thread_bytes(zero_run: usize, group: u32) -> Vec<u8> {
 #[test]
 fn thread_scope_decodes_standard_prefix_compact_marker_form() {
     let expected = |designation_offset: u64| DesignThreadConstruction {
+        angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
         form: DesignThreadForm::StandardCompact,
         designation_offset,
         designation: cadmpeg_core::text::NonBlankString::new("M5x0.8").unwrap(),
@@ -462,6 +466,7 @@ fn thread_scope_decodes_compact_preamble_and_localized_profile() {
     bytes[after_profile + 38..after_profile + 42].copy_from_slice(&[0, 0, 0, 1]);
 
     let expected = DesignThreadConstruction {
+        angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
         form: DesignThreadForm::Compact(None),
         designation_offset: 38,
         designation: cadmpeg_core::text::NonBlankString::new("M3.5x0.6").unwrap(),
@@ -581,6 +586,7 @@ fn thread_scope_decodes_class_414_legacy_compact_tail() {
     bytes[after_profile + 38..after_profile + 42].copy_from_slice(&[0, 0, 0, 1]);
 
     let expected = DesignThreadConstruction {
+        angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
         form: DesignThreadForm::CompactLegacy,
         designation_offset: 38,
         designation: cadmpeg_core::text::NonBlankString::new("M190x8").unwrap(),
@@ -848,11 +854,38 @@ fn extended_thread_prefix_checks_standard_owner_references_and_compact_tail() {
         for flag in [1, 2] {
             let mut flagged = bytes.clone();
             flagged[trailer - 17] = flag;
-            assert!(
-                exact_thread_construction(&flagged, &scope, &owners).is_none(),
-                "modeled flag {flag} with no prefix entry"
-            );
+            let decoded = exact_thread_construction(&flagged, &scope, &owners);
+            if standard && flag == 1 {
+                let decoded = decoded.expect("modeled standard thread without prefix entries");
+                assert!(decoded.modeled);
+                let loss = thread_modeled_entries_loss(&flagged, &scope, &decoded)
+                    .expect("entries-absent loss");
+                assert_eq!(
+                    loss.code,
+                    crate::loss::F3dLossCode::ThreadModeledEntriesAbsent.kind()
+                );
+            } else {
+                assert!(
+                    decoded.is_none(),
+                    "modeled flag {flag} with no prefix entry"
+                );
+            }
         }
+        let mut angled = bytes.clone();
+        angled[21..29].copy_from_slice(&55.0f64.to_le_bytes());
+        assert_eq!(
+            exact_thread_construction(&angled, &scope, &owners)
+                .expect("55-degree thread")
+                .angle
+                .degrees(),
+            55.0
+        );
+        for angle in [0.0, 180.0, f64::NAN] {
+            let mut refused = bytes.clone();
+            refused[21..29].copy_from_slice(&angle.to_le_bytes());
+            assert!(exact_thread_construction(&refused, &scope, &owners).is_none());
+        }
+        assert_eq!(construction.angle.degrees(), 60.0);
         if !standard {
             for offset in [
                 trailer,

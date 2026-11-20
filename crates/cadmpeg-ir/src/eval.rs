@@ -4625,6 +4625,111 @@ fn native_revolution_carrier(
     .map_err(|failure| failure.map(|()| UNREACHED_POINT))
 }
 
+/// The surface parameters strictly inside `ranges` at which the procedural
+/// construction of `surface` meets a knot of its NURBS directrix, rail or
+/// summand curve, along each surface parameter, in increasing order.
+pub(crate) fn procedural_surface_breaks(
+    index: &crate::index::ModelIndex<'_>,
+    surface: &crate::ids::SurfaceId,
+    ranges: [[f64; 2]; 2],
+) -> Result<[Vec<f64>; 2], ResourceLimit> {
+    let admission = admission::EvaluationAdmission::Standard;
+    let mut breaks = [Vec::new(), Vec::new()];
+    let Some(procedural) =
+        index.procedural_surface_for_surface(surface.as_str(), crate::index::StandardIndex)
+    else {
+        return Ok(breaks);
+    };
+    let carrier_interval = record_u_interval(procedural.record_bounds());
+    let identity = |parameter: f64| -> Result<Option<f64>, ResourceLimit> { Ok(Some(parameter)) };
+    match procedural.definition() {
+        ProceduralSurfaceDefinition::Extrusion(construction) => {
+            breaks[0] = knots_along(index, construction.directrix(), ranges[0], |u| {
+                finite_or_refusal(construction_curve_parameter(
+                    admission,
+                    index,
+                    construction.directrix(),
+                    u,
+                    construction
+                        .parameter_interval()
+                        .map(FiniteVector::finite_components),
+                    carrier_interval,
+                    extrusion_directrix_reversed(construction.revision_form()),
+                ))
+                .map(|carrier| carrier.map(|carrier| carrier.parameter.get()))
+            })?;
+        }
+        ProceduralSurfaceDefinition::Revolution(construction) => {
+            let axis = usize::from(*construction.transposed());
+            breaks[axis] =
+                knots_along(index, construction.directrix(), ranges[axis], |parameter| {
+                    finite_or_refusal(native_revolution_carrier(
+                        admission,
+                        index,
+                        construction,
+                        carrier_interval,
+                        parameter,
+                    ))
+                    .map(|carrier| carrier.map(|carrier| carrier.parameter.get()))
+                })?;
+        }
+        ProceduralSurfaceDefinition::LinearSweep(construction) => {
+            breaks[0] = knots_along(index, construction.directrix(), ranges[0], identity)?;
+        }
+        ProceduralSurfaceDefinition::AxisRevolution(construction) => {
+            breaks[1] = knots_along(index, construction.directrix(), ranges[1], identity)?;
+        }
+        ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
+            breaks[0] = knots_along(index, first, ranges[0], identity)?;
+            breaks[0].extend(knots_along(index, second, ranges[0], identity)?);
+        }
+        ProceduralSurfaceDefinition::Sum(construction) => {
+            breaks[0] = knots_along(index, construction.first(), ranges[0], identity)?;
+            breaks[1] = knots_along(index, construction.second(), ranges[1], identity)?;
+        }
+        _ => {}
+    }
+    for axis in &mut breaks {
+        axis.sort_by(f64::total_cmp);
+        axis.dedup();
+    }
+    Ok(breaks)
+}
+
+/// The knots of a solved NURBS `curve` that lie strictly between the carrier
+/// parameters `carrier` maps the ends of `range` to, mapped affinely back
+/// into `range`.
+fn knots_along(
+    index: &crate::index::ModelIndex<'_>,
+    curve: &crate::ids::CurveId,
+    range: [f64; 2],
+    carrier: impl Fn(f64) -> Result<Option<f64>, ResourceLimit>,
+) -> Result<Vec<f64>, ResourceLimit> {
+    if index
+        .procedural_curves_for_curve(curve.as_str(), crate::index::StandardIndex)
+        .is_some_and(|constructions| !constructions.is_empty())
+    {
+        return Ok(Vec::new());
+    }
+    let Some(CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs))) = index
+        .curves(curve.as_str(), crate::index::StandardIndex)
+        .map(|curve| &curve.geometry)
+    else {
+        return Ok(Vec::new());
+    };
+    let (Some(start), Some(end)) = (carrier(range[0])?, carrier(range[1])?) else {
+        return Ok(Vec::new());
+    };
+    let (low, high) = (start.min(end), start.max(end));
+    Ok(nurbs
+        .knots()
+        .iter()
+        .filter(|knot| low < **knot && **knot < high)
+        .map(|knot| range[0] + (knot - start) / (end - start) * (range[1] - range[0]))
+        .filter(|parameter| range[0] < *parameter && *parameter < range[1])
+        .collect())
+}
+
 /// The point of a native revolution, or why it has none: the directrix point
 /// at the carrier parameter revolved by the mapped angle. The point fails on
 /// no derivative.
