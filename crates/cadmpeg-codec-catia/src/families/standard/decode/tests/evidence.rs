@@ -449,7 +449,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
     .get();
     assert_eq!(
         point_on_surface(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             signed_sphere_point,
             &signed_sphere
         ),
@@ -476,7 +476,7 @@ fn analytic_surface_uv_accepts_finite_nonzero_carrier_scales() {
     .get();
     assert_eq!(
         point_on_surface(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             torus_point,
             &torus
         ),
@@ -1164,7 +1164,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
 
     assert_eq!(
         standard_native_support_endpoint_pair(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &native,
             &points,
             &[0, 1],
@@ -1201,7 +1201,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     );
     assert_eq!(
         standard_native_support_endpoint_pair(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &native,
             &points,
             &[0, 1],
@@ -1221,7 +1221,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     );
     assert_eq!(
         standard_native_support_endpoint_pair(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &reversed,
             &points,
             &[0, 1],
@@ -1239,7 +1239,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     ));
     assert_eq!(
         standard_native_support_endpoint_pair(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &native,
             &points,
             &[0, 1, 2],
@@ -1259,7 +1259,7 @@ fn native_support_pcurves_bind_standard_edge_endpoints() {
     );
     assert_eq!(
         standard_native_support_endpoint_pair(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &disagreeing,
             &points,
             &[0, 1],
@@ -1785,7 +1785,7 @@ fn native_support_matches_endpoints_and_reverses_pcurves() {
     };
     assert_eq!(
         standard_native_support_endpoint_pair(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &native,
             &points,
             &[0, 1],

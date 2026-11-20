@@ -113,6 +113,22 @@ impl CodecBackend for StepCodec {
         ctx: &cadmpeg_core::decode::DecodeContext<'_>,
         root: cadmpeg_core::decode::View<'_>,
     ) -> Result<Decoded, CodecError> {
+        let mut decoded = self.decode_packaged(ctx, root)?;
+        decoded.ir.state_root_definition(
+            ctx,
+            reader::product::document_definition_id(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )?;
+        Ok(decoded)
+    }
+}
+
+impl StepCodec {
+    fn decode_packaged(
+        &self,
+        ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+        root: cadmpeg_core::decode::View<'_>,
+    ) -> Result<Decoded, CodecError> {
         let bytes = root.window();
         if archive::has_zip_magic(bytes)
             || (!starts_with_step_magic(bytes)

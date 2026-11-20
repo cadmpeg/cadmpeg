@@ -17,8 +17,9 @@ use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::PositiveLength;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 
 const EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12: f64 = 1.0e-12;
 const EPS_GEOMETRY_TANGENT_NESTED_LINE_PROFILE_E10: f64 = 1.0e-10;
@@ -42,6 +43,9 @@ const ARRANGEMENT_TANGENT_TOLERANCE: f64 = 1.0e-9;
 /// Inverse millimetres between the signed curvatures of two arrangement
 /// edges that leave a node with the same tangent and bend alike.
 const ARRANGEMENT_CURVATURE_TOLERANCE: f64 = 1.0e-12;
+/// Fraction of a piece's coordinate magnitude that widens its bounds in
+/// the separation sweep.
+const CERTIFIED_SWEEP_BOUNDS_SLACK: f64 = 1.0e-9;
 
 /// Local work cap for arrangement edge retention walks, shared by every walk
 /// of one decode. An exhausted cap skips the arrangement.
@@ -83,6 +87,44 @@ pub(crate) struct ProfileGeometryWork {
     spatial_transition_assumed_selections: Cell<usize>,
     hole_boundary_inferred_selections: Cell<usize>,
     region_hole_inferred_selections: Cell<usize>,
+    sampled_regions: RefCell<Vec<RegionSampleEntry>>,
+    arrangement_reuse: RefCell<Option<ArrangementReuse>>,
+}
+
+/// The arrangement that the profile lookups inside one
+/// [`ProfileGeometryWork::reusing_arrangement`] call share, once built, with
+/// the arrangement work its build charged.
+struct ArrangementReuse {
+    key: ArrangementKey,
+    built: Option<(Option<Rc<Vec<SketchArrangementFace>>>, usize)>,
+}
+
+/// The addresses of a sketch and of its entity slice, the slice length, and
+/// the bits of a tolerance.
+type ArrangementKey = (usize, usize, usize, u64);
+
+/// The key of `sketch`, `entities`, and `tolerance`. The scope that holds a
+/// key keeps the sketch and the slice borrowed, so an equal key names the
+/// same sketch and entities.
+fn arrangement_key(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+) -> ArrangementKey {
+    (
+        std::ptr::from_ref(sketch).addr(),
+        entities.as_ptr().addr(),
+        entities.len(),
+        tolerance.to_bits(),
+    )
+}
+
+/// The samples of one set of atomic regions, keyed by the bits of the
+/// tolerance and of each region polyline.
+struct RegionSampleEntry {
+    tolerance: u64,
+    polylines: Vec<Vec<Point2>>,
+    samples: Option<Vec<(Point2, Vec<usize>)>>,
 }
 
 impl ProfileGeometryWork {
@@ -121,7 +163,139 @@ impl ProfileGeometryWork {
             spatial_transition_assumed_selections: Cell::new(0),
             hole_boundary_inferred_selections: Cell::new(0),
             region_hole_inferred_selections: Cell::new(0),
+            sampled_regions: RefCell::new(Vec::new()),
+            arrangement_reuse: RefCell::new(None),
         }
+    }
+
+    /// Run `run` with one shared build of the arrangement of `sketch` and
+    /// `entities` at `tolerance` for the region lookups inside it.
+    pub(super) fn reusing_arrangement<T>(
+        &self,
+        sketch: &cadmpeg_ir::sketches::Sketch,
+        entities: &[cadmpeg_ir::sketches::SketchEntity],
+        tolerance: f64,
+        run: impl FnOnce() -> T,
+    ) -> T {
+        let outer = self.arrangement_reuse.replace(Some(ArrangementReuse {
+            key: arrangement_key(sketch, entities, tolerance),
+            built: None,
+        }));
+        let result = run();
+        self.arrangement_reuse.replace(outer);
+        result
+    }
+
+    /// The faces `build` makes for `key`. Inside a
+    /// [`Self::reusing_arrangement`] call for `key`, a later call takes the
+    /// faces of an earlier build and charges the arrangement work that build
+    /// charged. It does so only when that build left the cap unexhausted and
+    /// set no flag or inferred count, and when the cap is unexhausted and
+    /// holds that work. Each build then charges, sets, and returns the same.
+    fn arrangement_faces(
+        &self,
+        key: ArrangementKey,
+        build: impl FnOnce() -> Result<Option<Vec<SketchArrangementFace>>, CodecError>,
+    ) -> Result<Option<Rc<Vec<SketchArrangementFace>>>, CodecError> {
+        let scoped = self
+            .arrangement_reuse
+            .borrow()
+            .as_ref()
+            .filter(|reuse| reuse.key == key)
+            .map(|reuse| reuse.built.clone());
+        let Some(built) = scoped else {
+            return Ok(build()?.map(Rc::new));
+        };
+        if let Some((faces, charged)) = built {
+            if !self.arrangement.exhausted()
+                && self.arrangement.remaining() >= charged
+                && (charged == 0 || self.arrangement.charge_by(charged))
+            {
+                return Ok(faces);
+            }
+        }
+        let flags = self.flag_cells();
+        let outer_flags = flags.map(Cell::take);
+        let inferred = self.inferred_counts();
+        let consumed = self.arrangement.consumed();
+        let faces = build();
+        let reusable = !self.arrangement.exhausted()
+            && self.inferred_counts() == inferred
+            && flags.iter().all(|flag| !flag.get());
+        let charged = self.arrangement.consumed() - consumed;
+        for (flag, outer) in flags.iter().zip(outer_flags) {
+            flag.set(flag.get() || outer);
+        }
+        let faces = faces?.map(Rc::new);
+        if reusable {
+            if let Some(reuse) = self.arrangement_reuse.borrow_mut().as_mut() {
+                reuse.built = Some((faces.clone(), charged));
+            }
+        }
+        Ok(faces)
+    }
+
+    /// Every flag a search sets for the open selection.
+    fn flag_cells(&self) -> [&Cell<bool>; 13] {
+        [
+            &self.arrangement_skipped,
+            &self.densification_skipped,
+            &self.crossing_loop_skipped,
+            &self.crossing_loop_assumed,
+            &self.loop_flags_assumed,
+            &self.coincident_direction_assumed,
+            &self.cut_regions_assumed,
+            &self.cut_regions_beyond_profile,
+            &self.island_absence_assumed,
+            &self.polyline_side_assumed,
+            &self.cap_outline_assumed,
+            &self.cap_carrier_assumed,
+            &self.spatial_transition_assumed,
+        ]
+    }
+
+    /// The samples `sample` takes of `regions` at `tolerance`. Each distinct
+    /// tolerance and set of region polylines is sampled once.
+    pub(super) fn region_samples(
+        &self,
+        regions: &[AtomicSketchRegion],
+        tolerance: f64,
+        sample: impl FnOnce() -> Option<Vec<(Point2, Vec<usize>)>>,
+    ) -> Option<Vec<(Point2, Vec<usize>)>> {
+        let same_points = |left: &[Point2], right: &[Point2]| {
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .zip(right)
+                    .all(|(a, b)| a.u.to_bits() == b.u.to_bits() && a.v.to_bits() == b.v.to_bits())
+        };
+        let hit = self
+            .sampled_regions
+            .borrow()
+            .iter()
+            .find(|entry| {
+                entry.tolerance == tolerance.to_bits()
+                    && entry.polylines.len() == regions.len()
+                    && entry
+                        .polylines
+                        .iter()
+                        .zip(regions)
+                        .all(|(polyline, region)| same_points(polyline, &region.polyline))
+            })
+            .map(|entry| entry.samples.clone());
+        if let Some(samples) = hit {
+            return samples;
+        }
+        let samples = sample();
+        self.sampled_regions.borrow_mut().push(RegionSampleEntry {
+            tolerance: tolerance.to_bits(),
+            polylines: regions
+                .iter()
+                .map(|region| region.polyline.clone())
+                .collect(),
+            samples: samples.clone(),
+        });
+        samples
     }
 
     pub(crate) fn record_hole_boundary_profile_inferred(&self) {
@@ -623,12 +797,17 @@ pub(super) fn arrangement_region_containing_points(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<ArrangementRegion>, CodecError> {
-    let Some(faces) = sketch_arrangement_faces(sketch, entities, tolerance, work, ctx)? else {
+    let Some(faces) = work
+        .arrangement_faces(arrangement_key(sketch, entities, tolerance), || {
+            sketch_arrangement_faces(sketch, entities, tolerance, work, ctx)
+        })?
+    else {
         return Ok(None);
     };
+    let faces: &[SketchArrangementFace] = &faces;
     let mut boundary = None;
     let mut boundary_count = 0;
-    for face in &faces {
+    for face in faces {
         let mut matches = true;
         for point in points {
             let mut on_boundary = false;
@@ -657,7 +836,7 @@ pub(super) fn arrangement_region_containing_points(
     let mut interior = None;
     let mut interior_count = 0;
     let mut assumed = false;
-    for face in &faces {
+    for face in faces {
         let mut excluded = false;
         let mut assumed_out = false;
         let mut assumed_in = false;
@@ -3848,11 +4027,11 @@ impl CertifiedProfileLoop {
     }
 
     fn strictly_contains(&self, inner: &Self) -> bool {
-        certified_pieces_separated(&self.pieces, &inner.pieces)
-            && inner
-                .pieces
-                .first()
-                .is_some_and(|piece| self.contains_point(piece.start()))
+        inner
+            .pieces
+            .first()
+            .is_some_and(|piece| self.contains_point(piece.start()))
+            && certified_pieces_separated(&self.pieces, &inner.pieces)
     }
 }
 
@@ -3961,9 +4140,62 @@ impl CertifiedPiece {
     }
 }
 
+/// Tests only the piece pairs whose widened bounds overlap, by a sweep
+/// along `u`.
 fn certified_pieces_separated(left: &[CertifiedPiece], right: &[CertifiedPiece]) -> bool {
-    left.iter()
-        .all(|left| right.iter().all(|right| left.separated_from(right)))
+    let mut events = Vec::with_capacity(left.len() + right.len());
+    for (side, pieces) in [(0_usize, left), (1, right)] {
+        for piece in pieces {
+            let Some(bounds) = sweep_bounds(piece) else {
+                return left
+                    .iter()
+                    .all(|left| right.iter().all(|right| left.separated_from(right)));
+            };
+            events.push((side, bounds, piece));
+        }
+    }
+    events.sort_by(|first, second| first.1[0].u.total_cmp(&second.1[0].u));
+    let mut active: [Vec<([Point2; 2], &CertifiedPiece)>; 2] = [Vec::new(), Vec::new()];
+    for (side, bounds, piece) in events {
+        let [low, high] = bounds;
+        let others = &mut active[1 - side];
+        others.retain(|([_, other_high], _)| other_high.u >= low.u);
+        let touches = others.iter().any(|([other_low, other_high], other)| {
+            other_low.v <= high.v
+                && low.v <= other_high.v
+                && !if side == 0 {
+                    piece.separated_from(other)
+                } else {
+                    other.separated_from(piece)
+                }
+        });
+        if touches {
+            return false;
+        }
+        active[side].push((bounds, piece));
+    }
+    true
+}
+
+/// The bounds of `piece` widened by `CERTIFIED_SWEEP_BOUNDS_SLACK` of their
+/// magnitude, so that a pair the sweep skips is apart by more than the
+/// rounding of `CertifiedPiece::separated_from`; `None` for a bound that
+/// is not finite.
+fn sweep_bounds(piece: &CertifiedPiece) -> Option<[Point2; 2]> {
+    let [low, high] = piece.bounds();
+    let magnitude = [low.u, low.v, high.u, high.v]
+        .into_iter()
+        .map(f64::abs)
+        .fold(1.0_f64, f64::max);
+    let slack = CERTIFIED_SWEEP_BOUNDS_SLACK * magnitude;
+    let widened = [
+        Point2::new(low.u - slack, low.v - slack),
+        Point2::new(high.u + slack, high.v + slack),
+    ];
+    widened
+        .iter()
+        .all(|point| point.u.is_finite() && point.v.is_finite())
+        .then_some(widened)
 }
 
 /// Whether each of `points` lies inside the closed profile loop `profile`;

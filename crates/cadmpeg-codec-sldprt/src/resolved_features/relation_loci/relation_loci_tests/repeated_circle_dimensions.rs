@@ -70,7 +70,7 @@ fn repeated_circle_dimension_binds_generated_circles_by_parameter_identity() {
     };
 
     assert!(matches!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -153,7 +153,7 @@ fn repeated_circle_dimension_binds_reference_display_run_by_radius() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,

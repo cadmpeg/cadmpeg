@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode parameter scopes and parse one scope payload.
 
-pub(super) mod family;
+pub(crate) mod family;
 
 use crate::bytes::lp_utf16_bounded;
 use cadmpeg_core::decode::u64_from_index;
@@ -62,7 +62,7 @@ use super::surfaces::exact_surface_untrim_operation;
 use super::surfaces::surface_extend_loss;
 use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
-use super::thread::thread_modeled_flag_loss;
+use super::thread::{thread_modeled_entries_loss, thread_modeled_flag_loss};
 use super::work_geometry::{
     direct_joint_origin_frame, exact_joint_origin_frame, exact_work_plane_frame,
 };
@@ -759,6 +759,9 @@ pub(crate) fn decode_parameter_scopes(
                         .as_ref()
                         .and_then(|construction| thread_modeled_flag_loss(&scope, construction)),
                 );
+                losses.extend(construction.as_ref().and_then(|construction| {
+                    thread_modeled_entries_loss(bytes, &scope, construction)
+                }));
                 if let scope::DesignScopePayloadMut::Thread(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
