@@ -7,13 +7,15 @@
 //! construction it reaches into its one spelling, innermost first. Every impl
 //! destructures its type exhaustively, so a field or variant added to a design
 //! type is walked or skipped by name, never silently. The family modules hold
-//! one impl per design type that reaches a selection; this module holds the
-//! impls of the selection, construction, and expression types themselves.
+//! one impl per design or process type that reaches a selection; this module
+//! holds the impls of the selection, construction, and expression types
+//! themselves.
 
 mod assembly;
 mod body;
 mod datum;
 mod dressup;
+mod process;
 mod root;
 mod shared;
 mod sheet_metal;

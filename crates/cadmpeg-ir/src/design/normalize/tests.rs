@@ -4,9 +4,29 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 
+use crate::codec::{
+    Codec, CodecBackend, Confidence, DecodeBody, DecodeOptions, DecodeResult, Decoded, FormatId,
+};
+use crate::design::names::{CodecId, NativeName, NativeNameValue};
+use crate::design::refs::{ConfigurationRef, EntityRef};
+use crate::design::scope::OccurrenceDesign;
+use crate::design::selection::{OccurrencePath, PathStep, StepRef, Witness};
+use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
+use crate::ids::EdgeId;
+use crate::process::feature::{MachiningFeature, MachiningFeatureClass};
+use crate::process::operation::{GeometryRole, GeometrySource, ProcessGeometry};
+use crate::process::state::{ProcessBase, ProcessContent, ProcessState, ProcessStateOf};
+use crate::process::{ProcessConstruction, WorkpieceSelection};
+use crate::report::loss::LossNote;
+use crate::report::Severity;
+use crate::source_fidelity::SourceFidelity;
+use crate::topology::EdgeCarrier;
+use crate::ContainerSummary;
 use cadmpeg_core::decode::ContentScope;
+use cadmpeg_core::decode::{DecodeContext, DecodePolicy, View};
+use cadmpeg_core::text::NonBlankString;
+use cadmpeg_core::CodecError;
 
-use super::normalize;
 use super::selections;
 use crate::design::construction::{
     kinds, AnyConstruction, Construction, ConstructionInput, FrameAxis, InputReference, InputRole,
@@ -37,6 +57,14 @@ use crate::pmi::{
 };
 use crate::references::InstanceTarget;
 use crate::scalar::{FiniteReal, Length};
+
+/// Normalizes under the default policy, which gives up no record of these
+/// documents.
+fn normalize(ir: &mut CadIr) -> Result<(), CodecError> {
+    let given_up = super::normalize(ir, &DecodePolicy::default())?;
+    assert_eq!(given_up, Vec::<String>::new());
+    Ok(())
+}
 
 fn id<T>(kind: &str, key: &str) -> T
 where
@@ -426,7 +454,7 @@ fn positions_name_a_rollback_through_its_member() {
 }
 
 #[test]
-fn a_rollback_follows_nested_ordered_containers_and_empty_ones() {
+fn an_empty_container_rolls_back_to_its_start() {
     let mut ir = document();
     let Container::Ordered { members, .. } = &mut ir.design.containers[1] else {
         panic!("the body is ordered");
@@ -455,18 +483,6 @@ fn a_target_into_the_state_none_reads_states_none() {
             Some(state(Some("large"), after_feature("fillet"))),
             Some(state(None, after_feature("points"))),
         ]
-    );
-}
-
-#[test]
-fn a_target_with_a_path_keeps_a_named_configuration() {
-    let mut ir = document();
-    let path = crate::design::selection::OccurrencePath(Vec::new());
-    ir.model.pmi[0].targets[1].path = Some(path);
-    normalize(&mut ir).unwrap();
-    assert_eq!(
-        ir.model.pmi[0].targets[1].state,
-        Some(state(Some("base"), after_feature("fillet")))
     );
 }
 
@@ -693,4 +709,341 @@ fn an_explicit_rule_with_propagation_or_exclusions_stays_a_rule() {
     let before = excluding.clone();
     selections::normalize(&mut excluding);
     assert_eq!(excluding, before);
+}
+
+/// The one-step path through occurrence `cube`, reading `configuration`
+/// where it is stated.
+fn path(configuration: Option<&str>) -> OccurrencePath {
+    OccurrencePath(vec![PathStep {
+        occurrence: StepRef::Occurrence(id("occurrence", "cube")),
+        configuration: configuration.map(|key| ConfigurationRef::Local(id("configuration", key))),
+    }])
+}
+
+#[test]
+fn a_rollback_after_a_nested_container_is_the_state_entering_it() {
+    let mut ir = document();
+    let Container::Ordered { members, .. } = &mut ir.design.containers[1] else {
+        panic!("the body is ordered");
+    };
+    *members = vec![Member::Container(id("container", "inner"))];
+    ir.design.containers.push(Container::Ordered {
+        id: id("container", "inner"),
+        kind: OrderedKind::Body,
+        members: vec![Member::Feature(feature("fillet"))],
+        folders: Vec::new(),
+        rollback: Rollback::End,
+        placement: None,
+    });
+    normalize(&mut ir).unwrap();
+    let start = Position::Start(id("container", "body"));
+    assert_eq!(ir.design.scopes[0].current[0].at, start);
+    let evaluation = &ir.design.evaluations[0];
+    assert_eq!(evaluation.of, Evaluated::State(start.clone()));
+    assert_eq!(
+        evaluation.content.as_ref().unwrap().base,
+        StateBase::Current(start)
+    );
+}
+
+/// The geometry of a line edge of the unit cube, and the edge.
+fn line_edge(ir: &CadIr) -> (EdgeId, SolvedCurveGeometry) {
+    ir.geometry
+        .edges
+        .iter()
+        .find_map(|edge| {
+            let (EdgeCarrier::Curve(carrier) | EdgeCarrier::Bounded(carrier, _)) = &edge.carrier
+            else {
+                return None;
+            };
+            let curve = ir
+                .geometry
+                .curves
+                .iter()
+                .find(|curve| &curve.id == carrier)?;
+            match &curve.geometry {
+                CurveGeometry::Solved(line @ SolvedCurveGeometry::Line(_)) => {
+                    Some((edge.id.clone(), line.clone()))
+                }
+                _ => None,
+            }
+        })
+        .unwrap()
+}
+
+#[test]
+fn a_parameter_ratio_on_a_line_edge_is_a_ratio() {
+    let mut ir = document();
+    let (edge, line) = line_edge(&ir);
+    let unnamed = || pick(PickTarget::Native { within: None });
+    let resolved = Picked {
+        resolved: Some(vec![EntityRef::Edge(edge)]),
+        ..unnamed()
+    };
+    let witnessed = Picked {
+        witness: Some(Witness {
+            point: None,
+            direction: None,
+            endpoints: None,
+            frame: None,
+            curves: vec![line],
+            surface: None,
+            body: None,
+        }),
+        ..unnamed()
+    };
+    ir.design.features.push(datum(
+        "edges",
+        DatumElement::Points(vec![
+            point_at(selection(named(vec![resolved])), 0.25),
+            point_at(selection(named(vec![witnessed])), 0.25),
+        ]),
+    ));
+    normalize(&mut ir).unwrap();
+    let DatumElement::Points(points) = datum_element(&ir, "edges") else {
+        panic!("points");
+    };
+    let values: Vec<Option<ScalarDimension>> = points
+        .iter()
+        .map(|point| point.inputs[0].value.clone())
+        .collect();
+    let ratio = Some(ScalarDimension::Ratio(Dimension::Literal(real(0.25))));
+    assert_eq!(values, [ratio.clone(), ratio]);
+}
+
+#[test]
+fn process_records_take_their_one_spelling() {
+    let mut ir = document();
+    let workpiece = WorkpieceSelection {
+        workpiece: None,
+        selection: Selection {
+            at: Anchor::Input,
+            picks: rule(vec![explicit(vec![picks_feature("a")])]),
+            native: None,
+        },
+    };
+    let end = ProcessConstruction {
+        workpiece: None,
+        construction: point_at(selection(named(vec![picks_feature("fillet")])), 1.0),
+    };
+    let geometry = |source| ProcessGeometry {
+        role: GeometryRole::Machine,
+        source,
+        slot: None,
+        combine: None,
+    };
+    ir.process.features.push(MachiningFeature {
+        id: id("machining", "pocket"),
+        name: None,
+        class: MachiningFeatureClass::ClosedPocket {},
+        native_kind: NativeName {
+            codec: CodecId::from(NonBlankString::new("test").unwrap()),
+            value: NativeNameValue::Text(NonBlankString::new("pocket").unwrap()),
+        },
+        geometry: vec![
+            geometry(GeometrySource::Selection(vec![workpiece])),
+            geometry(GeometrySource::Points(vec![end])),
+        ],
+        native_ref: None,
+    });
+    ir.process.states.push(ProcessState {
+        id: id("process", "stock"),
+        of: ProcessStateOf::Stock(id("setup", "one")),
+        configuration: None,
+        status: EvaluationStatus::Current,
+        content: Some(ProcessContent {
+            base: ProcessBase::Design(StateBase::Current(after_body())),
+            delta: StateDelta::default(),
+        }),
+        feature: None,
+    });
+    normalize(&mut ir).unwrap();
+    let [selected, points] = ir.process.features[0].geometry.as_slice() else {
+        panic!("two geometries");
+    };
+    let GeometrySource::Selection(selections) = &selected.source else {
+        panic!("a selection");
+    };
+    assert_eq!(
+        selections[0].selection.picks,
+        named(vec![picks_feature("a")])
+    );
+    let GeometrySource::Points(points) = &points.source else {
+        panic!("points");
+    };
+    assert_eq!(
+        points[0].construction.inputs[0].value,
+        Some(ScalarDimension::Ratio(Dimension::Literal(real(1.0))))
+    );
+    assert_eq!(
+        ir.process.states[0].content.as_ref().unwrap().base,
+        ProcessBase::Design(StateBase::Current(after_feature("fillet")))
+    );
+}
+
+#[test]
+fn a_target_whose_path_selects_the_active_configuration_states_none() {
+    let mut ir = document();
+    ir.model.pmi[0].targets[1].path = Some(path(None));
+    normalize(&mut ir).unwrap();
+    assert_eq!(ir.model.pmi[0].targets[1].state, None);
+}
+
+#[test]
+fn a_target_whose_path_selects_another_configuration_keeps_its_state() {
+    let mut ir = document();
+    let base = || Some(state(Some("base"), after_body()));
+    ir.model.pmi[0].targets[1].path = Some(path(Some("large")));
+    ir.model.pmi[0].targets.push(InstanceTarget {
+        path: Some(path(None)),
+        ..target(base())
+    });
+    ir.design.scopes[0].occurrences.insert(
+        id("occurrence", "cube"),
+        OccurrenceDesign {
+            configuration: Some(ConfigurationRef::Local(id("configuration", "large"))),
+            arrangements: Vec::new(),
+            grounded: None,
+            flexible: None,
+            parameters: BTreeMap::new(),
+        },
+    );
+    normalize(&mut ir).unwrap();
+    let kept = Some(state(Some("base"), after_feature("fillet")));
+    assert_eq!(ir.model.pmi[0].targets[1].state, kept);
+    assert_eq!(ir.model.pmi[0].targets[4].state, kept);
+}
+
+/// A point at `ParameterRatio` 1 of nothing, inside `depth - 1` points
+/// each coincident with the one it holds.
+fn nested_point(depth: usize) -> Construction<kinds::Point> {
+    let mut point = Construction {
+        inputs: vec![ConstructionInput {
+            role: Some(InputRole {
+                subject: Subject::Whole,
+                relation: Relation::AtParameter,
+            }),
+            reference: None,
+            value: Some(ScalarDimension::ParameterRatio(Dimension::Literal(real(
+                1.0,
+            )))),
+            reversed: None,
+        }],
+        ..Construction::default()
+    };
+    for _ in 1..depth {
+        point = Construction {
+            inputs: vec![input(
+                Relation::Coincident,
+                InputReference::Built(Box::new(AnyConstruction::Point(point))),
+                None,
+            )],
+            ..Construction::default()
+        };
+    }
+    point
+}
+
+/// The value of the innermost point of a datum's nested point.
+fn innermost_value(ir: &CadIr, key: &str) -> Option<ScalarDimension> {
+    let DatumElement::Points(points) = datum_element(ir, key) else {
+        panic!("points");
+    };
+    let mut point = &points[0];
+    while let Some(InputReference::Built(built)) = &point.inputs[0].reference {
+        let AnyConstruction::Point(inner) = built.as_ref() else {
+            panic!("a point");
+        };
+        point = inner;
+    }
+    point.inputs[0].value.clone()
+}
+
+/// Decodes the unit cube with a datum whose point nests 300 deep, past the
+/// default recursion ceiling, and one whose point nests one deep.
+struct DeepCodec;
+
+impl CodecBackend for DeepCodec {
+    const FORMAT: FormatId = FormatId::new("test");
+
+    fn detect_impl(&self, _: &DecodeContext<'_>, _: View<'_>) -> Result<Confidence, CodecError> {
+        Ok(Confidence::No)
+    }
+
+    fn inspect_impl(
+        &self,
+        _: &DecodeContext<'_>,
+        _: View<'_>,
+    ) -> Result<ContainerSummary, CodecError> {
+        panic!("the normalizer tests do not inspect")
+    }
+
+    fn decode_impl(&self, _: &DecodeContext<'_>, _: View<'_>) -> Result<Decoded, CodecError> {
+        let mut ir = crate::examples::unit_cube().unwrap();
+        ir.design
+            .features
+            .push(datum("deep", DatumElement::Points(vec![nested_point(300)])));
+        ir.design.features.push(datum(
+            "shallow",
+            DatumElement::Points(vec![nested_point(1)]),
+        ));
+        Ok(Decoded {
+            ir,
+            body: DecodeBody::new(crate::report::decode::DecodeTransfer::full(true)),
+            source_fidelity: SourceFidelity::new(crate::hash::digest::Sha256Digest::digest(
+                b"deep",
+            )),
+        })
+    }
+}
+
+fn decode_deep(policy: DecodePolicy) -> DecodeResult {
+    let options = DecodeOptions {
+        policy,
+        ..DecodeOptions::default()
+    };
+    DeepCodec
+        .decode(&mut std::io::Cursor::new(vec![1u8]), &options)
+        .unwrap()
+}
+
+fn incomplete(result: &DecodeResult) -> Vec<&LossNote> {
+    result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.to_string() == "decode/normalize.incomplete")
+        .collect()
+}
+
+#[test]
+fn a_record_too_deep_to_normalize_is_kept_as_decoded_with_a_warning() {
+    let result = decode_deep(DecodePolicy::default());
+    let ratio = |value| Some(ScalarDimension::Ratio(Dimension::Literal(real(value))));
+    assert_eq!(innermost_value(result.ir(), "shallow"), ratio(1.0));
+    assert_eq!(
+        innermost_value(result.ir(), "deep"),
+        Some(ScalarDimension::ParameterRatio(Dimension::Literal(real(
+            1.0
+        ))))
+    );
+    let warnings = incomplete(&result);
+    let [warning] = warnings.as_slice() else {
+        panic!("one normalizer warning");
+    };
+    assert_eq!(warning.severity, Severity::Warning);
+    assert!(warning
+        .message
+        .split_whitespace()
+        .any(|token| token == feature("deep").as_str()));
+}
+
+#[test]
+fn the_normalizer_reads_the_callers_ceilings() {
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_recursion_depth = 1024;
+    let result = decode_deep(policy);
+    let ratio = Some(ScalarDimension::Ratio(Dimension::Literal(real(1.0))));
+    assert_eq!(innermost_value(result.ir(), "deep"), ratio);
+    assert!(incomplete(&result).is_empty());
 }

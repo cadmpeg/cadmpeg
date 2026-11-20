@@ -2,11 +2,11 @@
 //! The positions of §5.3 and the instance-target `state` of §8.
 //!
 //! `After(Container(c))` of an ordered container `c` is the state at `c`'s
-//! rollback position, so an evaluation's `of`, a state base, a current state,
-//! and a `StateRef` name that state through its member: `Start(c)` before
-//! `c`'s first member, else the position after the member before the
-//! rollback. A target into a state that `state: None` reaches has
-//! `state: None`.
+//! rollback position, so an evaluation's `of`, a state base (of an
+//! evaluation or of a process state), a current state, and a `StateRef` name
+//! that state through its member: `After` the nearest feature of `c` before
+//! the rollback, else `Start(c)`. A target into a state that `state: None`
+//! reaches has `state: None`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -14,11 +14,14 @@ use crate::declared_measures::DeclaredTarget;
 use crate::design::container::{Container, Rollback};
 use crate::design::evaluation::StateBase;
 use crate::design::ids::ContainerId;
-use crate::design::refs::{Evaluated, Member, Position, StateRef};
-use crate::document::{Design, Model};
+use crate::design::refs::{ConfigurationRef, Evaluated, Member, Position, StateRef};
+use crate::design::selection::{OccurrencePath, StepRef};
+use crate::document::{Design, Model, Process};
 use crate::features::ConfigurationId;
+use crate::ids::OccurrenceId;
 use crate::physics::solver::SolverValue;
 use crate::pmi::PmiDefinition;
+use crate::process::state::ProcessBase;
 use crate::references::InstanceTarget;
 
 /// What the position and target rules read of the design, gathered before
@@ -33,6 +36,22 @@ pub(super) struct States {
     /// The active configuration of each scope and the positions of its
     /// current states, in their one spelling.
     current: BTreeMap<String, (Option<ConfigurationId>, Vec<Position>)>,
+    /// What the design states of the configuration each occurrence uses, by
+    /// the occurrence's id.
+    occurrences: BTreeMap<OccurrenceId, Uses>,
+}
+
+/// The statements of the configuration of its prototype that one
+/// occurrence uses (§5.1, §5.11).
+#[derive(Debug, Default)]
+struct Uses {
+    /// The base value of each scope entry that lists the occurrence; `None`
+    /// is the prototype's active configuration.
+    bases: Vec<Option<ConfigurationRef>>,
+    /// The value each configuration or arrangement override states.
+    overrides: Vec<ConfigurationRef>,
+    /// Whether an override replaces the occurrence's prototype.
+    replaced: bool,
 }
 
 impl States {
@@ -42,16 +61,19 @@ impl States {
             .iter()
             .map(|container| (container.id().as_str(), container))
             .collect();
-        let rollbacks = containers
-            .keys()
-            .filter_map(|&id| {
-                rollback_position(&containers, id).map(|position| (id.to_owned(), position))
+        let rollbacks = design
+            .containers
+            .iter()
+            .filter_map(|container| {
+                rollback_position(container)
+                    .map(|position| (container.id().as_str().to_owned(), position))
             })
             .collect();
         let mut states = Self {
             rollbacks,
             scopes: BTreeMap::new(),
             current: BTreeMap::new(),
+            occurrences: occurrence_uses(design),
         };
         for scope in &design.scopes {
             let definition = scope.definition.as_str();
@@ -134,6 +156,18 @@ impl States {
         }
     }
 
+    /// Spells the design state base of every process state through its
+    /// member.
+    pub(super) fn normalize_process(&self, process: &mut Process) {
+        for state in &mut process.states {
+            if let Some(content) = &mut state.content {
+                if let ProcessBase::Design(StateBase::Current(position)) = &mut content.base {
+                    self.position(position);
+                }
+            }
+        }
+    }
+
     /// Spells every `StateRef` of the model records through its member, and
     /// clears each instance target's `state` that names what `None` names.
     pub(super) fn normalize_model(&self, model: &mut Model) {
@@ -209,7 +243,8 @@ impl States {
     /// Spells a target's `state` through its member, and clears it where it
     /// names a current state of its scope in the configuration that
     /// `state: None` reads: the configuration in use (`configuration` of
-    /// `None`), or, with no path, the scope's active configuration.
+    /// `None`), or the scope's active configuration where the target has no
+    /// path or its path's instance selects that configuration (§8).
     fn target<E>(&self, target: &mut InstanceTarget<E>) {
         let Some(state) = &mut target.state else {
             return;
@@ -230,48 +265,106 @@ impl States {
             return;
         };
         let configuration_reads = state.configuration.is_none()
-            || (target.path.is_none() && state.configuration == *active);
+            || (state.configuration == *active
+                && target
+                    .path
+                    .as_ref()
+                    .is_none_or(|path| self.selects(path, active.as_ref())));
         if configuration_reads && positions.contains(position) {
             target.state = None;
         }
     }
+
+    /// Whether the instance a path places selects `active`, the active
+    /// configuration of the scope that holds the target's state, whatever
+    /// configuration the occurrences above it read: its last step states
+    /// it, or every statement of the configuration its occurrence uses is
+    /// `active`, an unstated base being the prototype's active configuration
+    /// (§5.1). A `Named` configuration, a `Native` step, and an occurrence
+    /// whose prototype an override replaces are not known to select it.
+    fn selects(&self, path: &OccurrencePath, active: Option<&ConfigurationId>) -> bool {
+        let is_active = |configuration: &ConfigurationRef| matches!(configuration, ConfigurationRef::Local(id) if Some(id) == active);
+        let Some(last) = path.0.last() else {
+            return false;
+        };
+        if let Some(configuration) = &last.configuration {
+            return is_active(configuration);
+        }
+        let StepRef::Occurrence(occurrence) = &last.occurrence else {
+            return false;
+        };
+        self.occurrences.get(occurrence).is_none_or(|uses| {
+            !uses.replaced
+                && uses
+                    .bases
+                    .iter()
+                    .all(|base| base.as_ref().is_none_or(is_active))
+                && uses.overrides.iter().all(is_active)
+        })
+    }
 }
 
-/// The position an ordered container's `After(Container(c))` names: its
-/// rollback position spelled through its member, following a member that is
-/// itself an ordered container. `None` for an unordered container, where a
-/// rollback names no member of its container, or where containers nest in a
-/// cycle.
-fn rollback_position(containers: &BTreeMap<&str, &Container>, id: &str) -> Option<Position> {
-    let mut id = id;
-    for _ in 0..=containers.len() {
-        let Container::Ordered {
-            id: container,
-            members,
-            rollback,
-            ..
-        } = containers.get(id)?
-        else {
-            return None;
-        };
-        let at = match rollback {
-            Rollback::End => members.len(),
-            Rollback::Before(member) => members.iter().position(|listed| listed == member)?,
-        };
-        let Some(before) = at.checked_sub(1) else {
-            return Some(Position::Start(container.clone()));
-        };
-        match &members[before] {
-            Member::Container(inner)
-                if matches!(
-                    containers.get(inner.as_str()),
-                    Some(Container::Ordered { .. })
-                ) =>
-            {
-                id = inner.as_str();
-            }
-            member => return Some(Position::After(member.clone())),
+/// Every statement of the configuration each occurrence uses: the base
+/// entries of the scopes, and the overrides of every configuration and
+/// arrangement.
+fn occurrence_uses(design: &Design) -> BTreeMap<OccurrenceId, Uses> {
+    let mut uses: BTreeMap<OccurrenceId, Uses> = BTreeMap::new();
+    for scope in &design.scopes {
+        for (occurrence, entry) in &scope.occurrences {
+            uses.entry(occurrence.clone())
+                .or_default()
+                .bases
+                .push(entry.configuration.clone());
         }
     }
-    None
+    let overrides = design
+        .configurations
+        .iter()
+        .map(|configuration| &configuration.overrides)
+        .chain(
+            design
+                .arrangements
+                .iter()
+                .map(|arrangement| &arrangement.overrides),
+        );
+    for overrides in overrides {
+        for (occurrence, stated) in &overrides.occurrences {
+            let entry = uses.entry(occurrence.clone()).or_default();
+            entry.replaced |= stated.prototype.is_some();
+            entry.overrides.extend(stated.configuration.clone());
+        }
+    }
+    uses
+}
+
+/// The position an ordered container's `After(Container(c))` names: the
+/// state entering the member at its rollback position, which is `After` the
+/// nearest member before it that is a feature, or `Start(c)` where no feature
+/// of `c` precedes it (§5.3). A member that is a container is passed over:
+/// the state leaving it is the state entering it. `None` for an unordered
+/// container, and for a rollback that names no member of its container.
+fn rollback_position(container: &Container) -> Option<Position> {
+    let Container::Ordered {
+        id,
+        members,
+        rollback,
+        ..
+    } = container
+    else {
+        return None;
+    };
+    let at = match rollback {
+        Rollback::End => members.len(),
+        Rollback::Before(member) => members.iter().position(|listed| listed == member)?,
+    };
+    Some(
+        members[..at]
+            .iter()
+            .rev()
+            .find(|member| matches!(member, Member::Feature(_)))
+            .map_or_else(
+                || Position::Start(id.clone()),
+                |feature| Position::After(feature.clone()),
+            ),
+    )
 }

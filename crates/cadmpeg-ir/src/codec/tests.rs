@@ -19,7 +19,7 @@ use super::{
 };
 use crate::ContainerSummary;
 use cadmpeg_core::decode::{
-    ContentScope, DecodeContext, DecodeDepth, DecodeMode, InspectOptions, View,
+    ContentScope, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy, InspectOptions, View,
 };
 use cadmpeg_core::CodecError;
 
@@ -34,7 +34,13 @@ fn decoded(ir: CadIr) -> Decoded {
 }
 
 fn decode_result(ir: CadIr) -> DecodeResult {
-    DecodeResult::new(decoded(ir), FormatId::new("test"), DecodeDepth::Full).unwrap()
+    DecodeResult::new(
+        decoded(ir),
+        FormatId::new("test"),
+        DecodeDepth::Full,
+        &DecodePolicy::default(),
+    )
+    .unwrap()
 }
 
 fn with_parameter(mut ir: CadIr) -> CadIr {
@@ -461,6 +467,7 @@ fn a_decode_result_keeps_the_body_it_was_given() {
         },
         FormatId::new("test"),
         DecodeDepth::Container,
+        &DecodePolicy::default(),
     )
     .unwrap();
 
@@ -500,7 +507,13 @@ fn the_document_records_the_depth_the_backend_reported() {
             unit_cube().expect("valid unit cube fixture")
         });
         decoded.body.transfer = transfer;
-        let result = DecodeResult::new(decoded, FormatId::new("test"), transfer.depth()).unwrap();
+        let result = DecodeResult::new(
+            decoded,
+            FormatId::new("test"),
+            transfer.depth(),
+            &DecodePolicy::default(),
+        )
+        .unwrap();
         assert_eq!(result.ir().scope(), transfer.depth().scope());
         assert_eq!(result.report().depth(), transfer.depth());
         assert_eq!(
@@ -531,7 +544,13 @@ fn the_wrapper_flags_each_requested_class_left_undelivered() {
             unit_cube().expect("valid unit cube fixture")
         });
         decoded.body.transfer = crate::report::decode::DecodeTransfer::at(delivered, true);
-        let result = DecodeResult::new(decoded, FormatId::new("test"), requested).unwrap();
+        let result = DecodeResult::new(
+            decoded,
+            FormatId::new("test"),
+            requested,
+            &DecodePolicy::default(),
+        )
+        .unwrap();
 
         assert_eq!(result.ir().scope(), delivered.scope());
         let losses = depth_losses(&result);
@@ -557,7 +576,13 @@ fn the_wrapper_records_only_the_classes_a_request_names_when_the_rest_are_empty(
     for requested in [DecodeDepth::Geometry, DecodeDepth::Design] {
         let mut decoded = decoded(unit_cube().expect("valid unit cube fixture"));
         decoded.body.transfer = crate::report::decode::DecodeTransfer::full(true);
-        let result = DecodeResult::new(decoded, FormatId::new("test"), requested).unwrap();
+        let result = DecodeResult::new(
+            decoded,
+            FormatId::new("test"),
+            requested,
+            &DecodePolicy::default(),
+        )
+        .unwrap();
         assert_eq!(result.ir().scope(), requested.scope());
         assert!(depth_losses(&result).is_empty());
     }
@@ -572,14 +597,26 @@ fn the_wrapper_refuses_records_of_a_class_the_scope_excludes() {
     ] {
         let mut decoded = decoded(ir.clone());
         decoded.body.transfer = crate::report::decode::DecodeTransfer::at(depth, true);
-        let error = DecodeResult::new(decoded, FormatId::new("test"), depth).unwrap_err();
+        let error = DecodeResult::new(
+            decoded,
+            FormatId::new("test"),
+            depth,
+            &DecodePolicy::default(),
+        )
+        .unwrap_err();
         assert!(matches!(error, CodecError::Malformed(_)), "{error}");
         assert!(error.to_string().contains(expected), "{error}");
     }
 
     let mut decoded = decoded(ir.clone());
     decoded.body.transfer = crate::report::decode::DecodeTransfer::full(true);
-    let result = DecodeResult::new(decoded, FormatId::new("test"), DecodeDepth::Geometry).unwrap();
+    let result = DecodeResult::new(
+        decoded,
+        FormatId::new("test"),
+        DecodeDepth::Geometry,
+        &DecodePolicy::default(),
+    )
+    .unwrap();
     assert_eq!(result.ir().scope(), ContentScope::design());
     assert_eq!(result.ir().model.parameters.len(), 1);
 

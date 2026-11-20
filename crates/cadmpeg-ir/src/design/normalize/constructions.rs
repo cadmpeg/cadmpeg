@@ -6,9 +6,11 @@
 //! `Offset` input on the reference. A `ParameterRatio` value on a `Built`
 //! reference, at 0 or 1, or on a curve the document states as a line, a
 //! circle, or a circular arc is the arc-length `Ratio`, which agrees with it
-//! there.
+//! there. The document states a picked curve by a sketch entity's curve, by
+//! the pick's witness, or by the carrier of each edge or curve the pick
+//! resolves to, in every state that holds that record.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::design::construction::AnyConstruction;
 use crate::design::construction::{
@@ -19,9 +21,11 @@ use crate::design::dimension::Dimension;
 use crate::design::feature::FeatureOperation;
 use crate::design::ops::datum::DatumElement;
 use crate::design::ops::sketch::{EntityDefinition, PlanarCurve, SpatialCurve};
+use crate::design::refs::EntityRef;
 use crate::design::selection::{DatumPart, PickTarget, Picked, Picks, PrincipalEntity};
-use crate::document::Design;
-use crate::geometry::SolvedCurveGeometry;
+use crate::document::CadIr;
+use crate::geometry::{CurveGeometry, SolvedCurveGeometry};
+use crate::topology::EdgeCarrier;
 
 /// The kind of element a construction builds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,10 +47,18 @@ pub(super) struct Facts {
     /// The planar and spatial sketch entities whose curve the document
     /// states as a line segment, a circle, or a circular arc.
     straight_or_circular: BTreeSet<String>,
+    /// Whether every version of a curve carrier, in the current geometry
+    /// and in each stored state, is stated as a line or a circle, by the
+    /// carrier's id.
+    curves: BTreeMap<String, bool>,
+    /// The carrier curve of every version of an edge, by the edge's id;
+    /// `None` for a version that states no carrier.
+    edges: BTreeMap<String, Vec<Option<String>>>,
 }
 
 impl Facts {
-    pub(super) fn new(design: &Design) -> Self {
+    pub(super) fn new(ir: &CadIr) -> Self {
+        let design = &ir.design;
         let planar_datums = design
             .features
             .iter()
@@ -72,9 +84,47 @@ impl Facts {
                 stated_curve(&entity.definition).is_some_and(spatial_straight_or_circular)
             })
             .map(|entity| entity.id.as_str().to_owned());
+        let topologies = std::iter::once(&ir.geometry)
+            .chain(
+                design
+                    .evaluations
+                    .iter()
+                    .filter_map(|evaluation| evaluation.content.as_ref())
+                    .map(|content| &content.delta.records),
+            )
+            .chain(
+                ir.process
+                    .states
+                    .iter()
+                    .filter_map(|state| state.content.as_ref())
+                    .map(|content| &content.delta.records),
+            );
+        let mut curves: BTreeMap<String, bool> = BTreeMap::new();
+        let mut edges: BTreeMap<String, Vec<Option<String>>> = BTreeMap::new();
+        for topology in topologies {
+            for curve in &topology.curves {
+                let straight = matches!(&curve.geometry, CurveGeometry::Solved(geometry)
+                    if solved_straight_or_circular(geometry));
+                *curves.entry(curve.id.as_str().to_owned()).or_insert(true) &= straight;
+            }
+            for edge in &topology.edges {
+                let carrier = match &edge.carrier {
+                    EdgeCarrier::Curve(curve) | EdgeCarrier::Bounded(curve, _) => {
+                        Some(curve.as_str().to_owned())
+                    }
+                    EdgeCarrier::Free | EdgeCarrier::Endpoints(_) => None,
+                };
+                edges
+                    .entry(edge.id.as_str().to_owned())
+                    .or_default()
+                    .push(carrier);
+            }
+        }
         Self {
             planar_datums,
             straight_or_circular: planar.chain(spatial).collect(),
+            curves,
+            edges,
         }
     }
 
@@ -98,17 +148,61 @@ impl Facts {
         }
     }
 
-    /// Whether a pick names a sketch entity whose curve the document states
-    /// as a line segment, a circle, or a circular arc.
+    /// Whether the document states the one curve a pick picks as a line
+    /// segment, a circle, or a circular arc: a sketch entity's curve, or the
+    /// curves its witness and its resolved entities state, at least one of
+    /// them and each a line or a circle.
     fn picks_straight_or_circular(&self, pick: &Picked) -> bool {
         match &pick.target {
-            PickTarget::SketchEntity(entity) => self.straight_or_circular.contains(entity.as_str()),
-            PickTarget::SpatialSketchEntity(entity) => {
-                self.straight_or_circular.contains(entity.as_str())
+            PickTarget::SketchEntity(entity) => {
+                return self.straight_or_circular.contains(entity.as_str())
             }
-            _ => false,
+            PickTarget::SpatialSketchEntity(entity) => {
+                return self.straight_or_circular.contains(entity.as_str())
+            }
+            _ => {}
         }
+        let witnessed = pick
+            .witness
+            .as_ref()
+            .map_or(&[][..], |witness| witness.curves.as_slice());
+        let resolved = pick.resolved.as_deref().unwrap_or_default();
+        if witnessed.len() > 1 || resolved.len() > 1 {
+            return false;
+        }
+        let mut stated: Vec<bool> = witnessed.iter().map(solved_straight_or_circular).collect();
+        for entity in resolved {
+            let carriers: Vec<&str> = match entity {
+                EntityRef::Edge(edge) => self
+                    .edges
+                    .get(edge.as_str())
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .map(String::as_str)
+                    .collect(),
+                EntityRef::Curve(curve) => vec![curve.as_str()],
+                EntityRef::Body(_)
+                | EntityRef::Face(_)
+                | EntityRef::Vertex(_)
+                | EntityRef::Surface(_)
+                | EntityRef::Subd(_) => return false,
+            };
+            stated.extend(
+                carriers
+                    .into_iter()
+                    .filter_map(|curve| self.curves.get(curve).copied()),
+            );
+        }
+        !stated.is_empty() && stated.into_iter().all(|straight| straight)
     }
+}
+
+const fn solved_straight_or_circular(curve: &SolvedCurveGeometry) -> bool {
+    matches!(
+        curve,
+        SolvedCurveGeometry::Line(_) | SolvedCurveGeometry::Circle(_)
+    )
 }
 
 /// The curve an entity's definition states: a free curve, or a defining
