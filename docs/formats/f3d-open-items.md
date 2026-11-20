@@ -886,6 +886,14 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer of several bodies must allocate the indices and write the snapshot stream. Designs with two and with more than three result bodies would settle the allocation and the geometry difference.
 
+### DR-899. Alternate forms of Base Feature roster records
+
+**Question.** What selects the alternate forms of the design `Body` owner and the root instance, and what sets the next value of the parameter snapshot body-map companion?
+
+**Known.** `f3d.md` §3.1 "**`Body` owners.**", "**Root instance.**", and "**Snapshot body-map companions.**" give the common forms. A design `Body` owner can store byte `1` after its ten zero bytes, followed by u32 `0`; its later fields then start four bytes later, and in a design with a sheet result body its first reference run names the alternate `Body` owner. A root instance can store a property list of count `3` with the properties `GatedByParent` (`IntrinsicMetaTypebool`), `ResolutionTime` (`IntrinsicMetaTypeHString`), and `SelfGated` (`IntrinsicMetaTypebool`), each an LP-ASCII name, an LP-ASCII value type, and the value; that form is 384 bytes. The parameter companion's next value is `n + 1`, `n`, or `n + 3` for `n` listed values.
+
+**Need.** A writer stores the common forms and the next value `n + 1`. The save conditions that produce each form would settle the selection.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences
