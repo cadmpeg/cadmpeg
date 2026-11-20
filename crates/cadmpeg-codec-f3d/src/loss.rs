@@ -1196,6 +1196,9 @@ pub(crate) enum F3dLossCode {
     WriterSourceAssociationOmitted,
     /// A body was not written, with the topology and geometry only it uses.
     WriterBodyOmitted,
+    /// A face on a carrier F3D has no form for was not written; its body was
+    /// written open, without it.
+    WriterFaceOmitted,
     /// Geometry no written body uses was not written.
     WriterGeometryOmitted,
     /// An appearance was not written.
@@ -1975,6 +1978,7 @@ impl F3dLossCode {
         Self::WriterTessellationOmitted,
         Self::WriterSourceAssociationOmitted,
         Self::WriterBodyOmitted,
+        Self::WriterFaceOmitted,
         Self::WriterGeometryOmitted,
         Self::WriterAppearanceOmitted,
         Self::WriterPatchDeclined,
@@ -3089,6 +3093,7 @@ impl F3dLossCode {
             Self::WriterTessellationOmitted => "writer.tessellation-omitted",
             Self::WriterSourceAssociationOmitted => "writer.source-association-omitted",
             Self::WriterBodyOmitted => "writer.body-omitted",
+            Self::WriterFaceOmitted => "writer.face-omitted",
             Self::WriterGeometryOmitted => "writer.geometry-omitted",
             Self::WriterAppearanceOmitted => "writer.appearance-omitted",
             Self::WriterPatchDeclined => "writer.patch-declined",
@@ -3191,6 +3196,7 @@ impl F3dLossCode {
             Self::WriterTessellationOmitted => Severity::Warning,
             Self::WriterSourceAssociationOmitted => Severity::Info,
             Self::WriterBodyOmitted => Severity::Error,
+            Self::WriterFaceOmitted => Severity::Error,
             Self::WriterGeometryOmitted => Severity::Warning,
             Self::WriterAppearanceOmitted => Severity::Warning,
             Self::WriterPatchDeclined => Severity::Warning,
@@ -3953,6 +3959,7 @@ impl F3dLossCode {
             Self::WriterTessellationOmitted => LossTaxonomy::TessellationOmitted,
             Self::WriterSourceAssociationOmitted => LossTaxonomy::SourceAssociationOmitted,
             Self::WriterBodyOmitted => LossTaxonomy::TopologyNotTransferred,
+            Self::WriterFaceOmitted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterGeometryOmitted => LossTaxonomy::GeometryNotTransferred,
             Self::WriterAppearanceOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterPatchDeclined => LossTaxonomy::PreservedSourceUnavailable,
@@ -5417,6 +5424,7 @@ mod tests {
                 "writer.tessellation-omitted",
                 "writer.source-association-omitted",
                 "writer.body-omitted",
+                "writer.face-omitted",
                 "writer.geometry-omitted",
                 "writer.appearance-omitted",
                 "writer.patch-declined",
