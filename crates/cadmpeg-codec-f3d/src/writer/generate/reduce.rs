@@ -168,6 +168,7 @@ impl<'a> Reduction<'a> {
         self.drop_unwritable_pcurves();
         self.allocate_appearance_guids();
         self.drop_unwritable_appearances();
+        self.separate_shared_appearance_guids();
         Ok(())
     }
 
@@ -798,6 +799,50 @@ impl<'a> Reduction<'a> {
                 F3dLossCode::WriterAppearanceOmitted
                     .note(format!("appearance {id} was not written: {error}")),
             );
+        }
+    }
+
+    /// The written design keys each Protein asset by its GUID, and one GUID
+    /// holds one asset. An F3Z source holds an appearance table per document,
+    /// where one GUID can name two different assets. A later appearance whose
+    /// asset differs from the first one written under its GUID takes a GUID the
+    /// writer allocates from its id.
+    fn separate_shared_appearance_guids(&mut self) {
+        let mut written = HashMap::<String, Vec<u8>>::new();
+        let mut separate = Vec::new();
+        for (index, appearance) in self.ir.model.appearances.iter().enumerate() {
+            let Some(guid) = appearance
+                .visual_guid
+                .as_deref()
+                .or(appearance.asset_guid.as_deref())
+            else {
+                continue;
+            };
+            let Ok(asset) = crate::materials::encode_protein(appearance) else {
+                continue;
+            };
+            match written.get(guid) {
+                Some(first) if *first != asset => separate.push(index),
+                Some(_) => {}
+                None => {
+                    written.insert(guid.to_owned(), asset);
+                }
+            }
+        }
+        if separate.is_empty() {
+            return;
+        }
+        let appearances = &mut self.ir.to_mut().model.appearances;
+        for index in separate {
+            let Some(appearance) = appearances.get_mut(index) else {
+                continue;
+            };
+            let guid = allocated_guid(appearance.id.as_str());
+            if appearance.visual_guid.is_some() {
+                appearance.visual_guid = Some(guid);
+            } else {
+                appearance.asset_guid = Some(guid);
+            }
         }
     }
 
