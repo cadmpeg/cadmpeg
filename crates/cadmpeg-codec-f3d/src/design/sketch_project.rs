@@ -96,32 +96,8 @@ pub(crate) fn scan_construction_curve_identities(
         if !is_analytic_shape {
             continue;
         }
-        let Some(tail_start) = g_off.checked_add(96) else {
-            continue;
-        };
-        let Some(tail_end) = tail_start.checked_add(80).map(|e| e.min(bytes.len())) else {
-            continue;
-        };
-        let Some(tail) = bytes.get(tail_start..tail_end) else {
-            continue;
-        };
-        let mut n_refs = 0usize;
-        let mut cur = 0usize;
-        while cur + 11 <= tail.len() && tail[cur] == 1 && tail[cur + 5..cur + 11] == [0; 6] {
-            n_refs += 1;
-            cur += 11;
-        }
-        if !(1..=3).contains(&n_refs) {
-            continue;
-        }
-        let pad = if n_refs == 1 { 5 } else { 3 };
-        let flag_off = cur + pad + 4;
-        if tail
-            .get(cur..cur + pad)
-            .is_some_and(|s| s.iter().all(|&b| b == 0))
-            && flag_off + 5 <= tail.len()
-            && View::u32_le_at(tail, flag_off) == Some(1)
-            && tail[flag_off + 4] == 1
+        if crate::design::decode::sketch::planar_curve_tail(bytes, g_off)
+            .is_some_and(|tail| tail.construction)
         {
             construction_ids.insert(curve.id.clone());
         }
