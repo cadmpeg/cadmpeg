@@ -4740,12 +4740,14 @@ fn decode_graph_inner(
                         (None, _, _) => None,
                     };
                     let spine_curve = carriers.curve(blend.spine);
-                    let allowed = (blend.signed_radius.abs() * BLEND_VERTEX_MISS_RADIUS_FRACTION)
-                        .min(blend_vertex_allowance(t, f, &edge_tolerances));
+                    let branch = blend.signed_radius.abs() * BLEND_VERTEX_MISS_RADIUS_FRACTION;
+                    let edges_allow = blend_vertex_allowance(t, f, &edge_tolerances);
                     // A cache stands for the face only where it passes within
-                    // `allowed` of the face's vertices and edge samples: a miss
-                    // of a sizeable share of the radius is another branch, and
-                    // one beyond what the face's edges state does not bound it.
+                    // the face's edge tolerance and its own fit tolerance of
+                    // the face's vertices and edge samples, which lie that far
+                    // from the exact edges and the cache from the exact
+                    // surface; and within a quarter of the radius, past which
+                    // it is another branch.
                     let bound = |cache: blend_surface::BlendCache| -> Result<
                         Result<blend_surface::BlendCache, BlendStep>,
                         cadmpeg_core::CodecError,
@@ -4753,6 +4755,7 @@ fn decode_graph_inner(
                         let Some(spine) = spine_curve else {
                             return Ok(Err(BlendStep::NotRun("the spine curve does not resolve")));
                         };
+                        let allowed = branch.min(edges_allow + cache.fit_tolerance);
                         Ok(
                             match blend_surface::vertex_miss(
                                 ctx,
