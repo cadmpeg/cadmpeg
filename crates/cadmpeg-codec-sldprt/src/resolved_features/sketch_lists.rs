@@ -9,6 +9,7 @@
 //! selects a line, a counterclockwise arc or a clockwise arc.
 
 use super::SKETCH_ANGLE_TOLERANCE;
+use crate::brep::graph::LINEAR_RESOLUTION_MM;
 use crate::layout::{
     sketch_arc_record as arc, sketch_arc_record_legacy as legacy_arc, sketch_line_record as line,
     sketch_record_head as head,
@@ -25,9 +26,6 @@ const EPS_ARC_RADIUS_M: f64 = 1.0e-9;
 /// The largest distance, in metres, of a three-coordinate point record from
 /// the sketch plane that still reads as a planar point.
 const EPS_PLANE_OFFSET_M: f64 = 1.0e-9;
-/// The largest difference, in sketch millimetres, between a curve record's
-/// projected endpoint and the endpoint of the chord a marker reading gives.
-const EPS_CHORD_ENDPOINT_MM: f64 = 1.0e-6;
 
 /// The f32 `-1` at +13 and +31 of every record head.
 const F32_MINUS_ONE: [u8; 4] = [0x00, 0x00, 0x80, 0xbf];
@@ -408,6 +406,8 @@ pub(super) enum ChordConflict {
     OtherEndpoints,
     /// The record's endpoints and centre define no arc.
     NoArc,
+    /// The record's arc does not pass through both endpoints of the chord.
+    MissesChord,
 }
 
 impl ChordConflict {
@@ -418,6 +418,9 @@ impl ChordConflict {
             Self::FullCircle => "whose equal endpoint indices make a full circle",
             Self::OtherEndpoints => "between point records at other positions",
             Self::NoArc => "whose endpoints and centre define no arc",
+            Self::MissesChord => {
+                "between the line's endpoint point records, but the arc misses the line's endpoints"
+            }
         }
     }
 }
@@ -425,8 +428,9 @@ impl ChordConflict {
 /// The reading of the listed curve record at `offset` when its sense is `1`
 /// or `-1` and a marker reading gave it the straight chord `chord`: the
 /// record's arc when its two endpoint point records project onto the chord's
-/// endpoints in either order, and the conflict otherwise. `None` when the
-/// offset starts no listed curve record with an arc sense.
+/// endpoints in either order and the arc itself ends at both chord endpoints,
+/// each within the linear resolution, and the conflict otherwise. `None` when
+/// the offset starts no listed curve record with an arc sense.
 pub(super) fn chord_record(
     payload: &[u8],
     lists: &SketchRecordLists,
@@ -457,13 +461,14 @@ pub(super) fn chord_record(
     let (Some(start_ir), Some(end_ir)) = (project(start_m), project(end_m)) else {
         return Some(ChordRecord::Conflict(ChordConflict::PointUnread));
     };
-    let near = |left: Point2, right: Point2| {
-        (left.u - right.u).abs() <= EPS_CHORD_ENDPOINT_MM
-            && (left.v - right.v).abs() <= EPS_CHORD_ENDPOINT_MM
+    let joins_chord = |first: Point2, second: Point2| {
+        let near = |left: Point2, right: Point2| {
+            (left.u - right.u).hypot(left.v - right.v) <= LINEAR_RESOLUTION_MM
+        };
+        (near(first, chord[0]) && near(second, chord[1]))
+            || (near(first, chord[1]) && near(second, chord[0]))
     };
-    let joins_chord = (near(start_ir, chord[0]) && near(end_ir, chord[1]))
-        || (near(start_ir, chord[1]) && near(end_ir, chord[0]));
-    if !joins_chord {
+    if !joins_chord(start_ir, end_ir) {
         return Some(ChordRecord::Conflict(ChordConflict::OtherEndpoints));
     }
     let sweep = if counterclockwise {
@@ -471,12 +476,30 @@ pub(super) fn chord_record(
     } else {
         ArcSweep::Clockwise
     };
-    Some(
-        arc_geometry(center_m, start_m, end_m, sweep, project).map_or(
-            ChordRecord::Conflict(ChordConflict::NoArc),
-            ChordRecord::Arc,
-        ),
-    )
+    let Some(arc) = arc_geometry(center_m, start_m, end_m, sweep, project) else {
+        return Some(ChordRecord::Conflict(ChordConflict::NoArc));
+    };
+    let SketchGeometryDefinition::Arc {
+        center,
+        radius,
+        start_angle,
+        end_angle,
+    } = *arc.definition()
+    else {
+        return Some(ChordRecord::Conflict(ChordConflict::NoArc));
+    };
+    let (center, radius) = (center.get(), radius.get());
+    let at = |angle: f64| {
+        Point2::new(
+            center.u + radius * angle.cos(),
+            center.v + radius * angle.sin(),
+        )
+    };
+    Some(if joins_chord(at(start_angle.get()), at(end_angle.get())) {
+        ChordRecord::Arc(arc)
+    } else {
+        ChordRecord::Conflict(ChordConflict::MissesChord)
+    })
 }
 
 /// Whether the record at `offset` is a current-layout line with an

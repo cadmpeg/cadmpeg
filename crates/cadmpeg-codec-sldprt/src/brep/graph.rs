@@ -2160,7 +2160,7 @@ fn blend_boundary(
 
 /// Distance within which a curve end lies at a vertex without a stored
 /// tolerance: the stream's linear resolution, `1e-8` m.
-pub(super) const LINEAR_RESOLUTION_MM: f64 = 1.0e-5;
+pub(crate) const LINEAR_RESOLUTION_MM: f64 = 1.0e-5;
 
 /// Whether an edge runs against an open NURBS curve that stores no range, from
 /// the parameters of its two vertices on the curve (spec §7.2). `None` on a
