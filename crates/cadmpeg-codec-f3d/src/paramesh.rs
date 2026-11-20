@@ -42,7 +42,7 @@ const CHUNK_STREAM: u32 = 4;
 const LZMA_PROPERTIES: u8 = 0x5D;
 /// Second byte of the LZMA1 stream encoding.
 const LZMA_ENCODING_TAG: u8 = 0x14;
-/// LZMA1 dictionary size of every compressed stream.
+/// Smallest LZMA1 history window the decoder allocates.
 const LZMA_DICTIONARY_BYTES: u32 = 1 << 22;
 /// Raw-stream selector following the common properties byte.
 const RAW_STREAM_MODE: u8 = 0xfe;
