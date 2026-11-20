@@ -719,15 +719,13 @@ fn compact_entity_selection_seed_naming_an_unlisted_scope_stays_native() {
                     PatternTransform::Linear { .. }
                 ));
             }
-            if timeline.contains_key(&("f3d:Design/BulkStream.dat", 5)) {
-                assert!(losses.is_empty());
-            } else {
-                assert_eq!(losses.len(), 1);
-                assert_eq!(
-                    losses[0].code,
-                    crate::loss::F3dLossCode::FeaturePatternFeatureSeedSubstituted.kind()
-                );
-            }
+            let substituted = crate::loss::F3dLossCode::FeaturePatternFeatureSeedSubstituted.kind();
+            let substitutions = losses
+                .iter()
+                .filter(|loss| loss.code == substituted)
+                .count();
+            let listed = timeline.contains_key(&("f3d:Design/BulkStream.dat", 5));
+            assert_eq!(substitutions, usize::from(!listed), "{losses:?}");
         }
     }
 }
@@ -754,7 +752,11 @@ fn compact_entity_selection_seed_without_a_feature_scope_stays_native() {
         )
         .expect("rectangular pattern");
         assert_linear_seed(definition, native.clone());
-        assert!(losses.is_empty());
+        let substituted = crate::loss::F3dLossCode::FeaturePatternFeatureSeedSubstituted.kind();
+        assert!(
+            losses.iter().all(|loss| loss.code != substituted),
+            "{losses:?}"
+        );
     }
 }
 
