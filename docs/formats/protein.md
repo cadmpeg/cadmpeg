@@ -157,7 +157,7 @@ The Design stream joins to the package through instance identifiers, written the
 
 An appearance and its twin carry one colour `(r, g, b, 1)`: `generic_diffuse` of the appearance and `opaque_albedo` of the twin. Each channel is a value `n / 255` rounded to binary32 and widened to binary64. The definition of the twin has the asset identifier `Opaque(R,G,B)`, the decimal 8-bit channel values. The appearance of the body has the colour `(246, 246, 243)`. An appearance that a per-face assignment adds has the colour of that face; its other values equal those of the body's appearance.
 
-The definition records, in table-of-contents order of their instances, hold these values. Format version `2` stores category, group, and description; version `1` stores group and description (§5).
+Each instance has one definition record, with these values. Format version `2` stores category, group, and description; version `1` stores group and description (§5).
 
 | Definition | Flag | Base asset identifier | Version | Metadata | Tags | Preview paths |
 |---|---|---|---|---|---|---|
@@ -359,4 +359,4 @@ Appearance twin of the body (value block 288 bytes):
 | `swatch` | `PrismCommonSchema` | String | `Swatch-Torus` |
 | `version` | `CommonSchema` | Integer | 4 |
 
-A package holds the five records once per design. A design with several bodies and one appearance has the same package; only the reference counts of the Protein asset manager change. The values that differ between packages are the GUIDs (basename, folder, package identifier, instance identifiers, and the base asset identifier of each `Opaque(R,G,B)` definition), the package time, and the colours of the per-face appearances. The table-of-contents order follows from the instance identifiers, and the page indices follow from that order and the record lengths. Open item DR-902 in [`f3d-open-items.md`](f3d-open-items.md) holds a second form of the body's appearance.
+A design with several bodies and one appearance has the same package; only the reference counts of the Protein asset manager change. The values that differ between packages are the GUIDs (basename, folder, package identifier, instance identifiers, and the base asset identifier of each `Opaque(R,G,B)` definition), the package time, and the colours of the per-face appearances. The table-of-contents order follows from the instance identifiers, and the page indices follow from that order and the record lengths. Open item DR-902 in [`f3d-open-items.md`](f3d-open-items.md) holds a second form of the body's appearance.
