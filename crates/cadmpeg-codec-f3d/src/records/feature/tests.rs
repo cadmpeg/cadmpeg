@@ -1965,6 +1965,7 @@ fn vertex_frame_rejects_displaced_indices_and_recipe_prefix() {
 
 mod three_point_planes;
 
+mod thread_wire;
 mod work_points;
 
 #[test]

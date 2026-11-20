@@ -17,7 +17,7 @@ fn reserved_unknown_arena_accepts_owned_and_borrowed_records() {
     let mut owned = CadIr::empty();
     owned
         .set_native_unknowns_from(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "test",
             records.clone(),
         )
@@ -25,7 +25,7 @@ fn reserved_unknown_arena_accepts_owned_and_borrowed_records() {
     let mut borrowed = CadIr::empty();
     borrowed
         .set_native_unknowns_from(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "test",
             records.iter(),
         )
@@ -54,7 +54,7 @@ fn duplicate_unknown_replacement_leaves_existing_document_unchanged() {
         if existing {
             document
                 .set_native_unknowns(
-                    &cadmpeg_test_support::service_decode_context(),
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
                     "test",
                     &[record("original", &[])],
                 )
@@ -63,7 +63,7 @@ fn duplicate_unknown_replacement_leaves_existing_document_unchanged() {
         let before = document.clone();
         let error = document
             .set_native_unknowns_from(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 "test",
                 [
                     record("duplicate", &["test:model:body#first"]),
@@ -84,7 +84,7 @@ fn complete_document_keeps_raw_native_fields_but_product_reader_checks_links() {
     let mut document = CadIr::empty();
     document
         .set_native_unknowns(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "test",
             &[record("a", &["test:model:body#unresolved"])],
         )
@@ -134,7 +134,7 @@ fn native_unknown_replacement_keeps_the_document_on_depth_and_record_text_refusa
         let mut document = CadIr::empty();
         document
             .set_native_unknowns(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 "test",
                 &[record("prior", &[])],
             )

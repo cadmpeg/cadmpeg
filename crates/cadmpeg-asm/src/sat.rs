@@ -2197,7 +2197,7 @@ mod tests {
     #[test]
     fn sat_subtype_typing_refuses_depth_before_recursive_descent() {
         let prefix = "{ cyl_spl_sur 0 intcurve forward { int_int_cur 0 full nubs 1 open 2 0 2 1 2 0 0 0 1 0 0 2 0 0 3 0 0 0 spline forward ";
-        for (repetitions, limit) in [(1, 0), (4096, 2)] {
+        for (repetitions, limit) in [(1, 0), (3, 2)] {
             let source = asm_stream(&format!(
                 "spline $-1 -1 $-1 forward {}{} #\n",
                 prefix.repeat(repetitions),

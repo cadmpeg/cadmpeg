@@ -31,6 +31,8 @@ use crate::pvs::Structure;
 
 /// Source attribute naming the structure member.
 const ATTRIBUTE_STRUCTURE_MEMBER: &str = "structure_member";
+/// Most occurrences one package decodes to.
+const MAX_OCCURRENCES: usize = 100_000;
 
 pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Decoded, CodecError> {
     let package = Package::open(ctx, root)?;
@@ -132,7 +134,7 @@ fn decode_model(
 ) -> Result<bool, CodecError> {
     losses.extend(structure.residue.losses());
     crate::model::definitions(ctx, structure, ir, losses)?;
-    crate::model::occurrences(ctx, structure, ir, losses)?;
+    crate::model::occurrences(ctx, structure, MAX_OCCURRENCES, ir, losses)?;
 
     let mut owners: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
     let mut order = Vec::new();

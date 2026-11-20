@@ -74,16 +74,23 @@ pub(crate) fn source_selectors(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let frames = design_primary_frames(bytes, &meta)?;
+        let mut frame_at = HashMap::new();
+        for (index, frame) in frames.iter().enumerate() {
+            if let Ok(start) = u64::try_from(frame.start) {
+                frame_at.entry((frame.entity_id, start)).or_insert(index);
+            }
+        }
         for identity in identities
             .iter()
             .filter(|identity| native_stream(&identity.id) == Some(entry.name.as_str()))
         {
-            let Some((index, owner)) = frames.iter().enumerate().find(|(_, frame)| {
-                frame.entity_id == u64::from(identity.following_record_index())
-                    && u64::try_from(frame.start).ok() == Some(identity.following_byte_offset())
-            }) else {
+            let Some(&index) = frame_at.get(&(
+                u64::from(identity.following_record_index()),
+                identity.following_byte_offset(),
+            )) else {
                 continue;
             };
+            let owner = &frames[index];
             let Some(body) = frames.get(index + 1) else {
                 continue;
             };
