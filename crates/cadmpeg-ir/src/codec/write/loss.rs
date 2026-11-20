@@ -31,6 +31,8 @@ pub(crate) enum ExportLossCode {
     /// A record's byte positions that no decoder reads have no stated value
     /// (§3.4, Residual bytes).
     RecordResidualUnavailable,
+    /// A value is written without a binding the target cannot hold (§3.2).
+    ValueUnwritable,
 }
 
 impl ExportLossCode {
@@ -44,6 +46,7 @@ impl ExportLossCode {
             Self::ParameterFlattened => "parameter.flattened",
             Self::ParameterRenamed => "parameter.renamed",
             Self::RecordResidualUnavailable => "record.residual-unavailable",
+            Self::ValueUnwritable => "value.unwritable",
         }
     }
 
@@ -54,7 +57,8 @@ impl ExportLossCode {
             | Self::OutputEmpty
             | Self::EvaluationMissing
             | Self::ParameterFlattened
-            | Self::RecordResidualUnavailable => Severity::Warning,
+            | Self::RecordResidualUnavailable
+            | Self::ValueUnwritable => Severity::Warning,
             Self::ParameterRenamed => Severity::Info,
         }
     }
@@ -68,7 +72,8 @@ impl ExportLossCode {
             Self::EvaluationMissing
             | Self::ParameterFlattened
             | Self::ParameterRenamed
-            | Self::RecordResidualUnavailable => return LossTaxonomy::ParametricRecordOmitted,
+            | Self::RecordResidualUnavailable
+            | Self::ValueUnwritable => return LossTaxonomy::ParametricRecordOmitted,
         };
         match kind {
             EntityKind::Body
@@ -235,6 +240,18 @@ where
         reason,
         ids,
     )
+}
+
+/// `export:value.unwritable`: the writer writes these values without a
+/// binding the target cannot hold. Each entry names the record and the
+/// binding (§3.2).
+#[must_use]
+pub fn value_unwritable<I, S>(format: &str, reason: &str, ids: I) -> Option<LossNote>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    listed(ExportLossCode::ValueUnwritable, format, reason, ids)
 }
 
 /// One note of `code` that lists every entry of `ids`, sorted, after their
