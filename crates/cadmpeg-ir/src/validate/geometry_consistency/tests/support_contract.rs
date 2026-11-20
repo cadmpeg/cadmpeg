@@ -58,7 +58,7 @@ fn using_edge(ir: &mut CadIr, range: [f64; 2]) {
 }
 
 fn assert_support_failure(ir: &CadIr, fails: bool) {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let index = crate::index::ModelIndex::new_model_only(ir);
     let mut findings = Vec::new();
     check_procedural_support_consistency(
@@ -382,7 +382,7 @@ fn offset_with_reparameterized_base(height: f64) -> CadIr {
 
 #[test]
 fn offset_used_hull_keeps_base_endpoint_witnesses_on_their_stored_parameters() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let ir = offset_with_reparameterized_base(25.0);
     let index = crate::index::ModelIndex::new_model_only(&ir);
     let mut findings = Vec::new();
@@ -398,7 +398,7 @@ fn offset_used_hull_keeps_base_endpoint_witnesses_on_their_stored_parameters() {
 
 #[test]
 fn offset_used_hull_above_its_distance_allowance_is_reported() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let ir = offset_with_reparameterized_base(26.0);
     let index = crate::index::ModelIndex::new_model_only(&ir);
     let mut findings = Vec::new();

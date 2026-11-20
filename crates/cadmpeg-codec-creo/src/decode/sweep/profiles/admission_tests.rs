@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{ProfileEntity, ProfileValidationWork, ValidatedProfile};
+use super::{
+    ProfileEntity, ProfileValidationWork, ValidatedProfile, PROFILE_VALIDATION_WORK_FLOOR,
+};
 use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::sketches::SketchGeometry;
@@ -34,7 +36,7 @@ fn single_nurbs_crossing_spans_cannot_mint_validated_profile() {
         crate::decode::with_service_context(|ctx| ValidatedProfile::new(
             ctx,
             vec![entity],
-            &mut ProfileValidationWork::new(1).expect("work")
+            &mut ProfileValidationWork::new(1, PROFILE_VALIDATION_WORK_FLOOR).expect("work")
         ))
         .expect("construct the validated profile")
         .is_none()
@@ -48,7 +50,7 @@ fn single_nurbs_simple_polygon_keeps_area() {
         ValidatedProfile::new(
             ctx,
             vec![entity],
-            &mut ProfileValidationWork::new(1).expect("work"),
+            &mut ProfileValidationWork::new(1, PROFILE_VALIDATION_WORK_FLOOR).expect("work"),
         )
     })
     .expect("construct the validated profile")

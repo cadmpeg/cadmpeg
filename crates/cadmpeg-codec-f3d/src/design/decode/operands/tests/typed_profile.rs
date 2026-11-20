@@ -512,7 +512,7 @@ fn marked_profile_selection_decodes_region_loops_from_the_operand_chain() {
     group.id = "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:construction-group#90".into();
     let selections = crate::test_support::zip_test::with_scan(&archive, |scan| {
         super::super::decode_profile_curve_selections(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             scan,
             &[group],
             &headers,

@@ -436,7 +436,7 @@ fn analytic_closed_isocurves_retain_the_native_full_turn() {
             )
             .expect("closed intersection evaluates");
             let inverse = cadmpeg_ir::eval::model_curve_parameter_near_point_in_index(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &cadmpeg_ir::index::ModelIndex::build(&ir),
                 curve,
                 point.get(),
@@ -1516,7 +1516,7 @@ fn nurbs_surface_fit_uses_the_declared_geometric_tolerance() {
     point.z += 0.001;
 
     let parameters = cadmpeg_ir::eval::nurbs_surface_parameter_within_tolerance(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         point,
         None,

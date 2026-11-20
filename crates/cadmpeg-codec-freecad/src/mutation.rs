@@ -100,7 +100,7 @@ pub(crate) fn replace_entry(
         .ok_or_else(|| CodecError::malformed(format_args!("missing FCStd entry {entry_name}")))?;
     entry.replace_data(bytes);
     namespace.set_arena(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "entries",
         &entries,
     )?;

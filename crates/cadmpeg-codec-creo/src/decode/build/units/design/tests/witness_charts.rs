@@ -67,7 +67,7 @@ fn witness_pcurve_charts_follow_singular_anchored_and_curve_bounded_owners() {
         if owner == 3 {
             body.coedges[0].pcurves.push(usage);
         }
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         topology(
             &ctx,
             &mut body,
@@ -111,7 +111,7 @@ fn witness_pcurve_missing_chart_fails_before_length_mutation() {
         native_ref: None,
     });
     let original = body.clone();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert!(topology(
         &ctx,
         &mut body,
@@ -174,7 +174,7 @@ fn witness_pcurve_conflicting_charts_fail_before_length_mutation() {
     ));
     body.surfaces.push(cylinder);
     let original = body.clone();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert!(topology(
         &ctx,
         &mut body,

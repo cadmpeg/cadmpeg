@@ -172,7 +172,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
     );
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             edited.native.namespace_mut("f3d"),
         )
         .unwrap();

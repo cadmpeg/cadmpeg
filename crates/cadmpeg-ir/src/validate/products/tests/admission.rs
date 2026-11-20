@@ -23,7 +23,7 @@ fn definition(id: &str, occurrences: &[&str]) -> ProductDefinition {
 }
 
 fn findings(ir: &CadIr) -> Vec<Finding> {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     super::super::check_products(&ctx, ir, &mut findings).unwrap();
     findings
@@ -168,10 +168,16 @@ fn a_definition_does_not_place_itself() {
     ));
     assert_eq!(
         messages(&ir),
-        [(
-            Some("test:model:product#root".into()),
-            "product definition places itself".into()
-        )]
+        [
+            (
+                Some("test:model:product#root".into()),
+                "an occurrence places the root definition".into()
+            ),
+            (
+                Some("test:model:product#root".into()),
+                "product definition places itself".into()
+            )
+        ]
     );
 
     let mut ir = assembly();
@@ -325,7 +331,7 @@ fn mesh_part(id: &str, tessellations: &[&str]) -> ProductDefinition {
 
 #[test]
 fn product_tessellations_exist_represent_no_body_and_have_one_definition() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let messages = |ir: &CadIr| {
         let mut findings = Vec::new();
         super::super::check_products(&ctx, ir, &mut findings).unwrap();

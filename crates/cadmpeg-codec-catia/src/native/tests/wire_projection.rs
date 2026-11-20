@@ -173,7 +173,10 @@ fn e5_edge_wire_views_keep_null_unresolved_and_allocation_fields() {
     let mut owned = cadmpeg_ir::NativeNamespace::default();
     native
         .clone()
-        .store_owned(&cadmpeg_test_support::service_decode_context(), &mut owned)
+        .store_owned(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &mut owned,
+        )
         .expect("store owned source operands");
     assert_eq!(borrowed, owned);
     assert_eq!(

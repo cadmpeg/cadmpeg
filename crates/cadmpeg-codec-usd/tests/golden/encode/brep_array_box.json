@@ -305,6 +305,7 @@
     "        )",
     "        {",
     "            uniform token elementType = \"face\"",
+    "            uniform token familyName = \"materialBind\"",
     "            int[] indices = [0, 1, 2, 3, 4, 5]",
     "            rel material:binding = </Looks/Box_face_1_material>",
     "        }",

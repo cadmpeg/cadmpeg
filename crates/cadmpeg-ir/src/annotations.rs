@@ -1320,7 +1320,7 @@ mod builder_storage_tests {
 
     #[test]
     fn annotation_builder_transaction_commits_the_same_tables() {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let stream = StreamHandle::new(crate::stream_name!("test"));
         let mut original = AnnotationBuilder::new();
         original.note("test:model:point#prior", &stream, 0, Some("prior"));

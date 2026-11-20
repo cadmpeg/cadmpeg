@@ -130,7 +130,11 @@ fn generated_projection_decodes_and_writes_source_less() {
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -208,7 +212,11 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -303,7 +311,11 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -416,7 +428,11 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
@@ -529,7 +545,11 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec

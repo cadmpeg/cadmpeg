@@ -52,7 +52,7 @@ fn structural_projection_preserves_nonfinite_values_and_refuses_at_the_depth_lim
         optional: Some(Box::new((true, 17))),
     };
     let expected = serde_value::to_value(&shape).unwrap();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let projected = project(&ctx, &shape, "project structural fixture").unwrap();
     assert_eq!(*projected, expected);
     let arena = DecodeArena::new();
@@ -71,7 +71,7 @@ fn structural_projection_preserves_nonfinite_values_and_refuses_at_the_depth_lim
 
 #[test]
 fn structural_display_text_projects_its_formatted_text() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let projected = project(&ctx, &DisplayText, "project display text").unwrap();
     assert_eq!(*projected, serde_value::Value::String("abcde".into()));
 }

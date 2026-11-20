@@ -1535,6 +1535,12 @@ struct SharedPcurves {
     bounds: BTreeMap<(u32, u32), PcurveBounds>,
 }
 
+#[cfg(test)]
+thread_local! {
+    /// Calls of [`pcurve_declared_interval_bounds`] on this thread.
+    static SUPPORT_BOUNDS_CHECKS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 fn pcurve_declared_interval_bounds(
     geometry: &PcurveGeometry,
     range: [f64; 2],
@@ -1542,6 +1548,8 @@ fn pcurve_declared_interval_bounds(
     periodic: [bool; 2],
     ctx: &DecodeContext<'_>,
 ) -> Result<PcurveBounds, CodecError> {
+    #[cfg(test)]
+    SUPPORT_BOUNDS_CHECKS.with(|checks| checks.set(checks.get() + 1));
     let Some(bounds) = bounds else {
         return Ok(PcurveBounds::Within);
     };

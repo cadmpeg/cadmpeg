@@ -4,8 +4,9 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
 use std::path::Path;
+use std::sync::LazyLock;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
@@ -13,14 +14,18 @@ use cadmpeg_ir::math::Point3;
 
 use crate::CatiaCodec;
 
-#[test]
-fn nist_ftc_07_transfers_every_solid_face_carrier() {
+static FTC_07: LazyLock<DecodeResult> = LazyLock::new(|| {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
     let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
-    let decoded = CatiaCodec
+    CatiaCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode FTC-07 CATPart");
+        .expect("decode FTC-07 CATPart")
+});
+
+#[test]
+fn nist_ftc_07_transfers_every_solid_face_carrier() {
+    let decoded = &*FTC_07;
     let geometry = &decoded.ir().geometry;
     assert_eq!(
         geometry
@@ -68,12 +73,7 @@ fn nist_ftc_07_transfers_every_solid_face_carrier() {
 fn nist_ftc_07_circular_edge_agrees_with_both_face_curves() {
     const STEP_EDGE_LENGTH_MM: f64 = 2.367_294_783_918_816_3;
     const LENGTH_TOLERANCE_MM: f64 = 2e-3;
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
-    let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
-    let decoded = CatiaCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode FTC-07 CATPart");
+    let decoded = &*FTC_07;
     let geometry = &decoded.ir().geometry;
     let edge = geometry
         .edges
@@ -210,12 +210,7 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
         (764, [139.561_823_278, -104.256_042_271, 70.771_719_768]),
         (809, [139.561_883_141, -104.254_327_504, -70.770_057_607]),
     ];
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
-    let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
-    let decoded = CatiaCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode FTC-07 CATPart");
+    let decoded = &*FTC_07;
     let geometry = &decoded.ir().geometry;
     let surfaces: HashMap<_, _> = geometry.surfaces.iter().map(|s| (&s.id, s)).collect();
     let freeform_faces: HashSet<_> = geometry
@@ -521,12 +516,7 @@ fn nist_ftc_07_transfers_all_freeform_boundary_curves() {
 fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
     use cadmpeg_ir::topology::BodyKind;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
-    let bytes = std::fs::read(path).expect("read FTC-07 CATPart");
-    let decoded = CatiaCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode FTC-07 CATPart");
+    let decoded = &*FTC_07;
     let model = &decoded.ir().model;
     let geometry = &decoded.ir().geometry;
     let solid_faces: HashSet<_> = geometry
@@ -642,14 +632,7 @@ fn nist_ftc_07_transfers_both_planar_sheet_bodies() {
 #[test]
 fn nist_ftc_07_planar_rims_classify_and_counterwind_their_holes() {
     use cadmpeg_ir::topology::{FaceLoops, Sense};
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../corpus/nist-pmi/catia/nist_ftc_07_asme1_rd_ct5290_ra.CATPart");
-    let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(std::fs::read(path).expect("native part")),
-            &DecodeOptions::default(),
-        )
-        .expect("decode native part");
+    let decoded = &*FTC_07;
     let geometry = &decoded.ir().geometry;
     let edges: HashMap<_, _> = geometry.edges.iter().map(|edge| (&edge.id, edge)).collect();
     let curves: HashMap<_, _> = geometry

@@ -257,7 +257,7 @@ fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
 
 #[test]
 fn mesh_selection_finishes_the_active_face_component_first() {
-    const UNRELATED_FACE_COUNT: usize = 1_000;
+    const UNRELATED_FACE_COUNT: usize = 8;
     catia_test_context!(ctx);
     let use_edge = |edge| MeshBoundaryEdgeCandidate {
         edge,

@@ -32,7 +32,7 @@ fn split_keeping_levels(controls: &[[f64; 4]], parameter: f64) -> (Vec<[f64; 4]>
 
 #[test]
 fn pcurve_split_of_a_high_degree_polygon_matches_the_level_split() {
-    let controls: Vec<[f64; 4]> = (0..1024_u32)
+    let controls: Vec<[f64; 4]> = (0..32_u32)
         .map(|index| {
             let t = f64::from(index);
             [1.0 + f64::from(index % 5) / 8.0, t.sin(), t.cos(), 0.0]
@@ -55,7 +55,7 @@ fn pcurve_spans_of_a_long_pcurve_insert_each_knot_near_its_span() {
     let controls: Vec<_> = (0..count)
         .map(|index| [1.0, f64::from(index), 0.0, 0.0])
         .collect();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let spans = homogeneous_pcurve_spans(2, &knots, &controls, &ctx)
         .unwrap()
         .unwrap();
@@ -72,7 +72,7 @@ fn pcurve_spans_of_a_long_pcurve_insert_each_knot_near_its_span() {
 
 #[test]
 fn pcurve_knot_insertion_reuses_controls_and_preserves_homogeneous_values() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let knots = [0.0, 0.0, 0.0, 0.0, 0.5, 1.0, 1.0, 1.0, 1.0];
     let controls = [
         [1.0, 0.0, 0.0, 0.0],
@@ -107,7 +107,7 @@ fn pcurve_many_internal_knots_split_into_one_span_per_knot_interval() {
     let controls: Vec<_> = (0..CONTROL_COUNT)
         .map(|index| [1.0, f64::from(index), 0.0, 0.0])
         .collect();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let spans = homogeneous_pcurve_spans(2, &knots, &controls, &ctx)
         .unwrap()
         .unwrap();

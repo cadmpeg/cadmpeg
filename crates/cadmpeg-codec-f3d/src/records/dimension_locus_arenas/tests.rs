@@ -30,7 +30,7 @@ fn nonnull_arena_rejects_null_form_at_construction_and_deserialization() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "design_dimension_locus_pairs",
             &[null_pair],
         )
@@ -48,7 +48,7 @@ fn null_arena_rejects_nonnull_form_at_construction_and_deserialization() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "design_dimension_null_locus_pairs",
             &[nonnull_pair],
         )
@@ -70,7 +70,7 @@ fn nonnull_arena_preserves_pair_wire() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .unwrap();

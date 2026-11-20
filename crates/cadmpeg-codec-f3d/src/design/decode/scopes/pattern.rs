@@ -19,10 +19,6 @@ use crate::records::feature::patterns::DesignCircularPatternConstruction;
 use crate::records::feature::patterns::DesignRectangularPatternConstruction;
 use crate::records::feature::patterns::DesignRectangularPatternInstances;
 use crate::records::feature::patterns::RectangularPatternSearchCap;
-use crate::records::feature::patterns::{
-    MAX_RECTANGULAR_PATTERN_INSTANCES, MAX_RECTANGULAR_PATTERN_RECORD_BYTES,
-    MAX_RECTANGULAR_PATTERN_SCANNED_BYTES, RECTANGULAR_PATTERN_RUN_WORK,
-};
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::parameters::DesignParameterOwner;
 use cadmpeg_core::decode::{bounded_len, View, WorkBudget};
@@ -135,7 +131,13 @@ pub(super) fn exact_rectangular_pattern_construction(
         .first()
         .is_none_or(|record| record.distance_type != 7)
     {
-        match exact_rectangular_pattern_instances(bytes, records, scope, &construction) {
+        match exact_rectangular_pattern_instances(
+            bytes,
+            records,
+            scope,
+            &construction,
+            RectangularPatternSearchCap::limit,
+        ) {
             InstanceSearch::Resolved(instances) => construction
                 .try_set_instances(Some(*instances))
                 .map_err(CodecError::malformed)?,
@@ -536,11 +538,13 @@ enum InstanceSearch {
     Capped(RectangularPatternSearchCap),
 }
 
+/// Searches the instance run under the value `limit` gives each local cap.
 fn exact_rectangular_pattern_instances(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     construction: &DesignRectangularPatternConstruction,
+    limit: fn(RectangularPatternSearchCap) -> usize,
 ) -> InstanceSearch {
     (|| {
         let mut active = [
@@ -554,7 +558,7 @@ fn exact_rectangular_pattern_instances(
             return None;
         }
         let count = usize::try_from(count).ok()?;
-        if count > MAX_RECTANGULAR_PATTERN_INSTANCES {
+        if count > limit(RectangularPatternSearchCap::Instances) {
             return Some(InstanceSearch::Capped(
                 RectangularPatternSearchCap::Instances,
             ));
@@ -595,14 +599,14 @@ fn exact_rectangular_pattern_instances(
                 .filter_map(|(_, offset)| (*offset > start).then_some(*offset))
                 .min()?;
             let span = end.checked_sub(start)?;
-            if span > MAX_RECTANGULAR_PATTERN_RECORD_BYTES {
+            if span > limit(RectangularPatternSearchCap::RecordBytes) {
                 return Some(InstanceSearch::Capped(
                     RectangularPatternSearchCap::RecordBytes,
                 ));
             }
             let Some(total) = scanned_bytes
                 .checked_add(span)
-                .filter(|total| *total <= MAX_RECTANGULAR_PATTERN_SCANNED_BYTES)
+                .filter(|total| *total <= limit(RectangularPatternSearchCap::ScannedBytes))
             else {
                 return Some(InstanceSearch::Capped(
                     RectangularPatternSearchCap::ScannedBytes,
@@ -613,7 +617,7 @@ fn exact_rectangular_pattern_instances(
         }
         let first_candidates = candidates.first()?;
         let final_candidates = candidates.last()?;
-        let budget = WorkBudget::new(RECTANGULAR_PATTERN_RUN_WORK);
+        let budget = WorkBudget::new(limit(RectangularPatternSearchCap::RunWork));
         let mut runs = Vec::new();
         for first in first_candidates {
             for final_candidate in final_candidates {

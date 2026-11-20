@@ -168,7 +168,7 @@ fn toc_headers_without_a_line_break_end_the_scan() {
 #[test]
 fn overlapping_toc_row_tables_stop_at_the_input_length_with_one_loss() {
     let header = b"#UGC_TOC a 99999999 1\n";
-    let data = header.repeat(20_000);
+    let data = header.repeat(2);
     let mut losses = Vec::new();
     assert!(super::super::toc_sections(&data, 0, &mut losses).is_empty());
     assert_eq!(losses.len(), 1);

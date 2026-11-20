@@ -226,7 +226,7 @@ fn assert_contacts(
     support: Support,
     ends: [Point2; 2],
 ) -> [Point3; 2] {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let surface = surface.solved().expect("solved analytic support");
     let points = pcurve.control_points();
     assert_eq!(points.len(), 2);

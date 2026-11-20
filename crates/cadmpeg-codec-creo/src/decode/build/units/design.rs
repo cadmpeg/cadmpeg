@@ -502,7 +502,7 @@ mod tests {
                 .into_operation()
                 .expect("valid axis conversion fixture"),
         );
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         scale_feature_definition(
             &ctx,
             &mut definition,
@@ -629,7 +629,7 @@ mod tests {
                 .into_operation()
                 .expect("valid axis conversion fixture"),
         );
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         scale_feature_definition(
             &ctx,
             &mut definition,

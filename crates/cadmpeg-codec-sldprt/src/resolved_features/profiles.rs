@@ -4269,7 +4269,7 @@ mod detached_legacy_sketch_tests {
         };
 
         bind_detached_legacy_sketch_objects(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             std::slice::from_ref(&history),
             &HashSet::new(),
             &mut lane,

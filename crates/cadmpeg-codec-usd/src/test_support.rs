@@ -108,6 +108,25 @@ pub(crate) fn try_encode(
     ))
 }
 
+/// The USDA 1.0 text that `ir` writes with the scene options `scene`.
+pub(crate) fn encode_with(
+    ir: &cadmpeg_ir::CadIr,
+    scene: cadmpeg_ir::codec::write::SceneOptions,
+) -> Written {
+    let plan = UsdCodec
+        .plan(
+            EncodeInput::new(ir, None).with_scene(scene),
+            TargetRequest::Explicit("usda-1.0"),
+        )
+        .expect("plan the write");
+    let mut bytes = Vec::new();
+    let report = plan.write_to(&mut bytes).expect("write the layer");
+    (
+        String::from_utf8(bytes).expect("USDA text is UTF-8"),
+        report,
+    )
+}
+
 /// The bytes that `ir` writes as for the target `request` resolves.
 pub(crate) fn encode_bytes(ir: &cadmpeg_ir::CadIr, request: TargetRequest<'_>) -> Vec<u8> {
     let plan = UsdCodec

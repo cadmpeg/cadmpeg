@@ -308,7 +308,7 @@ fn fragment_transition_group() -> (
         0, 0, -1,
     ];
     let structure = crate::design::decode::operands::edge_recipe_structure(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &program,
     )
     .unwrap()

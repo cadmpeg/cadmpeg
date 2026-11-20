@@ -199,6 +199,33 @@ fn a_solid_with_no_tessellation_is_written_as_a_brep_array_and_a_mesh() {
 }
 
 #[test]
+fn a_document_root_is_the_layer_and_no_prim() {
+    let bare = cadmpeg_ir::examples::unit_cube().unwrap();
+    let mut rooted = bare.clone();
+    rooted
+        .state_root_definition(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "test:model:product-definition#root".try_into().unwrap(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )
+        .unwrap();
+    assert_eq!(rooted.model.product_definitions[0].bodies.len(), 1);
+    let (text, report) = encode(&rooted);
+    let (bare_text, bare_report) = encode(&bare);
+    assert_eq!(text, bare_text);
+    assert_eq!(report.losses, bare_report.losses);
+    let round = decode(&text);
+    let roots = round
+        .ir()
+        .model
+        .product_definitions
+        .iter()
+        .filter(|definition| definition.is_root())
+        .count();
+    assert_eq!((roots, round.ir().geometry.bodies.len()), (1, 1));
+}
+
+#[test]
 fn an_external_prototype_is_a_reference() {
     let source =
         decode("#usda 1.0\ndef Xform \"A\" (\n    references = @parts/bolt.usd@</Bolt>\n)\n{\n}\n");

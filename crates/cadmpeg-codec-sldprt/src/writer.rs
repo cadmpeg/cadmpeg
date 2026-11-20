@@ -986,6 +986,9 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .geometry
         .bodies
         .retain(|body| selected.contains(&body.id));
+    for definition in &mut subset.model.product_definitions {
+        definition.bodies.retain(|body| selected.contains(body));
+    }
     subset
         .geometry
         .regions

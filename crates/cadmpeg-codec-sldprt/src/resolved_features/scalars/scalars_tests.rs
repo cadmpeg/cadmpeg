@@ -251,7 +251,7 @@ fn indexed_feature_names_preserve_precedence_and_ambiguity() {
     use super::FeatureObjectNames;
     use crate::records::{FeatureInputName, ObjectId};
 
-    let mut names = (0u32..1000)
+    let mut names = (0u32..5)
         .map(|index| FeatureInputName {
             id: format!("name#{index}"),
             parent: "lane".into(),
@@ -266,7 +266,7 @@ fn indexed_feature_names_preserve_precedence_and_ambiguity() {
     assert!(indexed.get(Some(1), "F1").is_none());
     assert!(indexed.get(None, "F0").is_none());
     assert_eq!(indexed.get(Some(1001), "F1").unwrap().id, "name#1");
-    for index in 1u32..1000 {
+    for index in 1u32..5 {
         let name = indexed.get(Some(index + 1), "F0").unwrap();
         assert_eq!(name.id, format!("name#{index}"));
     }

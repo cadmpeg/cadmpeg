@@ -1477,7 +1477,7 @@ mod tests {
             )
         );
         assert!(crate::assemble::neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &[]
         )
@@ -1607,7 +1607,7 @@ mod tests {
             Some([0.0, chord])
         );
         assert!(crate::assemble::neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &[]
         )
@@ -1771,7 +1771,7 @@ mod tests {
             &definition
         );
         assert!(crate::assemble::neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &[]
         )

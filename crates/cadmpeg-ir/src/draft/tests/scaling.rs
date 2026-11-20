@@ -6,7 +6,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 #[test]
 fn successive_session_commits_accumulate_entities_and_exactness() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = CadIr::empty();
     let mut annotations = Annotations::default();
     let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
@@ -45,7 +45,7 @@ fn rejected_candidates_keep_the_reusable_admission_facts() {
             .as_ref()
             .map(|state| state.lengths[<Asset as EntitySchema>::KIND.index()])
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let annotations = Annotations::default();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
     let mut append = |candidate, accept: bool| {

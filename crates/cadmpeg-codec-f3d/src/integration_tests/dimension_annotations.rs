@@ -63,7 +63,7 @@ fn dimension_annotation_empty_metadata_projects_the_governed_parameter_and_entit
         assert_eq!(entity, expected.id());
     }
     assert!(<F3dCodec as CodecBackend>::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         result.ir(),
         None
     )

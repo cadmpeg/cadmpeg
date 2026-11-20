@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 use super::{
     check_pcurve_surface_consistency, check_procedural_support_consistency,
@@ -43,7 +43,7 @@ fn wide_pcurve_domain_keeps_its_finite_midpoint_seed() {
         native_ref: None,
     };
     assert!(super::pcurve_parameter_seeds(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &pcurve
     )
     .unwrap()
@@ -102,7 +102,7 @@ fn large_surface_domain_keeps_its_finite_midpoint_pcurve_seed() {
     };
     let midpoint = (f64::MAX * 0.75).midpoint(f64::MAX);
     assert!(pcurve_parameter_seeds_on_surface(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &context,
         &pcurve
     )
@@ -430,7 +430,7 @@ fn untrimmed_surface_curve() -> CadIr {
 fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
     let mut findings = Vec::new();
     check_procedural_support_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&mapped_surface_curve([2.0, 3.0])),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -439,7 +439,7 @@ fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
     assert!(findings.is_empty());
 
     check_procedural_support_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&mapped_surface_curve([3.0, 2.0])),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -453,7 +453,7 @@ fn procedural_support_endpoints_honor_the_per_side_parameter_mapping() {
 fn surface_offset_support_constrains_the_embedded_base_curve() {
     let mut findings = Vec::new();
     check_procedural_support_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&mapped_surface_offset()),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -500,7 +500,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
         }
     });
     check_procedural_support_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&context_first),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -520,7 +520,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     let origin = crate::features::FinitePoint3::new(origin).unwrap();
     *line_curve = crate::geometry::analytic::LineCurve::new(origin, direction);
     check_procedural_support_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -540,7 +540,7 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
     let ir = untrimmed_surface_curve();
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -563,7 +563,7 @@ fn untrimmed_pcurve_uses_a_vertex_derived_parameter_interval() {
     )
     .unwrap();
     super::check_pcurve_surface_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&mismatched),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -644,7 +644,7 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
 
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -672,7 +672,7 @@ fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
     };
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -708,7 +708,7 @@ fn stale_trimmed_pcurve_range_can_use_a_vertex_derived_interval() {
     );
     let mut findings = Vec::new();
     super::check_pcurve_surface_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -743,13 +743,13 @@ fn raw_nurbs_domain_is_not_treated_as_edge_trim() {
     assert_eq!(
         pcurve
             .geometry
-            .parameter_domain(&cadmpeg_test_support::service_decode_context())
+            .parameter_domain(&cadmpeg_core::decode::test_support::service_decode_context())
             .unwrap()
             .map(crate::topology::IncreasingParameterInterval::endpoints),
         Some([0.0, 1.0])
     );
     assert!(pcurve_parameter_ranges(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &pcurve,
         None,
         None
@@ -779,7 +779,7 @@ fn collapsed_trimmed_pcurve_falls_back_to_its_basis_domain() {
     );
     assert_eq!(
         geometry
-            .parameter_domain(&cadmpeg_test_support::service_decode_context())
+            .parameter_domain(&cadmpeg_core::decode::test_support::service_decode_context())
             .unwrap()
             .map(crate::topology::IncreasingParameterInterval::endpoints),
         Some([0.0, 1.0])
@@ -828,7 +828,7 @@ fn untrimmed_cylindrical_pcurve_recovers_an_antipodal_vertex() {
         native_ref: None,
     };
     let ranges = edge_pcurve_parameter_ranges(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &context,
         None,
         [Point3::new(3.0, 0.0, 2.0), Point3::new(-3.0, 0.0, 2.0)],
@@ -907,7 +907,7 @@ fn line_pcurve_recovers_vertices_from_nurbs_surface_domain_seeds() {
         surface_id: &surface_id,
         geometry: &surface,
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let seeds = pcurve_parameter_seeds_on_surface(&ctx, &context, &pcurve).unwrap();
     assert!(seeds.iter().any(|seed| seed.get() == 0.5));
 
@@ -1451,7 +1451,7 @@ fn a_support_side_whose_points_overflow_misses_its_contract_by_nan() {
     ir.geometry.surfaces[0].geometry = overflowing_plane();
     let mut findings = Vec::new();
     check_procedural_support_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -1505,7 +1505,7 @@ fn a_coedge_pcurve_whose_mapped_points_overflow_misses_the_vertices_by_nan() {
     let coedge_id = coedge.id.as_str().to_owned();
     let mut findings = Vec::new();
     check_pcurve_surface_consistency(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &crate::index::ModelIndex::new_model_only(&ir),
         &crate::eval::admission::ModelEvaluationPass::new(),
         &mut findings,
@@ -1571,7 +1571,7 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
     );
     let seed = crate::scalar::FiniteReal::new(1.0e152).expect("finite seed");
     let parameter = mapped_pcurve_parameter_near_point(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &context,
         &parabola,
         target,
@@ -1626,7 +1626,7 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
     let seed = crate::scalar::FiniteReal::new(-1.0e308).expect("finite seed");
     assert_eq!(
         mapped_pcurve_parameter_near_point(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &context,
             &line,
             Point3::new(-1.0e308, 0.0, 0.0),
@@ -1638,7 +1638,7 @@ fn the_mapped_pcurve_search_without_a_domain_ends_where_a_step_leaves_the_finite
     );
     assert_eq!(
         mapped_pcurve_parameter_near_point(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &context,
             &line,
             Point3::new(-4.0e307, 0.0, 0.0),
@@ -1700,7 +1700,7 @@ fn the_mapped_pcurve_search_accepts_a_matching_seed_whose_pcurve_has_no_tangent(
     let seed = crate::scalar::FiniteReal::new(0.5).expect("finite seed");
     assert_eq!(
         mapped_pcurve_parameter_near_point(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &context,
             &pcurve,
             Point3::new(3.0, 0.5, 0.0),

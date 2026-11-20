@@ -413,7 +413,7 @@ fn placed_reference_edit(
     };
     let mut losses = Vec::new();
     let left_identity = super::super::place_contained_poses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut ir,
         &table,
         &mut losses,
@@ -1199,7 +1199,7 @@ fn typed_contained_pose_without_an_own_carrier_composes_in_each_member_instance(
         native.design_component_occurrences = vec![local_carrier(PART, 496)];
         native.xref_references = vec![reference];
     });
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut protected = std::collections::BTreeSet::new();
     let mut losses = Vec::new();
     for index in [0, 4] {

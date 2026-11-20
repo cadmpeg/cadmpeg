@@ -74,16 +74,6 @@ fn golden_output_is_deterministic() {
     harness().check_determinism_inputs(&inputs(), &branches());
 }
 
-#[test]
-fn primary_golden_snapshots_hold() {
-    harness().check_inputs(&inputs(), &branches());
-}
-
-#[test]
-fn primary_golden_output_is_deterministic() {
-    harness().check_determinism_inputs(&inputs(), &branches());
-}
-
 /// A geometry-depth decode agrees with the full decode outside the design
 /// arenas. A geometry request stops before design projection, so every input
 /// is cut.

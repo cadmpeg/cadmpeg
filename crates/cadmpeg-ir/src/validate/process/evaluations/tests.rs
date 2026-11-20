@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_core::decode::ResourceLimits;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 use crate::design::dimension::{Dimension, ParamRef};
 use crate::design::evaluation::{EvaluationStatus, StateBase};
 use crate::design::feature::FeatureOperation;
+use crate::document::CadIr;
 use crate::process::state::{ProcessBase, ProcessStateOf};
+use crate::report::check::{Check, Finding};
 use crate::validate::design::fixture as design;
 use crate::validate::process::fixture::{
     assert_error, assert_no_process_finding, document, id, state,
@@ -137,6 +139,19 @@ fn process_bases_resolve_to_states_with_content() {
     assert_error(&ir, "is an evaluation with no content");
 }
 
+/// The process findings of `ir` under `policy`.
+fn findings_under(ir: &CadIr, policy: &DecodePolicy) -> Vec<Finding> {
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, policy).unwrap();
+    let report = crate::validate::validate_neutral_for_decode(&ctx, ir, Vec::new()).unwrap();
+    ctx.finish_session().unwrap();
+    report
+        .findings
+        .into_iter()
+        .filter(|finding| finding.check == Check::Process)
+        .collect()
+}
+
 #[test]
 fn process_bases_form_a_forest_within_the_reader_ceiling() {
     let mut ir = document();
@@ -148,7 +163,9 @@ fn process_bases_form_a_forest_within_the_reader_ceiling() {
         "process state is its own ancestor through its state bases",
     );
 
-    let ceiling = ResourceLimits::default().max_state_chain_depth;
+    let mut policy = DecodePolicy::default();
+    policy.limits.max_state_chain_depth = 8;
+    let ceiling = policy.limits.max_state_chain_depth;
     let mut ir = document();
     ir.process.states.clear();
     let key = |at: u64| format!("{at:05}");
@@ -162,7 +179,7 @@ fn process_bases_form_a_forest_within_the_reader_ceiling() {
         chained.configuration = Some(design::id("configuration", &key(at)));
         ir.process.states.push(chained);
     }
-    let findings = crate::validate::process::fixture::process_findings(&ir);
+    let findings = findings_under(&ir, &policy);
     assert!(
         findings
             .iter()
@@ -203,7 +220,7 @@ fn a_state_feature_is_a_removal_states_feature_of_the_scope() {
 }
 
 #[test]
-fn a_material_removal_feature_is_named_by_at_most_one_removal_state() {
+fn a_material_removal_feature_is_named_by_removal_states_of_one_operation() {
     let mut ir = document();
     ir.design.features[0].definition.operation = FeatureOperation::MaterialRemoval;
     for (key, operation) in [("removal-drill", "drill"), ("removal-mill", "mill")] {
@@ -219,7 +236,31 @@ fn a_material_removal_feature_is_named_by_at_most_one_removal_state() {
     ir.process
         .states
         .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-    assert_error(&ir, "material-removal feature is named by 2 removal states");
+    assert_error(
+        &ir,
+        "material-removal feature is named by removal states of 2 operations: test:process:operation#drill, test:process:operation#mill",
+    );
+}
+
+#[test]
+fn removal_states_of_one_operation_in_several_configurations_name_one_feature() {
+    let mut ir = document();
+    ir.design.features[0].definition.operation = FeatureOperation::MaterialRemoval;
+    for (key, configuration) in [("removal-base", "base"), ("removal-large", "large")] {
+        let mut removal = state(
+            key,
+            ProcessStateOf::Removal(id("operation", "mill")),
+            ProcessBase::Design(StateBase::Empty),
+        );
+        removal.configuration = Some(design::id("configuration", configuration));
+        removal.content = None;
+        removal.feature = Some(design::feature("extrude"));
+        ir.process.states.push(removal);
+    }
+    ir.process
+        .states
+        .sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
+    assert_no_process_finding(&ir);
 }
 
 #[test]

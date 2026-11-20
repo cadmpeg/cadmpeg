@@ -596,6 +596,8 @@ mod tests {
         assert!(compared > 0, "the generated tables produce associations");
     }
 
+    /// The 40,000 replay entries make an association that finds each row by
+    /// a scan of its namespace quadratic in the entries.
     #[test]
     fn long_replay_tables_associate_every_window() {
         use crate::surface::SurfaceKind;

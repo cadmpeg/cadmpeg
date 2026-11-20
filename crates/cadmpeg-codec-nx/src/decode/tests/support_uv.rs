@@ -496,7 +496,7 @@ fn coupled_uv_completion_uses_values_lane_before_budgeted_offset_inverse() {
                 None,
             ]),
         )];
-        let limited_ctx = cadmpeg_test_support::service_decode_context();
+        let limited_ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut limited = ir.clone();
         // The original slice cannot admit the typed carrier walk: the lane
         // reports its exhausted geometry work and the session continues.

@@ -96,7 +96,11 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
             let (mut source_less, _, _) = result.into_parts();
             source_less.source = None;
             source_less
-                .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+                .set_native_unknowns(
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
+                    "f3d",
+                    &[],
+                )
                 .unwrap();
             for (ordinal, side) in side_curves.into_iter().enumerate() {
                 source_less
@@ -280,7 +284,11 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         for (ordinal, side) in side_curves.iter().enumerate() {
             source_less
@@ -641,7 +649,11 @@ fn parameterized_blend_tails_round_trip_source_less_generation() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         let expected = source_less.geometry.procedural_surfaces[0].clone();
         assert_eq!(expected.cache_fit_tolerance(), None);
@@ -964,7 +976,11 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         source_less
             .geometry
@@ -1126,7 +1142,11 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -1171,7 +1191,11 @@ fn generated_two_radii_variable_blend_decodes_explicit_circular_cross_section() 
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec

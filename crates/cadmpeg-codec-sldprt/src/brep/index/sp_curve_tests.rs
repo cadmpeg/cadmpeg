@@ -9,7 +9,7 @@ use super::{scan_carriers, CarrierIndex};
 use crate::test_support::parasolid::{planar_b_curve as planar_curve, sp_curve_records};
 
 fn scan(bytes: &[u8]) -> CarrierIndex {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     scan_carriers(&ctx, bytes).expect("carrier scan")
 }
 
@@ -103,7 +103,7 @@ fn a_two_dimensional_descriptor_marked_rational_is_not_read() {
 
 #[test]
 fn an_excluded_b_curve_reads_no_sp_curve() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let bytes = plane_stream([0.001, 0.002, 0.0]);
     let exclude = std::collections::HashSet::from([60]);
     let carriers =

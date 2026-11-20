@@ -409,13 +409,7 @@ fn attach_records(
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
     assembly_occurrences::attach(ctx, ir, model, losses)?;
     for section in &model.om.object_record_identity_bounded_sections {
-        losses.push(NxLossCode::ObjectRecordIdentityBounded.note(format!(
-            "The identity graph of indexed OM entry {} reached its work bound of {} bytes; \
-             {} of its object records were kept without a stable identity.",
-            section.source_entry,
-            crate::native::om::MAX_STABLE_GRAPH_WORK,
-            section.records
-        )));
+        losses.push(section.loss());
     }
     if model.display_jt.arithmetic_lane_work_bounded {
         losses.push(NxLossCode::DisplayJtArithmeticLaneBounded.note(format!(

@@ -322,7 +322,7 @@ fn conic_extrusion_unbound_support_has_one_loss_per_native_pcurve() {
                 },
             ));
             let mut losses = Vec::new();
-            let ctx = cadmpeg_test_support::service_decode_context();
+            let ctx = cadmpeg_core::decode::test_support::service_decode_context();
             admit(&ctx, &mut ir, &mut losses, &mut []).unwrap();
             assert_eq!(
                 losses.len(),

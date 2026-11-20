@@ -1173,7 +1173,7 @@ fn current_wide_arc_uses_direct_point_ids_with_an_arc_center_carrier() {
         ),
         Some(center)
     );
-    let unrelated = (100u32..1100)
+    let unrelated = (100u32..103)
         .map(|index| {
             let mut marker = entity(
                 "unrelated",

@@ -93,7 +93,7 @@ fn record_header_primary_index_overrides_a_header_shaped_payload() {
     zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     with_scan(&archive, |scan| {
-        let _ctx = cadmpeg_test_support::service_decode_context();
+        let _ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let headers = crate::design::decode::sketch::decode_related_record_headers(
             scan,
             &[(crate::ids::native_scope(bulk_name), 7)],

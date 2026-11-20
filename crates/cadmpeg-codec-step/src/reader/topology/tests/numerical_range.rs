@@ -50,7 +50,7 @@ fn numerical_0922b_pcurve_knot_units() {
         })
         .expect("seed collection fits policy");
         let r = pcurve_surface_closest(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &index,
             &id,
             &p,
@@ -239,7 +239,7 @@ fn pcurve_locus_finds_an_interior_curve_branch_near_the_float_limit() {
     let midpoint = lower.midpoint(upper);
     for x in [0.5, 0.6] {
         assert!(curve_parameter_near_point(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &index,
             &curve_id,
             Point3::new(x, 0.0, 0.0),
@@ -304,7 +304,7 @@ fn numerical_0922b_pcurve_retains_finite_seed_when_step_overflows() {
     };
     assert_eq!(
         mapped_pcurve_closest(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &index,
             &id,
             &pcurve,
@@ -345,7 +345,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_end_is_measured_at_its_finite_end()
     );
     assert_eq!(
         pcurve_declared_endpoint_fit_directed(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &index,
             &id,
             &pcurve,
@@ -382,7 +382,7 @@ fn the_mapped_pcurve_search_halves_a_step_whose_point_overflows() {
         0.,
     );
     let (error, parameter) = mapped_pcurve_closest(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &index,
         &id,
         &parabola,
@@ -429,7 +429,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_placed_end_misses_by_an_infinite_di
     );
     assert_eq!(
         pcurve_declared_endpoint_fit_directed(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &index,
             &id,
             &pcurve,
@@ -457,7 +457,7 @@ fn a_declared_pcurve_fit_with_an_overflowing_line_end_is_measured_at_its_finite_
     );
     assert_eq!(
         pcurve_declared_endpoint_fit_directed(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &index,
             &id,
             &pcurve,
@@ -499,7 +499,7 @@ fn certified_pcurve_endpoint_does_not_repeat_tangents_or_seed_searches() {
     assert!(ctx.finish_session().is_ok());
     // The parameter is a forward-evaluated witness, not a seed-only guess.
     let off_surface = mapped_pcurve_closest(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &index,
         &id,
         &pcurve,

@@ -342,7 +342,7 @@ fn datum_axis_option_keys_have_one_classification_and_distinct_literals_survive(
         "test:placed:parameter#one".to_owned(),
     )]);
     let replacements = TextReplacements::build(replacements.iter()).unwrap();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut map = IdentityMap::new(|id: &str| Ok(id.replace("test:model:", "test:placed:")))
         .with_text_replacements(&replacements);
     let axis = axis.rewrite_identities(&ctx, &mut map).unwrap();

@@ -1844,7 +1844,7 @@ mod tests {
 
     #[test]
     fn loop_ring_membership_checks_complete_text_and_keeps_source_order() {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let first = super::CoedgeId::mint("test:model:coedge#prefix-long").unwrap();
         let second = super::CoedgeId::mint("test:model:coedge#prefix").unwrap();
         let third = super::CoedgeId::mint("test:model:coedge#alpha").unwrap();

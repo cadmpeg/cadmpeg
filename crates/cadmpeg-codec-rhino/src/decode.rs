@@ -553,17 +553,6 @@ impl<'a> DecodeContext<'a> {
             .collect()
     }
 
-    /// The root definition the document states.
-    fn root_definition(&self) -> Option<cadmpeg_ir::ids::ProductDefinitionId> {
-        self.session
-            .document()
-            .model
-            .product_definitions
-            .iter()
-            .find(|definition| definition.is_root())
-            .map(|definition| definition.id.clone())
-    }
-
     /// Appends a later geometry-phase link to an object record.
     fn append_link(
         &mut self,
@@ -2668,7 +2657,13 @@ impl<'a> DecodeContext<'a> {
         for source in views.opaque_records {
             self.retain_opaque_record(&source)?;
         }
-        self.session.document_mut()?.finalize();
+        let document = self.session.document_mut()?;
+        document.state_root_definition(
+            ctx,
+            crate::product::root_definition_id(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )?;
+        document.finalize();
         let mut losses: Vec<LossNote> = Vec::new();
         let outcomes = self.class_outcomes()?;
         let decoded = outcomes
@@ -3912,7 +3907,7 @@ fn append_record_links(ir: &mut CadIr, unknown: &UnknownId, links: &[String]) {
     record.links.sort();
     record.links.dedup();
     ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "rhino",
         &unknowns,
     )
@@ -6481,9 +6476,16 @@ pub(crate) fn decode(
             format_args!("history projection rejected atomically by IR validation: {error}"),
         ),
     }
-    let design = history_projected.then(|| (context.object_bodies(), context.root_definition()));
+    let objects = history_projected.then(|| context.object_bodies());
     let mut decoded = context.commit()?;
-    if let Some((objects, root)) = design {
+    if let Some(objects) = objects {
+        let root = decoded
+            .ir
+            .model
+            .product_definitions
+            .iter()
+            .find(|definition| definition.is_root())
+            .map(|definition| definition.id.clone());
         crate::history::v11::project(expand.ctx(), &scan.history, &objects, root, &mut decoded.ir)?;
     }
     Ok(decoded)

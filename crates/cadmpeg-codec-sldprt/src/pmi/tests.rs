@@ -1162,7 +1162,7 @@ fn pmi_alias_comparison_counts_long_distinct_semantic_strings() {
 
 #[test]
 fn pmi_nested_messagepack_depth_cap_rejects_the_value() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut within = vec![0x91; 16];
     within.push(0xc0);
     let work = cadmpeg_core::decode::WorkBudget::new(usize::MAX);
@@ -1245,7 +1245,7 @@ fn pmi_skipped_values_are_validated_but_not_kept() {
     assert!(losses.is_empty(), "{losses:?}");
     assert_eq!(records, original);
 
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let work = cadmpeg_core::decode::WorkBudget::new(usize::MAX);
     let parse = super::Parse {
         shape: super::Shape::Record,

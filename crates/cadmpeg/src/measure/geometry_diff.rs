@@ -279,8 +279,23 @@ fn row_text(row: &Row) -> String {
         (Some(true), _) => "agree".to_owned(),
         (Some(false), _) => "disagree".to_owned(),
         (None, Some(cause)) => format!("not compared ({})", cause.code()),
-        (None, None) => "not compared".to_owned(),
+        (None, None) => "informational".to_owned(),
     };
+    if row.a().is_none() && row.b().is_none() {
+        // A row that compares two sets states its largest difference.
+        let largest = match (row.difference(), row.tolerance()) {
+            (Some(difference), Some(tolerance)) => {
+                format!(
+                    "largest {} (tolerance {})",
+                    number(difference),
+                    number(tolerance)
+                )
+            }
+            (Some(difference), None) => format!("largest {}", number(difference)),
+            (None, _) => "counts differ".to_owned(),
+        };
+        return format!("{:<24} {largest}  {outcome}", row.quantity());
+    }
     format!(
         "{:<24} {} = {}  {outcome}",
         row.quantity(),

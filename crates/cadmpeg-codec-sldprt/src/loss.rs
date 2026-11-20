@@ -64,6 +64,8 @@ pub(crate) enum SldprtLossCode {
     /// The configuration pass reached its work cap; later configurations
     /// keep empty projected states.
     ConfigProjectionWorkCapped,
+    /// A configuration's stored state has no design evaluation.
+    ConfigStateUnstated,
     /// Parameter lacks an evaluated scalar or a regenerable finite value.
     ParameterUnevaluated,
     /// Parameter records have empty, duplicate, or colliding names/ordinals.
@@ -338,6 +340,7 @@ impl SldprtLossCode {
         Self::ConfigIncoherentBodyRefs,
         Self::ConfigIncompleteSnapshot,
         Self::ConfigProjectionWorkCapped,
+        Self::ConfigStateUnstated,
         Self::ParameterUnevaluated,
         Self::ParameterAmbiguousIdentity,
         Self::PmiDimensionUnbound,
@@ -461,6 +464,7 @@ impl SldprtLossCode {
             Self::ConfigIncoherentBodyRefs => "config.incoherent-body-refs",
             Self::ConfigIncompleteSnapshot => "config.incomplete-snapshot",
             Self::ConfigProjectionWorkCapped => "config.projection-work-capped",
+            Self::ConfigStateUnstated => "config.state-unstated",
             Self::ParameterUnevaluated => "parameter.unevaluated",
             Self::ParameterAmbiguousIdentity => "parameter.ambiguous-identity",
             Self::PmiDimensionUnbound => "pmi.dimension-unbound",
@@ -631,6 +635,7 @@ impl SldprtLossCode {
             | Self::ConfigIncoherentBodyRefs
             | Self::ConfigIncompleteSnapshot
             | Self::ConfigProjectionWorkCapped
+            | Self::ConfigStateUnstated
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
@@ -842,6 +847,7 @@ impl SldprtLossCode {
             | Self::ConfigIncoherentBodyRefs
             | Self::ConfigIncompleteSnapshot
             | Self::ConfigProjectionWorkCapped
+            | Self::ConfigStateUnstated
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
@@ -1058,6 +1064,7 @@ mod tests {
                 "config.incoherent-body-refs",
                 "config.incomplete-snapshot",
                 "config.projection-work-capped",
+                "config.state-unstated",
                 "parameter.unevaluated",
                 "parameter.ambiguous-identity",
                 "pmi.dimension-unbound",

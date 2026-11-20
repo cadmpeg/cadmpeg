@@ -465,7 +465,7 @@ fn native_owner_operand_keeps_a_missing_source_index() {
         let markers = HashMap::from([(relation.id(), &relation), (owner.id(), &owner)]);
         let Some(SketchConstraintDefinitionInput::Native { operands, .. }) =
             typed_marker_relation_definition(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &relation,
                 &markers,
                 &HashMap::new(),
@@ -567,7 +567,7 @@ mod endpoint_probes;
 fn binary_curve_relation_does_not_replace_point_handles_by_incident_curves() {
     use crate::records::{SketchInputLinks, SketchRelationKind};
     use cadmpeg_ir::sketches::{SketchEntityId, SketchLocus};
-    let context = cadmpeg_test_support::service_decode_context();
+    let context = cadmpeg_core::decode::test_support::service_decode_context();
     let mut relation = SketchInputEntity::new(
         "relation",
         "lane",

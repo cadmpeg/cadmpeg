@@ -10,7 +10,7 @@ use cadmpeg_ir::codec::{Codec, Confidence};
 use crate::chunks::{
     anonymous_version, checked_count_bytes, checksum_children_through_class_end, chunk_at, crc16,
     packed_version, parse_header, validate_eof, verify_checksum, ArchiveVersion, BoundedReader,
-    ChecksumStatus, FramingError, TCODE_CLASS_END, TCODE_CRC, TCODE_SHORT,
+    ChecksumStatus, FramingError, CHECKSUM_CHILD_CAP, TCODE_CLASS_END, TCODE_CRC, TCODE_SHORT,
 };
 use crate::layout::endoffile_record_wide as eof_wide;
 use crate::layout::file_header;
@@ -35,6 +35,7 @@ fn class_end_alone_is_one_checksum_child() {
         &bytes,
         0..bytes.len(),
         archive,
+        CHECKSUM_CHILD_CAP,
         "render-settings userdata",
     )
     .expect("class end child range");
@@ -44,13 +45,13 @@ fn class_end_alone_is_one_checksum_child() {
 #[test]
 fn class_end_checksum_children_ceiling_is_a_framing_error() {
     let archive = ArchiveVersion::V8;
-    let cap = super::super::CHECKSUM_CHILD_CAP;
+    let cap = 3;
     let child = short_chunk(archive, TCODE_SHORT | 7, 0);
     let class_end = short_chunk(archive, TCODE_CLASS_END, 0);
     let mut bytes = child.repeat(cap);
     bytes.extend(&class_end);
     let error =
-        checksum_children_through_class_end(&bytes, 0..bytes.len(), archive, "class stream")
+        checksum_children_through_class_end(&bytes, 0..bytes.len(), archive, cap, "class stream")
             .expect_err("child ceiling rejects the class-end slot");
     assert!(
         matches!(error, FramingError::InvalidLength { offset, value }
@@ -62,12 +63,12 @@ fn class_end_checksum_children_ceiling_is_a_framing_error() {
 #[test]
 fn class_end_checksum_children_accept_the_ceiling() {
     let archive = ArchiveVersion::V8;
-    let cap = super::super::CHECKSUM_CHILD_CAP;
+    let cap = 3;
     let child = short_chunk(archive, TCODE_SHORT | 7, 0);
     let mut bytes = child.repeat(cap - 1);
     bytes.extend(short_chunk(archive, TCODE_CLASS_END, 0));
     let ranges =
-        checksum_children_through_class_end(&bytes, 0..bytes.len(), archive, "class stream")
+        checksum_children_through_class_end(&bytes, 0..bytes.len(), archive, cap, "class stream")
             .expect("class end is within the child ceiling");
     assert_eq!(ranges.len(), cap);
     assert_eq!(ranges.first(), Some(&(0..child.len())));

@@ -34,8 +34,11 @@ fn reference_rows_preserve_types_and_source_ordinals() {
         ),
     ] {
         let bytes = table(kinds.iter().map(|kind| row(kind, "part.f3d")).collect());
-        let parsed =
-            crate::xref::parse(&cadmpeg_test_support::service_decode_context(), &bytes).unwrap();
+        let parsed = crate::xref::parse(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &bytes,
+        )
+        .unwrap();
         assert_eq!(
             parsed
                 .references
@@ -74,9 +77,11 @@ fn unknown_reference_type_refuses_the_whole_table() {
         vec!["DERIVED", "UNKNOWN", "XREF"],
     ] {
         let bytes = table(kinds.iter().map(|kind| row(kind, "part.f3d")).collect());
-        assert!(
-            crate::xref::parse(&cadmpeg_test_support::service_decode_context(), &bytes).is_err()
-        );
+        assert!(crate::xref::parse(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &bytes
+        )
+        .is_err());
     }
 }
 
@@ -101,8 +106,10 @@ fn malformed_derived_rows_refuse_the_table() {
     }
     for invalid in cases {
         let bytes = table(vec![row("XREF", "child.f3d"), invalid]);
-        assert!(
-            crate::xref::parse(&cadmpeg_test_support::service_decode_context(), &bytes).is_err()
-        );
+        assert!(crate::xref::parse(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            &bytes
+        )
+        .is_err());
     }
 }

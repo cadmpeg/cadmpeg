@@ -103,7 +103,7 @@ fn datum_axis_walks_bound_dimensions_and_preserves_colliding_option_literals() {
         ..Default::default()
     })
     .unwrap();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut seen = Vec::new();
     axis.visit_identity_references(&ctx, &mut |identity| {
         seen.push(identity.to_owned());
@@ -284,7 +284,7 @@ fn axis_source_literals_preserve_both_collision_keys_while_other_feature_maps_ke
     let replacements =
         std::collections::BTreeMap::from([(source.to_owned(), destination.to_owned())]);
     let replacements = TextReplacements::build(replacements.iter()).unwrap();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut map = IdentityMap::new(|id: &str| Ok(id.replace("test:model:", "test:placed:")))
         .with_text_replacements(&replacements);
     let axis = axis.rewrite_identities(&ctx, &mut map).unwrap();

@@ -322,7 +322,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
     ]);
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &coincident,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
@@ -334,7 +334,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
     ));
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &merge_points,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
@@ -346,7 +346,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
     ));
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &midpoint,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
@@ -358,7 +358,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
     ));
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &arc_angle,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
@@ -370,7 +370,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
     ));
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &symmetric,
             &sketch,
             &[
@@ -390,7 +390,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
     );
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &at_intersection,
             &sketch,
             &[first.clone(), line.clone(), symmetry_axis.clone()],
@@ -410,7 +410,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
     })
     .unwrap();
     let definition = typed_marker_relation_definition_in_sketch(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &coincident,
         &sketch,
         &[first.clone(), second.clone(), line.clone(), arc.clone()],
@@ -438,7 +438,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
     ));
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &at_intersection,
             &sketch,
             &[first.clone(), line.clone(), symmetry_axis.clone()],
@@ -450,7 +450,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
     ));
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &midpoint,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
@@ -469,7 +469,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
     .unwrap();
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &arc_angle,
             &sketch,
             &[first.clone(), second.clone(), line.clone(), arc.clone()],
@@ -485,7 +485,7 @@ fn locus_relations_require_matching_evaluated_geometry() {
     .unwrap();
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &symmetric,
             &sketch,
             &[symmetric_first, symmetric_second, symmetry_axis],
@@ -1066,7 +1066,7 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
     )]);
     assert_eq!(
         unique_axis_aligned_linked_loci(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &sketch,
             &[
@@ -1088,7 +1088,7 @@ fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
     let ambiguous = point("synthetic:test:id#ambiguous", 6.0, 2.0);
     assert_eq!(
         unique_axis_aligned_linked_loci(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &sketch,
             &[first_entity, second_entity, unrelated, ambiguous],
@@ -1146,7 +1146,7 @@ fn fixed_relation_ignores_self_identifying_geometry_link() {
 
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             std::slice::from_ref(&point_entity),
@@ -1226,7 +1226,7 @@ fn relation_line_identity_ignores_self_identifying_geometry_link() {
 
     assert_eq!(
         single_marker_line_entity(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             relation.id(),
             &markers,
             &loci,
@@ -1263,7 +1263,7 @@ fn linked_locus_disambiguates_a_coordinate_collision() {
 
     assert_eq!(
         resolved_marker_locus(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             ambiguous.id(),
             &markers,
             &loci,
@@ -1274,7 +1274,7 @@ fn linked_locus_disambiguates_a_coordinate_collision() {
     );
     assert_eq!(
         marker_entities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             ambiguous.id(),
             &markers,
             &loci,
@@ -1325,7 +1325,7 @@ fn point_handle_does_not_inherit_a_constraint_sibling_locus() {
 
     assert_eq!(
         resolved_marker_locus(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             point.id(),
             &markers,
             &loci,

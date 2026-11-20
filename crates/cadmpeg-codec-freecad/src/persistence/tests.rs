@@ -566,7 +566,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .native
         .namespace_mut("fcstd")
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "logical_ledger",
             &missing_payload,
         )
@@ -690,7 +690,7 @@ fn native_validation_rejects_duplicate_extension_identity() {
         .native
         .namespace_mut("fcstd")
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "extensions",
             &extensions,
         )

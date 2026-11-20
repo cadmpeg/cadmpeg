@@ -52,7 +52,7 @@ fn model() -> CadIr {
 fn findings(ir: &CadIr) -> Vec<Finding> {
     let mut findings = Vec::new();
     super::super::check_products(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         ir,
         &mut findings,
     )

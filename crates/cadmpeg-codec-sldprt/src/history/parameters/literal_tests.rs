@@ -69,7 +69,7 @@ fn diameter_display_literals_participate_in_expressions() {
     let values = std::collections::HashMap::new();
     assert_eq!(
         ParameterExpressionParser::new_flat(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "<MOD-DIAM>4mm / 2",
             &aliases,
             &values
@@ -82,7 +82,7 @@ fn diameter_display_literals_participate_in_expressions() {
     );
     assert_eq!(
         ParameterExpressionParser::new_flat(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "<MOD-DIAM>4 + 1mm",
             &aliases,
             &values
@@ -95,7 +95,7 @@ fn diameter_display_literals_participate_in_expressions() {
     );
     assert_eq!(
         ParameterExpressionParser::new_flat(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "&lt;MOD-DIAM&gt;4mm / 2",
             &aliases,
             &values,
@@ -120,7 +120,7 @@ fn radius_display_literals_participate_in_expressions() {
     let values = std::collections::HashMap::new();
     assert_eq!(
         ParameterExpressionParser::new_flat(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "<MOD-RHO>4mm / 2",
             &aliases,
             &values
@@ -133,7 +133,7 @@ fn radius_display_literals_participate_in_expressions() {
     );
     assert_eq!(
         ParameterExpressionParser::new_flat(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "&lt;MOD-RHO&gt;4 + 1mm",
             &aliases,
             &values,
@@ -176,7 +176,7 @@ fn dimension_decorations_preserve_the_nominal_scalar() {
         assert_eq!(dimension_display(expression), Some(display), "{expression}");
         assert_eq!(
             ParameterExpressionParser::new_flat(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 expression,
                 &aliases,
                 &values

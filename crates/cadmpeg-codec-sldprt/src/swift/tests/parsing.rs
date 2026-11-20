@@ -453,7 +453,7 @@ fn swift_serialized_entity_depth_cap_leaves_the_root_unresolved() {
     }
     let mut payload = Vec::new();
     encode_entity(&nested, &mut payload);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     // The outer root exceeds the nesting cap; each inner candidate is a
     // second root, so no unique root remains.
     assert!(parse_unique_root(&ctx, &payload).unwrap().is_none());
@@ -470,7 +470,7 @@ fn duplicate_swift_annotation_reference_ids_refuse_before_projection() {
     root.annotations.entities = vec![annotation.clone(), annotation];
     let mut payload = Vec::new();
     encode_entity(&root, &mut payload);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let error = parse_unique_root(&ctx, &payload).unwrap_err();
     assert!(
         matches!(&error, CodecError::Malformed(message) if message == "duplicate SWIFT object reference ID A42")
@@ -542,7 +542,7 @@ fn assert_malformed_swift_projection(annotation: Entity, reason: &str) {
     let class = crate::swift::short_class(&annotation.class).to_owned();
     let source = source_with_swift_annotation(annotation);
     let scan = crate::test_support::container::scan(&source);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut provenance = cadmpeg_ir::annotations::Annotations::default();
     let expected = format!("SWIFT annotation A42 ({class}): {reason}");
     assert!(
@@ -613,7 +613,7 @@ fn swift_valid_and_suppressed_annotations_have_explicit_dispositions() {
         annotation.doubles.insert("Tolerance".into(), value);
         let source = source_with_swift_annotation(annotation);
         let scan = crate::test_support::container::scan(&source);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut provenance = cadmpeg_ir::annotations::Annotations::default();
         let projected = crate::swift::annotations(
             &ctx,
@@ -641,7 +641,7 @@ fn swift_valid_and_suppressed_annotations_have_explicit_dispositions() {
         annotation.integers.insert("IsSuppressed".into(), 1);
         let source = source_with_swift_annotation(annotation);
         let scan = crate::test_support::container::scan(&source);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut provenance = cadmpeg_ir::annotations::Annotations::default();
         assert!(crate::swift::annotations(
             &ctx,
@@ -664,7 +664,7 @@ fn swift_valid_and_suppressed_annotations_have_explicit_dispositions() {
 fn swift_recognized_unprojected_annotation_records_unsupported_loss() {
     let source = source_with_swift_annotation(super::entity("GdtWidth"));
     let scan = crate::test_support::container::scan(&source);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut provenance = cadmpeg_ir::annotations::Annotations::default();
     assert!(crate::swift::annotations(
         &ctx,
@@ -763,7 +763,7 @@ fn a_declared_display_list_that_its_head_does_not_frame_reports_its_loss() {
         &payload,
     ));
     let scan = crate::test_support::container::scan(&source);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut provenance = cadmpeg_ir::annotations::Annotations::default();
     let mut losses = Vec::new();
     crate::swift::annotations(&ctx, &scan, &mut provenance, None, &[], &[], &mut losses)

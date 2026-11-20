@@ -119,7 +119,7 @@ mod tests {
         zip.write_all(DATA).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            let ctx = cadmpeg_test_support::service_decode_context();
+            let ctx = cadmpeg_core::decode::test_support::service_decode_context();
             let asset = super::embedded_image_asset(&ctx, scan, NAME)
                 .unwrap()
                 .unwrap();
@@ -161,7 +161,7 @@ mod tests {
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
             assert!(super::embedded_image_asset(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 "mark.png"
             )

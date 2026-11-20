@@ -1284,7 +1284,8 @@ impl NativeModel {
         let rmfastload_physical_storages =
             super::rmfastload_storage::collect(ctx, container, &classes)?;
         let fields = field_definitions(container)?;
-        let (object_records, object_record_identity_bounded_sections) = object_records(container)?;
+        let (object_records, object_record_identity_bounded_sections) =
+            object_records(container, super::om::MAX_STABLE_GRAPH_WORK)?;
         let (rmfastload_object_id_tables, rmfastload_object_ids) =
             match rmfastload_object_id_table(ctx, container)? {
                 Some((table, object_ids)) => (vec![table], object_ids),

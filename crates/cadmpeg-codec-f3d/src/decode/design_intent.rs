@@ -938,6 +938,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         .extend(crate::history::bind_generated_body_selections(
             &mut model.features,
             &body_selection_inputs,
+            &scope_histories,
+            geometry.primary_brep,
+            &mut losses,
         ));
     losses.extend(crate::history::bind_feature_face_selections(
         &mut model.features,
@@ -1012,7 +1015,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.sketch_curve_identities,
         &design.sketch_surfaces,
         &design.sketch_relations,
-        geometry.tolerances.linear.get(),
+        crate::design::feature_project::SpatialProfileSearch {
+            linear_tolerance: geometry.tolerances.linear.get(),
+            work: crate::design::feature_project::SPATIAL_PROFILE_SEARCH_WORK,
+        },
     )?;
     model.spatial_sketches = spatial.sketches;
     model.spatial_sketch_entities = spatial.entities;

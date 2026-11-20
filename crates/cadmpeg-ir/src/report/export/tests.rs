@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_test_support::wire;
+use crate::test_support::wire;
 
 use crate::report::export::{CensusBasis, EntityCensus, ExportReport};
 use cadmpeg_core::dialect::DialectId;

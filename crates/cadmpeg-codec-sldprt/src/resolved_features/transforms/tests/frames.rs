@@ -209,7 +209,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     };
 
     assert!(matches!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&parameter),
             &sketch,
@@ -228,7 +228,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     let mut horizontal_relation = relation.clone();
     horizontal_relation.family = FeatureInputRelationFamily::PointPointHorizontalDistance;
     assert!(matches!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(),
             &horizontal_relation,
             Some(&parameter),
             &sketch,
@@ -272,7 +272,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     directional_parameter.value = Some(ParameterValue::Length(Length::new(1.0).unwrap()));
     assert!(matches!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &projected_relation,
             Some(&directional_parameter),
             &sketch,
@@ -286,7 +286,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     directional_parameter.value = Some(ParameterValue::Length(Length::new(0.05).unwrap()));
     assert!(matches!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &projected_relation,
             Some(&directional_parameter),
             &sketch,
@@ -304,7 +304,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     directional_parameter.value = Some(ParameterValue::Length(Length::new(1.0).unwrap()));
     assert!(matches!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &projected_relation,
             Some(&directional_parameter),
             &sketch,
@@ -320,7 +320,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     ambiguous_entities.push(point("synthetic:test:id#other-solved", -5.0));
     for candidate in [&relation, &horizontal_relation] {
         assert!(typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             candidate,
             Some(&parameter),
             &sketch,
@@ -340,7 +340,7 @@ fn point_distance_preserves_stored_operands_when_geometry_is_inconsistent() {
     ];
     for candidate in [&relation, &horizontal_relation] {
         assert!(typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             candidate,
             Some(&parameter),
             &sketch,

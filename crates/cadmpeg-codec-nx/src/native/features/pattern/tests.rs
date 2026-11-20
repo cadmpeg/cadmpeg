@@ -169,7 +169,7 @@ fn assert_pattern_content_admits(bytes: &[u8], route: PatternContentRoute) {
         }
         PatternContentRoute::Fixed => {
             crate::native::features::pattern::feature_pattern_construction_binary64_lanes(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &container,
                 payloads,
             )

@@ -153,6 +153,12 @@ opt-level = 2
 [profile.dev.package.cadmpeg-ir]
 opt-level = 1
 
+# Evaluation charges `WorkBudget` once per step. At opt-level 0 the budget
+# debit and its ancestor walk take about a quarter of the self time of
+# measured-geometry tests.
+[profile.dev.package.cadmpeg-core]
+opt-level = 1
+
 # Measurement tests spend most of their time in this crate's quadrature.
 [profile.dev.package.cadmpeg-measure]
 opt-level = 2

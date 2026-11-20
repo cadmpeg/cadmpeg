@@ -254,7 +254,7 @@ fn numerical_audit_rational_pcurve_preserves_finite_weighted_results() {
     use super::super::nurbs_pcurve_differential;
     use crate::math::Point2;
     let result = nurbs_pcurve_differential(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         1,
         &[0.0, 0.0, 1.0, 1.0],
         &[Point2::new(1e200, 0.0), Point2::new(2e200, 0.0)],
@@ -277,7 +277,7 @@ fn numerical_audit_pcurve_keeps_finite_derivatives_on_a_narrow_knot_span() {
 
     let width = f64::from_bits(1_u64 << 44);
     let result = nurbs_pcurve_differential(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         1,
         &[0.0, 0.0, width, width],
         &[Point2::new(0.0, 0.0), Point2::new(width, 0.0)],
@@ -296,7 +296,7 @@ fn numerical_audit_pcurve_keeps_finite_derivatives_on_a_narrow_knot_span() {
     );
 
     let quadratic = nurbs_pcurve_differential(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         2,
         &[0.0, 0.0, 0.0, width, width, width],
         &[
@@ -458,7 +458,7 @@ fn audit_regression_surface_inversion_accepts_large_parameter_origins() {
     .unwrap();
     let target = Point3::new(0.5, 0.5, 0.);
     let uv = crate::eval::nurbs_surface_closest_parameter_with_budget(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &surface,
         target,
         None,

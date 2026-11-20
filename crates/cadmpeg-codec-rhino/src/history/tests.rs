@@ -138,7 +138,7 @@ fn projection_links_unique_prior_producers_and_preserves_native_parameters() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &records,
             None,
             &mut ir,
@@ -177,7 +177,7 @@ fn projection_counts_dependency_on_later_producer() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &records,
             None,
             &mut ir,
@@ -199,7 +199,7 @@ fn projection_counts_dependency_with_ambiguous_producers() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &records,
             None,
             &mut ir,
@@ -238,7 +238,7 @@ fn history_value_accepts_a_future_minor_and_skips_its_suffix() {
     body.extend([0xaa, 0xbb]);
     let bytes = anonymous_value(9, &body);
     let (parsed, next) = parse_value(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0,
         bytes.len(),
@@ -448,7 +448,7 @@ fn projection_preserves_duplicate_values_and_same_record_descendants() {
     let mut ir = cadmpeg_ir::document::CadIr::empty();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &records,
             None,
             &mut ir,
@@ -494,7 +494,7 @@ fn decoded_history_geometry_is_counted_as_untyped_while_it_stays_stringified() {
         ));
         let geometry_value = value(10, &anonymous_value(0, &geometry_payload));
         let (parsed, _) = parse_value(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &geometry_value,
             0,
             geometry_value.len(),
@@ -544,7 +544,7 @@ fn embedded_history_point_cloud_projects_one_feature() {
         let mut ir = cadmpeg_ir::document::CadIr::empty();
         assert_eq!(
             project(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &[source],
                 Some((expand, ArchiveVersion::V8, None, MillimeterScale::IDENTITY)),
                 &mut ir,
@@ -566,7 +566,7 @@ fn history_geometry_without_unit_binding_is_counted_and_source_located() {
     ));
     let geometry_value = value(10, &anonymous_value(0, &geometry_payload));
     let (parsed, _) = parse_value(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &geometry_value,
         0,
         geometry_value.len(),
@@ -618,7 +618,7 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     geometry_payload.extend(geometry);
     let geometry_value = value(10, &anonymous_value(0, &geometry_payload));
     let (parsed, next) = parse_value(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &geometry_value,
         0,
         geometry_value.len(),
@@ -669,7 +669,7 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     polyedges.extend(anonymous_value(0, &polyedge));
     let polyedge_value = value(13, &anonymous_value(0, &polyedges));
     let (parsed, _) = parse_value(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &polyedge_value,
         0,
         polyedge_value.len(),
@@ -697,7 +697,7 @@ fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
     chains.extend(anonymous_value(1, &chain));
     let chain_value = value(14, &anonymous_value(1, &chains));
     let (parsed, _) = parse_value(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &chain_value,
         0,
         chain_value.len(),
@@ -762,7 +762,7 @@ fn subd_edge_chain_count_mismatch_drops_dependent_arrays_with_a_diagnostic() {
     let value = value(14, &anonymous_value(1, &chains));
     let mut warnings = Diagnostics::new();
     let (parsed, _) = parse_value_with_warnings(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &value,
         0,
         value.len(),

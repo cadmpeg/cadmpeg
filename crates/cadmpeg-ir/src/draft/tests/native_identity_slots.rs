@@ -68,7 +68,7 @@ fn committed_native_cache_keeps_paths_when_earlier_map_keys_are_inserted() {
         .namespace_mut("zeta")
         .arenas_mut()
         .insert("last".into(), vec![record()]);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(ir, &ctx, None).unwrap();
     assert!(session.contains(target).unwrap());
     // Exercise the cache owner directly: map-key insertion does not reorder rows.

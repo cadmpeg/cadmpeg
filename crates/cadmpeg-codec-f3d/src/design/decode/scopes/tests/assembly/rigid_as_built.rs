@@ -968,7 +968,7 @@ fn unadmitted_rigid_group_frames_emit_a_loss() {
         );
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             let decoded = decode_parameter_scopes(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 &ParameterScopeSources::default(),
             )

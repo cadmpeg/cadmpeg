@@ -57,7 +57,7 @@ fn placed_surface_partials_return_the_session_depth_refusal() {
 #[test]
 fn degree_sixteen_plane_partials_are_exact() {
     let plane = crate::eval::test_support::high_degree_plane();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let partials = crate::eval::nurbs_surface_partials(&ctx, &plane, 0.5, 0.5).unwrap();
     assert_eq!(partials.point, Point3::new(0.5, 0.5, 0.0));
     assert_eq!(partials.du, Vector3::new(1.0, 0.0, 0.0));

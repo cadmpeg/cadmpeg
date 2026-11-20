@@ -1441,17 +1441,38 @@ fn parallel_group_binds_one_common_axis_angle() {
     let second = line("generated:test:line#second", Point2::new(-2.0, -2.0));
     let mismatch = line("generated:test:line#mismatch", Point2::new(1.0, 0.0));
     let crossed = line("generated:test:line#crossed", Point2::new(1.0, -1.0));
-    let parameter = parse_design_parameter_record(&parameter_record(
-        Some(44),
-        "45 deg",
-        "Angular Dimension-2",
-        Some("deg"),
-        "d1",
-        std::f64::consts::FRAC_PI_4,
-    ))
-    .expect("generated angular dimension is canonical");
+    let dimension = |source_kind: &str| {
+        parse_design_parameter_record(&parameter_record(
+            Some(44),
+            "45 deg",
+            source_kind,
+            Some("deg"),
+            "d1",
+            std::f64::consts::FRAC_PI_4,
+        ))
+        .expect("generated angular dimension is canonical")
+    };
+    let parameter = dimension("Angular Dimension-2");
     let parameter_id =
         ParameterId::mint("generated:test:parameter#axis-angle").expect("identity grammar");
+    for (source_kind, admitted) in [
+        ("Angular Dimension-3", true),
+        ("Angular Dimension-17", true),
+        ("Angular Dimension", true),
+        ("Linear Dimension-2", false),
+        ("Angular Dimension-2a", false),
+    ] {
+        assert_eq!(
+            crate::design::dimensions::parallel_group_axis_angle_definition(
+                &[&first, &second],
+                &dimension(source_kind),
+                &parameter_id
+            )
+            .is_some(),
+            admitted,
+            "{source_kind}"
+        );
+    }
 
     assert!(matches!(
         crate::design::dimensions::parallel_group_axis_angle_definition(&[&first, &second], &parameter, &parameter_id),

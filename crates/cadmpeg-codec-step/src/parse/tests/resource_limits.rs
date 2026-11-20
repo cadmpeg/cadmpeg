@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Nesting follows the session depth; value-node limits omit the bounded item.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fmt::Write as _;
 
 use cadmpeg_core::decode::{DecodePolicy, ResourceDimension};
@@ -312,6 +312,28 @@ fn repeated_bounded_anchor_items_stop_before_copying() {
             None
         );
         assert_eq!(resolver.remaining_nodes, 10_000 - 8_191);
+    });
+}
+
+#[test]
+fn aggregate_anchor_materialization_omits_the_records_past_the_total() {
+    with_service_context(b"", |_, ctx| {
+        let anchors = doubling_anchor_values(3);
+        let mut resolver = AnchorResolver::new(&anchors, EXPANDED_PAYLOAD_BASE, ctx);
+        // Each copy of `a3` takes 31 value nodes, so five copies fit.
+        resolver.remaining_nodes = 5 * 31 + 30;
+        for copy in 1..=8 {
+            let mut item = [Value::Resource("#a3".into())];
+            assert_eq!(
+                resolver
+                    .resolve_item(item.iter_mut())
+                    .expect("a node limit is not an error")
+                    .as_deref(),
+                (copy > 5).then_some(ANCHOR_BOUND),
+                "copy {copy}"
+            );
+        }
+        assert_eq!(resolver.remaining_nodes, 30);
     });
 }
 
@@ -668,12 +690,15 @@ fn assert_payload_bounded(source: &str, allowance: usize, expansion: &str, occur
     let bound = format!(
         "{expansion} expansion exceeds {allowance} payload bytes (MAX_EXPANDED_PAYLOAD_PER_INPUT_BYTE)"
     );
+    let bounded = diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.kind == ParseDiagnosticKind::ExpansionBounded)
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect::<HashSet<_>>();
     for id in kept + 1..=LARGE_STRING_RECORDS {
         assert!(
-            has_diagnostic(
-                &diagnostics,
-                ParseDiagnosticKind::ExpansionBounded,
-                &format!("instance #{id} omitted: {bound}; exact source retained"),
+            bounded.contains(
+                format!("instance #{id} omitted: {bound}; exact source retained").as_str()
             ),
             "#{id}"
         );

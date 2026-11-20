@@ -84,7 +84,7 @@ fn dynamic_point_distance_uses_direct_point_roster_when_ordinal_pair_misses() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(10.0)),
             &sketch,
@@ -129,7 +129,7 @@ fn dynamic_point_line_uses_roster_line_when_point_is_explicit() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(2.0)),
             &sketch,
@@ -223,7 +223,7 @@ fn qualified_point_operand_uses_unique_linked_point_carrier() {
 
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&length_parameter(1.0)),
             &sketch,

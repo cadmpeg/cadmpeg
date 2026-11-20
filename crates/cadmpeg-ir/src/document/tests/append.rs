@@ -133,7 +133,7 @@ fn actual_admission_rejects_duplicate_identity_without_changing_the_document() {
     };
     let result = ir.try_append(geometry, Model::default(), Native::default(), |combined| {
         let report = crate::admit(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             combined,
             crate::DRAFT_CORE_CHECKS,
             Vec::new(),

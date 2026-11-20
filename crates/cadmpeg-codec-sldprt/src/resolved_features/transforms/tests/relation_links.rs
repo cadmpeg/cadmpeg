@@ -53,7 +53,7 @@ fn coordinate_curve_links_carry_reverse_constraint_incidence() {
     );
     let Some(SketchConstraintDefinitionInput::Native { operands, .. }) =
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &HashMap::new(),
@@ -103,7 +103,7 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
     assert!(!marker_owns_constraint(&relation, &markers));
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &HashMap::new()
@@ -136,7 +136,7 @@ fn self_link_does_not_make_a_relation_operand_bearing() {
     assert!(!marker_owns_constraint(&relation, &markers));
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &HashMap::new()
@@ -196,7 +196,7 @@ fn axis_relation_accepts_two_forward_points_through_identity_collisions() {
     assert!(marker_owns_constraint(&relation, &markers));
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &sketch,
             &entities,
@@ -241,7 +241,7 @@ fn object_index_collision_remains_a_forward_curve_operand() {
 
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &loci
@@ -298,7 +298,7 @@ fn self_identifying_forward_curve_link_is_excluded_from_arc_relation() {
 
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &loci
@@ -367,7 +367,7 @@ fn self_identifying_forward_link_is_not_a_relation_locus() {
 
     assert_eq!(
         relation_operand_loci(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &markers,
             &loci
@@ -423,7 +423,7 @@ fn native_fallback_entities_exclude_self_identity_collisions() {
     let Some(SketchConstraintDefinitionInput::Native {
         entities, operands, ..
     }) = typed_marker_relation_definition(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &relation,
         &markers,
         &loci,
@@ -482,7 +482,7 @@ fn exact_curve_identity_precedes_incident_locus_expansion() {
 
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             &entities,
@@ -537,7 +537,7 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
 
     assert_eq!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             std::slice::from_ref(&point_entity),
@@ -584,7 +584,7 @@ fn fixed_relation_selects_one_geometry_operand_beside_auxiliary_relation_handles
     ]);
     assert!(matches!(
         typed_marker_relation_definition_in_sketch(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             &SketchId::mint("synthetic:test:id#sketch").unwrap(),
             &[point_entity],
@@ -824,7 +824,7 @@ fn driving_point_distances_resolve_omitted_solver_points() {
 
         assert_eq!(
             inferred_point_coordinates_by_index(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &lane,
                 "feature-native"
             )
@@ -884,7 +884,7 @@ fn ambiguous_driving_point_distance_does_not_assign_solver_points() {
     };
 
     assert!(inferred_point_coordinates_by_index(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &lane,
         "feature-native"
     )

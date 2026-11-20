@@ -254,10 +254,8 @@ fn decode_reports_a_pcurve_support_check_over_the_blend_limit() {
 
 #[test]
 fn decode_checks_a_pcurve_shared_by_many_faces_like_a_single_reference() {
-    // 256 spans of degree 63 need 2^20 blends; repeating the support check
-    // per face would cost that once for each of the 256 faces.
-    let last = 63 + 256 - 1;
-    let pcurve = planar_nurbs_parameters(63, 256, true, |index| {
+    let last = 3 + 4 - 1;
+    let pcurve = planar_nurbs_parameters(3, 4, true, |index| {
         if index == 0 || index == last {
             [0.2, 0.2]
         } else {
@@ -265,14 +263,19 @@ fn decode_checks_a_pcurve_shared_by_many_faces_like_a_single_reference() {
         }
     });
     let decode = |faces| {
-        IgesCodec
+        super::SUPPORT_BOUNDS_CHECKS.with(|checks| checks.set(0));
+        let result = IgesCodec
             .decode(
                 &mut Cursor::new(subrange_nurbs_surfaces_sharing_pcurve_file(
                     2, &pcurve, faces,
                 )),
                 &DecodeOptions::default(),
             )
-            .unwrap()
+            .unwrap();
+        (
+            result,
+            super::SUPPORT_BOUNDS_CHECKS.with(std::cell::Cell::get),
+        )
     };
     let face_losses = |result: &cadmpeg_ir::codec::DecodeResult, sequence: usize| {
         let tag = format!("directory_entry:D{sequence}");
@@ -291,7 +294,8 @@ fn decode_checks_a_pcurve_shared_by_many_faces_like_a_single_reference() {
         messages.sort();
         messages
     };
-    let single = decode(1);
+    let (single, single_checks) = decode(1);
+    assert!(single_checks > 0);
     let expected = face_losses(&single, 9);
     assert!(
         single
@@ -304,8 +308,9 @@ fn decode_checks_a_pcurve_shared_by_many_faces_like_a_single_reference() {
         single.report().losses
     );
 
-    let faces = 256;
-    let shared = decode(faces);
+    let faces = 3;
+    let (shared, shared_checks) = decode(faces);
+    assert_eq!(shared_checks, single_checks);
     for face in 0..faces {
         let sequence = 9 + 2 * face;
         assert!(

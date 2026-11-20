@@ -473,7 +473,7 @@ fn relation_point_materializes_under_one_proven_marker_transform() {
         .collect::<HashMap<_, _>>();
     assert_eq!(
         marker_point_locus(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "sldprt:feature-input:sketch-entity#qualified-curve",
             &markers,
             &loci,
@@ -649,7 +649,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
         .collect::<HashMap<_, _>>();
     assert_eq!(
         marker_entities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             point_marker.id(),
             &markers,
             &loci,
@@ -660,7 +660,7 @@ fn relation_point_coexists_with_nonpoint_native_carrier() {
     );
     assert_eq!(
         marker_point_locus(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             point_marker.id(),
             &markers,
             &loci

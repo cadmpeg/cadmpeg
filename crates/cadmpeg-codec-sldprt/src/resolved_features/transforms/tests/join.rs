@@ -139,7 +139,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         .collect::<HashMap<_, _>>();
     assert_eq!(
         marker_entities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "reference",
             &markers,
             &joins,
@@ -163,7 +163,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(nested_reference.id(), &nested_reference);
     assert_eq!(
         marker_entities(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "nested-reference",
             &markers,
             &joins,
@@ -182,7 +182,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     );
     markers.insert(cycle.id(), &cycle);
     assert!(marker_entities(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "cycle",
         &markers,
         &joins,
@@ -192,7 +192,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     .is_empty());
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             markers["reference"],
             &markers,
             &joins,
@@ -207,7 +207,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         SketchRelationKind::HorizontalPoints,
     ));
     assert!(matches!(
-        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &nested_horizontal, &markers, &joins).unwrap(),
+        typed_marker_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(), &nested_horizontal, &markers, &joins).unwrap(),
         Some(SketchConstraintDefinitionInput::Native { ref native_kind, .. })
             if native_kind == "sldprt:marker-relation:25"
     ));
@@ -215,7 +215,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     nested_native.reclassify(SketchInputKind::from_native_code(28));
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &nested_native,
             &markers,
             &joins
@@ -257,7 +257,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(coordinate_horizontal.id(), &coordinate_horizontal);
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &coordinate_horizontal,
             &markers,
             &coordinate_loci,
@@ -285,7 +285,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(point_handle.id(), &point_handle);
     markers.insert(point_horizontal.id(), &point_horizontal);
     assert!(matches!(
-        typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &point_horizontal, &markers, &point_loci).unwrap(),
+        typed_marker_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(), &point_horizontal, &markers, &point_loci).unwrap(),
         Some(SketchConstraintDefinitionInput::Native { entities, .. })
             if entities == vec![relation_point]
     ));
@@ -294,7 +294,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     operandless_vertical.reclassify(SketchInputKind::Relation(SketchRelationKind::Vertical));
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &operandless_vertical,
             &markers,
             &joins
@@ -305,7 +305,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     operandless_vertical.coordinates_m = cadmpeg_ir::units::FiniteVector::new([0.01, 0.02]);
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &operandless_vertical,
             &markers,
             &joins
@@ -331,7 +331,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(parallel.id(), &parallel);
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &parallel,
             &markers,
             &joins
@@ -369,7 +369,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(symmetric.id(), &symmetric);
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &symmetric,
             &markers,
             &joins
@@ -410,7 +410,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(coincident.id(), &coincident);
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &coincident,
             &markers,
             &joins
@@ -433,7 +433,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(horizontal_points.id(), &horizontal_points);
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &horizontal_points,
             &markers,
             &joins
@@ -456,7 +456,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(legacy_horizontal_points.id(), &legacy_horizontal_points);
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &legacy_horizontal_points,
             &markers,
             &joins
@@ -501,7 +501,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     markers.insert(midpoint.id(), &midpoint);
     assert_eq!(
         typed_marker_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &midpoint,
             &markers,
             &midpoint_loci
@@ -541,7 +541,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         );
         assert_eq!(
             typed_marker_relation_definition(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &arc_angle,
                 &markers,
                 &arc_loci
@@ -555,7 +555,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         arc_angle.links.as_mut().unwrap().entries_mut()[0].entity_ref =
             entity_marker.id().to_string();
         assert!(matches!(
-            typed_marker_relation_definition(&cadmpeg_test_support::service_decode_context(), &arc_angle, &markers, &arc_loci).unwrap(),
+            typed_marker_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(), &arc_angle, &markers, &arc_loci).unwrap(),
             Some(SketchConstraintDefinitionInput::Native {
                 native_kind,
                 entities,
@@ -612,7 +612,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     let sketch_id = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let distance = parameter("synthetic:test:id#distance", None);
     assert!(matches!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(),
             &relation,
             Some(&distance),
             &sketch_id,
@@ -639,7 +639,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     };
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &same_locus_relation,
             Some(&distance),
             &sketch_id,
@@ -663,7 +663,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     };
     let radius = parameter("synthetic:test:id#circle", Some(DimensionDisplay::Radius));
     assert!(matches!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(),
             &circle,
             Some(&radius),
             &sketch_id,
@@ -676,7 +676,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     ));
     let diameter = parameter("synthetic:test:id#circle", Some(DimensionDisplay::Diameter));
     assert!(matches!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(),
             &circle,
             Some(&diameter),
             &sketch_id,
@@ -690,7 +690,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     let undisplayed = parameter("synthetic:test:id#circle", None);
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &circle,
             Some(&undisplayed),
             &sketch_id,
@@ -718,7 +718,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         .unwrap(),
     );
     assert!(matches!(
-        typed_relation_definition(&cadmpeg_test_support::service_decode_context(),
+        typed_relation_definition(&cadmpeg_core::decode::test_support::service_decode_context(),
             &unresolved_circle,
             Some(&radius),
             &sketch_id,
@@ -740,7 +740,7 @@ fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
     .with_endpoint_refs(circle_entity.endpoint_refs.clone());
     assert_eq!(
         typed_relation_definition(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &unresolved_circle,
             Some(&radius),
             &sketch_id,
@@ -880,7 +880,7 @@ fn line_handle_interior_points_identify_profile_entities() {
 #[test]
 fn coordinate_less_point_handle_selects_one_shared_endpoint() {
     const EPS_ENDPOINT_QUANTIZATION: f64 = 1.0e-8;
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let sketch = SketchId::mint("synthetic:test:id#sketch").unwrap();
     let first_id = SketchEntityId::mint("synthetic:test:id#first").unwrap();
     let second_id = SketchEntityId::mint("synthetic:test:id#second").unwrap();

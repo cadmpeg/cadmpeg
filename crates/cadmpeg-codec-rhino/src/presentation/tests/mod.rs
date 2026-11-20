@@ -606,7 +606,7 @@ fn light_record_attributes_use_the_object_attribute_projection() {
     let record = Record::long(0x2000_8060, 0..body.len(), 0..body.len());
     let mut losses = Vec::new();
     let value = parse_light_record_attributes(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &body,
         &record,
         archive,
@@ -639,7 +639,7 @@ fn embedded_bitmap_minor_gate_preserves_suffix_boundary() {
     ]);
     let minor_zero_bytes = embedded_bitmap_payload(0, id, 1);
     let minor_zero = parse_embedded_image(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &minor_zero_bytes,
         0..minor_zero_bytes.len(),
         ArchiveVersion::V8,
@@ -652,7 +652,7 @@ fn embedded_bitmap_minor_gate_preserves_suffix_boundary() {
 
     let minor_one_bytes = embedded_bitmap_payload(1, id, 1);
     let minor_one = parse_embedded_image(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &minor_one_bytes,
         0..minor_one_bytes.len(),
         ArchiveVersion::V8,
@@ -670,7 +670,7 @@ fn embedded_bitmap_minor_gate_preserves_suffix_boundary() {
 
     let raw_bytes = embedded_bitmap_payload(0, id, 0);
     let raw = parse_embedded_image(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &raw_bytes,
         0..raw_bytes.len(),
         ArchiveVersion::V8,
@@ -700,7 +700,7 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
         &[0xaa, 0xbb],
     );
     let contiguous_record = parse_windows_bitmap(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &contiguous,
         0..contiguous.len(),
         WINDOWS_BITMAP,
@@ -737,7 +737,7 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
         &[0xcc, 0xdd],
     );
     let split_record = parse_windows_bitmap(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &split,
         0..split.len(),
         WINDOWS_BITMAP,
@@ -768,7 +768,7 @@ fn windows_bitmap_consumes_source_buffer_variants_and_suffix() {
         &[0xee, 0xff],
     );
     let ex_record = parse_windows_bitmap(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ex,
         0..ex.len(),
         WINDOWS_BITMAP_EX,
@@ -799,7 +799,7 @@ fn legacy_windows_bitmap_uses_raw_palette_and_pixels() {
         &[0xaa, 0xbb],
     );
     let record = parse_windows_bitmap(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         WINDOWS_BITMAP,
@@ -828,7 +828,7 @@ fn windows_bitmap_rejects_a_buffer_size_that_disagrees_with_header() {
         &[],
     );
     assert!(parse_windows_bitmap(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         WINDOWS_BITMAP,
@@ -845,7 +845,7 @@ fn unstamped_legacy_text_style_charges_the_font_name_stamp_loss() {
     let bytes = legacy_text_style_bytes();
     let mut losses = Vec::new();
     let value = parse_text_style(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         TextStyleParseInput {
             range: 0..bytes.len(),
@@ -866,7 +866,7 @@ fn unstamped_legacy_text_style_charges_the_font_name_stamp_loss() {
 
     let mut stamped_losses = Vec::new();
     let stamped = parse_text_style(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         TextStyleParseInput {
             range: 0..bytes.len(),
@@ -905,7 +905,7 @@ fn legacy_text_style_bytes() -> Vec<u8> {
 fn legacy_text_style_preserves_font_identity_and_characteristics() {
     let bytes = legacy_text_style_bytes();
     let value = parse_text_style(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         TextStyleParseInput {
             range: 0..bytes.len(),
@@ -935,7 +935,7 @@ fn legacy_text_style_preserves_font_identity_and_characteristics() {
 fn modern_font_matches_producer_wide_string_and_future_suffix() {
     let bytes = modern_font_chunk(7, &[0xaa, 0xbb]);
     let value = parse_font(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         &mut BoundedReader::new(&bytes, 0, bytes.len()).unwrap(),
         ArchiveVersion::V8,
@@ -971,7 +971,7 @@ fn modern_text_style_preserves_identity_after_future_font_and_outer_suffix() {
     body.extend([0xee, 0xff]);
     let bytes = anonymous(2, &body);
     let value = parse_text_style(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         TextStyleParseInput {
             range: 0..bytes.len(),
@@ -995,7 +995,7 @@ fn modern_text_style_preserves_identity_after_future_font_and_outer_suffix() {
 fn dimension_style_future_minor_preserves_known_prefix_and_suffix() {
     let bytes = future_dimension_style_chunk();
     let value = parse_dimension_style(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         ArchiveVersion::V8,
@@ -1036,7 +1036,7 @@ fn dimension_style_future_minor_preserves_known_prefix_and_suffix() {
 fn dimension_style_current_minor_transfers_new_text_controls() {
     let bytes = current_dimension_style_chunk();
     let value = parse_dimension_style(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         ArchiveVersion::V8,
@@ -1086,7 +1086,7 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
     );
 
     let value = parse_v5_dimension_style(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &base,
         0..base.len(),
         crate::test_support::millimeter_scale(2.0),
@@ -1148,7 +1148,7 @@ fn v5_dimension_style_and_extra_follow_source_gates_and_scaling() {
     let mut invalid = base;
     invalid[0] = 0x25;
     assert!(parse_v5_dimension_style(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &invalid,
         0..invalid.len(),
         crate::settings::MillimeterScale::IDENTITY,
@@ -1222,7 +1222,7 @@ fn user_string_owner_mapping_preserves_order_and_source_cleanup() {
     };
     let mut losses = Vec::new();
     let (geometry_values, attribute_values) = first_user_string_records(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &data,
         ArchiveVersion::V8,
         &[descriptor(geometry_start..attributes_start)],
@@ -1255,7 +1255,7 @@ fn model_component_readers_follow_source_unknown_mask_and_status_rules() {
     let legacy = anonymous(0, &legacy_body);
     let mut legacy_reader = BoundedReader::new(&legacy, 0, legacy.len()).unwrap();
     let legacy_component = component(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &legacy,
         &mut legacy_reader,
         ArchiveVersion::V8,
@@ -1269,7 +1269,7 @@ fn model_component_readers_follow_source_unknown_mask_and_status_rules() {
     let modern = model_attributes_status_chunk([3, 2, 3, 2, 1], "status-compatible", &[0xcc, 0xdd]);
     let mut modern_reader = BoundedReader::new(&modern, 0, modern.len()).unwrap();
     let modern_component = component(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &modern,
         &mut modern_reader,
         ArchiveVersion::V8,
@@ -1289,7 +1289,7 @@ fn group_preserves_component_identity() {
     bytes.extend([0x44; 16]);
     bytes.extend([0xaa, 0xbb]);
     let group = parse_group(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         120,
@@ -1311,14 +1311,14 @@ fn duplicate_group_source_ids_are_disambiguated_without_rewriting_source_fields(
     bytes.extend(utf16_bytes("fixtures"));
     bytes.extend([0x44; 16]);
     let first = parse_group(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         120,
     )
     .expect("first group");
     let second = parse_group(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         240,
@@ -1406,7 +1406,7 @@ fn texture_payload(minor: i32, suffix: &[u8]) -> Vec<u8> {
 fn light_scales_spatial_values_but_not_direction_or_angles() {
     let bytes = light_payload(0x1f, 0.8);
     let light = parse_light(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         crate::test_support::millimeter_scale(10.0),
@@ -1435,7 +1435,7 @@ fn light_scales_spatial_values_but_not_direction_or_angles() {
 fn light_preserves_unset_hotspot_for_exponent_interface() {
     let bytes = light_payload(0x12, -1.234_321_012_343_21e308);
     let light = parse_light(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         crate::settings::MillimeterScale::IDENTITY,
@@ -1485,7 +1485,7 @@ fn legacy_rdk_material_userdata_transfers_uuid_from_unterminated_xml() {
     let userdata = [legacy_rdk_descriptor(0..bytes.len())];
     assert_eq!(
         legacy_rdk_material_instance_id(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &userdata
         )
@@ -1504,7 +1504,7 @@ fn legacy_rdk_material_userdata_ignores_terminated_callback_xml() {
     let userdata = [legacy_rdk_descriptor(0..bytes.len())];
     assert_eq!(
         legacy_rdk_material_instance_id(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &userdata
         )
@@ -1517,7 +1517,7 @@ fn legacy_rdk_material_userdata_ignores_terminated_callback_xml() {
 fn legacy_rdk_material_userdata_rejects_malformed_xml() {
     let bytes = legacy_rdk_payload("<xml><render-content-manager-data><material>", false, &[]);
     let error = parse_legacy_rdk_material_instance_id(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
     )
@@ -1691,7 +1691,7 @@ fn texture_reads_minor_gates_before_future_suffix() {
     let bytes = texture_payload(2, &[0xaa, 0xbb]);
     let mut losses = Vec::new();
     let value = parse_texture(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         ArchiveVersion::V8,
@@ -1729,7 +1729,7 @@ fn texture_file_reference_checksum_warning_is_located() {
 
     let mut losses = Vec::new();
     let value = parse_texture(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         ArchiveVersion::V8,
@@ -1771,7 +1771,7 @@ fn texture_array_closes_after_class_items_and_future_suffix() {
     let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("texture array bounds");
     let mut losses = Vec::new();
     let values = texture_array(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         &mut reader,
         ArchiveVersion::V8,
@@ -1808,7 +1808,7 @@ fn texture_mapping_reads_nested_primitive_class_wrapper() {
     let bytes = anonymous(1, &body);
 
     let mapping = parse_texture_mapping(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         ArchiveVersion::V8,

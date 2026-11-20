@@ -428,16 +428,20 @@ fn layout_coordinates(layout: &PatternLayout) -> Option<LayoutCoordinates<'_>> {
                 if second.is_some() && matches!(seed_only, Some(Dimension::Literal(true))) {
                     found.seed_only.push(coordinates.len());
                 }
-                coordinates.push(run_coordinate(&first.run));
-                coordinates.extend(second.iter().map(|second| run_coordinate(&second.run)));
+                coordinates.push(run_coordinate(&first.run, false));
+                coordinates.extend(
+                    second
+                        .iter()
+                        .map(|second| run_coordinate(&second.run, false)),
+                );
             }
             PatternLayout::Circular {
                 angular, radial, ..
             } => {
-                coordinates.push(run_coordinate(angular));
-                coordinates.extend(radial.iter().map(run_coordinate));
+                coordinates.push(run_coordinate(angular, false));
+                coordinates.extend(radial.iter().map(|radial| run_coordinate(radial, false)));
             }
-            PatternLayout::Path { run, .. } => coordinates.push(run_coordinate(run)),
+            PatternLayout::Path { run, .. } => coordinates.push(run_coordinate(run, true)),
             PatternLayout::Points { points, .. } => {
                 let last = match &points.picks {
                     Picks::Named(picks) => i64::try_from(picks.as_slice().len()).ok(),
@@ -468,9 +472,14 @@ fn layout_coordinates(layout: &PatternLayout) -> Option<LayoutCoordinates<'_>> {
 }
 
 /// The coordinate range of a run whose count, and seed where `sides` reads
-/// it, are literal. A run whose `sides` is not stated may lie on either side
-/// of the seed.
-fn run_coordinate<'a, Q>(run: &PatternRun<Q>) -> Coordinate<'a> {
+/// it, are literal (§6.5, Coordinate range). A run whose `sides` is not
+/// stated reaches at most `last` and has no lower bound: an unread side may
+/// be a `Reverse` arm whose count the run does not state. In a `Path` run
+/// (`on_path`) an unread side may also be `Against`, which reaches the seed,
+/// so the bound is the greater of `last` and the seed, and there is none for
+/// a seed that is not literal. That carve-out is interim, gap
+/// 20261119-ERR1-C-H6-2: §6.5 does not yet state it.
+fn run_coordinate<'a, Q>(run: &PatternRun<Q>, on_path: bool) -> Coordinate<'a> {
     let Some(last) = spacing_count(&run.spacing).map(|count| i64::from(count) - 1) else {
         return Coordinate::ANY;
     };
@@ -497,9 +506,8 @@ fn run_coordinate<'a, Q>(run: &PatternRun<Q>) -> Coordinate<'a> {
             let low = spacing_count(reverse).map(|count| (1 - i64::from(count)).min(-seed));
             Coordinate::Range(low, Some(last - seed))
         }),
-        None => seed.map_or(Coordinate::ANY, |seed| {
-            Coordinate::between(-last.max(seed), last.max(seed))
-        }),
+        None if on_path => Coordinate::Range(None, seed.map(|seed| last.max(seed))),
+        None => Coordinate::Range(None, Some(last)),
     }
 }
 

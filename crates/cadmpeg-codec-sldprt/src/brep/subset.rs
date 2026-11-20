@@ -646,7 +646,7 @@ mod tests {
         )
         .expect("valid rational test NURBS");
         let point = point_at(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
             0.5,
         )
@@ -670,7 +670,7 @@ mod tests {
             ));
             assert_eq!(
                 point_at(
-                    &cadmpeg_test_support::service_decode_context(),
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
                     &curve,
                     0.75 * d
                 )
@@ -678,7 +678,7 @@ mod tests {
                 Some(Point3::new(0.75, 0., 0.))
             );
             assert!(point_at(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &curve,
                 2. * d
             )

@@ -16,6 +16,14 @@ use crate::loss::RhinoLossCode;
 use crate::settings::UnitBinding;
 use crate::wire::Uuid;
 
+/// The root definition: the model the file holds at its top.
+pub(crate) fn root_definition_id() -> cadmpeg_ir::ids::ProductDefinitionId {
+    cadmpeg_ir::ids::ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("rhino", "model", "product-definition"),
+        cadmpeg_ir::identity_key!("root"),
+    )
+}
+
 #[derive(Debug, Serialize)]
 struct DefinitionRecord<'a> {
     id: String,
@@ -347,7 +355,7 @@ mod tests {
             .clone();
         let mut ir = CadIr::empty();
         let losses = install(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut ir,
         )

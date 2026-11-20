@@ -205,7 +205,7 @@ fn entity_schema_registry_covers_arenas_and_unit_cube_references_resolve() {
         }
         Ok(())
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     macro_rules! visit_arenas {
         ($($field:ident: $ty:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?;)*) => {
             $(for entity in &ir.$home.$field {
@@ -552,7 +552,7 @@ fn procedural_carrier_ownership_preserves_the_flat_cadir_wire() {
     assert_eq!(serde_json::from_value::<CadIr>(value).unwrap(), ir);
 
     let mut rewritten = Topology::default();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     rewritten
         .extend_rewritten(ir.geometry, &mut TypedIdentity(&ctx))
         .unwrap();

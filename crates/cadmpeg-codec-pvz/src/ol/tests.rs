@@ -27,7 +27,7 @@ const SQUARE: [[f32; 3]; 4] = [
 ];
 
 fn geometry(bytes: &[u8]) -> Result<MemberGeometry, CodecError> {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     decode(&ctx, View::over_retained(bytes))
 }
 
@@ -72,7 +72,7 @@ fn each_signature_selects_its_generation() {
 
 #[test]
 fn the_directory_partitions_the_member_with_or_without_the_preamble() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for preamble in [false, true] {
         let bytes = member(
             "DIV-OL09BL",
@@ -93,7 +93,7 @@ fn the_directory_partitions_the_member_with_or_without_the_preamble() {
 
 #[test]
 fn a_directory_that_does_not_tile_the_member_is_refused() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let good = member(
         "DIV-OL08BL",
         true,
@@ -136,7 +136,7 @@ fn a_directory_that_does_not_tile_the_member_is_refused() {
 
 #[test]
 fn the_exact_stream_is_expanded_on_request() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let plate = plate_member();
     let exact = exact_stream(&ctx, View::over_retained(&plate))
         .unwrap()

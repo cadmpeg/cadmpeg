@@ -669,6 +669,51 @@ mod product_roundtrip {
         "/../../corpus/freecad_fcstd/fixtures/core_operations.FCStd"
     ));
 
+    /// The definitions, the roots, the occurrences, and the bodies the roots
+    /// own, of a single-part document.
+    fn product_shape(ir: &CadIr) -> (usize, usize, usize, usize) {
+        let roots = ir
+            .model
+            .product_definitions
+            .iter()
+            .filter(|definition| definition.is_root())
+            .collect::<Vec<_>>();
+        (
+            ir.model.product_definitions.len(),
+            roots.len(),
+            ir.model.occurrences.len(),
+            roots.iter().map(|root| root.bodies.len()).sum(),
+        )
+    }
+
+    #[test]
+    fn a_single_part_round_trips_with_its_root_as_the_document() {
+        let source = FcstdCodec
+            .decode(&mut Cursor::new(CORE_OPERATIONS), &DecodeOptions::default())
+            .expect("decode FCStd part")
+            .into_parts()
+            .0;
+        let (_, _, _, bodies) = product_shape(&source);
+        assert!(bodies > 0);
+        assert_eq!(product_shape(&source), (1, 1, 0, bodies));
+
+        let mut step = Vec::new();
+        StepCodec::default()
+            .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+            .and_then(|plan| plan.write_to(&mut step))
+            .expect("write STEP");
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(step), &DecodeOptions::default())
+            .expect("decode STEP")
+            .into_parts()
+            .0;
+        assert_eq!(
+            product_shape(&decoded),
+            (1, 1, 0, decoded.geometry.bodies.len()),
+            "through STEP"
+        );
+    }
+
     #[test]
     fn fcstd_trimmed_edges_round_trip_through_step_onto_their_vertices() {
         let source = FcstdCodec

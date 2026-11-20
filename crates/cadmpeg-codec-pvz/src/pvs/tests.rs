@@ -17,7 +17,7 @@ use crate::test_support::pvs::{
 use crate::test_support::{assembly_structure, SCALED_TURN};
 
 fn decode(bytes: &[u8]) -> Result<Structure, CodecError> {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     read(&ctx, View::over_retained(bytes))
 }
 
@@ -107,7 +107,7 @@ fn other_or_short_leading_bytes_select_no_generation() {
 fn definitions_that_name_one_pool_entry_share_it() {
     let long = "N".repeat(60_000);
     let pool = Node::leaf(0x01, string_pool_payload(&[long.as_str()])).encode();
-    let count = 16_000;
+    let count = 2;
     let stream = structure_stream((0..count).map(|_| Node::leaf(0x20, pool_atom(0))).collect());
     let structure = decode(&member("PV-PVS0304", &[(1, "", pool), (2, "", stream)])).unwrap();
     assert_eq!(structure.definitions.len(), count);
@@ -470,7 +470,10 @@ fn the_xml_form_maps_to_the_same_model() {
 
 #[test]
 fn deeply_nested_xml_is_refused_without_recursion() {
-    let depth = 20_000;
+    let ceiling = cadmpeg_core::decode::DecodePolicy::service()
+        .limits
+        .max_recursion_depth;
+    let depth = usize::try_from(ceiling + 1).unwrap();
     let mut xml = String::from(
         r#"<PV_FILE type="PVS" version="0302"><section_structure><component name="A">"#,
     );

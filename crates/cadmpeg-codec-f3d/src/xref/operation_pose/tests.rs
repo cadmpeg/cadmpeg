@@ -119,7 +119,7 @@ fn operation_pose_refuses_cursor_flags_nonrigid_and_tail() {
 }
 
 fn model() -> (cadmpeg_ir::CadIr, BTreeMap<String, OperationPose>) {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let reference = reference();
     let key = reference.id.clone();
     let mut ir = cadmpeg_ir::CadIr::empty();
@@ -160,7 +160,7 @@ fn model() -> (cadmpeg_ir::CadIr, BTreeMap<String, OperationPose>) {
 fn operation_pose_updates_every_instance_of_one_definition() {
     let (mut ir, poses) = model();
     let mut losses = Vec::new();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         project(&ctx, &mut ir, &poses, &BTreeSet::new(), &mut losses).unwrap(),
         2
@@ -188,7 +188,7 @@ fn operation_pose_conflict_keeps_every_instance_native() {
     let before = ir.model.occurrences.clone();
     let protected = BTreeSet::from([ir.model.occurrences[0].id.clone()]);
     let mut losses = Vec::new();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         project(&ctx, &mut ir, &poses, &protected, &mut losses).unwrap(),
         0
@@ -219,7 +219,7 @@ fn operation_pose_cannot_move_a_carrier_selected_descendant() {
     let before = ir.model.occurrences.clone();
     let mut losses = Vec::new();
     project(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut ir,
         &poses,
         &protected,
@@ -234,7 +234,7 @@ fn operation_pose_cannot_move_a_carrier_selected_descendant() {
 
 #[test]
 fn operation_pose_registration_refuses_other_versions_and_duplicate_targets() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let stream = "Design/BulkStream.dat";
     for version in [None, Some(2), Some(3), Some(4)] {
         let mut table = OperationTables::default();
@@ -280,7 +280,7 @@ fn operation_pose_uses_one_matrix_even_inside_the_agreement_tolerance() {
     let mut losses = Vec::new();
     assert_eq!(
         project(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &poses,
             &BTreeSet::new(),
@@ -343,7 +343,7 @@ fn operation_pose_reads_typed_local_tables_without_a_redirections_entry() {
 
 #[test]
 fn operation_pose_requires_the_selected_source_root_frame() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let stream = "Design/BulkStream.dat";
     let scope = crate::ids::native_scope(stream);
     for root in [Some(3), Some(4), None] {
@@ -365,7 +365,7 @@ fn operation_pose_requires_the_selected_source_root_frame() {
 #[test]
 fn operation_pose_does_not_claim_a_solved_world_pose() {
     let (mut ir, poses) = model();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     project(&ctx, &mut ir, &poses, &BTreeSet::new(), &mut Vec::new()).unwrap();
     let mut refs = ir
         .native
@@ -397,7 +397,7 @@ fn operation_pose_keeps_an_agreeing_carrier_constraint_and_its_native_evidence()
     let before = ir.model.occurrences.clone();
     let mut losses = Vec::new();
     project(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut ir,
         &poses,
         &protected,
@@ -427,7 +427,7 @@ fn operation_pose_conflict_preserves_an_independent_sibling_pose() {
     ir.model.occurrences.push(sibling);
     let pose = poses.values().next().unwrap().clone();
     poses.insert(key.clone(), pose);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut refs = ir
         .native
         .namespace("f3d")

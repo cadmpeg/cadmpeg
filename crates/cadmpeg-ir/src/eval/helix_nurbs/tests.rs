@@ -90,7 +90,7 @@ fn distance(a: Point3, b: Point3) -> f64 {
 }
 
 fn max_deviation(helix: &Helix, spline: &NurbsCurve) -> f64 {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let [start, end] = helix.angle_range;
     (0..=DENSE_SAMPLES)
         .map(|index| {

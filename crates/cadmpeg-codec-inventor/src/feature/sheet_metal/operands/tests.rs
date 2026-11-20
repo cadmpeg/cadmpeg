@@ -347,6 +347,36 @@ fn attachment_directions_admit_either_u_sign_without_a_side_flip() {
 }
 
 #[test]
+fn off_axis_first_directions_refuse_an_orthogonal_attachment_frame() {
+    use cadmpeg_ir::{math::Vector3, units::UnitVector3};
+    let fixture = Fixture::new();
+    let first = UnitVector3::normalized(Vector3::new(3.0, 4.0, 0.0)).expect("first");
+    let second = UnitVector3::normalized(Vector3::new(-4.0, 3.0, 0.0)).expect("second");
+    for first in [first, first.reversed()] {
+        for second in [second, second.reversed()] {
+            let result = plate(
+                &fixture.plate,
+                Some(&fixture.style),
+                |r| fixture.property(r),
+                Fixture::length,
+                |r| match r.index() {
+                    2 => Some(first.reversed()),
+                    33 => Some(first),
+                    34 => Some(second),
+                    _ => Fixture::direction(r),
+                },
+                UnitVector3::Z_AXIS,
+                UnitVector3::X_AXIS,
+            );
+            assert_eq!(
+                result.expect_err("off-axis attachment"),
+                PlateRefusal::FirstDirection
+            );
+        }
+    }
+}
+
+#[test]
 fn second_direction_is_antiparallel_to_v_only_with_a_reversed_first_direction() {
     use cadmpeg_ir::units::UnitVector3;
     let fixture = Fixture::new();

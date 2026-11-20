@@ -806,7 +806,7 @@ fn sweep_text_projections_ignore_whitespace() {
             .unwrap(),
         variables: Vec::new(),
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         crate::eval::sweep_law::sweep_scale(EvaluationAdmission::Decode(&ctx), &scale),
         Ok(Some(Vector3::new(2.0, 3.0, 4.0)))

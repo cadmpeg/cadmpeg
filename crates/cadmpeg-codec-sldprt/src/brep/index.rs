@@ -936,7 +936,7 @@ mod tests {
     fn an_excluded_curve_resolves_no_bounded_wrapper() {
         use crate::test_support::parasolid::{bounded_curve_wrapper, line_carrier};
         use std::collections::HashSet;
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut body = line_carrier(30, [0.0; 3], [1.0, 0.0, 0.0]);
         body.extend(bounded_curve_wrapper(
             31,
@@ -1067,7 +1067,7 @@ mod tests {
         };
         let scan = |records: &[Vec<u8>]| {
             super::scan_carriers(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &records.concat(),
             )
             .expect("carrier scan")
@@ -1188,7 +1188,7 @@ mod tests {
         // circle of radius 10. Chart 9 runs on that circle; chart 10 ends
         // 0.2 mm off it, beyond its chordal error; chart 11 is the spine of
         // blend 8.
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut index = super::scan_carriers(
             &ctx,
             &[
@@ -1236,7 +1236,7 @@ mod tests {
         bound.push(0x2b);
         bound.extend_from_slice(&0u16.to_be_bytes());
         bound.extend_from_slice(&8u16.to_be_bytes());
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let index = super::scan_carriers(
             &ctx,
             &[
@@ -1301,7 +1301,7 @@ mod tests {
         // x = -1.15 at y = -60, behind the wall.
         let record =
             crate::test_support::parasolid::pair_blend_surface_carrier(5, [9, 20], 7, 1.0e-3);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut carriers = super::scan_carriers(&ctx, &record).expect("carrier scan");
         let plane = |attr: u32, origin: Point3, normal: Vector3, reference: Vector3| {
             Carrier::Surface(SurfaceCarrier {
@@ -1379,7 +1379,7 @@ mod tests {
     }
     #[test]
     fn unchecked_offset_graph_admission_requires_typed_acyclic_supports() {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut index = super::scan_carriers(&ctx, &authored_surface(0x32, 23)).unwrap();
         let offset = |support| super::offset::OffsetCarrier {
             support,

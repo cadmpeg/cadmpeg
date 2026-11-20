@@ -1,11 +1,150 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Path resolution from a reader's own module context.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use super::classify::same_crate;
 use super::scan::path_matches;
-use super::{HandImplSource, ImportBinding, PathShape, SourceIndex, SymbolKey, SymbolKind};
+use super::{HandImplSource, PathShape, SourceIndex, SymbolKey, SymbolKind};
+use crate::roots::crate_of;
+
+/// A file or crate, a module scope in it, and a name.
+type ScopedName = (String, Vec<String>, String);
+
+/// The source index keyed the way resolution reads it.
+pub(super) struct Lookups {
+    /// The symbol, import, and denied counts the tables were built from.
+    sizes: (usize, usize, usize),
+    /// Positions of non-glob imports, by file, scope, and alias.
+    explicit: BTreeMap<ScopedName, Vec<usize>>,
+    /// Positions of glob imports, by file and scope.
+    globs: BTreeMap<(String, Vec<String>), Vec<usize>>,
+    /// Distinct symbols, by crate, scope, and name.
+    symbols: BTreeMap<ScopedName, Vec<SymbolKey>>,
+    /// Denied wire declarations as type symbols, by crate, scope, and name.
+    denied: BTreeMap<ScopedName, Vec<SymbolKey>>,
+    /// The least (scope length, file) of the symbols and imports under each
+    /// crate and scope prefix.
+    module_sources: BTreeMap<(String, Vec<String>), (usize, String)>,
+}
+
+impl Lookups {
+    pub(super) fn new(index: &SourceIndex) -> Self {
+        let mut lookups = Self {
+            sizes: Self::sizes_of(index),
+            explicit: BTreeMap::new(),
+            globs: BTreeMap::new(),
+            symbols: BTreeMap::new(),
+            denied: BTreeMap::new(),
+            module_sources: BTreeMap::new(),
+        };
+        for (position, import) in index.imports.iter().enumerate() {
+            if import.glob {
+                lookups
+                    .globs
+                    .entry((import.path.clone(), import.scope.clone()))
+                    .or_default()
+                    .push(position);
+            } else {
+                lookups
+                    .explicit
+                    .entry((
+                        import.path.clone(),
+                        import.scope.clone(),
+                        import.alias.clone(),
+                    ))
+                    .or_default()
+                    .push(position);
+            }
+            lookups.record_module_source(&import.path, &import.scope);
+        }
+        for symbol in &index.symbols {
+            let found = lookups
+                .symbols
+                .entry((
+                    crate_of(&symbol.path),
+                    symbol.scope.clone(),
+                    symbol.name.clone(),
+                ))
+                .or_default();
+            if !found.contains(symbol) {
+                found.push(symbol.clone());
+            }
+            lookups.record_module_source(&symbol.path, &symbol.scope);
+        }
+        for wire in &index.denied {
+            lookups
+                .denied
+                .entry((crate_of(&wire.path), wire.scope.clone(), wire.name.clone()))
+                .or_default()
+                .push(SymbolKey {
+                    path: wire.path.clone(),
+                    scope: wire.scope.clone(),
+                    name: wire.name.clone(),
+                    kind: SymbolKind::Type,
+                });
+        }
+        lookups
+    }
+
+    fn sizes_of(index: &SourceIndex) -> (usize, usize, usize) {
+        (index.symbols.len(), index.imports.len(), index.denied.len())
+    }
+
+    /// Whether these tables were built from `index` as it stands.
+    pub(super) fn indexes(&self, index: &SourceIndex) -> bool {
+        self.sizes == Self::sizes_of(index)
+    }
+
+    fn record_module_source(&mut self, path: &str, scope: &[String]) {
+        let owner = crate_of(path);
+        for depth in 0..=scope.len() {
+            let least = self
+                .module_sources
+                .entry((owner.clone(), scope[..depth].to_vec()))
+                .or_insert_with(|| (scope.len(), path.to_owned()));
+            if (scope.len(), path) < (least.0, least.1.as_str()) {
+                *least = (scope.len(), path.to_owned());
+            }
+        }
+    }
+
+    /// Positions of the non-glob imports binding `alias` in module `scope` of
+    /// the file `path`.
+    pub(super) fn explicit(&self, path: &str, scope: &[String], alias: &str) -> &[usize] {
+        self.explicit
+            .get(&(path.to_owned(), scope.to_vec(), alias.to_owned()))
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
+    fn globs(&self, path: &str, scope: &[String]) -> &[usize] {
+        self.globs
+            .get(&(path.to_owned(), scope.to_vec()))
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
+    /// The distinct symbols named `name` in module `scope` of the crate of `path`.
+    fn symbols(&self, path: &str, scope: &[String], name: &str) -> &[SymbolKey] {
+        self.symbols
+            .get(&(crate_of(path), scope.to_vec(), name.to_owned()))
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
+    fn denied(&self, path: &str, scope: &[String], name: &str) -> &[SymbolKey] {
+        self.denied
+            .get(&(crate_of(path), scope.to_vec(), name.to_owned()))
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
+    fn module_source(&self, path: &str, scope: &[String]) -> Option<&str> {
+        self.module_sources
+            .get(&(crate_of(path), scope.to_vec()))
+            .map(|(_, source)| source.as_str())
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(super) enum ResolvedPath {
@@ -92,14 +231,6 @@ fn standard_prelude(name: &str) -> Option<Vec<String>> {
     Some(path.iter().map(|segment| (*segment).to_owned()).collect())
 }
 
-fn dedup_symbols(symbols: impl IntoIterator<Item = SymbolKey>) -> Vec<SymbolKey> {
-    let mut found = BTreeSet::new();
-    symbols
-        .into_iter()
-        .filter(|symbol| found.insert(symbol.clone()))
-        .collect()
-}
-
 fn module_scope_for(symbol: &SymbolKey) -> Vec<String> {
     let mut scope = symbol.scope.clone();
     scope.push(symbol.name.clone());
@@ -107,32 +238,11 @@ fn module_scope_for(symbol: &SymbolKey) -> Vec<String> {
 }
 
 fn module_source_path(fallback: &str, module_scope: &[String], index: &SourceIndex) -> String {
-    let mut candidates: Vec<(&String, usize)> = index
-        .symbols
-        .iter()
-        .filter(|symbol| {
-            same_crate(fallback, &symbol.path)
-                && symbol.scope.starts_with(module_scope)
-                && symbol.scope.len() >= module_scope.len()
-        })
-        .map(|symbol| (&symbol.path, symbol.scope.len()))
-        .chain(
-            index
-                .imports
-                .iter()
-                .filter(|import| {
-                    same_crate(fallback, &import.path)
-                        && import.scope.starts_with(module_scope)
-                        && import.scope.len() >= module_scope.len()
-                })
-                .map(|import| (&import.path, import.scope.len())),
-        )
-        .collect();
-    candidates.sort_by(|left, right| left.1.cmp(&right.1).then_with(|| left.0.cmp(right.0)));
-    candidates
-        .into_iter()
-        .next()
-        .map_or_else(|| fallback.to_owned(), |(path, _)| path.clone())
+    index
+        .lookups()
+        .module_source(fallback, module_scope)
+        .unwrap_or(fallback)
+        .to_owned()
 }
 
 fn module_context_path(fallback: &str, module_scope: &[String], index: &SourceIndex) -> String {
@@ -206,27 +316,16 @@ fn resolve_absolute_path(
     // imports in the current source module must not rewrite it: consulting
     // them would let an unrelated alias certify an absolute path.
     let root_path = module_context_path(source_path, &[], index);
-    let root_symbols = dedup_symbols(
-        index
-            .symbols
-            .iter()
-            .filter(|symbol| {
-                same_crate(&root_path, &symbol.path)
-                    && symbol.scope.is_empty()
-                    && symbol.name == *first
-            })
-            .cloned(),
-    );
-    let Some(symbol) = root_symbols.into_iter().next() else {
+    let Some(symbol) = index.lookups().symbols(&root_path, &[], first).first() else {
         return ResolvedPath::Unknown;
     };
     if segments.len() == 1 {
-        return ResolvedPath::Local(symbol);
+        return ResolvedPath::Local(symbol.clone());
     }
     if symbol.kind != SymbolKind::Module {
         return ResolvedPath::Unknown;
     }
-    let nested_scope = module_scope_for(&symbol);
+    let nested_scope = module_scope_for(symbol);
     let nested_path = module_source_path(&root_path, &nested_scope, index);
     resolve_from_module(&nested_path, &nested_scope, &segments[1..], index, seen)
 }
@@ -241,20 +340,13 @@ fn resolve_from_module(
     let Some(first) = segments.first() else {
         return ResolvedPath::Unknown;
     };
-    let explicit: Vec<&ImportBinding> = index
-        .imports
-        .iter()
-        .filter(|import| {
-            import.path == source_path
-                && import.scope == module_scope
-                && !import.glob
-                && import.alias == *first
-        })
-        .collect();
+    let lookups = index.lookups();
+    let explicit = lookups.explicit(source_path, module_scope, first);
     if explicit.len() > 1 {
         return ResolvedPath::Unknown;
     }
-    if let Some(import) = explicit.first() {
+    if let Some(position) = explicit.first() {
+        let import = &index.imports[*position];
         let key = format!("{}::{:?}::{}", import.path, import.scope, import.alias);
         if !seen.insert(key) {
             return ResolvedPath::Unknown;
@@ -268,59 +360,36 @@ fn resolve_from_module(
         return append_resolved(resolved, &segments[1..], source_path, index, seen);
     }
 
-    let local: Vec<SymbolKey> = dedup_symbols(
-        index
-            .symbols
-            .iter()
-            .filter(|symbol| same_crate(source_path, &symbol.path) && symbol.scope == module_scope)
-            .filter(|symbol| symbol.name == *first)
-            .cloned(),
-    );
+    let local = lookups.symbols(source_path, module_scope, first);
     if local.len() > 1 {
         return ResolvedPath::Unknown;
     }
-    if let Some(symbol) = local.into_iter().next() {
+    if let Some(symbol) = local.first() {
         if segments.len() == 1 {
-            return ResolvedPath::Local(symbol);
+            return ResolvedPath::Local(symbol.clone());
         }
         if symbol.kind != SymbolKind::Module {
             return ResolvedPath::Unknown;
         }
-        let nested_scope = module_scope_for(&symbol);
+        let nested_scope = module_scope_for(symbol);
         let nested_path = module_source_path(source_path, &nested_scope, index);
         return resolve_from_module(&nested_path, &nested_scope, &segments[1..], index, seen);
     }
 
-    let denied: Vec<SymbolKey> = dedup_symbols(
-        index
-            .denied
-            .iter()
-            .filter(|wire| same_crate(source_path, &wire.path) && wire.scope == module_scope)
-            .filter(|wire| wire.name == *first)
-            .map(|wire| SymbolKey {
-                path: wire.path.clone(),
-                scope: wire.scope.clone(),
-                name: wire.name.clone(),
-                kind: SymbolKind::Type,
-            }),
-    );
+    let denied = lookups.denied(source_path, module_scope, first);
     if denied.len() > 1 {
         return ResolvedPath::Unknown;
     }
-    if let Some(symbol) = denied.into_iter().next() {
+    if let Some(symbol) = denied.first() {
         if segments.len() == 1 {
-            return ResolvedPath::Local(symbol);
+            return ResolvedPath::Local(symbol.clone());
         }
         return ResolvedPath::Unknown;
     }
 
-    let globs: Vec<&ImportBinding> = index
-        .imports
-        .iter()
-        .filter(|import| import.path == source_path && import.scope == module_scope && import.glob)
-        .collect();
     let mut candidates = Vec::new();
-    for import in globs {
+    for position in lookups.globs(source_path, module_scope) {
+        let import = &index.imports[*position];
         let key = format!(
             "{}::{:?}::*::{:?}",
             import.path, import.scope, import.target

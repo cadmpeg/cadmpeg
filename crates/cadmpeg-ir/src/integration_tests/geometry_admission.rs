@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 use crate::geometry::analytic::EllipseCurve;
 use crate::geometry::pcurve::{

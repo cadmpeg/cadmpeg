@@ -319,7 +319,7 @@ fn position_shares_large_repeated_paths_on_wire_and_enforces_aggregate_budget() 
     let mut rewritten = wire.clone();
     let mut identities = IdentityMap::new(|id: &str| Ok(id.to_owned()));
     DesignParameterScope::rewrite_native_value(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut rewritten,
         &mut identities,
     )

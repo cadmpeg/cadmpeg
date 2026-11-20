@@ -165,7 +165,7 @@ fn assembly_envelope_keeps_a_registered_joint_origin_with_either_matrix() {
         let (archive, matrix_at) = scope_archive(&owners, x);
         let decoded = with_scan(&archive, |scan| {
             decode_parameter_scopes(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 &sources,
             )

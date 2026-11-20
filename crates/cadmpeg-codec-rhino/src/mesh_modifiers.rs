@@ -972,7 +972,7 @@ mod tests {
     fn shut_lining_profile_refuses_positive_overflow() {
         let xml = "<xml><shut-lining-object-data><curve><profile>2147483648</profile></curve></shut-lining-object-data></xml>";
         assert!(super::parse_shut_lining_xml(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             xml,
             2
         )
@@ -983,7 +983,7 @@ mod tests {
     fn shut_lining_profile_refuses_negative_overflow() {
         let xml = "<xml><shut-lining-object-data><curve><profile>-2147483649</profile></curve></shut-lining-object-data></xml>";
         assert!(super::parse_shut_lining_xml(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             xml,
             2
         )
@@ -994,7 +994,7 @@ mod tests {
     fn shut_lining_profile_refuses_nan() {
         let xml = "<xml><shut-lining-object-data><curve><profile>NaN</profile></curve></shut-lining-object-data></xml>";
         assert!(super::parse_shut_lining_xml(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             xml,
             2
         )
@@ -1005,7 +1005,7 @@ mod tests {
     fn shut_lining_profile_refuses_infinity() {
         let xml = "<xml><shut-lining-object-data><curve><profile>inf</profile></curve></shut-lining-object-data></xml>";
         assert!(super::parse_shut_lining_xml(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             xml,
             2
         )
@@ -1015,7 +1015,7 @@ mod tests {
     fn shut_lining_profile_refuses_negative_infinity() {
         let xml = "<xml><shut-lining-object-data><curve><profile>-inf</profile></curve></shut-lining-object-data></xml>";
         assert!(super::parse_shut_lining_xml(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             xml,
             2
         )
@@ -1040,7 +1040,7 @@ mod tests {
         warnings: &mut Diagnostics,
     ) -> Option<super::MeshModifiers> {
         super::parse_attribute_userdata(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             bytes,
             descriptors,
             archive,
@@ -1167,7 +1167,7 @@ mod tests {
             "<xml><new-displacement-object-data><{field} type=\"{kind}\">{value}</{field}></new-displacement-object-data></xml>"
         );
         let error = parse_xml(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &xml,
             2,
             ArchiveVersion::V6,
@@ -1294,7 +1294,7 @@ mod tests {
     #[test]
     fn an_xml_refusal_names_no_byte() {
         let error = parse_xml(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "<unterminated",
             2,
             ArchiveVersion::V6,

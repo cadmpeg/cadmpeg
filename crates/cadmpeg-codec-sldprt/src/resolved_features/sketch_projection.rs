@@ -604,7 +604,7 @@ mod projected_brep_output_tests {
         let mut annotations = cadmpeg_ir::annotations::Annotations::default();
         let stream = cadmpeg_ir::stream_name!("test:sketch-projection");
         project_brep(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &brep,
             &BrepSketchSource {
                 block_offset: 7,
@@ -645,7 +645,7 @@ mod projected_brep_output_tests {
         let mut entities = Vec::new();
         let mut constraints = Vec::new();
         project_brep(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &brep,
             &BrepSketchSource {
                 block_offset: 0,

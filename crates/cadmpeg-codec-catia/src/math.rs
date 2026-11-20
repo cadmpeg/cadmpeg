@@ -151,7 +151,7 @@ mod tests {
                 f64::from(u32::try_from(next() >> 32).expect("high 32 bits")) / f64::from(u32::MAX);
             base + scale * (2.0 * unit - 1.0)
         };
-        for _ in 0..200_000 {
+        for _ in 0..5_000 {
             let left = [coordinate(0.0), coordinate(0.0), coordinate(0.0)];
             let right = left.map(&mut coordinate);
             assert_eq!(

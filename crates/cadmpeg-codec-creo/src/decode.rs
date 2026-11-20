@@ -86,6 +86,22 @@ pub(crate) fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded,
         ctx.container_only(),
     )?;
     body.losses.extend(transfer_losses);
+    if let Some(definition) = ir.state_root_definition(
+        ctx,
+        crate::identity::compose_checked::<cadmpeg_ir::ids::ProductDefinitionId>(
+            &crate::identity::MODEL_PRODUCT_DEFINITION,
+            "root",
+        )?,
+        cadmpeg_ir::products::ExternalDocument::default(),
+    )? {
+        definition.kind.get_or_insert(
+            if crate::decode::assembly::declares_assembly(&scan.framing.version_line) {
+                cadmpeg_ir::products::ProductDefinitionKind::Assembly
+            } else {
+                cadmpeg_ir::products::ProductDefinitionKind::Part
+            },
+        );
+    }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity::for_root(root);
     source_fidelity.annotations = annotations;
     let (unknowns, classes): (Vec<_>, Vec<_>) = unknowns.into_iter().unzip();

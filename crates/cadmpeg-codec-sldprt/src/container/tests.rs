@@ -632,7 +632,7 @@ fn oversized_block_candidate_is_skipped_without_fusing_the_session() {
         .copy_from_slice(&declared.to_le_bytes());
     source.extend(block);
     source.extend(make_block(0x21, "Kept", b"kept payload"));
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let scan = container::scan(&ctx, cadmpeg_core::decode::View::over_retained(&source)).unwrap();
     assert_eq!(scan.blocks.len(), 1);
     assert_eq!(scan.blocks[0].type_id, 0x21);
@@ -642,7 +642,7 @@ fn oversized_block_candidate_is_skipped_without_fusing_the_session() {
 #[test]
 fn compound_scan_preserves_malformed_open_error() {
     let error = container::scan(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         cadmpeg_core::decode::View::over_retained(&COMPOUND_FILE_MAGIC),
     )
     .err()
@@ -715,7 +715,7 @@ fn empty_native_block_still_requires_compressed_member_and_valid_crc() {
     let mut block = make_block(0x42, "Contents/Empty", &[]);
     block[super::block_hdr::CRC32..super::block_hdr::CRC32 + 4]
         .copy_from_slice(&1_u32.to_le_bytes());
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert!(
         super::try_block(&ctx, cadmpeg_core::decode::View::over_retained(&block), 0)
             .unwrap()

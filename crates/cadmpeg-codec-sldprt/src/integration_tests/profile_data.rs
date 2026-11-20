@@ -37,7 +37,7 @@ fn profile_model(geometry: &Value, construction: bool) -> CadIr {
     );
     crate::native::SldprtNative::default()
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             ir.native.namespace_mut("sldprt"),
         )
         .expect("synthetic native namespace");
@@ -47,7 +47,7 @@ fn profile_model(geometry: &Value, construction: bool) -> CadIr {
 fn assert_curve_diagnostic(ir: &CadIr, missing: bool) {
     let mut report = DecodeBody::new(DecodeTransfer::full(true));
     crate::decode::append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         ir,
         &mut report,
     )
@@ -73,7 +73,7 @@ fn assert_curve_diagnostic(ir: &CadIr, missing: bool) {
         missing
     );
     let findings = crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         ir,
     )
     .expect("native validation");
@@ -158,7 +158,7 @@ fn native_profile_diagnostics_require_sldprt_namespace() {
     );
     ir.native = cadmpeg_ir::native::Native::default();
     assert!(crate::resolved_features::validate::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
     )
     .expect("native validation")

@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 use std::io::Cursor;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions, DecodeResult};
 use cadmpeg_ir::design::parameter::{FitDeviations, Tolerance as DimensionTolerance};
@@ -23,15 +24,43 @@ const NIST_VALUE_TOLERANCE: f64 = 1.0e-9;
 /// Millimetres per inch; NIST specifies CTC-05 in inches.
 const MM_PER_INCH: f64 = 25.4;
 
-fn decode_specimen(name: &str) -> DecodeResult {
+/// The NIST MBE PMI STEP specimens in `corpus/nist-pmi/step`.
+const SPECIMENS: [&str; 9] = [
+    "nist_ctc_01_asme1_ap242-e1.stp",
+    "nist_ctc_02_asme1_ap242-e2.stp",
+    "nist_ctc_03_asme1_ap242-e2.stp",
+    "nist_ctc_04_asme1_ap242-e1.stp",
+    "nist_ctc_05_asme1_ap242-e1.stp",
+    "nist_ftc_06_asme1_ap242-e2.stp",
+    "nist_ftc_07_asme1_ap242-e2.stp",
+    "nist_ftc_10_asme1_ap242-e2.stp",
+    "nist_ftc_09_asme1_rd.stp",
+];
+
+/// Each specimen's decode, made once for every test in the binary.
+static DECODED: [OnceLock<DecodeResult>; SPECIMENS.len()] =
+    [const { OnceLock::new() }; SPECIMENS.len()];
+
+fn specimen_bytes(name: &str) -> Vec<u8> {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/nist-pmi/step")
         .join(name);
-    let bytes =
-        std::fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
-    StepCodec::default()
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap_or_else(|error| panic!("decode {name}: {error}"))
+    std::fs::read(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
+}
+
+fn decode_specimen(name: &str) -> &'static DecodeResult {
+    let index = SPECIMENS
+        .iter()
+        .position(|specimen| *specimen == name)
+        .unwrap_or_else(|| panic!("{name} is not a NIST specimen"));
+    DECODED[index].get_or_init(|| {
+        StepCodec::default()
+            .decode(
+                &mut Cursor::new(specimen_bytes(name)),
+                &DecodeOptions::default(),
+            )
+            .unwrap_or_else(|error| panic!("decode {name}: {error}"))
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -850,21 +879,8 @@ fn nist_ftc_10_fit_and_zero_material_tolerances_match_the_nist_definition() {
 #[test]
 fn every_nist_step_preserves_its_source_faces_and_dimensions() {
     use cadmpeg_ir::pmi::PmiDefinition;
-    for name in [
-        "nist_ctc_01_asme1_ap242-e1.stp",
-        "nist_ctc_02_asme1_ap242-e2.stp",
-        "nist_ctc_03_asme1_ap242-e2.stp",
-        "nist_ctc_04_asme1_ap242-e1.stp",
-        "nist_ctc_05_asme1_ap242-e1.stp",
-        "nist_ftc_06_asme1_ap242-e2.stp",
-        "nist_ftc_07_asme1_ap242-e2.stp",
-        "nist_ftc_10_asme1_ap242-e2.stp",
-        "nist_ftc_09_asme1_rd.stp",
-    ] {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../corpus/nist-pmi/step")
-            .join(name);
-        let bytes = std::fs::read(path).expect("NIST source");
+    for name in SPECIMENS {
+        let bytes = specimen_bytes(name);
         let (exchange, _) = crate::test_support::with_service_context(&bytes, crate::parse::parse)
             .expect("parse NIST source");
         let result = decode_specimen(name);

@@ -111,7 +111,7 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
         .native
         .namespace_mut("fcstd")
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "applications",
             &altered,
         )
@@ -144,7 +144,7 @@ fn absent_object_data_keeps_empty_ranges_and_digest() {
     }];
     let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
     super::install(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut namespace,
         &objects,
         &[],
@@ -161,7 +161,7 @@ fn absent_object_data_keeps_empty_ranges_and_digest() {
     assert_eq!(records[0]["byte_len"], 0);
     assert_eq!(records[0]["sha256"], cadmpeg_ir::hash::sha256_hex(&[]));
     assert!(super::matches_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &namespace,
         &objects,
         &[],

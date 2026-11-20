@@ -5,6 +5,7 @@ use super::*;
 use crate::loss::F3dLossCode;
 
 const EPS_DENSIFICATION_REGION: f64 = 1.0e-6;
+const EPS_SHARED_ARRANGEMENT: f64 = 1.0e-6;
 
 fn densification_loss_message(selections: usize) -> String {
     format!(
@@ -223,4 +224,106 @@ fn island_assumptions_report_one_loss_per_selection() {
             ),
         ]
     );
+}
+
+fn square_corners() -> [Point2; 4] {
+    [
+        Point2::new(0.0, 0.0),
+        Point2::new(10.0, 0.0),
+        Point2::new(10.0, 10.0),
+        Point2::new(0.0, 10.0),
+    ]
+}
+
+/// A square of four lines in a sketch with no profile loops.
+fn square_sketch() -> (Sketch, Vec<SketchEntity>) {
+    let sketch_id = SketchId::mint("synthetic:test:id#shared-square").unwrap();
+    let corners = square_corners();
+    let entities = (0..corners.len())
+        .map(|side| {
+            SketchEntity::new(
+                SketchEntityId::mint(format!("synthetic:test:id#shared-square-{side}")).unwrap(),
+                sketch_id.clone(),
+                SketchGeometry::try_from(SketchGeometryDefinition::Line {
+                    start: corners[side],
+                    end: corners[(side + 1) % corners.len()],
+                })
+                .unwrap(),
+            )
+        })
+        .collect();
+    let sketch = Sketch {
+        id: sketch_id,
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
+        native_ref: None,
+    };
+    (sketch, entities)
+}
+
+/// The region of each of three lookups of the square's corners, the
+/// arrangement work left, and the loss messages, with the lookups inside one
+/// shared arrangement when `shared` holds.
+fn square_lookups(
+    limit: usize,
+    shared: bool,
+) -> (Vec<Option<SketchProfileRegion>>, usize, Vec<String>) {
+    let (sketch, entities) = square_sketch();
+    let corners = square_corners();
+    let work = ProfileGeometryWork::with_arrangement_work(limit);
+    let lookups = || {
+        crate::test_support::with_decode_context(|decode_ctx| {
+            (0..3)
+                .map(|_| {
+                    arrangement_region_containing_points(
+                        &sketch,
+                        &entities,
+                        &corners,
+                        EPS_SHARED_ARRANGEMENT,
+                        &work,
+                        decode_ctx,
+                    )
+                    .unwrap()
+                    .map(|found| found.region)
+                })
+                .collect::<Vec<_>>()
+        })
+    };
+    let regions = if shared {
+        work.reusing_arrangement(&sketch, &entities, EPS_SHARED_ARRANGEMENT, lookups)
+    } else {
+        lookups()
+    };
+    work.finish_selection();
+    let losses = work.losses().into_iter().map(|loss| loss.message).collect();
+    (regions, work.arrangement.remaining(), losses)
+}
+
+#[test]
+fn a_shared_arrangement_answers_and_charges_each_lookup_as_its_own_build() {
+    let (regions, left, _) = square_lookups(MAX_ARRANGEMENT_WALK_WORK, false);
+    assert!(regions.iter().all(Option::is_some));
+    let three_builds = MAX_ARRANGEMENT_WALK_WORK - left;
+    assert!(three_builds > 0);
+    let one_build = three_builds / 3;
+    for limit in [
+        MAX_ARRANGEMENT_WALK_WORK,
+        three_builds,
+        2 * one_build - 1,
+        one_build,
+    ] {
+        assert_eq!(
+            square_lookups(limit, true),
+            square_lookups(limit, false),
+            "arrangement work limit {limit}"
+        );
+    }
 }

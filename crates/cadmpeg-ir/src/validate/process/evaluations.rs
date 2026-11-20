@@ -492,33 +492,33 @@ fn check_chains(records: &ProcessRecords<'_>, max_chain_depth: u64, findings: &m
     }
 }
 
-/// A `MaterialRemoval` feature is named by the `feature` of at most one
-/// `Removal` process state (§7.9, D49).
+/// The `Removal` process states whose `feature` names one `MaterialRemoval`
+/// feature are states of one operation (§7.9, D49).
 fn check_material_removal(records: &ProcessRecords<'_>, findings: &mut Vec<Finding>) {
-    let mut named: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    let mut named: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     for state in &records.ir.process.states {
-        if let (ProcessStateOf::Removal(_), Some(feature)) = (&state.of, &state.feature) {
+        if let (ProcessStateOf::Removal(operation), Some(feature)) = (&state.of, &state.feature) {
             named
                 .entry(feature.as_str())
                 .or_default()
-                .push(state.id.as_str());
+                .insert(operation.as_str());
         }
     }
-    for (feature, states) in named {
+    for (feature, operations) in named {
         let removal = records.design.features.get(feature).is_some_and(|listed| {
             matches!(
                 listed.definition.operation,
                 FeatureOperation::MaterialRemoval
             )
         });
-        if removal && states.len() > 1 {
+        if removal && operations.len() > 1 {
             super::error(
                 findings,
                 feature,
                 format_args!(
-                    "material-removal feature is named by {} removal states: {}",
-                    states.len(),
-                    states.join(", ")
+                    "material-removal feature is named by removal states of {} operations: {}",
+                    operations.len(),
+                    operations.into_iter().collect::<Vec<_>>().join(", ")
                 ),
             );
         }

@@ -2209,7 +2209,7 @@ mod tests {
         ));
         let tiny = 1e-200;
         let offset = nurbs_carrier_offset(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &surface,
             &[[0.25, 0.25], [0.75, 0.75]],
             &[Point3::new(0.25, 0.25, tiny), Point3::new(0.75, 0.75, tiny)],
@@ -2220,7 +2220,7 @@ mod tests {
 
         assert_eq!(
             nurbs_carrier_offset(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &surface,
                 &[[0.25, 0.25], [0.75, 0.75]],
                 &[
@@ -2233,7 +2233,7 @@ mod tests {
         );
         assert_eq!(
             nurbs_carrier_offset(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &surface,
                 &[[0.0, 0.0]],
                 &[Point3::new(tiny, 0.0, tiny)],
@@ -2244,7 +2244,7 @@ mod tests {
         for invalid in [f64::NAN, f64::INFINITY] {
             assert_eq!(
                 nurbs_carrier_offset(
-                    &cadmpeg_test_support::service_decode_context(),
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
                     &surface,
                     &[[0.25, 0.25], [0.75, 0.75]],
                     &[

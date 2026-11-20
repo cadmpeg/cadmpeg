@@ -119,7 +119,7 @@ mod tests {
     use crate::test_support::gzip;
 
     fn expanded(bytes: &[u8]) -> Result<Vec<u8>, CodecError> {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         expand(&ctx, View::over_retained(bytes)).map(|view| view.window().to_vec())
     }
 

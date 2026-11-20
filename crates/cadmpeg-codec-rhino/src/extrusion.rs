@@ -1501,7 +1501,7 @@ pub(crate) mod tests {
     #[test]
     fn polygon_profile_exact_orientation_is_one() {
         let source = decoded_polygon(false, true);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         assert_eq!(
             exact_orientation(&ctx, &source, 0).expect("polygon orientation"),
             1

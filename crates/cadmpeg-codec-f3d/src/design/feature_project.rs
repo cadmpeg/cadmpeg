@@ -9291,7 +9291,17 @@ fn spatial_sketch_entity_endpoints(
 /// Each chain step scans every unused open edge, so the search is quadratic
 /// in the sketch's open edges. An exhausted cap leaves the sketch with no
 /// derived profiles.
-pub(super) const SPATIAL_PROFILE_SEARCH_WORK: usize = 1 << 24;
+pub(crate) const SPATIAL_PROFILE_SEARCH_WORK: usize = 1 << 24;
+
+/// The closed-profile chain search of each spatial sketch.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct SpatialProfileSearch {
+    /// Distance within which two chain ends join.
+    pub(crate) linear_tolerance: f64,
+    /// Work cap of one sketch's search; Design decode passes
+    /// [`SPATIAL_PROFILE_SEARCH_WORK`].
+    pub(crate) work: usize,
+}
 
 /// Closed profiles of one spatial sketch, or `None` when the chain search
 /// exhausts `budget`.

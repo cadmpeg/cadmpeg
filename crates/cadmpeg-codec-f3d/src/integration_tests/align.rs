@@ -15,7 +15,7 @@ fn align_scopes_retain_typed_prefix_or_emit_exact_refusal_loss() {
                 crate::test_support::align::align_archive(form, refused, constructor_refused);
             crate::test_support::zip_test::with_scan(&archive, |scan| {
                 let result = decode_parameter_scopes(
-                    &cadmpeg_test_support::service_decode_context(),
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
                     scan,
                     &ParameterScopeSources::default(),
                 )

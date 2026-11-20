@@ -289,7 +289,7 @@ fn numerical_audit_pcurve_newton_converges_on_small_chart() {
             .unwrap(),
         };
         let t = closest_pcurve_parameter_from_seed(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &p,
             Point2::new(0.25, 0.),
             0.9 * d,
@@ -350,7 +350,7 @@ fn numerical_audit_inverse_and_grid_keep_wide_finite_chart() {
                 .unwrap(),
             };
             let t = closest_pcurve_parameter_from_coarse_grid(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &p,
                 Point2::new(0.3, 0.),
             )

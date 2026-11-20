@@ -105,7 +105,13 @@ impl CodecBackend for UsdCodec {
     }
 
     fn decode_impl(&self, ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Decoded, CodecError> {
-        decode::decode(ctx, root)
+        let mut decoded = decode::decode(ctx, root)?;
+        decoded.ir.state_root_definition(
+            ctx,
+            crate::ids::stage(),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )?;
+        Ok(decoded)
     }
 }
 
@@ -131,7 +137,11 @@ impl EncoderBackend for UsdCodec {
         let (mut body, members) = writer::plan(input, &target, packaged)?;
         if binary {
             body.bytes = crate_layer(&body.bytes)?;
-            body.notes = vec!["USDC 0.8.0 binary layer, metre units".to_owned()];
+            let metres = input.scene.meters_per_unit.unwrap_or(1.0);
+            body.notes = vec![format!(
+                "USDC 0.8.0 binary layer, {}",
+                writer::units_note(metres)
+            )];
         }
         if packaged {
             let mut all = vec![(usdz::ROOT_MEMBER, body.bytes.as_slice())];

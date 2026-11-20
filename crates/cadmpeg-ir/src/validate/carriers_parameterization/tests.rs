@@ -30,7 +30,7 @@ fn face_on_unknown_surface_validates_clean() {
     // Preserve a raw record and point the unknown surface at it.
     let rec = UnknownId::mint("synthetic:cube:unknown#0").expect("valid identity");
     ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "synthetic",
         &[NativeUnknownRecord {
             id: rec.clone(),
@@ -527,7 +527,7 @@ fn carrier_reachability_follows_composite_segments_through_cycles_and_repeats() 
         self_intersect: None,
     });
     ir.geometry.curves.extend([first, second]);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     super::check_carrier_reachability(
         &ctx,
@@ -559,7 +559,7 @@ fn carrier_reachability_preserves_orphan_arena_order() {
     point.id = "test:model:point#orphan".try_into().unwrap();
     point.source_object = None;
     ir.geometry.points.push(point);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     super::check_carrier_reachability(
         &ctx,

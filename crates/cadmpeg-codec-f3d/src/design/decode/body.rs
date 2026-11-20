@@ -2125,7 +2125,7 @@ mod tests {
             let names = super::design_model_selection(scan).unwrap().blob_names;
             assert_eq!(names, ["BREP.synthetic.smbh"]);
             let bindings = super::decode_design_body_bindings(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 None,
                 &[],
@@ -2170,7 +2170,7 @@ mod tests {
         let mut out = Vec::new();
         with_scan(&archive, |scan| {
             out = super::decode_design_body_bindings(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 None,
                 &[],
@@ -2399,7 +2399,7 @@ mod tests {
             let archive = zip.finish().unwrap().into_inner();
             with_scan(&archive, |scan| {
                 let bindings = super::decode_design_body_bindings(
-                    &cadmpeg_test_support::service_decode_context(),
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
                     scan,
                     None,
                     &[],

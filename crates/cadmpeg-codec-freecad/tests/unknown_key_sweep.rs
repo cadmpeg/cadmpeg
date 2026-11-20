@@ -4,13 +4,13 @@
 //!
 //! The committed `FreeCAD` decode goldens store `native` as an elision marker,
 //! so their `ir` does not read back as a `CadIr` and the workspace-wide sweep
-//! in `cadmpeg-ir` skips them. This sweep decodes the charter fixtures instead
+//! in `cadmpeg-test-support` skips them. This sweep decodes the charter fixtures instead
 //! and runs the same walk over the live document, which reaches the sketch,
 //! annotation, assembly, and product shapes no other codec's goldens carry.
 //!
 //! This sweep reads `FREE_FORM_SHAPES` as an allowlist only. The over-listing
 //! check — that every listed entry is reached by something — lives in
-//! `every_golden_shape_refuses_an_unknown_key` in `cadmpeg-ir`, which reaches
+//! `every_golden_shape_refuses_an_unknown_key` in `cadmpeg-test-support`, which reaches
 //! every entry by a committed golden or by a minimal hand-written document, so
 //! a bogus entry fails there.
 

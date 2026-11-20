@@ -2927,7 +2927,7 @@ mod tests {
             Diagnostics::new(),
         );
         let error = scale_decoded_curve(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut decoded,
             crate::test_support::millimeter_scale(f64::MAX),
             17,
@@ -2959,7 +2959,7 @@ mod tests {
             Diagnostics::new(),
         );
         scale_decoded_curve(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut decoded,
             crate::test_support::millimeter_scale(2.0),
             17,
@@ -2986,7 +2986,7 @@ mod tests {
             Diagnostics::new(),
         );
         scale_decoded_curve(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut decoded,
             crate::test_support::millimeter_scale(2.0),
             17,
@@ -3012,7 +3012,7 @@ mod tests {
             Diagnostics::new(),
         );
         scale_decoded_curve(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut decoded,
             crate::test_support::millimeter_scale(2.0),
             17,

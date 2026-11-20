@@ -405,7 +405,7 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
             .unwrap();
         let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
         let placement = exact_coil_placement(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &records,
             &scope,
@@ -459,7 +459,7 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
 fn modern_coil_placement_accepts_class_450_matrix_frame() {
     let (bytes, scope, transform_start) = modern_coil_matrix_placement_fixture();
     let placement = exact_coil_placement(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
@@ -494,7 +494,7 @@ fn modern_coil_placement_requires_exact_class_450_matrix_carrier() {
     bytes[transform_start + coil_modern_matrix::CONSTANT_512 + 1] = 0;
     assert_eq!(
         exact_coil_placement(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
@@ -508,7 +508,7 @@ fn modern_coil_placement_requires_exact_class_450_matrix_carrier() {
     bytes[transform_start + coil_modern_matrix::IDENTITY_LANE + 7] = 0;
     assert_eq!(
         exact_coil_placement(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
@@ -522,7 +522,7 @@ fn modern_coil_placement_requires_exact_class_450_matrix_carrier() {
     bytes[transform_start + coil_modern_matrix::OWNER_REFERENCE + 1] = 0;
     assert_eq!(
         exact_coil_placement(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
@@ -537,7 +537,7 @@ fn modern_coil_placement_requires_exact_class_450_matrix_carrier() {
 fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
     let (bytes, scope, transform_start) = compact_coil_owner_identity_fixture();
     let placement = exact_coil_placement(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
@@ -570,7 +570,7 @@ fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
 fn legacy_coil_placement_accepts_identity_frame() {
     let (bytes, scope, transform_start) = legacy_coil_placement_identity_fixture();
     let placement = exact_coil_placement(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
@@ -607,7 +607,7 @@ fn legacy_coil_placement_requires_exact_identity_carrier() {
     bytes[transform_start + coil_legacy_identity::TAIL_VALUE] = 5;
     assert_eq!(
         exact_coil_placement(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
@@ -622,7 +622,7 @@ fn legacy_coil_placement_requires_exact_identity_carrier() {
         crate::records::references::DesignClassTag::try_from("432".to_owned()).unwrap();
     assert_eq!(
         exact_coil_placement(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
@@ -636,7 +636,7 @@ fn legacy_coil_placement_requires_exact_identity_carrier() {
     bytes[transform_start + coil_legacy_identity::SUCCESSOR_RECORD_INDEX] = 203;
     assert_eq!(
         exact_coil_placement(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
@@ -651,7 +651,7 @@ fn legacy_coil_placement_requires_exact_identity_carrier() {
 fn compact_coil_spiral_placement_accepts_seven_reference_form() {
     let (bytes, scope, transform_start) = compact_coil_spiral_placement_fixture();
     let placement = exact_coil_placement(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
@@ -681,7 +681,7 @@ fn compact_coil_seven_reference_form_requires_spiral_extent() {
     }
     assert_eq!(
         exact_coil_placement(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
@@ -704,7 +704,7 @@ fn compact_coil_placement_rejects_ambiguous_or_reflected_frames() {
     bytes[matrix_value_offset..matrix_value_offset + 8].copy_from_slice(&(-1.0f64).to_le_bytes());
     assert_eq!(
         exact_coil_placement(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
@@ -718,7 +718,7 @@ fn compact_coil_placement_rejects_ambiguous_or_reflected_frames() {
     bytes[transform_start + 65] = 0;
     assert_eq!(
         exact_coil_placement(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
@@ -732,7 +732,7 @@ fn compact_coil_placement_rejects_ambiguous_or_reflected_frames() {
     bytes[transform_start + 223] ^= 1;
     assert_eq!(
         exact_coil_placement(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &scope,
@@ -747,7 +747,7 @@ fn compact_coil_placement_rejects_ambiguous_or_reflected_frames() {
 fn compact_coil_placement_accepts_face_recipe_selection() {
     let (bytes, scope, recipes) = compact_coil_face_selection_fixture();
     let placement = exact_coil_placement(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,

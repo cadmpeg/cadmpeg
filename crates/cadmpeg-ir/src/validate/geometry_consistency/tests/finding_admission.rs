@@ -12,7 +12,7 @@ fn finds(
     checker: impl Fn(&DecodeContext<'_>, &CadIr, &mut Vec<Finding>) -> Result<(), CodecError>,
     message: &str,
 ) {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     checker(&ctx, ir, &mut findings).unwrap();
     assert!(!findings.is_empty());
@@ -251,7 +251,7 @@ fn charted_intersection_witness_finding_is_reported() {
 
 #[test]
 fn cache_support_failures_return_side_indexes_with_the_validator_allowance() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (mapping, fit, expected) in [
         ([2.0, 3.0], None, Vec::new()),
         ([3.0, 2.0], None, vec![0]),

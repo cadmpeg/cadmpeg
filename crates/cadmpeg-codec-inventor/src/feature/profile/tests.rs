@@ -601,20 +601,21 @@ fn a_wire_that_does_not_close_leaves_the_selection_unresolved() {
         .is_none());
 }
 
-/// The winding number of a closed loop about `point`, from a dense polyline
-/// through its curves.
-fn polyline_winding(curves: &[LoopCurve], point: Point2) -> f64 {
-    let mut turns = 0.0;
-    for curve in curves {
-        let samples = match *curve {
+/// A dense polyline through each curve of a closed loop.
+fn loop_polylines(curves: &[LoopCurve]) -> Vec<Vec<Point2>> {
+    // The 256 chords of each arc in these tests stay within 4e-5 of it, far
+    // inside the 0.01 band that the test skips.
+    curves
+        .iter()
+        .map(|curve| match *curve {
             LoopCurve::Arc {
                 center,
                 radius,
                 start_angle,
                 sweep,
-            } => (0..=4000)
+            } => (0..=256)
                 .map(|step| {
-                    let angle = sweep.mul_add(f64::from(step) / 4000.0, start_angle);
+                    let angle = sweep.mul_add(f64::from(step) / 256.0, start_angle);
                     Point2::new(
                         radius.mul_add(angle.cos(), center.u),
                         radius.mul_add(angle.sin(), center.v),
@@ -625,10 +626,15 @@ fn polyline_winding(curves: &[LoopCurve], point: Point2) -> f64 {
                 let (start, end) = curve.ends();
                 vec![start, end]
             }
-        };
-        for pair in samples.windows(2) {
-            turns += chord_turn(pair[0], pair[1], point);
-        }
+        })
+        .collect()
+}
+
+/// The winding number of a closed loop about `point`, from its polylines.
+fn polyline_winding(polylines: &[Vec<Point2>], point: Point2) -> f64 {
+    let mut turns = 0.0;
+    for pair in polylines.iter().flat_map(|polyline| polyline.windows(2)) {
+        turns += chord_turn(pair[0], pair[1], point);
     }
     turns / std::f64::consts::TAU
 }
@@ -652,6 +658,7 @@ fn an_arc_turns_by_its_chord_and_the_segment_it_bounds() {
         vec![upper, arc((0.5, 0.5), radius, -3.0 * FRAC_PI_4, -1.5 * PI)],
     ];
     for curves in &loops {
+        let polylines = loop_polylines(curves);
         for i in 0..=40 {
             for j in 0..=40 {
                 let point = Point2::new(
@@ -666,7 +673,7 @@ fn an_arc_turns_by_its_chord_and_the_segment_it_bounds() {
                 }
                 assert_eq!(
                     encloses(curves, point),
-                    Some(polyline_winding(curves, point).round() != 0.0),
+                    Some(polyline_winding(&polylines, point).round() != 0.0),
                     "{point:?}"
                 );
             }

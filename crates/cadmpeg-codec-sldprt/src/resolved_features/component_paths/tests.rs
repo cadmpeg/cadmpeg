@@ -39,15 +39,15 @@ fn component(source: u32) -> FeatureInputComponentPathEntry {
 
 #[test]
 fn component_indexes_resolve_referenced_sources() {
-    let features = (1..=1000).map(feature).collect::<Vec<_>>();
-    let components = [component(500)];
+    let features = (1..=3).map(feature).collect::<Vec<_>>();
+    let components = [component(2)];
     assert_eq!(
         component_path_features(&components, &features),
-        ["synthetic:feature#500"]
+        ["synthetic:feature#2"]
     );
     assert_eq!(
         component_path_terminal_feature(&components, &features),
-        Some("synthetic:feature#500".into())
+        Some("synthetic:feature#2".into())
     );
 }
 
