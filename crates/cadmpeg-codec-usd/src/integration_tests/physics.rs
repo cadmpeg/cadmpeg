@@ -549,3 +549,178 @@ fn a_transformed_group_body_reports_its_mass() {
         .iter()
         .any(|loss| loss.code == crate::loss::UsdLossCode::ExportPhysicsNotWritten.kind()));
 }
+
+/// `LAYER` with its hinge replaced by a generic joint that applies
+/// `PhysicsLimitAPI` with `limits`: `(instance, low, high)` in degrees and
+/// scene units (centimetres), low above high locking the axis.
+fn generic_joint(limits: &[(&str, f64, f64)]) -> String {
+    use std::fmt::Write as _;
+    let start = LAYER.find("    def PhysicsRevoluteJoint").unwrap();
+    let end = start + LAYER[start..].find("    }\n}\n").unwrap() + "    }\n".len();
+    let schemas: Vec<String> = limits
+        .iter()
+        .map(|(instance, _, _)| format!("\"PhysicsLimitAPI:{instance}\""))
+        .collect();
+    let mut values = String::new();
+    for (instance, low, high) in limits {
+        writeln!(values, "        float limit:{instance}:physics:low = {low}").unwrap();
+        writeln!(
+            values,
+            "        float limit:{instance}:physics:high = {high}"
+        )
+        .unwrap();
+    }
+    let joint = format!(
+        "    def PhysicsJoint \"Joint\" (\n        prepend apiSchemas = [{}]\n    )\n    {{\n        rel physics:body0 = </A/Base>\n        rel physics:body1 = </A/Arm>\n{values}    }}\n",
+        schemas.join(", ")
+    );
+    format!("{}{joint}{}", &LAYER[..start], &LAYER[end..])
+}
+
+const LOCKED: [(&str, f64, f64); 4] = [
+    ("transX", 1.0, -1.0),
+    ("transY", 1.0, -1.0),
+    ("rotX", 1.0, -1.0),
+    ("rotY", 1.0, -1.0),
+];
+
+fn joint_kind(source: &str) -> (PairedJointKind, Vec<String>) {
+    let result = decode(source);
+    let JointOperands::Pair { kind, .. } = result.ir().model.assembly_joints[0].operands() else {
+        panic!("a paired joint");
+    };
+    let losses = result
+        .report()
+        .losses
+        .iter()
+        .map(|loss| loss.message.clone())
+        .collect();
+    (kind.clone(), losses)
+}
+
+fn range(limits: Option<&JointLimits>) -> (f64, f64) {
+    let Some(JointLimits::Range(range)) = limits else {
+        panic!("a range: {limits:?}");
+    };
+    (range.minimum().get(), range.maximum().get())
+}
+
+/// A generic joint that locks every axis but `rotZ` and `transZ` is a
+/// cylindrical joint along its Z axis: `rotZ` from -30 to 60 degrees is -π/6
+/// to π/3, and `transZ` from 0 to 2 cm is 0 to 20 mm. Its limits are read,
+/// and no degree of freedom is reported lost.
+#[test]
+fn a_generic_joint_free_along_and_about_z_is_a_cylindrical_joint() {
+    let mut limits = LOCKED.to_vec();
+    limits.extend([("rotZ", -30.0, 60.0), ("transZ", 0.0, 2.0)]);
+    let (kind, losses) = joint_kind(&generic_joint(&limits));
+    let PairedJointKind::Cylindrical {
+        angular_limits,
+        linear_limits,
+        ..
+    } = kind
+    else {
+        panic!("a cylindrical joint: {kind:?}");
+    };
+    let (low, high) = range(angular_limits.as_ref());
+    assert!(close(low, -std::f64::consts::PI / 6.0) && close(high, std::f64::consts::PI / 3.0));
+    let (low, high) = range(linear_limits.as_ref());
+    assert!(close(low, 0.0) && close(high, 20.0));
+    assert!(
+        losses
+            .iter()
+            .all(|loss| !loss.contains("degrees of freedom") && !loss.contains("limit:")),
+        "{losses:#?}"
+    );
+}
+
+/// Locking `transZ` as well leaves a revolute joint about Z, and locking
+/// `rotZ` a slider along Z; a free axis with no limit has none.
+#[test]
+fn a_generic_joint_free_about_or_along_z_is_a_revolute_or_slider_joint() {
+    let mut limits = LOCKED.to_vec();
+    limits.extend([("rotZ", -90.0, 90.0), ("transZ", 1.0, -1.0)]);
+    let (kind, _) = joint_kind(&generic_joint(&limits));
+    let PairedJointKind::Revolute { angular_limits, .. } = kind else {
+        panic!("a revolute joint: {kind:?}");
+    };
+    let (low, high) = range(angular_limits.as_ref());
+    assert!(close(low, -std::f64::consts::FRAC_PI_2) && close(high, std::f64::consts::FRAC_PI_2));
+    let mut limits = LOCKED.to_vec();
+    limits.push(("rotZ", 1.0, -1.0));
+    let (kind, _) = joint_kind(&generic_joint(&limits));
+    assert!(
+        matches!(
+            kind,
+            PairedJointKind::Slider {
+                linear_limits: None,
+                ..
+            }
+        ),
+        "{kind:?}"
+    );
+}
+
+/// A generic joint that leaves another axis free stays a native joint: its
+/// degrees of freedom and the limit it keeps no record of are reported lost.
+#[test]
+fn another_generic_joint_stays_native_and_reports_its_freedoms() {
+    let limits = [
+        ("transX", 1.0, -1.0),
+        ("transY", 0.0, 5.0),
+        ("rotX", 1.0, -1.0),
+        ("rotY", 1.0, -1.0),
+    ];
+    let (kind, losses) = joint_kind(&generic_joint(&limits));
+    assert!(matches!(kind, PairedJointKind::Native { .. }), "{kind:?}");
+    for lost in [
+        "degrees of freedom",
+        "limit:transY:physics:low",
+        "limit:transY:physics:high",
+    ] {
+        assert!(
+            losses.iter().any(|loss| loss.contains(lost)),
+            "{lost}: {losses:#?}"
+        );
+    }
+}
+
+/// A distance limit has no place on a cylindrical joint: the joint stays
+/// native and the distance limit is reported lost.
+#[test]
+fn a_generic_joint_with_a_distance_limit_stays_native() {
+    let mut limits = LOCKED.to_vec();
+    limits.push(("distance", 0.0, 5.0));
+    let (kind, losses) = joint_kind(&generic_joint(&limits));
+    assert!(matches!(kind, PairedJointKind::Native { .. }), "{kind:?}");
+    for lost in ["limit:distance:physics:low", "limit:distance:physics:high"] {
+        assert!(
+            losses.iter().any(|loss| loss.contains(lost)),
+            "{lost}: {losses:#?}"
+        );
+    }
+}
+
+/// A cylindrical joint written as a generic joint reads back as a cylindrical
+/// joint with its limits: -π/6 to π/3 and 0 to 20 mm.
+#[test]
+fn a_cylindrical_joint_survives_a_write() {
+    let mut limits = LOCKED.to_vec();
+    limits.extend([("rotZ", -30.0, 60.0), ("transZ", 0.0, 2.0)]);
+    let first = decode(&generic_joint(&limits));
+    let (text, _) = encode(first.ir());
+    assert!(text.contains("def PhysicsJoint"), "{text}");
+    let (kind, _) = joint_kind(&text);
+    let PairedJointKind::Cylindrical {
+        angular_limits,
+        linear_limits,
+        ..
+    } = kind
+    else {
+        panic!("a cylindrical joint: {kind:?}");
+    };
+    let (low, high) = range(angular_limits.as_ref());
+    assert!(close(low, -std::f64::consts::PI / 6.0) && close(high, std::f64::consts::PI / 3.0));
+    let (low, high) = range(linear_limits.as_ref());
+    assert!(close(low, 0.0) && close(high, 20.0));
+}
