@@ -5,7 +5,7 @@ fn matching_polynomial_seed_returns_the_seed_parameter() {
     use crate::geometry::nurbs::NurbsCurve;
     use crate::math::Point3;
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    let preparation = cadmpeg_test_support::service_decode_context();
+    let preparation = cadmpeg_core::decode::test_support::service_decode_context();
     let mut knots = vec![0.0; 4];
     knots.extend((1..1_021).map(|ordinal| f64::from(ordinal) / 1_021.0));
     knots.extend([1.0; 4]);
@@ -37,7 +37,7 @@ fn matching_polynomial_seed_returns_the_seed_parameter() {
 fn matching_rational_seed_keeps_positive_weight_search_admission() {
     use crate::geometry::nurbs::NurbsCurve;
     use crate::math::Point3;
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let point = Point3::new(0.0, 0.0, 0.0);
     let curve = NurbsCurve::from_lanes(
         1,
@@ -133,7 +133,7 @@ fn bounded_curve_search_finds_the_linear_parameter() {
     use crate::geometry::nurbs::NurbsCurve;
     use crate::math::Point3;
     use crate::scalar::FiniteReal;
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let curve = NurbsCurve::from_lanes(
         1,
         vec![0.0, 0.0, 1.0, 1.0],

@@ -1017,7 +1017,7 @@ fn insert_only_history_uses_the_active_record_table_as_revisions() {
 
     assert_eq!(insert_only_active_record_count(&states), Some(4));
     admit_history_binding(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &states,
         &mut { u64::MAX },
     )
@@ -1401,7 +1401,7 @@ fn reverse_history_builds_complete_entity_version_maps() {
         .into();
 
     admit_history_binding(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &states,
         &mut { u64::MAX },
     )

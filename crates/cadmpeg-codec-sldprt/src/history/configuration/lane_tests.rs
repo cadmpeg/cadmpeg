@@ -1193,7 +1193,7 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
     );
 
     inherit_configuration_reference_plane_semantics(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_mut(&mut configured),
         &[base_plane.clone(), base_offset.clone()],
     )
@@ -1224,7 +1224,7 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
         }),
     );
     inherit_configuration_reference_plane_semantics(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_mut(&mut mismatched),
         &[base_plane, base_offset],
     )
@@ -1297,7 +1297,7 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
     );
 
     inherit_configuration_reference_plane_semantics(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_mut(&mut configured),
         &[base_plane.clone(), base_offset.clone()],
     )
@@ -1334,7 +1334,7 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
         }),
     );
     inherit_configuration_reference_plane_semantics(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_mut(&mut remains_unresolved),
         std::slice::from_ref(&unresolved_base),
     )
@@ -1400,7 +1400,7 @@ fn scoped_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
     ));
 
     inherit_configuration_reference_plane_semantics(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_mut(&mut configured),
         std::slice::from_ref(&base),
     )

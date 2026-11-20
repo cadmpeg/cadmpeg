@@ -238,7 +238,8 @@ fn symbol_heads_bind_exactly_the_materialised_input_forms() {
         words
     };
     let inputs = words(4);
-    for symbol in &inputs {
+    let symbols = words(3);
+    for symbol in &symbols {
         let heads = super::super::LegacySymbolHeads::new([symbol.as_str()]);
         let forms = materialised_symbol_input_forms(symbol);
         for input in &inputs {
@@ -249,7 +250,6 @@ fn symbol_heads_bind_exactly_the_materialised_input_forms() {
             );
         }
     }
-    let symbols = words(3);
     let heads = super::super::LegacySymbolHeads::new(symbols.iter().map(String::as_str));
     let forms = symbols
         .iter()

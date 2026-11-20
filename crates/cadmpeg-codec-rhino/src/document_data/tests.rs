@@ -215,7 +215,7 @@ fn grid_body() -> Vec<u8> {
 #[test]
 fn legacy_render_settings_gate_each_v5_suffix() {
     let value_100 = render_settings(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &legacy_body(100),
         0..legacy_body(100).len(),
         7,
@@ -230,7 +230,7 @@ fn legacy_render_settings_gate_each_v5_suffix() {
 
     let value_101 = legacy_body(101);
     let value_101 = render_settings(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &value_101,
         0..value_101.len(),
         7,
@@ -244,7 +244,7 @@ fn legacy_render_settings_gate_each_v5_suffix() {
 
     let value_102 = legacy_body(102);
     let value_102 = render_settings(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &value_102,
         0..value_102.len(),
         7,
@@ -262,7 +262,7 @@ fn legacy_render_settings_gate_each_v5_suffix() {
 
     let value_103 = legacy_body(103);
     let value_103 = render_settings(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &value_103,
         0..value_103.len(),
         7,
@@ -279,7 +279,7 @@ fn annotation_settings_gate_packed_minor_fields_and_skip_suffix() {
     for minor in 0..=5 {
         let bytes = annotation_body(minor);
         let value = annotation_settings(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             0..bytes.len(),
             19,
@@ -332,7 +332,7 @@ fn annotation_settings_gate_packed_minor_fields_and_skip_suffix() {
         0x01,
     ]);
     let value = annotation_settings(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         19,
@@ -355,7 +355,7 @@ fn annotation_settings_refuse_nonfinite_scales() {
             .expect("fixture contains the selected annotation scale");
         bytes[offset..offset + 8].copy_from_slice(&f64::NAN.to_le_bytes());
         assert!(annotation_settings(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             0..bytes.len(),
             19,
@@ -389,7 +389,7 @@ fn modern_render_settings_consumes_known_prefix_and_future_suffix() {
     let body = modern_body(4);
     let bytes = crc_chunk(ArchiveVersion::V8, ANONYMOUS, &body);
     let value = render_settings(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         11,
@@ -422,7 +422,7 @@ fn modern_render_settings_rejects_negative_minor() {
     let body = modern_body(-1);
     let bytes = crc_chunk(ArchiveVersion::V8, ANONYMOUS, &body);
     let error = render_settings(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         0..bytes.len(),
         0,

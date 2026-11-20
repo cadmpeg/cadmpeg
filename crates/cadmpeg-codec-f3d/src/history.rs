@@ -63,7 +63,7 @@ use loop_index::LoopIndex;
 use output_properties::{
     classify_face_plane, classify_inserted_face, collect_edge_midpoint_slots,
     feature_consumes_tool_body, feature_supports_body_absorption, resolve_split_result_plane,
-    resolve_split_tool_plane, EdgeMidpointRequest, InsertedFaceClassification,
+    resolve_split_tool_plane, EdgeMidpointRequest, FaceSurfaceIndex, InsertedFaceClassification,
     SplitResultPlaneContext, StateFacePlanes, StateSplitCandidates,
     EPS_HISTORY_BODY_BBOX_CONTAINMENT_E2, EPS_HISTORY_BODY_BBOX_GROWTH_E3,
     EPS_HISTORY_BODY_BBOX_UNCHANGED_E4, EPS_HISTORY_VERTEX_ABSORBED_DIST_SQ_E4,
@@ -621,7 +621,7 @@ struct HistoricalBodyIndex<'a> {
     cylinders: KeyedRows<'a, crate::history_records::AsmHistoricalCylinder>,
     edge_samples: KeyedRows<'a, crate::history_records::AsmHistoricalEdgeSample>,
     planes: KeyedRows<'a, crate::history_records::AsmHistoricalPlane>,
-    coedge_rows: &'a [AsmHistoricalCoedge],
+    edge_loops: HashMap<i64, Vec<i64>>,
     loop_faces: HashMap<i64, i64>,
 }
 
@@ -645,7 +645,16 @@ impl<'a> HistoricalBodyIndex<'a> {
             cylinders: KeyedRows::new(&topology.surface_cylinders),
             edge_samples: KeyedRows::new(&topology.edge_samples),
             planes: KeyedRows::new(&topology.surface_planes),
-            coedge_rows: &topology.coedge_topology,
+            edge_loops: topology.coedge_topology.iter().fold(
+                HashMap::new(),
+                |mut edge_loops: HashMap<i64, Vec<i64>>, coedge| {
+                    edge_loops
+                        .entry(coedge.edge)
+                        .or_default()
+                        .push(coedge.owner_loop);
+                    edge_loops
+                },
+            ),
             loop_faces: topology
                 .face_loops
                 .iter()
@@ -682,10 +691,11 @@ impl<'a> HistoricalBodyIndex<'a> {
         let radius = start.vector_from(center).norm();
         let tolerance = EPS_HISTORY_CIRCLE_EDGE_E7 * radius.max(1.0);
         let on_cylinder = self
-            .coedge_rows
+            .edge_loops
+            .get(&edge)
+            .map_or(&[][..], Vec::as_slice)
             .iter()
-            .filter(|coedge| coedge.edge == edge)
-            .filter_map(|coedge| self.loop_faces.get(&coedge.owner_loop))
+            .filter_map(|loop_| self.loop_faces.get(loop_))
             .filter_map(|face| self.face_surfaces.get(*face))
             .filter_map(|binding| self.cylinders.get(binding.carrier))
             .any(|cylinder| {
@@ -1277,9 +1287,10 @@ pub(crate) fn bind_feature_outputs(
                 .then(|| history.topology(&history.states()[index]))
                 .flatten();
             if let Some(topology) = measured_topology {
+                let face_surfaces = FaceSurfaceIndex::new(topology);
                 let mut face_planes = BTreeMap::new();
                 for &fid in &topology.faces {
-                    if let Some(plane) = classify_face_plane(topology, fid) {
+                    if let Some(plane) = classify_face_plane(&face_surfaces, fid) {
                         face_planes.insert(fid, plane);
                     }
                 }
@@ -1387,7 +1398,7 @@ pub(crate) fn bind_feature_outputs(
                                 .chain(&transition.topology.bodies.updated)
                                 .all(|b| solid_edges.contains_key(b));
                         for &fid in &transition.topology.faces.inserted {
-                            match classify_inserted_face(topology, transition, fid) {
+                            match classify_inserted_face(&face_surfaces, transition, fid) {
                                 InsertedFaceClassification::Plane(origin, normal) => {
                                     inserted_planar_faces.push((fid, origin, normal));
                                 }

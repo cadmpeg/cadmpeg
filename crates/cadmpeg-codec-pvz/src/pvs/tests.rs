@@ -17,7 +17,7 @@ use crate::test_support::pvs::{
 use crate::test_support::{assembly_structure, SCALED_TURN};
 
 fn decode(bytes: &[u8]) -> Result<Structure, CodecError> {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     read(&ctx, View::over_retained(bytes))
 }
 

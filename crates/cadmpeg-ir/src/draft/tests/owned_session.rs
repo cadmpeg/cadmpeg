@@ -6,7 +6,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 #[test]
 fn owned_commit_session_preserves_cross_candidate_references_and_rejections() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, None).unwrap();
     let point = "test:model:point#committed";
     let vertex = "test:model:vertex#committed";
@@ -39,7 +39,7 @@ fn owned_commit_session_invalidates_positions_before_document_mutation() {
     let mut ir = CadIr::empty();
     ir.geometry.points.push(super::point(first));
     ir.geometry.points.push(super::point(second));
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(ir, &ctx, None).unwrap();
     assert!(session.contains(first).unwrap());
     assert!(session.contains(second).unwrap());
@@ -107,7 +107,7 @@ fn staged_unknown_cache_moves_source_facts_and_extends_only_new_slots() {
 #[test]
 fn staged_unknown_cache_resolves_draft_references_and_rejects_identity_collisions() {
     let target = "test:source:unknown#native";
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, None).unwrap();
     session
         .push_unknown(crate::unknown::UnknownRecord::retained(
@@ -141,7 +141,7 @@ fn staged_unknown_cache_resolves_draft_references_and_rejects_identity_collision
 
 #[test]
 fn owned_source_session_replaces_native_unknown_identity_floor() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = CadIr::empty();
     let old = "test:source:unknown#old";
     let other = "test:source:unknown#other";
@@ -187,7 +187,7 @@ fn owned_source_session_replaces_native_unknown_identity_floor() {
 
 #[test]
 fn owned_source_session_clears_cached_source_positions() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
     let first = "test:source:unknown#first";
     let second = "test:source:unknown#second";
@@ -267,7 +267,7 @@ fn speculative_session_append_reuses_source_cache_across_candidates() {
 
 #[test]
 fn speculative_session_append_extends_native_cache_and_preserves_rejected_positions() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, None).unwrap();
     for (format, arena, identity) in [
         ("middle", "middle", "test:native:record#first"),
@@ -320,7 +320,7 @@ fn speculative_session_append_extends_native_cache_and_preserves_rejected_positi
 #[test]
 fn speculative_session_append_keeps_original_resource_refusal_and_model() {
     use cadmpeg_core::CodecError;
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, None).unwrap();
     session
         .commit_model(super::point_draft("test:model:point#first"))

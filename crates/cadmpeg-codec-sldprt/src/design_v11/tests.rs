@@ -8,8 +8,11 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::{FeatureOperation, OperationFamily};
+use cadmpeg_ir::design::names::{
+    CodecId, NameEntry, NameKind, NativeName, NativeNameValue, TopoName,
+};
 use cadmpeg_ir::design::ops::datum::DatumElement;
-use cadmpeg_ir::design::refs::{Member, Position};
+use cadmpeg_ir::design::refs::{EntityRef, Member, Position};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::check::Check;
 
@@ -32,14 +35,21 @@ fn decode(source: &[u8]) -> CadIr {
 }
 
 fn part_with_history(keywords: &[u8], classes: &[(&str, &str, u32)]) -> CadIr {
-    let mut source = sldprt_with_body(&triangle_body());
+    decode(&with_history(
+        sldprt_with_body(&triangle_body()),
+        keywords,
+        classes,
+    ))
+}
+
+fn with_history(mut source: Vec<u8>, keywords: &[u8], classes: &[(&str, &str, u32)]) -> Vec<u8> {
     source.extend(make_block(0x42, "Contents/Keywords", keywords));
     source.extend(make_block(
         0x42,
         "Contents/Config-0-ResolvedFeatures",
         &resolved_feature_classes_with_ids(classes),
     ));
-    decode(&source)
+    source
 }
 
 fn body_ids(ir: &CadIr) -> Vec<String> {
@@ -585,4 +595,377 @@ fn configurations_mark_the_active_one() {
             && material.material == MaterialRef::Named(cadmpeg_core::nonblank_literal!("Aluminum"))
     ));
     assert_no_design_findings(&ir);
+}
+
+/// The triangle body whose face carries the `FACE_ID_2001` list `face` and
+/// whose body carries the `ATOM_ID_2001` list `[body]`.
+fn identified_triangle(face: &[u32], body: u32) -> Vec<u8> {
+    use crate::test_support::parasolid::int_list_attribute;
+
+    let mut bytes = triangle_body();
+    bytes.extend(int_list_attribute(
+        "FACE_ID_2001",
+        &[9, 9, 1, 1],
+        1100,
+        10,
+        face,
+    ));
+    bytes.extend(int_list_attribute(
+        "ATOM_ID_2001",
+        &[9, 1],
+        1110,
+        900,
+        &[body],
+    ));
+    bytes
+}
+
+fn native_name(values: &[i64]) -> NativeName {
+    NativeName {
+        codec: CodecId::from(cadmpeg_core::nonblank_literal!("sldprt")),
+        value: NativeNameValue::Integers(values.to_vec()),
+    }
+}
+
+const BOSS: &[u8] = br#"<Keywords Name="Bracket">
+    <Extrusion Name="Boss" Type="BossExtrude" id="7">
+        <Sketch Name="Sketch1" Type="ProfileFeature" id="8"/>
+    </Extrusion>
+</Keywords>"#;
+
+#[test]
+fn faces_and_bodies_are_named_by_their_persistent_ids() {
+    let ir = decode(&with_history(
+        sldprt_with_body(&identified_triangle(&[72, 7, 0x6523_4178, 0, 3], 41)),
+        BOSS,
+        &[],
+    ));
+    let [face] = ir.geometry.faces.as_slice() else {
+        panic!("one face");
+    };
+    let [body] = ir.geometry.bodies.as_slice() else {
+        panic!("one body");
+    };
+    let entries = ir.design.names.entries();
+    assert_eq!(entries.len(), 2, "{entries:#?}");
+    assert_eq!(
+        entries.get(&EntityRef::Face(face.id.clone())),
+        Some(&NameEntry {
+            name: Some(TopoName::Blend {
+                feature: feature_named(&ir, "Boss").id.clone(),
+                between: Vec::new(),
+                index: Some(3),
+            }),
+            native: Some(native_name(&[72, 7, 0x6523_4178, 0, 3])),
+        })
+    );
+    assert_eq!(
+        entries.get(&EntityRef::Body(body.id.clone())),
+        Some(&NameEntry {
+            name: None,
+            native: Some(native_name(&[41])),
+        })
+    );
+    assert!(ir.design.evaluations.is_empty());
+    assert_no_design_findings(&ir);
+}
+
+/// The name of the one face of a part whose face carries `face`.
+fn face_name_of(face: &[u32]) -> (CadIr, Option<TopoName>) {
+    let ir = decode(&with_history(
+        sldprt_with_body(&identified_triangle(face, 41)),
+        BOSS,
+        &[],
+    ));
+    let entry = ir
+        .design
+        .names
+        .entries()
+        .get(&EntityRef::Face(ir.geometry.faces[0].id.clone()))
+        .cloned();
+    let entry = entry.unwrap_or_else(|| panic!("an entry for {face:?}"));
+    assert_eq!(
+        entry.native,
+        Some(native_name(
+            &face.iter().copied().map(i64::from).collect::<Vec<_>>()
+        ))
+    );
+    assert_no_design_findings(&ir);
+    (ir, entry.name)
+}
+
+#[test]
+fn face_names_state_the_role_and_index_their_class_stores() {
+    use cadmpeg_ir::design::names::GenerationRole;
+
+    const STAMP: u32 = 0x6523_4178;
+    let generated = |ir: &CadIr, role: Option<GenerationRole>, index: Option<u32>| {
+        Some(TopoName::Generated {
+            kind: NameKind::Face,
+            feature: feature_named(ir, "Boss").id.clone(),
+            role,
+            generator: None,
+            index,
+        })
+    };
+    let other = |code: &str| {
+        Some(GenerationRole::Other(
+            cadmpeg_core::text::NonBlankString::new(code).unwrap(),
+        ))
+    };
+    for (face, role, index) in [
+        // A side swept from a sketch entity: the entity's id is an
+        // allocation, not an index.
+        (&[74, 7, STAMP, 0, 5][..], Some(GenerationRole::Side), None),
+        (
+            &[83, 7, STAMP, 0, 5, u32::MAX, 1][..],
+            Some(GenerationRole::Side),
+            None,
+        ),
+        // A cap: its end is the role, its region the index, zero included.
+        (
+            &[40, 7, STAMP, 0, 0, 0][..],
+            Some(GenerationRole::Start),
+            Some(0),
+        ),
+        (
+            &[81, 7, STAMP, 0, 1, 4, 0][..],
+            Some(GenerationRole::End),
+            Some(4),
+        ),
+        // The four-word set names the producer and no role.
+        (&[36, 7, STAMP, 0][..], None, None),
+        // A class whose fields' meaning is not established.
+        (&[49, 7, STAMP, 0, 2, 0][..], other("sldprt:49"), None),
+        // A cap whose end is neither 0 nor 1 is no established cap.
+        (&[40, 7, STAMP, 0, 2, 0][..], other("sldprt:40"), None),
+    ] {
+        let (ir, name) = face_name_of(face);
+        assert_eq!(name, generated(&ir, role, index), "{face:?}");
+    }
+}
+
+#[test]
+fn a_face_whose_producer_is_no_feature_keeps_only_its_native_name() {
+    let ir = decode(&with_history(
+        sldprt_with_body(&identified_triangle(&[72, 99, 0x6523_4178, 0, 3], 41)),
+        BOSS,
+        &[],
+    ));
+    let face = &ir.geometry.faces[0];
+    assert_eq!(
+        ir.design
+            .names
+            .entries()
+            .get(&EntityRef::Face(face.id.clone())),
+        Some(&NameEntry {
+            name: None,
+            native: Some(native_name(&[72, 99, 0x6523_4178, 0, 3])),
+        })
+    );
+    assert_no_design_findings(&ir);
+}
+
+#[test]
+fn a_face_whose_producer_id_several_records_carry_keeps_only_its_native_name() {
+    let ir = decode(&with_history(
+        sldprt_with_body(&identified_triangle(&[72, 7, 0x6523_4178, 0, 3], 41)),
+        br#"<Keywords Name="Bracket">
+    <Extrusion Name="Boss" Type="BossExtrude" id="7">
+        <Sketch Name="Sketch1" Type="ProfileFeature" id="7"/>
+    </Extrusion>
+</Keywords>"#,
+        &[],
+    ));
+    let face = &ir.geometry.faces[0];
+    assert_eq!(
+        ir.design
+            .names
+            .entries()
+            .get(&EntityRef::Face(face.id.clone())),
+        Some(&NameEntry {
+            name: None,
+            native: Some(native_name(&[72, 7, 0x6523_4178, 0, 3])),
+        })
+    );
+}
+
+const TWO_CONFIGURATIONS: &[u8] = br#"<Keywords Name="Bracket">
+    <Configuration Name="First" SourceIndex="0"/>
+    <Configuration Name="Second" SourceIndex="1"/>
+    <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+    <Sketch Name="Sketch2" Type="ProfileFeature" id="12"/>
+</Keywords>"#;
+
+#[test]
+fn a_configuration_that_is_not_active_has_its_stored_state() {
+    use cadmpeg_ir::design::evaluation::{EvaluationStatus, StateBase};
+    use cadmpeg_ir::design::refs::Evaluated;
+
+    let mut source = with_history(
+        crate::test_support::container::sldprt_with_colliding_sites(),
+        TWO_CONFIGURATIONS,
+        &[],
+    );
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<swSolidWorks><swModel swConfigurationName="Second"/></swSolidWorks>"#,
+    ));
+    let ir = decode(&source);
+    let [scope] = ir.design.scopes.as_slice() else {
+        panic!("one scope");
+    };
+    let configuration = |name: &str| {
+        ir.design
+            .configurations
+            .iter()
+            .find(|configuration| configuration.name == name)
+            .unwrap()
+            .id
+            .clone()
+    };
+    assert_eq!(scope.active_configuration, Some(configuration("Second")));
+    let [current] = scope.current.as_slice() else {
+        panic!("one current state");
+    };
+    let [evaluation] = ir.design.evaluations.as_slice() else {
+        panic!("one evaluation: {:#?}", ir.design.evaluations);
+    };
+    assert_eq!(evaluation.scope, scope.definition);
+    assert_eq!(evaluation.configuration, Some(configuration("First")));
+    assert_eq!(
+        evaluation.of,
+        Evaluated::State(Position::After(Member::Feature(
+            feature_named(&ir, "Boss").id.clone()
+        )))
+    );
+    assert_eq!(evaluation.status, EvaluationStatus::Current);
+    let content = evaluation.content.as_ref().unwrap();
+    assert_eq!(content.base, StateBase::Empty);
+    let records = &content.delta.records;
+    let [body] = records.bodies.as_slice() else {
+        panic!("one body: {records:#?}");
+    };
+    assert!(!current.bodies.contains(&body.id));
+    assert_eq!(records.faces.len(), 1);
+    assert_eq!(records.vertices.len(), 3);
+    assert_eq!(records.points.len(), 3);
+    assert!(records
+        .points
+        .iter()
+        .all(|point| point.position().get().x < 10_000.0));
+    assert!(content.delta.removed.is_empty());
+    assert_no_design_findings(&ir);
+}
+
+#[test]
+fn a_configuration_flagged_for_rebuild_without_a_partition_is_stale() {
+    use cadmpeg_ir::design::evaluation::EvaluationStatus;
+
+    let mut source = with_history(
+        sldprt_with_body(&triangle_body()),
+        br#"<Keywords Name="Bracket">
+            <Configuration Name="Default" SourceIndex="0"/>
+            <Configuration Name="Long" SourceIndex="1"/>
+            <Extrusion Name="Boss" Type="BossExtrude" id="7"/>
+        </Keywords>"#,
+        &[],
+    );
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<swSolidWorks><swModel swConfigurationName="Default"/><swConfigurationList><swConfiguration swName="Default" swID="0" swConfigurationNeedsUpdate="NO"/><swConfiguration swName="Long" swID="1" swConfigurationNeedsUpdate="YES"/></swConfigurationList></swSolidWorks>"#,
+    ));
+    let ir = decode(&source);
+    let [evaluation] = ir.design.evaluations.as_slice() else {
+        panic!("one evaluation: {:#?}", ir.design.evaluations);
+    };
+    let long = ir
+        .design
+        .configurations
+        .iter()
+        .find(|configuration| configuration.name == "Long")
+        .unwrap();
+    assert_eq!(evaluation.configuration.as_ref(), Some(&long.id));
+    assert_eq!(evaluation.status, EvaluationStatus::Stale);
+    assert!(evaluation.content.is_none());
+    assert_no_design_findings(&ir);
+}
+
+#[test]
+fn a_configuration_whose_bodies_are_current_bodies_charges_a_loss() {
+    use std::collections::HashMap;
+
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+
+    use crate::loss::SldprtLossCode;
+
+    let mut source = with_history(
+        crate::test_support::container::sldprt_with_colliding_sites(),
+        TWO_CONFIGURATIONS,
+        &[],
+    );
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<swSolidWorks><swModel swConfigurationName="Second"/></swSolidWorks>"#,
+    ));
+    let ir = decode(&source);
+    let [scope] = ir.design.scopes.as_slice() else {
+        panic!("one scope");
+    };
+    let [Container::Ordered { id: timeline, .. }] = ir.design.containers.as_slice() else {
+        panic!("one timeline: {:#?}", ir.design.containers);
+    };
+    // The current state as `active_partition_bodies` falls back to it when
+    // the active partition is unresolved: every decoded body, so the other
+    // configuration's stored bodies are among the current ones.
+    let every_body = ir
+        .geometry
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<Vec<_>>();
+    let features = HashMap::new();
+    let names = super::names::Names::new(
+        super::Persistent {
+            faces: &[],
+            bodies: &[],
+        },
+        &[],
+        &features,
+    );
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Full);
+    let mut losses = Vec::new();
+    let (evaluations, records) = super::states::configuration_states(
+        &ctx,
+        &ir,
+        &super::states::Scope {
+            definition: &scope.definition,
+            timeline,
+            features: &ir.design.features,
+            configurations: &ir.design.configurations,
+            active: scope.active_configuration.as_ref(),
+            current: &every_body,
+        },
+        &names,
+        &mut losses,
+    )
+    .unwrap();
+    assert!(evaluations.is_empty(), "{evaluations:#?}");
+    assert_eq!(records, 0);
+    let first = ir
+        .design
+        .configurations
+        .iter()
+        .find(|configuration| configuration.name == "First")
+        .unwrap();
+    let [note] = losses.as_slice() else {
+        panic!("one loss: {losses:#?}");
+    };
+    assert_eq!(note.code, SldprtLossCode::ConfigStateUnstated.kind());
+    assert!(note.message.contains(&first.id.to_string()), "{note:#?}");
 }

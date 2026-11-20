@@ -119,6 +119,7 @@ use crate::test_support::test_streams::two_support_charted_intersection_curve_st
 use crate::test_support::test_streams::two_support_ext11_charted_intersection_curve_stream;
 use std::collections::BTreeSet;
 use std::io::Cursor;
+use std::sync::LazyLock;
 
 use cadmpeg_core::decode::InspectOptions;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -1034,7 +1035,7 @@ fn golden_output_is_deterministic() {
 }
 
 /// Union of `nx`-namespace arenas the fixture set populates.
-fn covered_arenas() -> BTreeSet<String> {
+static COVERED_ARENAS: LazyLock<BTreeSet<String>> = LazyLock::new(|| {
     let mut covered = BTreeSet::new();
     for (_, bytes) in fixtures() {
         let Ok(result) = NxCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()) else {
@@ -1049,15 +1050,15 @@ fn covered_arenas() -> BTreeSet<String> {
         }
     }
     covered
-}
+});
 
 /// Every arena a fixture populates must be a name production actually writes.
 #[test]
 fn arena_coverage_is_a_subset() {
     let known: BTreeSet<&str> = KNOWN_ARENAS.iter().copied().collect();
-    let unknown: Vec<String> = covered_arenas()
-        .into_iter()
-        .filter(|a| a != "unknowns" && !known.contains(a.as_str()))
+    let unknown: Vec<&String> = COVERED_ARENAS
+        .iter()
+        .filter(|a| a.as_str() != "unknowns" && !known.contains(a.as_str()))
         .collect();
     assert!(
         unknown.is_empty(),
@@ -1068,7 +1069,7 @@ fn arena_coverage_is_a_subset() {
 /// Collective arena coverage floor across the fixture set.
 #[test]
 fn arena_coverage_meets_floor() {
-    let covered = covered_arenas();
+    let covered = &*COVERED_ARENAS;
     let known: BTreeSet<&str> = KNOWN_ARENAS.iter().copied().collect();
     let hit = covered
         .iter()

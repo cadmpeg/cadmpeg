@@ -25,7 +25,7 @@ fn damage_local_frame(bytes: &mut [u8], name: &str) {
 #[test]
 fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
-    let preview = vec![0; 2_000_000];
+    let preview = b"unrelated preview".to_vec();
     for name in [
         "preview.bin",
         "FusionAssetName[Active]/Previews/preview.png",
@@ -52,7 +52,7 @@ fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() 
             .unwrap()
             .is_ok());
         assert!(<F3dCodec as CodecBackend>::validate_native(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             decoded.ir(),
             None,
         )
@@ -321,7 +321,7 @@ fn each_member_part_links_to_its_own_member_definition() {
         .unrepresented()
         .contains(&cadmpeg_core::decode::ArenaClass::Model));
     assert!(<F3dCodec as CodecBackend>::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir(),
         None,
     )

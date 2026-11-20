@@ -42,7 +42,7 @@ fn structure(definitions: Vec<Definition>) -> Structure {
 const LIMIT: usize = 8;
 
 fn expand_within(structure: &Structure, max_occurrences: usize) -> (CadIr, Vec<LossNote>) {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = CadIr::empty();
     let mut losses = Vec::new();
     definitions(&ctx, structure, &mut ir, &mut losses).unwrap();
@@ -315,7 +315,7 @@ fn retained_refusal(result: &Result<(), CodecError>) -> bool {
 
 #[test]
 fn a_shared_name_is_charged_each_time_it_enters_the_model() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     // One charge of the name fits the retained allowance, and two do not.
     let length = usize::try_from(ctx.retained_bytes_available() / 2 + 1).unwrap();
     let name: Rc<str> = "N".repeat(length).into();
@@ -338,7 +338,7 @@ fn a_shared_name_is_charged_each_time_it_enters_the_model() {
     for child in &mut root.occurrences {
         child.feature_id = Rc::clone(&name);
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = CadIr::empty();
     assert!(retained_refusal(&occurrences(
         &ctx,
@@ -382,7 +382,7 @@ fn properties_become_bom_properties_keyed_by_stream() {
 
 #[test]
 fn a_mesh_with_a_non_finite_vertex_is_rejected() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let geometry = MemberGeometry {
         appearances: crate::ol::AppearanceTable::default(),
         meshes: vec![
@@ -469,7 +469,7 @@ fn placement_defects_and_deep_chains_are_reported() {
     );
 
     let depth = usize::try_from(
-        cadmpeg_test_support::service_decode_context()
+        cadmpeg_core::decode::test_support::service_decode_context()
             .policy()
             .limits
             .max_recursion_depth,
@@ -519,7 +519,7 @@ fn an_appearance_colour_outside_the_unit_range_is_rejected() {
             (STREAM_SURFACE_TESSELLATION, surface),
         ],
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let geometry =
         crate::ol::decode(&ctx, cadmpeg_core::decode::View::over_retained(&bytes)).unwrap();
     let mut ir = CadIr::empty();

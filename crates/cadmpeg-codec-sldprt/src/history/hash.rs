@@ -218,10 +218,16 @@ mod tests {
 
         assert_eq!(read_back, record);
         assert_eq!(
-            hash_records(&cadmpeg_test_support::service_decode_context(), &read_back)
-                .expect("the record digests"),
-            hash_records(&cadmpeg_test_support::service_decode_context(), &record)
-                .expect("the record digests"),
+            hash_records(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &read_back
+            )
+            .expect("the record digests"),
+            hash_records(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &record
+            )
+            .expect("the record digests"),
         );
     }
 
@@ -230,12 +236,12 @@ mod tests {
     fn a_changed_field_moves_the_digest() {
         assert_ne!(
             hash_records(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &history("Bracket")
             )
             .expect("the record digests"),
             hash_records(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &history("Plate")
             )
             .expect("the record digests"),
