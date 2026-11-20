@@ -1,4 +1,4 @@
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 use crate::features::FeatureOperation;
 use crate::features::{
@@ -489,7 +489,7 @@ fn tree_children_wire_and_decode_share_membership_validation() {
     use crate::features::FeatureCollectionError;
     let first = feature_id("first");
     let second = feature_id("second");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (children, active, message) in [
         (
             vec![first.clone(), first.clone()],

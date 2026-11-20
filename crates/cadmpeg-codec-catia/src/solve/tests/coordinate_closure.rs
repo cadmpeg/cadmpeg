@@ -834,7 +834,7 @@ fn quotient_counts_global_face_incidence_once_across_coordinate_components() {
 
 #[test]
 fn quotient_closure_does_not_budget_forced_component_depth() {
-    const ROOT_COUNT: usize = 10_000;
+    const ROOT_COUNT: usize = 2 * WorkBudget::RECURSION_DEPTH;
     catia_test_context!(ctx);
     let mut quotient = MeshQuotient::new(repeated_domain(HashSet::from([0]), ROOT_COUNT));
     let candidates = vec![vec![[0, 0]]; ROOT_COUNT / 2];

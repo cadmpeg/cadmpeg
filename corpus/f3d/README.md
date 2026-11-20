@@ -125,3 +125,18 @@ count after the operation.
   4 bodies, 2600 mm³, 24 faces.
 - `copy_paste_three_bodies.f3d`: three boxes of one component. 6 bodies,
   3600 mm³, 36 faces.
+
+# Fusion API fixtures: Reverse Normal
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design. Each Sketch on the XZ origin plane holds a closed
+rectangle, revolved about the Z origin axis as a new surface body (isSolid
+false), with an angle extent of 90 deg and Symmetric on. A Reverse Normal of
+the surface bodies follows. The API reported the timeline, the body count and
+face count after each feature, and the bodies that the Reverse Normal selects.
+
+- `reverse_normal_revolve.f3d`: a rectangle at x 5–10 mm, z 0–10 mm, and a
+  Reverse Normal of its one body. 1 surface body, 4 faces.
+- `reverse_normal_two_revolves.f3d`: rectangles at x 5–10 mm and x 15–20 mm,
+  z 0–10 mm, each revolved by its own Revolve, and one Reverse Normal of both
+  bodies. 2 surface bodies, 8 faces.

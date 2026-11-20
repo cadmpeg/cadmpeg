@@ -239,7 +239,7 @@ fn text_plane_triangle_stream(scale: f64, [du, dv]: [f64; 2]) -> Vec<u8> {
 
 #[test]
 fn text_plane_pcurves_reach_their_vertices_in_the_stream_unit() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (scale, offset) in [1.0, 25.4, 10.0]
         .into_iter()
         .flat_map(|scale| [[0.0, 0.0], [3.0, -2.0]].map(|offset| (scale, offset)))

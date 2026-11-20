@@ -54,7 +54,7 @@ fn tree() -> String {
 }
 
 fn ctx() -> cadmpeg_core::decode::DecodeContext<'static> {
-    cadmpeg_test_support::service_decode_context()
+    cadmpeg_core::decode::test_support::service_decode_context()
 }
 
 fn named_block(section: &str, payload: Vec<u8>) -> Block {
@@ -896,7 +896,7 @@ fn a_reference_cycle_is_omitted_and_reported() {
 
 #[test]
 fn a_deep_sub_assembly_chain_is_refused_by_the_nesting_limit() {
-    let depth = 10_000;
+    let depth = cadmpeg_core::decode::ResourceLimits::service().max_recursion_depth + 1;
     let mut models = String::new();
     for level in 0..depth {
         let next = reference(&format!("r{level}"), &format!("m{}", level + 1), IDENTITY);

@@ -53,7 +53,7 @@ fn damaged_first_optional_frame_keeps_detection_and_required_brep_admission() {
     super::assert_valid(&decoded);
     assert!(!decoded.report().losses.is_empty());
     assert!(<F3dCodec as CodecBackend>::validate_native(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         decoded.ir(),
         None,
     )
@@ -138,7 +138,7 @@ fn unreadable_assets_preserve_the_complete_model_and_exact_archive() {
             assert_eq!(decoded.ir().model, expected.ir().model);
             super::assert_valid(&decoded);
             assert!(<F3dCodec as CodecBackend>::validate_native(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 decoded.ir(),
                 None,
             )

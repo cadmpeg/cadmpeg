@@ -1192,7 +1192,7 @@ mod route_tests {
     fn neutral_model_admissibility_rejects_invalid_topology() {
         let mut valid = CadIr::empty();
         assert!(neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut valid,
             &[]
         )
@@ -1202,7 +1202,7 @@ mod route_tests {
             cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
                 .expect("fixture identities are valid");
         assert!(!neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut invalid,
             &[]
         )
@@ -1214,7 +1214,7 @@ mod route_tests {
     fn phase5_freeze_shared_admissibility_fixtures() {
         let mut accepted = cadmpeg_test_support::admissibility::accepted_empty();
         assert!(neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut accepted,
             &[]
         )
@@ -1223,7 +1223,7 @@ mod route_tests {
             cadmpeg_test_support::admissibility::rejected_missing_region("catia:test")
                 .expect("fixture identities are valid");
         assert!(!neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut rejected,
             &[]
         )
@@ -1263,7 +1263,7 @@ mod route_tests {
             .any(|finding| finding.check == cadmpeg_ir::report::check::Check::ArenaOrder));
 
         neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &[],
         )
@@ -1327,7 +1327,7 @@ mod route_tests {
         )];
 
         assert!(neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &unknowns
         )
