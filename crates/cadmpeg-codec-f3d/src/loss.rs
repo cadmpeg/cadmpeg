@@ -803,6 +803,9 @@ pub(crate) enum F3dLossCode {
     /// A linked Reverse Normal scope takes its timeline position by record
     /// order among the other linked scopes of its timeline item.
     FeatureReverseNormalLinkOrderAssumed,
+    /// A Combine operand resolved in its input state names no model body and
+    /// no generating feature, so it keeps its input-state bodies.
+    FeatureCombineBodyProducerUnresolved,
     FeatureSilhouetteSplitPrefixUnparsed,
     FeatureSilhouetteSplitModeUnresolved,
     FeatureSilhouetteSplitDirectionUnresolved,
@@ -1727,6 +1730,7 @@ impl F3dLossCode {
         Self::FeatureReverseNormalLinkUnplaced,
         Self::FeatureReverseNormalLinkShared,
         Self::FeatureReverseNormalLinkOrderAssumed,
+        Self::FeatureCombineBodyProducerUnresolved,
         Self::FeatureSilhouetteSplitPrefixUnparsed,
         Self::FeatureSilhouetteSplitModeUnresolved,
         Self::FeatureSilhouetteSplitDirectionUnresolved,
@@ -2730,6 +2734,9 @@ impl F3dLossCode {
             Self::FeatureReverseNormalLinkOrderAssumed => {
                 "feature.reverse-normal-link-order-assumed"
             }
+            Self::FeatureCombineBodyProducerUnresolved => {
+                "feature.combine-body-producer-unresolved"
+            }
             Self::FeatureSilhouetteSplitPrefixUnparsed => {
                 "feature.silhouette-split-prefix-unparsed"
             }
@@ -3628,6 +3635,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkUnplaced
             | Self::FeatureReverseNormalLinkShared
             | Self::FeatureReverseNormalLinkOrderAssumed
+            | Self::FeatureCombineBodyProducerUnresolved
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -4328,6 +4336,7 @@ impl F3dLossCode {
             | Self::FeatureReverseNormalLinkUnplaced
             | Self::FeatureReverseNormalLinkShared
             | Self::FeatureReverseNormalLinkOrderAssumed
+            | Self::FeatureCombineBodyProducerUnresolved
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -5139,6 +5148,7 @@ mod tests {
                 "feature.reverse-normal-link-unplaced",
                 "feature.reverse-normal-link-shared",
                 "feature.reverse-normal-link-order-assumed",
+                "feature.combine-body-producer-unresolved",
                 "feature.silhouette-split-prefix-unparsed",
                 "feature.silhouette-split-mode-unresolved",
                 "feature.silhouette-split-direction-unresolved",
