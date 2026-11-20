@@ -741,7 +741,7 @@ pub(crate) enum F3dLossCode {
     /// name its text on the reading that each pick is one glyph.
     FeatureProfileTextGlyphsAssumed,
     /// Extrude profile picks that exceed the carried regions of their Sketch
-    /// lie in its text, and their glyphs stay native.
+    /// lie in its text, and the profile names none of their glyphs.
     FeatureProfileTextGlyphsNative,
     /// Extrude profile selections assumed that a curve outside the
     /// arrangement makes no island in a selected face.

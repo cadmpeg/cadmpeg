@@ -6,7 +6,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::loss::LossKind;
 use cadmpeg_ir::scalar::Length;
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchFontWeight, SketchGeometry,
+    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchFontWeight, SketchGeometry,
     SketchGeometryDefinition, SketchId, SketchPlacement, SketchProfiles,
 };
 
@@ -17,10 +17,12 @@ use crate::loss::F3dLossCode;
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_relations::SketchRelationOperand;
+use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
 use crate::records::topology::extrude_selection::{
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionGroupWire, DesignExtrudeSelectionMember,
     DesignExtrudeSelectionMemberDraft,
 };
+use crate::records::topology::fillet::HistoricalBinding;
 
 const TOLERANCE: f64 = 1.0e-6;
 const GROUP_RECORD: u32 = 9;
@@ -165,6 +167,15 @@ fn select(
     group: &DesignExtrudeSelectionGroup,
     members: &[DesignExtrudeSelectionMember],
 ) -> Option<(PlanarProfileRef, LossKind)> {
+    select_in(&sketch(), entities, group, members)
+}
+
+fn select_in(
+    sketch: &Sketch,
+    entities: &[SketchEntity],
+    group: &DesignExtrudeSelectionGroup,
+    members: &[DesignExtrudeSelectionMember],
+) -> Option<(PlanarProfileRef, LossKind)> {
     crate::test_support::with_decode_context(|ctx| {
         let work = ProfileGeometryWork::new();
         let scoped = ScopedExtrudeProfileResolution {
@@ -176,7 +187,7 @@ fn select(
             profile_work: &work,
             ctx,
         };
-        text_glyph_selection("feature#1", &sketch(), &[group], members, scoped)
+        text_glyph_selection("feature#1", sketch, &[group], members, scoped)
     })
     .unwrap()
     .map(|(profile, note)| (profile, note.code))
@@ -194,11 +205,14 @@ fn one_pick_per_glyph_beyond_the_carried_regions_names_the_text() {
 }
 
 #[test]
-fn picks_beyond_the_carried_regions_that_miss_the_glyph_count_stay_native() {
+fn picks_beyond_the_carried_regions_that_miss_the_glyph_count_keep_the_group_selection() {
     let entities = plate_with_text("NO BREAD", false);
     let group = group(3);
-    let (profile, code) = select(&entities, &group, &members(3)).expect("native profile");
-    assert_eq!(profile, PlanarProfileRef::Native(group.id.clone()));
+    let (profile, code) = select(&entities, &group, &members(3)).expect("group selection");
+    assert_eq!(
+        profile,
+        PlanarProfileRef::sketch_selection(sketch().id, vec![group.id.clone()]).unwrap()
+    );
     assert_eq!(code, F3dLossCode::FeatureProfileTextGlyphsNative.kind());
 }
 
@@ -233,6 +247,40 @@ fn a_point_pick_leaves_the_selection_to_the_point_rules() {
     members[0].resolved_geometry = Some(SketchRelationOperand::Point {
         record_index: 1,
         persistent_id: Some(2),
+    });
+    assert!(select(&entities, &group(3), &members).is_none());
+}
+
+#[test]
+fn picks_beyond_the_one_carried_loop_that_miss_the_glyph_count_select_the_loop() {
+    let mut entities = plate_with_text("NO BREAD", false);
+    entities.remove(4);
+    let mut sketch = sketch();
+    sketch.profiles = SketchProfiles::try_from(vec![entities[..4]
+        .iter()
+        .map(|entity| SketchEntityUse {
+            entity: entity.id().clone(),
+            reversed: false,
+        })
+        .collect::<Vec<_>>()])
+    .unwrap();
+    let (profile, code) =
+        select_in(&sketch, &entities, &group(3), &members(3)).expect("loop profile");
+    assert_eq!(
+        profile,
+        PlanarProfileRef::sketch_profiles(sketch.id.clone(), vec![0]).unwrap()
+    );
+    assert_eq!(code, F3dLossCode::FeatureProfileTextGlyphsNative.kind());
+}
+
+#[test]
+fn a_history_pick_leaves_the_selection_to_the_history_rules() {
+    let entities = plate_with_text("NO BREAD", false);
+    let mut members = members(3);
+    members[0].historical = Some(HistoricalBinding {
+        kind: AsmHistoricalEntityKind::Face,
+        entity_ref: 5,
+        state_ids: vec![2],
     });
     assert!(select(&entities, &group(3), &members).is_none());
 }

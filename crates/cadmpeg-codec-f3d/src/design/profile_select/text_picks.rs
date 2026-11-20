@@ -22,10 +22,11 @@ use cadmpeg_ir::sketches::{Sketch, SketchGeometryDefinition};
 /// glyphs, which the neutral sketch carries as text entities.
 ///
 /// When the member count equals the glyph count of the Sketch text, the
-/// profile names the text entities. Otherwise the group stays native.
-/// `None` when a member resolves to a Sketch point or curve, the Sketch holds
-/// a curve outside the line, arc, and circle families, or the carried regions
-/// do not resolve.
+/// profile names the text entities. Otherwise a Sketch with one profile loop
+/// selects that loop, and any other Sketch keeps the group as its selection.
+/// `None` when a member resolves to a Sketch point, a Sketch curve, or a
+/// history binding, the Sketch holds a curve outside the line, arc, and
+/// circle families, or the carried regions do not resolve.
 pub(super) fn text_glyph_selection(
     feature: &str,
     sketch: &Sketch,
@@ -76,7 +77,7 @@ pub(super) fn text_glyph_selection(
     if picks.len() != group.members().len()
         || picks
             .iter()
-            .any(|member| member.resolved_geometry.is_some())
+            .any(|member| member.resolved_geometry.is_some() || member.historical.is_some())
     {
         return Ok(None);
     }
@@ -111,10 +112,16 @@ pub(super) fn text_glyph_selection(
             return Ok(Some((profile, note)));
         }
     }
+    let profile = if sketch.profiles.len() == 1 {
+        PlanarProfileRef::sketch_profiles(sketch.id.clone(), vec![0])
+    } else {
+        PlanarProfileRef::sketch_selection(sketch.id.clone(), vec![group.id.clone()])
+    }
+    .unwrap_or_else(|_| PlanarProfileRef::Native(group.id.clone()));
     let note = F3dLossCode::FeatureProfileTextGlyphsNative.note(format!(
-        "Feature {feature} picks {distinct} profile regions in a Sketch whose curves bound {carried} and whose text has {glyphs} glyphs; its selection group stays native."
+        "Feature {feature} picks {distinct} profile regions in a Sketch whose curves bound {carried} and whose text has {glyphs} glyphs; its glyph picks stay native."
     ));
-    Ok(Some((PlanarProfileRef::Native(group.id.clone()), note)))
+    Ok(Some((profile, note)))
 }
 
 #[cfg(test)]
