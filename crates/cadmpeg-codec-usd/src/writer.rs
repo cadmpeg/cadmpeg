@@ -1400,7 +1400,9 @@ impl<'ir> Writer<'ir> {
                     .and_then(|id| self.group_binding_path(&tessellation_id, id))
             })
             .collect();
-        // The triangles of the faces that each material binds.
+        // The triangles of the faces that each material binds: the faces of a
+        // mesh the writer made, and the faces that triangle groups name. A
+        // group bound itself keeps its own material.
         let mut face_materials: BTreeMap<String, Vec<usize>> = BTreeMap::new();
         for (face, triangles) in faces {
             if let Some(path) = self.binding_path(&face.to_string()) {
@@ -1409,6 +1411,23 @@ impl<'ir> Writer<'ir> {
                     .or_default()
                     .extend(triangles.clone());
             }
+        }
+        for (group, own) in tessellation.triangle_groups().iter().zip(&bound) {
+            let Some(face) = group.face.as_ref().filter(|_| own.is_none()) else {
+                continue;
+            };
+            if let Some(path) = self.binding_path(&face.to_string()) {
+                face_materials.entry(path).or_default().extend(
+                    group
+                        .triangles
+                        .iter()
+                        .filter_map(|triangle| usize::try_from(*triangle).ok()),
+                );
+            }
+        }
+        for triangles in face_materials.values_mut() {
+            triangles.sort_unstable();
+            triangles.dedup();
         }
         if bound.iter().any(Option::is_some) || !face_materials.is_empty() {
             self.out
