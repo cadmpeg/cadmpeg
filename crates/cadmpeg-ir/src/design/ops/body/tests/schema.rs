@@ -2,7 +2,7 @@
 //! The schema feature generates a schema for every pattern, template, body
 //! operation, and shared type of §6.5.
 
-use schemars::{schema_for, JsonSchema};
+use schemars::{JsonSchema, SchemaGenerator};
 
 use crate::design::dimension::Dimension;
 use crate::design::ops::body::{
@@ -23,97 +23,100 @@ use crate::design::ops::shared::{
 };
 use crate::scalar::{Angle, Length};
 
-fn generates<T: JsonSchema>() {
-    let schema = serde_json::to_value(schema_for!(T)).unwrap();
-    assert!(schema.is_object(), "{}", T::schema_name());
+fn generates<T: JsonSchema>(generator: &mut SchemaGenerator) {
+    let schema = T::json_schema(generator);
+    assert!(schema.as_object().is_some(), "{}", T::schema_name());
 }
 
 #[test]
 fn every_pattern_type_has_a_schema() {
-    generates::<Pattern>();
-    generates::<PatternSeeds>();
-    generates::<PatternMethod>();
-    generates::<AdjustAgainst>();
-    generates::<PatternLayout>();
-    generates::<ChainLayout>();
-    generates::<ChainLinks>();
-    generates::<ChainLink>();
-    generates::<LinearRun>();
-    generates::<PatternRun<Length>>();
-    generates::<PatternRun<Angle>>();
-    generates::<RunSides<Length>>();
-    generates::<RunSides<Angle>>();
-    generates::<Spacing<Length>>();
-    generates::<Spacing<Angle>>();
-    generates::<UpToFill<Length>>();
-    generates::<UpToFill<Angle>>();
-    generates::<Locus>();
-    generates::<InstanceOrientation>();
-    generates::<PathReference>();
-    generates::<Increment>();
-    generates::<DimensionRun>();
-    generates::<DimensionTable>();
-    generates::<TableRow>();
-    generates::<PatternInstances>();
-    generates::<InstanceOverride>();
-    generates::<InstanceChange>();
-    generates::<PatternMember>();
+    let mut generator = SchemaGenerator::default();
+    generates::<Pattern>(&mut generator);
+    generates::<PatternSeeds>(&mut generator);
+    generates::<PatternMethod>(&mut generator);
+    generates::<AdjustAgainst>(&mut generator);
+    generates::<PatternLayout>(&mut generator);
+    generates::<ChainLayout>(&mut generator);
+    generates::<ChainLinks>(&mut generator);
+    generates::<ChainLink>(&mut generator);
+    generates::<LinearRun>(&mut generator);
+    generates::<PatternRun<Length>>(&mut generator);
+    generates::<PatternRun<Angle>>(&mut generator);
+    generates::<RunSides<Length>>(&mut generator);
+    generates::<RunSides<Angle>>(&mut generator);
+    generates::<Spacing<Length>>(&mut generator);
+    generates::<Spacing<Angle>>(&mut generator);
+    generates::<UpToFill<Length>>(&mut generator);
+    generates::<UpToFill<Angle>>(&mut generator);
+    generates::<Locus>(&mut generator);
+    generates::<InstanceOrientation>(&mut generator);
+    generates::<PathReference>(&mut generator);
+    generates::<Increment>(&mut generator);
+    generates::<DimensionRun>(&mut generator);
+    generates::<DimensionTable>(&mut generator);
+    generates::<TableRow>(&mut generator);
+    generates::<PatternInstances>(&mut generator);
+    generates::<InstanceOverride>(&mut generator);
+    generates::<InstanceChange>(&mut generator);
+    generates::<PatternMember>(&mut generator);
 }
 
 #[test]
 fn every_template_and_body_operation_type_has_a_schema() {
-    generates::<TemplateInstance>();
-    generates::<Template>();
-    generates::<TemplateInput>();
-    generates::<TemplateParameter>();
-    generates::<ExternalDocument>();
-    generates::<Combine>();
-    generates::<ToolDisposition>();
-    generates::<NewComponent>();
-    generates::<Split>();
-    generates::<SplitMode>();
-    generates::<SplitTool>();
-    generates::<SplitMethod>();
-    generates::<Kept<Dimension<bool>>>();
-    generates::<Kept<Vec<Option<Dimension<bool>>>>>();
-    generates::<PieceForm>();
-    generates::<DeleteBodies>();
-    generates::<Retention>();
-    generates::<Extract>();
-    generates::<TransformBodies>();
-    generates::<TransformMode>();
-    generates::<Transformation>();
-    generates::<TransformStep>();
-    generates::<BodyMate>();
-    generates::<ScaleFactors>();
-    generates::<MoveFaces>();
-    generates::<DeleteFaces>();
-    generates::<Heal>();
-    generates::<ReplaceFaces>();
-    generates::<Graft>();
-    generates::<Flex>();
-    generates::<FlexKind>();
+    let mut generator = SchemaGenerator::default();
+    generates::<TemplateInstance>(&mut generator);
+    generates::<Template>(&mut generator);
+    generates::<TemplateInput>(&mut generator);
+    generates::<TemplateParameter>(&mut generator);
+    generates::<ExternalDocument>(&mut generator);
+    generates::<Combine>(&mut generator);
+    generates::<ToolDisposition>(&mut generator);
+    generates::<NewComponent>(&mut generator);
+    generates::<Split>(&mut generator);
+    generates::<SplitMode>(&mut generator);
+    generates::<SplitTool>(&mut generator);
+    generates::<SplitMethod>(&mut generator);
+    generates::<Kept<Dimension<bool>>>(&mut generator);
+    generates::<Kept<Vec<Option<Dimension<bool>>>>>(&mut generator);
+    generates::<PieceForm>(&mut generator);
+    generates::<DeleteBodies>(&mut generator);
+    generates::<Retention>(&mut generator);
+    generates::<Extract>(&mut generator);
+    generates::<TransformBodies>(&mut generator);
+    generates::<TransformMode>(&mut generator);
+    generates::<Transformation>(&mut generator);
+    generates::<TransformStep>(&mut generator);
+    generates::<BodyMate>(&mut generator);
+    generates::<ScaleFactors>(&mut generator);
+    generates::<MoveFaces>(&mut generator);
+    generates::<DeleteFaces>(&mut generator);
+    generates::<Heal>(&mut generator);
+    generates::<ReplaceFaces>(&mut generator);
+    generates::<Graft>(&mut generator);
+    generates::<Flex>(&mut generator);
+    generates::<FlexKind>(&mut generator);
 }
 
 #[test]
 fn every_joint_type_has_a_schema() {
-    generates::<JointConnector>();
-    generates::<Alignment>();
-    generates::<JointKind>();
-    generates::<JointMotion>();
-    generates::<JointOffset>();
-    generates::<AxisLimits>();
-    generates::<Bounds<Length>>();
-    generates::<Bounds<Angle>>();
-    generates::<Coupling>();
-    generates::<JointDrive>();
-    generates::<DriveAxis>();
-    generates::<DriveMode>();
-    generates::<TangentContact>();
-    generates::<WidthMode>();
-    generates::<SlotPosition>();
-    generates::<PathPosition>();
-    generates::<PathAxisControl>();
-    generates::<PathRollControl>();
-    generates::<PairElement>();
+    let mut generator = SchemaGenerator::default();
+    generates::<JointConnector>(&mut generator);
+    generates::<Alignment>(&mut generator);
+    generates::<JointKind>(&mut generator);
+    generates::<JointMotion>(&mut generator);
+    generates::<JointOffset>(&mut generator);
+    generates::<AxisLimits>(&mut generator);
+    generates::<Bounds<Length>>(&mut generator);
+    generates::<Bounds<Angle>>(&mut generator);
+    generates::<Coupling>(&mut generator);
+    generates::<JointDrive>(&mut generator);
+    generates::<DriveAxis>(&mut generator);
+    generates::<DriveMode>(&mut generator);
+    generates::<TangentContact>(&mut generator);
+    generates::<WidthMode>(&mut generator);
+    generates::<SlotPosition>(&mut generator);
+    generates::<PathPosition>(&mut generator);
+    generates::<PathAxisControl>(&mut generator);
+    generates::<PathRollControl>(&mut generator);
+    generates::<PairElement>(&mut generator);
 }
