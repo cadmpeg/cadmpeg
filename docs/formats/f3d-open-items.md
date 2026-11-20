@@ -854,7 +854,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer of a design that Fusion opens writes every record of the roster and the Browser segment. Field tables for these records, in particular the Protein asset manager, the `AssetSettings` record, the unit-system groups, the `Body` owners, the root instance, and the Browser records.
 
-### DR-894. Count before the parameter-collection companion
+### DR-912. Count before the parameter-collection companion
 
 **Question.** What does the u32 `c` at offset 30 of the parameter collection (type `B0556F58-EE09-46A7-B18F-E296F48E5B13`, type version `4`) count, and what is the layout of a collection that stores nonzero bytes in the run that the layout gives as zero?
 
@@ -870,7 +870,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer of a body with more than one appearance must write the entries. Bodies whose faces carry appearances against their entry GUIDs and colours would settle what an entry selects.
 
-### DR-895. Evaluation duration and epoch of an item tail
+### DR-913. Evaluation duration and epoch of an item tail
 
 **Question.** What unit does the evaluation duration of a feature item tail use, and what selects the evaluation epoch?
 
