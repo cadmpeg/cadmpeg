@@ -54,6 +54,19 @@ pub(super) const EPOCH: u32 = 250;
 /// Feature items (DR-913).
 pub(super) const DURATION: f64 = 0.000_631;
 
+/// The note naming the item tail's evaluation values: the epoch written in
+/// place of the `252` f3d.md §3.1 states for the stream's generation words,
+/// and the duration DR-913 leaves open.
+pub(super) fn item_tail_loss(scope: u32) -> Option<LossNote> {
+    record_residual_unavailable(
+        "F3D",
+        &format!(
+            "writes evaluation epoch {EPOCH} in both epoch fields of the Base Feature item tail, where f3d.md §3.1 states 252 for the generation words 1234, 8, 36 the Design stream stores, because the decoder reads an empty-label tail of epoch 252 beside these record indices as named (F3D-EPOCH); and writes evaluation duration {DURATION}, which f3d-open-items.md DR-913 leaves open"
+        ),
+        [format!("record {scope} (Base Feature scope: its item tail)")],
+    )
+}
+
 /// The bodies the `Base Feature` stores, in body order, each with its faces
 /// in the order of its lump, shell and face chains.
 pub(super) struct BaseFeaturePlan<'a> {
@@ -1164,5 +1177,11 @@ fn residual_losses(indices: &Indices, bodies: &[BodyRecords]) -> Vec<LossNote> {
         records,
     )
     .into_iter()
+    .chain(
+        indices
+            .item
+            .as_ref()
+            .and_then(|item| item_tail_loss(item.scope)),
+    )
     .collect()
 }

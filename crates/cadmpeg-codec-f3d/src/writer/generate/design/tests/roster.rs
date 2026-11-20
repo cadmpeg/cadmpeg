@@ -6,7 +6,7 @@
 use std::collections::BTreeSet;
 use std::io::{Cursor, Read};
 
-use super::{scoped_cube, u32_at, u64_at, write_bytes};
+use super::{loss, scoped_cube, u32_at, u64_at, write_bytes};
 
 /// One segment's `MetaStream` fields and its `BulkStream`.
 pub(super) struct Segment {
@@ -376,6 +376,28 @@ fn timestamps_epochs_and_duration_are_the_stated_values() {
     let tail = &design.record(209)[193 + 52..271 + 52];
     assert_eq!((u32_at(tail, 35), u32_at(tail, 47)), (250, 250));
     assert!((f64_at(tail, 39) - 0.000_631).abs() < 1e-12);
+}
+
+#[test]
+fn the_item_tail_epoch_and_duration_are_named() {
+    let (report, _, _) = write_bytes(&scoped_cube());
+    let notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("item tail"))
+        .collect::<Vec<_>>();
+    let [note] = notes.as_slice() else {
+        panic!("one item-tail note: {:#?}", report.losses);
+    };
+    for named in [
+        "epoch 250 in both epoch fields",
+        "states 252 for the generation words 1234, 8, 36",
+        "duration 0.000631",
+        "F3D-EPOCH",
+        "DR-913",
+        "(1): record 209 (Base Feature scope: its item tail)",
+    ] {
+        assert!(note.contains(named), "{named}: {note}");
+    }
 }
 
 #[test]
