@@ -164,6 +164,8 @@ pub(crate) enum SldprtLossCode {
     GeometryOffsetValidityUnresolved,
     /// Stored spun-profile bounds are ignored and the whole profile is revolved.
     GeometrySpunProfileIntervalIgnored,
+    /// A rolling-ball blend face has no solved cache; it keeps its construction.
+    GeometryBlendCacheUnsolved,
     /// Edge references an untyped support curve carried opaque.
     GeometryEdgeSupportCurveUntyped,
     /// Tolerant edge has no curve because its fin geometry is not read.
@@ -392,6 +394,7 @@ impl SldprtLossCode {
         Self::GeometrySurfaceCarrierAmbiguous,
         Self::GeometryOffsetValidityUnresolved,
         Self::GeometrySpunProfileIntervalIgnored,
+        Self::GeometryBlendCacheUnsolved,
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryTolerantEdgeCurveUnread,
         Self::GeometryPointRecordAmbiguous,
@@ -524,6 +527,7 @@ impl SldprtLossCode {
             Self::GeometrySurfaceCarrierAmbiguous => "geometry.surface-carrier-ambiguous",
             Self::GeometryOffsetValidityUnresolved => "geometry.offset-validity-unresolved",
             Self::GeometrySpunProfileIntervalIgnored => "geometry.spun-profile-interval-ignored",
+            Self::GeometryBlendCacheUnsolved => "geometry.blend-cache-unsolved",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryTolerantEdgeCurveUnread => "geometry.tolerant-edge-curve-unread",
             Self::GeometryPointRecordAmbiguous => "geometry.point-record-ambiguous",
@@ -689,6 +693,7 @@ impl SldprtLossCode {
             | Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometrySurfaceCarrierAmbiguous
             | Self::GeometrySpunProfileIntervalIgnored
+            | Self::GeometryBlendCacheUnsolved
             | Self::GeometryOffsetValidityUnresolved
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryTolerantEdgeCurveUnread
@@ -809,6 +814,7 @@ impl SldprtLossCode {
             | Self::TopologyVertexRecordUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
             Self::GeometryCarrierApproximated => LossTaxonomy::ProceduralReduced,
+            Self::GeometryBlendCacheUnsolved => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometrySurfaceCarrierAmbiguous
@@ -1124,6 +1130,7 @@ mod tests {
                 "geometry.surface-carrier-ambiguous",
                 "geometry.offset-validity-unresolved",
                 "geometry.spun-profile-interval-ignored",
+                "geometry.blend-cache-unsolved",
                 "geometry.edge-support-curve-untyped",
                 "geometry.tolerant-edge-curve-unread",
                 "geometry.point-record-ambiguous",
