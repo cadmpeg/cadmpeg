@@ -209,6 +209,12 @@ fn faces_decode_nested_offset_surface_with_hidden_support() {
 
 /// The fit tolerance, in millimetres, of the cache the decoded blend holds.
 fn blend_cache_fit_tolerance(body: &[u8]) -> Option<f64> {
+    blend_cache(body).0
+}
+
+/// The fit tolerance of the decoded blend's cache, and the message of the
+/// loss that reports a blend without one.
+fn blend_cache(body: &[u8]) -> (Option<f64>, Option<String>) {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
     let result = SldprtCodec
@@ -239,8 +245,16 @@ fn blend_cache_fit_tolerance(body: &[u8]) -> Option<f64> {
             "1 fitted blend surface(s) use approximate carriers; largest fit tolerance {tolerance} mm."
         ));
     }
+    let unsolved: Vec<_> = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::SldprtLossCode::GeometryBlendCacheUnsolved.kind())
+        .map(|loss| loss.message.clone())
+        .collect();
+    assert_eq!(unsolved.len(), usize::from(!cached), "{unsolved:?}");
 
-    fit_tolerance
+    (fit_tolerance, unsolved.into_iter().next())
 }
 
 #[test]
@@ -259,11 +273,21 @@ fn a_blend_on_a_sweep_that_no_face_carries_has_no_cache() {
 }
 
 #[test]
-fn a_blend_cache_covers_a_vertex_inside_a_quarter_of_the_radius() {
-    let fit_tolerance = blend_cache_fit_tolerance(&blend_on_swept_wall_body(true, 0.001))
-        .expect("a 1 mm miss on a 100 mm ball is the same branch");
-    assert!(fit_tolerance >= 0.9, "{fit_tolerance}");
-    assert!(fit_tolerance <= 1.1, "{fit_tolerance}");
+fn a_blend_cache_within_the_vertex_floor_is_kept_with_its_miss() {
+    let fit_tolerance = blend_cache_fit_tolerance(&blend_on_swept_wall_body(true, 5.0e-7))
+        .expect("a 0.5 um miss is within 1e-3 mm");
+    assert!(fit_tolerance >= 4.0e-4, "{fit_tolerance}");
+    assert!(fit_tolerance <= 6.0e-4, "{fit_tolerance}");
+}
+
+#[test]
+fn a_blend_cache_that_misses_a_vertex_beyond_its_edges_is_reported_not_kept() {
+    // A 1 mm miss on a 100 mm ball is the same branch, but the face's edges
+    // state no tolerance, so the cache does not bound the face.
+    let (fit_tolerance, unsolved) = blend_cache(&blend_on_swept_wall_body(true, 0.001));
+    assert_eq!(fit_tolerance, None);
+    let message = unsolved.expect("the blend is reported");
+    assert!(message.contains("misses a face vertex by"), "{message}");
 }
 
 #[test]
