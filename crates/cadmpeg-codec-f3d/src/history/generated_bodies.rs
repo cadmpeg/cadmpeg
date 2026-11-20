@@ -2,7 +2,7 @@
 //! Body selections that name the bodies of earlier features.
 
 use super::stored_bodies::ActiveBodies;
-use super::{FeatureBodySelectionInputs, historical_body_slot, stable_ref};
+use super::{historical_body_slot, stable_ref, FeatureBodySelectionInputs};
 use crate::history_records::AsmHistory;
 use crate::loss::F3dLossCode;
 use cadmpeg_ir::report::loss::LossNote;
@@ -33,7 +33,7 @@ pub(crate) fn bind_generated_body_selections(
     losses: &mut Vec<LossNote>,
 ) -> Vec<cadmpeg_ir::features::FeatureResultTopology> {
     use cadmpeg_ir::features::{
-        BodySelection, FeatureDefinition, FeatureOperation, GeneratedBodyRef, patterns::PatternSeed,
+        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation, GeneratedBodyRef,
     };
 
     let live = inputs

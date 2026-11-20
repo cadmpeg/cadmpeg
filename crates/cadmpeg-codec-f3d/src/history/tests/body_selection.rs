@@ -3,7 +3,7 @@
 
 #![allow(clippy::default_trait_access)]
 
-use crate::history::{FeatureBodySelectionInputs, bind_feature_body_selections};
+use crate::history::{bind_feature_body_selections, FeatureBodySelectionInputs};
 use crate::records::topology::{
     construction::DesignConstructionOperandGroup,
     construction::DesignConstructionOperandGroupFrame, extrude_selection::DesignOperandRole,
@@ -176,7 +176,7 @@ fn move_body_selection_uses_unique_owning_history() {
 
 fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
     use cadmpeg_ir::features::{
-        Feature, FeatureDefinition, FeatureId, FeatureOperation, patterns::PatternKind,
+        patterns::PatternKind, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
     let scope = crate::records::feature::scope::DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#10",
@@ -273,7 +273,7 @@ fn pattern_seed_feature() -> cadmpeg_ir::features::Feature {
 #[test]
 fn pattern_body_seed_preserves_native_selection() {
     use cadmpeg_ir::features::{
-        BodySelection, FeatureDefinition, FeatureOperation, patterns::PatternSeed,
+        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
     };
     let feature = pattern_seed_feature();
     assert!(matches!(feature.evaluation.definition(),
@@ -390,8 +390,8 @@ fn body_recipe_operand(
 fn a_pattern_seed_without_a_stored_preceding_state_binds_through_its_history() {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
     use cadmpeg_ir::features::{
-        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
         patterns::{PatternKind, PatternSeed},
+        BodySelection, Feature, FeatureDefinition, FeatureId, FeatureOperation,
     };
 
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
@@ -602,9 +602,9 @@ fn generated_case_with_bindings(
     Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     use cadmpeg_ir::features::{
+        patterns::{PatternKind, PatternSeed},
         BodyRetentionMode, BodySelection, Feature, FeatureDefinition, FeatureEvaluation, FeatureId,
         FeatureOperation,
-        patterns::{PatternKind, PatternSeed},
     };
 
     let scope = |index: u32, state: i64, previous: i64| {
@@ -699,7 +699,7 @@ fn generated_case_with_bindings(
 
 #[test]
 fn a_seed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_it() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, patterns::PatternSeed};
+    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
     let (pattern, results) = generated_case(&[], false);
     let FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern {
         seeds, ..
@@ -718,13 +718,11 @@ fn a_seed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_it
         native.as_str(),
         "f3d:Design/BulkStream.dat:design-construction-operand-group#20"
     );
-    assert!(
-        pattern
-            .dependencies
-            .as_slice()
-            .iter()
-            .any(|dependency| dependency.as_str() == "f3d:test:feature#extrude")
-    );
+    assert!(pattern
+        .dependencies
+        .as_slice()
+        .iter()
+        .any(|dependency| dependency.as_str() == "f3d:test:feature#extrude"));
     let [result] = results.as_slice() else {
         panic!("one result state");
     };
@@ -741,7 +739,7 @@ fn a_seed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_it
 
 #[test]
 fn a_seed_body_the_final_model_keeps_stays_historical() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, patterns::PatternSeed};
+    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
     let mut body = cadmpeg_ir::examples::unit_cube()
         .unwrap()
         .geometry
@@ -780,13 +778,11 @@ fn a_removed_body_the_final_model_omits_is_generated_by_the_feature_that_inserts
         native.as_str(),
         "f3d:Design/BulkStream.dat:design-construction-operand-group#20"
     );
-    assert!(
-        remove
-            .dependencies
-            .as_slice()
-            .iter()
-            .any(|dependency| dependency.as_str() == "f3d:test:feature#extrude")
-    );
+    assert!(remove
+        .dependencies
+        .as_slice()
+        .iter()
+        .any(|dependency| dependency.as_str() == "f3d:test:feature#extrude"));
     assert_eq!(results.len(), 1);
 }
 
@@ -800,7 +796,7 @@ fn named_history(
 
 #[test]
 fn a_slot_that_only_another_history_inserts_falls_back_with_a_history_loss() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, patterns::PatternSeed};
+    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
     // The selecting scope's states 80 and 79 are in history `own`, which never
     // inserts slot 1. History `other` inserts its own slot 1 at state 77; the
     // pass falls back to the all-history search and charges a loss.
@@ -822,13 +818,11 @@ fn a_slot_that_only_another_history_inserts_falls_back_with_a_history_loss() {
         FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Pattern { seeds, .. })
             if matches!(seeds.as_slice(), [PatternSeed::Bodies(BodySelection::Generated(_))])
     ));
-    assert!(
-        pattern
-            .dependencies
-            .as_slice()
-            .iter()
-            .any(|dependency| dependency.as_str() == "f3d:test:feature#extrude")
-    );
+    assert!(pattern
+        .dependencies
+        .as_slice()
+        .iter()
+        .any(|dependency| dependency.as_str() == "f3d:test:feature#extrude"));
     assert_eq!(losses.len(), 1, "{losses:?}");
     assert_eq!(
         losses[0].code,
@@ -838,7 +832,7 @@ fn a_slot_that_only_another_history_inserts_falls_back_with_a_history_loss() {
 
 #[test]
 fn a_colliding_slot_is_generated_in_the_selecting_scopes_own_history() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, patterns::PatternSeed};
+    use cadmpeg_ir::features::{patterns::PatternSeed, BodySelection, FeatureDefinition};
     // Both histories insert a slot 1 at a state 77. The selecting scope's
     // states 80 and 79 are in history `own`, so its slot 1 is the body that
     // the transition 2 -> 77 of `own` inserts.
@@ -897,7 +891,7 @@ fn shared_pair_histories(indirect: Option<&str>) -> [crate::history_records::Asm
 #[test]
 fn a_shared_state_pair_uses_the_selecting_scopes_bound_history() {
     use cadmpeg_ir::features::{
-        BodySelection, FeatureDefinition, FeatureOperation, patterns::PatternSeed,
+        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
     };
 
     let bindings = std::collections::HashMap::from([(
@@ -939,7 +933,7 @@ fn a_shared_state_pair_uses_the_selecting_scopes_bound_history() {
 #[test]
 fn an_unbound_shared_state_pair_binds_the_one_inserting_state_with_a_history_loss() {
     use cadmpeg_ir::features::{
-        BodySelection, FeatureDefinition, FeatureOperation, patterns::PatternSeed,
+        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
     };
 
     let histories = shared_pair_histories(None);
@@ -989,7 +983,7 @@ fn an_unbound_shared_state_pair_binds_the_one_inserting_state_with_a_history_los
 #[test]
 fn a_shared_state_pair_uses_the_unique_direct_history() {
     use cadmpeg_ir::features::{
-        BodySelection, FeatureDefinition, FeatureOperation, patterns::PatternSeed,
+        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
     };
 
     let histories = shared_pair_histories(Some("other"));
@@ -1008,7 +1002,7 @@ fn a_shared_state_pair_uses_the_unique_direct_history() {
 #[test]
 fn a_partly_stored_state_pair_binds_through_every_history_with_a_loss() {
     use cadmpeg_ir::features::{
-        BodySelection, FeatureDefinition, FeatureOperation, patterns::PatternSeed,
+        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
     };
 
     let histories = [
