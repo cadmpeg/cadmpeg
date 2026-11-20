@@ -693,3 +693,19 @@ fn the_snapshot_is_the_solved_part_of_the_history_stream() {
     assert!(snapshot.ends_with(b"data"));
     assert!(snapshot.len() < history.len());
 }
+
+#[test]
+fn a_design_with_no_written_parameter_is_written_as_its_roster() {
+    let mut ir = scoped_cube();
+    ir.design.parameters.clear();
+    let (report, decoded, bytes) = write_bytes(&ir);
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    assert_eq!(parameters(&design), 0);
+    assert_eq!(design.record(17).len(), 61);
+    assert_eq!(design.primary.len(), 214);
+    assert!(decoded.model.parameters.is_empty());
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("stores no design for these features")));
+}
