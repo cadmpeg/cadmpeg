@@ -137,7 +137,10 @@ pub(super) fn resolve(
     Ok(boundaries_agree(&initial.regions, regions).then_some(candidate))
 }
 
-fn boundaries_agree(initial: &[SketchProfileRegion], selected: &[SketchProfileRegion]) -> bool {
+pub(super) fn boundaries_agree(
+    initial: &[SketchProfileRegion],
+    selected: &[SketchProfileRegion],
+) -> bool {
     match (outline(initial), outline(selected)) {
         (Some(initial), Some(selected)) => initial == selected,
         _ => false,
