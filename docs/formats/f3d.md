@@ -3239,7 +3239,7 @@ This subsection gives the records that a Design stream holds when its MetaStream
 | 4 | `BC84911E-A581-4E51-ABE4-B0F681CFED06` | 1 | 77 | |
 | 5 | `F9CB8717-EB86-47F2-AAA7-39E142C57A09` | 1 | 36 | |
 | 6 | `904F885E-D859-4755-A7EF-6EBED8732FAD` | 1 | 52 | component naming space |
-| 7 | `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA` | 4 | 103 | design `Body` owner |
+| 7 | `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA` | 4 | 103 or 107 | design `Body` owner |
 | 10 | `5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF` | 4 | 115 | sketch collection |
 | 11 | `A8635B5F-1E2C-45FD-8BA9-0173B0FEB75E` | 3 | 70 | |
 | 12 | `FCB17D75-8538-4E8E-BDBE-CB4FE2120DB7` | 1 | 42 | |
@@ -3268,11 +3268,11 @@ This subsection gives the records that a Design stream holds when its MetaStream
 | 40 | `1E650EA7-07C5-4111-B639-7DEE3A659799` | 0 | 61 | |
 | 41 | `7E84430B-74C7-4B67-92D0-4131A0B79109` | 0 | 72 | |
 | 42 | `074F9459-89C2-4B7D-8AB4-DCE67AE944FE` | 1 | 67 | |
-| 43 | `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` | 2 | 252 | `rootInstance` |
+| 43 | `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` | 2 | 252 or 384 | `rootInstance` |
 | 44 | `D50DCC35-42CC-4E7D-9B81-4EB8252712D0` | 0 | 85 | |
 | 45 | `0FAF9824-8ECA-45ED-B199-589022ED5F6D` | 9 | 114 | |
 | 46 | `A1675506-5D2D-47a5-8AD2-8FD5CE946DA0` | 0 | 103 | |
-| 47–160 | `21086CE0-C398-4b1b-9CD6-86F092429833`, `B61F1D39-4984-47b0-9248-3A1113E86FC1`, `C6EE7300-667E-4ea5-9F61-71F98412DE8B` | 2, 0, 0 | 95 to 356 | six unit-system groups. Each group is one unit-system record of type `21086CE0-C398-4b1b-9CD6-86F092429833`, two records of type `B61F1D39-4984-47b0-9248-3A1113E86FC1`, and 17 or 14 unit-type records of type `C6EE7300-667E-4ea5-9F61-71F98412DE8B` |
+| 47–160 | `21086CE0-C398-4b1b-9CD6-86F092429833`, `B61F1D39-4984-47b0-9248-3A1113E86FC1`, `C6EE7300-667E-4ea5-9F61-71F98412DE8B` | 2, 0, 0 | 95 to 356 | six unit-system groups. Each group is one unit-system record of type `21086CE0-C398-4b1b-9CD6-86F092429833`, two records of type `B61F1D39-4984-47b0-9248-3A1113E86FC1`, and unit-type records of type `C6EE7300-667E-4ea5-9F61-71F98412DE8B`: 17, 17, 17, 14, 14, and 17 in the six groups in record order |
 | 161 | `778FECF0-46E7-4EB8-A8D0-52C950CCEAAE` | 0 | 48 | |
 | 162 | `B4CDE096-07DE-4272-BA4A-B257EFE0B470` | 0 | 51 | |
 | 163 | `88A5C187-5E68-4318-8A33-3AAA72F9DDB1` | 0 | 70 | |
@@ -3284,7 +3284,7 @@ This subsection gives the records that a Design stream holds when its MetaStream
 | 184 | `AE9F7FB5-2798-4BE4-8905-F8FB42A07193` | 0 | 38 | |
 | 185 | `49B2AA69-7655-4C36-A14E-9582CCF1283C` | 0 | 202 | configuration-table serializer trigger |
 | 186 | `3185B924-6C84-4804-BE77-9105B09209DA` | 0 | 207 | configuration-rule serializer trigger |
-| 187 | `D3937028-C20C-4E65-B010-94AD418A5C20` | 19 | 891 | design body-reference record |
+| 187 | `D3937028-C20C-4E65-B010-94AD418A5C20` | 19 | 869 + 2a | design body-reference record |
 | 188 | `702b9cd2-537c-429e-8cc4-22beeeb98c37` | 1 | 133 | Scene node of the design body-reference record |
 | 189 | `a9dcf6c1-617c-4f65-8302-c6f3a9ebbc4c` | 0 | 95 | |
 | 190 | `2343b7ab-a2e0-4c66-8b74-99a05e4c670b` | 1 | 144 | Scene auxiliary record |
@@ -3312,13 +3312,15 @@ This subsection gives the records that a Design stream holds when its MetaStream
 | 212 | `B7F34D7B-DAC4-41A5-B67D-D672537C3BFA` | 2 | 72 | tracked-results table |
 | 213 | `493A89BA-E146-498D-9033-2783FE727AF4` | 3 | 120 | result owner |
 | 214 | `6CCF41D5-40BE-48ED-A834-18F3EAED6C57` | 1 | 58 | parameter companion of the result owner |
-| 215 | `D3937028-C20C-4E65-B010-94AD418A5C20` | 19 | 891 | parameter body-reference record |
+| 215 | `D3937028-C20C-4E65-B010-94AD418A5C20` | 19 | 869 + 2a | parameter body-reference record |
 | 219 | `E55D0457-898F-4A8E-B1A5-C85BDBA8794F` | 0 | variable | snapshot body-map companion |
 | 220 | `702b9cd2-537c-429e-8cc4-22beeeb98c37` | 1 | 133 | Scene node of the parameter body-reference record |
 | 221 | `a9dcf6c1-617c-4f65-8302-c6f3a9ebbc4c` | 0 | 95 | |
 | 222 | `2343b7ab-a2e0-4c66-8b74-99a05e4c670b` | 1 | 144 | Scene auxiliary record |
 | 223 | `5988EB6C-011B-4012-B500-089A713F57BF` | 2 | 197 | body tracking entry |
 | 224 | `D26351F0-5940-4D23-AA20-2C35475A6D9E` | 2 | 151 | browser-node member |
+
+The design `Body` owner is 107 bytes when it stores an empty attribute list, `u8 1` and u32 count `0`, in place of the zero byte that follows the nine zero bytes after its indexed header. The root instance is 252 bytes with an empty attribute list, and 384 bytes when its attribute list holds the three attributes `GatedByParent` (`IntrinsicMetaTypebool`), `ResolutionTime` (`IntrinsicMetaTypeHString`), and `SelfGated` (`IntrinsicMetaTypebool`). In a body-reference record with no appearance entry, `a` is the code-unit count of the appearance name ("**Body-reference records.**").
 
 The archive of such a design also holds an ACT segment (segment ID `1`) and a Browser segment (segment ID `2`) next to the Design segment (segment ID `0`), a `.smb` stream beside the `.smbh` history stream, and the members `DesignConfigurationTable.BlobParts`, `OGS.BlobFolder`, and `ProteinAssets.BlobParts`. The three segments store the MetaStream generation words `1234, 8, 36, 708837440` and the zero asset GUID.
 
@@ -3448,7 +3450,7 @@ The timestamps satisfy `t_c ≤ t_s ≤ t_r`. Eight zero bytes follow each owner
 
 The design body-reference record stores the body's node GUID, and the parameter body-reference record stores the body's parameter GUID, each as an LP-UTF16 GUID of 36 code units. In the 891-byte form of either record, that GUID is the second LP-UTF16 GUID and starts at offset 349.
 
-The 891-byte form continues after the LP-UTF16 name `0_<index>`, which ends at offset 96 for a three-digit index, with a cached mass-property block and two presentation envelopes. Lengths are in centimetres, and areas, volumes, and moments are in the matching powers of the centimetre.
+The form with no appearance entry continues after the LP-UTF16 name `0_<index>`, which ends at offset 96 for a three-digit index, with a cached mass-property block and two presentation envelopes. Lengths are in centimetres, and areas, volumes, and moments are in the matching powers of the centimetre.
 
 | Offset | Type | Field |
 |---|---|---|
@@ -3463,8 +3465,8 @@ The 891-byte form continues after the LP-UTF16 name `0_<index>`, which ends at o
 | 272 | f64 | volume |
 | 280 | f64 | relative accuracy of the volume, equal to the value at offset 140 |
 | 288 | u32 | body ordinal, from `1` |
-| 292 | u32 | `1` |
-| 296 | u8 | `0` |
+| 292 | u8 | `1` |
+| 293 | u32 | appearance-entry count `k`: `0` |
 | 297 | u32 | `0x00236810` |
 | 301 | u8 | `1` |
 | 302 | u8 | `1` in the design body-reference record, `0` in the parameter body-reference record |
@@ -3494,7 +3496,7 @@ The 891-byte form continues after the LP-UTF16 name `0_<index>`, which ends at o
 | 876 | u32 | `0` |
 | 880 | reference | the same `Body` owner as at offset 630 |
 
-The mass properties use unit density. In the parameter body-reference record every value is `0` and every accuracy is `-1.0`. A design body-reference record stores either the computed values with nonnegative accuracies, or `0` in every value and every accuracy. In the design body-reference record, the GUID at offset 196 is the `Geometry` GUID of the ACT aspect entry whose key is `0_<index>` of that record. The GUID at offset 196 of the parameter body-reference record occurs in no other record. The 955-byte form stores `0` at offset 684, the physical-material library and the appearance name `PrismMaterial-022_physmat_aspects:Prism-374` in the second envelope, and the colour `(0, 0, 0, 1.0)`: its appearance is the appearance of the physical material.
+The mass properties use unit density. In the parameter body-reference record every value is `0` and every accuracy is `-1.0`. A design body-reference record stores either the computed values with nonnegative accuracies, or `0` in every value and every accuracy. In the design body-reference record, the GUID at offset 196 is the `Geometry` GUID of the ACT aspect entry whose key is `0_<index>` of that record. The GUID at offset 196 of the parameter body-reference record occurs in no other record. A record whose appearance is the appearance of its physical material stores `0` at offset 684, the physical-material library and the appearance name `PrismMaterial-022_physmat_aspects:Prism-374` in the second envelope, and the colour `(0, 0, 0, 1.0)`. With `a` the code-unit count of the appearance name, the record is `869 + 2a` bytes: 891 bytes for `PrismOpaque` and 955 bytes for the physical-material appearance. A record with `k > 0` stores `k` appearance entries after the count, and every later field moves by their length.
 
 **Result owner.** The record of type `493A89BA-E146-498D-9033-2783FE727AF4`, type version `3`, is 120 bytes:
 

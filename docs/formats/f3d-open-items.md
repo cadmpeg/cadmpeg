@@ -856,17 +856,25 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 ### DR-894. Count before the parameter-collection companion
 
-**Question.** What does the u32 `c` at offset 30 of the parameter collection (type `B0556F58-EE09-46A7-B18F-E296F48E5B13`, type version `4`) count?
+**Question.** What does the u32 `c` at offset 30 of the parameter collection (type `B0556F58-EE09-46A7-B18F-E296F48E5B13`, type version `4`) count, and what is the layout of a collection that stores nonzero bytes in the run that the layout gives as zero?
 
-**Known.** `f3d.md` §3.1 "**Component records.**" gives the layout. `c` is at least the parameter count `n` and often equal to it.
+**Known.** `f3d.md` §3.1 "**Component records.**" gives the layout. `c` is at least the parameter count `n` and often equal to it. A version-4 collection can store nonzero bytes in the zero run after its indexed header; such a collection is longer than `61 + 11n` bytes.
 
-**Need.** A writer stores `c = n`. Collections with `c > n` against their deleted or unused parameters would settle the meaning.
+**Need.** A writer stores `c = n` and the zero run. Collections with `c > n` against their deleted or unused parameters would settle the meaning, and the parameters of a collection with a nonzero run against its bytes would settle its layout.
+
+### DR-899. Appearance entries of a body-reference record
+
+**Question.** What do the appearance entries of a body-reference record (type `D3937028-C20C-4E65-B010-94AD418A5C20`, type version `19`) select, and what is the layout of an entry?
+
+**Known.** `f3d.md` §3.1 "**Body-reference records.**" gives the record with entry count `k = 0`. A design and a parameter body-reference record of one body store `k = 2`. Each of their entries is 294 bytes: an LP-UTF16 GUID of 36 code units, four f32 colour components with alpha `1.0`, an appearance envelope in the form of the second presentation envelope with flag `1` and the appearance `PrismOpaque`, u32 `0`, and f32 `1.0`. The two entries store different GUIDs and colours. The fields after the entries are the fields of the `k = 0` form that follow the count.
+
+**Need.** A writer of a body with more than one appearance must write the entries. Bodies whose faces carry appearances against their entry GUIDs and colours would settle what an entry selects.
 
 ### DR-895. Evaluation duration and epoch of an item tail
 
 **Question.** What unit does the evaluation duration of a feature item tail use, and what selects the evaluation epoch?
 
-**Known.** `f3d.md` §3.1 "**Record timestamps and evaluation values.**" gives epoch `252` for every item of a stream with MetaStream generation words `1234, 8, 36`, and a positive duration for a `Base Feature` item. Streams with other generation words store other epochs, and two of them store more than one epoch value.
+**Known.** `f3d.md` §3.1 "**Record timestamps and evaluation values.**" gives epoch `252` for every item of a stream with MetaStream generation words `1234, 8, 36`, and a positive duration for a `Base Feature` item. Streams with other generation words store other epochs. The streams with generation words `1234, 8, 20`, `1234, 8, 23`, and `1234, 8, 27` each store more than one epoch value.
 
 **Need.** A writer must choose both values. The relation between the epoch and the generation words in the other streams.
 
