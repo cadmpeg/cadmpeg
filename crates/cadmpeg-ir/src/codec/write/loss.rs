@@ -21,6 +21,9 @@ pub(crate) enum ExportLossCode {
     NativeRecordsOmitted,
     /// The output holds no geometry (§3.5).
     OutputEmpty,
+    /// A record of this kind is written with an Error the output's own
+    /// validation finds (§3.4, Refusals).
+    RecordInvalid(EntityKind),
 }
 
 impl ExportLossCode {
@@ -30,6 +33,7 @@ impl ExportLossCode {
             Self::ArenaOmitted(_) => "arena.omitted",
             Self::NativeRecordsOmitted => "native.records-omitted",
             Self::OutputEmpty => "output.empty",
+            Self::RecordInvalid(_) => "record.invalid",
         }
     }
 
@@ -38,13 +42,14 @@ impl ExportLossCode {
             Self::ArenaOmitted(_) | Self::NativeRecordsOmitted | Self::OutputEmpty => {
                 Severity::Warning
             }
+            Self::RecordInvalid(_) => Severity::Error,
         }
     }
 
     /// Shared category of the omitted arena's content.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         let kind = match self {
-            Self::ArenaOmitted(kind) => kind,
+            Self::ArenaOmitted(kind) | Self::RecordInvalid(kind) => kind,
             Self::NativeRecordsOmitted => return LossTaxonomy::PassthroughRecordOmitted,
             Self::OutputEmpty => return LossTaxonomy::NoExportableSolids,
         };
@@ -169,4 +174,12 @@ where
 #[must_use]
 pub fn output_empty(message: impl Into<String>) -> LossNote {
     ExportLossCode::OutputEmpty.note(message)
+}
+
+/// `export:record.invalid`: the writer wrote these records of `kind` from the
+/// canonical side, and the output's own validation finds an Error in them
+/// (§3.4, Refusals). The message names each record.
+#[must_use]
+pub fn record_invalid(kind: EntityKind, message: impl Into<String>) -> LossNote {
+    ExportLossCode::RecordInvalid(kind).note(message)
 }
