@@ -5,8 +5,9 @@
 //!
 //! It runs where no native Design record is written and the document holds a
 //! design scope for its root definition. It charges a loss for every design
-//! scope, container, feature and parameter it does not write, and for the
-//! root scope's configuration, arrangements and occurrence states. A failure
+//! scope, container, feature and parameter it does not write, for the root
+//! scope's configuration, arrangements and occurrence states, and for every
+//! current state's `Stale` or `Failed` status and poses. A failure
 //! here is a [`super::reduce::Stage::NeutralDesign`] failure, whose only
 //! fallback is to write no design ([`dropped_records`]): it never drops a
 //! body.
@@ -24,12 +25,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 
-use cadmpeg_ir::codec::write::evaluation_missing;
+use cadmpeg_ir::codec::write::{evaluation_missing, evaluation_stale};
 use cadmpeg_ir::design::container::{Container, Rollback};
+use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::parameter::ParameterOwner;
-use cadmpeg_ir::design::refs::Member;
+use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
+use cadmpeg_ir::design::selection::StepRef;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::report::loss::LossNote;
@@ -99,6 +102,7 @@ pub(super) fn plan(target: &CadIr) -> Option<NeutralDesign<'_>> {
     .into_iter()
     .collect::<Vec<_>>();
     losses.extend(unwritten_records(target, scope));
+    losses.extend(current_states(target));
     Some(NeutralDesign {
         parameters,
         base_feature: base_feature::plan(target),
@@ -175,11 +179,11 @@ pub(super) fn restated_parameters(target: &CadIr) -> BTreeSet<&str> {
 }
 
 /// The losses of a design the writer drops: every design scope, container,
-/// feature and parameter of the document.
+/// feature and parameter of the document, and the current states' values.
 pub(super) fn dropped_records(target: &CadIr, reason: &str) -> Vec<LossNote> {
     let design = &target.design;
     let unwritten = format!("the F3D writer writes no design ({reason})");
-    let mut losses = Vec::new();
+    let mut losses = current_states(target);
     losses.extend(evaluation_missing(
         "F3D",
         &format!("stores no design for these features ({reason})"),
@@ -211,6 +215,56 @@ pub(super) fn dropped_records(target: &CadIr, reason: &str) -> Vec<LossNote> {
             .containers
             .iter()
             .map(|container| container.id().to_string()),
+    ));
+    losses
+}
+
+/// The losses of the current states' values that the written bodies do not
+/// carry: a `Stale` or `Failed` status, and each pose.
+fn current_states(target: &CadIr) -> Vec<LossNote> {
+    let mut stale = Vec::new();
+    let mut poses = Vec::new();
+    for scope in &target.design.scopes {
+        let definition = &scope.definition;
+        for state in &scope.current {
+            let at = match &state.at {
+                Position::Start(container) => format!("at the start of {container}"),
+                Position::After(member) => format!("after {}", member_id(member)),
+            };
+            match state.status {
+                EvaluationStatus::Current => {}
+                EvaluationStatus::Stale => {
+                    stale.push(format!("{definition} current state {at} (stale)"));
+                }
+                EvaluationStatus::Failed => {
+                    stale.push(format!("{definition} current state {at} (failed)"));
+                }
+            }
+            poses.extend(state.poses.keys().map(|path| {
+                let steps = path
+                    .0
+                    .iter()
+                    .map(|step| match &step.occurrence {
+                        StepRef::Occurrence(id) => id.to_string(),
+                        StepRef::Native(name) => format!("{:?}", name.value),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("/");
+                format!("{definition} pose of `{steps}` in the current state {at}")
+            }));
+        }
+    }
+    let mut losses = Vec::new();
+    losses.extend(evaluation_stale(
+        "F3D",
+        "stores no stale or failure mark, and writes these current states as current bodies",
+        stale,
+    ));
+    losses.extend(named_loss(
+        F3dLossCode::WriterDesignRecordOmitted,
+        "current state value",
+        "the F3D writer writes no occurrence pose of a current state",
+        poses,
     ));
     losses
 }
