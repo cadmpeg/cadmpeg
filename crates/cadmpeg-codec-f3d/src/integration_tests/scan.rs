@@ -255,3 +255,34 @@ fn scan_f3d_zstd_expansion_limit_preserves_an_unstarted_census() {
     assert_eq!(scan.stop_reason, Some(StopReason::ExpandedBytes));
     assert!(scan.census.is_none());
 }
+
+#[test]
+fn scan_f3z_child_without_a_census_keeps_the_aggregate_incomplete() {
+    let first = fixture(&[102, 101]);
+    let meta = design_metastream_with_records(&[(FIRST, "", 1, "Fusion", &[101])], &[(101, 0)]);
+    let second = deflated_archive(
+        "",
+        &[
+            ("Design1/MetaStream.dat", &meta),
+            ("Design1/BulkStream.dat", b"feature payload"),
+        ],
+    );
+    let source = deflated_archive("", &[("a.f3d", &first), ("b.f3d", &second)]);
+    let scan = F3dCodec::scan_design(
+        View::over_retained(&source),
+        ScanLimits::default(),
+        &ManualClock::default(),
+    );
+    assert!(matches!(scan.stop_reason, Some(StopReason::Unsupported(_))));
+    let census = scan.census.expect("first child's admitted rows");
+    assert!(!census.complete);
+    assert_eq!(census.total, None);
+    assert_eq!(
+        census
+            .rows
+            .iter()
+            .map(|row| row.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["Mirror", "Extrude"]
+    );
+}

@@ -112,3 +112,77 @@ fn scan_registry_neutral_reader_is_unsupported() {
     assert!(matches!(scan.stop_reason, Some(StopReason::Unsupported(_))));
     assert!(scan.census.is_none());
 }
+
+#[cfg(any(feature = "fcstd", feature = "pvz"))]
+fn compressed_listing(name: &str, xml: &[u8]) -> Vec<u8> {
+    use std::io::{Cursor, Write};
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    archive
+        .start_file(
+            name,
+            zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated),
+        )
+        .expect("member");
+    archive.write_all(xml).expect("XML");
+    archive.finish().expect("directory").into_inner()
+}
+
+#[cfg(feature = "fcstd")]
+#[test]
+fn scan_registry_freecad_detection_uses_listing_without_expansion() {
+    let mut xml = br#"<Document SchemaVersion="4">"#.to_vec();
+    xml.extend_from_slice(&[b' '; 4096]);
+    xml.extend_from_slice(b"</Document>");
+    scan_compressed_listing_without_payload("Document.xml", &xml, "fcstd");
+}
+
+#[cfg(feature = "pvz")]
+#[test]
+fn scan_registry_pvz_detection_uses_listing_without_expansion() {
+    let mut xml = br#"<PV_FILE type="PVS" version="0302">"#.to_vec();
+    xml.extend_from_slice(&[b' '; 4096]);
+    xml.extend_from_slice(b"</PV_FILE>");
+    scan_compressed_listing_without_payload("model.pvs", &xml, "pvz");
+}
+
+#[cfg(any(feature = "fcstd", feature = "pvz"))]
+fn scan_compressed_listing_without_payload(name: &str, xml: &[u8], format: &str) {
+    let source = compressed_listing(name, xml);
+    for source_bytes in [ScanLimits::default().source_bytes, 96] {
+        let scan = crate::scan_design(
+            View::over_retained(&source),
+            ScanLimits {
+                source_bytes,
+                expanded_bytes: 0,
+                ..ScanLimits::default()
+            },
+            &ManualClock::default(),
+        );
+        assert_eq!(scan.format.as_deref(), Some(format));
+        assert!(matches!(scan.stop_reason, Some(StopReason::Unsupported(_))));
+        assert!(scan.census.is_none());
+        assert!(scan.bytes_read < u64::try_from(source.len()).expect("ZIP extent"));
+    }
+}
+
+#[cfg(feature = "fcstd")]
+#[test]
+fn scan_registry_prefixed_zip_detection_keeps_payload_unexpanded() {
+    let mut source = b"executable prefix".to_vec();
+    source.extend(compressed_listing(
+        "Document.xml",
+        br#"<Document SchemaVersion="4"/>"#,
+    ));
+    let scan = crate::scan_design(
+        View::over_retained(&source),
+        ScanLimits {
+            expanded_bytes: 0,
+            ..ScanLimits::default()
+        },
+        &ManualClock::default(),
+    );
+    assert_eq!(scan.format.as_deref(), Some("fcstd"));
+    assert!(matches!(scan.stop_reason, Some(StopReason::Unsupported(_))));
+    assert!(scan.census.is_none());
+}

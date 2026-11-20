@@ -4,6 +4,9 @@
 mod budget;
 mod inflate;
 
+#[cfg(test)]
+mod tests;
+
 #[cfg(not(target_arch = "wasm32"))]
 pub use budget::SystemClock;
 pub use budget::{FeatureVisit, ManualClock, ScanBudget, ScanClock, ScanReader};
@@ -47,10 +50,11 @@ impl Default for ScanLimits {
 
 /// Evidence about the listing's readability.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum Readability {
     /// The complete feature listing was read.
+    #[serde(deserialize_with = "crate::tag_only::refuse_value")]
     KnownYes,
     /// Validated evidence prevents reading the listing.
     KnownNo(String),
@@ -101,6 +105,11 @@ pub struct FeatureRow {
 #[serde(deny_unknown_fields)]
 pub struct FeatureCensus {
     /// Validated total, available after the entire listing was read.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_total"
+    )]
     pub total: Option<u64>,
     /// Counts of admitted rows by native kind.
     #[serde(deserialize_with = "crate::distinct_keys::btree_map")]
@@ -123,22 +132,29 @@ pub struct DeclaredSize {
 
 /// Why a scan stopped before a complete census.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum StopReason {
     /// The physical read ceiling refused the next operation.
+    #[serde(deserialize_with = "crate::tag_only::refuse_value")]
     SourceBytes,
     /// The expansion ceiling refused the next operation.
+    #[serde(deserialize_with = "crate::tag_only::refuse_value")]
     ExpandedBytes,
     /// The retained-storage ceiling refused the next operation.
+    #[serde(deserialize_with = "crate::tag_only::refuse_value")]
     RetainedBytes,
     /// The elapsed-time ceiling expired.
+    #[serde(deserialize_with = "crate::tag_only::refuse_value")]
     ElapsedTime,
     /// The feature-visit ceiling refused the next visit.
+    #[serde(deserialize_with = "crate::tag_only::refuse_value")]
     FeatureCount,
     /// The active nesting ceiling refused the next descent.
+    #[serde(deserialize_with = "crate::tag_only::refuse_value")]
     NestingDepth,
     /// The host cancelled the scan.
+    #[serde(deserialize_with = "crate::tag_only::refuse_value")]
     Cancelled,
     /// Source bytes ended inside a required field.
     Truncated(String),
@@ -147,6 +163,7 @@ pub enum StopReason {
     /// The selected reader has no scan for this listing.
     Unsupported(String),
     /// Detection could not select a reader.
+    #[serde(deserialize_with = "crate::tag_only::refuse_value")]
     Unrecognized,
 }
 
@@ -169,20 +186,45 @@ impl std::error::Error for StopReason {}
 #[serde(deny_unknown_fields)]
 pub struct DesignScan {
     /// Detected format identity.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_format"
+    )]
     pub format: Option<String>,
     /// Version established from source header bytes.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_source_version"
+    )]
     pub source_version: Option<String>,
     /// Document kind established from source header bytes.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_document_kind"
+    )]
     pub document_kind: Option<String>,
     /// Evidence about reading the feature listing.
     pub readability: Readability,
     /// `None` means the feature census did not start.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_census"
+    )]
     pub census: Option<FeatureCensus>,
     /// Source claims kept separately from validated counts.
     pub declared_sizes: Vec<DeclaredSize>,
     /// Physical bytes charged before reads.
     pub bytes_read: u64,
     /// Refusal or framing failure that stopped this scan.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_stop_reason"
+    )]
     pub stop_reason: Option<StopReason>,
 }
 
@@ -278,3 +320,15 @@ impl DesignScan {
         }
     }
 }
+
+crate::named_optional_field!(deserialize_total, u64, "total");
+
+crate::named_optional_field!(deserialize_format, String, "format");
+
+crate::named_optional_field!(deserialize_source_version, String, "source_version");
+
+crate::named_optional_field!(deserialize_document_kind, String, "document_kind");
+
+crate::named_optional_field!(deserialize_census, FeatureCensus, "census");
+
+crate::named_optional_field!(deserialize_stop_reason, StopReason, "stop_reason");

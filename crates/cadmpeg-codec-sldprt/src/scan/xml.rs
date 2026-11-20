@@ -69,7 +69,7 @@ impl<'a> Tokens<'a, '_> {
         let raw = std::str::from_utf8(&self.bytes[start..self.at]).map_err(|_| malformed())?;
         self.byte()?;
         self.budget.retain(u64_from_index(raw.len()))?;
-        let mut value = String::new();
+        let mut value = String::with_capacity(raw.len());
         let mut tail = raw;
         while let Some(at) = tail.find('&') {
             self.budget.check()?;
@@ -112,12 +112,23 @@ pub(super) fn census(
     let mut converted = String::new();
     let bytes = if source.unread().starts_with(&[0xff, 0xfe]) {
         source.req_take(2)?;
+        if !source.remaining().is_multiple_of(2) {
+            return Err(StopReason::Truncated("SolidWorks UTF16 unit".into()));
+        }
+        let unit_count = source.remaining() / 2;
+        let utf8_capacity = unit_count.checked_mul(3).ok_or(StopReason::RetainedBytes)?;
         budget.retain(
-            u64_from_index(source.remaining())
-                .checked_mul(2)
+            u64_from_index(unit_count)
+                .checked_mul(5)
                 .ok_or(StopReason::RetainedBytes)?,
         )?;
         let mut units = Vec::new();
+        units
+            .try_reserve_exact(unit_count)
+            .map_err(|_| StopReason::RetainedBytes)?;
+        converted
+            .try_reserve_exact(utf8_capacity)
+            .map_err(|_| StopReason::RetainedBytes)?;
         while source.remaining() != 0 {
             budget.check()?;
             units.push(source.req_u16_le()?);
@@ -191,18 +202,20 @@ pub(super) fn census(
             return Err(malformed());
         }
         let name = tokens.name()?;
+        let local_name = name.rsplit_once(':').map_or(name, |(_, local)| local);
         let depth = u64_from_index(stack.len())
             .checked_add(1)
             .ok_or(StopReason::NestingDepth)?;
         budget.depth(depth)?;
         if !root_seen {
-            history = name.contains("Keywords");
+            history = local_name.contains("Keywords");
             root_seen = true;
             if history {
                 scan.census.get_or_insert_with(FeatureCensus::default);
             }
         }
-        let visit = if history && !matches!(name, "Keywords" | "Configuration" | "Dimension") {
+        let visit = if history && !matches!(local_name, "Keywords" | "Configuration" | "Dimension")
+        {
             Some(budget.feature()?)
         } else {
             None
@@ -252,7 +265,7 @@ pub(super) fn census(
             }
         }
         if let Some(visit) = visit {
-            scan.record_feature(visit, kind.as_deref().unwrap_or(name), suppressed)?;
+            scan.record_feature(visit, kind.as_deref().unwrap_or(local_name), suppressed)?;
         }
         if empty {
             if stack.is_empty() {
@@ -270,3 +283,6 @@ pub(super) fn census(
     }
     Ok(history)
 }
+
+#[cfg(test)]
+mod tests;

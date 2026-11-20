@@ -8,7 +8,7 @@ use cadmpeg_core::decode::{ByteRange, DecodeContext, ExpandSpec, View};
 use cadmpeg_core::{CodecError, ContainerEntry};
 mod entry;
 mod index;
-mod local;
+pub(crate) mod local;
 mod probe;
 
 /// Compression methods supported by [`ArchiveSnapshot::open`].

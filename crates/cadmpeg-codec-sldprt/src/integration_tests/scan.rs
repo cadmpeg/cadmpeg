@@ -169,3 +169,151 @@ fn scan_sldprt_trailing_garbage_keeps_the_census_incomplete() {
     assert_eq!(census.total, None);
     assert_eq!(census.rows[0].kind, "BossExtrude");
 }
+
+#[test]
+fn scan_sldprt_truncated_later_block_keeps_prior_rows_incomplete() {
+    let mut bytes = source(LIST);
+    bytes.extend(make_block(0x42, "Contents/Keywords", LIST));
+    bytes.pop();
+    let scan = SldprtCodec::scan_design(
+        View::over_retained(&bytes),
+        ScanLimits::default(),
+        &ManualClock::default(),
+    );
+    assert!(matches!(scan.stop_reason, Some(StopReason::Truncated(_))));
+    let census = scan.census.expect("first block's admitted rows");
+    assert!(!census.complete);
+    assert_eq!(census.total, None);
+    assert_eq!(
+        census
+            .rows
+            .iter()
+            .map(|row| row.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["BossExtrude", "Fillet"]
+    );
+}
+
+#[test]
+fn scan_sldprt_namespace_prefixes_preserve_local_feature_names() {
+    for (xml, expected_kind) in [
+        (br#"<k:Keywords xmlns:k="urn:test"><k:Feature Type="BossExtrude" Suppressed="1"/></k:Keywords>"#.as_slice(), "BossExtrude"),
+        (br#"<k:Keywords xmlns:k="urn:test"><k:Configuration/><k:Dimension/><k:Extrusion Suppressed="1"/></k:Keywords>"#.as_slice(), "Extrusion"),
+    ] {
+        let scan = SldprtCodec::scan_design(View::over_retained(&source(xml)), ScanLimits::default(), &ManualClock::default());
+        assert_eq!(scan.stop_reason, None);
+        let census = scan.census.expect("namespaced census");
+        assert!(census.complete);
+        assert_eq!(census.total, Some(1));
+        assert_eq!(census.rows[0].suppressed, Suppressed::Yes);
+        assert_eq!(census.rows[0].kind, expected_kind);
+    }
+}
+
+#[test]
+fn scan_sldprt_namespace_closing_tags_retain_qualified_framing() {
+    let bytes =
+        source(br#"<k:Keywords xmlns:k="urn:test" xmlns:j="urn:test"><k:Feature/></j:Keywords>"#);
+    let scan = SldprtCodec::scan_design(
+        View::over_retained(&bytes),
+        ScanLimits::default(),
+        &ManualClock::default(),
+    );
+    assert!(matches!(scan.stop_reason, Some(StopReason::Malformed(_))));
+    assert!(!scan.census.expect("admitted row").complete);
+}
+
+fn compound_keywords(xml: &[u8]) -> Vec<u8> {
+    use cadmpeg_test_support::bytes::{put_u16, put_u32};
+    let data_sectors = xml.len().div_ceil(512);
+    let fat_sectors = (data_sectors + 1).div_ceil(127);
+    assert!(fat_sectors <= 109);
+    let first_fat = data_sectors + 1;
+    let mut bytes = cadmpeg_test_support::compound::compound_fixture();
+    bytes.truncate(1024);
+    bytes.resize((first_fat + fat_sectors + 1) * 512, 0);
+    put_u32(
+        &mut bytes,
+        44,
+        u32::try_from(fat_sectors).expect("FAT count"),
+    );
+    for index in 0..109 {
+        let sector = if index < fat_sectors {
+            u32::try_from(first_fat + index).expect("FAT sector")
+        } else {
+            u32::MAX
+        };
+        put_u32(&mut bytes, 76 + index * 4, sector);
+    }
+    let directory = &mut bytes[512..1024];
+    for (index, name, kind, child, start, size) in [
+        (1, "Contents", 1, 2, 0xffff_fffe, 0),
+        (
+            2,
+            "Keywords",
+            2,
+            u32::MAX,
+            1,
+            u64::try_from(xml.len()).expect("XML extent"),
+        ),
+    ] {
+        let entry = &mut directory[index * 128..(index + 1) * 128];
+        entry.fill(0);
+        let mut units = 0;
+        for (at, unit) in name.encode_utf16().enumerate() {
+            put_u16(entry, at * 2, unit);
+            units += 1;
+        }
+        put_u16(
+            entry,
+            64,
+            u16::try_from((units + 1) * 2).expect("directory name"),
+        );
+        entry[66] = kind;
+        entry[67] = 1;
+        put_u32(entry, 68, u32::MAX);
+        put_u32(entry, 72, u32::MAX);
+        put_u32(entry, 76, child);
+        put_u32(entry, 116, start);
+        entry[120..128].copy_from_slice(&size.to_le_bytes());
+    }
+    bytes[1024..1024 + xml.len()].copy_from_slice(xml);
+    let fat = &mut bytes[(first_fat + 1) * 512..];
+    fat.fill(0xff);
+    put_u32(fat, 0, 0xffff_fffe);
+    for index in 1..=data_sectors {
+        let next = if index == data_sectors {
+            0xffff_fffe
+        } else {
+            u32::try_from(index + 1).expect("next data sector")
+        };
+        put_u32(fat, index * 4, next);
+    }
+    for index in first_fat..first_fat + fat_sectors {
+        put_u32(fat, index * 4, 0xffff_fffd);
+    }
+    bytes
+}
+
+#[test]
+fn scan_sldprt_compound_utf16_conversion_respects_retained_storage() {
+    let mut xml = vec![0xff, 0xfe];
+    for unit in "<Keywords><Feature Type=\""
+        .encode_utf16()
+        .chain(std::iter::repeat_n(0x0800, 1024 * 1024))
+        .chain("\"/></Keywords>".encode_utf16())
+    {
+        xml.extend_from_slice(&unit.to_le_bytes());
+    }
+    let bytes = compound_keywords(&xml);
+    let scan = SldprtCodec::scan_design(
+        View::over_retained(&bytes),
+        ScanLimits {
+            retained_bytes: 7 * 1024 * 1024,
+            ..ScanLimits::default()
+        },
+        &ManualClock::default(),
+    );
+    assert_eq!(scan.stop_reason, Some(StopReason::RetainedBytes));
+    assert!(scan.census.is_none());
+}

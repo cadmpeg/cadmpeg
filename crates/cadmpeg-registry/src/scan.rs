@@ -3,9 +3,7 @@
 
 use cadmpeg_container::compound::scan::ScanCompound;
 use cadmpeg_container::scan::ScanZip;
-use cadmpeg_core::decode::{
-    u64_from_index, DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, View,
-};
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy, View};
 use cadmpeg_core::scan::{DesignScan, ScanBudget, ScanClock, ScanLimits, ScanReader, StopReason};
 
 use crate::{DetectionOutcome, InputCatalog};
@@ -79,6 +77,9 @@ fn detect(
             StopReason::Unsupported("compound reader has no bounded feature scan".into())
         });
     }
+    if head.window().starts_with(b"PK\x03\x04") || head.window().starts_with(b"PK\x05\x06") {
+        return detect_zip(catalog, input, budget);
+    }
     let length = input.window().len().min(DETECTION_PREFIX_BYTES);
     reader.take(length - head.window().len())?;
     let end = input
@@ -88,6 +89,9 @@ fn detect(
     let prefix = input
         .child(input.start(), end)
         .ok_or_else(|| StopReason::Truncated("detection prefix".into()))?;
+    if cadmpeg_container::ArchiveSnapshot::has_footer(prefix.window()) {
+        return detect_zip(catalog, input, budget);
+    }
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::default();
     policy.limits.max_retained_bytes = DETECTION_STORAGE_BYTES;
@@ -99,38 +103,34 @@ fn detect(
         .map_err(|error| StopReason::Malformed(error.to_string()))?;
     budget.check()?;
     match outcome {
-        DetectionOutcome::Detected { codec, confidence }
-            if confidence > cadmpeg_ir::codec::Confidence::Low =>
-        {
-            Ok(codec.id().as_str().to_owned())
-        }
-        DetectionOutcome::Detected { .. } | DetectionOutcome::Ambiguous(_)
-            if prefix.window().starts_with(b"PK\x03\x04") =>
-        {
-            let mut archive = ScanZip::new(input, budget, true)?;
-            let mut names = b"PK\x03\x04".to_vec();
-            for entry in archive.entries()? {
-                budget.check()?;
-                budget.retain(
-                    u64_from_index(entry.name.len())
-                        .checked_add(1)
-                        .ok_or(StopReason::RetainedBytes)?,
-                )?;
-                names.extend_from_slice(entry.name.as_bytes());
-                names.push(0);
-            }
-            match catalog
-                .detect(&ctx, View::over_retained(&names))
-                .map_err(|error| StopReason::Malformed(error.to_string()))?
-            {
-                DetectionOutcome::Detected { codec, .. } => Ok(codec.id().as_str().to_owned()),
-                _ => Err(StopReason::Unrecognized),
-            }
-        }
         DetectionOutcome::Detected { codec, .. } => Ok(codec.id().as_str().to_owned()),
         DetectionOutcome::None if crate::catalog::is_cadir_prefix(prefix.window()) => {
             Ok(crate::Format::Cadir.name().as_str().to_owned())
         }
         DetectionOutcome::None | DetectionOutcome::Ambiguous(_) => Err(StopReason::Unrecognized),
     }
+}
+
+fn detect_zip(
+    catalog: &InputCatalog,
+    input: View<'_>,
+    budget: &ScanBudget<'_>,
+) -> Result<String, StopReason> {
+    let mut archive = ScanZip::new(input, budget, true)?;
+    let entries = archive.entries()?;
+    let mut selected = None;
+    for descriptor in catalog.descriptors() {
+        let mut matched = false;
+        for entry in &entries {
+            budget.check()?;
+            matched |= descriptor.scan_zip_match(&entry.name);
+        }
+        if matched {
+            if selected.is_some() {
+                return Err(StopReason::Unrecognized);
+            }
+            selected = Some(descriptor.format_id().as_str().to_owned());
+        }
+    }
+    selected.ok_or(StopReason::Unrecognized)
 }

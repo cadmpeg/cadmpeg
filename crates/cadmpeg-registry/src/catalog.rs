@@ -66,6 +66,15 @@ impl InputDescriptor {
         }
     }
 
+    pub(crate) fn scan_zip_match(&self, name: &str) -> bool {
+        match &self.kind {
+            InputKind::Native { native, .. } => {
+                native.zip_scan_probe.is_some_and(|probe| probe(name))
+            }
+            InputKind::Neutral { .. } => false,
+        }
+    }
+
     pub(crate) fn scan_compound_match(
         &self,
         entries: &[cadmpeg_container::compound::scan::ScanCompoundEntry],

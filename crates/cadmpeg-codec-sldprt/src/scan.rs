@@ -102,7 +102,12 @@ fn native(
             .checked_add(name_size)
             .and_then(|at| at.checked_add(index_from_u32(compressed)))
             .ok_or_else(|| malformed("SolidWorks block extent"))?;
-        if compressed == 0 || end > source.end() {
+        if end > source.end() {
+            return Err(StopReason::Truncated(
+                "SolidWorks history block extent".into(),
+            ));
+        }
+        if compressed == 0 {
             reader.seek(
                 at.checked_add(1)
                     .ok_or_else(|| malformed("SolidWorks marker position"))?,

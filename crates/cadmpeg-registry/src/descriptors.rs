@@ -74,6 +74,60 @@ macro_rules! compound_scan_probe {
     };
 }
 
+#[cfg(any(
+    feature = "fcstd",
+    feature = "f3d",
+    feature = "inventor",
+    feature = "sldprt",
+    feature = "catia",
+    feature = "creo",
+    feature = "nx",
+    feature = "rhino",
+    feature = "step",
+    feature = "iges",
+    feature = "sat",
+    feature = "pvz",
+    feature = "usd"
+))]
+macro_rules! zip_scan_probe {
+    (FCSTD) => {
+        Some(|name: &str| name == "Document.xml")
+    };
+    (F3D) => {
+        Some(|name: &str| {
+            [
+                "Breps.BlobParts",
+                "FusionAssetName",
+                "FusionDocType",
+                ".smbh",
+                "Manifest.json",
+                "DesignDescription.json",
+                ".f3d",
+            ]
+            .iter()
+            .any(|marker| name.contains(marker))
+        })
+    };
+    (PVZ) => {
+        Some(|name: &str| {
+            name.rsplit_once('.')
+                .is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("pvs"))
+        })
+    };
+    (USD) => {
+        Some(|name: &str| {
+            name.rsplit_once('.').is_some_and(|(_, extension)| {
+                ["usd", "usda", "usdc"]
+                    .iter()
+                    .any(|kind| extension.eq_ignore_ascii_case(kind))
+            })
+        })
+    };
+    ($name:ident) => {
+        None
+    };
+}
+
 /// Opaque witness that a compiled format has a native decoder.
 #[derive(Debug, Clone, Copy)]
 pub struct NativeDescriptor {
@@ -81,6 +135,7 @@ pub struct NativeDescriptor {
     input_extensions: &'static [&'static str],
     pub(crate) decoder: DecoderConstructor,
     pub(crate) scanner: Option<ScanConstructor>,
+    pub(crate) zip_scan_probe: Option<fn(&str) -> bool>,
     pub(crate) compound_scan_probe: Option<CompoundScanProbe>,
 }
 
@@ -255,6 +310,7 @@ macro_rules! reader {
                 input_extensions: $input_exts,
                 decoder: $decoder,
                 scanner: scan_backend!($name),
+                zip_scan_probe: zip_scan_probe!($name),
                 compound_scan_probe: compound_scan_probe!($name),
             }),
         };
@@ -297,6 +353,7 @@ macro_rules! writable {
                 input_extensions: $input_exts,
                 decoder: $decoder,
                 scanner: scan_backend!($name),
+                zip_scan_probe: zip_scan_probe!($name),
                 compound_scan_probe: compound_scan_probe!($name),
             }),
         };

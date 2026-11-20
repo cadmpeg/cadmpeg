@@ -239,7 +239,12 @@ fn document(
             budget.depth(nested_depth)?;
             scan.declared_size(budget, &entry.name, entry.declared_size)?;
             let bytes = archive.open(entry.ordinal)?;
-            found |= document(budget.view(&bytes)?, budget, scan, nested_depth, false)?;
+            if !document(budget.view(&bytes)?, budget, scan, nested_depth, false)? {
+                return Err(StopReason::Unsupported(
+                    "Fusion child timeline listing is absent".into(),
+                ));
+            }
+            found = true;
             continue;
         }
         let Some(prefix) = entry.name.strip_suffix("MetaStream.dat") else {

@@ -128,3 +128,100 @@ fn scan_zip64_admits_the_wide_directory_before_opening_a_member() {
         ScanZip::new(View::over_retained(&source), &budget, true).expect("ZIP64 directory");
     assert_eq!(zip.open(0).expect("listing"), b"feature rows");
 }
+
+#[test]
+fn scan_zip_rejects_variable_fields_outside_the_declared_directory_before_allocation() {
+    use crate::layout::{central_header, end_record};
+    use cadmpeg_test_support::bytes::{put_u16, put_u32};
+    for field in [
+        central_header::NAME_LENGTH,
+        central_header::EXTRA_LENGTH,
+        central_header::COMMENT_LENGTH,
+    ] {
+        let mut source = vec![0; central_header::LEN];
+        source[..4].copy_from_slice(b"PK\x01\x02");
+        put_u16(&mut source, field, u16::MAX);
+        source.resize(central_header::LEN + usize::from(u16::MAX), b'a');
+        let mut end = vec![0; end_record::LEN];
+        end[..4].copy_from_slice(b"PK\x05\x06");
+        put_u16(&mut end, end_record::DISK_ENTRIES, 1);
+        put_u16(&mut end, end_record::ENTRIES, 1);
+        put_u32(
+            &mut end,
+            end_record::DIRECTORY_SIZE,
+            u32::try_from(central_header::LEN).expect("fixed header"),
+        );
+        source.extend_from_slice(&end);
+        let clock = ManualClock::default();
+        let budget = ScanBudget::new(
+            ScanLimits {
+                retained_bytes: 2048,
+                ..ScanLimits::default()
+            },
+            &clock,
+        );
+        assert!(matches!(
+            ScanZip::new(View::over_retained(&source), &budget, true),
+            Err(StopReason::Malformed(_))
+        ));
+        assert!(budget.bytes_read() < 1024);
+    }
+}
+
+#[test]
+fn scan_zip_keeps_prefixed_archive_and_legacy_name_identity() {
+    use crate::layout::{central_header, end_record, local_header};
+    use cadmpeg_test_support::zip_fixture::{archive, RawEntry};
+    let mut zip = archive(&[RawEntry::stored("x", b"feature rows")]);
+    let tail = zip.len() - end_record::LEN;
+    let central = usize::try_from(
+        View::u32_le_at(&zip[tail..], end_record::DIRECTORY_POSITION).expect("directory position"),
+    )
+    .expect("offset");
+    zip[local_header::LEN] = 0x82;
+    zip[central + central_header::LEN] = 0x82;
+    let mut source = b"embedded ZIP prefix".to_vec();
+    source.extend(zip);
+    let clock = ManualClock::default();
+    let budget = ScanBudget::new(ScanLimits::default(), &clock);
+    let mut zip =
+        ScanZip::new(View::over_retained(&source), &budget, true).expect("prefixed archive");
+    assert_eq!(zip.entries().expect("directory")[0].name, "é");
+    assert_eq!(zip.open(0).expect("listing"), b"feature rows");
+}
+
+#[test]
+fn scan_zip64_preserves_a_wide_size_equal_to_the_narrow_sentinel() {
+    use crate::layout::{central_header, end_record};
+    use cadmpeg_test_support::bytes::{put_u16, put_u32};
+    use cadmpeg_test_support::zip_fixture::{archive, RawEntry};
+    let mut source = archive(&[RawEntry::stored("listing", b"feature rows")]);
+    let tail = source.len() - end_record::LEN;
+    let central = usize::try_from(
+        View::u32_le_at(&source[tail..], end_record::DIRECTORY_POSITION).expect("directory"),
+    )
+    .expect("offset");
+    let directory_size =
+        View::u32_le_at(&source[tail..], end_record::DIRECTORY_SIZE).expect("directory extent");
+    put_u32(
+        &mut source,
+        central + central_header::EXPANDED_LENGTH,
+        u32::MAX,
+    );
+    put_u16(&mut source, central + central_header::EXTRA_LENGTH, 12);
+    let mut extra = vec![1, 0, 8, 0];
+    extra.extend_from_slice(&u64::from(u32::MAX).to_le_bytes());
+    let extra_at = central + central_header::LEN + "listing".len();
+    source.splice(extra_at..extra_at, extra);
+    put_u32(
+        &mut source,
+        tail + 12 + end_record::DIRECTORY_SIZE,
+        directory_size + 12,
+    );
+    let clock = ManualClock::default();
+    let budget = ScanBudget::new(ScanLimits::default(), &clock);
+    let mut zip =
+        ScanZip::new(View::over_retained(&source), &budget, true).expect("wide directory");
+    let entries = zip.entries().expect("declared size");
+    assert_eq!(entries[0].declared_size, u64::from(u32::MAX));
+}
