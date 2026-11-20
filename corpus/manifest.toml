@@ -1216,7 +1216,7 @@ authoring_app = "SOLIDWORKS"
 authoring_app_version = "2025 SP5.1"
 acquisition_date = "2026-11-20"
 license = "CC0-1.0"
-sha256 = "5d2aa422a984f19623ba85d74866f92c068fdbdca86c36d31eaf17f2845f422c"
+sha256 = "f9c549bbd7b0fb41f067d15e4d3c98b1e5180813f7f6ebfca7e1a9a561ef3f18"
 notes = "STEP AP214 ground-truth export of sldprt/Pair1/plane_front_blind.SLDPRT. 20 x 10 mm rectangle on Front plane, blind extrude +10 mm along profile normal (DI-16)."
 
 [[file]]
@@ -1240,7 +1240,7 @@ authoring_app = "SOLIDWORKS"
 authoring_app_version = "2025 SP5.1"
 acquisition_date = "2026-11-20"
 license = "CC0-1.0"
-sha256 = "d4b83bd110f9933278f38251a879dc43e9fe1ea2e3629d808a3aff4156966ef4"
+sha256 = "414838ea1b020115809e6c8c27bfdfff786c051cd3b3e29b8d463182ff30e892"
 notes = "STEP AP214 ground-truth export of sldprt/Pair1/plane_front_flip.SLDPRT. 20 x 10 mm rectangle on Front plane, blind extrude 10 mm with Reverse Direction (DI-16)."
 
 [[file]]
@@ -1264,7 +1264,7 @@ authoring_app = "SOLIDWORKS"
 authoring_app_version = "2025 SP5.1"
 acquisition_date = "2026-11-20"
 license = "CC0-1.0"
-sha256 = "350468970d083d55cefb38cb083d96303974f9e41a9980573fa308af813b0d34"
+sha256 = "43d48ada35288bf4b7bd6f33ebf74ea68f3f955b53f2fe0829693de4fcfc5b22"
 notes = "STEP AP214 ground-truth export of sldprt/Pair1/plane_right_blind.SLDPRT. 20 x 10 mm rectangle on Right plane, blind extrude 10 mm along +X (SF-02)."
 
 [[file]]
@@ -1288,7 +1288,7 @@ authoring_app = "SOLIDWORKS"
 authoring_app_version = "2025 SP5.1"
 acquisition_date = "2026-11-20"
 license = "CC0-1.0"
-sha256 = "50fbe0f27516fffbb12569a5f5375cc0fc69de73462a893ca9bc6bf69d21df0d"
+sha256 = "c35388aa2bece064a94fdca9195e3d3dd94e890339646ba684c34586746f9524"
 notes = "STEP AP214 ground-truth export of sldprt/Pair1/plane_top_blind.SLDPRT. 20 x 10 mm rectangle on Top plane, blind extrude 10 mm along +Y (SF-01)."
 
 [[file]]
@@ -1312,7 +1312,7 @@ authoring_app = "SOLIDWORKS"
 authoring_app_version = "2025 SP5.1"
 acquisition_date = "2026-11-20"
 license = "CC0-1.0"
-sha256 = "3b34efc7723f75c7b1491d42e82d7f27cd30cfa115631a059c5acd7ae46749d4"
+sha256 = "6fe42441cfcb6827970028e4e1053ff4e7a916c506790bd1a9f18db5d9aebc56"
 notes = "STEP AP214 ground-truth export of sldprt/Pair2/extrude_start_offset_flip.SLDPRT. 20 x 10 mm rectangle on Front plane, blind extrude 10 mm from flipped 5 mm offset start (DI-68)."
 
 [[file]]
@@ -1336,7 +1336,7 @@ authoring_app = "SOLIDWORKS"
 authoring_app_version = "2025 SP5.1"
 acquisition_date = "2026-11-20"
 license = "CC0-1.0"
-sha256 = "1f897c6fe776af76fe02d963b65bcb4a321b0bdad37ddde52571ca2a34428c6c"
+sha256 = "974cb9a317019e71a908a1fa76f17fc8fdb274c7ba005cf9aa416119ee82662a"
 notes = "STEP AP214 ground-truth export of sldprt/Pair2/extrude_start_offset_pos.SLDPRT. 20 x 10 mm rectangle on Front plane, blind extrude 10 mm from +5 mm offset start (DI-68)."
 
 [[file]]
@@ -1360,7 +1360,7 @@ authoring_app = "SOLIDWORKS"
 authoring_app_version = "2025 SP5.1"
 acquisition_date = "2026-11-20"
 license = "CC0-1.0"
-sha256 = "579434f1a4520289c0dca3932e7943bc780cfeecc4c395d4884af70ffcb5cb74"
+sha256 = "1aea5d068aba9408dd6fc26ca7eb891a5e31a2a28519566a6668a2ae3dd01fe1"
 notes = "STEP AP214 ground-truth export of sldprt/Pair3/sketch_concentric_one_dim.SLDPRT. Concentric circles (r=5 mm, r=10 mm) with only inner circle dimensioned, blind extrude 10 mm (DI-70, DI-71)."
 
 [[file]]
@@ -1384,7 +1384,7 @@ authoring_app = "SOLIDWORKS"
 authoring_app_version = "2025 SP5.1"
 acquisition_date = "2026-11-20"
 license = "CC0-1.0"
-sha256 = "4e57025c018aaf39dbfce93da17cf90f768164b25cc81c7d9bb633294b063a88"
+sha256 = "084cda0f976980a248188d6f493b86c0ded336863253866c1b20a4ff425ba17d"
 notes = "STEP AP214 ground-truth export of sldprt/Pair3/sketch_concentric_ring.SLDPRT. Concentric circles (r=5 mm, r=10 mm) with both circles dimensioned, blind extrude 10 mm (DI-70, DI-71)."
 
 [[file]]
@@ -1408,7 +1408,7 @@ authoring_app = "SOLIDWORKS"
 authoring_app_version = "2025 SP5.1"
 acquisition_date = "2026-11-20"
 license = "CC0-1.0"
-sha256 = "270dad2be39f4b23d91421cb71f1d40c7c2026ad9adfc7981b2807232c916b05"
+sha256 = "212b2ff3ddafcf90df07a10ae0a65dd90f0caea2f39598a0f3eeb357b76b908b"
 notes = "STEP AP214 ground-truth export of sldprt/Pair4/sketch_arcs_cw_ccw.SLDPRT. Closed profile with CCW arc, CW 0xffff arc, and interior full circle, blind extrude 5 mm (EV-26, EV-27, GC-11)."
 
 [[file]]
@@ -1432,7 +1432,7 @@ authoring_app = "SOLIDWORKS"
 authoring_app_version = "2025 SP5.1"
 acquisition_date = "2026-11-20"
 license = "CC0-1.0"
-sha256 = "23481455a77cea00022aac8abb8c064bb8e17299c84aaf30353249bb8804a63b"
+sha256 = "dd07557e85d49e974e3bd16d105804c22cc996e738fc02efc1162011abd2d86b"
 notes = "STEP AP214 ground-truth export of sldprt/Pair4/sketch_ellipse.SLDPRT. Full sketch ellipse, blind extrude 5 mm."
 
 [[file]]
@@ -1456,7 +1456,7 @@ authoring_app = "SOLIDWORKS"
 authoring_app_version = "2025 SP5.1"
 acquisition_date = "2026-11-20"
 license = "CC0-1.0"
-sha256 = "73228cac456c1512e580a62200d6337cf476b1d51b48aea2c0d2ba3503b797cd"
+sha256 = "20dd747db31cf5a195193f49a6017ef2501d681fec8ab59c2da50aeee4ce6bd7"
 notes = "STEP AP214 ground-truth export of sldprt/Pair4/sketch_parabola.SLDPRT. Closed profile bounded by a trimmed sketch parabola and line, blind extrude 5 mm."
 
 [[file]]
@@ -1480,7 +1480,7 @@ authoring_app = "SOLIDWORKS"
 authoring_app_version = "2025 SP5.1"
 acquisition_date = "2026-11-20"
 license = "CC0-1.0"
-sha256 = "debb86a9ba54836b532265ad7357f2e5b614fe57b20f8ae04a6450b1125980f0"
+sha256 = "f05591aa80919f4849e6e7559eab32bda32b928de6fedb69a19ed20af4384f47"
 notes = "STEP AP214 ground-truth export of sldprt/Pair5/revolve_90_default.SLDPRT. 10 x 10 mm rectangle revolved 90 degrees in default direction about Y axis (EV-25)."
 
 [[file]]
@@ -1504,5 +1504,5 @@ authoring_app = "SOLIDWORKS"
 authoring_app_version = "2025 SP5.1"
 acquisition_date = "2026-11-20"
 license = "CC0-1.0"
-sha256 = "f680400b3aea440eb6c4547db57e77bd1db9993cf7ddc4b3eec5f47b3faca76c"
+sha256 = "2f015770b5626c14f4ef2ed4662f49af66218d35c9af849e9d72314445bea344"
 notes = "STEP AP214 ground-truth export of sldprt/Pair5/revolve_90_flipped.SLDPRT. 10 x 10 mm rectangle revolved 90 degrees with Reverse Direction about Y axis (EV-25)."
