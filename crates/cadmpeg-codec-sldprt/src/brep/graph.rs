@@ -1502,6 +1502,26 @@ fn closed_edge_start(
 /// a larger miss is another branch of the rolling ball.
 const BLEND_VERTEX_MISS_RADIUS_FRACTION: f64 = 0.25;
 
+/// Least distance a blend cache may pass from a face vertex: the departure
+/// a rolling-ball fit keeps at its deepest split.
+const BLEND_VERTEX_MISS_FLOOR_MM: f64 = 1.0e-3;
+
+/// How far a blend cache may pass from the vertices of `face`: the largest
+/// tolerance the face's edges state, and no less than
+/// [`BLEND_VERTEX_MISS_FLOOR_MM`].
+fn blend_vertex_allowance(
+    t: &topology::Tables,
+    face: &WalkedFace,
+    edge_tolerances: &HashMap<EdgeId, f64>,
+) -> f64 {
+    face.loops
+        .iter()
+        .flat_map(|(_, ring)| ring)
+        .filter_map(|coedge| t.coedges().get(coedge).map(|coedge| coedge.refs[6]))
+        .filter_map(|edge| edge_tolerances.get(&id_edge(edge)).copied())
+        .fold(BLEND_VERTEX_MISS_FLOOR_MM, f64::max)
+}
+
 /// Why the rolling-ball fit of a blend has no side, by side.
 const BLEND_SIDE_UNRESOLVED: [&str; 2] = [
     "support 0 is not an analytic or NURBS surface, a pair of them or a rolling ball",
@@ -1514,9 +1534,9 @@ enum BlendStep {
     NotRun(&'static str),
     /// The step ran and found no cache, for the reason given.
     NoCache(String),
-    /// The step's cache missed a face vertex by more than a quarter of the
-    /// radius, by this many millimetres.
-    Missed(f64),
+    /// The step's cache missed a face vertex by `miss` millimetres, more
+    /// than the `allowed` miss.
+    Missed { miss: f64, allowed: f64 },
 }
 
 impl std::fmt::Display for BlendStep {
@@ -1524,9 +1544,9 @@ impl std::fmt::Display for BlendStep {
         match self {
             Self::NotRun(why) => write!(f, "not run, {why}"),
             Self::NoCache(why) => f.write_str(why),
-            Self::Missed(miss) => write!(
+            Self::Missed { miss, allowed } => write!(
                 f,
-                "its cache misses a face vertex by {miss} mm, more than a quarter of the radius"
+                "its cache misses a face vertex by {miss} mm, more than the {allowed} mm the face's edges and a quarter of the radius allow"
             ),
         }
     }
@@ -4403,6 +4423,13 @@ fn decode_graph_inner(
             .count();
         faces.retain(|face| bridge_group.contains_key(&face.bridge_attr));
     }
+    // The tolerance each emitted edge states: a blend cache may pass that far
+    // from the vertices of the face the edge bounds.
+    let edge_tolerances = out
+        .edges
+        .iter()
+        .filter_map(|edge| Some((edge.id.clone(), edge.tolerance?.get())))
+        .collect::<HashMap<_, _>>();
     let mut face_edges_by_surface_carrier = HashMap::<u32, Vec<HashSet<u32>>>::new();
     for face in &faces {
         let mut edges = HashSet::new();
@@ -4777,7 +4804,12 @@ fn decode_graph_inner(
                             };
                             let from_fit = fitted.is_some();
                             // The cache states its largest vertex miss; a miss of
-                            // a sizeable share of the radius is another branch.
+                            // a sizeable share of the radius is another branch,
+                            // and a miss beyond what the face's edges state does
+                            // not bound the face.
+                            let allowed = (blend.signed_radius.abs()
+                                * BLEND_VERTEX_MISS_RADIUS_FRACTION)
+                                .min(blend_vertex_allowance(t, f, &edge_tolerances));
                             match fitted.or(off_vertex) {
                                 Some(mut cache) => match blend_surface::vertex_miss(
                                     ctx,
@@ -4785,11 +4817,7 @@ fn decode_graph_inner(
                                     &spine.carrier().geometry,
                                     &vertices,
                                 )? {
-                                    Some(miss)
-                                        if miss
-                                            <= blend.signed_radius.abs()
-                                                * BLEND_VERTEX_MISS_RADIUS_FRACTION =>
-                                    {
+                                    Some(miss) if miss <= allowed => {
                                         cache.fit_tolerance = cache.fit_tolerance.max(miss);
                                         Some(cache)
                                     }
@@ -4801,7 +4829,7 @@ fn decode_graph_inner(
                                                         .into(),
                                                 )
                                             },
-                                            BlendStep::Missed,
+                                            |miss| BlendStep::Missed { miss, allowed },
                                         );
                                         if from_fit {
                                             rolling = step;
