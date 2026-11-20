@@ -70,9 +70,10 @@ pub(crate) struct SemanticOutput {
     pub(crate) dialect: cadmpeg_core::dialect::DialectId,
     /// Which model arenas the written document carries.
     pub(crate) coverage: ArenaDispositions,
-    pub(crate) omitted_envelope_bytes: usize,
     /// The metadata attributes the write did not write, each with why.
     pub(crate) unwritten: UnwrittenAttributes,
+    /// The write's other losses.
+    pub(crate) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Writes a semantic document and returns the dialect and arena coverage it
@@ -424,8 +425,8 @@ pub(crate) fn write_semantic_with_records(
     Ok(SemanticOutput {
         dialect: written_dialect,
         coverage,
-        omitted_envelope_bytes: envelope.omitted_envelope_bytes,
         unwritten,
+        losses: envelope.losses().collect(),
     })
 }
 

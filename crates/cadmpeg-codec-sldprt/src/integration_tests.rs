@@ -445,14 +445,15 @@ fn inherit_refuses_an_off_catalog_source_dialect_with_nothing_retained() {
         "the refusal must name the declared synthesis alternative: {reason}"
     );
     assert!(
-        reason.contains("validated retained local, central and EOCD signature tokens"),
+        reason.contains("that envelope is sldprt:unknown"),
         "{reason}"
     );
 }
 
-/// Cross-dialect synthesis does not consume the retained Native envelope.
+/// Cross-dialect synthesis does not consume the retained Native envelope: it
+/// synthesizes one.
 #[test]
-fn explicit_cross_dialect_synthesis_without_consuming_native_framing_is_refused() {
+fn explicit_cross_dialect_synthesis_writes_a_synthesized_native_envelope() {
     let result = decode(versioned_part());
     assert!(result
         .source_fidelity()
@@ -460,17 +461,22 @@ fn explicit_cross_dialect_synthesis_without_consuming_native_framing_is_refused(
         .unwrap()
         .data()
         .is_some());
-    let error = plan(
+    let plan = plan(
         &result,
         true,
         cadmpeg_ir::codec::write::target::TargetRequest::Explicit("sldprt:unknown"),
     )
-    .expect_err("nonconsuming cross-dialect synthesis has no Native envelope tokens");
-    assert!(
-        matches!(error, cadmpeg_core::CodecError::NotImplemented(ref detail)
-        if detail.contains("validated retained local, central and EOCD signature tokens")),
-        "{error}"
-    );
+    .expect("nonconsuming cross-dialect synthesis synthesizes its Native envelope");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "record.residual-unavailable"));
+    let claimed = named_target(&plan);
+    assert_eq!(claimed, "sldprt:unknown");
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(classify(written), claimed);
 }
 
 #[test]
@@ -527,7 +533,7 @@ fn the_patch_path_names_the_preserved_dialect() {
 }
 
 #[test]
-fn digest_only_source_image_cannot_supply_native_envelope() {
+fn digest_only_source_image_writes_retained_records_in_a_synthesized_envelope() {
     let result = decode(versioned_part());
     let (ir, _, mut fidelity) = result.into_parts();
     let unavailable = {
@@ -562,28 +568,25 @@ fn digest_only_source_image_cannot_supply_native_envelope() {
         .unwrap()
         .data()
         .is_none());
-    let error = SldprtCodec
+    let plan = SldprtCodec
         .plan(
             cadmpeg_ir::codec::write::EncodeInput::new(&ir, Some(&fidelity)),
             cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
         )
-        .expect_err("digest-only source image cannot supply Native envelope framing");
-    let cadmpeg_core::CodecError::UnsupportedTarget(refusal) = &error else {
-        panic!("expected a target refusal, got {error}");
-    };
-    assert_eq!(refusal.format(), "sldprt");
-    let wire = serde_json::to_value(refusal).expect("serialize refusal");
-    assert_eq!(wire["refusal"]["source"], "sldprt:sw-version-12000-plus");
-    assert!(refusal
-        .available()
+        .expect("the retained records keep the source's swSolidWorks envelope");
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::SldprtLossCode::SourcePreservedImageUnavailable.kind()
+    }));
+    assert!(plan
+        .report()
+        .losses
         .iter()
-        .any(|target| target.id.as_str() == "sldprt:unknown"));
-    let reason = wire["refusal"]["reason"].as_str().expect("refusal reason");
-    assert!(reason.contains("sldprt:unknown"), "{reason}");
-    assert!(
-        reason.contains("validated retained local, central and EOCD signature tokens"),
-        "{reason}"
-    );
+        .any(|loss| loss.code.local_code() == "record.residual-unavailable"));
+    let claimed = named_target(&plan);
+    assert_eq!(claimed, "sldprt:sw-version-12000-plus");
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
+    assert_eq!(classify(written), claimed);
 }
 
 #[test]

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Regeneration of proved native ZIP envelopes with retained signature tokens.
-
-use std::collections::BTreeSet;
+//! Native ZIP envelope regeneration: retained signature tokens where the
+//! source envelope is proved, synthesized tokens otherwise.
 
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::container::{native_layout, ContainerScan};
 use crate::layout::block_frame_header as local;
@@ -12,31 +12,117 @@ use crate::layout::outer_header as outer;
 use crate::layout::zip_central_descriptor as descriptor;
 use crate::layout::zip_central_header as central;
 
-fn unsupported() -> CodecError {
-    CodecError::NotImplemented("SLDPRT envelope regeneration needs validated retained local, central and EOCD signature tokens".into())
-}
+/// The outer header's big-endian `version` word (§1.1).
+const NATIVE_VERSION: [u8; 4] = 4u32.to_be_bytes();
 
-fn bytes_array<const N: usize>(source: &[u8], start: usize) -> Result<[u8; N], CodecError> {
-    let end = start.checked_add(N).ok_or_else(unsupported)?;
+/// A central header's `version_made_by`: the decoder selects central records
+/// whose field is zero (§1.3).
+const VERSION_MADE_BY: [u8; 2] = [0; 2];
+
+fn bytes_array<const N: usize>(source: &[u8], start: usize) -> Option<[u8; N]> {
     source
-        .get(start..end)
+        .get(start..start.checked_add(N)?)
         .and_then(|bytes| bytes.try_into().ok())
-        .ok_or_else(unsupported)
 }
 
-fn unique<const N: usize>(values: &BTreeSet<[u8; N]>) -> Result<[u8; N], CodecError> {
-    if values.len() != 1 {
-        return Err(unsupported());
+/// The signature tokens and attributes one source member stores.
+struct SourceMember {
+    name: String,
+    type_id: u32,
+    local: [u8; 4],
+    central: [u8; 6],
+    attributes: [u8; 10],
+}
+
+/// A proved source envelope with every token it stores.
+struct RetainedEnvelope {
+    header: [u8; 8],
+    root: [u8; 4],
+    padding_bytes: usize,
+    members: Vec<SourceMember>,
+}
+
+impl RetainedEnvelope {
+    /// The token every source member shares, when they share one.
+    fn shared<const N: usize>(&self, token: impl Fn(&SourceMember) -> [u8; N]) -> Option<[u8; N]> {
+        let first = token(self.members.first()?);
+        self.members
+            .iter()
+            .all(|member| token(member) == first)
+            .then_some(first)
     }
-    values.first().copied().ok_or_else(unsupported)
 }
 
+/// The source's proved envelope, or `None` when the source has none or a
+/// stored token cannot be read.
+fn retained(scan: &ContainerScan<'_>) -> Result<Option<RetainedEnvelope>, CodecError> {
+    let envelope = match native_layout::source_envelope(scan.source_image, &scan.blocks) {
+        Ok(Some(envelope)) => envelope,
+        Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+        Ok(None) | Err(_) => return Ok(None),
+    };
+    let image = scan.source_image;
+    let member = |entry: &crate::container::DirectoryEntry| {
+        let relative = View::u32_le_at(&entry.descriptor, descriptor::LOCAL_OFFSET)?;
+        let signature = usize::try_from(relative).ok()?.checked_add(outer::LEN)?;
+        Some(SourceMember {
+            name: entry.name.clone(),
+            type_id: entry.type_id,
+            local: bytes_array(image, signature)?,
+            central: bytes_array(image, entry.offset.checked_sub(central::VERSION_NEEDED)?)?,
+            attributes: bytes_array(&entry.descriptor, 0)?,
+        })
+    };
+    let Some(members) = envelope
+        .entries
+        .iter()
+        .map(member)
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Ok(None);
+    };
+    let (Some(header), Some(root)) = (bytes_array(image, 0), bytes_array(image, envelope.root))
+    else {
+        return Ok(None);
+    };
+    Ok(Some(RetainedEnvelope {
+        header,
+        root,
+        padding_bytes: envelope.padding_bytes,
+        members,
+    }))
+}
+
+/// One regenerated envelope and what it could not hold.
 pub(super) struct Regenerated {
     pub(super) bytes: Vec<u8>,
     pub(super) omitted_envelope_bytes: usize,
+    /// The opaque token fields written as zero, each naming its record.
+    pub(super) residual: Vec<String>,
+    /// The members the envelope cannot store: a name it cannot encode, or a
+    /// count or offset past its field.
+    pub(super) dropped: Vec<String>,
 }
 
-pub(super) fn auxiliary_loss(bytes: usize) -> Option<cadmpeg_ir::report::loss::LossNote> {
+impl Regenerated {
+    pub(super) fn losses(&self) -> impl Iterator<Item = LossNote> {
+        auxiliary_loss(self.omitted_envelope_bytes)
+            .into_iter()
+            .chain(cadmpeg_ir::codec::write::record_residual_unavailable(
+                "SLDPRT",
+                "writes zero for these opaque envelope fields, whose value the SLDPRT specification \
+                 leaves unstated; whether SolidWorks accepts zero there cannot be tested",
+                self.residual.iter().cloned(),
+            ))
+            .chain(cadmpeg_ir::codec::write::native_records_omitted(
+                "SLDPRT",
+                "whose name, member count or offset the native envelope cannot store",
+                self.dropped.iter().cloned(),
+            ))
+    }
+}
+
+fn auxiliary_loss(bytes: usize) -> Option<LossNote> {
     (bytes != 0).then(|| {
         crate::loss::SldprtLossCode::WriterNativeEnvelopeAuxiliaryOmitted.note(format!(
             "{bytes} native envelope auxiliary bytes were omitted during semantic envelope regeneration"
@@ -44,137 +130,163 @@ pub(super) fn auxiliary_loss(bytes: usize) -> Option<cadmpeg_ir::report::loss::L
     })
 }
 
+fn storable_name(name: &str) -> bool {
+    !name.is_empty()
+        && u16::try_from(name.len()).is_ok()
+        && name.bytes().all(|byte| (0x20..0x7f).contains(&byte))
+}
+
+/// Whether the members named `name` are written with the time/date and
+/// payload multiset the source stores, so the source's cache cell for them
+/// still describes them.
+fn cell_members_unchanged(
+    scan: &ContainerScan<'_>,
+    name: &str,
+    written: &[(&str, u32, &[u8])],
+) -> bool {
+    let mut original: Vec<_> = scan
+        .blocks
+        .iter()
+        .filter(|block| block.section.name() == Some(name))
+        .map(|block| (block.type_id, block.payload.as_slice()))
+        .collect();
+    let mut current: Vec<_> = written
+        .iter()
+        .filter(|(member, ..)| *member == name)
+        .map(|(_, time_date, payload)| (*time_date, *payload))
+        .collect();
+    original.sort_unstable();
+    current.sort_unstable();
+    !original.is_empty() && original == current
+}
+
+/// Write `sections` in a native envelope. A section takes the tokens and
+/// attributes of the source member of its name and type id, the k-th such
+/// section the k-th such member. A section with no source member takes the
+/// token every source member shares, else zero.
 pub(super) fn build(
     sections: &[(String, Vec<u8>)],
     time_dates: &[u32],
     source_scan: Option<&ContainerScan<'_>>,
 ) -> Result<Regenerated, CodecError> {
-    let scan = source_scan.ok_or_else(unsupported)?;
-    let envelope =
-        native_layout::source_envelope(scan.source_image, &scan.blocks)?.ok_or_else(unsupported)?;
-    if sections.len() != time_dates.len() {
-        return Err(unsupported());
-    }
-    let count = u16::try_from(sections.len()).map_err(|_| unsupported())?;
-    let mut local_tokens = BTreeSet::new();
-    let mut central_tokens = BTreeSet::new();
-    for entry in &envelope.entries {
-        let relative =
-            View::u32_le_at(&entry.descriptor, descriptor::LOCAL_OFFSET).ok_or_else(unsupported)?;
-        let signature = usize::try_from(relative)
-            .map_err(|_| unsupported())?
-            .checked_add(outer::LEN)
-            .ok_or_else(unsupported)?;
-        local_tokens.insert(bytes_array::<4>(scan.source_image, signature)?);
-        central_tokens.insert(bytes_array::<6>(
-            scan.source_image,
-            entry
-                .offset
-                .checked_sub(central::VERSION_NEEDED)
-                .ok_or_else(unsupported)?,
-        )?);
-    }
-    let mut output = bytes_array::<8>(scan.source_image, 0)?.to_vec();
-    let mut central_entries = Vec::new();
-    for ((name, payload), time_date) in sections.iter().zip(time_dates) {
-        if u16::try_from(name.len()).is_err()
-            || name.is_empty()
-            || !name.bytes().all(|byte| (0x20..0x7f).contains(&byte))
+    debug_assert_eq!(sections.len(), time_dates.len());
+    let retained = source_scan.map(retained).transpose()?.flatten();
+    let mut residual = Vec::new();
+    let mut dropped = Vec::new();
+    let header = match (&retained, source_scan) {
+        (Some(retained), _) => retained.header,
+        (None, Some(scan))
+            if scan.source_image.get(outer::VERSION..outer::LEN) == Some(&NATIVE_VERSION[..]) =>
         {
-            return Err(unsupported());
+            bytes_array(scan.source_image, 0).unwrap_or_default()
         }
-        let mut matches = envelope
-            .entries
-            .iter()
-            .filter(|entry| entry.name == *name && entry.type_id == *time_date);
-        let source = matches.next();
-        if matches.next().is_some() {
-            return Err(unsupported());
+        (None, _) => {
+            residual.push("outer header file_id".to_owned());
+            let mut header = [0; outer::LEN];
+            header[outer::VERSION..].copy_from_slice(&NATIVE_VERSION);
+            header
         }
-        let (local_token, central_token, attributes) = if let Some(entry) = source {
-            let relative = View::u32_le_at(&entry.descriptor, descriptor::LOCAL_OFFSET)
-                .ok_or_else(unsupported)?;
-            let signature = usize::try_from(relative)
-                .map_err(|_| unsupported())?
-                .checked_add(outer::LEN)
-                .ok_or_else(unsupported)?;
-            (
-                bytes_array::<4>(scan.source_image, signature)?,
-                bytes_array::<6>(
-                    scan.source_image,
-                    entry
-                        .offset
-                        .checked_sub(central::VERSION_NEEDED)
-                        .ok_or_else(unsupported)?,
-                )?,
-                bytes_array::<10>(&entry.descriptor, 0)?,
-            )
-        } else {
-            (unique(&local_tokens)?, unique(&central_tokens)?, [0; 10])
+    };
+    let shared_local = retained
+        .as_ref()
+        .and_then(|retained| retained.shared(|member| member.local));
+    let shared_central = retained
+        .as_ref()
+        .and_then(|retained| retained.shared(|member| member.central));
+    let mut used = vec![
+        false;
+        retained
+            .as_ref()
+            .map_or(0, |retained| retained.members.len())
+    ];
+    let mut output = header.to_vec();
+    let mut central_entries = Vec::new();
+    let mut written = Vec::new();
+    for (index, ((name, payload), time_date)) in sections.iter().zip(time_dates).enumerate() {
+        if !storable_name(name) {
+            dropped.push(name.clone());
+            continue;
+        }
+        let relative = u32::try_from(output.len() - outer::LEN)
+            .ok()
+            .filter(|_| central_entries.len() < usize::from(u16::MAX));
+        let Some(relative) = relative else {
+            dropped.extend(sections[index..].iter().map(|(name, _)| name.clone()));
+            break;
         };
-        let relative = u32::try_from(
-            output
-                .len()
-                .checked_sub(outer::LEN)
-                .ok_or_else(unsupported)?,
-        )
-        .map_err(|_| unsupported())?;
+        let source = retained.as_ref().and_then(|retained| {
+            let position = retained
+                .members
+                .iter()
+                .zip(&used)
+                .position(|(member, used)| {
+                    !used && member.name == *name && member.type_id == *time_date
+                })?;
+            used[position] = true;
+            retained.members.get(position)
+        });
+        let (local_token, central_token, attributes) = match source {
+            Some(member) => (member.local, member.central, member.attributes),
+            None => {
+                let local_token = shared_local.unwrap_or_else(|| {
+                    residual.push(format!("{name} local signature"));
+                    [0; 4]
+                });
+                let central_token = shared_central.unwrap_or_else(|| {
+                    residual.push(format!("{name} central signature"));
+                    let mut token = [0; 6];
+                    token[4..].copy_from_slice(&VERSION_MADE_BY);
+                    token
+                });
+                (local_token, central_token, [0; 10])
+            }
+        };
         let frame = super::block(payload, name, *time_date)?;
         output.extend(local_token);
         output.extend(&frame);
         let mut directory = central_token.to_vec();
-        directory.extend(frame.get(..local::LEN).ok_or_else(unsupported)?);
+        directory.extend(&frame[..local::LEN]);
         directory.extend(attributes);
         directory.extend(relative.to_le_bytes());
-        let name_end = local::LEN.checked_add(name.len()).ok_or_else(unsupported)?;
-        directory.extend(frame.get(local::LEN..name_end).ok_or_else(unsupported)?);
+        directory.extend(&frame[local::LEN..local::LEN + name.len()]);
         central_entries.push(directory);
+        written.push((name.as_str(), *time_date, payload.as_slice()));
     }
-    let mut omitted_envelope_bytes = envelope.padding_bytes;
-    for cell in &scan.cache_cells {
-        let mut original_members: Vec<_> = scan
-            .blocks
-            .iter()
-            .filter(|block| block.section.name() == Some(cell.name.as_str()))
-            .map(|block| (block.type_id, block.payload.as_slice()))
-            .collect();
-        let mut written_members: Vec<_> = sections
-            .iter()
-            .zip(time_dates)
-            .filter_map(|((name, payload), time_date)| {
-                (name == &cell.name).then_some((*time_date, payload.as_slice()))
-            })
-            .collect();
-        original_members.sort_unstable();
-        written_members.sort_unstable();
-        let original_matches = !original_members.is_empty() && original_members == written_members;
-        let range = cell.physical_range.clone().ok_or_else(unsupported)?;
-        if original_matches {
-            output.extend(scan.source_image.get(range).ok_or_else(unsupported)?);
-        } else {
-            omitted_envelope_bytes = omitted_envelope_bytes
-                .checked_add(range.len())
-                .ok_or_else(unsupported)?;
+    let mut omitted_envelope_bytes = retained
+        .as_ref()
+        .map_or(0, |retained| retained.padding_bytes);
+    if let Some(scan) = source_scan {
+        for cell in &scan.cache_cells {
+            let Some(range) = cell.physical_range.clone() else {
+                continue;
+            };
+            let kept = retained.is_some() && cell_members_unchanged(scan, &cell.name, &written);
+            match scan.source_image.get(range.clone()) {
+                Some(bytes) if kept => output.extend(bytes),
+                _ => omitted_envelope_bytes += range.len(),
+            }
         }
     }
+    let too_large = || {
+        CodecError::NotImplemented(
+            "SLDPRT output exceeds the native envelope's 32-bit offsets".into(),
+        )
+    };
     let central_start = output.len();
+    let count = u16::try_from(central_entries.len()).map_err(|_| too_large())?;
     for directory in central_entries {
         output.extend(directory);
     }
-    let central_size = u32::try_from(
-        output
-            .len()
-            .checked_sub(central_start)
-            .ok_or_else(unsupported)?,
-    )
-    .map_err(|_| unsupported())?;
-    let central_offset = u32::try_from(
-        central_start
-            .checked_sub(outer::LEN)
-            .ok_or_else(unsupported)?,
-    )
-    .map_err(|_| unsupported())?;
-    output.extend(bytes_array::<4>(scan.source_image, envelope.root)?);
+    let central_size = u32::try_from(output.len() - central_start).map_err(|_| too_large())?;
+    let central_offset = u32::try_from(central_start - outer::LEN).map_err(|_| too_large())?;
+    let root = retained.as_ref().map_or_else(
+        || {
+            residual.push("end-of-directory signature".to_owned());
+            [0; 4]
+        },
+        |retained| retained.root,
+    );
+    output.extend(root);
     output.extend([0u8; 4]);
     output.extend(count.to_le_bytes());
     output.extend(count.to_le_bytes());
@@ -184,6 +296,8 @@ pub(super) fn build(
     Ok(Regenerated {
         bytes: output,
         omitted_envelope_bytes,
+        residual,
+        dropped,
     })
 }
 
@@ -204,18 +318,87 @@ mod tests {
     }
 
     #[test]
-    fn source_less_and_unproved_signature_envelopes_abstain() {
-        assert!(matches!(
-            build(&[], &[], None),
-            Err(CodecError::NotImplemented(_))
-        ));
+    fn source_less_and_unproved_envelopes_are_synthesized_with_zero_tokens() {
+        let sections = vec![
+            ("A".into(), b"new".to_vec()),
+            ("\u{c4}".into(), b"x".to_vec()),
+        ];
+        let synthesized = build(&sections, &[10, 11], None).unwrap();
+        assert_eq!(synthesized.dropped, ["\u{c4}"]);
+        assert_eq!(
+            synthesized.residual,
+            [
+                "outer header file_id",
+                "A local signature",
+                "A central signature",
+                "end-of-directory signature"
+            ]
+        );
+        assert_eq!(&synthesized.bytes[..outer::LEN], &[0, 0, 0, 0, 0, 0, 0, 4]);
+        let written = crate::test_support::container::scan(&synthesized.bytes);
+        assert_eq!(written.blocks.len(), 1);
+        assert_eq!(written.blocks[0].payload, b"new");
+        assert_eq!(
+            &synthesized.bytes[written.blocks[0].offset - 4..written.blocks[0].offset],
+            &[0; 4]
+        );
+        let envelope = native_layout::source_envelope(&synthesized.bytes, &written.blocks)
+            .unwrap()
+            .unwrap();
+        assert_eq!(envelope.entries.len(), 1);
+        assert_eq!(
+            bytes_array::<4>(&synthesized.bytes, envelope.root),
+            Some([0; 4])
+        );
+        let codes = synthesized
+            .losses()
+            .map(|note| note.code.local_code().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            codes,
+            ["record.residual-unavailable", "native.records-omitted"]
+        );
+
         let mut legacy = outer_header();
         legacy.extend(make_block(10, "A", b"old"));
         let scan = crate::test_support::container::scan(&legacy);
-        assert!(matches!(
-            build(&[("A".into(), b"new".to_vec())], &[10], Some(&scan)),
-            Err(CodecError::NotImplemented(_))
-        ));
+        let synthesized = build(&[("A".into(), b"new".to_vec())], &[10], Some(&scan)).unwrap();
+        assert_eq!(&synthesized.bytes[..outer::LEN], &legacy[..outer::LEN]);
+        assert_eq!(
+            synthesized.residual,
+            [
+                "A local signature",
+                "A central signature",
+                "end-of-directory signature"
+            ]
+        );
+        let written = crate::test_support::container::scan(&synthesized.bytes);
+        assert!(
+            native_layout::source_envelope(&synthesized.bytes, &written.blocks)
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn repeated_name_and_time_date_members_take_their_source_tokens_in_order() {
+        let mut source = outer_header();
+        source.extend(make_block(10, "A", b"first"));
+        source.extend(make_block(10, "A", b"second"));
+        let source = native_envelope_fixture(&source);
+        let original = crate::test_support::container::scan(&source);
+        let sections = vec![
+            ("A".into(), b"first".to_vec()),
+            ("A".into(), b"second".to_vec()),
+        ];
+        let regenerated = build(&sections, &[10, 10], Some(&original)).unwrap();
+        assert!(regenerated.residual.is_empty());
+        let written = crate::test_support::container::scan(&regenerated.bytes);
+        assert_eq!(written.directory.len(), 2);
+        assert!(written
+            .directory
+            .iter()
+            .all(|entry| entry.descriptor[4] == 1));
     }
 
     #[test]
@@ -291,18 +474,24 @@ mod tests {
     }
 
     #[test]
-    fn new_member_does_not_choose_between_distinct_retained_signature_tokens() {
+    fn new_member_takes_zero_where_retained_signature_tokens_differ() {
         let mut source = source_fixture(0);
         let parsed = crate::test_support::container::scan(&source);
         let at = parsed.blocks[1].offset - 4;
         source[at] ^= 1;
         let parsed = crate::test_support::container::scan(&source);
         let sections = vec![("C".into(), b"new".to_vec())];
-        assert!(matches!(
-            build(&sections, &[12], Some(&parsed)),
-            Err(CodecError::NotImplemented(_))
-        ));
+        let regenerated = build(&sections, &[12], Some(&parsed)).unwrap();
+        assert_eq!(regenerated.residual, ["C local signature"]);
+        let written = crate::test_support::container::scan(&regenerated.bytes);
+        let block = &written.blocks[0];
+        assert_eq!(&regenerated.bytes[block.offset - 4..block.offset], &[0; 4]);
+        assert_eq!(
+            &regenerated.bytes[written.directory[0].offset - 6..written.directory[0].offset],
+            &[0x45, 0x2b, 0x7e, 0x28, 0, 0]
+        );
     }
+
     #[test]
     fn omitted_padding_and_unretained_cache_bytes_have_one_counted_loss() {
         for fill in [0, 0xff] {
