@@ -8,7 +8,9 @@ use cadmpeg_core::CodecError;
 
 use super::super::base_feature::{timestamp_table, DURATION, EPOCH};
 use super::super::frames::DesignRecords;
-use super::super::sketch::{CurveGeometry, Entity, OriginPlane, PlannedSketch, RelationKind};
+use super::super::sketch::{
+    CurveGeometry, Entity, OriginPlane, PlannedSketch, RelationKind, TangencyEnds,
+};
 use super::super::types;
 use super::{count, Context, AGGREGATE};
 use crate::writer::generate::presentation::TypeRow;
@@ -144,7 +146,7 @@ impl SketchRoster {
             .iter()
             .map(|relation| {
                 take(match relation.kind {
-                    RelationKind::Tangent => types::SKETCH_TANGENCY,
+                    RelationKind::Tangent(_) => types::SKETCH_TANGENCY,
                     _ => types::SKETCH_RELATION,
                 })
             })
@@ -627,8 +629,11 @@ impl Item<'_> {
             let mut ascending = semantic.clone();
             ascending.sort_unstable();
             ascending.dedup();
-            let tangent = relation.kind == RelationKind::Tangent;
-            let row = if tangent {
+            let tangent = match relation.kind {
+                RelationKind::Tangent(ends) => Some(ends.map_or([0; 3], TangencyEnds::bytes)),
+                _ => None,
+            };
+            let row = if tangent.is_some() {
                 types::SKETCH_TANGENCY
             } else {
                 types::SKETCH_RELATION
@@ -643,8 +648,8 @@ impl Item<'_> {
                 *ordinal += 1;
             }
             out.byte(0);
-            if tangent {
-                out.zeros(3);
+            for flag in tangent.into_iter().flatten() {
+                out.byte(flag);
             }
             out.reference(self.records.container)
                 .u64(mask(relation.kind))
@@ -904,7 +909,7 @@ fn mask(kind: RelationKind) -> u64 {
         RelationKind::Perpendicular => PERPENDICULAR,
         RelationKind::Horizontal => HORIZONTAL,
         RelationKind::Vertical => VERTICAL,
-        RelationKind::Tangent => TANGENT,
+        RelationKind::Tangent(_) => TANGENT,
         RelationKind::Curvature => CURVATURE,
         RelationKind::Symmetric => SYMMETRIC,
         RelationKind::Midpoint => MIDPOINT,
