@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Count records omitted inside arenas written by the semantic exporter.
 
-use crate::loss::SldprtLossCode;
+use crate::loss::{NamedCount, SldprtLossCode};
 use cadmpeg_ir::{
     appearance::AppearanceTarget,
     geometry::{CurveGeometry, SolvedCurveGeometry},
@@ -142,5 +142,17 @@ pub(super) fn losses(ir: &CadIr, regenerated_brep: bool) -> Vec<LossNote> {
         SldprtLossCode::WriterTessellationMetadataOmitted,
         "tessellation chordal deflection",
     );
+    let mut unstated = NamedCount::default();
+    for attribute in super::metadata_attributes(ir) {
+        if super::states_no_value(attribute) {
+            unstated.push(attribute.id.as_str());
+        }
+    }
+    if !unstated.is_empty() {
+        losses.push(SldprtLossCode::WriterAttributesOmitted.note(format!(
+            "{} sldprt metadata attribute record(s) state a null value, so the SLDPRT semantic exporter kept each one's retained source bytes or wrote no record: {unstated}",
+            unstated.count()
+        )));
+    }
     losses
 }
