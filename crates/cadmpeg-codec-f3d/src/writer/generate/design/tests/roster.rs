@@ -354,7 +354,7 @@ fn the_type_table_lists_the_empty_rows_with_their_spellings() {
 }
 
 #[test]
-fn timestamps_epochs_and_duration_are_the_stated_values() {
+fn timestamps_epochs_and_duration_are_the_written_values() {
     let (design, _) = design();
     let stamp = |record: u64, at: usize| u64_at(design.record(record), at);
     // The component table: `00 00`, no entry, owner `t_c`.
@@ -376,6 +376,37 @@ fn timestamps_epochs_and_duration_are_the_stated_values() {
     let tail = &design.record(209)[193 + 52..271 + 52];
     assert_eq!((u32_at(tail, 35), u32_at(tail, 47)), (250, 250));
     assert!((f64_at(tail, 39) - 0.000_631).abs() < 1e-12);
+    let (report, _, _) = write_bytes(&scoped_cube());
+    let stamp_notes = loss(&report, "export/record.residual-unavailable")
+        .into_iter()
+        .filter(|message| message.contains("fixed-clock"))
+        .collect::<Vec<_>>();
+    assert_eq!(stamp_notes.len(), 1, "{:#?}", report.losses);
+    for rec in ["record 206", "record 210", "record 214"] {
+        assert!(stamp_notes[0].contains(rec), "{rec}: {}", stamp_notes[0]);
+    }
+}
+
+#[test]
+fn an_unmodeled_or_unset_length_unit_falls_back_to_mm_with_a_loss() {
+    for units in [
+        None,
+        Some(cadmpeg_ir::design::units::Units {
+            length: cadmpeg_ir::design::units::UnitSymbol::Km,
+            angle: cadmpeg_ir::design::units::UnitSymbol::Deg,
+        }),
+    ] {
+        let mut ir = scoped_cube();
+        ir.model.product_definitions[0].units = units;
+        let (report, _, _) = write_bytes(&ir);
+        assert!(
+            loss(&report, "export/record.residual-unavailable")
+                .iter()
+                .any(|message| message.contains("MmMKS") && message.contains("record 0")),
+            "{:#?}",
+            report.losses
+        );
+    }
 }
 
 #[test]
@@ -553,11 +584,13 @@ fn the_act_segment_is_stated() {
         reader.utf16()
     };
     assert_eq!(name(act.record(2), 57), name(design.record(3), 888));
-    assert!(design_aspects
-        .iter()
-        .chain(&component)
-        .chain(&instance)
-        .all(|(_, guid)| guid.chars().all(|c| !c.is_ascii_uppercase())));
+    assert!(
+        design_aspects
+            .iter()
+            .chain(&component)
+            .chain(&instance)
+            .all(|(_, guid)| guid.chars().all(|c| !c.is_ascii_uppercase()))
+    );
 }
 
 #[test]
@@ -726,8 +759,10 @@ fn a_design_with_no_written_parameter_is_written_as_its_roster() {
     assert_eq!(design.record(17).len(), 61);
     assert_eq!(design.primary.len(), 214);
     assert!(decoded.model.parameters.is_empty());
-    assert!(!report
-        .losses
-        .iter()
-        .any(|loss| loss.message.contains("stores no design for these features")));
+    assert!(
+        !report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("stores no design for these features"))
+    );
 }
