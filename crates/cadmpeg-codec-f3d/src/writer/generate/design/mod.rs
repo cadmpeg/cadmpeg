@@ -6,8 +6,8 @@
 //! It runs where no native Design record is written and the document holds a
 //! design scope for its root definition. A failure here is a
 //! [`super::reduce::Stage::NeutralDesign`] failure. Its fallbacks write the
-//! design without its `Sketch` items, then write no design: they never drop
-//! a body.
+//! extrude in the Base Feature, then the design without its `Sketch` items,
+//! then no design: they never drop a body.
 
 mod base_feature;
 mod expression;
@@ -65,6 +65,21 @@ fn requested_sketch_failure() -> Option<cadmpeg_core::CodecError> {
         .then(|| {
             cadmpeg_core::CodecError::NotImplemented("a test failure of the sketch records".into())
         })
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Makes the next attempt that writes an `Extrude` item on this thread
+    /// fail in the `Extrude` records.
+    static FAIL_NEXT_EXTRUDE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The failure [`FAIL_NEXT_EXTRUDE`] requests, once.
+#[cfg(test)]
+fn requested_extrude_failure() -> Option<cadmpeg_core::CodecError> {
+    FAIL_NEXT_EXTRUDE.with(|fail| fail.replace(false)).then(|| {
+        cadmpeg_core::CodecError::NotImplemented("a test failure of the Extrude records".into())
+    })
 }
 
 /// The failure [`FAIL_NEXT_PLAN`] requests, once.
@@ -251,6 +266,15 @@ impl NeutralDesign<'_> {
         losses.extend(self.sketches.into_losses());
         losses
     }
+}
+
+/// Whether the root definition's design scope writes its extrude as an
+/// `Extrude` item.
+pub(super) fn writes_extrude(target: &CadIr) -> bool {
+    plan(target, None, None)
+        .ok()
+        .flatten()
+        .is_some_and(|design| matches!(design.extrude, Decision::Extrude(_)))
 }
 
 /// Whether the root definition's design scope writes a `Sketch` item.

@@ -231,6 +231,10 @@ pub(super) fn write(
     let Some(records) = &ctx.roster.extrude else {
         return Ok(());
     };
+    #[cfg(test)]
+    if let Some(error) = super::super::requested_extrude_failure() {
+        return Err(error);
+    }
     let sketch = ctx
         .sketches
         .get(plan.sketch)
