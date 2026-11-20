@@ -97,10 +97,8 @@ pub(super) fn exact_rectangular_pattern_construction(
     let Some(mut construction) = parsed else {
         return Ok(None);
     };
-    let directions = active_direction_records(
-        &construction,
-        exact_rectangular_pattern_directions(bytes, records, scope),
-    );
+    let stored_directions = exact_rectangular_pattern_directions(bytes, records, scope);
+    let directions = active_direction_records(&construction, stored_directions.clone());
     let secondary = exact_rectangular_pattern_secondary_direction(
         bytes,
         records,
@@ -116,7 +114,7 @@ pub(super) fn exact_rectangular_pattern_construction(
         records,
         scope,
         &construction,
-        &directions,
+        &stored_directions,
         stream_types,
     ));
     if directions.len() == construction.bound_direction_record_count() {
