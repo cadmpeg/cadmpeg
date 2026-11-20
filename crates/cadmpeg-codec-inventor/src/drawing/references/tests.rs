@@ -18,7 +18,7 @@ fn payloads() -> [Vec<u8>; 3] {
 }
 
 fn table() -> Result<Tables, cadmpeg_core::CodecError> {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let bytes = payloads();
     let (pairs, revisions, external) = parse(
         &ctx,
@@ -39,7 +39,7 @@ fn table() -> Result<Tables, cadmpeg_core::CodecError> {
 
 #[test]
 fn fixed_reference_forms_share_decode_and_native_validation() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let table = table()?;
     assert!(table.valid(&ctx)?);
     assert_eq!(table.pairs.len(), 1);
@@ -63,7 +63,7 @@ fn fixed_reference_forms_share_decode_and_native_validation() -> TestResult {
 
 #[test]
 fn every_reference_width_rejects_short_long_and_wrong_count_forms() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for index in 0..3 {
         let valid = table()?;
         for extra in [false, true] {
@@ -104,7 +104,7 @@ fn every_reference_width_rejects_short_long_and_wrong_count_forms() -> TestResul
 
 #[test]
 fn unresolved_reference_words_and_counts_remain_exact_native_fields() -> TestResult {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for word in [0x0001_0000_u32, 0x0002_0000, u32::MAX] {
         let mut bytes = payloads();
         bytes[2][..4].copy_from_slice(&word.to_le_bytes());

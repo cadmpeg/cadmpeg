@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_test_support::wire;
+use crate::test_support::wire;
 
 use std::collections::BTreeMap;
 use std::io::Cursor;
