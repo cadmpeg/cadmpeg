@@ -29,6 +29,7 @@ fn curve(record_index: u32) -> SketchCurveIdentity {
         secondary_id: 0,
         geometry: None,
         planar_z_noise: None,
+        tail_marker: None,
     }
 }
 
@@ -63,6 +64,7 @@ fn frame(operands: [u32; 2]) -> DesignDimensionPresentationFrame {
 #[test]
 fn measuring_presentation_frame_precedes_recipe_candidates() {
     let placement = DesignSketchPlacement {
+        display_name: None,
         frame: crate::records::sketch_placement::DesignSketchFrame::new(
             0,
             crate::records::sketch_placement::DesignSketchFrameForm::ScopeCompact,

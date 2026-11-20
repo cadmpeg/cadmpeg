@@ -1192,10 +1192,13 @@ pub(super) fn attach_point_edge_carriers(out: &mut AsmBrep, records: &[Record], 
         let Some(index) = point_edges.get(&edge.id) else {
             continue;
         };
-        if edge.curve().is_some() || edge.start != edge.end {
+        let Some(ends) = edge.ends.as_ref().filter(|ends| ends.start == ends.end) else {
+            continue;
+        };
+        if edge.curve().is_some() {
             continue;
         }
-        let Some(position) = vertex_positions.get(&edge.start) else {
+        let Some(position) = vertex_positions.get(&ends.start) else {
             continue;
         };
         let curve = brep_id!(format, CurveId, "point-edge-curve", *index);
@@ -1207,6 +1210,7 @@ pub(super) fn attach_point_edge_carriers(out: &mut AsmBrep, records: &[Record], 
             ))),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
     }
     out.curves.extend(curves);
@@ -1226,15 +1230,16 @@ pub(super) fn classify_body_kinds(out: &mut AsmBrep, collapsed: &HashSet<EdgeId>
         let Some(body) = shell_bodies.get(&shell.id).copied() else {
             continue;
         };
-        if !shell.wire_edges().is_empty() || !shell.free_vertices().is_empty() {
+        if !shell.members.is_empty() {
             body_has_wires.insert(body);
         }
-        if !shell.faces().is_empty() {
-            body_has_faces.insert(body);
-        }
-        for face in shell.faces() {
-            face_bodies.insert(face, body);
-        }
+    }
+    for face in &out.faces {
+        let Some(body) = shell_bodies.get(&face.shell).copied() else {
+            continue;
+        };
+        body_has_faces.insert(body);
+        face_bodies.insert(&face.id, body);
     }
     // A single-sided face without loops covers a whole closed surface (a
     // full sphere or torus), so it bounds a volume by itself. A body bounded
@@ -1513,9 +1518,12 @@ mod tests {
         let edge = Edge {
             id: EdgeId::mint("sat:audit:edge#domain").unwrap(),
             carrier: EdgeCarrier::new(Some(id.clone()), Some([-1e-10, 5e-13])).unwrap(),
-            start: VertexId::mint("sat:audit:vertex#a").unwrap(),
-            end: VertexId::mint("sat:audit:vertex#b").unwrap(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::mint("sat:audit:vertex#a").unwrap(),
+                VertexId::mint("sat:audit:vertex#b").unwrap(),
+            )),
             tolerance: None,
+            native_ref: None,
         };
         let mut out = super::AsmBrep {
             curves: vec![Curve {
@@ -1523,6 +1531,7 @@ mod tests {
                 id,
                 geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 source_object: None,
+                native_ref: None,
             }],
             edges: vec![edge],
             ..Default::default()

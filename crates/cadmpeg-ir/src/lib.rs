@@ -48,6 +48,7 @@ pub mod compare;
 pub mod container;
 
 pub mod declared_measures;
+pub mod design;
 pub mod diff;
 pub mod document;
 pub mod draft;
@@ -60,6 +61,7 @@ pub mod examples;
 pub mod features;
 pub mod geometry;
 pub mod hash;
+pub mod history_body;
 
 pub mod ids;
 pub mod index;
@@ -69,6 +71,7 @@ pub mod physics;
 pub mod pmi;
 pub mod point_cloud;
 pub mod presentation;
+pub mod process;
 pub mod products;
 mod provenance;
 pub mod references;
@@ -94,24 +97,25 @@ pub use diff::{
     NonEmptyFields, SourceDiff,
 };
 pub use document::{
-    ArenaClass, ArenaName, CadIr, CensusKey, DesignBelowFullDepth, SourceMeta, IR_VERSION,
+    ArenaHome, ArenaName, CadIr, CensusKey, ScopeViolation, SourceMeta, IR_VERSION,
 };
 pub use draft::ModelDraft;
 pub use features::{
     BodyMember, BodyMembers, BodyRetentionMode, BodySelection, BodyTrimSide, CoilConstruction,
-    CoilExtent, CoilPlacement, CoilResult, CoilSection, CoilSectionPlacement,
-    ConfigurationEvaluation, ConfigurationId, CurveProjectionDirection,
-    CurveProjectionDirectionState, DesignConfiguration, DesignParameter, FaceMotion, Feature,
-    FeatureDefinition, FeatureId, FeatureOperation, LoftGuidance, ParameterId, ParameterPmi,
-    ParameterValue, PmiDimensionSubtype, ScaleCenter, ScaleFactors,
+    CoilExtent, CoilPlacement, CoilSection, CoilSectionPlacement, ConfigurationEvaluation,
+    ConfigurationId, CurveProjectionDirection, CurveProjectionDirectionState, DesignConfiguration,
+    DesignParameter, FaceMotion, Feature, FeatureDefinition, FeatureId, FeatureOperation,
+    LoftGuidance, ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype, ScaleCenter,
+    ScaleFactors, SolidFeatureResult,
 };
 pub use ids::{is_valid_identity, IdentityError};
 pub use native::{
     LossCount, Native, NativeConvertError, NativeField, NativeNamespace, NativeRecord,
 };
 pub use pmi::{
-    DatumReference, DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind,
-    PmiAnnotation, PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
+    DatumReference, DatumTargetForm, DimensionModifier, FitStandard, FitZone,
+    GeometricToleranceKind, LimitsAndFits, PmiAnnotation, PmiDefinition, PmiDimension,
+    PmiDimensionKind, PmiQuantity, PmiTarget, PmiValue,
 };
 pub use presentation::{
     CameraState, PresentationDocument, PresentationId, PresentationState, PresentationStateKind,
@@ -119,10 +123,9 @@ pub use presentation::{
 };
 pub use presentation::{PresentationItem, PresentationLayer};
 pub use products::{
-    AssemblyGraph, AssemblyGraphError, AssemblyJoint, CopyOnChange, CopyOnChangePolicy,
-    ExternalDocument, JointConnector, JointId, JointLimits, JointOperand, JointOperands,
-    LinkMember, LinkState, Occurrence, OperandContainer, PairedJointKind, PlaneSense,
-    ProductDefinition, ProductDefinitionKind, PrototypeReference, TangentContact,
+    AssemblyJoint, ExternalDocument, InstanceBodies, JointConnector, JointId, JointLimits,
+    JointOperand, JointOperands, Occurrence, OperandContainer, PairedJointKind, PlaneSense,
+    ProductDefinition, ProductDefinitionKind, Storage, TangentContact,
 };
 /// Source location attached to a [`report::loss::LossNote`].
 pub use provenance::{
@@ -148,9 +151,9 @@ pub use spreadsheets::{
     SpreadsheetRange,
 };
 pub use subd::{
-    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdGripDirection, SubdGripWedge, SubdPlaneFrame,
-    SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip, SubdSurface,
-    SubdSymmetry, SubdSymmetryKind, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
+    SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdFaceSide, SubdGripDirection, SubdGripWedge,
+    SubdPlaneFrame, SubdRadialMapSelector, SubdRadialSymmetryMap, SubdScheme, SubdSecondaryGrip,
+    SubdSurface, SubdSymmetry, SubdSymmetryKind, SubdVertex, SubdVertexGripLayout, SubdVertexTag,
 };
 pub use unknown::{NativeUnknownRecord, UnknownRecord};
 pub use validate::admit::{
@@ -161,11 +164,6 @@ pub use validate::admit::{
 pub use validate::{validate_neutral, validate_neutral_with_source_fidelity};
 
 pub mod unknown;
-
-/// Serde default for a flag whose absent form is `true`.
-const fn default_true() -> bool {
-    true
-}
 
 /// Generate the JSON Schema for the current [`CadIr`] representation.
 ///

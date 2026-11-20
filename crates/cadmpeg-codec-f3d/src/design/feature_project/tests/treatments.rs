@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod short_fillet;
+mod silhouette_split;
+
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::parameters::parse_design_parameter_record;
@@ -213,8 +216,11 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
     let native = |features: &[cadmpeg_ir::features::Feature]| {
         matches!(
             features[0].evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::Native {
-                kind: cadmpeg_ir::features::NativeFeatureKind::Draft,
+            FeatureDefinition::Operation(FeatureOperation::Draft {
+                anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                    plane: FaceSelection::Native(_),
+                    pull: None
+                },
                 ..
             })
         )
@@ -274,8 +280,12 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         project(&selection);
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: cadmpeg_ir::features::NativeFeatureKind::Draft,
+        FeatureDefinition::Operation(FeatureOperation::Draft {
+            anchor: cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+                plane: FaceSelection::Native(_),
+                pull: None
+            },
+            angle: Some(_),
             ..
         })
     ));
@@ -767,6 +777,41 @@ fn fillet_edge_sets_pair_with_radii_and_leave_the_face_group_unassigned() {
 }
 
 #[test]
+fn fillet_with_owners_and_no_radius_assignment_keeps_its_set_list_native() {
+    use crate::design::decode::operands::fillet_set_list_is_unadmitted;
+    let scope = localized_fillet_scope();
+    let groups = [
+        localized_fillet_group(100, 0, vec![200]),
+        localized_fillet_group(101, 1, vec![201]),
+    ];
+    let parameters = [
+        localized_fillet_parameter(10, 11, "TangencyWeight", None, 1.0),
+        localized_fillet_parameter(20, 21, "ChordLen", Some("mm"), 0.3),
+    ];
+    let owners = [
+        localized_fillet_owner(10, 11, 0),
+        localized_fillet_owner(20, 21, 1),
+    ];
+    // Two groups and a chord length pair no group with a law.
+    let assignments =
+        decode_fillet_radius_groups(std::slice::from_ref(&scope), &groups, &owners, &parameters);
+    assert!(assignments.is_empty());
+    assert!(fillet_set_list_is_unadmitted(
+        &scope,
+        &groups,
+        &assignments,
+        &owners
+    ));
+    // Without owned parameters nothing is retained for lack of a set list.
+    assert!(!fillet_set_list_is_unadmitted(
+        &scope,
+        &groups,
+        &assignments,
+        &[]
+    ));
+}
+
+#[test]
 fn detached_fillet_owner_supplies_no_radius() {
     let scope = localized_fillet_scope();
     let operand_groups = [localized_fillet_group(100, 0, vec![200])];
@@ -827,7 +872,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     let parameter = localized_fillet_parameter;
     let owner = localized_fillet_owner;
     let parameters = [
-        parameter(10, 11, "Radius", Some("mm"), 0.5),
+        parameter(10, 11, "radius", Some("mm"), 0.5),
         parameter(20, 21, "Radius", Some("mm"), 0.3),
         parameter(30, 31, "TangencyWeight", None, 1.0),
         parameter(40, 41, "TangencyWeight", None, 0.75),
@@ -840,7 +885,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
     ];
     let mut indexed_scope = scope.clone();
     if let DesignScopePayloadMut::Fillet(slot) = indexed_scope.payload_mut() {
-        *slot = Some(DesignFixedFilletParameters {
+        slot.fixed = Some(DesignFixedFilletParameters {
             groups: vec![DesignFixedFilletGroup::try_new(
                 Some(DesignFixedFilletScalar {
                     value: crate::test_support::real(1.0),
@@ -1623,30 +1668,6 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
             == Some(cadmpeg_ir::features::SurfaceContinuity::Contact)
             && native == &patch_group.id
     ));
-
-    let mut fill_scope = scope.clone();
-    fill_scope
-        .try_edit(|draft| {
-            draft.payload = DesignFeatureKind::BoundaryFill.try_into().unwrap();
-            draft.reference_members = ReferenceRun::unlocated(vec![100, 200, 201, 300, 301, 400]);
-            draft.layout_fixture_references();
-            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
-    let mut tools = group(100, 0, vec![200, 201]);
-    tools.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::BODIES_A);
-    let mut cell = group(300, 3, vec![301]);
-    cell.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
-    assert!(matches!(
-        crate::design::feature_project::project_boundary_fill(&fill_scope, &[tools.clone(), cell.clone()]),
-        Some(FeatureDefinition::Operation(FeatureOperation::BoundaryFill {
-            tools: cadmpeg_ir::features::BodySelection::Native(ref tool_selection),
-            cells: ref cell_selections,
-        })) if tool_selection == &tools.id
-            && cell_selections.as_slice() == [cadmpeg_ir::features::BodySelection::Native(cell.id)]
-    ));
 }
 
 #[test]
@@ -1835,16 +1856,17 @@ fn fillet_projection_rejects_mistyped_assignment_records_without_panicking() {
         };
         assert!(matches!(
             crate::test_support::with_decode_context(|decode_ctx| {
-                crate::design::feature_project::project_fillet_arm(
+                crate::design::feature_project::fillet::project(
                     decode_ctx,
                     &inputs,
                     &scope,
                     &parameters,
                     "f3d:native",
+                    &mut Vec::new(),
                 )
             }),
-            Ok(FeatureDefinition::Operation(
-                FeatureOperation::Native { .. }
+            Ok(super::super::fillet::FilletProjection::Existing(
+                FeatureDefinition::Operation(FeatureOperation::Native { .. })
             ))
         ));
     }
@@ -1871,6 +1893,7 @@ fn fillet_unit_conversion_rejects_finite_overflow() {
     );
 }
 
+mod boundary_fill;
 mod chamfer;
 
 mod tangency_weight;

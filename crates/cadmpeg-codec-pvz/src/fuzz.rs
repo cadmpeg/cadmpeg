@@ -60,7 +60,7 @@ pub fn exact_geometry<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<(),
         &exact,
         &cadmpeg_ir::identity_key!("fuzz"),
         &mut crate::brep::emit::Sink {
-            model: &mut ir.model,
+            geometry: &mut ir.geometry,
             annotations: &mut annotations,
             losses: &mut losses,
             stream: &stream,

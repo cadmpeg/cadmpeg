@@ -242,7 +242,12 @@ fn native_catalog_separates_offset_only_blocks_from_object_records() {
         prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", offset_only_indexed_om_section())]);
     let container = container::scan_bytes(file).expect("required invariant");
 
-    assert!((super::object_records(&container)).unwrap().0.is_empty());
+    assert!(
+        (super::object_records(&container, super::MAX_STABLE_GRAPH_WORK))
+            .unwrap()
+            .0
+            .is_empty()
+    );
     let blocks = super::data_blocks(&container).unwrap();
     assert_eq!(blocks.len(), 3);
     assert_eq!(blocks[0].block_ordinal, 0);
@@ -926,7 +931,7 @@ fn decode_retains_nx_arrangement_configurations() {
     );
     assert!(result.ir().model.configurations[0].active);
     assert!(result.ir().model.configurations[0].bodies.is_none());
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     for configuration in &result.ir().model.configurations {
         assert!(configuration.parameter_values.is_empty());
         assert!(configuration.parameter_overrides.is_empty());

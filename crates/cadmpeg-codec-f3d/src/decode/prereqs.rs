@@ -22,6 +22,7 @@ use crate::xref::XrefTable;
 /// Design records that geometry and product projection read.
 #[derive(Debug)]
 pub(super) struct ProductPrereqs {
+    pub(super) given_up: Vec<cadmpeg_ir::unknown::part::GivenUpPart>,
     pub(super) construction_recipes: Vec<ConstructionRecipe>,
     pub(super) design_material_assignments: Vec<DesignMaterialAssignment>,
     pub(super) design_types: Vec<SegmentType>,
@@ -39,6 +40,10 @@ pub(super) struct ProductPrereqs {
         Vec<crate::design::decode::parameters::StreamParameterCount>,
     /// Native parameter identities retained without an interpreted owner frame.
     pub(super) design_parameter_owner_unparsed: Vec<String>,
+    /// Per-stream counts of decoded owners whose compact trailer sets its
+    /// final flag byte; the session reports them as losses.
+    pub(super) design_parameter_owner_trailer_flags:
+        Vec<crate::design::decode::parameters::StreamParameterCount>,
     /// Non-equivalent duplicate scope envelopes superseded by the
     /// primary-indexed envelope; the session reports them as a loss.
     pub(super) design_superseded_scope_envelopes: usize,
@@ -64,10 +69,14 @@ pub(super) struct ProductPrereqs {
     pub(super) design_work_plane_inferred_axes: std::collections::HashMap<String, (u64, [u8; 2])>,
     /// Freedoms and limits of the joints whose motion records carry them.
     pub(super) design_joint_motions: Vec<crate::records::feature::joint_motion::DesignJointMotion>,
+    /// Occurrences that hidden-occurrence records name.
+    pub(super) design_hidden_occurrences:
+        Vec<crate::design::decode::hidden_occurrences::DesignHiddenOccurrence>,
     /// Authored feature order, which tells top-level `Component Insert`
     /// scopes from internal operands. A decode failure that does not refuse
     /// the document stays here; design intent then does not run.
     pub(super) design_feature_timelines: Result<Vec<DesignFeatureTimeline>, CodecError>,
+    pub(super) design_feature_timeline_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(super) design_component_naming_spaces: Vec<DesignComponentNamingSpace>,
     /// Registered component entities with no context-UUID binding in this
     /// document; the session reports them as a loss.
@@ -104,6 +113,7 @@ impl ProductPrereqs {
     /// reference outcome.
     pub(super) fn store(self, native: &mut F3dNative) -> Result<Option<XrefTable>, CodecError> {
         let Self {
+            given_up: _,
             construction_recipes,
             design_material_assignments,
             design_types,
@@ -112,6 +122,7 @@ impl ProductPrereqs {
             design_parameter_trailer_flags: _,
             design_parameter_null_owners: _,
             design_parameter_owner_unparsed: _,
+            design_parameter_owner_trailer_flags: _,
             design_superseded_scope_envelopes: _,
             design_entity_headers,
             design_record_headers,
@@ -126,7 +137,9 @@ impl ProductPrereqs {
             design_parameter_scope_losses: _,
             design_work_plane_inferred_axes: _,
             design_joint_motions,
+            design_hidden_occurrences: _,
             design_feature_timelines,
+            design_feature_timeline_losses: _,
             design_component_naming_spaces,
             design_unbound_component_naming_spaces: _,
             design_body_bindings,
@@ -195,6 +208,7 @@ pub(super) fn decode(
     let crate::design::decode::parameters::DecodedParameterOwners {
         owners: design_parameter_owners,
         unparsed: design_parameter_owner_unparsed,
+        trailer_flags: design_parameter_owner_trailer_flags,
     } = crate::design::decode::parameters::decode_parameter_owners(
         scan,
         &design_parameters,
@@ -206,8 +220,9 @@ pub(super) fn decode(
         ambiguous_current_poses: design_ambiguous_current_poses,
         losses: design_component_occurrence_losses,
         paths: design_component_paths,
-    } = crate::design::decode::components::decode_component_occurrences(scan)?;
+    } = crate::design::decode::components::decode_component_occurrences(ctx, scan)?;
     let crate::design::decode::scopes::parameter_scope::DecodedParameterScopes {
+        given_up,
         scopes: mut design_parameter_scopes,
         losses: design_parameter_scope_losses,
         work_plane_inferred_axes: design_work_plane_inferred_axes,
@@ -232,10 +247,16 @@ pub(super) fn decode(
             &history_index,
             &primary_frames,
         )?;
-    let design_joint_motions =
-        crate::design::decode::joint_motion::decode_joint_motions(scan, &design_parameter_scopes)?;
-    let design_feature_timelines = match crate::design::decode::meta::decode_feature_timelines(scan)
-    {
+    let design_joint_motions = crate::design::decode::joint_motion::decode_joint_motions(
+        scan,
+        &design_parameter_scopes,
+        &design_types,
+    )?;
+    let mut design_feature_timeline_losses = Vec::new();
+    let design_feature_timelines = match crate::design::decode::meta::decode_feature_timelines(
+        scan,
+        &mut design_feature_timeline_losses,
+    ) {
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         other => other,
     };
@@ -246,11 +267,22 @@ pub(super) fn decode(
     let design_body_members = crate::design::decode::body::decode_body_members(scan)?;
     let xref = match crate::xref::decode_with_scopes(ctx, scan, &design_parameter_scopes) {
         Err(error @ (CodecError::ResourceLimit(_) | CodecError::NotImplemented(_))) => {
-            return Err(error)
+            return Err(error);
         }
         other => other,
     };
+    let design_hidden_occurrences =
+        crate::design::decode::hidden_occurrences::decode_hidden_occurrences(
+            scan,
+            &design_types,
+            &design_component_occurrences,
+            xref.as_ref()
+                .ok()
+                .and_then(Option::as_ref)
+                .map_or(&[], |table| table.references.as_slice()),
+        )?;
     Ok(ProductPrereqs {
+        given_up,
         construction_recipes,
         design_material_assignments,
         design_types,
@@ -259,6 +291,7 @@ pub(super) fn decode(
         design_parameter_trailer_flags,
         design_parameter_null_owners,
         design_parameter_owner_unparsed,
+        design_parameter_owner_trailer_flags,
         design_superseded_scope_envelopes,
         design_entity_headers,
         design_record_headers,
@@ -273,7 +306,9 @@ pub(super) fn decode(
         design_parameter_scope_losses,
         design_work_plane_inferred_axes,
         design_joint_motions,
+        design_hidden_occurrences,
         design_feature_timelines,
+        design_feature_timeline_losses,
         design_component_naming_spaces,
         design_unbound_component_naming_spaces,
         design_body_bindings,

@@ -26,7 +26,7 @@
 //! # fn run() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.CATPart")?;
 //! let decoded = CatiaCodec.decode(&mut input, &DecodeOptions::default())?;
-//! println!("{} surfaces", decoded.ir().model.surfaces.len());
+//! println!("{} surfaces", decoded.ir().geometry.surfaces.len());
 //! # Ok(())
 //! # }
 //! ```
@@ -49,6 +49,7 @@ mod container;
 mod coverage;
 mod decode;
 mod design_feature;
+mod design_v11;
 mod dialect;
 mod entity_table;
 mod families;

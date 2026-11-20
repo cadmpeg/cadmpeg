@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use cadmpeg_core::dialect::DialectId;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -31,7 +32,7 @@ pub struct ExportReport {
 /// native dialect.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "payload", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 enum ExportIdentity {
     /// The dialect-free canonical CADIR document.
     Cadir {},
@@ -52,7 +53,7 @@ mod schema_tests {
             .as_array()
             .expect("export identity schema is a tagged union")
             .iter()
-            .find(|arm| arm["properties"]["payload"]["const"] == "native")
+            .find(|arm| arm["properties"]["kind"]["const"] == "native")
             .expect("the native arm");
         let required = native["required"]
             .as_array()
@@ -78,7 +79,7 @@ mod schema_tests {
 /// The variants are ordered by how much of the output the encoder authored.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "path", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum WritePath {
     /// Retained source bytes were copied to the output unchanged. No writer code
@@ -116,7 +117,7 @@ impl fmt::Display for WritePath {
 /// was given or was given none.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case", tag = "status")]
+#[serde(rename_all = "snake_case", tag = "kind")]
 #[serde(deny_unknown_fields)]
 pub enum ReplayFidelity {
     /// The input had no decode-time fidelity state.
@@ -140,7 +141,7 @@ impl From<ReplayFidelity> for FidelityResolution {
 /// source content.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case", tag = "status")]
+#[serde(rename_all = "snake_case", tag = "kind")]
 #[serde(deny_unknown_fields)]
 pub enum SynthesisFidelity {
     /// The input had no decode-time fidelity state.
@@ -167,7 +168,7 @@ impl From<SynthesisFidelity> for FidelityResolution {
 /// How an encoder resolved optional source fidelity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(rename_all = "snake_case", tag = "status")]
+#[serde(rename_all = "snake_case", tag = "kind")]
 #[serde(deny_unknown_fields)]
 pub enum FidelityResolution {
     /// The input had no decode-time fidelity state.
@@ -184,7 +185,7 @@ pub enum FidelityResolution {
 }
 
 /// The model against which export entity counts were measured.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]

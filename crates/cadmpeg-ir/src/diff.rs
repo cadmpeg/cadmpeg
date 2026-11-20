@@ -52,9 +52,11 @@ pub struct AttributeChange {
     pub key: NonBlankString,
     /// Value in the left-hand document, absent when only the right-hand document
     /// carries the key.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub left: Option<String>,
     /// Value in the right-hand document, absent when only the left-hand document
     /// carries the key.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub right: Option<String>,
 }
 
@@ -63,6 +65,7 @@ pub struct AttributeChange {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 pub struct SourceDiff {
     /// `(left, right)` source format ids, present only when they differ.
+    #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "schema", schemars(with = "Option<(String, String)>"))]
     pub format_change: Option<FormatChange>,
     /// `(left, right)` complete dialect-layer sets, present when they differ.
@@ -217,11 +220,15 @@ pub struct ModifiedEntity {
     pub fields: NonEmptyFields,
 }
 
-/// Compared arena: a registered model arena or a native namespace arena.
+/// Compared arena: a registered arena, the design's name table, or a native
+/// namespace arena.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ArenaKind {
-    /// A model arena declared by `arena_registry!`.
+    /// An arena declared by `arena_registry!`.
     Model(ArenaName),
+    /// The name table of the design, serialized as `design.names`, keyed by
+    /// entity id.
+    DesignNames,
     /// A native namespace arena, serialized as `native.{format}.{name}`.
     Native {
         /// Source-format namespace.
@@ -230,6 +237,8 @@ pub enum ArenaKind {
         name: String,
     },
 }
+
+const DESIGN_NAMES: &str = "design.names";
 
 impl ArenaKind {
     /// Native namespace arena named `native.{format}.{name}` on the wire.
@@ -246,6 +255,7 @@ impl fmt::Display for ArenaKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Model(name) => f.write_str(name.as_str()),
+            Self::DesignNames => f.write_str(DESIGN_NAMES),
             Self::Native { format, name } => write!(f, "native.{format}.{name}"),
         }
     }
@@ -255,6 +265,7 @@ impl PartialEq<str> for ArenaKind {
     fn eq(&self, other: &str) -> bool {
         match self {
             Self::Model(name) => name.as_str() == other,
+            Self::DesignNames => other == DESIGN_NAMES,
             Self::Native { format, name } => {
                 other
                     .strip_prefix("native.")
@@ -331,10 +342,12 @@ impl IrDiff {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[cfg_attr(feature = "schema", schemars(rename = "IrDiff"))]
 struct IrDiffWriteWire<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
     unit_change: Option<(
         crate::units::CanonicalUnitsWire,
         crate::units::CanonicalUnitsWire,
     )>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     tolerance_change: &'a Option<(crate::units::Tolerances, crate::units::Tolerances)>,
     source: &'a SourceDiff,
     per_arena: &'a [ArenaDiff],
@@ -441,21 +454,45 @@ where
 }
 
 macro_rules! define_diff_arenas {
-    ($( $field:ident: $element:ty, $class:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
+    ($( $field:ident: $element:ty, $class:ident, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         fn diff_arenas(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
             vec![$(arena(
-                ArenaKind::Model(ArenaName::registered(
-                    stringify!($field),
-                    crate::document::arena_class!($class),
-                )),
-                &left.model.$field,
-                &right.model.$field,
-                crate::schema::EntitySchema::identity,
+                ArenaKind::Model(crate::document::arena_name!($field, $class, $home)),
+                &left.$home.$field,
+                &right.$home.$field,
+                crate::schema::ArenaRecord::record_identity,
             )),*]
         }
     };
 }
 crate::document::classified_arena_registry!(define_diff_arenas);
+
+/// One entry of the design's name table, compared as a record keyed by its
+/// entity's id.
+#[derive(PartialEq, Serialize)]
+struct NameRow<'a> {
+    entity: &'a crate::design::refs::EntityRef,
+    entry: &'a crate::design::names::NameEntry,
+}
+
+fn name_rows(ir: &CadIr) -> Vec<NameRow<'_>> {
+    ir.design
+        .names
+        .entries()
+        .iter()
+        .map(|(entity, entry)| NameRow { entity, entry })
+        .collect()
+}
+
+fn diff_names(left: &CadIr, right: &CadIr) -> ArenaDiff {
+    let rows = name_rows;
+    arena(
+        ArenaKind::DesignNames,
+        &rows(left),
+        &rows(right),
+        |row: &NameRow<'_>| row.entity.id(),
+    )
+}
 
 fn diff_native_namespaces(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
     let namespaces = left
@@ -569,6 +606,7 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
     let tolerance_change = (!tolerances_agree(left.tolerances, right.tolerances))
         .then_some((left.tolerances, right.tolerances));
     let mut per_arena = diff_arenas(left, right);
+    per_arena.push(diff_names(left, right));
     per_arena.extend(diff_native_namespaces(left, right));
     IrDiff {
         tolerance_change,
@@ -589,8 +627,8 @@ mod tests {
     fn detects_changes_in_all_document_dimensions() {
         let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
-        let moved = right.model.points[0].position().get();
-        right.model.points[0].set_position(
+        let moved = right.geometry.points[0].position().get();
+        right.geometry.points[0].set_position(
             crate::features::FinitePoint3::new(crate::math::Point3::new(
                 moved.x + 1.0,
                 moved.y,
@@ -598,8 +636,8 @@ mod tests {
             ))
             .expect("a finite position is a point"),
         );
-        right.model.loops.pop();
-        right.model.coedges.pop();
+        right.geometry.loops.pop();
+        right.geometry.coedges.pop();
 
         let result = diff(&left, &right);
         assert!(!result.is_empty());
@@ -650,7 +688,7 @@ mod tests {
 
     /// Index of a point whose `x` is at unit magnitude or above.
     fn scaled_point(ir: &crate::CadIr) -> usize {
-        ir.model
+        ir.geometry
             .points
             .iter()
             .position(|point| point.position().get().x.abs() >= 1.0)
@@ -664,22 +702,22 @@ mod tests {
         let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
         let index = scaled_point(&left);
-        let before = right.model.points[index].position().get().x;
+        let before = right.geometry.points[index].position().get().x;
         let after = f64::from_bits(before.to_bits() + 1);
         assert_ne!(
             before.to_bits(),
             after.to_bits(),
             "the coordinate must move, or this test proves nothing"
         );
-        let moved = right.model.points[index].position().get();
-        right.model.points[index].set_position(
+        let moved = right.geometry.points[index].position().get();
+        right.geometry.points[index].set_position(
             crate::features::FinitePoint3::new(crate::math::Point3::new(after, moved.y, moved.z))
                 .expect("a finite position is a point"),
         );
 
         assert_ne!(
-            serde_json::to_value(&left.model.points).expect("test fixture invariant"),
-            serde_json::to_value(&right.model.points).expect("test fixture invariant"),
+            serde_json::to_value(&left.geometry.points).expect("test fixture invariant"),
+            serde_json::to_value(&right.geometry.points).expect("test fixture invariant"),
             "the serialized documents must differ, or exact equality would pass too"
         );
         let result = diff(&left, &right);
@@ -710,8 +748,8 @@ mod tests {
         let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
         let index = scaled_point(&left);
-        let point = right.model.points[index].position().get();
-        right.model.points[index].set_position(
+        let point = right.geometry.points[index].position().get();
+        right.geometry.points[index].set_position(
             crate::features::FinitePoint3::new(crate::math::Point3::new(
                 point.x.mul_add(1.0e-6, point.x),
                 point.y,
@@ -724,7 +762,7 @@ mod tests {
         assert!(!result.is_empty());
         assert_eq!(
             modified(&result, "points"),
-            [left.model.points[index].id.as_str().to_owned()]
+            [left.geometry.points[index].id.as_str().to_owned()]
         );
     }
 
@@ -758,12 +796,13 @@ mod tests {
                 .expect("test fixture invariant"),
             )),
             source_object: None,
+            native_ref: None,
         };
 
         let mut left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
-        left.model.curves.push(nurbs(1));
-        right.model.curves.push(nurbs(2));
+        left.geometry.curves.push(nurbs(1));
+        right.geometry.curves.push(nurbs(2));
 
         let result = diff(&left, &right);
         assert!(!result.is_empty());

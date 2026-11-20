@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Stream-scope entity metadata records.
 
-use cadmpeg_core::convert::f32_from_f64;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::topology::Color;
 use std::collections::{HashMap, HashSet};
@@ -200,7 +199,7 @@ fn color_record(body: &[u8], off: usize) -> Option<(u32, Color, usize)> {
     {
         return None;
     }
-    let color = Color::new(f32_from_f64(r)?, f32_from_f64(g)?, f32_from_f64(b)?, 1.0)?;
+    let color = Color::new(r, g, b, 1.0)?;
     Some((attr, color, data + 24))
 }
 

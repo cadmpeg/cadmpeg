@@ -66,8 +66,7 @@ fn classic_loft_profile_data_states_only_its_own_fields() {
         "first_flag": true,
         "asm_extension": 3,
         "subdata": {
-            "form": "type211",
-            "dimensions": [1, 0],
+            "kind": "type211", "dimensions": [1, 0],
             "row": [0.0, 1.0]
         }
     });

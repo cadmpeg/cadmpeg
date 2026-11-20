@@ -13,7 +13,7 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
         .unwrap();
 
     let Some(SolvedSurfaceGeometry::Plane(plane_surface)) =
-        result.ir().model.surfaces[0].geometry.solved()
+        result.ir().geometry.surfaces[0].geometry.solved()
     else {
         panic!("expected a plane carrier");
     };
@@ -26,7 +26,7 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
     assert_eq!(
         cadmpeg_ir::eval::decode::surface_point(
             cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-            &result.ir().model.surfaces[0].geometry,
+            &result.ir().geometry.surfaces[0].geometry,
             1.0,
             3.0
         )

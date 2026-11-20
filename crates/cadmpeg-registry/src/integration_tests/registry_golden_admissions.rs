@@ -137,10 +137,7 @@ fn collect_layer_sets_at(
 ) -> Result<(), AdmissionViolation> {
     match value {
         serde_json::Value::Object(object) => {
-            if object
-                .get("classification")
-                .and_then(serde_json::Value::as_str)
-                == Some("classified")
+            if object.get("kind").and_then(serde_json::Value::as_str) == Some("classified")
                 && pointer.rsplit('/').next() == Some("identity")
                 && !object.contains_key("dialects")
             {

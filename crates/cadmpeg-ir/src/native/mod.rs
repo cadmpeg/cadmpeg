@@ -506,7 +506,6 @@ impl NativeRecord {
 #[derive(Serialize)]
 struct DigestUnknown<'a> {
     id: &'a str,
-    #[serde(skip_serializing_if = "<[Value]>::is_empty")]
     links: &'a [Value],
 }
 

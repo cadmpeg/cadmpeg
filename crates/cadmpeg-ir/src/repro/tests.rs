@@ -63,3 +63,43 @@ fn repro_signature_normalizes_hex_ranges_and_decimal_exponents() {
         vec![16.0, 32.0, -150.0]
     );
 }
+
+#[test]
+fn bundle_metadata_context_refuses_a_key_stated_twice() {
+    let finding = Finding {
+        check: Check::NativeLinks,
+        severity: Severity::Error,
+        entity: None,
+        related: Vec::new(),
+        message: "unresolved link".into(),
+    };
+    let mut context = Map::new();
+    context.insert("tool".into(), Value::String("cli".into()));
+    let metadata = BundleMetadata {
+        signature: Signature::new(&finding, "cadir", Stage::Check),
+        roots: Vec::new(),
+        context,
+        manifest: Vec::new(),
+        incomplete_reason: None,
+    };
+    let wire = serde_json::to_string(&metadata).expect("metadata writes");
+    let read: BundleMetadata = serde_json::from_str(&wire).expect("distinct keys read");
+    assert_eq!(read, metadata);
+    for (stated, repeated) in [
+        (
+            r#""context":{"tool":"cli"}"#,
+            r#""context":{"tool":"cli","tool":"gui"}"#,
+        ),
+        (
+            r#""context":{"tool":"cli"}"#,
+            r#""context":{"tool":{"name":"a","name":"b"}}"#,
+        ),
+    ] {
+        let tampered = wire.replace(stated, repeated);
+        assert_ne!(tampered, wire);
+        let error = serde_json::from_str::<BundleMetadata>(&tampered)
+            .expect_err("a repeated context key is refused")
+            .to_string();
+        assert!(error.contains("duplicate key"), "{error}");
+    }
+}

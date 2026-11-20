@@ -45,30 +45,29 @@ fn plate_and_bend_are_separate_wire_operations() {
         },
         "transition": {"form": "style_default", "radius": 1.5}
     });
-    let plate = json!({
-        "definition": "sheet_metal_attached_plate",
+    let plate = json!({"kind": "sheet_metal_attached_plate", "value": {
         "profile": {"kind": "sketch", "value": "test:model:sketch#profile"},
         "thickness": 1.0,
         "side": "forward",
         "attachment": {"kind": "unresolved"}
-    });
-    bend["definition"] = json!("sheet_metal_bend");
+    }});
     bend["plate"] = json!("test:model:feature#plate");
-    for wire in [plate, bend.clone()] {
+    let bend_wire = json!({"kind": "sheet_metal_bend", "value": bend});
+    for wire in [plate, bend_wire] {
         let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
         assert!(operation.body_output_family().is_some());
-        if wire["definition"] == "sheet_metal_attached_plate" {
+        if wire["kind"] == "sheet_metal_attached_plate" {
             let mut spatial = wire.clone();
-            spatial["profile"] =
+            spatial["value"]["profile"] =
                 json!({"kind": "spatial_sketch", "value": "test:model:sketch#spatial"});
             assert!(serde_json::from_value::<FeatureOperation>(spatial).is_err());
             let mut invalid_thickness = wire.clone();
-            invalid_thickness["thickness"] = json!(0.0);
+            invalid_thickness["value"]["thickness"] = json!(0.0);
             assert!(serde_json::from_value::<FeatureOperation>(invalid_thickness).is_err());
             for field in ["op", "inside_radius", "relief", "transition"] {
                 let mut invalid = wire.clone();
-                invalid[field] = if field == "op" {
+                invalid["value"][field] = if field == "op" {
                     json!("join")
                 } else {
                     bend[field].clone()
@@ -77,7 +76,7 @@ fn plate_and_bend_are_separate_wire_operations() {
             }
         } else {
             let mut invalid = wire;
-            invalid["inside_radius"] = json!(0.0);
+            invalid["value"]["inside_radius"] = json!(0.0);
             assert!(serde_json::from_value::<FeatureOperation>(invalid).is_err());
         }
     }
@@ -85,20 +84,19 @@ fn plate_and_bend_are_separate_wire_operations() {
 
 #[test]
 fn unchanged_corner_requires_an_explicit_effect_and_preserves_its_bend() {
-    let wire = json!({
-        "definition": "sheet_metal_corner",
+    let wire = json!({"kind": "sheet_metal_corner", "value": {
         "bend": "test:model:feature#bend",
         "effect": "unchanged"
-    });
+    }});
     let operation: FeatureOperation = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&operation).unwrap(), wire);
     for effect in [json!(null), json!("unknown"), json!("relief")] {
         let mut invalid = wire.clone();
-        invalid["effect"] = effect;
+        invalid["value"]["effect"] = effect;
         assert!(serde_json::from_value::<FeatureOperation>(invalid).is_err());
     }
     let mut missing = wire;
-    missing.as_object_mut().unwrap().remove("effect");
+    missing["value"].as_object_mut().unwrap().remove("effect");
     assert!(serde_json::from_value::<FeatureOperation>(missing).is_err());
 }
 
@@ -106,10 +104,10 @@ fn unchanged_corner_requires_an_explicit_effect_and_preserves_its_bend() {
 #[cfg(feature = "schema")]
 fn corner_schema_requires_bend_and_effect() {
     fn find_corner(value: &serde_json::Value) -> Option<&serde_json::Value> {
-        if value["properties"]["definition"]["const"] == "sheet_metal_corner"
-            || value["properties"]["definition"]["enum"] == json!(["sheet_metal_corner"])
+        if value["properties"]["kind"]["const"] == "sheet_metal_corner"
+            || value["properties"]["kind"]["enum"] == json!(["sheet_metal_corner"])
         {
-            return Some(value);
+            return Some(&value["properties"]["value"]);
         }
         match value {
             serde_json::Value::Object(fields) => fields.values().find_map(find_corner),
@@ -119,6 +117,12 @@ fn corner_schema_requires_bend_and_effect() {
     }
     let schema = serde_json::to_value(schemars::schema_for!(FeatureOperation)).unwrap();
     let corner = find_corner(&schema).unwrap();
+    let corner = match corner.get("$ref").and_then(serde_json::Value::as_str) {
+        Some(reference) => schema
+            .pointer(reference.strip_prefix('#').unwrap())
+            .unwrap(),
+        None => corner,
+    };
     let required = corner["required"].as_array().unwrap();
     assert!(required.contains(&json!("bend")));
     assert!(required.contains(&json!("effect")));

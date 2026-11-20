@@ -378,10 +378,11 @@ impl DesignTimelineFrame {
         {
             return Err("timeline.item_count_offset is outside the frame".into());
         }
-        if items
-            .first()
-            .is_some_and(|item| item_count_offset.checked_add(5) != Some(item.offset))
-        {
+        if items.first().is_some_and(|item| {
+            item_count_offset
+                .checked_add(5)
+                .is_none_or(|first| item.offset < first)
+        }) {
             return Err(
                 "timeline.item_record_index_offsets must start after the item count".into(),
             );

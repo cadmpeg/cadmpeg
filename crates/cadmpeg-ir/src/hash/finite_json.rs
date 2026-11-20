@@ -15,8 +15,8 @@ use std::cell::{Cell, RefCell};
 
 use cadmpeg_core::decode::ResourceLimit;
 
-mod admission;
-use admission::{Admission, StandardAdmission};
+pub(super) mod admission;
+use admission::{Admission, CanonicalAdmission};
 use std::fmt::Display;
 
 use serde::ser::{
@@ -50,9 +50,9 @@ pub enum CanonicalJsonError {
 /// The guard is consulted on both arms. A `Serialize` implementation that
 /// catches the adapter's refusal and completes would otherwise outrun it and
 /// produce canonical JSON for a value the adapter had already refused.
-pub(super) fn write_canonical_json<A: Admission, W: std::io::Write, T: Serialize + ?Sized>(
-    admission: A,
-    writer: W,
+pub(super) fn write_canonical_json<T: Serialize + ?Sized>(
+    admission: CanonicalAdmission<'_, '_>,
+    writer: &mut dyn std::io::Write,
     value: &T,
 ) -> Result<(), CanonicalJsonError> {
     let guard = FiniteGuard::new(admission);
@@ -76,7 +76,7 @@ pub fn to_canonical_json_string<T: Serialize + ?Sized>(
     value: &T,
 ) -> Result<String, CanonicalJsonError> {
     let mut bytes = Vec::new();
-    write_canonical_json(StandardAdmission, &mut bytes, value)?;
+    write_canonical_json(CanonicalAdmission::unlimited(), &mut bytes, value)?;
     String::from_utf8(bytes)
         .map_err(|error| CanonicalJsonError::Serialize(serde_json::Error::custom(error)))
 }
@@ -197,7 +197,8 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
     fn serialize_f64(self, value: f64) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
         if value.is_finite() {
-            self.inner.serialize_f64(value)
+            // `-0.0 + 0.0` is `0.0`, so a writer never writes negative zero.
+            self.inner.serialize_f64(value + 0.0)
         } else {
             Err(self.guard.refuse(value))
         }
@@ -206,7 +207,7 @@ impl<'guard, S: Serializer, A: Admission> Serializer for FiniteSerializer<'guard
     fn serialize_f32(self, value: f32) -> Result<Self::Ok, Self::Error> {
         let _depth = self.guard.enter::<S::Error>()?;
         if value.is_finite() {
-            self.inner.serialize_f32(value)
+            self.inner.serialize_f32(value + 0.0)
         } else {
             Err(self.guard.refuse(f64::from(value)))
         }

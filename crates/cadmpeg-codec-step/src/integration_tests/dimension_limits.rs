@@ -4,7 +4,10 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::pmi::{DimensionTolerance, PmiDefinition};
+use cadmpeg_ir::design::dimension::Dimension;
+use cadmpeg_ir::design::options::NativeOption;
+use cadmpeg_ir::design::parameter::Tolerance;
+use cadmpeg_ir::pmi::PmiDefinition;
 
 use crate::export::write_step;
 use crate::test_support::exchange::decode_inline;
@@ -49,14 +52,34 @@ fn limit_dimensions_round_trip_with_and_without_a_nominal() {
                 _ => None,
             })
             .expect("dimension");
-        assert_eq!(dimension.nominal().is_some(), with_nominal);
-        if let Some(nominal) = dimension.nominal() {
+        assert_eq!(dimension.literal_nominal().is_some(), with_nominal);
+        if let Some(nominal) = dimension.literal_nominal() {
             assert!((nominal.value.get() - 35.0).abs() < EPS_LIMIT);
         }
-        let Some(DimensionTolerance::Limits { lower, upper }) = dimension.tolerance() else {
-            panic!("limits: {dimension:?}");
+        let annotation = roundtrip
+            .ir()
+            .model
+            .pmi
+            .iter()
+            .find(|annotation| matches!(annotation.definition, PmiDefinition::Dimension(_)))
+            .expect("dimension annotation");
+        let (lower, upper) = if with_nominal {
+            let Some(Tolerance::Deviations(deviations)) = dimension.tolerance.as_ref() else {
+                panic!("deviations: {dimension:?}");
+            };
+            assert!(annotation
+                .source_settings
+                .contains_key("step:tolerance_display"));
+            (35.0 + deviations.lower.get(), 35.0 + deviations.upper.get())
+        } else {
+            assert!(dimension.tolerance.is_none());
+            let limit = |key: &str| match annotation.native_options.get(key) {
+                Some(NativeOption::Length(Dimension::Literal(value))) => value.get(),
+                other => panic!("{key}: {other:?}"),
+            };
+            (limit("step:lower_limit"), limit("step:upper_limit"))
         };
-        assert!((lower.value.get() - 34.8).abs() < EPS_LIMIT);
-        assert!((upper.value.get() - 35.2).abs() < EPS_LIMIT);
+        assert!((lower - 34.8).abs() < EPS_LIMIT);
+        assert!((upper - 35.2).abs() < EPS_LIMIT);
     }
 }

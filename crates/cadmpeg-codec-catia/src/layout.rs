@@ -84,6 +84,28 @@ pub(crate) mod extent_struct {
     pub(crate) const TRAILING_WORD: usize = 16;
 }
 
+/// Byte offsets for the `visible_body_roster_prefix` record.
+///
+/// Spec §3.1. Record length 4 B.
+///
+/// ```text
+/// The count is followed by count positive u32le allocation ends and four zero u32le words.
+/// ```
+pub(crate) mod visible_body_roster_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 4;
+    /// Offset of `count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COUNT: usize = 0;
+}
+
+/// Byte offsets for the `visible_body_roster_suffix` record.
+///
+/// Spec §3.1. Record length 16 B.
+pub(crate) mod visible_body_roster_suffix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 16;
+}
+
 /// Byte offsets for the `vertex_roster_row` record.
 ///
 /// Spec §3.5. Record length 7 B.
@@ -860,4 +882,64 @@ pub(crate) mod container_property_record {
     pub(crate) const VALUE_TYPE: usize = 8;
     /// Offset of `value_bytes` (`u32`, big-endian). Spec §3.1.
     pub(crate) const VALUE_BYTES: usize = 10;
+}
+
+/// Byte offsets for the `surface_weight_row_prefix` record.
+///
+/// Spec §6.1. Record length 3 B.
+pub(crate) mod surface_weight_row_prefix {
+    /// Record length in bytes. Spec §6.1.
+    pub(crate) const LEN: usize = 3;
+    /// Offset of `command` (`u8`). Spec §6.1.
+    pub(crate) const COMMAND: usize = 0;
+    /// Offset of `mirror` (`u16`, little-endian). Spec §6.1.
+    pub(crate) const MIRROR: usize = 1;
+}
+
+/// Byte offsets for the `surface_weight_repeat_row_prefix` record.
+///
+/// Spec §6.1. Record length 5 B.
+pub(crate) mod surface_weight_repeat_row_prefix {
+    /// Record length in bytes. Spec §6.1.
+    pub(crate) const LEN: usize = 5;
+    /// Stated value of `command` (`u8`). Spec §6.1.
+    pub(crate) const COMMAND_VALUE: u8 = 5;
+    /// Offset of `leading_repeats` (`u16`, little-endian). Spec §6.1.
+    pub(crate) const LEADING_REPEATS: usize = 3;
+}
+
+/// Byte offsets for the `surface_weight_symmetric_03_prefix` record.
+///
+/// Spec §6.1. Record length 3 B.
+pub(crate) mod surface_weight_symmetric_03_prefix {
+    /// Stated value of `command` (`u8`). Spec §6.1.
+    pub(crate) const COMMAND_VALUE: u8 = 1;
+    /// Stated value of `control` (`u16`). Spec §6.1.
+    pub(crate) const CONTROL_VALUE: u16 = 0x0003;
+}
+
+/// Byte offsets for the `surface_weight_symmetric_07_prefix` record.
+///
+/// Spec §6.1. Record length 3 B.
+pub(crate) mod surface_weight_symmetric_07_prefix {
+    /// Stated value of `control` (`u16`). Spec §6.1.
+    pub(crate) const CONTROL_VALUE: u16 = 0x0007;
+}
+
+/// Byte offsets for the `consolidated_vertex_wide_roster` record.
+///
+/// Spec §6.4. Record length 5 B.
+pub(crate) mod consolidated_vertex_wide_roster {
+    /// Record length in bytes. Spec §6.4.
+    pub(crate) const LEN: usize = 5;
+    /// Offset of `marker` (`u8`). Spec §6.4.
+    pub(crate) const MARKER: usize = 0;
+    /// Stated value of `marker` (`u8`). Spec §6.4.
+    pub(crate) const MARKER_VALUE: u8 = 14;
+    /// Offset of `ordinal` (`u24`, little-endian). Spec §6.4.
+    pub(crate) const ORDINAL: usize = 1;
+    /// Offset of `terminal` (`u8`). Spec §6.4.
+    pub(crate) const TERMINAL: usize = 4;
+    /// Stated value of `terminal` (`u8`). Spec §6.4.
+    pub(crate) const TERMINAL_VALUE: u8 = 0;
 }

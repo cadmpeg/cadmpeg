@@ -52,6 +52,7 @@ cadmpeg_core::named_optional_field!(
     DesignWorkPointInput,
     "vertex_input"
 );
+cadmpeg_core::named_optional_field!(deserialize_location_plane, DesignHolePlane, "plane");
 cadmpeg_core::named_optional_field!(
     deserialize_extent_leading_word,
     Located<u32>,
@@ -68,6 +69,7 @@ cadmpeg_core::named_optional_field!(
     "direction_control"
 );
 cadmpeg_core::named_optional_field!(deserialize_standard, DesignHoleStandard, "standard");
+cadmpeg_core::named_optional_field!(deserialize_hole_type, Located<u32>, "hole_type");
 
 /// Standard sizing names that a type-version-5 or -7 Hole stores after its
 /// extent controls when its standard flag is `1`, in source order.
@@ -105,9 +107,14 @@ const HOLE_CARRIER_PLANE_POINT: u32 = 14;
 const POINT_DATA_SKETCH_POINT: u32 = 10;
 /// Point-data `refType` of a point on a construction plane.
 const POINT_DATA_PLANE_POINT: u32 = 12;
+/// Point-data `refType` of a point on a face or reconstructed plane.
+const POINT_DATA_HOST_POINT: u32 = 17;
 /// Accepted difference, in source centimetres, between a carrier position and
 /// the value that the placement form requires.
 const EPS_HOLE_CARRIER_POSITION_CM: f64 = 1.0e-9;
+/// Accepted difference between a unit plane axis length, an axis dot product,
+/// or a direction alignment and its exact value.
+const EPS_HOLE_PLANE_FRAME: f64 = 1.0e-9;
 
 fn hole_position_matches(left: &[FiniteReal; 3], right: &[f64; 3]) -> bool {
     left.iter()
@@ -133,6 +140,69 @@ pub(crate) struct DesignHoleLocation {
         deserialize_with = "deserialize_vertex_input"
     )]
     pub(crate) vertex_input: Option<DesignWorkPointInput>,
+    /// Reconstructed construction plane that the sole input of a
+    /// `refType` 17 record selects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_location_plane"
+    )]
+    pub(crate) plane: Option<DesignHolePlane>,
+}
+
+/// Frame of a reconstructed construction plane that a Hole point record
+/// selects through a direct persistent selection.
+///
+/// The plane normal is `u_axis × v_axis`. Coordinates are source centimetres.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignHolePlane {
+    /// Direct persistent selection record that the point record references.
+    pub(crate) selection_record_index: u32,
+    /// Plane record that the selection owns.
+    pub(crate) record_index: u32,
+    /// Plane origin in source model centimetres.
+    pub(crate) origin: [FiniteReal; 3],
+    /// Byte offset of the first origin coordinate. The in-plane axes follow it.
+    pub(crate) origin_offset: u64,
+    /// Unit in-plane u axis in model space.
+    pub(crate) u_axis: [FiniteReal; 3],
+    /// Unit in-plane v axis in model space.
+    pub(crate) v_axis: [FiniteReal; 3],
+}
+
+impl DesignHolePlane {
+    /// Unit plane normal `u × v`, when the axes form an orthonormal frame.
+    fn normal(&self) -> Option<[f64; 3]> {
+        let u = self.u_axis.map(FiniteReal::get);
+        let v = self.v_axis.map(FiniteReal::get);
+        let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        let orthonormal = (dot(u, u) - 1.0).abs() <= EPS_HOLE_PLANE_FRAME
+            && (dot(v, v) - 1.0).abs() <= EPS_HOLE_PLANE_FRAME
+            && dot(u, v).abs() <= EPS_HOLE_PLANE_FRAME;
+        orthonormal.then(|| {
+            [
+                u[1] * v[2] - u[2] * v[1],
+                u[2] * v[0] - u[0] * v[2],
+                u[0] * v[1] - u[1] * v[0],
+            ]
+        })
+    }
+
+    /// Whether `point` lies on the plane and `direction` is parallel to its
+    /// normal.
+    fn places(&self, point: &[FiniteReal; 3], direction: &[FiniteReal; 3]) -> bool {
+        let Some(normal) = self.normal() else {
+            return false;
+        };
+        let distance: f64 = (0..3)
+            .map(|axis| (point[axis].get() - self.origin[axis].get()) * normal[axis])
+            .sum();
+        let alignment: f64 = (0..3)
+            .map(|axis| direction[axis].get() * normal[axis])
+            .sum();
+        distance.abs() <= EPS_HOLE_CARRIER_POSITION_CM
+            && (alignment.abs() - 1.0).abs() <= EPS_HOLE_PLANE_FRAME
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -152,6 +222,8 @@ pub(crate) struct DesignHoleExtent {
     pub(crate) direction_control: Option<Located<u8>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) standard: Option<DesignHoleStandard>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) hole_type: Option<Located<u32>>,
 }
 
 #[derive(Deserialize)]
@@ -166,6 +238,8 @@ struct DesignHoleExtentWire {
     direction_control: Option<Located<u8>>,
     #[serde(default, deserialize_with = "deserialize_standard")]
     standard: Option<DesignHoleStandard>,
+    #[serde(default, deserialize_with = "deserialize_hole_type")]
+    hole_type: Option<Located<u32>>,
 }
 
 impl TryFrom<DesignHoleExtentWire> for DesignHoleExtent {
@@ -184,12 +258,20 @@ impl TryFrom<DesignHoleExtentWire> for DesignHoleExtent {
         {
             return Err("invalid Hole direction control");
         }
+        if wire
+            .hole_type
+            .as_ref()
+            .is_some_and(|hole_type| !valid_hole_type(hole_type.value))
+        {
+            return Err("invalid Hole type");
+        }
         Ok(Self {
             leading_word: wire.leading_word,
             extent_control: wire.extent_control,
             saved_non_distance_depth: wire.saved_non_distance_depth,
             direction_control: wire.direction_control,
             standard: wire.standard,
+            hole_type: wire.hole_type,
         })
     }
 }
@@ -200,10 +282,10 @@ pub(crate) struct DesignHoleScope {
     pub(crate) extent: Option<DesignHoleExtent>,
 }
 
-/// Tangent-point payload of a version-four Hole point carrier.
+/// Tangent-point payload of a Hole point carrier.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignHoleTangentPoint {
-    pub(crate) prefix: u8,
+    pub(crate) prefix: Option<u8>,
     pub(crate) data: Located<[FiniteReal; 3]>,
 }
 
@@ -268,13 +350,26 @@ impl DesignHoleConstruction {
                     .map(|location| location.position)
                     .collect()
             }),
-            HOLE_CARRIER_FACE_POINT => self
-                .locations
-                .iter()
-                .all(|location| {
+            HOLE_CARRIER_FACE_POINT => {
+                if self.locations.iter().all(|location| {
                     hole_position_matches(&self.position, &location.position.map(FiniteReal::get))
-                })
-                .then(|| vec![self.position]),
+                }) {
+                    return Some(vec![self.position]);
+                }
+                // A point record on a reconstructed plane places the Hole at its
+                // own point; the carrier position is not that point.
+                match self.locations.as_slice() {
+                    [location]
+                        if location.reference_type == POINT_DATA_HOST_POINT
+                            && location.plane.as_ref().is_some_and(|plane| {
+                                plane.places(&location.position, &self.direction)
+                            }) =>
+                    {
+                        Some(vec![location.position])
+                    }
+                    _ => None,
+                }
+            }
             HOLE_CARRIER_PLANE_POINT => match self.locations.as_slice() {
                 [location]
                     if hole_position_matches(&self.position, &[0.0; 3])
@@ -387,8 +482,8 @@ impl TryFrom<DesignHoleConstructionWire> for DesignHoleConstruction {
             reference_type_offset: wire.reference_type_offset,
             tangent_point_data: match (wire.tangent_point_data, wire.tangent_point_data_prefix, wire.tangent_point_data_offset) {
                 (None, None, None) => None,
-                (Some(value), Some(prefix), Some(offset)) => Some(DesignHoleTangentPoint { prefix, data: Located { value, offset } }),
-                _ => return Err("tangent_point_data, tangent_point_data_prefix and tangent_point_data_offset must occur together".into()),
+                (Some(value), prefix, Some(offset)) => Some(DesignHoleTangentPoint { prefix, data: Located { value, offset } }),
+                _ => return Err("tangent_point_data and tangent_point_data_offset must occur together; tangent_point_data_prefix requires both".into()),
             },
             input_records: wire.input_record_indices.into_iter().zip(wire.input_record_offsets).map(|(value, offset)| Located { value, offset }).collect(),
             face_selection: wire.face_selection,
@@ -462,7 +557,7 @@ impl Serialize for DesignHoleConstruction {
             reference_type: self.reference_type,
             reference_type_offset: self.reference_type_offset,
             tangent_point_data: tangent.map(|value| &value.data.value),
-            tangent_point_data_prefix: tangent.map(|value| value.prefix),
+            tangent_point_data_prefix: tangent.and_then(|value| value.prefix),
             tangent_point_data_offset: tangent.map(|value| value.data.offset),
             input_record_indices: InputRecordIndices(&self.input_records),
             input_record_offsets: InputRecordOffsets(&self.input_records),
@@ -796,6 +891,83 @@ mod tests {
         assert_eq!(entry_points(&carrier(19, A, &[(6, A), (5, B)])), None);
         assert_eq!(entry_points(&carrier(19, A, &[(6, B), (5, A)])), None);
         assert_eq!(entry_points(&carrier(19, A, &[(6, B), (5, B)])), None);
+    }
+
+    /// A face-point carrier at `A` with one `refType` 17 record at `position`
+    /// that selects a reconstructed plane with the given frame.
+    fn plane_located(
+        position: [f64; 3],
+        origin: [f64; 3],
+        u_axis: [f64; 3],
+        v_axis: [f64; 3],
+    ) -> DesignHoleConstruction {
+        let mut value = serde_json::to_value(carrier(19, A, &[(17, position)])).unwrap();
+        value["locations"][0]["plane"] = serde_json::json!({
+            "selection_record_index": 1, "record_index": 2,
+            "origin": origin, "origin_offset": 3,
+            "u_axis": u_axis, "v_axis": v_axis
+        });
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn face_point_carrier_places_a_hole_at_its_record_on_a_reconstructed_plane() {
+        // The plane z = 2 with normal +z; the carrier direction is +z.
+        let on_plane = plane_located(B, [0.0, 0.0, 2.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+        assert_eq!(entry_points(&on_plane), Some(vec![B]));
+        // A record off the plane places no Hole.
+        let off_plane = plane_located(B, [0.0, 0.0, 2.5], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+        assert_eq!(entry_points(&off_plane), None);
+        // A plane whose normal is not the carrier direction places no Hole.
+        let slanted = plane_located(B, [0.0, 1.5, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]);
+        assert_eq!(entry_points(&slanted), None);
+        // Either sign of the normal is parallel to the carrier direction.
+        let flipped = plane_located(B, [0.0, 0.0, 2.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]);
+        assert_eq!(entry_points(&flipped), Some(vec![B]));
+        // Axes that are not an orthonormal frame give no normal.
+        let scaled = plane_located(B, [0.0, 0.0, 2.0], [2.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+        assert_eq!(entry_points(&scaled), None);
+        let skew = plane_located(B, [0.0, 0.0, 2.0], [1.0, 0.0, 0.0], [0.6, 0.8, 0.0]);
+        assert_eq!(entry_points(&skew), None);
+    }
+
+    #[test]
+    fn face_point_carrier_off_its_record_needs_the_plane_and_one_record() {
+        assert_eq!(entry_points(&carrier(19, A, &[(17, B)])), None);
+        let mut two = serde_json::to_value(plane_located(
+            B,
+            [0.0, 0.0, 2.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ))
+        .unwrap();
+        let first = two["locations"][0].clone();
+        two["locations"].as_array_mut().unwrap().push(first);
+        let two: DesignHoleConstruction = serde_json::from_value(two).unwrap();
+        assert_eq!(entry_points(&two), None);
+        // Another point-data rule never takes its position from the plane.
+        let mut other = serde_json::to_value(plane_located(
+            B,
+            [0.0, 0.0, 2.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+        ))
+        .unwrap();
+        other["locations"][0]["reference_type"] = serde_json::json!(12);
+        let other: DesignHoleConstruction = serde_json::from_value(other).unwrap();
+        assert_eq!(entry_points(&other), None);
+    }
+
+    #[test]
+    fn a_location_plane_round_trips() {
+        let located = plane_located(B, [0.0, 0.0, 2.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+        let value = serde_json::to_value(&located).unwrap();
+        assert_eq!(
+            value["locations"][0]["plane"]["origin"],
+            serde_json::json!([0.0, 0.0, 2.0])
+        );
+        let decoded: DesignHoleConstruction = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded, located);
     }
 
     #[test]

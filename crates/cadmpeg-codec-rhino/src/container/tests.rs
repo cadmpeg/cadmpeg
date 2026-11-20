@@ -191,8 +191,8 @@ fn container_only_returns_empty_current_ir_for_full_bands() {
             )
             .expect("required invariant");
         assert_eq!(result.ir().ir_version(), IR_VERSION);
-        assert!(result.ir().model.bodies.is_empty());
-        assert!(result.ir().model.subds.is_empty());
+        assert!(result.ir().geometry.bodies.is_empty());
+        assert!(result.ir().geometry.subds.is_empty());
         assert!(result.report().container_only());
         assert_eq!(result.report().format(), "rhino");
     }
@@ -222,8 +222,8 @@ fn container_only_returns_empty_current_ir_for_v3_and_v4() {
             )
             .expect("required invariant");
         assert_eq!(result.ir().ir_version(), IR_VERSION);
-        assert!(result.ir().model.bodies.is_empty());
-        assert!(result.ir().model.subds.is_empty());
+        assert!(result.ir().geometry.bodies.is_empty());
+        assert!(result.ir().geometry.subds.is_empty());
         assert!(result.report().container_only());
     }
 }
@@ -261,14 +261,19 @@ fn v2_class_records_use_four_byte_chunks_and_container_only_stays_empty() {
         )
         .expect("V2 container-only decode");
     assert!(container_only.report().container_only());
-    assert!(container_only.ir().model.points.is_empty());
+    assert!(container_only.ir().geometry.points.is_empty());
 
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("V2 class-record decode");
-    assert_eq!(decoded.ir().model.points.len(), 1, "{:?}", decoded.report());
     assert_eq!(
-        decoded.ir().model.points[0].position().get(),
+        decoded.ir().geometry.points.len(),
+        1,
+        "{:?}",
+        decoded.report()
+    );
+    assert_eq!(
+        decoded.ir().geometry.points[0].position().get(),
         cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
     );
 }
@@ -1112,7 +1117,7 @@ fn optional_properties_tables_do_not_control_independent_objects() {
         let expected = RhinoCodec
             .decode(&mut Cursor::new(baseline), &DecodeOptions::default())
             .expect("baseline point");
-        assert_eq!(expected.ir().model.points.len(), 1, "{version}");
+        assert_eq!(expected.ir().geometry.points.len(), 1, "{version}");
         for tables in [
             vec![settings.clone(), objects.clone()],
             vec![
@@ -1128,15 +1133,17 @@ fn optional_properties_tables_do_not_control_independent_objects() {
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .expect("framed optional tables");
-            let canonical = serde_json::to_string(&expected.ir().model).expect("model");
-            let actual = serde_json::to_string(&decoded.ir().model).expect("model");
-            let expected_offset = expected.ir().model.points[0]
+            let canonical = serde_json::to_string(&(&expected.ir().geometry, &expected.ir().model))
+                .expect("model");
+            let actual = serde_json::to_string(&(&decoded.ir().geometry, &decoded.ir().model))
+                .expect("model");
+            let expected_offset = expected.ir().geometry.points[0]
                 .id
                 .as_str()
                 .rsplit_once("offset-")
                 .expect("source offset")
                 .1;
-            let actual_offset = decoded.ir().model.points[0]
+            let actual_offset = decoded.ir().geometry.points[0]
                 .id
                 .as_str()
                 .rsplit_once("offset-")
@@ -1162,15 +1169,17 @@ fn optional_properties_tables_do_not_control_independent_objects() {
         let decoded = RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("misplaced metadata is opaque");
-        let canonical = serde_json::to_string(&expected.ir().model).expect("model");
-        let actual = serde_json::to_string(&decoded.ir().model).expect("model");
-        let expected_offset = expected.ir().model.points[0]
+        let canonical =
+            serde_json::to_string(&(&expected.ir().geometry, &expected.ir().model)).expect("model");
+        let actual =
+            serde_json::to_string(&(&decoded.ir().geometry, &decoded.ir().model)).expect("model");
+        let expected_offset = expected.ir().geometry.points[0]
             .id
             .as_str()
             .rsplit_once("offset-")
             .expect("source offset")
             .1;
-        let actual_offset = decoded.ir().model.points[0]
+        let actual_offset = decoded.ir().geometry.points[0]
             .id
             .as_str()
             .rsplit_once("offset-")

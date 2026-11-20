@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::decode::sketch::decode_sketch_visibility_member;
 use crate::design::decode::sketch::CURRENT_SKETCH_CONTAINER_VERSION;
 use crate::design::decode::sketch::SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID;
 use crate::design::decode::sketch::SKETCH_CONTAINER_MEMBER_TYPE_GUID;
 use crate::design::decode::sketch::SKETCH_CONTAINER_MEMBER_VERSION;
 use crate::design::decode::sketch::SKETCH_CONTAINER_TYPE_GUID;
+use crate::design::decode::sketch::{
+    decode_sketch_member_display_name, decode_sketch_visibility_member,
+};
 use crate::records::entity_header::DESIGN_MODULE_SKETCH;
 
 const ENTITY_SUFFIX: u64 = 201;
@@ -20,6 +22,7 @@ fn decode_sketch_visibilities_in_stream(
     cadmpeg_core::CodecError,
 > {
     super::super::decode_sketch_visibilities_in_stream(bytes, metadata, &mut Vec::new())
+        .map(|v| v.into_iter().map(|(id, vis, _)| (id, vis)).collect())
 }
 
 fn decode_with_losses(
@@ -34,7 +37,11 @@ fn decode_with_losses(
 ) {
     let mut losses = Vec::new();
     let visibilities =
-        super::super::decode_sketch_visibilities_in_stream(bytes, metadata, &mut losses).unwrap();
+        super::super::decode_sketch_visibilities_in_stream(bytes, metadata, &mut losses)
+            .unwrap()
+            .into_iter()
+            .map(|(id, vis, _)| (id, vis))
+            .collect();
     (visibilities, losses)
 }
 
@@ -498,4 +505,101 @@ fn version_three_collection_has_six_bytes_before_its_member_run() {
     assert_eq!(visibilities[0].0, ENTITY_SUFFIX);
     assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
     assert!(visibilities[0].1.visible);
+}
+
+#[test]
+fn sketch_member_display_name_decodes_cleanly() {
+    let mut bytes = member(1, 1);
+    crate::test_support::lp_utf16(&mut bytes, "MountingHoles");
+    let name = decode_sketch_member_display_name(&bytes, 0);
+    assert_eq!(name.as_deref(), Some("MountingHoles"));
+}
+
+#[test]
+fn sketch_member_display_name_omitted_returns_none() {
+    let bytes = member(1, 1);
+    let name = decode_sketch_member_display_name(&bytes, 0);
+    assert_eq!(name, None);
+}
+
+#[test]
+fn sketch_member_display_name_empty_returns_none() {
+    let mut bytes = member(1, 1);
+    crate::test_support::lp_utf16(&mut bytes, "");
+    let name = decode_sketch_member_display_name(&bytes, 0);
+    assert_eq!(name, None);
+}
+
+#[test]
+fn sketch_member_display_name_rejects_blank_and_control_characters() {
+    for invalid in ["   ", "\t", "Outline\0Tail", "Line\nBreak"] {
+        let mut bytes = member(1, 1);
+        crate::test_support::lp_utf16(&mut bytes, invalid);
+        assert_eq!(decode_sketch_member_display_name(&bytes, 0), None);
+    }
+}
+
+#[test]
+fn sketch_member_display_name_supports_null_container_reference() {
+    let mut bytes = member(1, 1);
+    bytes.truncate(36);
+    bytes.push(0);
+    crate::test_support::lp_utf16(&mut bytes, "UnlistedSketch");
+    assert_eq!(
+        decode_sketch_member_display_name(&bytes, 0).as_deref(),
+        Some("UnlistedSketch")
+    );
+}
+
+#[test]
+fn unrecognised_container_header_is_a_loss_not_a_decode_failure() {
+    let (mut bytes, metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX])]);
+    bytes[15] = 1;
+    let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
+    assert!(visibilities.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::SketchContainerHeaderUnrecognized.kind()
+    );
+    assert!(losses[0].message.contains("201"));
+}
+
+#[test]
+fn good_container_survives_a_neighbour_with_an_unrecognised_header() {
+    let (good, mut metadata) = visibility_stream();
+    let mut bad = good.clone();
+    bad[7..15].copy_from_slice(&(ENTITY_SUFFIX + 1).to_le_bytes());
+    bad[15] = 1;
+    let good_at = bad.len();
+    let mut bytes = bad;
+    bytes.extend_from_slice(&good);
+    metadata.types[0].entities = crate::records::identity::ReferenceRun::located(
+        [ENTITY_SUFFIX + 1, ENTITY_SUFFIX]
+            .into_iter()
+            .map(|value| crate::records::identity::Located { value, offset: 0 })
+            .collect(),
+    );
+    metadata.records = vec![
+        crate::metastream::RecordIndexEntry {
+            entity_id: ENTITY_SUFFIX + 1,
+            bulk_offset: 0,
+        },
+        crate::metastream::RecordIndexEntry {
+            entity_id: ENTITY_SUFFIX,
+            bulk_offset: cadmpeg_core::decode::u64_from_index(good_at),
+        },
+    ];
+    let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
+    assert_eq!(visibilities.len(), 1);
+    assert_eq!(visibilities[0].0, ENTITY_SUFFIX);
+    assert!(visibilities[0].1.visible);
+    let unrecognised = losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::F3dLossCode::SketchContainerHeaderUnrecognized.kind()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(unrecognised.len(), 1);
+    assert!(unrecognised[0].message.contains("202"));
 }

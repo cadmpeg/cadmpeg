@@ -69,7 +69,7 @@ fn configuration_lane_loss_uses_stored_ids_not_partition_indices() {
 #[test]
 fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+    ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
             .expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -81,19 +81,20 @@ fn unresolved_configuration_body_membership_reuses_model_surface_carriers() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
         bodies: None,
         ..design_configuration("unresolved", 0, Some(0), None)
     });
 
-    assert_eq!(configuration_surface_carriers(&ir, 0), ir.model.surfaces,);
+    assert_eq!(configuration_surface_carriers(&ir, 0), ir.geometry.surfaces,);
 }
 
 #[test]
 fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
     let mut ir = cadmpeg_ir::CadIr::empty();
-    ir.model.surfaces.push(cadmpeg_ir::geometry::Surface {
+    ir.geometry.surfaces.push(cadmpeg_ir::geometry::Surface {
         id: cadmpeg_ir::ids::SurfaceId::mint("test:model:entity#model-surface")
             .expect("identity grammar"),
         geometry: cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
@@ -105,6 +106,7 @@ fn resolved_empty_configuration_body_membership_has_no_surface_carriers() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
     ir.model
         .configurations
@@ -1191,7 +1193,7 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
     );
 
     inherit_configuration_reference_plane_semantics(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_mut(&mut configured),
         &[base_plane.clone(), base_offset.clone()],
     )
@@ -1222,7 +1224,7 @@ fn scoped_offset_plane_inherits_only_a_frame_matching_reference() {
         }),
     );
     inherit_configuration_reference_plane_semantics(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_mut(&mut mismatched),
         &[base_plane, base_offset],
     )
@@ -1295,7 +1297,7 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
     );
 
     inherit_configuration_reference_plane_semantics(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_mut(&mut configured),
         &[base_plane.clone(), base_offset.clone()],
     )
@@ -1332,7 +1334,7 @@ fn scoped_offset_plane_inherits_an_omitted_resolved_reference() {
         }),
     );
     inherit_configuration_reference_plane_semantics(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_mut(&mut remains_unresolved),
         std::slice::from_ref(&unresolved_base),
     )
@@ -1398,7 +1400,7 @@ fn scoped_offset_plane_does_not_merge_a_resolved_plane_with_a_face() {
     ));
 
     inherit_configuration_reference_plane_semantics(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_mut(&mut configured),
         std::slice::from_ref(&base),
     )
@@ -1653,7 +1655,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(feature);
-    ir.model.faces.push(Face {
+    ir.geometry.faces.push(Face {
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
@@ -1665,6 +1667,7 @@ fn configuration_topology_binding_updates_snapshot_face_selection() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     ir.model.configurations.push(with_configuration_id(
         design_configuration("config", 0, Some(0), None),
@@ -1756,7 +1759,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
     ir.model.features.push(feature);
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
             cadmpeg_ir::geometry::analytic::PlaneSurface::try_new(
@@ -1767,8 +1770,9 @@ fn configuration_frame_alias_binds_without_body_membership() {
             .unwrap(),
         )),
         source_object: None,
+        native_ref: None,
     });
-    ir.model.faces.push(Face {
+    ir.geometry.faces.push(Face {
         id: FaceId::mint("test:model:entity#face").expect("identity grammar"),
         shell: ShellId::mint("test:model:entity#shell").expect("identity grammar"),
         surface: SurfaceId::mint("test:model:entity#surface").expect("identity grammar"),
@@ -1780,6 +1784,7 @@ fn configuration_frame_alias_binds_without_body_membership() {
         name: None,
         color: None,
         tolerance: None,
+        native_ref: None,
     });
     let mut configuration = design_configuration("config", 0, None, None);
     configuration.bodies = None;

@@ -67,10 +67,10 @@ Co 1001000 +2 {face_location} *
             .expect("trimmed sphere with unrestricted pcurve support");
         let ir = result.ir();
         let index = cadmpeg_ir::index::ModelIndex::build(ir);
-        let face = &ir.model.faces[0];
+        let face = &ir.geometry.faces[0];
         assert!(face.surface.as_str().contains("basis"));
         let subsets = ir
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .filter(|surface| {
@@ -83,11 +83,11 @@ Co 1001000 +2 {face_location} *
         assert_eq!(subsets.len(), trim_count);
         for subset in subsets {
             let owner = ir
-                .model
+                .geometry
                 .procedural_surface_owner(&subset.id)
                 .expect("retained subset owner");
             let wrapper = ir
-                .model
+                .geometry
                 .surfaces
                 .iter()
                 .find(|surface| &surface.id == owner)
@@ -98,13 +98,13 @@ Co 1001000 +2 {face_location} *
             );
         }
         let support = ir
-            .model
+            .geometry
             .surfaces
             .iter()
             .find(|surface| surface.id == face.surface)
             .unwrap();
         assert_eq!(support.source_object.as_ref().unwrap().geometry_role, None);
-        let pcurve = &ir.model.pcurves[0];
+        let pcurve = &ir.geometry.pcurves[0];
         for (parameter, expected) in [(0.0, first), (last_latitude, last)] {
             let uv = cadmpeg_ir::eval::decode::pcurve_uv(
                 EvaluationAdmission::Standard,

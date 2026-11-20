@@ -1,184 +1,221 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Shared local, external, and explicit-null reference targets.
+//! Instance targets, and the references of drawings and annotations.
 
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-/// Identity form of a drawing or semantic-annotation reference.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+use crate::design::names::NativeName;
+use crate::design::refs::{EntityRef, StateRef};
+use crate::design::selection::OccurrencePath;
+use crate::features::FeatureId;
+use crate::ids::{OccurrenceId, ProductDefinitionId};
+
+/// A model-class target that can name an instance: an entity, the placed
+/// instance whose prototype holds it, and the state whose geometry holds it.
+///
+/// A whole placed instance is its last occurrence as `entity` with the steps
+/// above it as `path`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(from = "ReferenceTargetWire", into = "ReferenceTargetWire")]
 #[serde(deny_unknown_fields)]
-pub enum ReferenceTarget {
-    /// Explicit null reference.
-    Null,
-    /// Identity within the current document.
-    Local(String),
-    /// Identity within another document.
-    External {
-        /// External document token.
-        document: String,
-        /// Stable object token within the external document.
-        object: String,
-    },
+pub struct InstanceTarget<E> {
+    /// The targeted entity.
+    pub entity: E,
+    /// The placed instance whose prototype holds `entity`, outermost
+    /// occurrence first. `None` targets the entity in the definition that
+    /// owns it, and so in every placement of that definition.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path"
+    )]
+    pub path: Option<OccurrencePath>,
+    /// The state whose geometry holds `entity`, in the scope of the
+    /// definition that holds it. `None` is the current geometry, or, with a
+    /// `path`, the geometry of the configuration that instance selects.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_state"
+    )]
+    pub state: Option<StateRef>,
 }
 
-impl ReferenceTarget {
-    /// Returns the local identity, when this target is local.
+impl<E> InstanceTarget<E> {
+    /// A target on `entity` in the definition that owns it, in the current
+    /// geometry.
     #[must_use]
-    pub fn local(&self) -> Option<&str> {
-        match self {
-            Self::Local(target) => Some(target),
-            Self::Null | Self::External { .. } => None,
+    pub const fn new(entity: E) -> Self {
+        Self {
+            entity,
+            path: None,
+            state: None,
         }
     }
 }
 
-/// One reference target and its ordered model-subelement selectors.
+impl<E> InstanceTarget<E> {
+    /// Whether the target references a record of the design class: a state,
+    /// or a configuration of this document in a path step.
+    pub(crate) fn reads_design(&self) -> bool {
+        self.state.is_some()
+            || self.path.as_ref().is_some_and(|path| {
+                path.0.iter().any(|step| {
+                    matches!(
+                        step.configuration,
+                        Some(crate::design::refs::ConfigurationRef::Local(_))
+                    )
+                })
+            })
+    }
+}
+
+impl<E> From<E> for InstanceTarget<E> {
+    fn from(entity: E) -> Self {
+        Self::new(entity)
+    }
+}
+
+/// A drawing relationship or an annotation reference.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ReferenceSelection {
-    /// Local, external, or explicit-null target identity.
+    /// The referenced object.
     pub target: ReferenceTarget,
-    /// Ordered model subelement selectors.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub subelements: Vec<String>,
+    /// The source's object token and sub-element string, where the target
+    /// is `Unresolved`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native"
+    )]
+    pub native: Option<NativeName>,
 }
 
 impl ReferenceSelection {
-    /// Creates a target with its ordered subelement selectors.
+    /// A reference to `target` with no native name.
     #[must_use]
-    pub fn new(target: ReferenceTarget, subelements: Vec<String>) -> Self {
+    pub const fn new(target: ReferenceTarget) -> Self {
         Self {
             target,
-            subelements,
+            native: None,
         }
     }
 
-    /// Returns the local identity, when this selection targets this document.
+    /// A reference that resolves to no object the document holds, by the
+    /// source's name for it.
     #[must_use]
-    pub fn local_target(&self) -> Option<&str> {
-        self.target.local()
+    pub const fn unresolved(native: NativeName) -> Self {
+        Self {
+            target: ReferenceTarget::Unresolved,
+            native: Some(native),
+        }
+    }
+
+    /// The source's text name for the referenced object, where it states
+    /// one.
+    #[must_use]
+    pub fn native_text(&self) -> Option<&str> {
+        match &self.native.as_ref()?.value {
+            crate::design::names::NativeNameValue::Text(text) => Some(text.as_str()),
+            crate::design::names::NativeNameValue::Integers(_)
+            | crate::design::names::NativeNameValue::Bytes(_) => None,
+        }
     }
 }
 
+/// The object of a drawing or annotation reference.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
-enum ReferenceTargetWire {
-    /// Explicit null reference.
-    Null {},
-    /// Identity within the current document.
-    Local {
-        /// Identity of the referenced object in the current document.
-        target: String,
-    },
-    /// Identity within another document.
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum ReferenceTarget {
+    /// The source's explicit empty reference.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Null,
+    /// An entity of the geometry or the products the document holds.
+    Entity(InstanceTarget<ReferenceEntity>),
+    /// A feature, such as the result a drawing view shows.
+    Feature(FeatureId),
+    /// An object of a document that was not read.
     External {
-        /// Identity of the referenced document.
+        /// The document.
         document: String,
-        /// Identity of the referenced object in that document.
+        /// The object's token in that document.
         object: String,
     },
+    /// A target the decoder cannot resolve to an object the document holds.
+    #[serde(deserialize_with = "cadmpeg_core::tag_only::refuse_value")]
+    Unresolved,
 }
 
-impl From<ReferenceTargetWire> for ReferenceTarget {
-    fn from(wire: ReferenceTargetWire) -> Self {
-        match wire {
-            ReferenceTargetWire::Null {} => Self::Null,
-            ReferenceTargetWire::Local { target } => Self::Local(target),
-            ReferenceTargetWire::External { document, object } => {
-                Self::External { document, object }
-            }
+impl ReferenceTarget {
+    /// Whether the target references a record of the design class.
+    pub(crate) fn reads_design(&self) -> bool {
+        match self {
+            Self::Entity(target) => target.reads_design(),
+            Self::Feature(_) => true,
+            Self::Null | Self::External { .. } | Self::Unresolved => false,
+        }
+    }
+
+    /// Whether every record the target names is in the document: an entity
+    /// by `contains`, which looks a model-class identity up, and a feature
+    /// in `records`.
+    pub(crate) fn resolves(
+        &self,
+        records: &crate::document::design_records::DesignRecords<'_>,
+        contains: impl Fn(&str) -> bool,
+    ) -> bool {
+        match self {
+            Self::Entity(target) => contains(target.entity.id()),
+            Self::Feature(feature) => records.holds_feature(feature),
+            Self::Null | Self::External { .. } | Self::Unresolved => true,
         }
     }
 }
+
+/// An entity that a reference names.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(
+    tag = "kind",
+    content = "value",
+    rename_all = "snake_case",
+    deny_unknown_fields
+)]
+pub enum ReferenceEntity {
+    /// A body, face, edge, vertex, carrier, or cage.
+    Topology(EntityRef),
+    /// A product definition.
+    Definition(ProductDefinitionId),
+    /// An occurrence.
+    Occurrence(OccurrenceId),
+}
+
+impl ReferenceEntity {
+    /// The entity's record id.
+    #[must_use]
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Topology(entity) => entity.id(),
+            Self::Definition(id) => id.as_str(),
+            Self::Occurrence(id) => id.as_str(),
+        }
+    }
+}
+
+cadmpeg_core::named_optional_field!(deserialize_path, OccurrencePath, "path");
+cadmpeg_core::named_optional_field!(deserialize_state, StateRef, "state");
+cadmpeg_core::named_optional_field!(deserialize_native, NativeName, "native");
 
 #[cfg(test)]
-mod tests {
-    use super::{ReferenceSelection, ReferenceTarget};
-
-    #[test]
-    fn a_reference_target_is_one_nested_tagged_object() {
-        let cases = [
-            (
-                ReferenceTarget::Null,
-                serde_json::json!({ "target": { "kind": "null" } }),
-            ),
-            (
-                ReferenceTarget::Local("local-id".into()),
-                serde_json::json!({ "target": { "kind": "local", "target": "local-id" } }),
-            ),
-            (
-                ReferenceTarget::External {
-                    document: "document".into(),
-                    object: "object".into(),
-                },
-                serde_json::json!({
-                    "target": {
-                        "kind": "external",
-                        "document": "document",
-                        "object": "object"
-                    }
-                }),
-            ),
-        ];
-        for (target, wire) in cases {
-            let selection = ReferenceSelection::new(target.clone(), Vec::new());
-            assert_eq!(serde_json::to_value(selection).unwrap(), wire);
-            let decoded: ReferenceSelection = serde_json::from_value(wire).unwrap();
-            assert_eq!(decoded.target, target);
-        }
-
-        let selection = ReferenceSelection::new(
-            ReferenceTarget::Local("local-id".into()),
-            vec!["Face1".into()],
-        );
-        assert_eq!(
-            serde_json::to_value(selection).unwrap(),
-            serde_json::json!({
-                "target": { "kind": "local", "target": "local-id" },
-                "subelements": ["Face1"]
-            })
-        );
-    }
-
-    #[test]
-    fn a_reference_target_carries_no_key_of_another_form() {
-        for wire in [
-            serde_json::json!({ "target": {} }),
-            serde_json::json!({ "target": { "kind": "null", "target": "local" } }),
-            serde_json::json!({ "target": { "kind": "external", "document": "document" } }),
-            serde_json::json!({
-                "target": {
-                    "kind": "local",
-                    "target": "local",
-                    "document": "document",
-                    "object": "object"
-                }
-            }),
-            serde_json::json!({ "is_null": true }),
-            serde_json::json!({ "target": "local-id" }),
-        ] {
-            assert!(
-                serde_json::from_value::<ReferenceSelection>(wire.clone()).is_err(),
-                "{wire}"
-            );
-        }
-
-        let bogus = serde_json::json!({
-            "target": { "kind": "local", "target": "local-id" },
-            "zz_bogus": 1
-        });
-        let error = serde_json::from_value::<ReferenceSelection>(bogus)
-            .unwrap_err()
-            .to_string();
-        assert!(error.contains("zz_bogus"), "{error}");
-    }
-}
+mod tests;
 
 mod identity_rewrite;
-
-mod serialization;

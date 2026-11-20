@@ -156,16 +156,18 @@ mod tests {
         let text = CadIr::empty().to_canonical_json().unwrap();
         std::fs::write(&path, &text).unwrap();
         let report: DecodeReport = serde_json::from_value(serde_json::json!({
-            "identity": {"classification": "unclassified", "format": "test"},
-            "transfer": {"transfer": "full", "geometry_transferred": false},
+            "identity": {"kind": "unclassified", "format": "test"},
+            "transfer": {"kind": "full", "geometry_transferred": false},
+            "coverage": {},
             "losses": [],
             "notes": [],
+            "transfer_ledger": {"entries": []},
         }))
         .unwrap();
         let sidecar = DecodeSidecar::bind_sha256(
             cadmpeg_ir::hash::digest::Sha256Digest::digest(text.as_bytes()),
             report,
-            SourceFidelity::default(),
+            SourceFidelity::new(cadmpeg_ir::hash::digest::Sha256Digest::digest(b"source")),
         );
         std::fs::write(
             cadmpeg_ir::decode_sidecar_path(&path).unwrap(),

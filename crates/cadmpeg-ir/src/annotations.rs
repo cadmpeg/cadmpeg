@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::sync::Arc;
 
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -26,11 +27,9 @@ pub use sparse::{PreparedAnnotationDelta, SparseAnnotationTransaction};
 #[serde(deny_unknown_fields)]
 pub struct Annotations {
     /// Source location for each annotated entity.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub provenance: BTreeMap<String, AnnotationProvenance>,
     /// Non-byte-exact entity or field annotations.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     exactness: BTreeMap<String, ExactnessNote>,
 }
@@ -174,7 +173,7 @@ impl Display for FieldName {
 }
 
 /// Exactness of an entity that is not byte-exact.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -275,14 +274,13 @@ impl<'de> Deserialize<'de> for NonEmptyMap {
 /// Exactness for an entity and sparse overrides for its serialized fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "scope", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ExactnessNote {
     /// The entity itself is not byte-exact; listed fields override it.
     Entity {
         /// Exactness of the entity except where overridden by `fields`.
         entity: Inexactness,
         /// Exactness overrides keyed by serde field path.
-        #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
         fields: BTreeMap<FieldName, Exactness>,
     },
@@ -1125,15 +1123,13 @@ mod tests {
     #[test]
     fn an_entity_note_refuses_byte_exact_and_a_field_note_refuses_an_empty_map() {
         let error = serde_json::from_value::<ExactnessNote>(serde_json::json!({
-            "scope": "entity",
-            "entity": "byte_exact"
+            "kind": "entity", "entity": "byte_exact"
         }))
         .expect_err("byte-exact is the implicit entity exactness");
         assert!(error.to_string().contains("unknown variant"), "{error}");
 
         let error = serde_json::from_value::<ExactnessNote>(serde_json::json!({
-            "scope": "fields",
-            "fields": {}
+            "kind": "fields", "fields": {}
         }))
         .expect_err("a field note carries at least one override");
         assert!(
@@ -1145,8 +1141,7 @@ mod tests {
     #[test]
     fn explicit_field_exactness_survives_an_equal_entity_note() {
         let wire = serde_json::json!({
-            "scope": "entity",
-            "entity": "derived",
+            "kind": "entity", "entity": "derived",
             "fields": {"geometry": "derived"}
         });
         let note: ExactnessNote = serde_json::from_value(wire.clone()).unwrap();
@@ -1169,7 +1164,7 @@ mod tests {
                 if entity_first {
                     wire.clone()
                 } else {
-                    serde_json::json!({"scope": "entity", "entity": "derived"})
+                    serde_json::json!({"kind": "entity", "entity": "derived", "fields": {}})
                 }
             );
         }
@@ -1229,8 +1224,8 @@ mod tests {
             before
         );
         for wire in [
-            serde_json::json!({"scope": "entity", "entity": "derived", "fields": {"": "derived"}}),
-            serde_json::json!({"scope": "fields", "fields": {"": "derived"}}),
+            serde_json::json!({"kind": "entity", "entity": "derived", "fields": {"": "derived"}}),
+            serde_json::json!({"kind": "fields", "fields": {"": "derived"}}),
         ] {
             let error = serde_json::from_value::<ExactnessNote>(wire).expect_err("empty field key");
             assert!(
@@ -1239,8 +1234,7 @@ mod tests {
             );
         }
         let wire = serde_json::json!({
-            "scope": "entity",
-            "entity": "derived",
+            "kind": "entity", "entity": "derived",
             "fields": {"position.x": "byte_exact"}
         });
         let admitted: ExactnessNote = serde_json::from_value(wire.clone()).expect("nonempty path");
@@ -1253,7 +1247,7 @@ mod tests {
     fn repeated_exactness_field_keys_are_refused_through_the_decode_sidecar() {
         let ir = crate::examples::unit_cube().expect("valid cube");
         let ir_json = ir.to_canonical_json().expect("serialize CADIR");
-        let id = ir.model.points[0].id.as_str();
+        let id = ir.geometry.points[0].id.as_str();
         for scope in ["entity", "fields"] {
             let mut builder = AnnotationBuilder::new();
             if scope == "entity" {
@@ -1271,7 +1265,10 @@ mod tests {
             let sidecar = crate::source_fidelity::DecodeSidecar::bind_sha256(
                 crate::hash::digest::Sha256Digest::digest(ir_json.as_bytes()),
                 report,
-                crate::SourceFidelity::with_annotations(builder.build()),
+                crate::SourceFidelity::with_annotations(
+                    builder.build(),
+                    crate::hash::digest::Sha256Digest::digest(b"test source"),
+                ),
             );
             let text = serde_json::to_string(&sidecar).expect("serialize sidecar");
             assert_eq!(
@@ -1323,7 +1320,7 @@ mod builder_storage_tests {
 
     #[test]
     fn annotation_builder_transaction_commits_the_same_tables() {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let stream = StreamHandle::new(crate::stream_name!("test"));
         let mut original = AnnotationBuilder::new();
         original.note("test:model:point#prior", &stream, 0, Some("prior"));

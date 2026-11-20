@@ -1,41 +1,46 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::document::CadIr;
-use crate::products::{Occurrence, OccurrenceParent, PrototypeReference};
+use crate::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use crate::report::check::Finding;
 use crate::transform::Transform;
 
-fn occurrence(id: &str, parent: Option<&str>, ordinal: u32) -> Occurrence {
-    Occurrence {
-        id: id.try_into().unwrap(),
-        prototype: PrototypeReference::Unresolved {},
-        parent: parent.map_or(OccurrenceParent::Root {}, |id| {
-            OccurrenceParent::Occurrence {
-                occurrence: id.try_into().unwrap(),
-            }
-        }),
-        ordinal,
-        transform: Transform::identity(),
-        linked_prototype: None,
-        scale: [crate::scalar::FiniteReal::ONE; 3],
-        name: None,
-        visible: None,
-        link: None,
-        native_ref: None,
-    }
+fn occurrence(id: &str, prototype: &str) -> Occurrence {
+    Occurrence::new(
+        id.try_into().unwrap(),
+        prototype.try_into().unwrap(),
+        Some(Transform::identity()),
+    )
 }
 
-fn reports(ir: &CadIr) {
-    let ctx = cadmpeg_test_support::service_decode_context();
+fn definition(id: &str, occurrences: &[&str]) -> ProductDefinition {
+    let mut definition = ProductDefinition::new(id.try_into().unwrap(), Storage::Embedded);
+    definition.occurrences = occurrences
+        .iter()
+        .map(|id| (*id).try_into().unwrap())
+        .collect();
+    definition
+}
+
+fn findings(ir: &CadIr) -> Vec<Finding> {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     super::super::check_products(&ctx, ir, &mut findings).unwrap();
-    assert!(!findings.is_empty());
+    findings
+}
+
+fn messages(ir: &CadIr) -> Vec<(Option<String>, String)> {
+    findings(ir)
+        .into_iter()
+        .map(|finding| (finding.entity, finding.message))
+        .collect()
 }
 
 fn missing_body(ir: &mut CadIr) {
-    ir.model.product_definitions.push(serde_json::from_value(serde_json::json!({
-        "id": "test:model:product#definition", "kind": "part", "bodies": ["test:model:body#missing"]
-    })).unwrap());
+    let mut row = definition("test:model:product#definition", &[]);
+    row.bodies
+        .push("test:model:body#missing".try_into().unwrap());
+    ir.model.product_definitions.push(row);
 }
 
 fn missing_joint(ir: &mut CadIr) {
@@ -73,144 +78,169 @@ fn missing_joint(ir: &mut CadIr) {
     ));
 }
 
+/// A root that owns one occurrence of a part, which is the valid baseline.
+fn assembly() -> CadIr {
+    let mut ir = CadIr::empty();
+    let mut root = definition("test:model:product#root", &["test:model:occurrence#part"]);
+    root.storage = Storage::File {
+        document: ExternalDocument::default(),
+        source: None,
+    };
+    ir.model.product_definitions = vec![root, definition("test:model:product#part", &[])];
+    ir.model.occurrences = vec![occurrence(
+        "test:model:occurrence#part",
+        "test:model:product#part",
+    )];
+    ir
+}
+
+#[test]
+fn a_root_that_owns_an_occurrence_of_a_part_is_valid() {
+    assert!(findings(&assembly()).is_empty());
+}
+
 #[test]
 fn product_body_validation_reports_a_finding() {
     let mut ir = CadIr::empty();
     missing_body(&mut ir);
-    reports(&ir);
+    assert!(!findings(&ir).is_empty());
 }
 
 #[test]
-fn product_sibling_ordinal_validation_reports_a_finding() {
-    let mut ir = CadIr::empty();
-    ir.model.occurrences = vec![
-        occurrence("test:model:occurrence#first", None, 0),
-        occurrence("test:model:occurrence#second", None, 0),
-    ];
-    reports(&ir);
-}
-
-#[test]
-fn product_auxiliary_definition_validation_reports_a_finding() {
-    let mut ir = CadIr::empty();
-    let mut row = occurrence("test:model:occurrence#link", None, 0);
-    row.link = crate::products::LinkState::new(
-        Vec::new(),
-        Some("test:model:product#missing".try_into().unwrap()),
-        None,
-        None,
+fn an_occurrence_names_an_existing_prototype() {
+    let mut ir = assembly();
+    ir.model.occurrences[0].prototype = "test:model:product#absent".try_into().unwrap();
+    assert_eq!(
+        messages(&ir),
+        [(
+            Some("test:model:occurrence#part".into()),
+            "invalid occurrence prototype".into()
+        )]
     );
-    ir.model.occurrences.push(row);
-    reports(&ir);
 }
 
 #[test]
-fn product_copy_source_and_group_validation_reports_a_finding() {
-    for source in [true, false] {
-        let mut ir = CadIr::empty();
-        let mut row = occurrence("test:model:occurrence#copy", None, 0);
-        let reference = PrototypeReference::Local {
-            definition: "test:model:product#missing".try_into().unwrap(),
-        };
-        row.link = crate::products::LinkState::new(
-            Vec::new(),
-            None,
-            None,
-            Some(crate::products::CopyOnChange {
-                policy: crate::products::CopyOnChangePolicy::Enabled,
-                source: source.then(|| reference.clone()),
-                group: (!source).then_some(reference),
-                touched: None,
-            }),
-        );
-        ir.model.occurrences.push(row);
-        reports(&ir);
-    }
+fn an_occurrence_has_exactly_one_owner() {
+    let mut ir = assembly();
+    ir.model.product_definitions[0].occurrences.clear();
+    assert_eq!(
+        messages(&ir),
+        [(
+            Some("test:model:occurrence#part".into()),
+            "occurrence has no owning definition".into()
+        )]
+    );
+
+    let mut ir = assembly();
+    let mut other = definition("test:model:product#other", &["test:model:occurrence#part"]);
+    other.storage = Storage::Embedded;
+    ir.model.product_definitions.push(other);
+    assert_eq!(
+        messages(&ir),
+        [(
+            Some("test:model:product#other".into()),
+            "occurrence has more than one owning definition".into()
+        )]
+    );
+
+    let mut ir = assembly();
+    ir.model.product_definitions[0]
+        .occurrences
+        .push("test:model:occurrence#absent".try_into().unwrap());
+    assert_eq!(
+        messages(&ir),
+        [(
+            Some("test:model:product#root".into()),
+            "invalid product occurrence reference".into()
+        )]
+    );
+}
+
+#[test]
+fn a_definition_does_not_place_itself() {
+    let mut ir = assembly();
+    ir.model.product_definitions[1]
+        .occurrences
+        .push("test:model:occurrence#back".try_into().unwrap());
+    ir.model.occurrences.push(occurrence(
+        "test:model:occurrence#back",
+        "test:model:product#root",
+    ));
+    assert_eq!(
+        messages(&ir),
+        [
+            (
+                Some("test:model:product#root".into()),
+                "an occurrence places the root definition".into()
+            ),
+            (
+                Some("test:model:product#root".into()),
+                "product definition places itself".into()
+            )
+        ]
+    );
+
+    let mut ir = assembly();
+    ir.model.product_definitions[1]
+        .occurrences
+        .push("test:model:occurrence#self".try_into().unwrap());
+    ir.model.occurrences.push(occurrence(
+        "test:model:occurrence#self",
+        "test:model:product#part",
+    ));
+    assert_eq!(
+        messages(&ir),
+        [(
+            Some("test:model:product#part".into()),
+            "product definition places itself".into()
+        )]
+    );
+}
+
+#[test]
+fn a_shared_definition_placed_twice_is_no_cycle() {
+    let mut ir = assembly();
+    ir.model.product_definitions[0]
+        .occurrences
+        .push("test:model:occurrence#again".try_into().unwrap());
+    ir.model.occurrences.push(occurrence(
+        "test:model:occurrence#again",
+        "test:model:product#part",
+    ));
+    assert!(findings(&ir).is_empty());
 }
 
 #[test]
 fn product_joint_validation_reports_a_finding() {
-    let mut ir = CadIr::empty();
-    ir.model
-        .occurrences
-        .push(occurrence("test:model:occurrence#present", None, 0));
+    let mut ir = assembly();
     missing_joint(&mut ir);
-    reports(&ir);
+    assert!(!findings(&ir).is_empty());
 }
 
 #[test]
-fn product_sibling_orders_distinguish_parent_groups() {
-    let mut ir = CadIr::empty();
-    ir.model.occurrences = vec![
-        occurrence("test:model:occurrence#a", None, 0),
-        occurrence("test:model:occurrence#b", None, 1),
-        occurrence(
-            "test:model:occurrence#first",
-            Some("test:model:occurrence#a"),
-            0,
-        ),
-        occurrence(
-            "test:model:occurrence#other",
-            Some("test:model:occurrence#b"),
-            0,
-        ),
-    ];
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let mut findings = Vec::new();
-    super::super::check_products(&ctx, &ir, &mut findings).unwrap();
-    assert!(findings.is_empty(), "{findings:?}");
-    ir.model.occurrences.push(occurrence(
-        "test:model:occurrence#duplicate",
-        Some("test:model:occurrence#a"),
-        0,
-    ));
-    super::super::check_products(&ctx, &ir, &mut findings).unwrap();
-    assert_eq!(findings.len(), 1);
-    assert_eq!(
-        findings[0].entity.as_deref(),
-        Some("test:model:occurrence#duplicate")
-    );
-}
-
-#[test]
-fn product_validation_keeps_definition_graph_occurrence_joint_finding_order() {
+fn product_validation_keeps_definition_occurrence_joint_finding_order() {
     let mut ir = CadIr::empty();
     missing_body(&mut ir);
-    let mut row = occurrence(
+    ir.model.occurrences.push(occurrence(
         "test:model:occurrence#bad",
-        Some("test:model:occurrence#absent"),
-        0,
-    );
-    row.prototype = PrototypeReference::Local {
-        definition: "test:model:product#absent".try_into().unwrap(),
-    };
-    ir.model.occurrences.push(row);
+        "test:model:product#absent",
+    ));
     missing_joint(&mut ir);
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let mut findings: Vec<Finding> = Vec::new();
-    super::super::check_products(&ctx, &ir, &mut findings).unwrap();
     assert_eq!(
-        findings
-            .iter()
-            .map(|finding| finding.entity.as_deref())
-            .collect::<Vec<_>>(),
+        messages(&ir),
         [
-            Some("test:model:product#definition"),
-            Some("model:assembly"),
-            Some("test:model:occurrence#bad"),
-            Some("test:model:joint#missing")
-        ]
-    );
-    assert_eq!(
-        findings
-            .iter()
-            .map(|finding| finding.message.as_str())
-            .collect::<Vec<_>>(),
-        [
-            "invalid product body reference",
-            "invalid occurrence parent graph",
-            "invalid occurrence reference, ordinal, or affine transform",
-            "invalid assembly joint operands, frames, or limits"
+            (
+                Some("test:model:product#definition".into()),
+                "invalid product body reference".into()
+            ),
+            (
+                Some("test:model:occurrence#bad".into()),
+                "invalid occurrence prototype".into()
+            ),
+            (
+                Some("test:model:joint#missing".into()),
+                "invalid assembly joint operands, frames, or limits".into()
+            ),
         ]
     );
 }
@@ -221,35 +251,28 @@ fn product_sketch_references_exist_and_have_one_definition() {
     let sketch = "test:model:sketch#one";
     ir.model.sketches.push(
         serde_json::from_value(serde_json::json!({
-            "id": sketch, "placement": {"kind": "unresolved"}
+            "id": sketch, "placement": {"kind": "unresolved"}, "profiles": []
         }))
         .unwrap(),
     );
-    ir.model.product_definitions.push(
-        serde_json::from_value(serde_json::json!({
-            "id": "test:model:product#one", "kind": "part", "sketches": [sketch]
-        }))
-        .unwrap(),
-    );
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let mut findings = Vec::new();
-    super::super::check_products(&ctx, &ir, &mut findings).unwrap();
-    assert!(findings.is_empty());
-    ir.model.product_definitions.push(
-        serde_json::from_value(serde_json::json!({
-            "id": "test:model:product#two", "kind": "part", "sketches": [sketch]
-        }))
-        .unwrap(),
-    );
-    super::super::check_products(&ctx, &ir, &mut findings).unwrap();
-    assert!(findings
+    let with_sketch = |id: &str| {
+        let mut row = definition(id, &[]);
+        row.sketches.push(sketch.try_into().unwrap());
+        row
+    };
+    ir.model
+        .product_definitions
+        .push(with_sketch("test:model:product#one"));
+    assert!(findings(&ir).is_empty());
+    ir.model
+        .product_definitions
+        .push(with_sketch("test:model:product#two"));
+    assert!(findings(&ir)
         .iter()
         .any(|finding| finding.message == "sketch has multiple product definitions"));
-    findings.clear();
     ir.model.product_definitions.pop();
     ir.model.sketches.clear();
-    super::super::check_products(&ctx, &ir, &mut findings).unwrap();
-    assert!(findings
+    assert!(findings(&ir)
         .iter()
         .any(|finding| finding.message == "invalid product sketch reference"));
 }
@@ -260,24 +283,90 @@ fn product_sketch_reference_cannot_repeat_in_one_definition() {
     let sketch = "test:model:sketch#one";
     ir.model.sketches.push(
         serde_json::from_value(serde_json::json!({
-            "id": sketch, "placement": {"kind": "unresolved"}
+            "id": sketch, "placement": {"kind": "unresolved"}, "profiles": []
         }))
         .unwrap(),
     );
-    ir.model.product_definitions.push(
-        serde_json::from_value(serde_json::json!({
-            "id": "test:model:product#one", "kind": "part", "sketches": [sketch, sketch, sketch]
-        }))
-        .unwrap(),
+    let mut row = definition("test:model:product#one", &[]);
+    row.sketches = vec![sketch.try_into().unwrap(); 3];
+    ir.model.product_definitions.push(row);
+    let found = findings(&ir);
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].message, "duplicate product sketch reference");
+    assert_eq!(found[0].entity.as_deref(), Some("test:model:product#one"));
+    assert_eq!(found[0].severity, crate::report::Severity::Error);
+}
+
+/// A triangle mesh with the identity `id` that represents `body`.
+fn mesh(id: &str, body: Option<crate::ids::BodyId>) -> crate::tessellation::Tessellation {
+    use crate::math::Point3;
+    use crate::tessellation::{Tessellation, TessellationMesh};
+
+    Tessellation::new(
+        id.try_into().expect("valid identity"),
+        TessellationMesh::List {
+            vertices: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+        },
+        Vec::new(),
+    )
+    .expect("a valid mesh")
+    .with_body(body)
+}
+
+/// A part definition `id` that owns the meshes `tessellations`.
+fn mesh_part(id: &str, tessellations: &[&str]) -> ProductDefinition {
+    let mut row = definition(id, &[]);
+    row.kind = Some(crate::products::ProductDefinitionKind::Part);
+    row.tessellations = tessellations
+        .iter()
+        .map(|id| (*id).try_into().unwrap())
+        .collect();
+    row
+}
+
+#[test]
+fn product_tessellations_exist_represent_no_body_and_have_one_definition() {
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
+    let messages = |ir: &CadIr| {
+        let mut findings = Vec::new();
+        super::super::check_products(&ctx, ir, &mut findings).unwrap();
+        findings
+            .into_iter()
+            .map(|finding| finding.message)
+            .collect::<Vec<_>>()
+    };
+    let shared = "test:model:tessellation#shared";
+    let mut ir = CadIr::empty();
+    ir.model.tessellations.push(mesh(shared, None));
+    ir.model
+        .product_definitions
+        .push(mesh_part("test:model:product#one", &[shared]));
+    assert!(messages(&ir).is_empty());
+
+    ir.model
+        .product_definitions
+        .push(mesh_part("test:model:product#two", &[shared]));
+    assert!(messages(&ir).contains(&"tessellation has multiple product definitions".to_owned()));
+    ir.model.product_definitions.pop();
+
+    ir.model.product_definitions[0] = mesh_part("test:model:product#one", &[shared, shared]);
+    assert!(messages(&ir).contains(&"duplicate product tessellation reference".to_owned()));
+
+    ir.model.product_definitions[0] = mesh_part(
+        "test:model:product#one",
+        &["test:model:tessellation#missing"],
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
-    let mut findings = Vec::new();
-    super::super::check_products(&ctx, &ir, &mut findings).unwrap();
-    assert_eq!(findings.len(), 1);
-    assert_eq!(findings[0].message, "duplicate product sketch reference");
-    assert_eq!(
-        findings[0].entity.as_deref(),
-        Some("test:model:product#one")
+    assert!(messages(&ir).contains(&"invalid product tessellation reference".to_owned()));
+
+    ir.model.tessellations[0] = mesh(
+        shared,
+        Some("test:model:body#solid".try_into().expect("valid identity")),
     );
-    assert_eq!(findings[0].severity, crate::report::Severity::Error);
+    ir.model.product_definitions[0] = mesh_part("test:model:product#one", &[shared]);
+    assert!(messages(&ir).contains(&"product tessellation represents a body".to_owned()));
 }

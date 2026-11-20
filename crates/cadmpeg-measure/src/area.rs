@@ -2,7 +2,9 @@
 //! Trimmed area by Green's theorem.
 //!
 //! For a region `R` whose boundary runs with `R` on its left in the
-//! parameter plane, `A = ∮ F(u, v) du` with `∂F/∂v = −|S_u × S_v|`. On an
+//! parameter plane, `A = ∮ F(u, v) du` with `∂F/∂v = −|S_u × S_v|`, or
+//! `A = ∮ G(u, v) dv` with `∂G/∂u = |S_u × S_v|` on a chart whose inner
+//! integrals run along `u`. On an
 //! analytic chart `F(u, v) = G(v) − G(v₀)` for an antiderivative `G` of
 //! `−|N|`. Each piece integrates `F(u(t), v(t))·u'(t)` by adaptive
 //! quadrature, so the listed order of a ring changes no value once its
@@ -134,6 +136,10 @@ fn inner(
     scale: f64,
 ) -> Measure<(f64, f64)> {
     let column = Column::new(eval, chart, u)?;
+    let (breaks, width) = match chart {
+        Chart::Nurbs(nurbs) => (nurbs.v_breaks(), nurbs.width(0)),
+        _ => (Vec::new(), 1.0),
+    };
     let mut charge = |units| eval.charge(units);
     let mut density = |s: f64| -> Measure<[f64; 1]> {
         let partials = column.partials(eval, s)?;
@@ -144,11 +150,45 @@ fn inner(
         &mut density,
         from,
         to,
-        &match chart {
-            Chart::Nurbs(nurbs) => nurbs.v_breaks(),
-            _ => Vec::new(),
-        },
-        Target::inner([scale * scale]),
+        &breaks,
+        Target::inner([scale * scale / width]),
+    )?;
+    if !integral.converged {
+        return Err(MeasureFailure::unavailable(
+            UnavailableReason::QuadratureNotConverged,
+            None,
+            "the inner area quadrature did not converge",
+        ));
+    }
+    Ok((integral.value[0], integral.error[0]))
+}
+
+/// `∫_from^to |N(s, v)| ds` along a `u`-isoline of a NURBS chart and its
+/// error estimate.
+fn inner_across(
+    eval: &Eval<'_, '_>,
+    chart: &Chart<'_>,
+    v: f64,
+    [from, to]: [f64; 2],
+    scale: f64,
+) -> Measure<(f64, f64)> {
+    let row = Column::across(eval, chart, v)?;
+    let (breaks, width) = match chart {
+        Chart::Nurbs(nurbs) => (nurbs.u_breaks(), nurbs.width(1)),
+        _ => (Vec::new(), 1.0),
+    };
+    let mut charge = |units| eval.charge(units);
+    let mut density = |s: f64| -> Measure<[f64; 1]> {
+        let partials = row.partials(eval, s)?;
+        Ok([partials.du.cross(partials.dv).norm()])
+    };
+    let integral = integrate(
+        &mut charge,
+        &mut density,
+        from,
+        to,
+        &breaks,
+        Target::inner([scale * scale / width]),
     )?;
     if !integral.converged {
         return Err(MeasureFailure::unavailable(
@@ -168,12 +208,27 @@ fn generic_loop_integral(
     scale: f64,
 ) -> Measure<LoopIntegral> {
     let target = Target::outer([scale * scale, scale * scale]);
+    let along_u = match chart {
+        Chart::Nurbs(nurbs) if chart.inner_along_u() => Some(nurbs.domain[0][0]),
+        _ => None,
+    };
     let mut value = 0.0_f64;
     let mut error = 0.0_f64;
     for piece in &resolved.pieces {
         let mut charge = |units| eval.charge(units);
         let mut integrand = |t: f64| -> Measure<[f64; 2]> {
             let sample = piece.sample(eval, chart, t)?;
+            if let Some(u0) = along_u {
+                if sample.duv[1] == 0.0 {
+                    return Ok([0.0; 2]);
+                }
+                let (row, row_error) =
+                    inner_across(eval, chart, sample.uv[1], [u0, sample.uv[0]], scale)?;
+                return Ok([row * sample.duv[1], row_error * sample.duv[1].abs()]);
+            }
+            if sample.duv[0] == 0.0 {
+                return Ok([0.0; 2]);
+            }
             let (column, column_error) =
                 inner(eval, chart, sample.uv[0], [base, sample.uv[1]], scale)?;
             Ok([-column * sample.duv[0], column_error * sample.duv[0].abs()])
@@ -183,7 +238,7 @@ fn generic_loop_integral(
             &mut integrand,
             piece.t0,
             piece.t1,
-            &piece.breaks(),
+            &crate::flux::outer_breaks(eval, chart, piece, along_u)?,
             target,
         )?;
         if !integral.converged {

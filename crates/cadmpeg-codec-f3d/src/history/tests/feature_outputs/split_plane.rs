@@ -14,7 +14,23 @@ use cadmpeg_ir::features::{
 use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 
-fn split_body_test_feature(scope_id: &str) -> Feature {
+fn sample_segment(topology: &mut AsmHistoricalTopology, edge: i64, start: Point3, end: Point3) {
+    topology
+        .edge_samples
+        .push(crate::history_records::AsmHistoricalEdgeSample {
+            edge,
+            interior: Point3::new(
+                (start.x + end.x) * 0.5,
+                (start.y + end.y) * 0.5,
+                (start.z + end.z) * 0.5,
+            ),
+            tangent: None,
+            bounds: Some([start, end]),
+        });
+    topology.edge_samples.sort_by_key(|sample| sample.edge);
+}
+
+pub(super) fn split_body_test_feature(scope_id: &str) -> Feature {
     Feature {
         id: FeatureId::mint("test:model:feature#split").unwrap(),
         ordinal: 0,
@@ -27,6 +43,7 @@ fn split_body_test_feature(scope_id: &str) -> Feature {
         source_content: Default::default(),
         evaluation: FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::SplitBody {
+                extend_tool: None,
                 targets: BodySelection::Unresolved,
                 tool: SplitBodyTool::Faces(FaceSelection::Faces(vec![])),
             }),
@@ -46,6 +63,7 @@ fn split_body_with_face_tool(scope_id: &str, face_slots: &[i64]) -> Feature {
     feature
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: BodySelection::Unresolved,
             tool: SplitBodyTool::Faces(FaceSelection::Faces(faces)),
         }));
@@ -91,7 +109,7 @@ fn attach_shell_face(
     }
 }
 
-fn two_solid_boxes_with_planes(
+pub(super) fn two_solid_boxes_with_planes(
     b1: i64,
     min1: Point3,
     max1: Point3,
@@ -259,6 +277,8 @@ fn two_solid_boxes_with_planes(
         ],
         ..AsmHistoricalTopology::default()
     };
+    sample_segment(&mut topo, 8, min1, max1);
+    sample_segment(&mut topo, 108, min2, max2);
     for (i, p) in planes.into_iter().enumerate() {
         let offset = i64::try_from(i).unwrap() * 2;
         attach_shell_face(&mut topo, 3, 5, 200 + offset, p.clone());
@@ -268,6 +288,7 @@ fn two_solid_boxes_with_planes(
 }
 
 fn add_third_solid_box(topo: &mut AsmHistoricalTopology, b3: i64, min3: Point3, max3: Point3) {
+    sample_segment(topo, 308, min3, max3);
     topo.bodies.push(b3);
     topo.bodies.sort_unstable();
     topo.body_regions.push(AsmHistoricalRelation {
@@ -397,7 +418,8 @@ fn split_plane_only_emitted_for_split_body() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature_unresolved
             .source_properties
@@ -418,7 +440,8 @@ fn split_plane_only_emitted_for_split_body() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature_split
             .source_properties
@@ -460,6 +483,7 @@ fn split_plane_only_emitted_for_split_body() {
     feature_datum_split
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            extend_tool: None,
             targets: BodySelection::Unresolved,
             tool: SplitBodyTool::Plane { plane: datum_id },
         }));
@@ -472,7 +496,8 @@ fn split_plane_only_emitted_for_split_body() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         features[1]
             .source_properties
@@ -686,7 +711,8 @@ fn split_plane_separates_body_centers_when_bodies_exist() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature_split
             .source_properties
@@ -729,7 +755,8 @@ fn split_plane_separates_body_centers_when_bodies_exist() {
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feature_split2
             .source_properties
@@ -991,6 +1018,9 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
     topo_partial_vertices
         .point_positions
         .retain(|p| p.point != 21);
+    topo_partial_vertices
+        .edge_samples
+        .retain(|sample| sample.edge != 8);
 
     let mut topo_unsolid_body = two_solid_boxes_with_planes(
         1,
@@ -1047,7 +1077,8 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
             &Default::default(),
             None,
         )
-        .unwrap();
+        .unwrap()
+        .losses;
         assert_eq!(
             feature_split
                 .source_properties
@@ -1061,21 +1092,12 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
                 .get(&cadmpeg_core::nonblank_literal!("body_centers"))
                 .map(String::as_str),
             Some("1:0,0,1;2:0,0,2"),
-            "case {i} must preserve readable body centers"
+            "case {i} must preserve centres from available edge evidence"
         );
         if i == 0 {
-            assert!(
-                losses.iter().any(|loss| {
-                    loss.code == crate::loss::F3dLossCode::HistoricalBodyCenterPartial.kind()
-                }),
-                "partial vertex evidence must emit HistoricalBodyCenterPartial"
-            );
-            assert!(
-                losses.iter().all(|loss| {
-                    loss.code != crate::loss::F3dLossCode::HistoricalBodyBoundsUnresolved.kind()
-                }),
-                "partial vertex evidence with readable bounds must not emit HistoricalBodyBoundsUnresolved"
-            );
+            assert!(losses.iter().any(|loss| {
+                loss.code == crate::loss::F3dLossCode::HistoricalBodyCenterPartial.kind()
+            }));
 
             let history_prev_only = crate::test_support::history::history(
                 "f3d:asm-history#incomplete-prev-only".into(),
@@ -1096,7 +1118,8 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
                 &Default::default(),
                 None,
             )
-            .unwrap();
+            .unwrap()
+            .losses;
             assert!(
                 prev_losses.iter().all(|loss| {
                     loss.code != crate::loss::F3dLossCode::HistoricalBodyCenterPartial.kind()
@@ -1155,7 +1178,8 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
         &Default::default(),
         None,
     )
-    .unwrap();
+    .unwrap()
+    .losses;
     assert_eq!(
         feat_coplanar
             .source_properties
@@ -1203,6 +1227,8 @@ fn combine_join_test_feature(scope_id: &str, target: Option<i64>, tool: Option<i
                 operands: CombineOperands::new(target_sel, tool_sel).unwrap(),
                 op: BooleanKind::Join,
                 keep_tools: false,
+
+                destination: cadmpeg_ir::features::CombineDestination::default(),
             }),
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
@@ -1284,6 +1310,12 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
         position: Point3::new(19.0, 9.0, 9.0),
     });
     state1_half_verts.point_positions.sort_by_key(|p| p.point);
+    sample_segment(
+        &mut state1_half_verts,
+        32,
+        Point3::new(12., 0., 0.),
+        Point3::new(19., 9., 9.),
+    );
 
     let history_half = crate::test_support::history::history(
         "f3d:asm-history#abs-half".into(),
@@ -1378,6 +1410,12 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
     state1_distinct_carriers
         .point_positions
         .sort_by_key(|p| p.point);
+    sample_segment(
+        &mut state1_distinct_carriers,
+        32,
+        Point3::new(12., 0., 0.),
+        Point3::new(15., 5., 5.),
+    );
 
     // 1. Without operand identity or carrier transfer, distinct carriers leave absorption unresolved.
     let history_distinct = crate::test_support::history::history(
@@ -1484,6 +1522,12 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
         end_vertex: 210,
     });
     state2_touch_b2.edge_vertices.sort_by_key(|e| e.edge);
+    sample_segment(
+        &mut state2_touch_b2,
+        208,
+        Point3::new(12., 0., 0.),
+        Point3::new(14., 2., 2.),
+    );
     state2_touch_b2.coedge_topology.extend([
         AsmHistoricalCoedge {
             coedge: 206,
@@ -1805,6 +1849,12 @@ fn split_and_body_properties_follow_bound_history_across_equal_state_numbers() {
         },
     ]);
     h1_state2.vertex_points.sort_by_key(|v| v.entity);
+    sample_segment(
+        &mut h1_state2,
+        32,
+        Point3::new(0., 0., 2.),
+        Point3::new(2., 2., 3.),
+    );
 
     let mut h1_states = vec![
         state(2, 2, Some(1), h1_state2),

@@ -230,7 +230,7 @@ fn reversed_nurbs_outer_boundary_write_round_trip_keeps_measured_geometry() {
 fn topology_owned_curves_without_a_role_round_trip_as_one_solid() {
     let ir = cadmpeg_test_support::solids::solid_cylinder();
     let written = round_tripped(&ir);
-    assert_eq!(written.model.bodies.len(), ir.model.bodies.len());
+    assert_eq!(written.geometry.bodies.len(), ir.geometry.bodies.len());
     measures_agree("role-less cylinder", &ir, &written)
         .expect("the round trip keeps its measured geometry");
 }

@@ -212,7 +212,7 @@ pub(super) fn valid(
     ) else {
         return false;
     };
-    ir.model
+    ir.geometry
         .bodies
         .iter()
         .any(|candidate| candidate.id == body.body)

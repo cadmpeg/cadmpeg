@@ -5,11 +5,11 @@
       "attributes": {
         "offset": "91"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "BasBasData",
       "role": "model-data",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 36
       }
     },
@@ -17,36 +17,40 @@
       "attributes": {
         "offset": "127"
       },
-      "compression": "none",
+      "kind": "none",
       "name": "NeuAsmSld",
       "role": "metadata",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 238
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "residual",
+        "admission": {
+          "kind": "residual"
+        },
         "declared": {
           "version_line": "#UGC:2 ASSEMBLY 2562 2120"
         },
         "dialect": "creo:unknown"
       }
-    }
+    },
+    "kind": "classified"
   },
   "losses": [
     {
       "code": {
-        "code": "source.dialect-unverified",
-        "kind": "source_dialect_unverified",
-        "namespace": "creo",
-        "scope": "namespaced",
-        "strict_floor": "warning"
+        "kind": "namespaced",
+        "value": {
+          "code": "source.dialect-unverified",
+          "kind": "source_dialect_unverified",
+          "namespace": "creo",
+          "strict_floor": "warning"
+        }
       },
       "message": "the PSB section table carries no layout discriminant: no DEPDB_DATA section with the p_dep_db root record, no ND: section-name decoration, and no complete legacy ASCII #P_OBJECT frame. This decode ran the layout-independent path only, so every ND, DEPDB, and legacy ASCII decode gate was skipped",
       "severity": "warning"

@@ -44,10 +44,10 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
     assert_eq!(page.parameters["usage_7_sequence"], "1");
     assert!(page.relationships["items"]
         .iter()
-        .any(|target| { target.local_target() == Some("step:drawing:presentation_view#4") }));
+        .any(|target| { target.native_text() == Some("#4") }));
     assert!(page.relationships["drawing_revision"]
         .iter()
-        .any(|target| { target.local_target() == Some("step:drawing:drawing_revision#2") }));
+        .any(|target| { target.native_text() == Some("#2") }));
 
     let view = result
         .ir()
@@ -58,10 +58,10 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
         .expect("presentation view");
     assert!(view.relationships["items"]
         .iter()
-        .any(|target| { target.local_target() == Some("step:data:item#5") }));
+        .any(|target| { target.native_text() == Some("#5") }));
     assert!(view.relationships["presentation_context"]
         .iter()
-        .any(|target| { target.local_target() == Some("step:data:representation_context#3") }));
+        .any(|target| { target.native_text() == Some("#3") }));
     assert_eq!(view.parameters["presentation_context"], "#3");
 
     let model = result
@@ -73,10 +73,10 @@ fn drawing_graph_transfers_pages_revisions_views_and_opaque_items() {
         .expect("draughting model");
     assert!(model.relationships["semantic_definition"]
         .iter()
-        .any(|target| { target.local_target() == Some("step:data:item#11") }));
+        .any(|target| { target.native_text() == Some("#11") }));
     assert!(model.relationships["associated_items"]
         .iter()
-        .any(|target| { target.local_target() == Some("step:drawing:presentation_view#4") }));
+        .any(|target| { target.native_text() == Some("#4") }));
 
     let validation = cadmpeg_ir::validate_neutral(result.ir(), result.report().losses.clone())
         .expect("validate the neutral model");
@@ -112,7 +112,7 @@ fn complex_draughting_model_reads_inherited_representation_attributes() {
     assert_eq!(model.parameters["presentation_context"], "#1");
     assert!(model.relationships["items"]
         .iter()
-        .any(|target| target.local_target() == Some("step:data:item#3")));
+        .any(|target| target.native_text() == Some("#3")));
     assert!(!result.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::DrawingRecordTooFewParameters.kind()
             && loss.message.contains("#2")
@@ -135,7 +135,7 @@ fn complex_draughting_callout_reads_inherited_name() {
     assert_eq!(callout.parameters["name"], "Callout");
     assert!(callout.relationships["contents"]
         .iter()
-        .any(|target| target.local_target() == Some("step:data:item#2")));
+        .any(|target| target.native_text() == Some("#2")));
     assert!(!result
         .report()
         .losses
@@ -199,8 +199,8 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
         .expect("draughting model");
     assert!(model.relationships["semantic_definition"]
         .iter()
-        .filter_map(cadmpeg_ir::ReferenceSelection::local_target)
-        .any(|target| target == "step:data:shape_aspect#3"));
+        .filter_map(cadmpeg_ir::ReferenceSelection::native_text)
+        .any(|target| target == "#3"));
     let drawing_targets = &result
         .ir()
         .native
@@ -213,16 +213,16 @@ fn drawing_associations_preserve_shape_aspects_and_placeholders() {
     assert_eq!(
         model.relationships["associated_items"]
             .iter()
-            .filter_map(cadmpeg_ir::ReferenceSelection::local_target)
-            .filter(|target| *target == "step:drawing:draughting_callout#5")
+            .filter_map(cadmpeg_ir::ReferenceSelection::native_text)
+            .filter(|target| *target == "#5")
             .count(),
         3
     );
     assert_eq!(
         model.relationships["annotation_placeholder"]
             .iter()
-            .filter_map(cadmpeg_ir::ReferenceSelection::local_target)
-            .filter(|target| *target == "step:presentation:pmi#7")
+            .filter_map(cadmpeg_ir::ReferenceSelection::native_text)
+            .filter(|target| *target == "#7")
             .count(),
         2
     );
@@ -272,8 +272,10 @@ fn drawing_association_uses_product_definition_shape_view_scope() {
             })
             .and_then(|drawing| drawing.relationships.get("semantic_definition"))
             .and_then(|targets| targets.first())
-            .and_then(cadmpeg_ir::ReferenceSelection::local_target)
-            .map(str::to_owned)
+            .and_then(|selection| match &selection.target {
+                cadmpeg_ir::ReferenceTarget::Entity(target) => Some(target.entity.id().to_owned()),
+                _ => None,
+            })
     };
 
     let source_order = decode_fixture(include_bytes!(
@@ -336,7 +338,15 @@ fn drawing_relationships_resolve_unique_wrapper_carriers() {
         .expect("annotation drawing model");
     assert!(annotation_model.relationships["items"]
         .iter()
-        .any(|target| target.local_target() == Some("step:data:surface#4")));
+        .any(|target| target.target
+            == cadmpeg_ir::ReferenceTarget::Entity(
+                cadmpeg_ir::references::ReferenceEntity::Topology(
+                    cadmpeg_ir::design::refs::EntityRef::Surface(
+                        "step:data:surface#4".try_into().expect("surface id")
+                    )
+                )
+                .into()
+            )));
 
     let mapped_model = result
         .ir()
@@ -347,7 +357,15 @@ fn drawing_relationships_resolve_unique_wrapper_carriers() {
         .expect("mapped drawing model");
     assert!(mapped_model.relationships["items"]
         .iter()
-        .any(|target| target.local_target() == Some("step:data:surface#4")));
+        .any(|target| target.target
+            == cadmpeg_ir::ReferenceTarget::Entity(
+                cadmpeg_ir::references::ReferenceEntity::Topology(
+                    cadmpeg_ir::design::refs::EntityRef::Surface(
+                        "step:data:surface#4".try_into().expect("surface id")
+                    )
+                )
+                .into()
+            )));
 
     let ambiguous_model = result
         .ir()
@@ -371,7 +389,7 @@ fn drawing_relationships_resolve_unique_wrapper_carriers() {
         .expect("cyclic drawing model");
     assert!(cyclic_model.relationships["items"]
         .iter()
-        .any(|target| target.local_target() == Some("step:data:mapped_item#21")));
+        .any(|target| target.native_text() == Some("#21")));
     let drawing_targets = &result
         .ir()
         .native
@@ -414,7 +432,7 @@ fn drawing_relationships_retain_unresolved_wrapper_identity() {
         .expect("unresolved mapped drawing model");
     assert!(model.relationships["items"]
         .iter()
-        .any(|target| target.local_target() == Some("step:data:mapped_item#8")));
+        .any(|target| target.native_text() == Some("#8")));
     let drawing_targets = &result
         .ir()
         .native
@@ -497,9 +515,17 @@ fn deep_drawing_wrapper_graph_resolves_without_call_stack_recursion() {
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(source.as_bytes(), &arena, &policy)
             .expect("root fits service policy");
+    let surface = cadmpeg_ir::references::ReferenceEntity::Topology(
+        cadmpeg_ir::design::refs::EntityRef::Surface(
+            cadmpeg_ir::ids::SurfaceId::mint("step:data:surface#1").expect("surface id"),
+        ),
+    );
+    let entities =
+        std::collections::BTreeMap::from([("step:data:surface#1".to_owned(), surface.clone())]);
     let resolved = super::target_resolution(
         target,
         &identities,
+        &entities,
         &std::collections::HashSet::new(),
         &exchange,
         &std::collections::BTreeMap::new(),
@@ -509,5 +535,8 @@ fn deep_drawing_wrapper_graph_resolves_without_call_stack_recursion() {
     let super::TargetResolution::Resolved(resolved) = resolved else {
         panic!("deep mapped graph lost its unique surface target");
     };
-    assert_eq!(resolved.local_target(), Some("step:data:surface#1"));
+    assert_eq!(
+        resolved.target,
+        cadmpeg_ir::ReferenceTarget::Entity(surface.into())
+    );
 }

@@ -26,7 +26,6 @@ pub struct CameraState {
     #[serde(deserialize_with = "deserialize_orientation")]
     pub orientation: Option<crate::units::NonzeroVector<4>>,
     /// Other camera fields retained by exact source name.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub properties: BTreeMap<NonBlankString, String>,
 }
@@ -34,7 +33,7 @@ pub struct CameraState {
 /// Closed set of document GUI state families.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
-#[serde(tag = "type", content = "value")]
+#[serde(tag = "kind", content = "value")]
 #[serde(deny_unknown_fields)]
 pub enum PresentationStateKind {
     /// Persisted camera pose.
@@ -53,11 +52,9 @@ pub struct PresentationState {
     /// Source order among document GUI state elements.
     pub order: u32,
     /// Exact root attributes.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub attributes: BTreeMap<NonBlankString, String>,
     /// Referenced display assets as global native entry ids.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<String>,
 }
 
@@ -101,7 +98,6 @@ struct PresentationDocumentWire {
     )]
     active_view: Option<String>,
     /// Ordered document-level GUI states.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     states: Vec<PresentationState>,
     /// Native GUI document record supplying this state.
     #[serde(
@@ -241,7 +237,6 @@ pub struct ViewPresentation {
     #[serde(deserialize_with = "deserialize_point_size")]
     pub point_size: Option<crate::scalar::NonNegativeReal>,
     /// Remaining view properties by exact source property name.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub properties: BTreeMap<NonBlankString, String>,
     /// Native view-provider record supplying this state.
@@ -352,9 +347,9 @@ pub struct PresentationLayer {
         deserialize_with = "deserialize_visible"
     )]
     pub visible: Option<bool>,
-    /// Assigned items in deterministic projection order; order has no semantic meaning.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub items: Vec<PresentationItem>,
+    /// Assigned items, each in the placed instance and the state that hold
+    /// it, in deterministic projection order; order has no semantic meaning.
+    pub items: Vec<crate::references::InstanceTarget<PresentationItem>>,
 }
 
 cadmpeg_core::named_optional_field!(
@@ -396,6 +391,7 @@ mod tests {
         let refusal = serde_json::from_value::<ViewPresentation>(serde_json::json!({
             "id": "freecad:presentation:view#1",
             "order": 0,
+            "properties": {},
             "line_width": null
         }))
         .expect_err("null is not a spelling of an absent line width");
@@ -407,9 +403,10 @@ mod tests {
         );
         let absent = serde_json::from_value::<ViewPresentation>(serde_json::json!({
             "id": "freecad:presentation:view#1",
-            "order": 0
+            "order": 0,
+            "properties": {}
         }))
-        .expect("an absent key reaches the field default");
+        .expect("an absent optional key reads as none");
         assert!(absent.line_width.is_none());
     }
 
@@ -484,7 +481,8 @@ mod tests {
             visible: None,
             items: vec![PresentationItem::Source {
                 source_id: cadmpeg_core::nonblank_literal!("#{}", 42),
-            }],
+            }
+            .into()],
         });
 
         assert!(validate_neutral(&ir, Vec::new())
@@ -502,7 +500,8 @@ mod tests {
             visible: None,
             items: vec![PresentationItem::Source {
                 source_id: cadmpeg_core::nonblank_literal!("#{}", 42),
-            }],
+            }
+            .into()],
         });
 
         assert!(validate_neutral(&ir, Vec::new())
@@ -520,7 +519,8 @@ mod tests {
             visible: None,
             items: vec![PresentationItem::Face {
                 face: FaceId::mint("test:model:face#missing").expect("valid identity"),
-            }],
+            }
+            .into()],
         });
 
         assert!(validate_neutral(&ir, Vec::new())

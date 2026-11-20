@@ -48,7 +48,7 @@ fn legacy_material_bytes(diffuse: [u8; 4]) -> Vec<u8> {
 fn legacy_material_preserves_core_appearance_and_switches() {
     let bytes = legacy_material_bytes([5, 6, 7, 8]);
     let material = parse_material(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         MaterialParseInput {
             range: 0..bytes.len(),
@@ -82,7 +82,7 @@ fn unstamped_legacy_material_charges_the_transparency_stamp_loss() {
     let bytes = legacy_material_bytes([5, 6, 7, 8]);
     let mut losses = Vec::new();
     let material = parse_material(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         MaterialParseInput {
             range: 0..bytes.len(),
@@ -103,7 +103,7 @@ fn unstamped_legacy_material_charges_the_transparency_stamp_loss() {
 
     let mut stamped_losses = Vec::new();
     let stamped = parse_material(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         MaterialParseInput {
             range: 0..bytes.len(),
@@ -122,7 +122,7 @@ fn unstamped_legacy_material_charges_the_transparency_stamp_loss() {
     let agreeing = legacy_material_bytes([128, 128, 128, 24]);
     let mut agreeing_losses = Vec::new();
     let material = parse_material(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &agreeing,
         MaterialParseInput {
             range: 0..agreeing.len(),
@@ -188,7 +188,7 @@ fn v2_v3_material_reads_direct_prefix_and_legacy_textures() {
     for archive in [ArchiveVersion::V2, ArchiveVersion::V3] {
         let bytes = v2_v3_material_payload(1);
         let material = parse_material(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             MaterialParseInput {
                 range: 0..bytes.len(),
@@ -247,7 +247,7 @@ fn v2_v3_material_reads_direct_prefix_and_legacy_textures() {
 fn v2_v3_material_minor_zero_uses_source_defaults_without_fabricating_identity() {
     let bytes = v2_v3_material_payload(0);
     let material = parse_material(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &bytes,
         MaterialParseInput {
             range: 0..bytes.len(),

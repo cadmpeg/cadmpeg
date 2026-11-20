@@ -3,6 +3,7 @@
 
 use crate::math::portable::Portable;
 use cadmpeg_core::text::NonBlankString;
+use cadmpeg_derive::DeserializeName;
 #[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -14,7 +15,7 @@ crate::ids::id_type!(
 );
 
 /// Semantic role of a drawing entity.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -70,7 +71,6 @@ pub struct Drawing {
     )]
     pub visible: Option<bool>,
     /// Ordered relationships grouped by exact source-property role.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub relationships: BTreeMap<NonBlankString, Vec<crate::references::ReferenceSelection>>,
     /// Page template drawing identity.
@@ -92,10 +92,10 @@ pub struct Drawing {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(deserialize_with = "deserialize_direction")]
     pub direction: Option<crate::units::NonzeroVector<3>>,
-    /// View rotation in degrees.
+    /// Counterclockwise view rotation on the page.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[serde(deserialize_with = "deserialize_rotation_degrees")]
-    pub rotation_degrees: Option<crate::scalar::FiniteReal>,
+    #[serde(deserialize_with = "deserialize_rotation")]
+    pub rotation: Option<crate::scalar::Angle>,
     /// Sheet dimensions in millimetres and ordered title-block fields.
     #[serde(
         default,
@@ -105,7 +105,6 @@ pub struct Drawing {
     pub sheet: Option<DrawingSheet>,
     /// Curves in source order. Origin is the view origin; X points right and Y points up.
     /// Coordinates are millimetres before view scale and rotation.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub curves: Vec<DrawingCurve>,
     /// Page-space template primitives and positioned text; template owners only.
     #[serde(
@@ -121,15 +120,47 @@ pub struct Drawing {
         deserialize_with = "deserialize_x_direction"
     )]
     pub x_direction: Option<crate::units::NonzeroVector<3>>,
+    /// Where a view's scale comes from.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_scale_from"
+    )]
+    pub scale_from: Option<ScaleFrom>,
+    /// A sheet's or a projection group's projection angle; a group with
+    /// `None` takes its sheet's.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_projection"
+    )]
+    pub projection: Option<ProjectionAngle>,
+    /// The focus distance of a perspective view.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_perspective"
+    )]
+    pub perspective: Option<crate::scalar::PositiveLength>,
+    /// How a view's hidden-line projection computes its curves.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_hidden_line"
+    )]
+    pub hidden_line: Option<HiddenLineMethod>,
     /// Remaining typed or exactly framed parameters by source name.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(deserialize_with = "cadmpeg_core::distinct_keys::btree_map")]
     pub parameters: BTreeMap<NonBlankString, String>,
     /// Template, image, symbol, or other retained assets.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub assets: Vec<String>,
     /// Native drawing record supplying this entity.
-    pub native_ref: String,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_native_ref"
+    )]
+    pub native_ref: Option<String>,
 }
 
 impl Drawing {
@@ -141,7 +172,7 @@ impl Drawing {
         kind: DrawingKind,
         runtime_type: String,
         order: u32,
-        native_ref: String,
+        native_ref: Option<String>,
     ) -> Self {
         Self {
             id,
@@ -156,9 +187,13 @@ impl Drawing {
             position: None,
             scale: None,
             direction: None,
-            rotation_degrees: None,
+            rotation: None,
             template_geometry: None,
             x_direction: None,
+            scale_from: None,
+            projection: None,
+            perspective: None,
+            hidden_line: None,
             sheet: None,
             curves: Vec::new(),
             parameters: BTreeMap::new(),
@@ -181,11 +216,51 @@ cadmpeg_core::named_optional_field!(
     "direction"
 );
 
+cadmpeg_core::named_optional_field!(deserialize_rotation, crate::scalar::Angle, "rotation");
+cadmpeg_core::named_optional_field!(deserialize_scale_from, ScaleFrom, "scale_from");
+cadmpeg_core::named_optional_field!(deserialize_projection, ProjectionAngle, "projection");
 cadmpeg_core::named_optional_field!(
-    deserialize_rotation_degrees,
-    crate::scalar::FiniteReal,
-    "rotation_degrees"
+    deserialize_perspective,
+    crate::scalar::PositiveLength,
+    "perspective"
 );
+cadmpeg_core::named_optional_field!(deserialize_hidden_line, HiddenLineMethod, "hidden_line");
+cadmpeg_core::named_optional_field!(deserialize_native_ref, String, "native_ref");
+/// Where a view's scale comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum ScaleFrom {
+    /// The sheet's scale.
+    Sheet,
+    /// A scale chosen to fit the sheet.
+    Fit,
+    /// The view's own `scale`.
+    Own,
+}
+
+/// A projection angle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum ProjectionAngle {
+    /// First-angle projection.
+    First,
+    /// Third-angle projection.
+    Third,
+}
+
+/// How a hidden-line projection computes its curves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
+#[cfg_attr(feature = "schema", derive(JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum HiddenLineMethod {
+    /// From the exact geometry.
+    Exact,
+    /// From the shape's triangulation: every curve is a chain of line
+    /// segments.
+    Polygonal,
+}
 
 #[cfg(test)]
 mod tests {
@@ -216,7 +291,7 @@ mod tests {
             {"geometry": {"kind": "line", "start": [0.0, 1.0], "end": [2.0, 3.0]}, "visibility": "hidden", "source": "projected_model_edge"},
             {"geometry": {"kind": "circle", "center": [0.0, 0.0], "radius": 2.0}, "visibility": "visible", "source": "cosmetic"},
             {"geometry": {"kind": "arc", "center": [0.0, 0.0], "radius": 2.0, "start": [2.0, 0.0], "middle": [0.0, 2.0], "end": [-2.0, 0.0]}, "visibility": "visible", "source": "center_line"}
-        ]});
+        ], "relationships": {}, "parameters": {}, "assets": []});
         let drawing: Drawing = serde_json::from_value(wire.clone()).unwrap();
         assert!(drawing.sheet.as_ref().unwrap().is_valid());
         assert!(drawing.curves.iter().all(super::DrawingCurve::is_valid));
@@ -246,7 +321,7 @@ mod tests {
 
     #[test]
     fn template_reference_preserves_string_wire_and_rejects_invalid_ids() {
-        let value = serde_json::json!({"id": "synthetic:test:drawing#page", "object": "source", "kind": "page", "runtime_type": "Page", "order": 0, "template": "synthetic:test:drawing#template", "native_ref": "native"});
+        let value = serde_json::json!({"id": "synthetic:test:drawing#page", "object": "source", "kind": "page", "runtime_type": "Page", "order": 0, "template": "synthetic:test:drawing#template", "native_ref": "native", "relationships": {}, "curves": [], "parameters": {}, "assets": []});
         let drawing: Drawing = serde_json::from_value(value.clone()).expect("valid drawing");
         assert_eq!(
             drawing.template.as_ref().map(DrawingId::as_str),
@@ -264,7 +339,7 @@ mod tests {
     }
     #[test]
     fn numeric_admission_names_fields_and_preserves_valid_values() {
-        let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native", "position": [-2.0, 0.0], "scale": 0.5, "direction": [0.0, 0.0, 2.0], "rotation_degrees": -90.0});
+        let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0, "native_ref": "native", "position": [-2.0, 0.0], "scale": 0.5, "direction": [0.0, 0.0, 2.0], "rotation": -0.5, "relationships": {}, "curves": [], "parameters": {}, "assets": []});
         let drawing: Drawing = serde_json::from_value(wire.clone()).expect("valid drawing");
         assert_eq!(serde_json::to_value(drawing).expect("serialize"), wire);
         for (field, invalid) in [
@@ -281,6 +356,32 @@ mod tests {
     }
 
     #[test]
+    fn view_projection_fields_round_trip_and_name_their_fields() {
+        let wire = serde_json::json!({"id": "synthetic:test:drawing#view", "object": "source", "kind": "view", "runtime_type": "View", "order": 0,
+            "scale_from": "fit", "projection": "third", "perspective": 250.0, "hidden_line": "polygonal",
+            "relationships": {}, "curves": [], "parameters": {}, "assets": []});
+        let drawing: Drawing = serde_json::from_value(wire.clone()).expect("valid drawing");
+        assert!(drawing.native_ref.is_none());
+        assert_eq!(drawing.scale_from, Some(super::ScaleFrom::Fit));
+        assert_eq!(serde_json::to_value(drawing).expect("serialize"), wire);
+        for (field, invalid) in [
+            ("scale_from", serde_json::Value::Null),
+            ("projection", serde_json::json!("second")),
+            ("perspective", serde_json::json!(0.0)),
+            ("hidden_line", serde_json::Value::Null),
+            ("native_ref", serde_json::Value::Null),
+        ] {
+            let mut rejected = wire.clone();
+            rejected[field] = invalid;
+            let error = serde_json::from_value::<Drawing>(rejected).expect_err("invalid field");
+            assert!(error.to_string().contains(field), "{field}: {error}");
+        }
+        let mut rejected = wire;
+        rejected["rotation_degrees"] = serde_json::json!(90.0);
+        assert!(serde_json::from_value::<Drawing>(rejected).is_err());
+    }
+
+    #[test]
     fn a_free_form_map_refuses_a_blank_key() {
         let wire = serde_json::json!({
             "id": "synthetic:test:drawing#view",
@@ -289,7 +390,7 @@ mod tests {
             "runtime_type": "View",
             "order": 0,
             "native_ref": "native",
-            "parameters": {"   ": "value"},
+            "parameters": {"   ": "value"}, "relationships": {}, "curves": [], "assets": []
         });
         let error = serde_json::from_value::<Drawing>(wire).expect_err("blank parameter role");
         assert!(error.to_string().contains("must not be blank"), "{error}");
@@ -301,7 +402,7 @@ mod tests {
             "runtime_type": "View",
             "order": 0,
             "native_ref": "native",
-            "relationships": {"": []},
+            "relationships": {"": []}, "curves": [], "parameters": {}, "assets": []
         });
         let error =
             serde_json::from_value::<Drawing>(relationships).expect_err("blank relationship role");
@@ -314,7 +415,7 @@ mod tests {
             "runtime_type": "View",
             "order": 0,
             "native_ref": "native",
-            "parameters": {" scale ": "value"},
+            "parameters": {" scale ": "value"}, "relationships": {}, "curves": [], "assets": []
         });
         let drawing: Drawing =
             serde_json::from_value(named).expect("a named role is kept verbatim");
@@ -334,11 +435,10 @@ mod identity_rewrite;
 #[serde(deny_unknown_fields)]
 pub struct DrawingSheet {
     /// Positive sheet width in millimetres.
-    pub width_mm: crate::scalar::PositiveReal,
+    pub width_mm: crate::scalar::PositiveLength,
     /// Positive sheet height in millimetres.
-    pub height_mm: crate::scalar::PositiveReal,
+    pub height_mm: crate::scalar::PositiveLength,
     /// Ordered name/value pairs; names are unique.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<TitleBlockField>,
 }
 
@@ -354,7 +454,7 @@ pub struct TitleBlockField {
 }
 
 /// Hidden-line classification, independent of presentation style.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum CurveVisibility {
@@ -365,7 +465,7 @@ pub enum CurveVisibility {
 }
 
 /// Curve origin.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, DeserializeName)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum CurveSource {
@@ -414,14 +514,14 @@ pub enum DrawingCurveGeometry {
         /// Center point.
         center: crate::units::FiniteVector<2>,
         /// Positive radius in millimetres.
-        radius: crate::scalar::PositiveReal,
+        radius: crate::scalar::PositiveLength,
     },
     /// Circular arc from start through middle to end, with distinct points.
     Arc {
         /// Center point.
         center: crate::units::FiniteVector<2>,
         /// Positive radius in millimetres.
-        radius: crate::scalar::PositiveReal,
+        radius: crate::scalar::PositiveLength,
         /// Start point.
         start: crate::units::FiniteVector<2>,
         /// Interior point selecting the sweep.
@@ -464,7 +564,7 @@ impl DrawingCurveGeometry {
         let finite =
             |point: crate::units::FiniteVector<2>| point.get().iter().all(|v| v.is_finite());
         let positive =
-            |radius: crate::scalar::PositiveReal| radius.get().is_finite() && radius.get() > 0.0;
+            |radius: crate::scalar::PositiveLength| radius.get().is_finite() && radius.get() > 0.0;
         match *self {
             DrawingCurveGeometry::Line { start, end } => finite(start) && finite(end),
             DrawingCurveGeometry::Circle { center, radius } => finite(center) && positive(radius),

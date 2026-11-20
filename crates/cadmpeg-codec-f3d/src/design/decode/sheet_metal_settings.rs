@@ -90,10 +90,11 @@ pub(crate) fn decode_settings(
         let frames = primary_record_frames(&meta, bytes.len())?;
         let primary =
             (frames.iter().map(|frame| frame.entity_id)).collect::<std::collections::HashSet<_>>();
-        let rule_starts = frames
+        let frames_by_entity = frames
             .iter()
-            .map(|frame| (frame.entity_id, frame.start))
+            .map(|frame| (frame.entity_id, frame))
             .collect::<HashMap<_, _>>();
+        let mut thickness_by_rule = HashMap::new();
         for frame in &frames {
             let Some((guid, version)) = by_entity.get(&frame.entity_id) else {
                 continue;
@@ -108,9 +109,12 @@ pub(crate) fn decode_settings(
                     "F3D sheet-metal settings frame or typed link is invalid".into(),
                 ));
             };
-            let rule = rule_starts
-                .get(&fields.rule)
-                .and_then(|start| rule_thickness(bytes, *start));
+            let rule = *thickness_by_rule.entry(fields.rule).or_insert_with(|| {
+                let frame = frames_by_entity.get(&fields.rule)?;
+                let (_, version) = by_entity.get(&fields.rule)?;
+                let view = View::over_retained(bytes).child(frame.start, frame.member_end)?;
+                rule_thickness(view, *version, &by_entity)
+            });
             let id = super::text::design_record_id(
                 &entry.name,
                 ":design-sheet-metal-settings#",
@@ -137,26 +141,38 @@ pub(crate) fn decode_settings(
     Ok(out)
 }
 
-/// The thickness a sheet-metal rule record states and its offset: after the
-/// indexed header and ten zero bytes, a u32 word, then the first entry, an
-/// LP-UTF16 `Thickness` followed by the f64 value in centimetres.
-pub(crate) fn rule_thickness(
-    bytes: &[u8],
-    start: usize,
+fn rule_thickness(
+    mut view: View<'_>,
+    version: u32,
+    types: &HashMap<u64, (&str, u32)>,
 ) -> Option<(cadmpeg_ir::scalar::PositiveReal, u64)> {
     use crate::layout::sheet_metal_rule_prefix as rule;
-    if bytes.get(start.checked_add(rule::ZERO_RUN_11)?..start.checked_add(rule::ENTRY_WORD)?)?
-        != [0; 10]
-    {
+    view.skip(rule::ZERO_RUN_11)?;
+    if view.take(rule::ENTRY_WORD - rule::ZERO_RUN_11)? != [0; 10] {
         return None;
     }
-    let (name, name_end) =
-        crate::bytes::lp_utf16_bounded(bytes, start.checked_add(rule::FIRST_ENTRY_NAME)?, 1..=64)?;
-    if name != "Thickness" || Some(name_end) != start.checked_add(rule::THICKNESS) {
+    if version == 0 {
+        let count = view.u32_le()?;
+        let count = view.counted(u64::from(count), 11)?;
+        for _ in 0..count.get() {
+            let target = local(&mut view).ok()??;
+            let (guid, _) = types.get(&target)?;
+            if !guid.eq_ignore_ascii_case(SETTINGS_GUID) {
+                return None;
+            }
+        }
+    }
+    view.skip(rule::FIRST_ENTRY_NAME - rule::ENTRY_WORD)?;
+    let (name, width) = crate::bytes::lp_utf16_bounded(view.unread(), 0, 1..=64)?;
+    if name != "Thickness" || width != rule::THICKNESS - rule::FIRST_ENTRY_NAME {
         return None;
     }
-    let thickness = cadmpeg_ir::scalar::PositiveReal::new(View::f64_le_at(bytes, name_end)?)?;
-    Some((thickness, u64_from_index(name_end)))
+    view.skip(width)?;
+    let offset = u64_from_index(view.position());
+    Some((
+        cadmpeg_ir::scalar::PositiveReal::new(view.f64_le()?)?,
+        offset,
+    ))
 }
 
 struct SettingsFields {

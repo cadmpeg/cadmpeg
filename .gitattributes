@@ -13,6 +13,8 @@ crates/*/tests/golden/**/*.bin binary
 # to a different document.
 crates/*/tests/golden/fixtures/** binary
 crates/*/tests/fixtures/** binary
+crates/cadmpeg-codec-catia/tests/fixtures/chart_domains/*.md diff merge text eol=lf
+crates/cadmpeg-codec-catia/tests/fixtures/chart_domains/*.py diff merge text eol=lf
 crates/*/src/**/tests/data/** binary
 
 # NIST corpus files are SHA-256 pinned in corpus/manifest.toml and
@@ -20,3 +22,6 @@ crates/*/src/**/tests/data/** binary
 # diffs and merges as text.
 corpus/nist-pmi/** binary
 corpus/nist-pmi/**/*.md diff merge text eol=lf
+
+# ISO 10303 short-name list, kept byte for byte as ISO publishes it.
+crates/cadmpeg-codec-step/src/parse/short_names/short-names.txt -text

@@ -15,16 +15,19 @@ on:
 permissions:
   contents: read
 
-# A new run supersedes the in-flight run of its group. A PR has one group per
-# ref. Pushes to main share one group, so a merge cancels the run of the merge
-# before it; the `changes` job widens the next run to every commit since the
-# last successful push run. The nightly and dispatched runs use the ref group,
-# so a merge does not cancel the nightly full gate. A re-run of a push run gets
-# its own group: Cut release re-runs a cancelled bump-commit run, and that
-# re-run must not cancel the run of the newer main head, or be cancelled by it.
+# A PR has one group per ref, and a new push to the PR cancels its run in
+# flight. Pushes to main share one group, and a merge does not cancel the push
+# run in flight: main's run takes longer than the gap between merges, so
+# cancelling it left main with no finished run. A merge queues behind the
+# running push run and replaces the push run already queued, and the `changes`
+# job widens the queued run to every commit since the last successful push run.
+# The nightly and dispatched runs use the ref group, so a merge does not cancel
+# the nightly full gate. A re-run of a push run gets its own group: Cut release
+# re-runs a cancelled bump-commit run, and that re-run must not cancel the run
+# of the newer main head, or be cancelled by it.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name != 'push' && github.ref || github.run_attempt == '1' && 'push' || format('push-{0}-{1}', github.sha, github.run_attempt) }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -254,7 +257,7 @@ jobs:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - name: Require valid gate selection
         shell: bash
@@ -265,8 +268,10 @@ jobs:
       - name: Install pinned toolchain
         uses: ./.github/actions/pinned-rust
 
-      - name: Match cargo's job count to the runner
-        uses: ./.github/actions/cargo-job-count
+      - name: Limit concurrent test links
+        # Link at most two test binaries at once, within the runner's memory.
+        shell: bash
+        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
 
       - name: Hash the Cargo profiles
         id: profiles
@@ -283,14 +288,18 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.90.0
+        uses: taiki-e/install-action@v2.90.3
         with:
           tool: cargo-nextest
 
       - name: Unit and integration tests
         # Compile selected packages and their dependencies before running.
-        # A separate `cargo build` step would repeat that compilation.
-        run: python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
+        # A separate `cargo build` step would repeat that compilation. The
+        # memory line every 30 seconds stays in the log if the runner stops.
+        shell: bash
+        run: |
+          (while sleep 30; do free -m | awk 'NR==2 {print "memory used " $3 " of " $2 " MiB"}'; done) &
+          python3 scripts/ci_cargo.py nextest run --bins --tests --no-fail-fast
 
       - name: Inventor CLI evidence tests
         if: needs.changes.outputs.inventor_cli == 'true'
@@ -357,6 +366,12 @@ jobs:
           prefix-key: v0-rust-${{ steps.profiles.outputs.hash }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      - name: Compile cadmpeg-ir without optimization
+        # The steps below compile cadmpeg-ir with three feature sets and run
+        # few of its tests. A Cargo config profile overrides the manifest's.
+        shell: bash
+        run: printf '[profile.dev.package.cadmpeg-ir]\nopt-level = 0\n' >> "${CARGO_HOME:-$HOME/.cargo}/config.toml"
+
       - name: Schema feature
         if: needs.changes.outputs.schema == 'true'
         # The CLI enables IR schemas. This gate also checks schema assertions
@@ -366,6 +381,12 @@ jobs:
           cargo test -q -p cadmpeg-ir -p cadmpeg-asm --features cadmpeg-ir/schema,cadmpeg-asm/schema --lib
           cargo check -q -p cadmpeg-core -p cadmpeg-asm --all-targets \
             --features cadmpeg-core/schema,cadmpeg-asm/schema
+
+      - name: Annex A
+        if: needs.changes.outputs.schema == 'true'
+        # Annex A of docs/cadir-v11.md states the schema of each type the
+        # specification names and does not state; it is generated, never edited.
+        run: python3 scripts/generate-annex-a.py --check
 
       - name: Single-codec CLI feature gate
         if: needs.changes.outputs.sldprt_cli == 'true'
@@ -481,7 +502,10 @@ jobs:
       CI_PACKAGES: ${{ needs.changes.outputs.packages }}
       CI_FULL: ${{ needs.changes.outputs.full }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # macos-latest is sometimes a 5-core runner and sometimes a 3-core one.
+    # On 5 cores the full test build took 18 minutes and the tests 6. On 3
+    # cores the build was still compiling at 60 minutes, and Windows took 57.
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
@@ -510,7 +534,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2.90.0
+        uses: taiki-e/install-action@v2.90.3
         with:
           tool: cargo-nextest
 
@@ -534,7 +558,7 @@ jobs:
       - name: Install cargo-audit
         # Prebuilt binary; rustsec/audit-check compiled cargo-audit from
         # source on every run and dominated the pipeline's wall-clock.
-        uses: taiki-e/install-action@v2.90.0
+        uses: taiki-e/install-action@v2.90.3
         with:
           tool: cargo-audit
 

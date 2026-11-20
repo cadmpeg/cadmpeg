@@ -19,14 +19,14 @@ enum AnnotatedEntity<'ir> {
 }
 
 macro_rules! define_model_entity_projection {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
+    ($( $field:ident: $element:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         fn model_entity_projection<'ir>(
             ctx: &DecodeContext<'_>,
             ir: &'ir CadIr,
             wanted: &BorrowedIdentities<'_, bool>,
             add: &mut dyn FnMut(&'ir str, AnnotatedEntity<'ir>),
         ) -> Result<(), CodecError> {
-            $(for entity in &ir.model.$field {
+            $(for entity in &ir.$home.$field {
                 let id = crate::schema::EntitySchema::identity(entity);
                 if wanted.contains(id) {
                     let value = match crate::schema::structural::project(ctx, entity, "annotated entity projection") {

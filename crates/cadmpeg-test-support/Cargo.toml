@@ -14,12 +14,15 @@ publish = false
 cadmpeg-core = { workspace = true, features = ["test-support"] }
 cadmpeg-ir = { workspace = true, features = ["examples"] }
 serde.workspace = true
+regex.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-cadmpeg-ir = { workspace = true, features = ["examples"] }
+cadmpeg-derive.workspace = true
+# The golden schema sweep reads `cadmpeg_ir::cadir_json_schema()`.
+cadmpeg-ir = { workspace = true, features = ["examples", "schema"] }
 
 [lints]
 workspace = true

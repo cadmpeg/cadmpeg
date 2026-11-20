@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{exact_path_feature_construction, loft_reference_loss, three_flag_loft_settings_loss};
+use super::{
+    exact_path_feature_construction, loft_lists_loss, loft_reference_loss,
+    three_flag_loft_settings_loss,
+};
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features::DesignPathFeatureConstruction;
 use crate::records::feature::scope::DesignParameterScope;
@@ -60,6 +63,8 @@ fn assert_loft_operation(bytes: &[u8], offset: u64) {
                 operation: DesignExtrudeOperation::Join,
                 operation_offset: offset,
                 reference_target: None,
+                section_records: Vec::new(),
+                rail_groups: Vec::new(),
             }
         )
     );
@@ -104,6 +109,8 @@ fn standard_loft_reads_marked_group_reference() {
             operation: DesignExtrudeOperation::Join,
             operation_offset: 29,
             reference_target: Some(16015),
+            section_records: Vec::new(),
+            rail_groups: Vec::new(),
         }
     );
     let loss = loft_reference_loss(&loft_scope(), &construction).expect("reference loss");
@@ -113,7 +120,7 @@ fn standard_loft_reads_marked_group_reference() {
     );
     assert_eq!(
         loss.message,
-        "Loft scope generated:loft#20 stores a non-null marked reference with target 16015 at prefix offset 33; the target and the Loft setting it selects are unresolved (DR-268), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false."
+        "Loft scope generated:loft#20 stores a non-null marked reference with target 16015 at prefix offset 33; the Loft setting it selects is unresolved (DR-268), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false."
     );
 
     let scope = DesignParameterScope::empty(
@@ -163,6 +170,8 @@ fn three_flag_standard_loft_with_zero_byte_33_reads_operation_at_28() {
                     operation,
                     operation_offset: 28,
                     reference_target: None,
+                    section_records: Vec::new(),
+                    rail_groups: Vec::new(),
                 }
             )
         );
@@ -238,6 +247,154 @@ fn unrecognized_loft_has_no_construction() {
         ),
         None
     );
+}
+
+fn push_reference(bytes: &mut Vec<u8>, target: u64, typed: bool) {
+    bytes.push(1);
+    bytes.extend_from_slice(&target.to_le_bytes());
+    if typed {
+        bytes.extend_from_slice(&36u32.to_le_bytes());
+        bytes.extend_from_slice(b"2CA5A1CD-C99B-4C9B-91AF-57989148E841");
+    }
+    bytes.extend_from_slice(&[0, 0]);
+}
+
+fn push_loft_body(
+    bytes: &mut Vec<u8>,
+    selector: bool,
+    rails: &[u64],
+    sections: &[u64],
+    typed: bool,
+) {
+    bytes.extend_from_slice(&(-1i32).to_le_bytes());
+    bytes.extend_from_slice(&6u32.to_le_bytes());
+    bytes.extend_from_slice(&0u32.to_le_bytes());
+    bytes.push(0);
+    if selector {
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+    }
+    bytes.push(0);
+    bytes.extend_from_slice(&u32::try_from(rails.len()).unwrap().to_le_bytes());
+    for rail in rails {
+        push_reference(bytes, *rail, typed);
+    }
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.push(0);
+    bytes.extend_from_slice(&u32::try_from(sections.len()).unwrap().to_le_bytes());
+    for section in sections {
+        push_reference(bytes, *section, typed);
+    }
+    bytes.resize(bytes.len().max(240), 0);
+}
+
+fn loft_scope_with_members(members: Vec<u32>) -> DesignParameterScope {
+    let mut scope = DesignParameterScope::empty(
+        "generated:loft#20",
+        crate::records::feature::scope::DesignFeatureKind::Loft,
+        20,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(members);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope
+}
+
+fn listed_loft(
+    bytes: &[u8],
+    members: Vec<u32>,
+) -> crate::records::feature::path_features::DesignLoftConstruction {
+    match exact_path_feature_construction(
+        bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+        &loft_scope_with_members(members),
+        &[],
+    ) {
+        Some(DesignPathFeatureConstruction::Loft(construction)) => construction,
+        other => panic!("Loft construction: {other:?}"),
+    }
+}
+
+const LISTED_LOFT_MEMBERS: [u32; 8] = [30, 31, 40, 41, 45, 46, 50, 51];
+
+#[test]
+fn standard_loft_body_reads_the_rail_and_section_lists_after_the_selector() {
+    let mut bytes = loft_prefix(29, true, false);
+    bytes.truncate(33);
+    bytes.push(0);
+    push_loft_body(&mut bytes, true, &[40, 50], &[29, 44], false);
+    let construction = listed_loft(&bytes, LISTED_LOFT_MEMBERS.to_vec());
+    assert_eq!(construction.section_records, vec![29, 44]);
+    assert_eq!(construction.rail_groups, vec![40, 50]);
+    assert_eq!(loft_lists_loss(&loft_scope(), &construction), None);
+}
+
+#[test]
+fn compact_loft_body_reads_typed_lists_without_the_selector() {
+    let mut bytes = loft_prefix(25, false, false);
+    bytes.truncate(30);
+    push_loft_body(&mut bytes, false, &[50], &[29, 44], true);
+    let construction = listed_loft(&bytes, LISTED_LOFT_MEMBERS.to_vec());
+    assert_eq!(construction.operation_offset, 25);
+    assert_eq!(construction.section_records, vec![29, 44]);
+    assert_eq!(construction.rail_groups, vec![50]);
+}
+
+#[test]
+fn a_loft_body_that_both_readings_accept_stays_unread() {
+    let mut bytes = loft_prefix(29, true, false);
+    bytes.truncate(33);
+    bytes.push(0);
+    let second_reference = bytes.len() + 13;
+    push_loft_body(&mut bytes, false, &[40], &[29, 44], false);
+    bytes.splice(
+        second_reference..=second_reference,
+        [1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+    );
+    let construction = listed_loft(&bytes, LISTED_LOFT_MEMBERS.to_vec());
+    assert!(construction.section_records.is_empty());
+    assert!(construction.rail_groups.is_empty());
+    assert_eq!(
+        loft_lists_loss(&loft_scope(), &construction).map(|loss| loss.code),
+        Some(crate::loss::F3dLossCode::FeatureLoftListsUnresolved.kind())
+    );
+}
+
+#[test]
+fn loft_body_lists_outside_the_reference_table_stay_unread() {
+    for (rails, sections) in [
+        (&[60][..], &[29, 44][..]),
+        (&[40][..], &[29, 59][..]),
+        (&[40][..], &[29][..]),
+    ] {
+        let mut bytes = loft_prefix(29, true, false);
+        bytes.truncate(33);
+        bytes.push(0);
+        push_loft_body(&mut bytes, true, rails, sections, false);
+        let construction = listed_loft(&bytes, LISTED_LOFT_MEMBERS.to_vec());
+        assert!(
+            construction.section_records.is_empty(),
+            "{rails:?} {sections:?}"
+        );
+        assert!(
+            construction.rail_groups.is_empty(),
+            "{rails:?} {sections:?}"
+        );
+        let loss = loft_lists_loss(&loft_scope(), &construction).expect("lists loss");
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::FeatureLoftListsUnresolved.kind()
+        );
+        assert_eq!(
+            loss.message,
+            "Loft scope generated:loft#20 has no unique reading of the rail list and the section list in its scope body (DR-331), and the scope stays native."
+        );
+    }
 }
 
 #[test]

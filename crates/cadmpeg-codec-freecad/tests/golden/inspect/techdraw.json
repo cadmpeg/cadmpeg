@@ -8,8 +8,8 @@
         "data_offset": "42",
         "header_offset": "0"
       },
-      "compression": "deflate",
       "expanded": 32781,
+      "kind": "deflate",
       "name": "Document.xml",
       "role": "document",
       "stored": 3116
@@ -21,8 +21,8 @@
         "data_offset": "3201",
         "header_offset": "3158"
       },
-      "compression": "deflate",
       "expanded": 8938,
+      "kind": "deflate",
       "name": "Box.Shape.brp",
       "role": "brep",
       "stored": 731
@@ -34,8 +34,8 @@
         "data_offset": "3983",
         "header_offset": "3932"
       },
-      "compression": "deflate",
       "expanded": 462,
+      "kind": "deflate",
       "name": "techdraw-template.svg",
       "role": "auxiliary",
       "stored": 284
@@ -47,8 +47,8 @@
         "data_offset": "4307",
         "header_offset": "4267"
       },
-      "compression": "deflate",
       "expanded": 52,
+      "kind": "deflate",
       "name": "BoxCorners",
       "role": "auxiliary",
       "stored": 20
@@ -60,19 +60,20 @@
         "data_offset": "4383",
         "header_offset": "4327"
       },
-      "compression": "deflate",
       "expanded": 566,
+      "kind": "deflate",
       "name": "Length.SavedGeometry.0.brp",
       "role": "brep",
       "stored": 199
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "file_version": "1",
           "program_version": "1.1R45039 (Git)",
@@ -80,8 +81,10 @@
         },
         "dialect": "fcstd:schema-4"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "SchemaVersion=4",
     "FileVersion=1",

@@ -28,7 +28,42 @@ pub(super) struct EdgeInventory {
     pub(super) generated_sources: Option<HashMap<u32, SourceNames>>,
     pub(super) generated_sources_complete: bool,
     pub(super) historical: HashMap<(String, u32), historical::SelectedEdge>,
+    /// The generator array of the selector of each historical edge.
+    pub(super) historical_generators: HashMap<(String, u32), Vec<u32>>,
+    /// Why the joins have no archive records, when they have none.
+    pub(super) unavailable: Option<Unavailable>,
     pub(super) faces: HashMap<(String, u32), super::face_selection::SelectedFace>,
+}
+
+/// Why the edge-naming and stored-edge joins have no archive records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Unavailable {
+    /// The document has no selected active kernel carrier.
+    Carrier,
+    /// The carrier schema is outside the joined schemas.
+    Schema,
+    /// The `PmDc` feature records are not in exactly one segment.
+    Segments,
+    /// No direct edge or face selector, and no flange corner, uses the joins.
+    Selectors,
+    /// The construction-history archive does not frame.
+    Archive,
+    /// The construction-history archive frames, but does not end at its terminator.
+    ArchiveIncomplete,
+}
+
+impl Unavailable {
+    /// The pinned kebab detail of the reason.
+    pub(super) const fn detail(self) -> &'static str {
+        match self {
+            Self::Carrier => "carrier",
+            Self::Schema => "schema",
+            Self::Segments => "segments",
+            Self::Selectors => "selectors",
+            Self::Archive => "archive",
+            Self::ArchiveIncomplete => "archive-incomplete",
+        }
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -172,7 +207,7 @@ pub(super) fn source_names(
     let [Token::Long(stored_schema), Token::Long(count), values @ ..] = rest else {
         return None;
     };
-    if !matches!(schema, 38 | 40 | 42) || *stored_schema != i64::from(schema) {
+    if !class_chain_matched_schema(schema) || *stored_schema != i64::from(schema) {
         return None;
     }
     let count = usize::try_from(*count).ok()?;
@@ -450,14 +485,20 @@ pub(super) fn inventory(
     ctx: &DecodeContext<'_>,
     document: &RseInventory<'_>,
 ) -> Result<EdgeInventory, CodecError> {
-    if ctx.container_only() || ctx.depth() != cadmpeg_core::decode::DecodeDepth::Full {
+    if ctx.container_only() || ctx.depth() < cadmpeg_core::decode::DecodeDepth::Design {
         return Ok(EdgeInventory::default());
     }
     let ActiveCarrierState::Selected(carrier) = &document.active_carrier else {
-        return Ok(EdgeInventory::default());
+        return Ok(EdgeInventory {
+            unavailable: Some(Unavailable::Carrier),
+            ..EdgeInventory::default()
+        });
     };
     if !historical::supported_schema(carrier.schema) {
-        return Ok(EdgeInventory::default());
+        return Ok(EdgeInventory {
+            unavailable: Some(Unavailable::Schema),
+            ..EdgeInventory::default()
+        });
     }
     let mut selectors = Vec::new();
     let mut stored_selectors = Vec::new();
@@ -598,17 +639,33 @@ pub(super) fn inventory(
             && (selectors.is_empty() || !names_joined(carrier.schema, has_flange))
             && !name_corners)
     {
-        return Ok(EdgeInventory::default());
+        return Ok(EdgeInventory {
+            unavailable: Some(if tokens.len() == 1 {
+                Unavailable::Selectors
+            } else {
+                Unavailable::Segments
+            }),
+            ..EdgeInventory::default()
+        });
     }
     let (records, archive_complete) = match archive::records(ctx, carrier) {
         Ok(records) => records,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => return Ok(EdgeInventory::default()),
+        Err(_) => {
+            return Ok(EdgeInventory {
+                unavailable: Some(Unavailable::Archive),
+                ..EdgeInventory::default()
+            });
+        }
     };
+    let unavailable = (!archive_complete).then_some(Unavailable::ArchiveIncomplete);
     let Some(token) = tokens.into_iter().next() else {
-        return Ok(EdgeInventory::default());
+        return Ok(EdgeInventory {
+            unavailable: Some(Unavailable::Segments),
+            ..EdgeInventory::default()
+        });
     };
-    let historical = if archive_complete {
+    let historical: HashMap<_, _> = if archive_complete {
         historical::selected(ctx, &records, &stored_selectors, carrier.schema)?
             .into_iter()
             .map(|(source, edge)| ((token.clone(), source), edge))
@@ -616,6 +673,12 @@ pub(super) fn inventory(
     } else {
         HashMap::new()
     };
+    let historical_generators = stored_selectors
+        .iter()
+        .map(|selector| ((token.clone(), selector.source), selector))
+        .filter(|(key, _)| historical.contains_key(key))
+        .map(|(key, selector)| (key, selector.generators.clone()))
+        .collect();
     let faces = if archive_complete {
         super::face_selection::selected(&records, &face_selectors, carrier.schema)
             .into_iter()
@@ -635,6 +698,8 @@ pub(super) fn inventory(
             generated_sources,
             generated_sources_complete,
             historical,
+            historical_generators,
+            unavailable,
             faces,
             ..EdgeInventory::default()
         });
@@ -649,15 +714,17 @@ pub(super) fn inventory(
         HashMap::new()
     };
     Ok(EdgeInventory {
-        historical,
-        faces,
-        generated_sources,
-        generated_sources_complete,
         names: names
             .into_iter()
             .map(|(source, name)| ((token.clone(), source), name))
             .collect(),
         geometry,
+        generated_sources,
+        generated_sources_complete,
+        historical,
+        historical_generators,
+        unavailable,
+        faces,
     })
 }
 
@@ -751,10 +818,13 @@ fn sketch_entity(
     crate::sketch::entity_id(entity)
 }
 
+/// `consumed` maps a bend or corner record that a projected contour flange
+/// represents to that contour flange, which then produces its edges.
 pub(super) fn generated_names(
     inventory: &super::FeatureInventory,
     history: &super::history::History,
     sketches: &crate::sketch::SketchInventory,
+    consumed: &std::collections::BTreeMap<(String, u32), cadmpeg_ir::features::FeatureId>,
 ) -> HashMap<(String, u32), Option<GeneratedEdgeRef>> {
     let features = unique_index(inventory.features.iter().map(|feature| {
         (
@@ -775,7 +845,10 @@ pub(super) fn generated_names(
                 features.get(&(token.as_str(), name.generator))?.as_ref()?;
             history.placement(feature.identity.record_ordinal)?;
             let entity = sketch_entity(inventory, sketches, feature, name)?;
-            let feature = super::history_feature_id(&feature.identity).ok()?;
+            let feature = match consumed.get(&(token.clone(), feature.identity.record_ordinal)) {
+                Some(contour) => contour.clone(),
+                None => super::history_feature_id(&feature.identity).ok()?,
+            };
             let local_id = cadmpeg_ir::features::SelectionReference::new(format!(
                 "inventor:nmx:{}:sketch-entity:{}:role:{}",
                 name.family, entity, name.role

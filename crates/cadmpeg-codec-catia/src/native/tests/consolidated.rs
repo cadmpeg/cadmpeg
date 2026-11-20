@@ -927,7 +927,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
         .expect("decode resolved CATIA revolution");
     let directrix = decoded
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| {
@@ -951,7 +951,7 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
     );
     let revolution = decoded
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find(|surface| {
@@ -961,8 +961,8 @@ fn native_namespace_retains_resolved_consolidated_revolution_carriers() {
                 .starts_with("catia:consolidated:surface-revolution#")
         })
         .expect("transferred revolution construction");
-    assert!(decoded.ir().model.surfaces.iter().any(|surface| {
-        decoded.ir().model.procedural_surface_owner(&revolution.id) == Some(&surface.id)
+    assert!(decoded.ir().geometry.surfaces.iter().any(|surface| {
+        decoded.ir().geometry.procedural_surface_owner(&revolution.id) == Some(&surface.id)
             && surface.source_object.is_none()
             && matches!(surface.geometry.solved_cache(), Some(SolvedSurfaceGeometry::Torus(torus_surface))
                     if {

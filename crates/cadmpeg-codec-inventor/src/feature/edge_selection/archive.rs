@@ -16,15 +16,30 @@ const SNAPSHOT_WRAPPER: &[u8] = b"\x0e\x03End\x0e\x02of\x0e\x03ASM\x0e\x07Histor
 
 /// Whether the archive begins with a snapshot record wrapped by the
 /// `End-of-ASM-History-Section` name chain: the stored bytes carry the chain
-/// and the first record is a body, edge, or face.
+/// and the first record carries the embedded name chain that follows it. The
+/// embedded record can be any entity, including an attribute.
 fn wrapped_snapshot(bytes: &[u8], start: usize, first: Option<&sab::Record>) -> bool {
     bytes
         .get(start..)
         .is_some_and(|tail| tail.starts_with(SNAPSHOT_WRAPPER))
-        && first.is_some_and(|record| {
-            matches!(record.head(), "body" | "edge" | "face")
-                && matches!(record.tokens.first(), Some(sab::Token::Ident(name)) if name == record.head())
-        })
+        && first.is_some_and(embedded_name)
+}
+
+/// Whether the leading identifier tokens of a record spell its name: zero or
+/// more subtype identifiers and one terminal identifier, joined by `-`.
+fn embedded_name(record: &sab::Record) -> bool {
+    let mut parts = Vec::new();
+    for token in record.tokens.iter() {
+        match token {
+            sab::Token::SubIdent(part) => parts.push(part.as_str()),
+            sab::Token::Ident(part) => {
+                parts.push(part.as_str());
+                return parts.join("-") == record.name;
+            }
+            _ => return false,
+        }
+    }
+    false
 }
 
 fn tagged(view: &mut View<'_>, tag: u8, width: RefWidth) -> Result<i64, CodecError> {
@@ -168,12 +183,6 @@ mod tests {
         for head in ["body", "edge", "face"] {
             assert!(wrapped_snapshot(&bytes, 0, Some(&snapshot_record(head))));
         }
-        // Other entity heads are not a snapshot start.
-        assert!(!wrapped_snapshot(
-            &bytes,
-            0,
-            Some(&snapshot_record("coedge"))
-        ));
         assert!(!wrapped_snapshot(&bytes, 0, None));
         // The stored bytes carry the wrapper name chain.
         let mut bare = vec![0x0d, 4];
@@ -184,6 +193,39 @@ mod tests {
             bytes.len() + 1,
             Some(&snapshot_record("face"))
         ));
+    }
+
+    #[test]
+    fn a_wrapped_attribute_or_other_entity_snapshot_starts_the_archive() {
+        let bytes = SNAPSHOT_WRAPPER.to_vec();
+        for head in ["coedge", "vertex"] {
+            assert!(wrapped_snapshot(&bytes, 0, Some(&snapshot_record(head))));
+        }
+        let attribute = sab::Record {
+            index: 0,
+            name: "ATTRIB_CUSTOM-attrib".into(),
+            tokens: vec![
+                sab::Token::SubIdent("ATTRIB_CUSTOM".into()),
+                sab::Token::Ident("attrib".into()),
+                sab::Token::Ref(-1),
+            ]
+            .into(),
+            offset: 0,
+            len: 0,
+        };
+        assert!(wrapped_snapshot(&bytes, 0, Some(&attribute)));
+        // The leading identifiers spell the record name.
+        let mismatched = sab::Record {
+            name: "ATTRIB_CUSTOM-attrib".into(),
+            tokens: vec![sab::Token::Ident("attrib".into()), sab::Token::Ref(-1)].into(),
+            ..attribute.clone()
+        };
+        assert!(!wrapped_snapshot(&bytes, 0, Some(&mismatched)));
+        let unnamed = sab::Record {
+            tokens: vec![sab::Token::Ref(-1)].into(),
+            ..attribute
+        };
+        assert!(!wrapped_snapshot(&bytes, 0, Some(&unnamed)));
     }
 
     #[test]

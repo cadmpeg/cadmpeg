@@ -32,14 +32,14 @@ fn decode(bytes: Vec<u8>) -> DecodeResult {
 
 /// The coedges of the one loop of `ir` in traversal order.
 fn loop_coedges(ir: &CadIr) -> Vec<&Coedge> {
-    let [loop_] = ir.model.loops.as_slice() else {
+    let [loop_] = ir.geometry.loops.as_slice() else {
         panic!("the model has one loop");
     };
     loop_
         .coedges()
         .iter()
         .map(|id| {
-            ir.model
+            ir.geometry
                 .coedges
                 .iter()
                 .find(|coedge| coedge.id == *id)
@@ -54,7 +54,7 @@ fn use_points(ir: &CadIr, coedge: &Coedge) -> Vec<[f64; 2]> {
     let mut points = Vec::new();
     for pcurve_use in &coedge.pcurves {
         let pcurve = ir
-            .model
+            .geometry
             .pcurves
             .iter()
             .find(|pcurve| pcurve.id == pcurve_use.pcurve)
@@ -118,7 +118,7 @@ fn edge_direction_parameter_curve_of_a_sense_2_item_is_used_backward() {
         let result = decode(edge_direction_parameter_curve_square_file(preference));
         assert!(result.report().losses.is_empty());
         let ir = result.ir();
-        assert_eq!(ir.model.faces.len(), 1);
+        assert_eq!(ir.geometry.faces.len(), 1);
         let validation =
             cadmpeg_ir::validate_neutral(ir, Vec::new()).expect("validate the neutral model");
         assert!(validation.is_ok());
@@ -157,7 +157,7 @@ fn disagreeing_alternate_parameter_curve_is_omitted_with_a_loss() {
         .iter()
         .any(|loss| loss.code == IgesLossCode::BoundaryPcurveDisagrees.kind()));
     let ir = result.ir();
-    assert_eq!(ir.model.faces.len(), 1);
+    assert_eq!(ir.geometry.faces.len(), 1);
     let coedges = loop_coedges(ir);
     assert!(coedges[2].pcurves.is_empty());
     assert!(coedges
@@ -171,7 +171,7 @@ fn disagreeing_alternate_parameter_curve_is_omitted_with_a_loss() {
 #[test]
 fn disagreeing_preferred_parameter_curve_projects_no_face() {
     let result = decode(disagreeing_parameter_curve_square_file(2));
-    assert!(result.ir().model.faces.is_empty());
+    assert!(result.ir().geometry.faces.is_empty());
     assert!(!result.report().losses.is_empty());
     assert!(result
         .report()

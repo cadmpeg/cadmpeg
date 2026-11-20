@@ -61,9 +61,12 @@ fn projected_sketch_nurbs_edge_projects() {
     let edge = Edge {
         id: EdgeId::mint("test:model:entity#edge").expect("edge id"),
         carrier: EdgeCarrier::unbounded(Some(curve_id.clone())),
-        start: start_vertex.clone(),
-        end: end_vertex.clone(),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            start_vertex.clone(),
+            end_vertex.clone(),
+        )),
         tolerance: None,
+        native_ref: None,
     };
     let vertices = HashMap::from([(&start_vertex, &start_point), (&end_vertex, &end_point)]);
     let points = HashMap::from([
@@ -138,9 +141,12 @@ fn a_nurbs_edge_whose_carrier_misses_its_vertices_projects_as_its_chord() {
     let edge = Edge {
         id: EdgeId::mint("test:model:entity#edge").expect("edge id"),
         carrier: EdgeCarrier::unbounded(Some(curve_id.clone())),
-        start: start_vertex.clone(),
-        end: end_vertex.clone(),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            start_vertex.clone(),
+            end_vertex.clone(),
+        )),
         tolerance: None,
+        native_ref: None,
     };
     let vertices = HashMap::from([(&start_vertex, &start_point), (&end_vertex, &end_point)]);
     let points = HashMap::from([
@@ -240,9 +246,12 @@ fn sketch_projection_projects_opaque_curve() {
     let edge = Edge {
         id: EdgeId::mint("test:model:edge#opaque").expect("edge ID"),
         carrier: EdgeCarrier::unbounded(Some(curve_id.clone())),
-        start: start_vertex.clone(),
-        end: end_vertex.clone(),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            start_vertex.clone(),
+            end_vertex.clone(),
+        )),
         tolerance: None,
+        native_ref: None,
     };
     let vertices = HashMap::from([(&start_vertex, &start_point), (&end_vertex, &end_point)]);
     let points = HashMap::from([
@@ -338,9 +347,12 @@ fn closed_square_edge(
     let edge = Edge {
         id: EdgeId::mint("test:model:edge#square").expect("edge id"),
         carrier: EdgeCarrier::new(Some(curve_id.clone()), param_range).expect("edge carrier"),
-        start: vertex.clone(),
-        end: vertex.clone(),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            vertex.clone(),
+            vertex.clone(),
+        )),
         tolerance: None,
+        native_ref: None,
     };
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
         NurbsCurve::from_lanes(
@@ -413,9 +425,12 @@ fn a_circle_turning_clockwise_in_the_sketch_projects_a_negative_sweep() {
             Some([0.0, std::f64::consts::FRAC_PI_2]),
         )
         .expect("edge carrier"),
-        start: start_vertex.clone(),
-        end: end_vertex.clone(),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            start_vertex.clone(),
+            end_vertex.clone(),
+        )),
         tolerance: None,
+        native_ref: None,
     };
     let vertices = HashMap::from([(&start_vertex, &start_point), (&end_vertex, &end_point)]);
     let points = HashMap::from([
@@ -490,9 +505,12 @@ fn a_cubic_edge_trims_to_its_interior_vertices() {
     let edge = Edge {
         id: EdgeId::mint("test:model:edge#cubic").expect("edge id"),
         carrier: EdgeCarrier::unbounded(Some(curve_id.clone())),
-        start: start_vertex.clone(),
-        end: end_vertex.clone(),
+        ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+            start_vertex.clone(),
+            end_vertex.clone(),
+        )),
         tolerance: None,
+        native_ref: None,
     };
     let vertices = HashMap::from([(&start_vertex, &start_point), (&end_vertex, &end_point)]);
     let start_position = Point3::new(0.75, 0.0, 0.0);
@@ -514,7 +532,7 @@ fn a_cubic_edge_trims_to_its_interior_vertices() {
     let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
     let curves = HashMap::from([(&curve_id, &geometry)]);
     let vertex_tolerances = HashMap::from([(&start_vertex, None), (&end_vertex, None)]);
-    let context = cadmpeg_test_support::service_decode_context();
+    let context = cadmpeg_core::decode::test_support::service_decode_context();
     let range = super::nurbs_edge_trim_range(
         &context,
         &edge,

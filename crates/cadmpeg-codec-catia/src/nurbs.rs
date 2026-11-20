@@ -70,6 +70,19 @@ impl LaneRefusals {
         self.notes.len()
     }
 
+    pub(crate) fn push_body_selection(&mut self, resolved: bool, excluded: usize) {
+        let note = if resolved {
+            crate::loss::CatiaLossCode::TopologyUnselectedBodiesRetained.note(format!(
+                "Retained {excluded} unselected native sheet-group rosters outside neutral bounded topology, using the stored visible-body list."
+            ))
+        } else {
+            crate::loss::CatiaLossCode::TopologyBodySelectionUnresolved.note(
+                "The stored visible-body list did not resolve uniquely to body allocations; decoded rosters remain available as neutral subsets."
+            )
+        };
+        self.notes.push(note);
+    }
+
     /// Retain the identity that prevented a carrier population from merging.
     pub(crate) fn push_annotation_collision(
         &mut self,
@@ -99,6 +112,37 @@ impl LaneRefusals {
         );
     }
 
+    pub(crate) fn push_endpoint_station_reading_inferred(
+        &mut self,
+        record: usize,
+        curve: usize,
+        parameter: f64,
+        first_tag: bool,
+    ) {
+        let reading = if first_tag {
+            "first-scalar tag"
+        } else {
+            "final-scalar tag"
+        };
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologyEndpointStationReadingInferred.note(format!(
+                "For incidence allocation {record} and curve allocation {curve}, chose the {reading} reading of an ambiguous three-lane endpoint station; native parameter {parameter}."
+            )),
+        );
+    }
+
+    pub(crate) fn push_shared_boundary_reconciled(
+        &mut self,
+        [vertex, seed, retry, replaced]: [usize; 4],
+        max_gap_mm: f64,
+    ) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::TopologySharedBoundaryReconciled.note(format!(
+                "Chose reconciled native shared-boundary readings for emitted faces with vertex repair on {vertex} faces, seed alignment on {seed} faces, and shared-edge retry on {retry} faces. Replaced shared curves on {replaced} previously admitted faces. Largest discrepancy was {max_gap_mm:.9} mm. Faces can occur in more than one path count."
+            )),
+        );
+    }
+
     pub(crate) fn push_two_edge_binding_inferred(&mut self, owner_pos: usize, singleton: bool) {
         let sense_evidence = if singleton {
             "the class-61 singleton occurrence bit"
@@ -122,6 +166,49 @@ impl LaneRefusals {
         self.notes.push(crate::loss::CatiaLossCode::GeometrySheetSurfaceFitted.note(format!(
             "Transferred fitted B-spline surfaces for {rolling_ball} rolling-ball, {offset} offset, {ruled} ruled, and {extrusion} extrusion sheet faces. The fits use sampled geometric checks."
         )));
+    }
+
+    pub(crate) fn push_surface_weights_inferred(&mut self, source: usize) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometrySurfaceWeightsInferred.note(format!(
+            "For the rational A5 surface at offset {source}, interpreted extended row controls as reflected-column masks and command-05 leading repeats; these control meanings are inferred."
+        )));
+    }
+
+    pub(crate) fn push_plane_pcurve_projected(&mut self, source: usize, gap: f64) {
+        self.notes.push(crate::loss::CatiaLossCode::GeometryPlanePcurveProjected.note(format!(
+            "Projected the class-18 model curve at offset {source} onto its compatible plane. Positive rational weights bound the lift discrepancy by the largest control-point distance, {gap:.9} mm."
+        )));
+    }
+
+    pub(crate) fn push_parameter_map_pcurve_accuracy(&mut self, source: usize, tolerance: f64) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryParameterMapAccuracyInferred.note(format!(
+                "Interpreted class-25 fit tolerance {tolerance} as a model-space bound in mm for the stored plane pcurve at offset {source}; retained its class-20 geometry and the class-18 model curve."
+            )),
+        );
+    }
+
+    pub(crate) fn push_conic_branch_bounds_inferred(&mut self, source: usize, gap: f64) {
+        self.notes.push(
+            crate::loss::CatiaLossCode::GeometryConicBranchBoundsInferred.note(format!(
+                "For conic support at offset {source}, used agreeing cylinder AABB-center azimuth witnesses and inferred the ellipse branch with smaller extrema discrepancy in each contradicting incident face box; largest stored-box excess {gap:.9} mm."
+            )),
+        );
+    }
+
+    pub(crate) fn push_sheet_boundary_recovery(
+        &mut self,
+        code: crate::loss::CatiaLossCode,
+        faces: usize,
+        max_gap_mm: f64,
+    ) {
+        let choice = match code {
+            crate::loss::CatiaLossCode::GeometryRollingSheetExtended => "Extended the stored transverse rolling section within 0.01 in parameter space and 0.005 mm in model space",
+            crate::loss::CatiaLossCode::TopologyAffineVertexReconciled => "Chose corroborated affine stations and reconciled incident fitted vertex positions",
+            crate::loss::CatiaLossCode::GeometryParameterMapAccuracyInferred => "Interpreted the parameter-map fit tolerance as a model-space bound in mm for corroborated planar shared-edge lifts, added the model gap, and retained the inferred bound as edge accuracy",
+            _ => return,
+        };
+        self.notes.push(code.note(format!("{choice} on {faces} emitted sheet faces; largest sampled discrepancy {max_gap_mm:.9} mm.")));
     }
 
     pub(crate) fn push_rolling_ball_rails_adjusted(&mut self, faces: usize, max_shift_mm: f64) {

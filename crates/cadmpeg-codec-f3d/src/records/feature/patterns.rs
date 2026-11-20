@@ -22,6 +22,11 @@ cadmpeg_core::named_optional_field!(
     "secondary_direction"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_distribution,
+    DesignRectangularPatternDistribution,
+    "distribution"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_instances,
     DesignRectangularPatternInstances,
     "instances"
@@ -59,7 +64,16 @@ pub(crate) struct DesignCircularPatternConstruction {
         deserialize_with = "deserialize_axis_separator_flag_offset"
     )]
     pub(crate) axis_separator_flag_offset: Option<u64>,
+    /// Symmetric byte of the pattern payload: the instances lie on both sides of the seed.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_symmetric"
+    )]
+    pub(crate) symmetric: Option<Located<bool>>,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_symmetric, Located<bool>, "symmetric");
 
 cadmpeg_core::named_optional_field!(
     deserialize_axis_separator_flag_offset,
@@ -481,6 +495,28 @@ pub(crate) struct DesignRectangularPatternConstruction {
     /// Direction records in U-then-V order; the payload can supply V.
     directions: Vec<DesignRectangularPatternDirection>,
     secondary_direction: Option<crate::records::identity::Located<[FiniteReal; 3]>>,
+    /// Distribution bytes of the pattern payload.
+    distribution: Option<DesignRectangularPatternDistribution>,
+}
+
+/// Distribution bytes of a rectangular-pattern payload.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignRectangularPatternDistribution {
+    /// Payload record.
+    pub(crate) record_index: u32,
+    /// Direction one places its instances on both sides of the seed.
+    pub(crate) symmetric: Located<bool>,
+    /// Each distance owner stores the seed-to-final-instance extent; adjacent spacing otherwise.
+    pub(crate) total_extent: Located<bool>,
+    /// Compute option: `0` Optimized, `1` Identical, `2` Adjust.
+    pub(crate) compute_option: Located<u32>,
+    /// Seed kind: `0` face, `1` feature, `2` body.
+    pub(crate) seed_kind: Located<u32>,
+    /// Count of the marked body references before the fixed fields.
+    pub(crate) body_references: Located<u32>,
+    /// Body references whose record the stream does not register as a body
+    /// browser node.
+    pub(crate) untyped_body_references: u32,
 }
 
 /// Direction record of one active rectangular-pattern direction.
@@ -492,7 +528,8 @@ pub(crate) struct DesignRectangularPatternDirection {
     pub(crate) selection_record_index: u32,
     /// Selection kind `8` or `16`.
     pub(crate) selection_kind: u32,
-    /// Distance representation: 7 is adjacent spacing; 8 is total span.
+    /// Distance representation: 7 is adjacent spacing; 8 is total span; 10 is the flagged
+    /// compact form, whose payload distribution block states the distance form.
     pub(crate) distance_type: u32,
     /// Origin in source centimetres.
     pub(crate) origin: [FiniteReal; 3],
@@ -507,7 +544,7 @@ pub(crate) struct DesignRectangularPatternDirection {
 impl DesignRectangularPatternDirection {
     /// The unit direction of the displacement, before the extent sign applies.
     pub(crate) fn direction(&self) -> Option<UnitVector3> {
-        if !matches!(self.selection_kind, 8 | 16) || !matches!(self.distance_type, 7 | 8) {
+        if !matches!(self.selection_kind, 8 | 16) || !matches!(self.distance_type, 7 | 8 | 10) {
             return None;
         }
         let vector = Vector3::from(self.displacement.map(FiniteReal::get));
@@ -539,6 +576,7 @@ impl Clone for DesignRectangularPatternConstruction {
             instance_search_cap: self.instance_search_cap,
             directions: self.directions.clone(),
             secondary_direction: self.secondary_direction,
+            distribution: self.distribution,
         }
     }
 }
@@ -559,6 +597,8 @@ struct DesignRectangularPatternConstructionRef<'a> {
     directions: &'a [DesignRectangularPatternDirection],
     #[serde(skip_serializing_if = "Option::is_none")]
     secondary_direction: Option<crate::records::identity::Located<[FiniteReal; 3]>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    distribution: Option<DesignRectangularPatternDistribution>,
 }
 
 impl Serialize for DesignRectangularPatternConstruction {
@@ -574,6 +614,7 @@ impl Serialize for DesignRectangularPatternConstruction {
             instance_search_cap: self.instance_search_cap,
             directions: &self.directions,
             secondary_direction: self.secondary_direction,
+            distribution: self.distribution,
         }
         .serialize(serializer)
     }
@@ -617,6 +658,13 @@ pub(crate) struct DesignRectangularPatternConstructionWire {
         deserialize_with = "deserialize_secondary_direction"
     )]
     pub(crate) secondary_direction: Option<crate::records::identity::Located<[FiniteReal; 3]>>,
+    /// Distribution bytes of the pattern payload.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_distribution"
+    )]
+    pub(crate) distribution: Option<DesignRectangularPatternDistribution>,
 }
 
 impl TryFrom<DesignRectangularPatternConstructionWire> for DesignRectangularPatternConstruction {
@@ -624,14 +672,12 @@ impl TryFrom<DesignRectangularPatternConstructionWire> for DesignRectangularPatt
     fn try_from(wire: DesignRectangularPatternConstructionWire) -> Result<Self, Self::Error> {
         let u_count = NonZeroU32::new(wire.u_count).ok_or("u_count must be nonzero")?;
         let v_count = NonZeroU32::new(wire.v_count).ok_or("v_count must be nonzero")?;
-        if u_count.get() == 1 && v_count.get() == 1 {
-            return Err("u_count and v_count must not both be one");
+        if !wire.u_extent.is_finite() || !wire.v_extent.is_finite() {
+            return Err("pattern extents must be finite");
         }
-        if !wire.u_extent.is_finite() || (u_count.get() == 1) != (wire.u_extent == 0.0) {
-            return Err("u_extent must be finite and zero exactly when u_count is one");
-        }
-        if !wire.v_extent.is_finite() || (v_count.get() == 1) != (wire.v_extent == 0.0) {
-            return Err("v_extent must be finite and zero exactly when v_count is one");
+        if !(u_count.get() > 1 && wire.u_extent != 0.0 || v_count.get() > 1 && wire.v_extent != 0.0)
+        {
+            return Err("one direction must repeat over a nonzero distance");
         }
         let mut record = Self {
             u_count,
@@ -644,6 +690,7 @@ impl TryFrom<DesignRectangularPatternConstructionWire> for DesignRectangularPatt
             instance_search_cap: None,
             directions: Vec::new(),
             secondary_direction: None,
+            distribution: wire.distribution,
         };
         record.try_set_instances(wire.instances)?;
         if let Some(cap) = wire.instance_search_cap {
@@ -669,6 +716,7 @@ impl From<DesignRectangularPatternConstruction> for DesignRectangularPatternCons
             instance_search_cap: value.instance_search_cap,
             directions: value.directions,
             secondary_direction: value.secondary_direction,
+            distribution: value.distribution,
         }
     }
 }
@@ -712,12 +760,37 @@ impl DesignRectangularPatternConstruction {
         Ok(())
     }
 
-    /// The number of directions whose count exceeds one.
+    /// The number of directions that repeat the seed over a nonzero distance.
     pub(crate) fn active_direction_count(&self) -> usize {
-        [self.u_count, self.v_count]
+        [(self.u_count, self.u_extent), (self.v_count, self.v_extent)]
             .iter()
-            .filter(|count| count.get() > 1)
+            .filter(|(count, extent)| count.get() > 1 && *extent != 0.0)
             .count()
+    }
+
+    pub(crate) fn direction_two_active(&self) -> bool {
+        self.v_count.get() > 1 && self.v_extent != 0.0
+    }
+
+    /// The number of direction records the scope binds: the one U-direction
+    /// record beside a payload V direction, or one record per active direction.
+    pub(crate) fn bound_direction_record_count(&self) -> usize {
+        if self.secondary_direction.is_some() {
+            1
+        } else {
+            self.active_direction_count()
+        }
+    }
+
+    pub(crate) fn distribution(&self) -> Option<&DesignRectangularPatternDistribution> {
+        self.distribution.as_ref()
+    }
+
+    pub(crate) fn set_distribution(
+        &mut self,
+        distribution: Option<DesignRectangularPatternDistribution>,
+    ) {
+        self.distribution = distribution;
     }
 
     /// Direction records in U-then-V order; empty when direction binding fails.
@@ -729,20 +802,18 @@ impl DesignRectangularPatternConstruction {
         &mut self,
         directions: Vec<DesignRectangularPatternDirection>,
     ) -> Result<(), &'static str> {
-        if self.secondary_direction.is_some()
-            && (directions.len() != 1 || directions[0].distance_type != 7)
-        {
-            return Err("payload V direction requires one spacing direction record");
+        if self.secondary_direction.is_some() && directions.len() != 1 {
+            return Err("payload V direction requires one U direction record");
         }
-        if directions
-            .windows(2)
-            .any(|pair| pair[0].distance_type != pair[1].distance_type)
-        {
+        if directions.windows(2).any(|pair| {
+            pair[0].distance_type != pair[1].distance_type
+                && pair[0].distance_type != 10
+                && pair[1].distance_type != 10
+        }) {
             return Err("direction records must use the same distance representation");
         }
         if !directions.is_empty() {
-            let secondary_count = usize::from(self.secondary_direction.is_some());
-            if directions.len() + secondary_count != self.active_direction_count() {
+            if directions.len() != self.bound_direction_record_count() {
                 return Err("directions must hold one record per active direction");
             }
             if directions.iter().any(|record| record.direction().is_none()) {
@@ -764,11 +835,13 @@ impl DesignRectangularPatternConstruction {
         direction: Option<crate::records::identity::Located<[FiniteReal; 3]>>,
     ) -> Result<(), &'static str> {
         if let Some(direction) = &direction {
-            if self.active_direction_count() != 2
+            if !self.direction_two_active()
                 || UnitVector3::normalized(Vector3::from(direction.value.map(FiniteReal::get)))
                     .is_none()
             {
-                return Err("secondary direction requires two active axes and a nonzero vector");
+                return Err(
+                    "secondary direction requires an active direction two and a nonzero vector",
+                );
             }
         }
         self.secondary_direction = direction;
@@ -1047,9 +1120,10 @@ mod tests {
         DesignAxis, DesignCircularPatternAxis, DesignCircularPatternAxisWire,
         DesignPatternAxisWrapper, DesignPatternComponentInstance, DesignPatternInstance,
         DesignRectangularPatternConstruction, DesignRectangularPatternConstructionWire,
-        DesignRectangularPatternInstances, DesignRectangularPatternInstancesWire,
-        RectangularPatternSearchCap, CIRCULAR_PATTERN_AXIS_CLONE_COUNT,
-        RECTANGULAR_PATTERN_CONSTRUCTION_CLONE_COUNT, RECTANGULAR_PATTERN_INSTANCES_CLONE_COUNT,
+        DesignRectangularPatternDistribution, DesignRectangularPatternInstances,
+        DesignRectangularPatternInstancesWire, RectangularPatternSearchCap,
+        CIRCULAR_PATTERN_AXIS_CLONE_COUNT, RECTANGULAR_PATTERN_CONSTRUCTION_CLONE_COUNT,
+        RECTANGULAR_PATTERN_INSTANCES_CLONE_COUNT,
     };
     use crate::records::identity::Located;
     use crate::records::sketch_placement::SketchPlacementMatrix;
@@ -1108,6 +1182,7 @@ mod tests {
             instance_search_cap: None,
             directions: Vec::new(),
             secondary_direction: None,
+            distribution: None,
         }
     }
 
@@ -1269,6 +1344,61 @@ mod tests {
     }
 
     #[test]
+    fn rectangular_pattern_admits_a_coincident_direction() {
+        let wire = |u_count, v_count, u_extent, v_extent| {
+            let mut wire = DesignRectangularPatternConstructionWire::from(construction(None));
+            wire.u_count = u_count;
+            wire.v_count = v_count;
+            wire.u_extent = u_extent;
+            wire.v_extent = v_extent;
+            DesignRectangularPatternConstruction::try_from(wire)
+        };
+        let coincident = wire(3, 3, 2.0, 0.0).expect("coincident second direction");
+        assert_eq!(coincident.active_direction_count(), 1);
+        assert_eq!(wire(3, 2, 2.0, -1.0).unwrap().active_direction_count(), 2);
+        assert!(wire(3, 3, 0.0, 0.0).is_err());
+        assert!(wire(1, 1, 0.0, 0.0).is_err());
+        // A count-one direction can keep a distance; it places only the seed.
+        assert_eq!(wire(3, 1, 2.0, 1.0).unwrap().active_direction_count(), 1);
+        assert!(wire(1, 1, 2.0, 1.0).is_err());
+        assert!(wire(1, 3, 2.0, 0.0).is_err());
+        assert!(wire(3, 1, f64::INFINITY, 0.0).is_err());
+
+        let mut wire = DesignRectangularPatternConstructionWire::from(coincident);
+        wire.distribution = Some(DesignRectangularPatternDistribution {
+            record_index: 9,
+            symmetric: Located {
+                value: true,
+                offset: 109,
+            },
+            total_extent: Located {
+                value: false,
+                offset: 158,
+            },
+            compute_option: Located {
+                value: 2,
+                offset: 146,
+            },
+            seed_kind: Located {
+                value: 1,
+                offset: 150,
+            },
+            body_references: Located {
+                value: 1,
+                offset: 134,
+            },
+            untyped_body_references: 0,
+        });
+        let record = DesignRectangularPatternConstruction::try_from(wire.clone()).unwrap();
+        assert_eq!(record.distribution(), wire.distribution.as_ref());
+        let json = serde_json::to_value(&record).unwrap();
+        assert_eq!(
+            serde_json::from_value::<DesignRectangularPatternConstruction>(json).unwrap(),
+            record
+        );
+    }
+
+    #[test]
     fn rectangular_pattern_capped_instance_search_round_trips_without_instances() {
         let uncapped = construction(None);
         assert!(serde_json::to_value(&uncapped)
@@ -1323,6 +1453,45 @@ mod tests {
         );
     }
     #[test]
+    fn a_distance_type_ten_record_can_pair_with_another_distance_type() {
+        let record =
+            |record_index, distance_type, displacement| super::DesignRectangularPatternDirection {
+                record_index,
+                selection_record_index: record_index + 3,
+                selection_kind: 8,
+                distance_type,
+                origin: crate::test_support::reals([0.0, 0.0, 0.0]),
+                origin_offset: 0,
+                displacement: crate::test_support::reals(displacement),
+                displacement_offset: 24,
+            };
+        let wire = |directions| {
+            let mut wire = DesignRectangularPatternConstructionWire {
+                directions,
+                ..DesignRectangularPatternConstructionWire::from(construction(None))
+            };
+            wire.v_count = 3;
+            wire.v_extent = 1.0;
+            wire
+        };
+        for (first, second) in [(10, 7), (7, 10), (10, 8)] {
+            assert!(
+                DesignRectangularPatternConstruction::try_from(wire(vec![
+                    record(20, first, [1.0, 0.0, 0.0]),
+                    record(30, second, [0.0, 1.0, 0.0]),
+                ]))
+                .is_ok(),
+                "{first} and {second}"
+            );
+        }
+        assert!(DesignRectangularPatternConstruction::try_from(wire(vec![
+            record(20, 7, [1.0, 0.0, 0.0]),
+            record(30, 8, [0.0, 1.0, 0.0]),
+        ]))
+        .is_err());
+    }
+
+    #[test]
     fn rectangular_pattern_payload_direction_validates_wire_fields() {
         let mut wire = DesignRectangularPatternConstructionWire::from(construction(None));
         wire.v_count = 3;
@@ -1346,7 +1515,6 @@ mod tests {
         for (field, value) in [
             ("distance_type", 6),
             ("selection_kind", 9),
-            ("distance_type", 8),
             ("selection_kind", 16),
         ] {
             let mut corrupt = encoded.clone();
@@ -1355,12 +1523,29 @@ mod tests {
                 serde_json::from_value::<DesignRectangularPatternConstruction>(corrupt).is_err()
             );
         }
+        let mut span = encoded.clone();
+        span["directions"][0]["distance_type"] = 8.into();
+        span["directions"][0]["selection_kind"] = 16.into();
+        span["directions"][0]["displacement"] = serde_json::json!([0.0, 0.0, 1.0]);
+        assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(span).is_ok());
         let mut zero = encoded.clone();
         zero["secondary_direction"]["value"] = serde_json::json!([0.0, 0.0, 0.0]);
         assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(zero).is_err());
         let mut missing = encoded;
         missing["directions"] = serde_json::json!([]);
         assert!(serde_json::from_value::<DesignRectangularPatternConstruction>(missing).is_err());
+        let mut inactive_one = wire.clone();
+        inactive_one.u_extent = 0.0;
+        let record = DesignRectangularPatternConstruction::try_from(inactive_one).unwrap();
+        assert_eq!(record.active_direction_count(), 1);
+        assert_eq!(record.directions().len(), 1);
+        assert!(record.secondary_direction().is_some());
+        assert!(
+            serde_json::from_value::<DesignRectangularPatternConstruction>(
+                serde_json::to_value(&record).unwrap()
+            )
+            .is_ok()
+        );
         wire.v_count = 1;
         wire.v_extent = 0.0;
         assert!(DesignRectangularPatternConstruction::try_from(wire).is_err());
@@ -1377,23 +1562,119 @@ pub(crate) const PATH_PATTERN_START_TYPE: (&str, u32) = ("69EE2FA7-BCC7-449E-9CA
 
 /// Fixed settings of a `PathPattern` scope, from its settings record and its
 /// path-start record.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignPathPatternSettings {
-    /// Settings record named by the scope prefix.
-    pub(crate) settings_record_index: u32,
-    /// Byte offset of the settings record header.
-    pub(crate) settings_byte_offset: u64,
+    #[doc = "The scope reference table places both parameter owners before its seed group."]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) reordered_owners: bool,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path_pattern_settings_index"
+    )]
+    pub(crate) settings_record_index: Option<u32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path_pattern_settings_offset"
+    )]
+    pub(crate) settings_byte_offset: Option<u64>,
     /// The distance parameter is the total extent; otherwise it is the
     /// spacing between adjacent instances.
-    pub(crate) total_extent: Located<bool>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path_pattern_total_extent"
+    )]
+    pub(crate) total_extent: Option<Located<bool>>,
     /// The instances run against the path direction.
-    pub(crate) flipped: Located<bool>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path_pattern_flipped"
+    )]
+    pub(crate) flipped: Option<Located<bool>>,
     /// Each instance follows the path direction.
-    pub(crate) path_oriented: Located<bool>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path_pattern_path_oriented"
+    )]
+    pub(crate) path_oriented: Option<Located<bool>>,
     /// Path group named by the settings record.
-    pub(crate) path_group_record_index: u32,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path_pattern_path_group_record_index"
+    )]
+    pub(crate) path_group_record_index: Option<u32>,
     /// Path-start record in the scope reference table.
-    pub(crate) start_record_index: u32,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path_pattern_start_record_index"
+    )]
+    pub(crate) start_record_index: Option<u32>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path_pattern_start_frame_end"
+    )]
+    pub(crate) start_frame_end: Option<u64>,
     /// Path parameter of the pattern start point.
-    pub(crate) start_parameter: Located<FiniteReal>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path_pattern_start_parameter"
+    )]
+    pub(crate) start_parameter: Option<Located<FiniteReal>>,
 }
+
+cadmpeg_core::named_optional_field!(
+    deserialize_path_pattern_settings_index,
+    u32,
+    "settings_record_index"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_path_pattern_settings_offset,
+    u64,
+    "settings_byte_offset"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_path_pattern_total_extent,
+    Located<bool>,
+    "total_extent"
+);
+
+cadmpeg_core::named_optional_field!(deserialize_path_pattern_flipped, Located<bool>, "flipped");
+
+cadmpeg_core::named_optional_field!(
+    deserialize_path_pattern_path_oriented,
+    Located<bool>,
+    "path_oriented"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_path_pattern_path_group_record_index,
+    u32,
+    "path_group_record_index"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_path_pattern_start_record_index,
+    u32,
+    "start_record_index"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_path_pattern_start_frame_end,
+    u64,
+    "start_frame_end"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_path_pattern_start_parameter,
+    Located<FiniteReal>,
+    "start_parameter"
+);

@@ -26,6 +26,7 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::topology::Sense;
+use cadmpeg_parasolid::topology::fin::{FinForm, FinLinks};
 
 use crate::layout::edge_bare as edge_body;
 use crate::layout::edge_tripled as edge_delta;
@@ -150,21 +151,6 @@ pub(super) struct VertexLoopFin {
     pub(super) offset: usize,
 }
 
-impl VertexLoopFin {
-    /// The vertex-loop FIN that the coedge cells `refs` and `marker` of
-    /// `attr` state: marker `?`, both ring links to `attr`, and null partner
-    /// and edge.
-    pub(super) fn read(attr: u32, refs: &[u32; 9], marker: u8, offset: usize) -> Option<Self> {
-        (marker == b'?' && refs[2] == attr && refs[3] == attr && refs[5] <= 1 && refs[6] <= 1)
-            .then_some(Self {
-                attr,
-                loop_attr: refs[1],
-                vertex: refs[4],
-                offset,
-            })
-    }
-}
-
 /// A FIN record: an edge coedge or the FIN of a vertex loop.
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum Fin {
@@ -175,15 +161,28 @@ pub(super) enum Fin {
 impl Fin {
     /// The FIN of `attr` that the coedge cells `refs` and `marker` state.
     pub(super) fn read(attr: u32, refs: [u32; 9], marker: u8, offset: usize) -> Option<Self> {
-        match parse_sense(marker) {
-            Some(sense) => Some(Self::Edge(Coedge {
+        let non_null = |reference: u32| (reference > 1).then_some(reference);
+        let links = FinLinks {
+            fin: attr,
+            forward_fin: refs[2],
+            backward_fin: refs[3],
+            other_fin: non_null(refs[5]),
+            edge: non_null(refs[6]),
+        };
+        Some(match FinForm::classify(&links, marker)? {
+            FinForm::Edge(sense) => Self::Edge(Coedge {
                 attr,
                 refs,
                 sense,
                 offset,
-            })),
-            None => VertexLoopFin::read(attr, &refs, marker, offset).map(Self::Vertex),
-        }
+            }),
+            FinForm::VertexLoop => Self::Vertex(VertexLoopFin {
+                attr,
+                loop_attr: refs[1],
+                vertex: refs[4],
+                offset,
+            }),
+        })
     }
 
     pub(super) fn attr(&self) -> u32 {
@@ -1422,6 +1421,7 @@ fn merge_framed_records<T>(
 pub(crate) struct Tables {
     bridges: HashMap<u32, Bridge>,
     bridge_frames: HashMap<u32, RecordFrame>,
+    looped_bridge_attrs: HashSet<u32>,
     loops: HashMap<u32, Loop>,
     loop_frames: HashMap<u32, RecordFrame>,
     edge_uses: HashMap<u32, EdgeUse>,
@@ -1445,6 +1445,7 @@ impl Tables {
         let keep = |attr: &u32| !attrs.contains(attr);
         self.bridges.retain(|attr, _| keep(attr));
         self.bridge_frames.retain(|attr, _| keep(attr));
+        self.looped_bridge_attrs.retain(keep);
         self.loops.retain(|attr, _| keep(attr));
         self.loop_frames.retain(|attr, _| keep(attr));
         self.edge_uses.retain(|attr, _| keep(attr));
@@ -1484,13 +1485,27 @@ impl Tables {
         &self.bridges
     }
 
+    pub(super) fn has_looped_bridge_frame(&self, attr: u32) -> bool {
+        self.looped_bridge_attrs.contains(&attr)
+    }
+
+    pub(super) fn record_looped_bridge_attrs(&mut self, attrs: &HashSet<u32>) {
+        self.looped_bridge_attrs.extend(attrs.iter().copied());
+    }
+
     #[cfg(test)]
     pub(super) fn insert_bridge(&mut self, record: Bridge) {
+        if record.refs[2] > 1 {
+            self.looped_bridge_attrs.insert(record.attr);
+        }
         self.bridges.insert(record.attr, record);
     }
 
     fn merge_bridge_frame(&mut self, record: Bridge, frame: RecordFrame) {
         let attr = record.attr;
+        if record.refs[2] > 1 {
+            self.looped_bridge_attrs.insert(attr);
+        }
         merge_record_frame(
             &mut self.bridges,
             &mut self.bridge_frames,
@@ -1639,6 +1654,7 @@ impl Tables {
             deltas.bridge_frames.contains_key(attr)
                 || (!self.bridges.contains_key(attr) && may_add(attr))
         });
+        self.looped_bridge_attrs.extend(deltas.looped_bridge_attrs);
         merge_framed_records(
             &mut self.bridges,
             &mut self.bridge_frames,
@@ -1973,11 +1989,27 @@ pub(crate) fn patch_point_values(
 
 /// Replace one world-point record while preserving its framing.
 pub(crate) fn patch_point(buf: &mut [u8], attr: u32, xyz_m: [f64; 3]) -> bool {
-    let mut tables = scan_records(buf, false, false, None, None, None, None);
-    let Some(record) = tables.points.remove(&attr) else {
-        return false;
-    };
-    patch_point_values(buf, record.xyz_offset, record.xyz_m, xyz_m)
+    patch_points(buf, &[(attr, xyz_m)]).is_ok()
+}
+
+/// Replace the world-point records of distinct attributes in one scan while
+/// preserving their framing. The error is the first attribute that has no
+/// record to patch.
+pub(crate) fn patch_points(buf: &mut [u8], points: &[(u32, [f64; 3])]) -> Result<(), u32> {
+    if points.is_empty() {
+        return Ok(());
+    }
+    let tables = scan_records(buf, false, false, None, None, None, None);
+    for &(attr, xyz_m) in points {
+        let patched = tables
+            .points
+            .get(&attr)
+            .is_some_and(|record| patch_point_values(buf, record.xyz_offset, record.xyz_m, xyz_m));
+        if !patched {
+            return Err(attr);
+        }
+    }
+    Ok(())
 }
 
 /// Scan stream-local topology records.
@@ -2227,6 +2259,39 @@ fn scan_deltas_with_curve_attrs_excluding(
     let mut owners = super::typed::topology_owner_attrs_for_streams([(&owner_facts, body, true)]);
     owners.extend(base.owner_classes.iter().copied());
     scan_deltas_with_owner_attrs(body, curves, excluded, base, &owners)
+}
+
+pub(super) fn framed_looped_bridge_attrs(body: &[u8], deltas: bool, plain: bool) -> HashSet<u32> {
+    let scopes = topology_scopes(body, deltas);
+    let mut payload_index = 0;
+    let mut attrs = HashSet::new();
+    let mut offset = 0;
+    while offset + 14 <= body.len() {
+        while scopes
+            .excluded_starts
+            .get(payload_index)
+            .is_some_and(|range| range.end <= offset)
+        {
+            payload_index += 1;
+        }
+        if let Some(range) = scopes
+            .excluded_starts
+            .get(payload_index)
+            .filter(|range| range.contains(&offset))
+        {
+            offset = range.end;
+            continue;
+        }
+        if View::u16_be_at(body, offset) == Some(0x000e) {
+            if let Some(record) =
+                parse_bridge(body, offset, plain).filter(|record| record.refs[2] > 1)
+            {
+                attrs.insert(record.attr);
+            }
+        }
+        offset += 1;
+    }
+    attrs
 }
 
 fn scan_records(
@@ -4465,9 +4530,9 @@ mod tests {
         let decoded = crate::SldprtCodec
             .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(decoded.ir().model.faces.len(), 1);
-        assert_eq!(decoded.ir().model.loops.len(), 1);
-        assert_eq!(decoded.ir().model.coedges.len(), 3);
+        assert_eq!(decoded.ir().geometry.faces.len(), 1);
+        assert_eq!(decoded.ir().geometry.loops.len(), 1);
+        assert_eq!(decoded.ir().geometry.coedges.len(), 3);
         let body = crate::writer::brep_body(decoded.ir(), 0.001, false).unwrap();
         let original = scan(&body);
         assert_eq!(original.edge_uses.len(), 3);

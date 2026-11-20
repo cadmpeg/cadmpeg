@@ -26,6 +26,8 @@ use super::super::rolling_ball_patch::fit_rectangular_patch;
 use super::ruled::Ruled;
 use super::{near, surface_fit, SheetSurfaceFit};
 
+const MAX_ROLLING_EXTENSION_MM: f64 = 0.005;
+
 pub(super) const SPHERE_BRIDGE_RADIUS_TOLERANCE_MM: f64 = 1.0e-6;
 
 pub(super) enum Carrier<'a> {
@@ -89,11 +91,11 @@ impl Carrier<'_> {
             ]),
             Self::Torus(torus, _) => Some([
                 torus
-                    .major_angular_range
+                    .major_angular_domain
                     .endpoints()
                     .map(|u| u * torus.major_scale.get()),
                 torus
-                    .minor_angular_range
+                    .minor_angular_domain
                     .endpoints()
                     .map(|v| v * torus.minor_scale.get()),
             ]),
@@ -220,6 +222,29 @@ impl Carrier<'_> {
         let (definition, _) = self.rolling_definition()?;
         let [u, s] = self.point([u, v]);
         eval::rolling_ball_jet_boundary_gap(definition, u, s).ok()
+    }
+
+    pub(super) fn evaluate_rolling_extension(&self, u: f64, v: f64) -> Option<Point3> {
+        let (definition, _) = self.rolling_definition()?;
+        eval::rolling_ball_jet_extended_point(definition, u, v, MAX_ROLLING_EXTENSION_MM)
+            .ok()
+            .map(FinitePoint3::get)
+    }
+
+    pub(super) fn solve_rolling_extension(
+        &self,
+        limits: [[f64; 2]; 2],
+    ) -> Option<SolvedSurfaceGeometry> {
+        let (ProceduralSurfaceDefinition::RollingBallJet(jet), _) = self.rolling_definition()?
+        else {
+            return None;
+        };
+        let surface = surface_fit::bounded(
+            jet.stations().iter().map(|s| s.knot.get()),
+            limits,
+            |u, v| self.evaluate_rolling_extension(u, v),
+        )?;
+        Some(SolvedSurfaceGeometry::Nurbs(surface))
     }
 
     pub(super) fn solved(
@@ -401,6 +426,16 @@ impl SpatialPlane {
             | (0xc4, 0x30 | 0x38 | 0x3c, None)
             | (0xd4, 0xa0, None)
             | (0xe4, 0x50, None) => (direction(mask)?, direction(layout & 0x70)?),
+            (0xb4, 0xd0, None) => {
+                let y = view.f64_le()?;
+                if y.abs() != 1.0 {
+                    return None;
+                }
+                (
+                    UnitVector3::new(Vector3::new(0.0, y, 0.0))?,
+                    UnitVector3::Z_AXIS,
+                )
+            }
             (0xb4, 0xd6, None) => (direction(mask)?, UnitVector3::Z_AXIS),
             (0x08, 0, Some(0x18)) => (direction(0)?, direction(0)?),
             (0x08, 0xe8, Some(0x1d)) => (UnitVector3::X_AXIS, UnitVector3::Y_AXIS),
@@ -543,6 +578,23 @@ pub(super) fn analytic_bridge(bytes: &[u8]) -> Option<(AllocationReference, u8, 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spatial_plane_retains_the_mirrored_chart_direction() {
+        let mut bytes = vec![0xb4, 0xd0];
+        for value in [3.0_f64, 4.0, 5.0, -1.0, -2.0, 3.0, 0.0, 4.0] {
+            bytes.extend(value.to_le_bytes());
+        }
+        let plane = SpatialPlane::read(&bytes).expect("bounded mirrored plane");
+        assert_eq!(plane.bounds, Some([[-2.0, 3.0], [0.0, 4.0]]));
+        let carrier = Carrier::Plane(plane);
+        assert_eq!(
+            carrier.evaluate([2.0, 3.0]),
+            Some(Point3::new(3.0, 2.0, 8.0))
+        );
+        bytes.push(0);
+        assert!(SpatialPlane::read(&bytes).is_none());
+    }
 
     #[test]
     fn offset_cache_admits_a_trimmed_subdomain() {

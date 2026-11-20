@@ -77,18 +77,17 @@ fn decode_bound(bytes: &[u8]) -> Decoded {
     bound
 }
 
-/// Decode under each `step / steps` fraction of `full_charge` below it.
+/// Decode under each `step / steps` fraction of `full_charge` below it, one
+/// decode per item taken.
 fn below_full_charge(
     bytes: &[u8],
     full_charge: u64,
     steps: u64,
-) -> Vec<(u64, Result<Decoded, String>)> {
-    (1..steps)
-        .map(|step| {
-            let allowance = full_charge * step / steps;
-            (allowance, decode(bytes, allowance))
-        })
-        .collect()
+) -> impl DoubleEndedIterator<Item = (u64, Result<Decoded, String>)> + '_ {
+    (1..steps).map(move |step| {
+        let allowance = full_charge * step / steps;
+        (allowance, decode(bytes, allowance))
+    })
 }
 
 fn binding_skipped(result: &DecodeResult) -> bool {
@@ -111,7 +110,7 @@ fn duplicate_component_insert_placements_do_not_depend_on_the_retained_allowance
         [0.0, 0.0, 1.0, 30.0],
     ])
     .unwrap();
-    assert_eq!(occurrences[0].transform, expected);
+    assert_eq!(occurrences[0].transform, Some(expected));
 
     for (allowance, outcome) in below_full_charge(&bytes, bound.retained_bytes, 16) {
         if let Ok(decoded) = outcome {
@@ -130,9 +129,14 @@ fn an_allowance_that_skips_history_binding_keeps_the_placements() {
     let bound = decode_bound(&bytes);
     let mut outcomes = Vec::new();
     let mut skipped = None;
-    for (allowance, outcome) in below_full_charge(&bytes, bound.retained_bytes, 64) {
+    // Search down from the full charge, where an allowance first falls short
+    // of the binding estimate.
+    for (allowance, outcome) in below_full_charge(&bytes, bound.retained_bytes, 64).rev() {
         match outcome {
-            Ok(decoded) if binding_skipped(&decoded.result) => skipped = Some(decoded),
+            Ok(decoded) if binding_skipped(&decoded.result) => {
+                skipped = Some(decoded);
+                break;
+            }
             Ok(decoded) => outcomes.push(format!("{allowance}: bound, {}", decoded.retained_bytes)),
             Err(error) => outcomes.push(format!("{allowance}: {error}")),
         }
@@ -152,7 +156,7 @@ fn an_allowance_that_skips_history_binding_keeps_the_placements() {
 #[test]
 fn attributed_local_children_repeat_under_each_containing_instance() {
     const TOLERANCE: f64 = 1e-12;
-    let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(&[300]);
+    let (bulk, meta) = crate::test_support::component_design::nested_local_component_design(&[300]);
     let bytes = f3d_with_breps_and_design(
         &[(
             "BREP.module.smbh",
@@ -163,27 +167,37 @@ fn attributed_local_children_repeat_under_each_containing_instance() {
     );
     let result = super::decode(bytes);
     let model = &result.ir().model;
-    assert_eq!(model.bodies.len(), 1);
+    let geometry = &result.ir().geometry;
+    assert_eq!(geometry.bodies.len(), 1);
+    // §8.1: the root component, the module, and the component; the module,
+    // placed twice, owns its two children once, so the placed instance tree
+    // has four leaves.
     assert_eq!(model.product_definitions.len(), 3);
-    assert_eq!(model.occurrences.len(), 7);
+    assert_eq!(model.occurrences.len(), 4);
     assert!(!result
         .report()
         .losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::LocalOccurrenceUnplaced.kind()));
-    let graph = cadmpeg_ir::products::AssemblyGraph::new(&model.occurrences).unwrap();
-    let leaves = model
+    let expanded = crate::tree::expand(
+        &cadmpeg_core::decode::ResourceLimits::default(),
+        &model.product_definitions,
+        &model.occurrences,
+        &std::collections::BTreeMap::new(),
+    )
+    .unwrap();
+    let poses = crate::tree::world_poses(model);
+    let leaves = expanded
         .occurrences
         .iter()
         .filter(|occurrence| {
-            occurrence.id.as_str().contains(':')
-                && occurrence
-                    .id
-                    .as_str()
-                    .split('#')
-                    .next_back()
-                    .unwrap()
-                    .contains(':')
+            occurrence
+                .id
+                .as_str()
+                .split('#')
+                .next_back()
+                .unwrap()
+                .contains(':')
         })
         .collect::<Vec<_>>();
     assert_eq!(leaves.len(), 4);
@@ -191,7 +205,7 @@ fn attributed_local_children_repeat_under_each_containing_instance() {
         .iter()
         .all(|leaf| leaf.prototype == leaves[0].prototype));
     for leaf in leaves {
-        let pose = cadmpeg_test_support::assembly::resolved_transform(&graph, &leaf.id).unwrap();
+        let pose = poses[&leaf.id];
         let child_b = leaf.id.as_str().ends_with("000000000403");
         let face = pose
             .apply_point(cadmpeg_ir::math::Point3::new(
@@ -207,9 +221,10 @@ fn attributed_local_children_repeat_under_each_containing_instance() {
 }
 
 #[test]
-fn only_absent_membership_uses_the_component_cluster() {
+fn unadmitted_membership_places_the_body_once_at_its_stored_frame() {
     for owners in [&[][..], &[200, 300][..], &[999][..]] {
-        let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(owners);
+        let (bulk, meta) =
+            crate::test_support::component_design::nested_local_component_design(owners);
         let bytes = f3d_with_breps_and_design(
             &[(
                 "BREP.module.smbh",
@@ -219,7 +234,7 @@ fn only_absent_membership_uses_the_component_cluster() {
             &meta,
         );
         let result = super::decode(bytes);
-        assert_eq!(result.ir().model.bodies.len(), 1);
+        assert_eq!(result.ir().geometry.bodies.len(), 1);
         assert_eq!(
             result
                 .ir()
@@ -228,14 +243,71 @@ fn only_absent_membership_uses_the_component_cluster() {
                 .iter()
                 .flat_map(|definition| &definition.bodies)
                 .count(),
-            usize::from(owners.is_empty())
+            1
         );
+        let model = &result.ir().model;
+        let definition = model
+            .product_definitions
+            .iter()
+            .find(|definition| !definition.bodies.is_empty())
+            .unwrap();
+        let stored = model
+            .occurrences
+            .iter()
+            .filter(|occurrence| occurrence.prototype == definition.id)
+            .collect::<Vec<_>>();
+        // A model without occurrences stays flat; otherwise the definition
+        // has one identity occurrence in the root definition.
+        if model.occurrences.is_empty() {
+            assert!(stored.is_empty());
+        } else {
+            assert_eq!(stored.len(), 1);
+            assert!(crate::tree::owner_of(model, &stored[0].id)
+                .is_some_and(cadmpeg_ir::products::ProductDefinition::is_root));
+            assert_eq!(
+                stored[0].transform,
+                Some(cadmpeg_ir::transform::Transform::identity())
+            );
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code == F3dLossCode::StoredFrameOccurrence.kind()));
+        }
         assert!(result.report().losses.iter().any(|loss| loss.code
             == if owners.is_empty() {
                 F3dLossCode::ComponentBodyOwnerFallback.kind()
             } else {
                 F3dLossCode::ComponentBodyOwnerUnresolved.kind()
             }));
+    }
+}
+
+#[test]
+fn design_without_occurrences_groups_its_unbound_body_at_its_stored_frame() {
+    for owners in [&[][..], &[999][..]] {
+        let (bulk, meta) = crate::test_support::component_design::flat_component_design(owners);
+        let bytes = f3d_with_breps_and_design(
+            &[(
+                "BREP.module.smbh",
+                &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+            )],
+            &bulk,
+            &meta,
+        );
+        let result = super::decode(bytes);
+        let model = &result.ir().model;
+        let geometry = &result.ir().geometry;
+        assert_eq!(geometry.bodies.len(), 1);
+        assert!(model.occurrences.is_empty());
+        assert_eq!(
+            model
+                .product_definitions
+                .iter()
+                .flat_map(|definition| &definition.bodies)
+                .count(),
+            1
+        );
     }
 }
 
@@ -260,7 +332,7 @@ fn history_only_body_map_pair_leaves_the_current_model_and_reports_its_loss() {
             &meta,
         );
         let result = super::decode(bytes);
-        assert_eq!(result.ir().model.bodies.len(), bodies, "{hidden}");
+        assert_eq!(result.ir().geometry.bodies.len(), bodies, "{hidden}");
         assert_eq!(
             result
                 .report()
@@ -300,8 +372,8 @@ fn consumed_pair_beside_a_listed_survivor_keeps_exactly_the_survivor() {
             &meta,
         );
         let result = super::decode(bytes);
-        assert_eq!(result.ir().model.bodies.len(), 1, "{survivor_key}");
-        assert_eq!(result.ir().model.faces.len(), 1, "{survivor_key}");
+        assert_eq!(result.ir().geometry.bodies.len(), 1, "{survivor_key}");
+        assert_eq!(result.ir().geometry.faces.len(), 1, "{survivor_key}");
         let native = crate::test_support::native_test::f3d_native(result.ir());
         let native_keys = native
             .body_native_keys
@@ -368,7 +440,7 @@ fn no_physical_model_requires_every_body_map_pair_to_be_history_only() {
             &meta,
         );
         let result = super::decode(bytes);
-        assert!(result.ir().model.bodies.is_empty(), "{expected}");
+        assert!(result.ir().geometry.bodies.is_empty(), "{expected}");
         let has = |text: &str| {
             result
                 .report()
@@ -384,7 +456,8 @@ fn no_physical_model_requires_every_body_map_pair_to_be_history_only() {
 #[test]
 fn admitted_component_membership_wins_over_an_unregistered_owner() {
     for owners in [&[999, 300][..], &[300, 999][..]] {
-        let (bulk, meta) = crate::test_support::streams_test::nested_local_component_design(owners);
+        let (bulk, meta) =
+            crate::test_support::component_design::nested_local_component_design(owners);
         let bytes = f3d_with_breps_and_design(
             &[(
                 "BREP.module.smbh",
@@ -412,7 +485,6 @@ fn admitted_component_membership_wins_over_an_unregistered_owner() {
 
 #[test]
 fn empty_attribute_local_children_place_identity_matrix_and_nested_occurrences() {
-    use cadmpeg_ir::products::OccurrenceParent;
     let (bulk, meta) =
         crate::test_support::empty_attribute_occurrences::empty_attribute_local_component_design(
             &[300],
@@ -428,48 +500,35 @@ fn empty_attribute_local_children_place_identity_matrix_and_nested_occurrences()
     let result = super::decode(bytes);
     super::assert_valid(&result);
     let model = &result.ir().model;
+    // §8.1: the root component holds the two module occurrences, and the
+    // module, placed by both, owns its two children once.
     assert_eq!(model.product_definitions.len(), 3);
-    assert_eq!(model.occurrences.len(), 7);
+    assert_eq!(model.occurrences.len(), 4);
     assert!(!result
         .report()
         .losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::LocalOccurrenceUnplaced.kind()));
     let root = model
-        .occurrences
+        .product_definitions
         .iter()
-        .find(|o| o.parent == OccurrenceParent::Root {})
+        .find(|definition| definition.is_root())
         .unwrap();
-    let children = model
+    let children = root
         .occurrences
         .iter()
-        .filter(|o| {
-            o.parent
-                == OccurrenceParent::Occurrence {
-                    occurrence: root.id.clone(),
-                }
-        })
+        .map(|id| model.occurrences.iter().find(|o| &o.id == id).unwrap())
         .collect::<Vec<_>>();
     assert_eq!(children.len(), 2);
     assert_eq!(
         children
             .iter()
-            .filter(|o| o.transform == Transform::identity())
+            .filter(|o| o.transform == Some(Transform::identity()))
             .count(),
         1
     );
     for child in children {
-        assert_eq!(
-            model
-                .occurrences
-                .iter()
-                .filter(|o| o.parent
-                    == OccurrenceParent::Occurrence {
-                        occurrence: child.id.clone()
-                    })
-                .count(),
-            2
-        );
+        assert_eq!(crate::tree::listed(model, &child.prototype).len(), 2);
     }
 }
 
@@ -495,7 +554,9 @@ fn later_fixed_identity_occurrence_reports_loss_and_stays_out_of_neutral_structu
         .collect::<Vec<_>>();
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("ordinal 2"));
-    assert_eq!(result.ir().model.occurrences.len(), 4);
+    // §8.1: the root component is the root definition, with no occurrence
+    // of its own.
+    assert_eq!(result.ir().model.occurrences.len(), 3);
     assert!(result
         .ir()
         .model
@@ -524,7 +585,7 @@ fn history_only_hidden_uncontained_body_with_a_bound_cluster_stays_in_model() {
         &meta,
     );
     let result = super::decode(bytes);
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     let native = crate::test_support::native_test::f3d_native(result.ir());
     assert!(!native.design_body_bindings[0].history_only);
     assert!(native.design_body_bindings[0].body.is_some());
@@ -566,7 +627,7 @@ fn a_body_a_consuming_scope_names_leaves_the_model_with_a_bound_cluster() {
         &meta,
     );
     let result = super::decode(bytes);
-    assert!(result.ir().model.bodies.is_empty());
+    assert!(result.ir().geometry.bodies.is_empty());
     let native = crate::test_support::native_test::f3d_native(result.ir());
     assert!(native.design_body_bindings[0].history_only);
     assert!(native.design_body_bindings[0].body.is_none());
@@ -610,7 +671,7 @@ fn history_only_consumed_member_keeps_the_inserted_design_body() {
         ],
     );
     let result = super::decode(archive);
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert!(result
         .report()
         .losses
@@ -622,4 +683,56 @@ fn history_only_consumed_member_keeps_the_inserted_design_body() {
         .iter()
         .any(|loss| loss.code == F3dLossCode::ComponentBodyOwnerFallback.kind()));
     super::assert_valid(&result);
+}
+
+#[test]
+fn attributed_version_two_occurrences_keep_definition_ownership_and_nested_world_poses() {
+    let (bulk, meta) =
+        crate::test_support::empty_attribute_occurrences::attributed_local_component_design();
+    let bytes = f3d_with_breps_and_design(
+        &[(
+            "BREP.module.smbh",
+            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        )],
+        &bulk,
+        &meta,
+    );
+    let result = super::decode(bytes);
+    super::assert_valid(&result);
+    let model = &result.ir().model;
+    assert_eq!(model.occurrences.len(), 4);
+    assert_eq!(
+        model
+            .product_definitions
+            .iter()
+            .flat_map(|definition| &definition.bodies)
+            .count(),
+        1
+    );
+    let placements = model
+        .occurrences
+        .iter()
+        .filter_map(|occurrence| occurrence.transform)
+        .collect::<Vec<_>>();
+    assert!(placements.iter().any(|transform| [
+        transform.rows()[0][3],
+        transform.rows()[1][3],
+        transform.rows()[2][3]
+    ] == [30.0, 40.0, 0.0]));
+    assert!(placements.iter().any(|transform| [
+        transform.rows()[0][3],
+        transform.rows()[1][3],
+        transform.rows()[2][3]
+    ] == [10.0, 0.0, 0.0]));
+    for code in [
+        F3dLossCode::LocalOccurrenceUnplaced,
+        F3dLossCode::ComponentBodyOwnerUnresolved,
+        F3dLossCode::LocalOccurrenceEnvelopeNative,
+    ] {
+        assert!(!result
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.code == code.kind()));
+    }
 }

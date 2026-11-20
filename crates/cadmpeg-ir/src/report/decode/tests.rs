@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_test_support::wire;
+use crate::test_support::wire;
 
 use crate::report::decode::{DecodeReport, DecodeTransfer, TransferLedger};
 use cadmpeg_core::dialect::DialectLayers;
@@ -68,7 +68,7 @@ fn transfer_record_keeps_the_nested_outcome_wire_shape() {
         serde_json::json!({
             "source": "D1",
             "outcome": {
-                "disposition": "retained",
+                "kind": "retained",
                 "target": "iges:entity:directory#1",
                 "note": "retained"
             }
@@ -88,19 +88,19 @@ fn transfer_record_wire_rejects_disposition_target_disagreement() {
     for wire in [
         serde_json::json!({
             "source": "D1",
-            "outcome": {"disposition": "retained"}
+            "outcome": {"kind": "retained"}
         }),
         serde_json::json!({
             "source": "D1",
-            "outcome": {"disposition": "omitted", "target": "point:1"}
+            "outcome": {"kind": "omitted", "target": "point:1"}
         }),
         serde_json::json!({
             "source": "D1",
-            "outcome": {"disposition": "emitted", "target": "point:1", "note": "n"}
+            "outcome": {"kind": "emitted", "target": "point:1", "note": "n"}
         }),
         serde_json::json!({
             "source": "D1",
-            "outcome": {"disposition": "emitted"}
+            "outcome": {"kind": "emitted"}
         }),
     ] {
         assert!(serde_json::from_value::<TransferRecord>(wire).is_err());
@@ -108,15 +108,12 @@ fn transfer_record_wire_rejects_disposition_target_disagreement() {
 
     let omitted: TransferRecord = serde_json::from_value(serde_json::json!({
         "source": "D2",
-        "outcome": {"disposition": "omitted", "note": "unsupported"}
+        "outcome": {"kind": "omitted", "note": "unsupported"}
     }))
     .expect("omitted record has no target");
     assert_eq!(omitted.target(), None);
     assert_eq!(
-        wire::field::<crate::report::decode::TransferDisposition>(
-            &(omitted.outcome),
-            "disposition"
-        ),
+        wire::field::<crate::report::decode::TransferDisposition>(&(omitted.outcome), "kind"),
         TransferDisposition::Omitted
     );
     assert_eq!(
@@ -140,14 +137,14 @@ fn classified_report_wire_requires_its_primary_format() {
     let golden = serde_json::to_string(&report).unwrap();
     assert_eq!(
         golden,
-        r#"{"identity":{"classification":"classified","dialects":{"primary":{"dialect":"rhino:archive-80","admission":"admitted"},"extra":[]}},"transfer":{"transfer":"full","geometry_transferred":true},"losses":[],"notes":[]}"#
+        r#"{"identity":{"kind":"classified","dialects":{"primary":{"dialect":"rhino:archive-80","declared":{},"admission":{"kind":"admitted"}},"extra":[]}},"transfer":{"kind":"full","geometry_transferred":true},"coverage":{},"losses":[],"notes":[],"transfer_ledger":{"entries":[]}}"#
     );
     assert_eq!(
         serde_json::from_str::<DecodeReport>(&golden).unwrap(),
         report
     );
 
-    let contradictory = golden.replacen("\"transfer\":\"full\"", "\"transfer\":\"container\"", 1);
+    let contradictory = golden.replacen("\"kind\":\"full\"", "\"kind\":\"container\"", 1);
     let error = serde_json::from_str::<DecodeReport>(&contradictory)
         .expect_err("a container-only report has no geometry outcome to state");
     assert!(
@@ -156,8 +153,8 @@ fn classified_report_wire_requires_its_primary_format() {
     );
 
     let restated = golden.replacen(
-        "\"classification\":\"classified\"",
-        "\"classification\":\"classified\",\"format\":\"step\"",
+        "\"kind\":\"classified\"",
+        "\"kind\":\"classified\",\"format\":\"step\"",
         1,
     );
     let error = serde_json::from_str::<DecodeReport>(&restated)
@@ -178,7 +175,7 @@ fn container_only_report_wire_preserves_the_coherent_transfer_state() {
 
     let rendered = serde_json::to_string(&report).unwrap();
     assert!(
-        rendered.contains("\"transfer\":\"container\""),
+        rendered.contains("\"transfer\":{\"kind\":\"container\"}"),
         "{rendered}"
     );
     assert!(!rendered.contains("geometry_transferred"), "{rendered}");
@@ -191,20 +188,22 @@ fn container_only_report_wire_preserves_the_coherent_transfer_state() {
 #[test]
 fn a_decode_transfer_states_its_scope_and_carries_only_its_own_keys() {
     let base = serde_json::json!({
-        "identity": {"classification": "unclassified", "format": "rhino"},
-        "transfer": {"transfer": "full", "geometry_transferred": true},
+        "identity": {"kind": "unclassified", "format": "rhino"},
+        "transfer": {"kind": "full", "geometry_transferred": true},
+        "coverage": {},
         "losses": [],
         "notes": [],
+        "transfer_ledger": {"entries": []},
     });
     let report = serde_json::from_value::<DecodeReport>(base.clone()).expect("a full decode");
     assert_eq!(report.transfer, DecodeTransfer::full(true));
     assert_eq!(
-        serde_json::to_value(&report).unwrap()["transfer"]["transfer"],
+        serde_json::to_value(&report).unwrap()["transfer"]["kind"],
         "full"
     );
 
     let mut container_only = base.clone();
-    container_only["transfer"]["transfer"] = serde_json::json!("container");
+    container_only["transfer"]["kind"] = serde_json::json!("container");
     let error = serde_json::from_value::<DecodeReport>(container_only.clone())
         .expect_err("a container-only report has no geometry outcome");
     assert!(
@@ -220,13 +219,13 @@ fn a_decode_transfer_states_its_scope_and_carries_only_its_own_keys() {
         serde_json::from_value::<DecodeReport>(container_only.clone()).expect("container only");
     assert_eq!(report.transfer, DecodeTransfer::ContainerOnly {});
     let wire = serde_json::to_value(&report).unwrap();
-    assert_eq!(wire["transfer"]["transfer"], "container");
+    assert_eq!(wire["transfer"]["kind"], "container");
     assert_eq!(
-        wire["transfer"]["transfer"],
+        wire["transfer"]["kind"],
         serde_json::to_value(cadmpeg_core::decode::DecodeDepth::Container).unwrap(),
         "the transfer tag spells the depth it delivered"
     );
-    container_only["transfer"]["transfer"] = serde_json::json!("container_only");
+    container_only["transfer"]["kind"] = serde_json::json!("container_only");
     serde_json::from_value::<DecodeReport>(container_only)
         .expect_err("the depth token is `container`");
     assert!(wire["transfer"].get("geometry_transferred").is_none());

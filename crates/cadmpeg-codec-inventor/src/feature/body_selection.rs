@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::document::Model;
+use cadmpeg_ir::document::{Model, Topology};
 use cadmpeg_ir::features::{
     patterns::PatternSeed, BodySelection, CombineOperands, FeatureDefinition, FeatureOperation,
     TrimBodyOperands,
@@ -188,7 +188,7 @@ pub(crate) fn body_map(
     joins: &[WrapperLink],
     carrier: &ActiveCarrierRecord,
     keys: &[BodyNativeKey],
-    model: &Model,
+    geometry: &Topology,
     scope: &Scope<'_>,
 ) -> HashMap<String, BodyId> {
     let mut bodies = HashMap::new();
@@ -208,7 +208,7 @@ pub(crate) fn body_map(
     let join_ids =
         cadmpeg_core::decode::unique_index(joins.iter().map(|join| (join.wrapper.as_str(), join)));
     let model_bodies =
-        cadmpeg_core::decode::unique_index(model.bodies.iter().map(|body| (&body.id, body)));
+        cadmpeg_core::decode::unique_index(geometry.bodies.iter().map(|body| (&body.id, body)));
     for join in joins {
         let Some(wrapper) = properties.get(&join.wrapper).and_then(Option::as_ref) else {
             continue;
@@ -358,9 +358,41 @@ pub(crate) fn split_matches(
 }
 
 pub(crate) struct ProducerRecords<'a> {
-    pub(crate) features: &'a [super::PmDcFeature],
-    pub(crate) labels: &'a [super::PmDcFeatureLabel],
-    pub(crate) properties: &'a [PmDcFeatureProperty],
+    sources: HashMap<String, Option<&'a super::PmDcFeature>>,
+    labels: HashMap<(&'a str, Option<u32>), Option<&'a super::PmDcFeatureLabel>>,
+    properties: HashMap<(&'a str, u32), Option<&'a PmDcFeatureProperty>>,
+}
+
+impl<'a> ProducerRecords<'a> {
+    pub(crate) fn new(
+        features: &'a [super::PmDcFeature],
+        labels: &'a [super::PmDcFeatureLabel],
+        properties: &'a [PmDcFeatureProperty],
+    ) -> Self {
+        Self {
+            sources: cadmpeg_core::decode::unique_index(
+                features.iter().map(|source| (source.id(), source)),
+            ),
+            labels: cadmpeg_core::decode::unique_index(labels.iter().map(|label| {
+                (
+                    (
+                        label.identity.segment_token.as_str(),
+                        label.header.owner.record_ordinal(),
+                    ),
+                    label,
+                )
+            })),
+            properties: cadmpeg_core::decode::unique_index(properties.iter().map(|property| {
+                (
+                    (
+                        property.identity.segment_token.as_str(),
+                        property.identity.record_ordinal,
+                    ),
+                    property,
+                )
+            })),
+        }
+    }
 }
 
 pub(crate) fn produced_before(
@@ -386,28 +418,6 @@ pub(crate) fn produced_before(
         .flat_map(cadmpeg_ir::features::FeatureResultTopology::bodies)
         .map(|wrapper| wrapper.as_str().to_owned())
         .collect::<HashSet<_>>();
-    let sources = cadmpeg_core::decode::unique_index(
-        records.features.iter().map(|source| (source.id(), source)),
-    );
-    let properties =
-        cadmpeg_core::decode::unique_index(records.properties.iter().map(|property| {
-            (
-                (
-                    property.identity.segment_token.as_str(),
-                    property.identity.record_ordinal,
-                ),
-                property,
-            )
-        }));
-    let labels = cadmpeg_core::decode::unique_index(records.labels.iter().map(|label| {
-        (
-            (
-                label.identity.segment_token.as_str(),
-                label.header.owner.record_ordinal(),
-            ),
-            label,
-        )
-    }));
     for producer in producers {
         if !matches!(
             producer.evaluation.definition(),
@@ -418,13 +428,14 @@ pub(crate) fn produced_before(
         let Some(source) = producer
             .native_ref
             .as_deref()
-            .and_then(|id| sources.get(id))
+            .and_then(|id| records.sources.get(id))
             .and_then(Option::as_ref)
         else {
             continue;
         };
         let token = source.identity.segment_token.as_str();
-        let Some(label) = labels
+        let Some(label) = records
+            .labels
             .get(&(token, Some(source.identity.record_ordinal)))
             .and_then(Option::as_ref)
         else {
@@ -437,7 +448,8 @@ pub(crate) fn produced_before(
             continue;
         }
         if let Some((_, output)) = base::wrappers(source, label.class_id(), |ordinal| {
-            properties
+            records
+                .properties
                 .get(&(token, ordinal))
                 .and_then(Option::as_ref)
                 .copied()
@@ -609,18 +621,17 @@ pub(crate) fn outputs_match(
 }
 
 pub(crate) fn project(
-    model: &mut Model,
+    ir: &mut cadmpeg_ir::CadIr,
     bodies: &HashMap<String, BodyId>,
     inventory: &FeatureInventory,
 ) {
-    let sources = cadmpeg_core::decode::unique_index(
-        inventory
-            .features
-            .iter()
-            .map(|source| (source.id(), source)),
+    let records = ProducerRecords::new(
+        &inventory.features,
+        &inventory.labels,
+        &inventory.properties,
     );
-    let features = model.features.clone();
-    for feature in &mut model.features {
+    let features = ir.model.features.clone();
+    for feature in &mut ir.model.features {
         let group = matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Combine { .. })
@@ -629,28 +640,36 @@ pub(crate) fn project(
             feature
                 .native_ref
                 .as_deref()
-                .and_then(|native| sources.get(native))
+                .and_then(|native| records.sources.get(native))
                 .and_then(Option::as_ref)
                 .and_then(|source| tools_group(source, &inventory.properties))
         })
         .flatten();
-        let earlier = produced_before(
-            &features,
-            &model.feature_result_topologies,
-            feature,
-            &ProducerRecords {
-                features: &inventory.features,
-                labels: &inventory.labels,
-                properties: &inventory.properties,
-            },
-        );
+        let earlier = if matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(
+                FeatureOperation::Combine { .. }
+                    | FeatureOperation::TrimBodies { .. }
+                    | FeatureOperation::TrimBodiesAtPlane { .. }
+                    | FeatureOperation::SplitBody { .. }
+            )
+        ) {
+            produced_before(
+                &features,
+                &ir.model.feature_result_topologies,
+                feature,
+                &records,
+            )
+        } else {
+            HashSet::new()
+        };
         let qualified_target = matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::SplitBody { .. })
         ) && feature
             .native_ref
             .as_deref()
-            .and_then(|native| sources.get(native))
+            .and_then(|native| records.sources.get(native))
             .and_then(Option::as_ref)
             .is_some_and(|source| qualified_split_target(source, &inventory.properties));
         feature.evaluation.edit(|value, _| {
@@ -658,11 +677,11 @@ pub(crate) fn project(
             combine_local(value, &earlier, group.as_deref());
             split_local(value, &earlier, qualified_target);
         });
-        if let Some(outputs) = outputs(&feature.id, &model.feature_result_topologies, bodies) {
+        if let Some(outputs) = outputs(&feature.id, &ir.model.feature_result_topologies, bodies) {
             feature.evaluation.set_outputs(outputs);
         }
     }
-    name_bodies(model, bodies, inventory);
+    name_bodies(&mut ir.geometry, bodies, inventory);
 }
 
 /// Names each current body from the feature label that the body's wrapper
@@ -670,7 +689,11 @@ pub(crate) fn project(
 /// surface-body wrapper joins it, exactly one label in the wrapper's
 /// segment names the wrapper as its owner, and the stored name is faithful and
 /// non-blank.
-fn name_bodies(model: &mut Model, bodies: &HashMap<String, BodyId>, inventory: &FeatureInventory) {
+fn name_bodies(
+    geometry: &mut Topology,
+    bodies: &HashMap<String, BodyId>,
+    inventory: &FeatureInventory,
+) {
     let properties = cadmpeg_core::decode::unique_index(
         inventory
             .properties
@@ -697,7 +720,7 @@ fn name_bodies(model: &mut Model, bodies: &HashMap<String, BodyId>, inventory: &
                 .push(label);
         }
     }
-    for body in &mut model.bodies {
+    for body in &mut geometry.bodies {
         if body.name.is_some() {
             continue;
         }

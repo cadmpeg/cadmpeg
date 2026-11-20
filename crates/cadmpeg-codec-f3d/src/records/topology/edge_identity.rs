@@ -512,6 +512,9 @@ pub(crate) struct DesignEdgeOperand {
     /// Preceding boundary-edge slots deleted by the owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) deleted_boundary_edge_slots: Vec<i64>,
+    /// Preceding edge slots that the owning feature deletes across its whole transition, whatever face they bound.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) transition_deleted_edge_slots: Vec<i64>,
     /// Preceding boundary-edge slots assigned a different record revision by
     /// the owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -621,6 +624,8 @@ impl Serialize for DesignEdgeOperand {
             #[serde(skip_serializing_if = "Vec::is_empty")]
             deleted_boundary_edge_slots: &'a Vec<i64>,
             #[serde(skip_serializing_if = "Vec::is_empty")]
+            transition_deleted_edge_slots: &'a Vec<i64>,
+            #[serde(skip_serializing_if = "Vec::is_empty")]
             updated_boundary_edge_slots: &'a Vec<i64>,
             #[serde(skip_serializing_if = "Vec::is_empty")]
             treatment_radius_candidates: &'a Vec<DesignEdgeTreatmentRadiusCandidate>,
@@ -673,6 +678,7 @@ impl Serialize for DesignEdgeOperand {
             terminal_boundary_edge_slots: &self.terminal_boundary_edge_slots,
             changed_boundary_edge_slots: &self.changed_boundary_edge_slots,
             deleted_boundary_edge_slots: &self.deleted_boundary_edge_slots,
+            transition_deleted_edge_slots: &self.transition_deleted_edge_slots,
             updated_boundary_edge_slots: &self.updated_boundary_edge_slots,
             treatment_radius_candidates: &self.treatment_radius_candidates,
             changed_boundary_edge_contexts: &self.changed_boundary_edge_contexts,
@@ -740,6 +746,7 @@ impl DesignEdgeOperand {
             terminal_boundary_edge_slots: draft.terminal_boundary_edge_slots,
             changed_boundary_edge_slots: draft.changed_boundary_edge_slots,
             deleted_boundary_edge_slots: draft.deleted_boundary_edge_slots,
+            transition_deleted_edge_slots: draft.transition_deleted_edge_slots,
             updated_boundary_edge_slots: draft.updated_boundary_edge_slots,
             treatment_radius_candidates: draft.treatment_radius_candidates,
             changed_boundary_edge_contexts: draft.changed_boundary_edge_contexts,
@@ -797,6 +804,7 @@ impl DesignEdgeOperand {
             terminal_boundary_edge_slots: self.terminal_boundary_edge_slots,
             changed_boundary_edge_slots: self.changed_boundary_edge_slots,
             deleted_boundary_edge_slots: self.deleted_boundary_edge_slots,
+            transition_deleted_edge_slots: self.transition_deleted_edge_slots,
             updated_boundary_edge_slots: self.updated_boundary_edge_slots,
             treatment_radius_candidates: self.treatment_radius_candidates,
             changed_boundary_edge_contexts: self.changed_boundary_edge_contexts,
@@ -924,6 +932,9 @@ pub(crate) struct DesignEdgeOperandDraft {
     /// Preceding boundary-edge slots deleted by the owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) deleted_boundary_edge_slots: Vec<i64>,
+    /// Preceding edge slots that the owning feature deletes across its whole transition, whatever face they bound.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) transition_deleted_edge_slots: Vec<i64>,
     /// Preceding boundary-edge slots assigned a different record revision by
     /// the owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1018,6 +1029,7 @@ impl From<DesignEdgeOperand> for DesignEdgeOperandDraft {
             terminal_boundary_edge_slots: value.terminal_boundary_edge_slots,
             changed_boundary_edge_slots: value.changed_boundary_edge_slots,
             deleted_boundary_edge_slots: value.deleted_boundary_edge_slots,
+            transition_deleted_edge_slots: value.transition_deleted_edge_slots,
             updated_boundary_edge_slots: value.updated_boundary_edge_slots,
             treatment_radius_candidates: value.treatment_radius_candidates,
             changed_boundary_edge_contexts: value.changed_boundary_edge_contexts,

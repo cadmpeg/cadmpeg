@@ -1295,9 +1295,9 @@ fn owned_sphere_class_1d_pcurve_enters_the_transfer_plan() {
         )
         .expect("transfer the B5 topology"));
     });
-    assert_eq!(ir.model.pcurves.len(), 1);
+    assert_eq!(ir.geometry.pcurves.len(), 1);
     assert!(matches!(
-        ir.model.pcurves[0].geometry,
+        ir.geometry.pcurves[0].geometry,
         PcurveGeometry::SphericalGreatCircle(_)
     ));
 }
@@ -1489,20 +1489,20 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
 
     // Native traversal order, which the arena-order check reads as unsorted.
     assert_eq!(
-        ir.model
+        ir.geometry
             .faces
             .iter()
             .map(|face| face.id.as_str())
             .collect::<Vec<_>>(),
         ["catia:b5:face#9", "catia:b5:face#10"]
     );
-    assert_eq!(ir.model.loops.len(), 2);
-    assert_eq!(ir.model.shells.len(), 2);
-    assert_eq!(ir.model.regions.len(), 2);
-    assert_eq!(ir.model.edges.len(), 6);
-    assert_eq!(ir.model.coedges.len(), 6);
-    assert_eq!(ir.model.vertices.len(), 6);
-    assert_eq!(ir.model.pcurves.len(), 2);
+    assert_eq!(ir.geometry.loops.len(), 2);
+    assert_eq!(ir.geometry.shells.len(), 2);
+    assert_eq!(ir.geometry.regions.len(), 2);
+    assert_eq!(ir.geometry.edges.len(), 6);
+    assert_eq!(ir.geometry.coedges.len(), 6);
+    assert_eq!(ir.geometry.vertices.len(), 6);
+    assert_eq!(ir.geometry.pcurves.len(), 2);
     let unsorted_arenas = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .findings
@@ -1515,13 +1515,13 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
     );
 
     assert!(crate::assemble::neutral_model_is_admissible(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut ir,
         &[]
     )
     .expect("check that the neutral model is admissible"));
     assert_eq!(
-        ir.model
+        ir.geometry
             .faces
             .iter()
             .map(|face| face.id.as_str())
