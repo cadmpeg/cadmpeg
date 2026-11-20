@@ -9,8 +9,10 @@
 //! suppression of each feature its cells toggle. A scope whose active row
 //! does not resolve states no configurations, since a scope with
 //! configurations names its active one (part 10). The rows of a document
-//! with no scope of its own state no configuration. A loss names each row
-//! and each cell the design omits.
+//! with no scope of its own state no configuration. The design states no
+//! configuration property, so a loss names each property of a configuration
+//! it states, and the unresolved targets a row keeps as properties join the
+//! cells whose target the design does not state.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -68,10 +70,22 @@ pub(super) fn project(
     }
     let mut inactive = Vec::new();
     let mut unstated = Vec::new();
+    let mut properties = Vec::new();
     for (row, scope) in placed {
         if !out.active.contains_key(scope) {
             inactive.push(row.id.as_str());
             continue;
+        }
+        for key in row.properties.keys() {
+            let named = format!("{key} in {}", row.id);
+            if ["suppressed:", "parameter:"]
+                .iter()
+                .any(|prefix| key.as_str().starts_with(prefix))
+            {
+                unstated.push(named);
+            } else {
+                properties.push(named);
+            }
         }
         let overrides = if row.active {
             Overrides::default()
@@ -108,6 +122,12 @@ pub(super) fn project(
             unstated.len(),
             "configuration cell(s) set a parameter or feature the design does not state, so their rows omit them",
             unstated.join("; "),
+        ),
+        (
+            F3dLossCode::ConfigurationPropertyUnprojected,
+            properties.len(),
+            "configuration propert(ies) the design does not state, so their rows omit them",
+            properties.join("; "),
         ),
     ] {
         if count != 0 {

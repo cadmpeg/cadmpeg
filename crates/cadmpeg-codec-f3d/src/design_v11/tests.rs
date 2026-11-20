@@ -1020,3 +1020,96 @@ fn rows_and_cells_the_design_omits_are_named_by_one_loss_per_class() {
         );
     }
 }
+
+#[test]
+fn configuration_properties_are_named_by_a_loss() {
+    use crate::loss::F3dLossCode;
+    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration as LegacyConfiguration};
+    let root = crate::tree::file_root_id();
+    let scopes = BTreeMap::from([(String::new(), root)]);
+    let row = |key: &str, active: bool, properties: &[(&str, &str)]| LegacyConfiguration {
+        id: ConfigurationId::mint(format!("f3d:configuration:variant#{key}")).unwrap(),
+        ordinal: 0,
+        active,
+        source_index: None,
+        name: Some(key.to_owned()),
+        material: None,
+        properties: properties
+            .iter()
+            .map(|(key, value)| {
+                (
+                    cadmpeg_core::text::NonBlankString::new((*key).to_owned()).unwrap(),
+                    (*value).to_owned(),
+                )
+            })
+            .collect(),
+        parameter_overrides: BTreeMap::new(),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
+        native_ref: Some("f3d:configuration:entry#table".to_owned()),
+    };
+    let legacy = [
+        row("wide", true, &[("property:Part Number", "W-1")]),
+        row(
+            "narrow",
+            false,
+            &[
+                ("property:Part Number", "N-1"),
+                ("suppressed:column-3", "true"),
+                ("parameter:column-4", "4 mm"),
+            ],
+        ),
+        row("plain", false, &[]),
+    ];
+    let mut losses = Vec::new();
+    let projected = super::configurations::project(
+        &legacy,
+        &scopes,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+        &[],
+        &mut losses,
+    );
+    assert_eq!(projected.records.len(), 3);
+    let [unstated, properties] = losses.as_slice() else {
+        panic!("two losses: {losses:?}")
+    };
+    assert_eq!(
+        unstated.code,
+        F3dLossCode::ConfigurationOverrideUnstated.kind()
+    );
+    assert!(unstated.message.starts_with("2 "), "{}", unstated.message);
+    for key in ["suppressed:column-3", "parameter:column-4"] {
+        assert!(
+            unstated
+                .message
+                .contains(&format!("{key} in {}", legacy[1].id)),
+            "{}",
+            unstated.message
+        );
+    }
+    assert_eq!(
+        properties.code,
+        F3dLossCode::ConfigurationPropertyUnprojected.kind()
+    );
+    assert!(
+        properties.message.starts_with("2 "),
+        "{}",
+        properties.message
+    );
+    for row in &legacy[..2] {
+        assert!(
+            properties
+                .message
+                .contains(&format!("property:Part Number in {}", row.id)),
+            "{}",
+            properties.message
+        );
+    }
+    assert!(
+        !properties.message.contains(legacy[2].id.as_str()),
+        "{}",
+        properties.message
+    );
+}

@@ -578,6 +578,8 @@ pub(crate) enum F3dLossCode {
     ConfigurationOverrideUnstated,
     /// Configuration rows of a scope whose active row does not resolve stay v10 configurations.
     ConfigurationScopeWithoutActiveRow,
+    /// Configuration properties the design does not state.
+    ConfigurationPropertyUnprojected,
     /// The rollback marker of a timeline is not read; the timeline is stated built through its last item.
     HistoryRollbackUnread,
     /// Feature history-state dependency links were not projected.
@@ -1539,6 +1541,7 @@ impl F3dLossCode {
         Self::ConfigurationReferencedDesignUnscoped,
         Self::ConfigurationOverrideUnstated,
         Self::ConfigurationScopeWithoutActiveRow,
+        Self::ConfigurationPropertyUnprojected,
         Self::HistoryRollbackUnread,
         Self::HistoryDependencyUnprojected,
         Self::HistoryDependencyAmbiguous,
@@ -2447,6 +2450,7 @@ impl F3dLossCode {
             }
             Self::ConfigurationOverrideUnstated => "configuration.override-unstated",
             Self::ConfigurationScopeWithoutActiveRow => "configuration.scope-without-active-row",
+            Self::ConfigurationPropertyUnprojected => "configuration.property-unprojected",
             Self::HistoryRollbackUnread => "history.rollback-unread",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
@@ -3366,6 +3370,7 @@ impl F3dLossCode {
             | Self::ConfigurationReferencedDesignUnscoped
             | Self::ConfigurationOverrideUnstated
             | Self::ConfigurationScopeWithoutActiveRow
+            | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
@@ -4041,6 +4046,7 @@ impl F3dLossCode {
             | Self::ConfigurationReferencedDesignUnscoped
             | Self::ConfigurationOverrideUnstated
             | Self::ConfigurationScopeWithoutActiveRow
+            | Self::ConfigurationPropertyUnprojected
             | Self::HistoryRollbackUnread
             | Self::HistoryDependencyUnprojected
             | Self::HistoryDependencyAmbiguous
@@ -4837,6 +4843,7 @@ mod tests {
                 "configuration.referenced-design-unscoped",
                 "configuration.override-unstated",
                 "configuration.scope-without-active-row",
+                "configuration.property-unprojected",
                 "history.rollback-unread",
                 "history.dependency-unprojected",
                 "history.dependency-ambiguous",
