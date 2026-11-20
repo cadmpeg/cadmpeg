@@ -2104,7 +2104,7 @@ kind = "byte"
 section = "6.6"
 anchor = "The fixed 141-byte terminal-span tail follows the complete inline grid."
 size = 141
-note = "Tail-relative offsets. The generic 133-byte and 142-byte surface tails share the prefix through offset 71."
+note = "Fixed terminal-span production in section 6.6, with one-byte identifiers and a six-byte suffix. The surface_owned_tail slot layout in section 6.1 describes sheet-owned tails: compact identifier widths shift the following fields, and descriptor widths determine the suffix length."
 
 [[record.field]]
 name = "controls"
@@ -2140,6 +2140,46 @@ offset = 135
 type = "bytes[6]"
 source = "spec"
 anchor = "01 00 01 00 07 07"
+
+
+[[record]]
+name = "surface_owned_tail"
+parsed_by = "crates/cadmpeg-codec-catia/src/families/a5a8/records.rs"
+kind = "slot"
+section = "6.1"
+anchor = "Sheet-owned tails are length-closed by their descriptor suffix."
+note = "Variable total length. The fixed surface_terminal_span_tail record is the terminal-span production in section 6.6."
+
+[[record.field]]
+name = "patch_identifiers"
+type = "token_stream"
+source = "spec"
+anchor = "The four terminal patch identifiers also use compact unsigned integers."
+
+[[record.field]]
+name = "parameters"
+type = "f64[8]"
+endianness = "little"
+source = "spec"
+anchor = "The eight parameter values follow the fourth identifier."
+
+[[record.field]]
+name = "flags"
+type = "bytes[3]"
+source = "spec"
+anchor = "then three flags"
+
+[[record.field]]
+name = "continuation"
+type = "array"
+source = "spec"
+anchor = "The continuation has seven zero f64 values in the 133-byte form and eight finite f64 values in the other forms."
+
+[[record.field]]
+name = "axis_descriptors_and_terminal"
+type = "token_stream"
+source = "spec"
+anchor = "The sheet-owned tail suffix stores one extrapolation descriptor per axis in U, V order, followed by `07 07`."
 
 
 [[record]]
