@@ -12826,14 +12826,14 @@ name = "null_reference_flag"
 offset = 9
 type = "u8"
 source = "spec"
-anchor = "a flag byte of `0` or `1`, and a zero byte"
+anchor = "a flag byte of `0` or `1`, and a terminal byte"
 
 [[record.field]]
-name = "null_reference_zero"
+name = "null_reference_terminal"
 offset = 10
 type = "u8"
 source = "spec"
-anchor = "a flag byte of `0` or `1`, and a zero byte"
+anchor = "a flag byte of `0` or `1`, and a terminal byte"
 
 [[record.field]]
 name = "body_count"
@@ -12918,14 +12918,14 @@ name = "null_reference_flag"
 offset = 48
 type = "u8"
 source = "spec"
-anchor = "a flag byte of `0` or `1`, and a zero byte"
+anchor = "a flag byte of `0` or `1`, and a terminal byte"
 
 [[record.field]]
-name = "null_reference_zero"
+name = "null_reference_terminal"
 offset = 49
 type = "u8"
 source = "spec"
-anchor = "a flag byte of `0` or `1`, and a zero byte"
+anchor = "a flag byte of `0` or `1`, and a terminal byte"
 
 [[record.field]]
 name = "repeated_count"
