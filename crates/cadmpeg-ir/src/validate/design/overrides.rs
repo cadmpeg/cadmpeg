@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use serde::ser::{self, Impossible, Serialize};
-use serde_value::Value;
+use serde_json::Value;
 
 use crate::design::configuration::Overrides;
 use crate::design::feature::FeatureDefinition;
@@ -96,18 +96,18 @@ fn close(left: &Value, right: &Value, tolerance: f64) -> bool {
             <= tolerance.max(LITERAL_RELATIVE_TOLERANCE * left.abs().max(right.abs()))
     };
     match (left, right) {
-        (Value::F64(left), Value::F64(right)) => reals(*left, *right),
-        (Value::F32(left), Value::F32(right)) => reals(f64::from(*left), f64::from(*right)),
-        (Value::Option(Some(left)), Value::Option(Some(right)))
-        | (Value::Newtype(left), Value::Newtype(right)) => close(left, right, tolerance),
-        (Value::Seq(left), Value::Seq(right)) => {
+        (Value::Number(left), Value::Number(right)) if left.is_f64() && right.is_f64() => left
+            .as_f64()
+            .zip(right.as_f64())
+            .is_some_and(|(left, right)| reals(left, right)),
+        (Value::Array(left), Value::Array(right)) => {
             left.len() == right.len()
                 && left
                     .iter()
                     .zip(right)
                     .all(|(left, right)| close(left, right, tolerance))
         }
-        (Value::Map(left), Value::Map(right)) => {
+        (Value::Object(left), Value::Object(right)) => {
             left.len() == right.len()
                 && left
                     .iter()
@@ -365,11 +365,9 @@ impl ser::SerializeMap for Map<'_> {
     type Error = Unsupported;
 
     fn serialize_key<T: Serialize + ?Sized>(&mut self, key: &T) -> Result<(), Unsupported> {
-        let text = key.serialize(Text).or_else(|_| {
-            serde_value::to_value(key)
-                .map(|key| format!("{key:?}"))
-                .map_err(|_| Unsupported)
-        })?;
+        let text = key
+            .serialize(Text)
+            .or_else(|_| serde_json::to_string(key).map_err(|_| Unsupported))?;
         self.key = Some(text);
         Ok(())
     }
@@ -422,7 +420,7 @@ impl Fields<'_> {
             } => {
                 match key {
                     "kind" => *arm = value.serialize(Text).ok(),
-                    "value" => *held = serde_value::to_value(value).ok(),
+                    "value" => *held = serde_json::to_value(value).ok(),
                     _ => {}
                 }
                 Ok(())
