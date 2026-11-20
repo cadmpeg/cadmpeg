@@ -4107,7 +4107,13 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 crate::scene::collect(ctx, &scan, &mut decoded.ir, &mut decoded.body.losses)?;
             if has_scene {
                 let sources = crate::scene::sources(ctx, &scan, &decoded.ir)?;
-                crate::scene::bind(ctx, &mut decoded.ir, &sources, &mut decoded.body.losses)?;
+                crate::scene::bind(
+                    ctx,
+                    &mut decoded.ir,
+                    &sources,
+                    &std::collections::BTreeMap::new(),
+                    &mut decoded.body.losses,
+                )?;
             }
             let owned =
                 crate::tree::own_once(ctx, &mut decoded.ir, &std::collections::BTreeMap::new())?;
@@ -4702,10 +4708,10 @@ fn project_mesh_bodies(
         )?;
         let mut triangle_groups = Vec::new();
         for group in std::mem::take(&mut body.triangle_groups) {
-            triangle_groups.push(cadmpeg_ir::tessellation::TessellationTriangleGroup {
-                source_id: Some(group.source_id),
-                triangles: group.triangles,
-            });
+            triangle_groups.push(cadmpeg_ir::tessellation::TessellationTriangleGroup::new(
+                Some(group.source_id),
+                group.triangles,
+            ));
         }
         let channels = mesh_attribute_channels(
             &body.attributes,
