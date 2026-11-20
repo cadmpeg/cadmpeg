@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run rustc and append its wall time and peak RSS to $RUSTC_LOG."""
+"""Run rustc and append its wall time and peak RSS to $MEASURE_LOG."""
 import os, platform, resource, subprocess, sys, time
 
 args = sys.argv[1:]
@@ -12,7 +12,7 @@ name = args[args.index("--crate-name") + 1] if "--crate-name" in args else "-"
 kind = "test" if "--test" in args else "lib/bin"
 default = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "measure", "rustc.tsv")
 try:
-    with open(os.environ.get("RUSTC_LOG") or default, "a") as log:
+    with open(os.environ.get("MEASURE_LOG") or default, "a") as log:
         log.write(f"{wall:.1f}\t{kib}\t{name}\t{kind}\n")
 except OSError:
     pass
