@@ -13920,15 +13920,121 @@ Offsets are relative to the relation's indexed header. The `m` member entries fo
 
 Spec §Records of a Sketch item · layout: byte offsets · size: 39 B
 
-Offsets are relative to the frame's indexed header. The measured members follow.
+Offsets are relative to the frame's indexed header. The measured members follow at 39.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A dimension frame stores its measured members after a 39-byte head |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A dimension frame stores, in order: the indexed header, eight zero bytes, `u8 1`, the u32 operand count `n` |
+| 11 | 8 | `zero_run` | `bytes[8]` | little | spec | A dimension frame stores, in order: the indexed header, eight zero bytes, `u8 1`, the u32 operand count `n` · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 19 | 1 | `marker` | `u8` | little | spec | A dimension frame stores, in order: the indexed header, eight zero bytes, `u8 1`, the u32 operand count `n` · value `1` |
+| 20 | 4 | `operand_count` | `u32` | little | spec | A dimension frame stores, in order: the indexed header, eight zero bytes, `u8 1`, the u32 operand count `n` |
+| 24 | 11 | `null_locus` | `bytes[11]` | little | spec | The first operand is the null locus: the eleven-byte reference to record index `0` |
+| 35 | 4 | `null_locus_ordinal` | `u32` | little | spec | DR-917 the ordinal of the null locus |
 
-Unstated regions:
+## `sketch_item_dimension_frame_linear`
 
-- `11..39` (28 B): The specification states no field in this range.
+Spec §Records of a Sketch item · layout: byte offsets · size: 129 B
+
+Offsets are relative to the first byte after the property block.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `dimension_line_start` | `f64[3]` | little | spec | the dimension-line ends `P0` and `P1` |
+| 24 | 24 | `dimension_line_end` | `f64[3]` | little | spec | the dimension-line ends `P0` and `P1` |
+| 48 | 24 | `second_anchor` | `f64[3]` | little | spec | the second anchor `A2` |
+| 72 | 24 | `fourth_point` | `f64[3]` | little | spec | a fourth point, the offset flag |
+| 96 | 1 | `offset_flag` | `u8` | little | spec | a fourth point, the offset flag |
+| 97 | 8 | `value` | `f64` | little | spec | the f64 measured value, and the first anchor `A1` |
+| 105 | 24 | `first_anchor` | `f64[3]` | little | spec | the f64 measured value, and the first anchor `A1` |
+
+## `sketch_item_dimension_frame_radial`
+
+Spec §Records of a Sketch item · layout: byte offsets · size: 153 B
+
+Offsets are relative to the first byte after the property block.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 96 | `curve_payload` | `f64[12]` | little | spec | the 96-byte analytic payload of the measured circular curve |
+| 96 | 24 | `centre` | `f64[3]` | little | spec | the centre of that curve, the attach point |
+| 120 | 24 | `attach_point` | `f64[3]` | little | spec | the centre of that curve, the attach point |
+| 144 | 1 | `flag` | `u8` | little | spec | a flag byte, and the f64 radius |
+| 145 | 8 | `radius` | `f64` | little | spec | a flag byte, and the f64 radius |
+
+## `sketch_item_dimension_frame_angular`
+
+Spec §Records of a Sketch item · layout: byte offsets · size: 146 B
+
+Offsets are relative to the first byte after the property block.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 8 | `angle` | `f64` | little | spec | the f64 angle, the u32 quadrant |
+| 8 | 4 | `quadrant` | `u32` | little | spec | the f64 angle, the u32 quadrant |
+| 12 | 2 | `zero_run` | `bytes[2]` | little | spec | the u32 quadrant, two zero bytes · value `[0, 0]` |
+| 14 | 4 | `quadrant_2` | `u32` | little | spec | a second u32 quadrant word |
+| 18 | 24 | `first_line_end` | `f64[3]` | little | spec | the two point positions of the first measured line |
+| 42 | 24 | `first_line_start` | `f64[3]` | little | spec | the two point positions of the first measured line |
+| 66 | 24 | `second_line_end` | `f64[3]` | little | spec | the two point positions of the second measured line |
+| 90 | 24 | `second_line_start` | `f64[3]` | little | spec | the two point positions of the second measured line |
+| 114 | 24 | `arc_point` | `f64[3]` | little | spec | the arc point, and the f64 arc radius |
+| 138 | 8 | `arc_radius` | `f64` | little | spec | the arc point, and the f64 arc radius |
+
+## `sketch_item_dimension_frame_text`
+
+Spec §Records of a Sketch item · layout: byte offsets · size: 91 B
+
+Offsets are relative to the first byte after the measurement. The LP-UTF16 prefix follows at 91.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `style_byte` | `u8` | little | spec | a style byte and four f32 style values |
+| 1 | 16 | `style_values` | `f32[4]` | little | spec | a style byte and four f32 style values |
+| 17 | 1 | `marker` | `u8` | little | spec | a byte `1` or `0`, a zero byte |
+| 18 | 1 | `zero_byte` | `u8` | little | spec | a byte `1` or `0`, a zero byte · value `0` |
+| 19 | 24 | `origin` | `f64[3]` | little | spec | an origin, and two unit axes |
+| 43 | 24 | `x_axis` | `f64[3]` | little | spec | an origin, and two unit axes |
+| 67 | 24 | `y_axis` | `f64[3]` | little | spec | an origin, and two unit axes |
+
+## `sketch_item_dimension_frame_linear_kind`
+
+Spec §Records of a Sketch item · layout: byte offsets · size: 52 B
+
+Offsets are relative to the first byte after the LP-UTF16 text.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `text_position` | `f64[3]` | little | spec | the text position, u32 `2` |
+| 24 | 4 | `word` | `u32` | little | spec | the text position, u32 `2` · value `2` |
+| 28 | 16 | `values` | `f64[2]` | little | spec | two f64 values `0` or `1` |
+| 44 | 8 | `kind_mask` | `u64` | little | spec | and the u64 kind mask |
+
+## `sketch_item_dimension_frame_kind`
+
+Spec §Records of a Sketch item · layout: byte offsets · size: 32 B
+
+Offsets are relative to the first byte after the LP-UTF16 text.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `text_position` | `f64[3]` | little | spec | the text position and the u64 kind mask |
+| 24 | 8 | `kind_mask` | `u64` | little | spec | the text position and the u64 kind mask |
+
+## `sketch_item_dimension_frame_paired`
+
+Spec §Records of a Sketch item · layout: byte offsets · size: 59 B
+
+Offsets are relative to the paired indexed header. The offsets hold when both references are the eleven-byte same-segment form.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `paired_header` | `bytes[11]` | little | spec | the paired indexed header, eight zero bytes, the sketch container reference |
+| 11 | 8 | `zero_run` | `bytes[8]` | little | spec | the paired indexed header, eight zero bytes, the sketch container reference · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 19 | 11 | `container` | `bytes[11]` | little | spec | the paired indexed header, eight zero bytes, the sketch container reference |
+| 30 | 12 | `zero_run_2` | `bytes[12]` | little | spec | twelve zero bytes, the f32 `1.0`, two zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 42 | 4 | `scale` | `f32` | little | spec | twelve zero bytes, the f32 `1.0`, two zero bytes · value `1.0` |
+| 46 | 2 | `zero_run_3` | `bytes[2]` | little | spec | twelve zero bytes, the f32 `1.0`, two zero bytes · value `[0, 0]` |
+| 48 | 11 | `container_closing` | `bytes[11]` | little | spec | two zero bytes, and the sketch container reference |
 
 ## `sketch_item_dimension_owner`
 
