@@ -306,7 +306,11 @@ fn commented_document_parameter_keeps_its_comment_through_a_rewrite() {
     let (mut rewritten, _, _) = decoded.into_parts();
     rewritten.source = None;
     rewritten
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let round_trip = decode(write(&rewritten));
     assert_eq!(comment(round_trip.ir()).as_deref(), Some(COMMENT));
