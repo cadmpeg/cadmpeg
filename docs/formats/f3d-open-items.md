@@ -846,14 +846,6 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer of several result bodies must number the faces of each body. The edge and vertex tags of the earlier bodies against the start of the next run would settle it.
 
-### DR-893. Layouts of the remaining records of a Base Feature design
-
-**Question.** What are the field layouts of the records of a `Base Feature` design's Design stream that `f3d.md` §3.1 "**Record roster.**" lists without a layout, and of its Browser segment?
-
-**Known.** `f3d.md` §3.1 "**Record roster.**" gives each record's type, version, length, and order. "**Component aggregate.**", "**Origin records.**", "**Body-reference records.**", "**ACT segment of a Base Feature design.**", and the records that the timeline context names have stated layouts. The other records have fixed lengths except the Protein asset manager, the root instance (252 or 384 bytes), the snapshot body-map companions, and the `Body` owners. Apart from their record indices, class tags, GUIDs, names, and the Protein asset list, their bytes are the same in every one-body design. The Browser segment (segment ID `2`, segment type code `6`) holds 31 records for one body; each references Design records across segments.
-
-**Need.** A writer of a design that Fusion opens writes every record of the roster and the Browser segment. Field tables for these records, in particular the Protein asset manager, the `AssetSettings` record, the unit-system groups, the `Body` owners, the root instance, and the Browser records.
-
 ### DR-894. Count before the parameter-collection companion
 
 **Question.** What does the u32 `c` at offset 30 of the parameter collection (type `B0556F58-EE09-46A7-B18F-E296F48E5B13`, type version `4`) count?
@@ -869,6 +861,30 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 **Known.** `f3d.md` §3.1 "**Record timestamps and evaluation values.**" gives epoch `252` for every item of a stream with MetaStream generation words `1234, 8, 36`, and a positive duration for a `Base Feature` item. Streams with other generation words store other epochs, and two of them store more than one epoch value.
 
 **Need.** A writer must choose both values. The relation between the epoch and the generation words in the other streams.
+
+### DR-896. Fitted extents of the `HOME` camera
+
+**Question.** What rule gives the view extents `w0`, `w1` of the `HOME` camera and the scene radius at offset 426 of the `AssetSettings` record, and what centre does the camera use in a design with more than one result body?
+
+**Known.** `f3d.md` §3.1 "**Named views.**" and "**`AssetSettings`.**" give the camera layout, the target, the view direction `(1, -1, 1)`, the up direction, the field of view `2 atan(0.2)`, and the eye distance `2.5 max(w0, w1)`. `w0` is between 1.08 and 1.11 times the height, and `w1` between 1.07 and 1.09 times the width, of the body's bounding box projected on the view plane. The scene radius is between 1.0002 and 1.0044 times half the diagonal of that box. In a design with three result bodies, the target is not the centre of the union of the body boxes.
+
+**Need.** A writer must store the extents, the radius, and the target. The displayed tessellation of the body, projected on the view plane, against the extents would settle the rule.
+
+### DR-897. Layout of the OGS display scene
+
+**Question.** What is the layout of the members of `OGS.BlobFolder/OGS/DefaultScene/` (`world`, `stream_mesh_<n>`, `Fusion_mesh_<n>`), and what selects the numbers `<n>` in their names?
+
+**Known.** `f3d.md` §3.1 "**Archive members of a Base Feature design.**" lists the members. `world` is a serialized scene graph of UTF-16 type names (`ARenderList`, `GroupNode`, `GeometryNode`, `OgsSimpleMesh`, `VertexFormat`, `AIndexBuffer`, and the attribute types) with origin, edge, face, and body nodes; it stores pointer-like hexadecimal node names and the Protein instance GUIDs of the body. `stream_mesh_<n>` is 860 bytes with the same bytes in every one-body solid design. `Fusion_mesh_<n>` members store f32 vertex data.
+
+**Need.** A writer must decide whether to store the display scene and, if so, its bytes.
+
+### DR-898. Records and snapshot stream of a design with several result bodies
+
+**Question.** How does a `Base Feature` design with several result bodies allocate the record indices of its further body-reference records and Scene records, and how does its snapshot stream differ from the solved part of its history stream?
+
+**Known.** `f3d.md` §3.1 "**Record roster.**" gives the ten records that each further solid body adds. In a design with three solid bodies, the further design body-reference records and their Scene records follow record 192, the further parameter body-reference records and Scene records follow record 222 with unused indices between them, and the further tracking entries and browser-node members follow. Its snapshot stream has the same topology counts as the history stream, and geometry records of the two streams differ.
+
+**Need.** A writer of several bodies must allocate the indices and write the snapshot stream. Designs with two and with more than three result bodies would settle the allocation and the geometry difference.
 
 ## 2. External references
 
