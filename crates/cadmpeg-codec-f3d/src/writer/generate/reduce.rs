@@ -20,9 +20,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{
-    evaluation_missing, native_records_omitted, output_empty, record_invalid,
-};
+use cadmpeg_ir::codec::write::{native_records_omitted, output_empty, record_invalid};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
@@ -168,6 +166,11 @@ impl<'a> Reduction<'a> {
         !self.writes_design()
             && !self.neutral_dropped
             && super::design::root_scope(&self.ir).is_some()
+    }
+
+    /// Whether a fallback dropped the root definition's design scope.
+    pub(super) fn drops_neutral_design(&self) -> bool {
+        self.neutral_dropped
     }
 
     /// The losses, with `export:output.empty` when no geometry is written.
@@ -1132,24 +1135,16 @@ impl<'a> Reduction<'a> {
         true
     }
 
-    /// Write no design scope: its features and parameters are charged.
+    /// Write no design scope: every design scope, container, feature and
+    /// parameter is charged by name, also where the document's v10 design
+    /// records keep the export wrapper from charging the design arenas.
     fn drop_neutral_design(&mut self, reason: &str) -> bool {
         if !self.writes_neutral_design() {
             return false;
         }
-        let (features, parameters) = super::design::scope_records(&self.ir);
         self.neutral_dropped = true;
-        self.losses.extend(evaluation_missing(
-            "F3D",
-            &format!("stores no design for these features ({reason})"),
-            features,
-        ));
-        self.losses.extend(named_loss(
-            F3dLossCode::WriterParameterOmitted,
-            "parameter",
-            &format!("the F3D writer writes no design ({reason})"),
-            parameters,
-        ));
+        self.losses
+            .extend(super::design::dropped_records(&self.ir, reason));
         true
     }
 

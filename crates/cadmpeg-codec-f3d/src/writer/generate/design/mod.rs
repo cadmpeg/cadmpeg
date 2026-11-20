@@ -4,9 +4,13 @@
 //! feature of the current bodies.
 //!
 //! It runs where no native Design record is written and the document holds a
-//! design scope for its root definition. A failure here is a
-//! [`super::reduce::Stage::NeutralDesign`] failure, whose only fallback is to
-//! write no design: it never drops a body.
+//! design scope for its root definition. It charges a loss for every design
+//! scope, container, feature and parameter it does not write, for the root
+//! scope's configuration, arrangements and occurrence states, for every
+//! current state's `Stale` or `Failed` status and poses, and for every stored
+//! evaluation. A failure here is a [`super::reduce::Stage::NeutralDesign`]
+//! failure, whose only fallback is to write no design ([`dropped_records`]):
+//! it never drops a body.
 
 mod base_feature;
 mod expression;
@@ -22,17 +26,23 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
 
-use cadmpeg_ir::codec::write::evaluation_missing;
-use cadmpeg_ir::design::container::Container;
+use cadmpeg_ir::codec::write::{
+    evaluation_missing, evaluation_stale, ArenaDisposition, DesignArenaDispositions,
+};
+use cadmpeg_ir::design::container::{Container, Rollback};
+use cadmpeg_ir::design::evaluation::EvaluationStatus;
 use cadmpeg_ir::design::ids::ContainerId;
 use cadmpeg_ir::design::parameter::ParameterOwner;
-use cadmpeg_ir::design::refs::Member;
+use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
+use cadmpeg_ir::design::selection::StepRef;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::report::loss::LossNote;
 
 use super::presentation::GeneratedDesignRegistry;
+use super::reduce::named_loss;
+use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
 use base_feature::BaseFeaturePlan;
 use frames::DesignRecords;
@@ -52,6 +62,17 @@ pub(super) fn requested_test_failure() -> Option<cadmpeg_core::CodecError> {
         cadmpeg_core::CodecError::NotImplemented("a test failure of the design module".into())
     })
 }
+
+/// The design arenas where the design is dropped: [`dropped_records`]
+/// charges each of their records.
+pub(super) const DROPPED: DesignArenaDispositions = DesignArenaDispositions {
+    scopes: ArenaDisposition::Dropped,
+    containers: ArenaDisposition::Dropped,
+    features: ArenaDisposition::Dropped,
+    parameters: ArenaDisposition::Dropped,
+    evaluations: ArenaDisposition::Dropped,
+    ..DesignArenaDispositions::uniform(ArenaDisposition::Omitted)
+};
 
 /// What the writer writes of the root definition's design scope.
 pub(super) struct NeutralDesign<'a> {
@@ -87,13 +108,15 @@ pub(super) fn plan(target: &CadIr) -> Option<NeutralDesign<'_>> {
                 ),
                 None => feature.to_string(),
             });
-    let losses = evaluation_missing(
+    let mut losses = evaluation_missing(
         "F3D",
         "stores the current bodies as one Base Feature and no timeline item for these features of the design",
         unwritten,
     )
     .into_iter()
-    .collect();
+    .collect::<Vec<_>>();
+    losses.extend(unwritten_records(target, scope));
+    losses.extend(states(target));
     Some(NeutralDesign {
         parameters,
         base_feature: base_feature::plan(target),
@@ -196,24 +219,278 @@ pub(super) fn restated_parameters(target: &CadIr) -> BTreeSet<&str> {
     })
 }
 
-/// The root scope's features and parameters, for the losses of a design the
-/// writer drops.
-pub(super) fn scope_records(target: &CadIr) -> (Vec<String>, Vec<String>) {
-    let Some(scope) = root_scope(target) else {
-        return (Vec::new(), Vec::new());
+/// The losses of a design the writer drops: every design scope, container,
+/// feature, parameter and evaluation of the document, and the current
+/// states' values.
+pub(super) fn dropped_records(target: &CadIr, reason: &str) -> Vec<LossNote> {
+    let design = &target.design;
+    let unwritten = format!("the F3D writer writes no design ({reason})");
+    let mut losses = states(target);
+    losses.extend(evaluation_missing(
+        "F3D",
+        &format!("stores no design for these features ({reason})"),
+        design.features.iter().map(|feature| feature.id.to_string()),
+    ));
+    losses.extend(named_loss(
+        F3dLossCode::WriterParameterOmitted,
+        "parameter",
+        &unwritten,
+        design
+            .parameters
+            .iter()
+            .map(|parameter| parameter.id.to_string()),
+    ));
+    losses.extend(named_loss(
+        F3dLossCode::WriterDesignRecordOmitted,
+        "design scope",
+        &unwritten,
+        design
+            .scopes
+            .iter()
+            .map(|scope| scope.definition.to_string()),
+    ));
+    losses.extend(named_loss(
+        F3dLossCode::WriterDesignRecordOmitted,
+        "design container",
+        &unwritten,
+        design
+            .containers
+            .iter()
+            .map(|container| container.id().to_string()),
+    ));
+    losses
+}
+
+/// The losses of the scopes' states: a current state's `Stale` or `Failed`
+/// status and each pose, which the written bodies do not carry, and every
+/// evaluation, which no written record holds.
+fn states(target: &CadIr) -> Vec<LossNote> {
+    let mut stale = Vec::new();
+    let mut poses = Vec::new();
+    let mut evaluations = Vec::new();
+    for scope in &target.design.scopes {
+        let definition = &scope.definition;
+        for state in &scope.current {
+            let at = position(&state.at);
+            match state.status {
+                EvaluationStatus::Current => {}
+                EvaluationStatus::Stale => {
+                    stale.push(format!("{definition} current state {at} (stale)"));
+                }
+                EvaluationStatus::Failed => {
+                    stale.push(format!("{definition} current state {at} (failed)"));
+                }
+            }
+            poses.extend(state.poses.keys().map(|path| {
+                let steps = path
+                    .0
+                    .iter()
+                    .map(|step| match &step.occurrence {
+                        StepRef::Occurrence(id) => id.to_string(),
+                        StepRef::Native(name) => format!("{:?}", name.value),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("/");
+                format!("{definition} pose of `{steps}` in the current state {at}")
+            }));
+        }
+    }
+    for evaluation in &target.design.evaluations {
+        let of = match &evaluation.of {
+            Evaluated::State(at) => format!("state {}", position(at)),
+            Evaluated::Tool(feature) => format!("tool body of {feature}"),
+        };
+        let configuration = evaluation
+            .configuration
+            .as_ref()
+            .map_or_else(String::new, |id| format!(" in configuration {id}"));
+        let entry = format!(
+            "{}: {} {of}{configuration}",
+            evaluation.id, evaluation.scope
+        );
+        match evaluation.status {
+            EvaluationStatus::Current => evaluations.push(entry),
+            EvaluationStatus::Stale => stale.push(format!("{entry} (stale)")),
+            EvaluationStatus::Failed => stale.push(format!("{entry} (failed)")),
+        }
+    }
+    let mut losses = Vec::new();
+    losses.extend(evaluation_stale(
+        "F3D",
+        "stores no stale or failure mark: it writes these current states as current bodies and writes no evaluation",
+        stale,
+    ));
+    losses.extend(named_loss(
+        F3dLossCode::WriterDesignRecordOmitted,
+        "current state value",
+        "the F3D writer writes no occurrence pose of a current state",
+        poses,
+    ));
+    losses.extend(named_loss(
+        F3dLossCode::WriterDesignRecordOmitted,
+        "evaluation",
+        "the F3D design holds its current bodies alone, with no stored evaluation",
+        evaluations,
+    ));
+    losses
+}
+
+fn position(at: &Position) -> String {
+    match at {
+        Position::Start(container) => format!("at the start of {container}"),
+        Position::After(member) => format!("after {}", member_id(member)),
+    }
+}
+
+/// The losses of the design records outside the root scope's written form:
+/// the root scope's configuration, arrangements and occurrence states, the
+/// other scopes with their features and parameters, every container but the
+/// one the written timeline stands for, and that container's folders,
+/// rollback and placement.
+fn unwritten_records(target: &CadIr, root: &DesignScope) -> Vec<LossNote> {
+    let others = move || {
+        target
+            .design
+            .scopes
+            .iter()
+            .filter(move |scope| !std::ptr::eq(*scope, root))
     };
-    let features = scope_features(target, scope)
+    let charged = scope_features(target, root)
         .into_iter()
-        .map(ToString::to_string)
-        .collect();
-    let parameters = target
-        .design
-        .parameters
+        .collect::<BTreeSet<_>>();
+    let mut placed = BTreeMap::new();
+    for scope in others() {
+        for feature in scope_features(target, scope) {
+            placed.entry(feature).or_insert(&scope.definition);
+        }
+    }
+    let mut losses = Vec::new();
+    losses.extend(named_loss(
+        F3dLossCode::WriterDesignRecordOmitted,
+        "design scope",
+        &format!(
+            "the F3D writer writes the design of the root definition {} alone",
+            root.definition
+        ),
+        others().map(|scope| scope.definition.to_string()),
+    ));
+    let definition = &root.definition;
+    let configuration = root
+        .active_configuration
         .iter()
-        .filter(|parameter| parameter.scope == scope.definition)
-        .map(|parameter| parameter.id.to_string())
-        .collect();
-    (features, parameters)
+        .map(|id| format!("{definition} active configuration {id}"));
+    let arrangements = root
+        .active_arrangements
+        .iter()
+        .map(|id| format!("{definition} active arrangement {id}"));
+    let occurrences = root
+        .occurrences
+        .keys()
+        .map(|id| format!("{definition} design state of occurrence {id}"));
+    losses.extend(named_loss(
+        F3dLossCode::WriterDesignRecordOmitted,
+        "design scope value",
+        "the F3D design holds its current bodies alone, with no configuration, arrangement or occurrence state",
+        configuration.chain(arrangements).chain(occurrences),
+    ));
+    losses.extend(evaluation_missing(
+        "F3D",
+        &format!(
+            "writes the design of the root definition {} alone, and no timeline item for these features",
+            root.definition
+        ),
+        target
+            .design
+            .features
+            .iter()
+            .map(|feature| &feature.id)
+            .filter(|feature| !charged.contains(feature))
+            .map(|feature| match placed.get(feature) {
+                Some(definition) => format!("{feature} (design scope of {definition})"),
+                None => format!("{feature} (in no design scope)"),
+            }),
+    ));
+    losses.extend(named_loss(
+        F3dLossCode::WriterParameterOmitted,
+        "parameter",
+        &format!(
+            "the F3D writer writes the parameters of the root definition {} alone",
+            root.definition
+        ),
+        target
+            .design
+            .parameters
+            .iter()
+            .filter(|parameter| parameter.scope != root.definition)
+            .map(|parameter| format!("{} (definition {})", parameter.id, parameter.scope)),
+    ));
+    let timeline = written_timeline(target, root);
+    losses.extend(named_loss(
+        F3dLossCode::WriterDesignRecordOmitted,
+        "design container",
+        "the F3D timeline holds one Base Feature and no other container",
+        target
+            .design
+            .containers
+            .iter()
+            .filter(|container| {
+                !timeline.is_some_and(|timeline| std::ptr::eq(*container, timeline))
+            })
+            .map(|container| container.id().to_string()),
+    ));
+    if let Some(Container::Ordered {
+        id,
+        folders,
+        rollback,
+        placement,
+        ..
+    }) = timeline
+    {
+        let mut values = folders
+            .iter()
+            .map(|folder| match &folder.name {
+                Some(name) => format!(
+                    "{id} folder `{name}` (members {}..={})",
+                    folder.first, folder.last
+                ),
+                None => format!("{id} folder (members {}..={})", folder.first, folder.last),
+            })
+            .collect::<Vec<_>>();
+        if let Rollback::Before(member) = rollback {
+            values.push(format!("{id} rollback (before {})", member_id(member)));
+        }
+        if placement.is_some() {
+            values.push(format!("{id} placement"));
+        }
+        losses.extend(named_loss(
+            F3dLossCode::WriterDesignRecordOmitted,
+            "timeline value",
+            "the F3D timeline holds one Base Feature, so no folder, rollback or placement of the source timeline has its members",
+            values,
+        ));
+    }
+    losses
+}
+
+/// The container the written Fusion timeline stands for: the root scope's
+/// one root, where it is ordered.
+fn written_timeline<'a>(target: &'a CadIr, root: &DesignScope) -> Option<&'a Container> {
+    let [id] = root.roots.as_slice() else {
+        return None;
+    };
+    target
+        .design
+        .containers
+        .iter()
+        .find(|container| container.id() == id)
+        .filter(|container| matches!(container, Container::Ordered { .. }))
+}
+
+fn member_id(member: &Member) -> &str {
+    match member {
+        Member::Feature(feature) => feature.as_str(),
+        Member::Container(container) => container.as_str(),
+    }
 }
 
 /// Every feature of the scope's containers, in container order.

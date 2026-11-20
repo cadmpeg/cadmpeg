@@ -9,27 +9,31 @@ use std::num::NonZeroI8;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::design::container::{Container, OrderedKind, Rollback};
+use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
-use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
+use cadmpeg_ir::design::evaluation::{
+    CurrentState, Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
+};
 use cadmpeg_ir::design::expr::{
     BinaryOp, Expression, ExpressionDialect, ExpressionToken, Neutral, Node,
 };
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
-use cadmpeg_ir::design::ids::ContainerId;
+use cadmpeg_ir::design::ids::{ArrangementId, ContainerId, EvaluationId};
 use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::parameter::{
     DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
 };
-use cadmpeg_ir::design::refs::{Member, Position};
-use cadmpeg_ir::design::scope::DesignScope;
+use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
+use cadmpeg_ir::design::scope::{DesignScope, OccurrenceDesign};
+use cadmpeg_ir::design::selection::{OccurrencePath, PathStep, StepRef};
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{FeatureId, ParameterId};
-use cadmpeg_ir::ids::ProductDefinitionId;
+use cadmpeg_ir::features::{ConfigurationId, FeatureId, ParameterId};
+use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
 use cadmpeg_ir::report::export::ExportReport;
 use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::scalar::NonNegativeReal;
+use cadmpeg_ir::transform::Transform;
 
 use crate::loss::F3dLossCode;
 use crate::test_support::native_test::{f3d_native, f3d_native_mut};
@@ -37,6 +41,7 @@ use crate::F3dCodec;
 
 const SKETCH: &str = "test:design:feature#sketch";
 const EXTRUDE: &str = "test:design:feature#extrude";
+const HOLE: &str = "test:design:feature#hole";
 
 fn parameter_id(name: &str) -> ParameterId {
     ParameterId::mint(format!("test:design:parameter#{name}")).expect("identity grammar")
@@ -721,7 +726,10 @@ fn a_container_or_attribute_parameter_is_written_without_its_owner() {
     let unwritable = report
         .losses
         .iter()
-        .filter(|loss| loss.code.to_string() == "export/value.unwritable")
+        .filter(|loss| {
+            loss.code.to_string() == "export/value.unwritable"
+                && loss.message.contains("without their owners")
+        })
         .collect::<Vec<_>>();
     assert_eq!(unwritable.len(), 1, "{:#?}", report.losses);
     assert_eq!(unwritable[0].severity, Severity::Warning);
@@ -748,6 +756,353 @@ fn a_container_or_attribute_parameter_is_written_without_its_owner() {
 }
 
 #[test]
+fn the_timeline_is_written_without_its_folders_and_rollback() {
+    let mut ir = scoped_cube();
+    let timeline = ContainerId::mint("test:design:container#timeline").expect("identity grammar");
+    let Container::Ordered {
+        folders, rollback, ..
+    } = &mut ir.design.containers[0]
+    else {
+        panic!("the fixture's timeline is ordered");
+    };
+    folders.push(Folder {
+        name: Some("Setup".into()),
+        first: 0,
+        last: 1,
+    });
+    *rollback = Rollback::Before(Member::Feature(
+        FeatureId::mint(EXTRUDE).expect("identity grammar"),
+    ));
+    let (report, _) = write(&ir);
+    let omitted = loss(
+        &report,
+        &F3dLossCode::WriterDesignRecordOmitted.kind().to_string(),
+    );
+    assert_eq!(omitted.len(), 1, "{:#?}", report.losses);
+    assert!(
+        omitted[0].contains(&format!("{timeline} folder `Setup` (members 0..=1)")),
+        "{}",
+        omitted[0]
+    );
+    assert!(
+        omitted[0].contains(&format!("{timeline} rollback (before {EXTRUDE})")),
+        "{}",
+        omitted[0]
+    );
+}
+
+/// Add a design scope of a placed part to `ir`: its timeline holds a Hole
+/// feature, and it owns the parameter `Depth`.
+fn place_part_scope(ir: &mut CadIr) -> (ProductDefinitionId, ContainerId) {
+    let part = ProductDefinitionId::mint("test:design:product#part").expect("identity grammar");
+    let history =
+        ContainerId::mint("test:design:container#part-timeline").expect("identity grammar");
+    ir.design
+        .features
+        .push(feature(HOLE, OperationFamily::Hole));
+    ir.design.containers.push(Container::Ordered {
+        id: history.clone(),
+        kind: OrderedKind::Timeline,
+        members: vec![Member::Feature(
+            FeatureId::mint(HOLE).expect("identity grammar"),
+        )],
+        folders: Vec::new(),
+        rollback: Rollback::End,
+        placement: None,
+    });
+    ir.design.scopes.push(DesignScope {
+        definition: part.clone(),
+        roots: vec![history.clone()],
+        active_configuration: None,
+        active_arrangements: BTreeSet::new(),
+        occurrences: BTreeMap::new(),
+        current: Vec::new(),
+    });
+    let mut depth = parameter(
+        "depth",
+        "Depth",
+        neutral(number(8.0, Some(UnitSymbol::Mm))),
+        Some(8.0),
+    );
+    depth.scope = part.clone();
+    ir.design.parameters.push(depth);
+    ir.model
+        .occurrences
+        .push(cadmpeg_ir::products::Occurrence::new(
+            OccurrenceId::mint("test:model:occurrence#part").expect("identity grammar"),
+            part.clone(),
+            None,
+        ));
+    (part, history)
+}
+
+#[test]
+fn a_placed_design_scope_is_charged_with_its_containers_features_and_parameters() {
+    let mut ir = scoped_cube();
+    let (part, history) = place_part_scope(&mut ir);
+    let (report, decoded_ir) = write(&ir);
+    assert_length(&decoded_ir, "Width", "60 mm", 60.0);
+    assert!(decoded(&decoded_ir, "Depth").is_none());
+    let omitted = loss(
+        &report,
+        &F3dLossCode::WriterDesignRecordOmitted.kind().to_string(),
+    );
+    assert!(
+        omitted
+            .iter()
+            .any(|message| message.contains("design scope") && message.contains(part.as_str())),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        omitted
+            .iter()
+            .any(|message| message.contains("design container")
+                && message.contains(history.as_str())
+                && !message.contains("container#timeline")),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        loss(&report, "export/evaluation.missing")
+            .iter()
+            .any(|message| message.contains(&format!("{HOLE} (design scope of {part})"))),
+        "{:#?}",
+        report.losses
+    );
+    let depth = parameter_id("depth");
+    let parameters = loss(
+        &report,
+        &F3dLossCode::WriterParameterOmitted.kind().to_string(),
+    );
+    assert!(
+        parameters.iter().any(
+            |message| message.contains(&format!("{depth} (definition {part})"))
+                && !message.contains(parameter_id("width").as_str())
+        ),
+        "{:#?}",
+        report.losses
+    );
+}
+
+#[test]
+fn the_root_scopes_configuration_arrangements_and_occurrence_states_are_charged() {
+    let mut ir = scoped_cube();
+    let configuration =
+        ConfigurationId::mint("test:design:configuration#long").expect("identity grammar");
+    let arrangement =
+        ArrangementId::mint("test:design:arrangement#open").expect("identity grammar");
+    let occurrence = OccurrenceId::mint("test:model:occurrence#part").expect("identity grammar");
+    let scope = &mut ir.design.scopes[0];
+    scope.active_configuration = Some(configuration.clone());
+    scope.active_arrangements.insert(arrangement.clone());
+    scope.occurrences.insert(
+        occurrence.clone(),
+        OccurrenceDesign {
+            configuration: None,
+            arrangements: Vec::new(),
+            grounded: Some(true),
+            flexible: None,
+            parameters: BTreeMap::new(),
+        },
+    );
+    let (report, _) = write(&ir);
+    let omitted = loss(
+        &report,
+        &F3dLossCode::WriterDesignRecordOmitted.kind().to_string(),
+    );
+    let root = root();
+    for value in [
+        format!("{root} active configuration {configuration}"),
+        format!("{root} active arrangement {arrangement}"),
+        format!("{root} design state of occurrence {occurrence}"),
+    ] {
+        assert!(
+            omitted.iter().any(|message| message.contains(&value)),
+            "{value}: {:#?}",
+            report.losses
+        );
+    }
+}
+
+#[test]
+fn a_dropped_design_charges_every_scope_container_feature_and_parameter() {
+    let mut ir = scoped_cube();
+    let (part, history) = place_part_scope(&mut ir);
+    // A v10 design record: the export wrapper then charges no design arena.
+    ir.model
+        .parameters
+        .push(cadmpeg_ir::features::DesignParameter {
+            product_definition: None,
+            id: parameter_id("legacy"),
+            owner: None,
+            ordinal: 0,
+            name: "Legacy".into(),
+            expression: "1 mm".into(),
+            display: None,
+            value: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+    super::FAIL_NEXT_PLAN.with(|fail| fail.set(true));
+    let (report, _) = write(&ir);
+    let omitted = loss(
+        &report,
+        &F3dLossCode::WriterDesignRecordOmitted.kind().to_string(),
+    );
+    let timeline = ContainerId::mint("test:design:container#timeline").expect("identity grammar");
+    assert!(
+        omitted
+            .iter()
+            .any(|message| message.contains("design scope")
+                && message.contains(root().as_str())
+                && message.contains(part.as_str())),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        omitted
+            .iter()
+            .any(|message| message.contains("design container")
+                && message.contains(timeline.as_str())
+                && message.contains(history.as_str())),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        loss(&report, "export/evaluation.missing")
+            .iter()
+            .any(
+                |message| message.contains("a test failure of the design module")
+                    && message.contains(SKETCH)
+                    && message.contains(HOLE)
+            ),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        loss(
+            &report,
+            &F3dLossCode::WriterParameterOmitted.kind().to_string()
+        )
+        .iter()
+        .any(|message| message.contains(parameter_id("width").as_str())
+            && message.contains(parameter_id("depth").as_str())),
+        "{:#?}",
+        report.losses
+    );
+}
+
+#[test]
+fn a_stale_current_state_and_its_pose_are_charged() {
+    let mut ir = scoped_cube();
+    let occurrence = OccurrenceId::mint("test:model:occurrence#pin").expect("identity grammar");
+    let state = &mut ir.design.scopes[0].current[0];
+    state.status = EvaluationStatus::Stale;
+    state.poses.insert(
+        OccurrencePath(vec![PathStep {
+            occurrence: StepRef::Occurrence(occurrence.clone()),
+            configuration: None,
+        }]),
+        Transform::identity(),
+    );
+    let (report, _) = write(&ir);
+    let root = root();
+    let stale = format!("{root} current state after {EXTRUDE} (stale)");
+    assert!(
+        loss(&report, "export/evaluation.stale")
+            .iter()
+            .any(|message| message.contains(&stale)),
+        "{:#?}",
+        report.losses
+    );
+    let pose = format!("{root} pose of `{occurrence}` in the current state after {EXTRUDE}");
+    assert!(
+        loss(
+            &report,
+            &F3dLossCode::WriterDesignRecordOmitted.kind().to_string()
+        )
+        .iter()
+        .any(|message| message.contains(&pose)),
+        "{:#?}",
+        report.losses
+    );
+}
+
+#[test]
+fn a_stale_and_a_current_evaluation_are_each_charged_once_by_name() {
+    let mut ir = scoped_cube();
+    let timeline = ContainerId::mint("test:design:container#timeline").expect("identity grammar");
+    let stale = EvaluationId::mint("test:design:evaluation#tool").expect("identity grammar");
+    let current = EvaluationId::mint("test:design:evaluation#start").expect("identity grammar");
+    ir.design.evaluations.extend([
+        Evaluation {
+            id: stale.clone(),
+            scope: root(),
+            configuration: None,
+            of: Evaluated::Tool(FeatureId::mint(EXTRUDE).expect("identity grammar")),
+            status: EvaluationStatus::Stale,
+            content: None,
+            native_ref: None,
+        },
+        Evaluation {
+            id: current.clone(),
+            scope: root(),
+            configuration: None,
+            of: Evaluated::State(Position::Start(timeline.clone())),
+            status: EvaluationStatus::Current,
+            content: Some(StateContent {
+                base: StateBase::Empty,
+                delta: StateDelta::default(),
+            }),
+            native_ref: None,
+        },
+    ]);
+    let root = root();
+    let stale = format!("{stale}: {root} tool body of {EXTRUDE} (stale)");
+    let current = format!("{current}: {root} state at the start of {timeline}");
+    for dropped in [false, true] {
+        super::FAIL_NEXT_PLAN.with(|fail| fail.set(dropped));
+        let (report, _) = write(&ir);
+        assert!(
+            loss(&report, "export/evaluation.stale")
+                .iter()
+                .any(|message| message.contains(&stale)),
+            "dropped {dropped}: {:#?}",
+            report.losses
+        );
+        assert!(
+            loss(
+                &report,
+                &F3dLossCode::WriterDesignRecordOmitted.kind().to_string()
+            )
+            .iter()
+            .any(|message| message.contains("evaluation") && message.contains(&current)),
+            "dropped {dropped}: {:#?}",
+            report.losses
+        );
+        let charged_by_name = [
+            "design.scopes",
+            "design.containers",
+            "design.features",
+            "design.parameters",
+            "design.evaluations",
+        ];
+        assert!(
+            !loss(&report, "export/arena.omitted").iter().any(|message| {
+                charged_by_name
+                    .iter()
+                    .any(|arena| message.contains(&format!("`{arena}`")))
+            }),
+            "dropped {dropped}: {:#?}",
+            report.losses
+        );
+    }
+}
+
+#[test]
 fn an_integer_parameter_is_written_as_a_real_with_a_note() {
     let mut ir = scoped_cube();
     let mut count = parameter("count", "Count", neutral(number(4.0, None)), None);
@@ -769,6 +1124,32 @@ fn an_integer_parameter_is_written_as_a_real_with_a_note() {
     assert_eq!(notes[0].severity, Severity::Info);
     assert!(notes[0].message.contains(parameter_id("count").as_str()));
     assert!(!notes[0].message.contains(parameter_id("width").as_str()));
+}
+
+#[test]
+fn a_parameter_display_flag_and_unstated_body_visibility_are_charged() {
+    let mut ir = scoped_cube();
+    ir.design.parameters[0].display =
+        Some(cadmpeg_ir::design::parameter::DimensionDisplay::Diameter);
+    ir.geometry.bodies[0].visible = None;
+    let body = ir.geometry.bodies[0].id.to_string();
+    let param = ir.design.parameters[0].id.to_string();
+    let (report, _) = write(&ir);
+    let unwritable = loss(&report, "export/value.unwritable");
+    assert!(
+        unwritable
+            .iter()
+            .any(|message| message.contains("display") && message.contains(&param)),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        unwritable
+            .iter()
+            .any(|message| message.contains("visible") && message.contains(&body)),
+        "{:#?}",
+        report.losses
+    );
 }
 
 mod roster;

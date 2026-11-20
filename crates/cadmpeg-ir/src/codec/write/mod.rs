@@ -31,8 +31,9 @@ mod coverage;
 pub mod edge_recovery;
 mod loss;
 pub use loss::{
-    evaluation_missing, native_records_omitted, output_empty, parameter_flattened,
-    parameter_renamed, record_invalid, record_residual_unavailable, value_unwritable,
+    evaluation_missing, evaluation_stale, native_records_omitted, output_empty,
+    parameter_flattened, parameter_renamed, record_invalid, record_residual_unavailable,
+    value_unwritable,
 };
 mod scene;
 pub mod subset_lowering;
