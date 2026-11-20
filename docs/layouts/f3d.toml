@@ -47702,21 +47702,410 @@ anchor = "the indexed header, eight zero bytes, `u8 1`, the u32 member count `m`
 name = "sketch_item_dimension_frame_head"
 kind = "byte"
 section = "Records of a Sketch item"
-anchor = "A dimension frame stores its measured members after a 39-byte head"
+anchor = "a dimension frame stores, in order: the indexed header, eight zero bytes, `u8 1`, the u32 operand count `n`"
 size = 39
-note = "Offsets are relative to the frame's indexed header. The measured members follow."
+note = "Offsets are relative to the frame's indexed header and hold when the references use the eleven-byte same-segment form (DR-910). The measured members follow at 39."
 
 [[record.field]]
 name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "A dimension frame stores its measured members after a 39-byte head"
+anchor = "a dimension frame stores, in order: the indexed header, eight zero bytes, `u8 1`, the u32 operand count `n`"
 
-[[record.gap]]
+[[record.field]]
+name = "zero_run"
 offset = 11
-size = 28
-note = "The specification states no field in this range."
+type = "bytes[8]"
+source = "spec"
+anchor = "a dimension frame stores, in order: the indexed header, eight zero bytes, `u8 1`, the u32 operand count `n`"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "a dimension frame stores, in order: the indexed header, eight zero bytes, `u8 1`, the u32 operand count `n`"
+value = 1
+
+[[record.field]]
+name = "operand_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "a dimension frame stores, in order: the indexed header, eight zero bytes, `u8 1`, the u32 operand count `n`"
+
+[[record.field]]
+name = "null_locus"
+offset = 24
+type = "bytes[11]"
+source = "spec"
+anchor = "The first operand is the null locus: the eleven-byte reference to record index `0`"
+
+[[record.field]]
+name = "null_locus_ordinal"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "DR-917 the ordinal of the null locus"
+
+[[record]]
+name = "sketch_item_dimension_frame_linear"
+kind = "byte"
+section = "Records of a Sketch item"
+anchor = "The measurement of a linear frame is 129 bytes"
+size = 129
+note = "Offsets are relative to the first byte after the property block."
+
+[[record.field]]
+name = "dimension_line_start"
+offset = 0
+type = "f64[3]"
+source = "spec"
+anchor = "the dimension-line ends `P0` and `P1`"
+
+[[record.field]]
+name = "dimension_line_end"
+offset = 24
+type = "f64[3]"
+source = "spec"
+anchor = "the dimension-line ends `P0` and `P1`"
+
+[[record.field]]
+name = "second_anchor"
+offset = 48
+type = "f64[3]"
+source = "spec"
+anchor = "the second anchor `A2`"
+
+[[record.field]]
+name = "fourth_point"
+offset = 72
+type = "f64[3]"
+source = "spec"
+anchor = "a fourth point, the offset flag"
+
+[[record.field]]
+name = "offset_flag"
+offset = 96
+type = "u8"
+source = "spec"
+anchor = "a fourth point, the offset flag"
+
+[[record.field]]
+name = "value"
+offset = 97
+type = "f64"
+source = "spec"
+anchor = "the f64 measured value, and the first anchor `A1`"
+
+[[record.field]]
+name = "first_anchor"
+offset = 105
+type = "f64[3]"
+source = "spec"
+anchor = "the f64 measured value, and the first anchor `A1`"
+
+[[record]]
+name = "sketch_item_dimension_frame_radial"
+kind = "byte"
+section = "Records of a Sketch item"
+anchor = "The measurement of a radial or diameter frame is 153 bytes"
+size = 153
+note = "Offsets are relative to the first byte after the property block."
+
+[[record.field]]
+name = "curve_payload"
+offset = 0
+type = "f64[12]"
+source = "spec"
+anchor = "the 96-byte analytic payload of the measured circular curve"
+
+[[record.field]]
+name = "centre"
+offset = 96
+type = "f64[3]"
+source = "spec"
+anchor = "the centre of that curve, the attach point"
+
+[[record.field]]
+name = "attach_point"
+offset = 120
+type = "f64[3]"
+source = "spec"
+anchor = "the centre of that curve, the attach point"
+
+[[record.field]]
+name = "flag"
+offset = 144
+type = "u8"
+source = "spec"
+anchor = "a flag byte, and the f64 radius"
+
+[[record.field]]
+name = "radius"
+offset = 145
+type = "f64"
+source = "spec"
+anchor = "a flag byte, and the f64 radius"
+
+[[record]]
+name = "sketch_item_dimension_frame_angular"
+kind = "byte"
+section = "Records of a Sketch item"
+anchor = "The measurement of an angular frame is 146 bytes"
+size = 146
+note = "Offsets are relative to the first byte after the property block."
+
+[[record.field]]
+name = "angle"
+offset = 0
+type = "f64"
+source = "spec"
+anchor = "the f64 angle, the u32 quadrant"
+
+[[record.field]]
+name = "quadrant"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "the f64 angle, the u32 quadrant"
+
+[[record.field]]
+name = "zero_run"
+offset = 12
+type = "bytes[2]"
+source = "spec"
+anchor = "the u32 quadrant, two zero bytes"
+value = [0, 0]
+
+[[record.field]]
+name = "quadrant_2"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "a second u32 quadrant word"
+
+[[record.field]]
+name = "first_line_end"
+offset = 18
+type = "f64[3]"
+source = "spec"
+anchor = "the two point positions of the first measured line"
+
+[[record.field]]
+name = "first_line_start"
+offset = 42
+type = "f64[3]"
+source = "spec"
+anchor = "the two point positions of the first measured line"
+
+[[record.field]]
+name = "second_line_end"
+offset = 66
+type = "f64[3]"
+source = "spec"
+anchor = "the two point positions of the second measured line"
+
+[[record.field]]
+name = "second_line_start"
+offset = 90
+type = "f64[3]"
+source = "spec"
+anchor = "the two point positions of the second measured line"
+
+[[record.field]]
+name = "arc_point"
+offset = 114
+type = "f64[3]"
+source = "spec"
+anchor = "the arc point, and the f64 arc radius"
+
+[[record.field]]
+name = "arc_radius"
+offset = 138
+type = "f64"
+source = "spec"
+anchor = "the arc point, and the f64 arc radius"
+
+[[record]]
+name = "sketch_item_dimension_frame_text"
+kind = "byte"
+section = "Records of a Sketch item"
+anchor = "The text frame is 91 bytes"
+size = 91
+note = "Offsets are relative to the first byte after the measurement. The LP-UTF16 prefix follows at 91."
+
+[[record.field]]
+name = "style_byte"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "a style byte and four f32 style values"
+
+[[record.field]]
+name = "style_values"
+offset = 1
+type = "f32[4]"
+source = "spec"
+anchor = "a style byte and four f32 style values"
+
+[[record.field]]
+name = "marker"
+offset = 17
+type = "u8"
+source = "spec"
+anchor = "a byte `1` or `0`, a zero byte"
+
+[[record.field]]
+name = "zero_byte"
+offset = 18
+type = "u8"
+source = "spec"
+anchor = "a byte `1` or `0`, a zero byte"
+value = 0
+
+[[record.field]]
+name = "origin"
+offset = 19
+type = "f64[3]"
+source = "spec"
+anchor = "an origin, and two unit axes"
+
+[[record.field]]
+name = "x_axis"
+offset = 43
+type = "f64[3]"
+source = "spec"
+anchor = "an origin, and two unit axes"
+
+[[record.field]]
+name = "y_axis"
+offset = 67
+type = "f64[3]"
+source = "spec"
+anchor = "an origin, and two unit axes"
+
+[[record]]
+name = "sketch_item_dimension_frame_linear_kind"
+kind = "byte"
+section = "Records of a Sketch item"
+anchor = "The kind block of a linear frame is 52 bytes"
+size = 52
+note = "Offsets are relative to the first byte after the LP-UTF16 text."
+
+[[record.field]]
+name = "text_position"
+offset = 0
+type = "f64[3]"
+source = "spec"
+anchor = "the text position, u32 `2`"
+
+[[record.field]]
+name = "word"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "the text position, u32 `2`"
+value = 2
+
+[[record.field]]
+name = "values"
+offset = 28
+type = "f64[2]"
+source = "spec"
+anchor = "two f64 values (DR-917)"
+
+[[record.field]]
+name = "kind_mask"
+offset = 44
+type = "u64"
+source = "spec"
+anchor = "and the u64 kind mask"
+
+[[record]]
+name = "sketch_item_dimension_frame_kind"
+kind = "byte"
+section = "Records of a Sketch item"
+anchor = "The kind block of the other frames is 32 bytes"
+size = 32
+note = "Offsets are relative to the first byte after the LP-UTF16 text."
+
+[[record.field]]
+name = "text_position"
+offset = 0
+type = "f64[3]"
+source = "spec"
+anchor = "the text position and the u64 kind mask"
+
+[[record.field]]
+name = "kind_mask"
+offset = 24
+type = "u64"
+source = "spec"
+anchor = "the text position and the u64 kind mask"
+
+[[record]]
+name = "sketch_item_dimension_frame_paired"
+kind = "byte"
+section = "Records of a Sketch item"
+anchor = "the paired part is 59 bytes"
+size = 59
+note = "Offsets are relative to the paired indexed header. The offsets hold when both references are the eleven-byte same-segment form (DR-910)."
+
+[[record.field]]
+name = "paired_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "the paired indexed header, eight zero bytes, the sketch container reference"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "the paired indexed header, eight zero bytes, the sketch container reference"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "container"
+offset = 19
+type = "bytes[11]"
+source = "spec"
+anchor = "the paired indexed header, eight zero bytes, the sketch container reference"
+
+[[record.field]]
+name = "zero_run_2"
+offset = 30
+type = "bytes[12]"
+source = "spec"
+anchor = "twelve zero bytes, the f32 `1.0`, two zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "scale"
+offset = 42
+type = "f32"
+source = "spec"
+anchor = "twelve zero bytes, the f32 `1.0`, two zero bytes"
+value = 1.0
+
+[[record.field]]
+name = "zero_run_3"
+offset = 46
+type = "bytes[2]"
+source = "spec"
+anchor = "twelve zero bytes, the f32 `1.0`, two zero bytes"
+value = [0, 0]
+
+[[record.field]]
+name = "container_closing"
+offset = 48
+type = "bytes[11]"
+source = "spec"
+anchor = "two zero bytes, and the sketch container reference"
 
 [[record]]
 name = "sketch_item_dimension_owner"
