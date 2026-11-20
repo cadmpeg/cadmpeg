@@ -9,11 +9,12 @@ use super::super::frames::DesignRecords;
 use crate::records::references::DesignClassTag;
 use crate::writer::generate::presentation::{dynamic_class_tag, TypeRow};
 
-/// The segments of a Base Feature design.
+/// The three segments of a Base Feature design.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(in crate::writer::generate) enum SegmentKind {
     Design,
     Act,
+    Browser,
 }
 
 impl SegmentKind {
@@ -22,6 +23,7 @@ impl SegmentKind {
         match self {
             Self::Design => 0,
             Self::Act => 1,
+            Self::Browser => 2,
         }
     }
 
@@ -30,6 +32,7 @@ impl SegmentKind {
         match self {
             Self::Design => "FusionDesignSegmentType",
             Self::Act => "FusionACTSegmentType",
+            Self::Browser => "FusionBrowserSegmentType",
         }
     }
 
@@ -38,6 +41,7 @@ impl SegmentKind {
         match self {
             Self::Design => 1,
             Self::Act => 5,
+            Self::Browser => 6,
         }
     }
 
@@ -123,7 +127,7 @@ pub(in crate::writer::generate) struct Segment<'a> {
     pub(super) kind: SegmentKind,
     pub(super) table: &'a TypeTable,
     /// The records in ascending record index.
-    pub(super) records: DesignRecords,
+    pub(super) records: &'a DesignRecords,
     /// The records that store an LP-ASCII name after four zero bytes.
     pub(super) named: Vec<u32>,
     pub(super) next_entity: u64,

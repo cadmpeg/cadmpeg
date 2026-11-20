@@ -4,7 +4,9 @@
 //! role fixes, written from its layout template or its stated form, and the
 //! archive members around them.
 
+mod act;
 mod bodies;
+mod browser;
 mod component;
 mod fixed;
 mod rows;
@@ -270,20 +272,33 @@ pub(super) fn archive(
     views::write(ctx, &mut records)?;
     component::write(ctx, &mut records)?;
     bodies::write(ctx, &mut records)?;
+    let records = records.sorted()?;
     let design = segment::Segment {
         kind: segment::SegmentKind::Design,
         table: &ctx.table,
-        records: records.sorted()?,
+        records: &records,
         named: NAMED.to_vec(),
         next_entity: ctx.roster.next_entity(),
     };
-    let mut members = design.members()?.to_vec();
+    let act = act::Act::new(ctx)?;
+    let browser = browser::Browser::new()?;
+    let mut members = Vec::new();
+    for segment in [design, act.segment(), browser.segment()] {
+        members.extend(segment.members()?);
+    }
     let [history, snapshot] = bodies::stream_basenames(ctx);
     members.push((
         format!("Breps.BlobParts/{history}"),
         super::history::with_header(smbh, HISTORY_FLAGS, HISTORY_SCALE)?,
     ));
     members.push((format!("Breps.BlobParts/{snapshot}"), smb.to_vec()));
+    for basename in fixed::configuration_basenames(ctx) {
+        members.push((
+            format!("DesignConfigurationTable.BlobParts/{basename}"),
+            EMPTY_CONFIGURATION.to_vec(),
+        ));
+    }
+    members.push((IMAGES.to_owned(), Vec::new()));
     Ok((members, losses(ctx)))
 }
 
@@ -292,6 +307,11 @@ pub(super) fn archive(
 const HISTORY_FLAGS: u64 = 3;
 /// The `scale` word of the history stream of a Base Feature design.
 const HISTORY_SCALE: f64 = 40.0;
+/// The bytes of the configuration table and of the configuration rule set
+/// of a design with no configuration.
+const EMPTY_CONFIGURATION: &[u8] = b"{}";
+/// The empty directory of the document's images.
+pub(super) const IMAGES: &str = "Images.BlobParts/";
 
 /// The values this writer chooses where the specification leaves the rule
 /// open.
@@ -309,6 +329,14 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
         "F3D",
         "writes no display scene; f3d-open-items.md DR-914 leaves its layout open",
         ["OGS.BlobFolder".to_owned()],
+    ));
+    notes.extend(record_residual_unavailable(
+        "F3D",
+        "writes no Protein package for the asset manager (record 1) to name; f3d-open-items.md DR-905 leaves the text of its schema documents open and protein.md states no byte form of its value-block carriers",
+        [format!(
+            "ProteinAssets.BlobParts/{}",
+            component::Assets::new(ctx).package
+        )],
     ));
     notes.extend(record_residual_unavailable(
         "F3D",

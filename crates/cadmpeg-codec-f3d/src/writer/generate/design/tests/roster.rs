@@ -434,3 +434,262 @@ fn two_writes_are_identical() {
     let (_, _, second) = write_bytes(&scoped_cube());
     assert!(first == second, "the archive is a function of the document");
 }
+
+/// The `(target, segment)` of the cross-segment reference at `at`.
+fn cross(record: &[u8], at: usize) -> (u64, u32) {
+    assert_eq!((record[at], record[at + 9], record[at + 10]), (1, 0, 1));
+    (u64_at(record, at + 1), u32_at(record, at + 11))
+}
+
+#[test]
+fn the_act_segment_is_stated() {
+    let (_, archive) = design();
+    let act = segment(&archive, "FusionACTSegmentType1");
+    assert_eq!(
+        (act.short_name.as_str(), act.full_name.as_str()),
+        ("FusionACTSegmentType", "FusionACTSegmentType")
+    );
+    assert_eq!(
+        (act.id, act.code, act.words),
+        (1, (5, 0), [1234, 8, 36, 708_837_440])
+    );
+    assert_eq!(act.named, [0, 1, 5, 6]);
+    assert!(act.secondary.is_empty());
+    assert_eq!(act.next, 12);
+    let written = act.primary.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+    assert_eq!(written, [0, 1, 2, 3, 4, 5, 6, 7, 8, 10]);
+    for (index, length) in [
+        (0, 833),
+        (1, 75),
+        (3, 583),
+        (4, 56),
+        (5, 96),
+        (6, 200),
+        (7, 583),
+        (8, 403),
+        (10, 403),
+    ] {
+        assert_eq!(act.record(index).len(), length, "ACT record {index}");
+    }
+    let mut table = Reader {
+        bytes: act.record(0),
+        at: 29,
+    };
+    let entries = (0..table.u32())
+        .map(|_| {
+            let target = u64_at(table.take(11), 1);
+            (target, table.utf16())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        entries,
+        [
+            (8, "0_187".to_owned()),
+            (10, "0_215".to_owned()),
+            (3, "1_2".to_owned()),
+            (7, "1_6".to_owned())
+        ]
+    );
+    let aspects = |index: u64| {
+        let mut reader = Reader {
+            bytes: act.record(index),
+            at: 21,
+        };
+        let pairs = (0..reader.u32())
+            .map(|_| (reader.ascii(), reader.utf16()))
+            .collect::<Vec<_>>();
+        (pairs, reader.utf16())
+    };
+    let _manifest = table.utf16();
+    let table_guid = table.utf16();
+    table.u32();
+    let table_aspects = (0..table.u32())
+        .map(|_| (table.ascii(), table.utf16()))
+        .collect::<Vec<_>>();
+    assert_eq!(table_aspects[1], ("Geometry".to_owned(), table_guid));
+    let (component, key) = aspects(3);
+    assert_eq!(key, "1_2");
+    assert_eq!(
+        component[2].1, component[5].1,
+        "PhysicalMaterial is Transform"
+    );
+    let (instance, key) = aspects(7);
+    assert_eq!(key, "1_6");
+    for (aspect, guid) in &instance {
+        assert_eq!(aspect == "Properties", guid != &instance[0].1, "{aspect}");
+    }
+    let (design_aspects, key) = aspects(8);
+    assert_eq!((design_aspects.len(), key.as_str()), (4, "0_187"));
+    let (design, _) = design();
+    let mut body = Reader {
+        bytes: design.record(187),
+        at: 196,
+    };
+    assert_eq!(body.utf16(), design_aspects[1].1, "the mass-block GUID");
+    let name = |record: &[u8], at: usize| {
+        let mut reader = Reader { bytes: record, at };
+        reader.utf16()
+    };
+    assert_eq!(name(act.record(2), 57), name(design.record(3), 888));
+    assert!(design_aspects
+        .iter()
+        .chain(&component)
+        .chain(&instance)
+        .all(|(_, guid)| guid.chars().all(|c| !c.is_ascii_uppercase())));
+}
+
+#[test]
+fn the_browser_segment_is_stated() {
+    let (_, archive) = design();
+    let browser = segment(&archive, "FusionBrowserSegmentType1");
+    assert_eq!((browser.id, browser.code), (2, (6, 0)));
+    assert_eq!(browser.named, [0]);
+    assert_eq!(browser.next, 31);
+    let written = browser
+        .primary
+        .iter()
+        .map(|(id, _)| *id)
+        .collect::<Vec<_>>();
+    assert_eq!(written, (0..31).collect::<Vec<_>>());
+    for (index, length) in [
+        (0, 1042),
+        (1, 464),
+        (2, 148),
+        (10, 194),
+        (16, 115),
+        (29, 153),
+    ] {
+        assert_eq!(
+            browser.record(index).len(),
+            length,
+            "Browser record {index}"
+        );
+    }
+    let [(root, offset)] = browser.secondary.as_slice() else {
+        panic!("one paired header: {:?}", browser.secondary);
+    };
+    assert_eq!((*root, *offset), (0, browser.primary[0].1 + 1002));
+    assert_eq!(cross(browser.record(16), 24), (193, 0));
+    assert_eq!(cross(browser.record(29), 24), (6, 0));
+    let entries = &browser.record(0)[61..61 + 24 * 26];
+    let shown = entries
+        .chunks(26)
+        .map(|pair| (cross(pair, 0).0, u64_at(pair, 16)))
+        .collect::<BTreeSet<_>>();
+    assert!(shown.contains(&(43, 1)) && shown.contains(&(2, 30)) && shown.len() == 24);
+}
+
+#[test]
+fn every_cross_segment_reference_names_its_stated_target() {
+    let (design, archive) = design();
+    let act = segment(&archive, "FusionACTSegmentType1");
+    let name = u64::from(u32_at(design.record(3), 888));
+    let after_name = usize::try_from(892 + 2 * name).expect("offset");
+    assert_eq!(cross(design.record(208), 38), (2, 1));
+    assert_eq!(cross(design.record(3), 785), (2, 1));
+    assert_eq!(cross(design.record(6), 21), (4, 1));
+    assert_eq!(cross(design.record(43), 214), (6, 1));
+    assert_eq!(cross(act.record(2), 42), (3, 0));
+    assert_eq!(cross(act.record(4), 21), (6, 0));
+    assert_eq!(cross(act.record(6), 168), (43, 0));
+    assert_eq!(u64_at(design.record(3), after_name + 2), 43);
+}
+
+/// `name` with each lowercase 36-character GUID replaced by `<uuid>`.
+fn masked(name: &str) -> String {
+    let is_guid = |text: &str| {
+        text.len() == 36
+            && text.char_indices().all(|(at, character)| match at {
+                8 | 13 | 18 | 23 => character == '-',
+                _ => character.is_ascii_digit() || ('a'..='f').contains(&character),
+            })
+    };
+    let mut out = String::new();
+    let mut at = 0;
+    while at < name.len() {
+        if name.get(at..at + 36).is_some_and(is_guid) {
+            out.push_str("<uuid>");
+            at += 36;
+        } else {
+            let character = name[at..].chars().next().expect("a character");
+            out.push(character);
+            at += character.len_utf8();
+        }
+    }
+    out
+}
+
+#[test]
+fn the_archive_holds_the_stated_members() {
+    let (_, _, bytes) = write_bytes(&scoped_cube());
+    let zip = zip::ZipArchive::new(Cursor::new(bytes.clone())).expect("a ZIP archive");
+    let names = zip
+        .file_names()
+        .map(|name| masked(&name.expect("a member name")))
+        .collect::<BTreeSet<_>>();
+    let folder = crate::manifest::GENERATED_DESIGN_ASSET_FOLDER;
+    let mut expected = ["Manifest.dat".to_owned(), "Properties.dat".to_owned()]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    for name in [
+        "Manifest.dat",
+        "FusionDesignSegmentType1/MetaStream.dat",
+        "FusionDesignSegmentType1/BulkStream.dat",
+        "FusionACTSegmentType1/MetaStream.dat",
+        "FusionACTSegmentType1/BulkStream.dat",
+        "FusionBrowserSegmentType1/MetaStream.dat",
+        "FusionBrowserSegmentType1/BulkStream.dat",
+        "Breps.BlobParts/BREP.<uuid>.smbh",
+        "Breps.BlobParts/BREP.<uuid>.smb",
+        "DesignConfigurationTable.BlobParts/DesignConfigurationTable.<uuid>.dsgcfg",
+        "DesignConfigurationTable.BlobParts/DesignConfigurationRule.<uuid>.dsgcfgrule",
+        "Images.BlobParts/",
+    ] {
+        expected.insert(format!("{folder}/{name}"));
+    }
+    assert_eq!(names, expected);
+    let (design, _) = design();
+    for (record, at) in [(185, 62), (186, 61)] {
+        let mut reader = Reader {
+            bytes: design.record(record),
+            at,
+        };
+        let basename = reader.utf16();
+        let configuration = member(
+            &bytes,
+            &format!("DesignConfigurationTable.BlobParts/{basename}"),
+        );
+        assert_eq!(configuration, b"{}");
+    }
+}
+
+/// The flags word and the `scale` of a binary ASM stream.
+fn stream_header(stream: &[u8]) -> (u64, f64) {
+    let mut at = 47;
+    for _ in 0..3 {
+        at += 2 + usize::from(stream[at + 1]);
+    }
+    assert_eq!(stream[at], 0x06);
+    (u64_at(stream, 39), f64_at(stream, at + 1))
+}
+
+#[test]
+fn the_snapshot_is_the_solved_part_of_the_history_stream() {
+    let (design, archive) = design();
+    let basename = |record: u64, at: usize| {
+        let mut reader = Reader {
+            bytes: design.record(record),
+            at,
+        };
+        reader.utf16()
+    };
+    let history = member(&archive, &format!("Breps.BlobParts/{}", basename(197, 53)));
+    let snapshot = member(&archive, &format!("Breps.BlobParts/{}", basename(195, 64)));
+    assert_eq!(stream_header(&history), (3, 40.0));
+    assert_eq!(stream_header(&snapshot), (2, 10.0));
+    let has = |stream: &[u8], text: &[u8]| stream.windows(text.len()).any(|window| window == text);
+    assert!(has(&history, b"History"));
+    assert!(!has(&snapshot, b"History"));
+    assert!(snapshot.ends_with(b"data"));
+    assert!(snapshot.len() < history.len());
+}

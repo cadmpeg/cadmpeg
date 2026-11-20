@@ -40,6 +40,8 @@ pub(in crate::writer::generate) enum Bind<'a> {
     Units(&'a str),
     /// An LP-UTF16 string.
     Utf16(&'a str),
+    /// Bytes written as they are.
+    Bytes(&'a [u8]),
 }
 
 impl DesignRecords {
@@ -123,6 +125,9 @@ impl DesignRecords {
                 }
                 Bind::Utf16(text) => {
                     value.lp_utf16(text)?;
+                }
+                Bind::Bytes(bytes) => {
+                    value.raw(bytes);
                 }
             }
             self.place(start, *offset, &value.bytes, unstated)?;
