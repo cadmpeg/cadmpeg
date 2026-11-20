@@ -188,14 +188,14 @@ fn other_bindings(index: &DesignRecords<'_>) -> Vec<String> {
                 .flatten(),
         );
     }
-    if let Ok(process) = serde_json::to_value(&ir.process) {
+    if let Ok(process) = crate::hash::finite_json::to_json_value(&ir.process) {
         found.extend(design_targets(&process));
     }
     found
 }
 
 fn wire_of<T: Serialize>(record: &T) -> Option<Json> {
-    serde_json::to_value(record).ok()
+    crate::hash::finite_json::to_json_value(record).ok()
 }
 
 /// The ids a wire value binds as `{"kind": "parameter" | "negated",
