@@ -290,6 +290,7 @@ impl<'ir> FaceInput<'_, 'ir> {
             }),
         };
         let row_work = self.work == Work::Row;
+        let box_work = self.work == Work::Box;
         let carrier_row = match &carrier {
             Ok(carrier) if row_work => carrier.measures(Sources {
                 fidelity: self.fidelity,
@@ -467,7 +468,7 @@ impl<'ir> FaceInput<'_, 'ir> {
         };
 
         let (bbox, aabbs) = match (&chart, &region) {
-            _ if !row_work => (Readings::single(not_computed(id)), [None, None]),
+            _ if !row_work && !box_work => (Readings::single(not_computed(id)), [None, None]),
             (Ok(chart @ (Chart::Sphere(_) | Chart::Torus(_))), Ok(region)) => self.closed_box(
                 face,
                 &coedges,
@@ -487,6 +488,7 @@ impl<'ir> FaceInput<'_, 'ir> {
                     PlainBox {
                         chart,
                         region,
+                        gated: !box_work,
                         tau_b,
                         hull,
                     },
@@ -632,7 +634,7 @@ impl<'ir> FaceInput<'_, 'ir> {
                     reach,
                     active: match self.work {
                         Work::Row => MEASURE_COMPONENTS,
-                        Work::Orientation => ORIENTATION_COMPONENTS,
+                        Work::Orientation | Work::Box => ORIENTATION_COMPONENTS,
                     },
                 };
                 Some(settle(
@@ -778,12 +780,14 @@ impl<'ir> FaceInput<'_, 'ir> {
         let PlainBox {
             chart,
             region,
+            gated,
             tau_b,
             hull,
         } = basis;
+        let gate_passes = !gated || region.is_ok();
         match (chart, region) {
-            (Ok(Chart::Plane(_) | Chart::Cylinder(_) | Chart::Extrusion(_)), Ok(_)) => self
-                .boundary_box(
+            (Ok(Chart::Plane(_) | Chart::Cylinder(_) | Chart::Extrusion(_)), _) if gate_passes => {
+                self.boundary_box(
                     face,
                     coedges,
                     boundary,
@@ -792,7 +796,8 @@ impl<'ir> FaceInput<'_, 'ir> {
                         member: None,
                         method: Method::BoundaryExtremum,
                     },
-                ),
+                )
+            }
             (Ok(Chart::Cone(_)), Ok(region)) => self.boundary_box(
                 face,
                 coedges,
@@ -803,7 +808,7 @@ impl<'ir> FaceInput<'_, 'ir> {
                     method: Method::CriticalPoints,
                 },
             ),
-            (Ok(Chart::Nurbs(_)), Ok(_)) => match hull {
+            (Ok(Chart::Nurbs(_)), _) if gate_passes => match hull {
                 Some(Ok(hull)) => {
                     let (boundary_box, _) = self.boundary_box(
                         face,
@@ -1172,6 +1177,10 @@ fn face_flux(
 struct PlainBox<'a, 'ir> {
     chart: &'a Outcome<Chart<'ir>>,
     region: &'a Outcome<Region>,
+    /// Whether a plane, cylinder, extrusion or NURBS face needs a region to
+    /// have a box. A box pass boxes such a face from its boundary pieces
+    /// also when its region does not classify.
+    gated: bool,
     tau_b: f64,
     hull: Option<Result<Aabb, UnavailableReason>>,
 }

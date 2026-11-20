@@ -10,8 +10,8 @@
 //!
 //! Measurement is an oracle on decoded output. A decoder or encoder never
 //! selects a layout, carrier, sense, unit or interpretation by measuring
-//! geometry. The Fusion encoder writes the measured body box of each body
-//! into the design it encodes.
+//! geometry. The Fusion encoder writes the box that [`body_boxes`] measures
+//! for each body into the design it encodes.
 //!
 //! ```
 //! use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
@@ -70,7 +70,9 @@ pub use budget::{
 };
 pub use declared::declared_findings;
 pub use select::{FaceFilter, RadiusRange, Selection, SurfaceKind};
-pub use session::{findings, Density, MeasureError, MeasureInput, MeasureOptions, Measurer};
+pub use session::{
+    body_boxes, findings, Density, MeasureError, MeasureInput, MeasureOptions, Measurer,
+};
 
 #[cfg(test)]
 mod integration_tests;

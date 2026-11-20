@@ -887,7 +887,10 @@ selects a layout, carrier, sense, unit, or interpretation by measuring
 geometry. Outside `[dev-dependencies]`, the `cadmpeg` CLI crate,
 `cadmpeg-registry` and `cadmpeg-codec-f3d` depend on `cadmpeg-measure`; the
 source-policy rule `measurement_dependency` enforces this. The Fusion encoder
-writes the measured body box of each body into the design it encodes.
+writes the measured body box of each body into the design it encodes, from
+`body_boxes`. The source-policy rule `measurement_use` admits production uses
+of `cadmpeg_measure` in a codec crate only under
+`crates/cadmpeg-codec-f3d/src/writer/`.
 
 A writer test compares the measures of a document and of its written and
 decoded copy with `cadmpeg_measure::test_support::round_trip`. The writer

@@ -10,7 +10,8 @@ contract is in `docs/measurement.md` of the repository.
 
 Measurement is an oracle on decoded output. A decoder or encoder selects its
 layout, carrier and interpretation from format semantics. The Fusion encoder
-writes the measured body box of each body into the design it encodes.
+writes the box that `body_boxes` measures for each body into the design it
+encodes.
 
 ```rust
 use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};

@@ -1136,6 +1136,24 @@ accessors!(BodyMeasures {
     status: RowStatus;
 });
 
+/// The boxes of one body from [`crate::body_boxes`], in millimetres with the
+/// body transform applied.
+#[derive(Debug, Clone)]
+pub struct BodyBox {
+    pub(crate) body: String,
+    pub(crate) bbox: Quantity<BoxValue>,
+    pub(crate) vertex_box: Option<Quantity<BoxValue>>,
+}
+
+accessors!(BodyBox {
+    /// The body ID.
+    body: String;
+    /// Union of member boxes, as [`BodyMeasures::bbox`] reports it.
+    bbox: Quantity<BoxValue>;
+    /// Box of the vertex points; absent for a body with no vertex.
+    vertex_box: Option<Quantity<BoxValue>>;
+});
+
 /// The work the pass used.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct WorkReport {
