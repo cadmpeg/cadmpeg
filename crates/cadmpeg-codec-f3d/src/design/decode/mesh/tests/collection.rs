@@ -352,7 +352,7 @@ fn mesh_collection_joins_bodies_from_two_scopes() {
                 body.scope_body_ordinal
             ))
             .collect::<Vec<_>>(),
-        [(104, 109, Some(0)), (117, 122, Some(0))]
+        [(104, Some(109), Some(0)), (117, Some(122), Some(0))]
     );
     let wire = serde_json::to_value(feature).unwrap();
     assert_eq!(wire["scopes"][1]["scope_record"]["record_index"], 122);

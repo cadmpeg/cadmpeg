@@ -69,6 +69,22 @@ enum CanonicalTimeUnitWire {
 /// accepts is one the topology contract also accepts.
 pub const COINCIDENCE_TOLERANCE: f64 = 0.01;
 
+/// The distance within which positions the model makes coincide agree: the
+/// largest of [`COINCIDENCE_TOLERANCE`], the document's `linear` tolerance and
+/// the declared `tolerances` (edge, vertex, face, cache fit) that apply there.
+/// Validation and every writer that decides whether its output meets that
+/// check use this one bound, so the two cannot disagree.
+pub fn coincidence_allowance(
+    linear: crate::scalar::PositiveLength,
+    tolerances: &[Option<f64>],
+) -> f64 {
+    tolerances
+        .iter()
+        .flatten()
+        .copied()
+        .fold(COINCIDENCE_TOLERANCE.max(linear.get()), f64::max)
+}
+
 /// An array of finite coordinates.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FiniteVector<const N: usize>([f64; N]);

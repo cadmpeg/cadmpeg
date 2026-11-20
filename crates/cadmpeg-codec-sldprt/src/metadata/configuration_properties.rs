@@ -461,7 +461,8 @@ fn project_rows(
             id,
             target: AttributeTarget::Document.into(),
             name: ATTRIBUTE_NAME.into(),
-            values,
+            values: values.into_iter().map(Some).collect(),
+            native_ref: None,
         });
     }
     Ok(())
