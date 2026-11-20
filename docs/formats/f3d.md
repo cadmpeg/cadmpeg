@@ -3730,149 +3730,65 @@ The cross-segment references between the Design segment and the ACT segment are:
 
 A cross-segment reference is 15 bytes: `01`, the u64 target record index, `00`, `01`, and the u32 target segment ID.
 
-**Record indices of the roster.** The roster leaves the record indices 8, 9, 35, 179 to 183, and 216 to 218 unused. The MetaStream next-entity-ID counter is greater than every record index: `225` for the one-body roster. The named-entity ID list holds the records that store an LP-ASCII name at offset 15, which are records 0, 1, 4, 43, 44, 45, 46, 161, 177, 184, 185, 186, and 191. The secondary index has one entry for each record that stores a paired header, with the BulkStream offset of that header.
+**Record indices of the roster.** The roster leaves the record indices 8, 9, 35, 179 to 183, and 216 to 218 unused. The MetaStream next-entity-ID counter is greater than every record index. The named-entity ID list holds the records that store an LP-ASCII name after four zero bytes: records 0, 1, 4, 43, 44, 45, 46, 161, 177, 184, 185, 186, and 191. The secondary index has one entry for each record that stores a paired header, with the BulkStream offset of that header.
 
-**Fixed records of the roster.** These records have the same bytes in every `Base Feature` design apart from their indexed headers and the body count of record 191. Offsets are record-relative; "zero bytes" are runs of `00`. A reference to record 0 is the eleven bytes `01`, eight zero bytes, `00 00`.
+**Fixed records of the roster.** The records below have the same bytes in every `Base Feature` design apart from their indexed headers and the body count of record 191. [The layout tables](../layouts/f3d.md) give their offsets and constant values under the named layout records. "Zero bytes" are runs of `00`. A reference to record 0 is the eleven bytes `01`, eight zero bytes, `00 00`.
 
-| Index | Type, version, length | Layout |
-|---|---|---|
-| 2 | `3B9288E7-E1DE-414D-90BD-1C0CDAC77EB1`, 0, 22 | header; 11 zero bytes |
-| 4 | `BC84911E-A581-4E51-ABE4-B0F681CFED06`, 1, 77 | header; 4 zero bytes; LP-ASCII `ComponentsRoot` at 15; 10 zero bytes; LP-ASCII `ComponentsRoot` at 43; u32 `1` at 61; the component aggregate at 65; `00` |
-| 5 | `F9CB8717-EB86-47F2-AAA7-39E142C57A09`, 1, 36 | header; 14 zero bytes; the component aggregate at 25 |
-| 6 | `904F885E-D859-4755-A7EF-6EBED8732FAD`, 1, 52 | header; 10 zero bytes; a cross-segment reference to the ACT naming-space link at 21; 5 zero bytes; the component aggregate at 41 |
-| 10 | `5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF`, 4, 115 | header; 9 zero bytes; u8 `1` at 20; u32 `1` at 21, the property count; LP-ASCII `crv_tag_id_idx` at 25; LP-ASCII `IntrinsicMetaTypeuint64` at 43; u64 `100` at 70; 8 zero bytes; u8 `1` at 86; u8 `1` at 87; record 22 at 88; 5 zero bytes; the component aggregate at 104 |
-| 11 | `A8635B5F-1E2C-45FD-8BA9-0173B0FEB75E`, 3, 70 | header; 30 zero bytes; u8 `1` at 41; u8 `1` at 42; record 21 at 43; 5 zero bytes; the component aggregate at 59 |
-| 12, 37 | `FCB17D75-8538-4E8E-BDBE-CB4FE2120DB7`, 1, 42; `AD3F9695-7FDF-4708-AE05-B21309CDE969`, 1, 42 | header; 14 zero bytes; u8 `1` at 25; 5 zero bytes; the component aggregate at 31 |
-| 13 | `596C8B98-D176-4E40-B294-6404BAD566BC`, 3, 46 | header; 18 zero bytes; u8 `1` at 29; 5 zero bytes; the component aggregate at 35 |
-| 14, 16, 20, 21, 22 | `AC202226-A700-462A-BC41-13631C9E95D5`, `77EF6384-409E-498D-8167-BCA537533B35`, `30DCFC57-8E13-405B-9295-5CF74AC1FB39`, `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, `0C5DAB90-715E-49EA-A56E-E30F2328F43E`; each version 0, 41 | header; 19 zero bytes; the component aggregate at 30 |
-| 15 | `0DBF95ED-82D2-4CC4-936D-642370679CBB`, 0, 45 | header; 23 zero bytes; the component aggregate at 34 |
-| 23 | `F670456D-872C-4818-95E9-DE115B264ACA`, 0, 59 | header; 10 zero bytes; u32 `1` at 21; paired header at 25; 12 zero bytes; the component aggregate at 48 |
-| 32, 33 | `64435F6E-077A-4F6B-A7B6-537BF84BA414`, `BF7A6B8B-6E56-4C84-8882-1E8A1C1FE487`; each version 0, 55 | header; 10 zero bytes; paired header at 21; 12 zero bytes; the component aggregate at 44 |
-| 34 | `8EF00D65-F18D-4179-A644-FE0CA39943D6`, 5, 80 | header; 10 zero bytes; record 39 at 21; 8 zero bytes; u8 `1` at 40; u8 `1` at 41; f32 `1.0` at 42; paired header at 46; 12 zero bytes; the component aggregate at 69 |
-| 36 | `878C70A7-15B8-4B0B-B1B7-C2A7A23CC45C`, 3, 60 | header; 10 zero bytes; u8 `1` at 21; f32 `1.0` at 22; paired header at 26; 12 zero bytes; the component aggregate at 49 |
-| 38 | `3978701C-58EC-401A-8D24-A6FF4103DC24`, 0, 62 | header; 14 zero bytes; u8 `1` at 25; u8 `1` at 26; paired header at 27; 13 zero bytes; the component aggregate at 51 |
-| 39 | `91461D14-4F77-44B2-9E79-8B052566D9CE`, 0, 60 | header; 10 zero bytes; paired header at 21; 17 zero bytes; the component aggregate at 49 |
-| 40 | `1E650EA7-07C5-4111-B639-7DEE3A659799`, 0, 61 | header; 10 zero bytes; u8 `1` at 21; u8 `1` at 22; 4 zero bytes; paired header at 27; 12 zero bytes; the component aggregate at 50 |
-| 41 | `7E84430B-74C7-4B67-92D0-4131A0B79109`, 0, 72 | header; 10 zero bytes; u8 `1` at 21; 4 zero bytes; paired header at 26; 9 zero bytes; u32 `1` at 46; record 42 at 50; the component aggregate at 61 |
-| 42 | `074F9459-89C2-4B7D-8AB4-DCE67AE944FE`, 1, 67 | header; 10 zero bytes; the Protein asset manager at 21; 4 zero bytes; paired header at 36; 9 zero bytes; record 41 at 56 |
-| 44 | `D50DCC35-42CC-4E7D-9B81-4EB8252712D0`, 0, 85 | header; 4 zero bytes; LP-ASCII `ComponentInstancesRoot` at 15; 2 zero bytes; LP-ASCII `ComponentInstancesRoot` at 43; u32 `1` at 69; the root instance at 73; `00` |
-| 45 | `0FAF9824-8ECA-45ED-B199-589022ED5F6D`, 9, 114 | header; 4 zero bytes; LP-ASCII `VisualAnalyses` at 15; 2 zero bytes; a reference to record 0 at 35; 10 zero bytes; a reference to record 0 at 56; 9 zero bytes; paired header at 76; 4 zero bytes; LP-ASCII `VisualAnalyses` at 91; 5 zero bytes |
-| 46 | `A1675506-5D2D-47A5-8AD2-8FD5CE946DA0`, 0, 103 | header; 4 zero bytes; LP-ASCII `UnitSystems` at 15; 2 zero bytes; u32 `6` at 32; the six unit-system records at 36, in roster order; `00` |
-| 161 | `778FECF0-46E7-4EB8-A8D0-52C950CCEAAE`, 0, 48 | header; 4 zero bytes; LP-ASCII `NamedTrackedEntitySet` at 15; 8 zero bytes |
-| 162 | `B4CDE096-07DE-4272-BA4A-B257EFE0B470`, 0, 51 | header; 10 zero bytes; paired header at 21; 8 zero bytes; the component aggregate at 40 |
-| 173 to 176 | `830A2A2B-0AA9-4D6A-ACA1-F7A2B2A06573`, 0, 25 | header; 14 zero bytes |
-| 177 | `C170F594-38B1-4C2A-B649-7FE0164C44E3`, 0, 99 | header; 4 zero bytes; LP-ASCII `WorkingModelPlaceholderRoot` at 15; 2 zero bytes; paired header at 48; 4 zero bytes; LP-ASCII `WorkingModelPlaceholderRoot` at 63; 5 zero bytes |
-| 178 | `60F93DE2-6329-4598-A6AF-096AC63E627C`, 0, 57 | header; 10 zero bytes; u8 `1` at 21; paired header at 22; 13 zero bytes; the component aggregate at 46 |
-| 184 | `AE9F7FB5-2798-4BE4-8905-F8FB42A07193`, 0, 38 | header; 4 zero bytes; LP-ASCII `OGSSerializer` at 15; 6 zero bytes |
-| 191 | `A2EDAFD4-B122-49CC-AF09-96BE5C57A89D`, 0, `50 + 22N` | header; 4 zero bytes; LP-ASCII `BodiesRoot` at 15; 2 zero bytes; LP-ASCII `BodiesRoot` at 31; u32 `2N` at 45; the `N` design body-reference records and then the `N` parameter body-reference records at 49; `00` |
-| 194 | `FA21074E-32D2-4DC9-9E77-8F53D7E7D96B`, 0, 60 | header; 14 zero bytes; paired header at 25; 13 zero bytes; the component aggregate at 49 |
-| 196 | `E55D0457-898F-4A8E-B1A5-C85BDBA8794F`, 0, 39 | header; 28 zero bytes: the companion of the snapshot body map |
+| Index | Type, version, length | Content | Layout record |
+|---|---|---|---|
+| 2 | `3B9288E7-E1DE-414D-90BD-1C0CDAC77EB1`, 0, 22 | header and zero bytes | `base_feature_zero_record` |
+| 4 | `BC84911E-A581-4E51-ABE4-B0F681CFED06`, 1, 77 | components root: LP-ASCII `ComponentsRoot` twice, count `1`, the component aggregate | `base_feature_components_root` |
+| 5 | `F9CB8717-EB86-47F2-AAA7-39E142C57A09`, 1, 36 | the component aggregate | `base_feature_aggregate_link_25` |
+| 6 | `904F885E-D859-4755-A7EF-6EBED8732FAD`, 1, 52 | component naming space: a cross-segment reference to the ACT naming-space link, the component aggregate | `base_feature_component_naming_space` |
+| 10 | `5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF`, 4, 115 | sketch collection: one property `crv_tag_id_idx` of type `IntrinsicMetaTypeuint64` with value `100`, record 22, the component aggregate | `base_feature_sketch_collection` |
+| 11 | `A8635B5F-1E2C-45FD-8BA9-0173B0FEB75E`, 3, 70 | two flag bytes `1`, record 21, the component aggregate | `base_feature_record_11` |
+| 12, 37 | `FCB17D75-8538-4E8E-BDBE-CB4FE2120DB7`, 1, 42; `AD3F9695-7FDF-4708-AE05-B21309CDE969`, 1, 42 | a flag byte `1`, the component aggregate | `base_feature_flagged_aggregate_link_42` |
+| 13 | `596C8B98-D176-4E40-B294-6404BAD566BC`, 3, 46 | a flag byte `1`, the component aggregate | `base_feature_flagged_aggregate_link_46` |
+| 14, 16, 20, 21, 22 | `AC202226-A700-462A-BC41-13631C9E95D5`, `77EF6384-409E-498D-8167-BCA537533B35`, `30DCFC57-8E13-405B-9295-5CF74AC1FB39`, `47C245A2-2DBE-4B1F-9C56-762F373BB0C8`, `0C5DAB90-715E-49EA-A56E-E30F2328F43E`; each version 0, 41 | the component aggregate | `base_feature_aggregate_link_41` |
+| 15 | `0DBF95ED-82D2-4CC4-936D-642370679CBB`, 0, 45 | the component aggregate | `base_feature_aggregate_link_45` |
+| 19 | `372234A0-2A6C-4122-8047-E74DBA04F326`, 0, 42 | the alternate `Body` owner list, empty, and the component aggregate | `base_feature_alternate_owner_list_empty` |
+| 23 | `F670456D-872C-4818-95E9-DE115B264ACA`, 0, 59 | count `1`, paired header, the component aggregate | `base_feature_paired_record_23` |
+| 32, 33 | `64435F6E-077A-4F6B-A7B6-537BF84BA414`, `BF7A6B8B-6E56-4C84-8882-1E8A1C1FE487`; each version 0, 55 | paired header, the component aggregate | `base_feature_paired_aggregate_link_55` |
+| 34 | `8EF00D65-F18D-4179-A644-FE0CA39943D6`, 5, 80 | record 39, two flag bytes `1`, f32 `1.0`, paired header, the component aggregate | `base_feature_record_34` |
+| 36 | `878C70A7-15B8-4B0B-B1B7-C2A7A23CC45C`, 3, 60 | a flag byte `1`, f32 `1.0`, paired header, the component aggregate | `base_feature_record_36` |
+| 38 | `3978701C-58EC-401A-8D24-A6FF4103DC24`, 0, 62 | two flag bytes `1`, paired header, the component aggregate | `base_feature_record_38` |
+| 39 | `91461D14-4F77-44B2-9E79-8B052566D9CE`, 0, 60 | paired header, the component aggregate | `base_feature_record_39` |
+| 40 | `1E650EA7-07C5-4111-B639-7DEE3A659799`, 0, 61 | two flag bytes `1`, paired header, the component aggregate | `base_feature_record_40` |
+| 41 | `7E84430B-74C7-4B67-92D0-4131A0B79109`, 0, 72 | a flag byte `1`, paired header, count `1`, record 42, the component aggregate | `base_feature_record_41` |
+| 42 | `074F9459-89C2-4B7D-8AB4-DCE67AE944FE`, 1, 67 | the Protein asset manager, paired header, record 41 | `base_feature_record_42` |
+| 44 | `D50DCC35-42CC-4E7D-9B81-4EB8252712D0`, 0, 85 | component instances root: LP-ASCII `ComponentInstancesRoot` twice, count `1`, the root instance | `base_feature_component_instances_root` |
+| 45 | `0FAF9824-8ECA-45ED-B199-589022ED5F6D`, 9, 114 | LP-ASCII `VisualAnalyses`, two references to record 0, paired header, LP-ASCII `VisualAnalyses` | `base_feature_visual_analyses` |
+| 46 | `A1675506-5D2D-47A5-8AD2-8FD5CE946DA0`, 0, 103 | unit-system root: LP-ASCII `UnitSystems`, count `6`, the six unit-system records in roster order | `base_feature_unit_system_root` |
+| 161 | `778FECF0-46E7-4EB8-A8D0-52C950CCEAAE`, 0, 48 | LP-ASCII `NamedTrackedEntitySet` | `base_feature_named_tracked_entity_set` |
+| 162 | `B4CDE096-07DE-4272-BA4A-B257EFE0B470`, 0, 51 | paired header, the component aggregate | `base_feature_record_162` |
+| 163 | `88A5C187-5E68-4318-8A33-3AAA72F9DDB1`, 0, 70 | named-view list: count `4`, the four view-name records | `base_feature_named_view_list` |
+| 173 to 176 | `830A2A2B-0AA9-4D6A-ACA1-F7A2B2A06573`, 0, 25 | header and zero bytes | `base_feature_archive_entry_name` |
+| 177 | `C170F594-38B1-4C2A-B649-7FE0164C44E3`, 0, 99 | LP-ASCII `WorkingModelPlaceholderRoot`, paired header, LP-ASCII `WorkingModelPlaceholderRoot` | `base_feature_working_model_placeholder_root` |
+| 178 | `60F93DE2-6329-4598-A6AF-096AC63E627C`, 0, 57 | a flag byte `1`, paired header, the component aggregate | `base_feature_record_178` |
+| 184 | `AE9F7FB5-2798-4BE4-8905-F8FB42A07193`, 0, 38 | LP-ASCII `OGSSerializer` | `base_feature_ogs_serializer` |
+| 191 | `A2EDAFD4-B122-49CC-AF09-96BE5C57A89D`, 0, `50 + 22N` | bodies root: LP-ASCII `BodiesRoot` twice, count `2N`, the `N` design body-reference records and then the `N` parameter body-reference records | `base_feature_bodies_root` |
+| 194 | `FA21074E-32D2-4DC9-9E77-8F53D7E7D96B`, 0, 60 | paired header, the component aggregate | `base_feature_record_194` |
+| 196 | `E55D0457-898F-4A8E-B1A5-C85BDBA8794F`, 0, 39 | header and zero bytes: the companion of the snapshot body map | `base_feature_snapshot_map_companion` |
 
-The configuration-table and configuration-rule serializer triggers (records 185 and 186) store, after their indexed headers, 4 zero bytes, the LP-ASCII keys `DesignConfigurationTableSerializerTrigger` and `DesignConfigurationRuleSerializerTrigger`, 2 zero bytes, and the LP-UTF16 basenames `DesignConfigurationTable.<uuid>.dsgcfg` and `DesignConfigurationRule.<uuid>.dsgcfgrule` of members of `DesignConfigurationTable.BlobParts/`. Each `<uuid>` is a fresh lowercase GUID.
+The configuration-table and configuration-rule serializer triggers (records 185 and 186, layout records `base_feature_configuration_table_trigger` and `base_feature_configuration_rule_trigger`) store the LP-ASCII keys `DesignConfigurationTableSerializerTrigger` and `DesignConfigurationRuleSerializerTrigger` and the LP-UTF16 basenames `DesignConfigurationTable.<uuid>.dsgcfg` and `DesignConfigurationRule.<uuid>.dsgcfgrule` of members of `DesignConfigurationTable.BlobParts/`. Each `<uuid>` is a fresh lowercase GUID.
 
-**`Body` owners.** The design `Body` owner (record 7) and the parameter `Body` owner (record 193) are records of type `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA`, type version `4`. `N` is the number of result bodies.
+**`Body` owners.** The design `Body` owner (record 7) and the parameter `Body` owner (record 193) are records of type `CD57BC48-50EC-47DC-975A-FB6DEA72F4DA`, type version `4`. With `N` result bodies, each stores, after ten zero bytes and byte `0`, the count `N` twice; a run of `N` references to its body-reference records (design or parameter); byte `1`; its snapshot body-map companion (record 192 or 219); its body map (record 197 in the design owner, the snapshot body map record 195 in the parameter owner); byte `1`; a slot that names record 19 in the design owner and holds a null reference in the parameter owner; byte `0`; the count `N`; the same run of body-reference records; and the component aggregate. The design owner is `81 + 22N` bytes and the parameter owner `71 + 22N` bytes. Layout records `base_feature_design_body_owner` and `base_feature_parameter_body_owner` give the one-body forms. Other forms of the design owner are open item DR-899.
 
-| Offset | Type | Field |
-|---|---|---|
-| 0 | header | indexed header |
-| 11 | 10 × u8 | zero |
-| 21 | u8 | `0` |
-| 22 | u32 | `N` |
-| 26 | u32 | `N` |
-| 30 | `N` references | the design body-reference records in the design owner, the parameter body-reference records in the parameter owner |
-| 30 + 11N | u8 | `1` |
-| 31 + 11N | reference | the owner's snapshot body-map companion (type `E55D0457-898F-4A8E-B1A5-C85BDBA8794F`): record 192 or record 219 |
-| 42 + 11N | reference | the body map (type `74CA4562-59F8-4C97-8AD1-F8297C21F9AA`, record 197) in the design owner, the snapshot body map (type `40DCC3F41D-E94F-B3B1-3E95-9B6ABE572C`, record 195) in the parameter owner |
-| 53 + 11N | u8 | `1` |
-| 54 + 11N | reference slot | record 19 in the design owner; a null reference in the parameter owner |
-| — | u8 | `0` |
-| — | u32 | `N` |
-| — | `N` references | the body-reference records of offset 30 |
-| — | reference | the component aggregate |
+Record 19 lists the alternate `Body` owners: a slot, a set count, byte `0`, a run count, the run of alternate owners, and the component aggregate. With no sheet body, the slot is a null reference and both counts are `0` (layout record `base_feature_alternate_owner_list_empty`). With one sheet body, the slot and the one-element run name the alternate owner of type `3A8E00DC-E342-4C03-8521-846BD9F7513E`, type version `3`, which names the design body-reference record, the design `Body` owner, and record 19.
 
-The design owner is `81 + 22N` bytes and the parameter owner `71 + 22N` bytes. A design owner can store byte `1` at offset 20 followed by u32 `0` at offset 21; its later fields then start four bytes later. In a design with a sheet result body, the first reference run of that form names the alternate `Body` owner.
+**Snapshot body-map companions.** The companions of the two `Body` owners (records 192 and 219) are records of type `E55D0457-898F-4A8E-B1A5-C85BDBA8794F`, type version `0`, of `49 + 8n` bytes: a next value, the owning `Body` owner, and a count `n` followed by `n` u64 values (layout record `base_feature_body_map_companion_prefix`). `n` is `F + E`, the sum of the face and edge counts of the owner's result bodies. The parameter companion lists `0` to `n - 1`. The design companion lists `n` consecutive values, and its next value is its first value plus `n`. With solid result bodies, the design companion's first value is the parameter companion's next value. Each next value is greater than the last listed value; the value of the parameter companion's next value is open item DR-899.
 
-The record of type `372234A0-2A6C-4122-8047-E74DBA04F326` (record 19) lists the alternate `Body` owners. It stores the header, 10 zero bytes, a reference slot at 21, u32 `m`, u8 `0`, u32 `m`, `m` references to alternate owners, and the component aggregate. With no sheet body, the slot is a null reference and `m = 0` (42 bytes). With one sheet body, the slot and the run name the alternate owner (63 bytes). The alternate owner (type `3A8E00DC-E342-4C03-8521-846BD9F7513E`, type version `3`, 77 bytes) stores the header; 11 zero bytes; u8 `1` at 22; u8 `0` at 23; u32 `1` at 24; u32 `0` at 28; u32 `1` at 32; u32 `1` at 36; the design body-reference record at 40; the design `Body` owner at 51; u32 `0` at 62; and record 19 at 66.
+**Body maps of a Base Feature design.** The body map (record 197) stores one pair `(i, design body-reference record index)` for each result body, the design `Body` owner, and the basename `BREP.<uuid>.smbh` of the history stream. The snapshot body map (record 195, type version `1`) stores its companion (record 196), one pair `(i, parameter body-reference record index)` for each result body, the parameter `Body` owner, and the basename `BREP.<uuid>.smb` of the snapshot stream. Both basenames name members of `Breps.BlobParts/`, and their `<uuid>` values are fresh lowercase GUIDs.
 
-**Snapshot body-map companions.** The companions of the two `Body` owners (records 192 and 219) are records of type `E55D0457-898F-4A8E-B1A5-C85BDBA8794F`, type version `0`, of `49 + 8n` bytes: the header, 14 zero bytes, a u64 next value at 25, the owning `Body` owner at 33, u8 `0` at 44, u32 `n` at 45, and `n` u64 values at 49. `n` is `F + E`, the sum of the face and edge counts of the owner's result bodies. The parameter companion lists `0` to `n - 1`. In a design with one solid result body, the design companion lists the `n` consecutive values that start at the parameter companion's next value. Each next value is greater than the last listed value; it is `n + 1` in the parameter companion and `2n + 1` in the design companion when the parameter companion stores `n + 1`.
+**Scene records of a body-reference record.** Each body-reference record names a Scene node, and the Scene node names one record of type `A9DCF6C1-617C-4F65-8302-C6F3A9EBBC4C` and one Scene auxiliary record of type `2343B7AB-A2E0-4C66-8B74-99A05E4C670B`, which also names record 0. Each of the three records stores `u8 1`, the six f64 values `(xmax, ymax, zmax, xmin, ymin, zmin)` in centimetres, and `u8 1` (layout records `base_feature_scene_node`, `base_feature_scene_box`, and `base_feature_scene_auxiliary`). The three records of a design body-reference record store the axis-aligned bounding box of the body. The three records of a parameter body-reference record store the empty box: `-1.7976931348623157e308` in each maximum and `1.7976931348623157e308` in each minimum.
 
-**Body maps of a Base Feature design.** The body map (record 197, type `74CA4562-59F8-4C97-8AD1-F8297C21F9AA`, `41 + 16N + 2L` bytes for `N` pairs and a basename of `L` code units) stores the header, 10 zero bytes, u32 pair count `N` at 21, the pairs `(i, design body-reference record index)` as two u64 values each from offset 25, the design `Body` owner, `00`, and the LP-UTF16 basename `BREP.<uuid>.smbh` of the history stream. The snapshot body map (record 195, type `40DCC3F41D-E94F-B3B1-3E95-9B6ABE572C`, type version `1`) stores the header, 10 zero bytes, its companion (record 196) at 21, u32 pair count at 32, the pairs `(i, parameter body-reference record index)` from offset 36, the parameter `Body` owner, `00`, and the LP-UTF16 basename `BREP.<uuid>.smb` of the snapshot stream. Both basenames name members of `Breps.BlobParts/`, and their `<uuid>` values are fresh lowercase GUIDs.
+**Root instance.** The root instance (record 43, type `CE2913AA-CFE0-4F04-9102-24424ED3BCFA`, type version `2`, 252 bytes, layout record `base_feature_root_instance`) stores LP-ASCII `rootInstance`, two flag bytes `1`, the component aggregate, an empty property list (byte `1` and count `0`), two LP-UTF16 GUIDs of 36 lowercase code units, a cross-segment reference to the ACT instance root, the component aggregate again, and a reference to record 0. The two GUIDs occur in no other record or archive member. A root instance with a property list is open item DR-899.
 
-**Scene records of a body-reference record.** Each body-reference record names a Scene node, and the Scene node names one record of type `A9DCF6C1-617C-4F65-8302-C6F3A9EBBC4C` and one Scene auxiliary record. Each of the three records stores `u8 1`, the six f64 values `(xmax, ymax, zmax, xmin, ymin, zmin)` in centimetres, and `u8 1`. The three records of a design body-reference record store the axis-aligned bounding box of the body. The three records of a parameter body-reference record store the empty box: `-1.7976931348623157e308` in each maximum and `1.7976931348623157e308` in each minimum.
+**Protein asset manager.** The Protein asset manager (record 1, type `2C54F6D6-5C2B-4C4A-89A2-2AB486EF152D`, type version `0`) lists the asset instances of the Protein package and their reference counts: LP-ASCII `ProteinAssetManager`; the physical-material count `1`; the physical-material instance GUID; `1` and the reference count `2N + 1` of the physical material; the appearance count `a`; `a` appearance instance GUIDs; `a` again and `a` reference counts; and the LP-UTF16 basename `ProteinAsset.<uuid>.protein` of the Protein package. Each GUID is LP-UTF16 of 36 uppercase code units. The record is `254 + 80a` bytes for a basename of 57 code units, and layout record `base_feature_protein_asset_manager` gives the form with `a = 1`. The physical-material GUID is the physical-material instance GUID of the component aggregate and of each body-reference record. With `a = 1`, the appearance GUID is the appearance instance GUID of each body-reference record, and its reference count is `2N`. Both GUIDs are instance GUIDs of the package's `AssetData/AssetTableOfContents.bin` and `AssetData/InstanceProperties.bin`. The basename names the member of `ProteinAssets.BlobParts/`.
 
-| Record | Layout |
-|---|---|
-| Scene node, type `702B9CD2-537C-429E-8CC4-22BEEEB98C37`, version 1, 133 bytes | header; 14 zero bytes; u32 `2` at 25; u32 `2` at 29; its record of type `A9DCF6C1-617C-4F65-8302-C6F3A9EBBC4C` at 33; u32 `3` at 44; its Scene auxiliary record at 48; 24 zero bytes; u8 `1` at 83; the box at 84; u8 `1` at 132 |
-| `A9DCF6C1-617C-4F65-8302-C6F3A9EBBC4C`, version 0, 95 bytes | header; 34 zero bytes; u8 `1` at 45; the box at 46; u8 `1` at 94 |
-| Scene auxiliary record, type `2343B7AB-A2E0-4C66-8B74-99A05E4C670B`, version 1, 144 bytes | header; 58 zero bytes; a reference to record 0 at 69; 14 zero bytes; u8 `1` at 94; the box at 95; u8 `1` at 143 |
+**Named views.** The named-view list (record 163) names four view-name records. Records 164 to 171 alternate a camera and a view-name record, and each camera precedes its view-name record. A view-name record (type `1787C882-91E2-4363-9C18-80C98EBE4C77`, type version `0`, layout record `base_feature_view_name_prefix`) stores the LP-UTF16 view name, its camera, and the named-view list. The names are `TOP`, `FRONT`, `RIGHT`, and `HOME`.
 
-**Root instance.** The root instance (record 43, type `CE2913AA-CFE0-4F04-9102-24424ED3BCFA`, type version `2`) is 252 bytes:
-
-| Offset | Type | Field |
-|---|---|---|
-| 0 | header | indexed header |
-| 11 | 4 × u8 | zero |
-| 15 | LP-ASCII | `rootInstance` |
-| 31 | u8 | `1` |
-| 32 | u8 | `1` |
-| 33 | 3 × u8 | zero |
-| 36 | reference | the component aggregate |
-| 47 | 4 × u8 | zero |
-| 51 | u8 | `1` |
-| 52 | u32 | property count `0` |
-| 56 | 6 × u8 | zero |
-| 62 | LP-UTF16 | GUID of 36 lowercase code units |
-| 138 | LP-UTF16 | GUID of 36 lowercase code units |
-| 214 | cross-segment reference | the ACT instance root |
-| 229 | u8 | `0` |
-| 230 | reference | the component aggregate |
-| 241 | reference | record 0 |
-
-The two GUIDs occur in no other record or archive member. A root instance with properties stores at offset 52 the property count `3` and the properties `GatedByParent` (`IntrinsicMetaTypebool`), `ResolutionTime` (`IntrinsicMetaTypeHString`), and `SelfGated` (`IntrinsicMetaTypebool`), each an LP-ASCII name, an LP-ASCII value type, and the value; that form is 384 bytes.
-
-**Protein asset manager.** The Protein asset manager (record 1, type `2C54F6D6-5C2B-4C4A-89A2-2AB486EF152D`, type version `0`) lists the asset instances of the Protein package and their reference counts:
-
-| Offset | Type | Field |
-|---|---|---|
-| 0 | header | indexed header |
-| 11 | 4 × u8 | zero |
-| 15 | LP-ASCII | `ProteinAssetManager` |
-| 38 | 2 × u8 | zero |
-| 40 | u32 | physical-material count `1` |
-| 44 | LP-UTF16 | physical-material instance GUID, 36 code units |
-| 120 | u32 | `1` |
-| 124 | u32 | reference count of the physical material, `2N + 1` |
-| 128 | u32 | appearance count `a` |
-| 132 | `a` × LP-UTF16 | appearance instance GUIDs, 36 code units each |
-| — | u32 | `a` |
-| — | `a` × u32 | reference count of each appearance |
-| — | LP-UTF16 | basename `ProteinAsset.<uuid>.protein` of the Protein package |
-
-The record is `254 + 80a` bytes for a basename of 57 code units. The physical-material GUID is the GUID at offset 503 of the component aggregate and at offset 436 of each body-reference record. With `a = 1`, the appearance GUID is the GUID at offset 685 of each body-reference record, and its reference count is `2N`. Both GUIDs are uppercase and are the instance GUIDs of the package's `AssetData/AssetTableOfContents.bin` and `AssetData/InstanceProperties.bin`. The basename names the member of `ProteinAssets.BlobParts/`.
-
-**Named views.** The named-view list (record 163, type `88A5C187-5E68-4318-8A33-3AAA72F9DDB1`, type version `0`, 70 bytes) stores the header, 10 zero bytes, u32 `4` at 21, the four view-name records at 25, and `00`. Records 164 to 171 alternate a camera and a view-name record. A view-name record (type `1787C882-91E2-4363-9C18-80C98EBE4C77`, type version `0`) stores the header, 11 zero bytes, the LP-UTF16 view name at 22, its camera, and the named-view list. The names are `TOP`, `FRONT`, `RIGHT`, and `HOME`, and each camera precedes its view-name record.
-
-A camera (type `736DEAAF-2425-405E-B871-003AAB726295`, type version `5`) is 153 bytes. Coordinates are in centimetres.
-
-| Offset | Type | Field |
-|---|---|---|
-| 0 | header | indexed header |
-| 11 | 10 × u8 | zero |
-| 21 | u32 | `1` |
-| 25 | u32 | `0` |
-| 29 | u32 | `64` |
-| 33 | u32 | `0` |
-| 37 | 2 × u8 | zero |
-| 39 | f32 | `12.0` |
-| 43 | 2 × f64 | view extents `w0`, `w1` |
-| 59 | f32 | `1.0` |
-| 63 | u32 | `0` |
-| 67 | 2 × u8 | zero |
-| 69 | f64 | field of view `0.39479111969976155`, that is `2 atan(0.2)` |
-| 77 | 3 × f64 | eye point |
-| 101 | u32 | `1` |
-| 105 | 3 × f64 | target point |
-| 129 | 3 × f64 | up direction |
+A camera (type `736DEAAF-2425-405E-B871-003AAB726295`, type version `5`, 153 bytes, layout record `base_feature_camera`) stores two view extents `w0` and `w1`, the field of view `0.39479111969976155` (`2 atan(0.2)`), the eye point, the target point, and the up direction, in centimetres, among constant words.
 
 | View | Extents | Eye | Target | Up |
 |---|---|---|---|---|
@@ -3881,75 +3797,15 @@ A camera (type `736DEAAF-2425-405E-B871-003AAB726295`, type version `5`) is 153 
 | `RIGHT` | `0.4`, `0.4` | `(0, 0, 0)` | `(-1, 0, 0)` | `(0, 0, 1)` |
 | `HOME` | fitted | `c + d (1, -1, 1) / √3` | `c` | `(0, 0, 1)` |
 
-In the `HOME` camera of a design with one result body, `c` is the centre of the axis-aligned bounding box of the body, and the eye distance is `d = 2.5 max(w0, w1)`. With this distance, the larger extent fills the field of view.
+In the `HOME` camera, the eye distance is `d = 2.5 max(w0, w1)`, so the larger extent fills the field of view. In a design with one result body, `c` is the centre of the axis-aligned bounding box of the body. The extents are open item DR-896.
 
-**`AssetSettings`.** The `AssetSettings` record (record 0, type `23FD63FB-4EBE-4C85-A42B-5D9809AA3499`, type version `17`) is 494 bytes. Its view block repeats the `HOME` camera without the fields at offsets 59 to 76: the two extents, the eye point, u32 `1`, the target point, and the up direction, 92 bytes in total.
+**`AssetSettings`.** The `AssetSettings` record (record 0, type `23FD63FB-4EBE-4C85-A42B-5D9809AA3499`, type version `17`, 494 bytes, layout record `base_feature_asset_settings`) stores LP-ASCII `AssetSettings`; a reference to the document unit system, one of the records 47, 67, 87, 107, 124, and 141; two copies of the view block of the `HOME` camera; the directions `(0, 1, 0)` and `(0, 0, 1)`; the value `1.8`; the named-view list; the lighting environment; the scene centre `c`; the values `1.8`, `1.8`, `1.8`; a scene radius of at least half the diagonal of the bounding box; the directions `(0, 1, 0)` and `(0, 0, 1)` again; and record 2. A view block is the camera's two extents, eye point, u32 `1`, target point, and up direction.
 
-| Offset | Type | Field |
-|---|---|---|
-| 0 | header | indexed header |
-| 11 | 4 × u8 | zero |
-| 15 | LP-ASCII | `AssetSettings` |
-| 32 | 6 × u8 | zero |
-| 38 | reference | the document unit system: one of the six unit-system records |
-| 49 | u32 | `2` |
-| 53 | 5 × u8 | zero |
-| 58 | 92 bytes | view block of the `HOME` camera |
-| 150 | u32 | `1` |
-| 154 | 92 bytes | view block of the `HOME` camera |
-| 246 | 3 × f64 | `(0, 1, 0)` |
-| 270 | 3 × f64 | `(0, 0, 1)` |
-| 294 | u8 | `0` |
-| 295 | u8 | `1` |
-| 296 | f64 | `1.8` |
-| 304 | 37 × u8 | zero |
-| 341 | f64 | `1.0` |
-| 349 | u8 | `0`, a null reference |
-| 350 | reference | the named-view list |
-| 361 | 6 × u8 | zero |
-| 367 | reference | the lighting environment |
-| 378 | 3 × f64 | the centre `c` of the `HOME` camera |
-| 402 | 3 × f64 | `1.8`, `1.8`, `1.8` |
-| 426 | f64 | scene radius, at least half the diagonal of the bounding box |
-| 434 | 3 × f64 | `(0, 1, 0)` |
-| 458 | 3 × f64 | `(0, 0, 1)` |
-| 482 | u8 | `1` |
-| 483 | reference | record 2 |
+**Lighting environment.** The lighting environment (record 172, type `D9554B4F-2333-42C2-9495-2148D96F7437`, type version `11`, 261 bytes, layout record `base_feature_lighting_environment`) stores the LP-UTF16 name `Sharp Highlights`; the f32 colour `0.69803923` (`178 / 255`) three times and `1.0`; f32 `1000.0`; u32 `2`; the f32 values `-2.3561945` (`-3π/4`), `9.5`, and `1.0`; a reference to record 0; the LP-UTF16 environment `Studio1`; f32 `1.6973956`; the archive-entry name records 175, 176, 173, and 174; f64 `150.0`; and f32 `0.1`.
 
-The reference at offset 38 names the document unit system, one of the records 47, 67, 87, 107, 124, and 141.
+**Unit systems.** Records 46 to 160 have the same bytes in every `Base Feature` design. Each of the six groups is one unit-system record of type `21086CE0-C398-4B1B-9CD6-86F092429833`, type version `2`, followed by its members. The unit-system record stores, after ten zero bytes, the LP-ASCII name, the LP-ASCII description, u8 `1`, the LP-ASCII key `<name>UnitSystemName`, LP-ASCII `NaFusion`, u32 `0`, u32 member count `k`, the `k` member records, and the unit-system root (record 46).
 
-**Lighting environment.** The lighting environment (record 172, type `D9554B4F-2333-42C2-9495-2148D96F7437`, type version `11`) is 261 bytes:
-
-| Offset | Type | Field |
-|---|---|---|
-| 0 | header | indexed header |
-| 11 | 10 × u8 | zero |
-| 21 | LP-UTF16 | `Sharp Highlights` |
-| 57 | 12 × u8 | zero |
-| 69 | 3 × f32 | `0.69803923` (`178 / 255`) |
-| 81 | f32 | `1.0` |
-| 85 | u32 | `0` |
-| 89 | f32 | `1000.0` |
-| 93 | u32 | `2` |
-| 97 | 25 × u8 | zero |
-| 122 | f32 | `-2.3561945` (`-3π/4`) |
-| 126 | f32 | `9.5` |
-| 130 | f32 | `1.0` |
-| 134 | u8 | `0` |
-| 135 | reference | record 0 |
-| 146 | 2 × u8 | zero |
-| 148 | LP-UTF16 | `Studio1` |
-| 166 | 5 × u8 | zero |
-| 171 | f32 | `1.6973956` |
-| 175, 186, 197, 208 | reference | records 175, 176, 173, 174 |
-| 219 | 21 × u8 | zero |
-| 240 | f64 | `150.0` |
-| 248 | f32 | `0.1` |
-| 252 | 9 × u8 | zero |
-
-**Unit systems.** Records 46 to 160 have the same bytes in every `Base Feature` design. Each of the six groups is one unit-system record of type `21086CE0-C398-4B1B-9CD6-86F092429833`, type version `2`, followed by its members. The unit-system record stores the header, 10 zero bytes, LP-ASCII name, LP-ASCII description, u8 `1`, LP-ASCII key `<name>UnitSystemName`, LP-ASCII `NaFusion`, u32 `0`, u32 member count `k`, the `k` member records, and the unit-system root (record 46).
-
-The first two members are records of type `B61F1D39-4984-47B0-9248-3A1113E86FC1`, type version `0`: the header, 10 zero bytes, LP-ASCII `ModelingLength` or `ModelingMass`, LP-ASCII `Modeling Length` or `Modeling Mass`, u8 `1`, LP-ASCII `modelingLengthName` or `modelingMassName`, LP-ASCII `NsCommonData`, u32 `0`, the LP-UTF16 unit name, and the unit-system record. The other members are unit-type records of type `C6EE7300-667E-4EA5-9F61-71F98412DE8B`, type version `0`: the header, 10 zero bytes, u32 unit-type code at 21, LP-ASCII unit-type name `<T>`, u8 `1`, LP-ASCII `UnitType<T>`, LP-ASCII `NsCommonData`, u32 `0`, the LP-UTF16 unit name, and the unit-system record.
+The first two members are records of type `B61F1D39-4984-47B0-9248-3A1113E86FC1`, type version `0`: after ten zero bytes, LP-ASCII `ModelingLength` or `ModelingMass`, LP-ASCII `Modeling Length` or `Modeling Mass`, u8 `1`, LP-ASCII `modelingLengthName` or `modelingMassName`, LP-ASCII `NsCommonData`, u32 `0`, the LP-UTF16 unit name, and the unit-system record. The other members are unit-type records of type `C6EE7300-667E-4EA5-9F61-71F98412DE8B`, type version `0`: after ten zero bytes, the u32 unit-type code, LP-ASCII unit-type name `<T>`, u8 `1`, LP-ASCII `UnitType<T>`, LP-ASCII `NsCommonData`, u32 `0`, the LP-UTF16 unit name, and the unit-system record.
 
 | Records | Name | Description | Modelling length, mass |
 |---|---|---|---|
@@ -4010,33 +3866,7 @@ The metric groups (`CmMKS`, `MmMKS`, `MMKS`, `Custom`) list 17 unit types, in th
 
 Record 0 is the browser root, record 1 the component node, and record 2 the document-settings folder. Records 3 to 30 are browser entries. A cross-segment reference with segment ID `0` names a Design record. Every Browser record has the same bytes in every `Base Feature` design, except the order of the browser root's map entries.
 
-A browser entry with `c` children and a kind name of `K` bytes is `115 + 11c + K` bytes:
-
-| Offset | Type | Field |
-|---|---|---|
-| 0 | header | indexed header |
-| 11 | 8 × u8 | zero |
-| 19 | u8 | `1` |
-| 20 | u32 | `1` |
-| 24 | cross-segment reference | the Design record that the entry shows |
-| 39 | u32 | position among the entries of the same Design record, from `0` |
-| 43 | u8 | `0` |
-| 44 | u8 | `1` |
-| 45 | u32 | `0` |
-| 49 | u8 | `2` |
-| 50 | u32 | `0` |
-| 54 | u32 | child count `c` |
-| 58 | `c` references | the child entries |
-| 58 + 11c | cross-segment reference | the Design record of offset 24 |
-| 73 + 11c | u32 | `1` |
-| 77 + 11c | u32 | `0` |
-| 81 + 11c | u32 | `1` |
-| 85 + 11c | reference | the parent: the component node, the document-settings folder, or record 10 |
-| 96 + 11c | reference | the browser root |
-| 107 + 11c | LP-ASCII | kind name, empty for most entries |
-| — | u32 | `0` |
-
-Record 29 differs from this form: it stores u32 `2` at 39, u32 `1` at 45, a second cross-segment reference to its Design record at 49, the fields of offsets 49 to 57 at 64 with `c = 0`, and a null reference in place of the reference at `58 + 11c`; it is 153 bytes.
+A browser entry with `c` children and a kind name of `K` bytes is `115 + 11c + K` bytes (layout record `base_feature_browser_entry` for `c = 0` and `K = 0`). It stores a cross-segment reference to the Design record that the entry shows; its position among the entries of that Design record, from `0`; the child count `c` and the `c` child entries; the Design record again; its parent (the component node, the document-settings folder, or record 10); the browser root; the LP-ASCII kind name, empty for most entries; and u32 `0`, among constant words. Record 29 (layout record `base_feature_browser_document_structure_entry`, 153 bytes) also stores a second reference to its Design record, stores position `2`, and holds a null reference in place of the repeated Design record.
 
 | Records | Design record shown | Parent | Kind name |
 |---|---|---|---|
@@ -4056,14 +3886,14 @@ Record 29 differs from this form: it stores u32 `2` at 39, u32 `1` at 45, a seco
 | 29 | 6, component naming space | document-settings folder | `Na::DocumentStructureTypeBrowserEntry` |
 | 30 | 2 | document-settings folder | |
 
-Records 10 to 14 store positions 0 to 4 at offset 39; record 2 has the children 28, 29, 30 and record 10 the children 11 to 14. Records 15 and 16 have type `80DD69FA-8942-4D8B-9E6C-F7F9D730EA80`. Every other entry has its own type.
+Records 10 to 14 store positions 0 to 4; record 2 has the children 28, 29, 30 and record 10 the children 11 to 14. Records 15 and 16 have type `80DD69FA-8942-4D8B-9E6C-F7F9D730EA80`. Every other entry has its own type.
 
-The component node (record 1, 464 bytes) stores the header; 8 zero bytes; u8 `1` at 19; u32 `4` at 20; four pairs of a cross-segment reference to a Design record and a u32 at 24: (component aggregate, `1`), (component naming space, `0`), (record 23, `0`), (root instance, `0`); 2 zero bytes at 100; a cross-segment reference to the ACT instance root at 102; u8 `1` at 117; u32 `3` at 118; cross-segment references to the component aggregate, the component naming space, and record 23 at 122; u32 `2` at 167; u8 `0` at 171; u32 `22` at 172; the 22 entries 2 to 10 and 15 to 27 at 176; a cross-segment reference to the root instance at 418; the browser root at 433; u8 `0` at 444; the browser root at 445; and 8 zero bytes.
+The component node (record 1, 464 bytes, layout record `base_feature_browser_component_node`) stores four pairs of a cross-segment reference to a Design record and a u32: (component aggregate, `1`), (component naming space, `0`), (record 23, `0`), (root instance, `0`); a cross-segment reference to the ACT instance root; cross-segment references to the component aggregate, the component naming space, and record 23; the 22 entries 2 to 10 and 15 to 27; a cross-segment reference to the root instance; and the browser root twice.
 
-The browser root (record 0, type `33F72249-4935-47EB-8282-B2C3D93546CE`, 1042 bytes) stores the header; 4 zero bytes; LP-ASCII `PersistBrowserRootId` at 15; 2 zero bytes; a cross-segment reference to the root instance at 41; u8 `1` at 56; then two maps:
+The browser root (record 0, type `33F72249-4935-47EB-8282-B2C3D93546CE`, 1042 bytes) stores LP-ASCII `PersistBrowserRootId`, a cross-segment reference to the root instance, and two maps (layout record `base_feature_browser_root_prefix` gives the fixed part through the component-node reference):
 
-- the entry map: u32 `24` at 57 and 24 pairs of a cross-segment reference to a Design record and the Browser entry that shows it, one pair for each of the records 1 to 9, 15 to 28, and 30;
-- after the component node at 685, the named-entry map: u32 `2`, and two keys, each a key reference, u32 `m`, and `m` pairs of an LP-ASCII kind name and the entry with that kind name. The key Design record 13 has the five entries 10 to 14. A null reference keys the one entry 29.
+- the entry map: count `24` and 24 pairs of a cross-segment reference to a Design record and the Browser entry that shows it, one pair for each of the records 1 to 9, 15 to 28, and 30;
+- after a reference to the component node, the named-entry map: u32 `2`, and two keys, each a key reference, u32 `m`, and `m` pairs of an LP-ASCII kind name and the entry with that kind name. The key Design record 13 has the five entries 10 to 14. A null reference keys the one entry 29.
 
 The pairs of each map and the two keys are in any order. A paired header, 4 zero bytes, LP-ASCII `PersistBrowserRootId`, and `00` close the record.
 
