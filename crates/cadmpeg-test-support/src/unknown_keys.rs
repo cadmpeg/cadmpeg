@@ -79,7 +79,7 @@ pub struct SweptShapes {
 /// Returns the serde error when `ir` does not read back as a `CadIr`.
 pub fn accepting_shapes(ir: &Value) -> Result<SweptShapes, serde_json::Error> {
     CadIr::deserialize(ir)?;
-    let empty = serde_json::to_value(CadIr::empty())?;
+    let empty = cadmpeg_ir::hash::finite_json::to_json_value(&CadIr::empty())?;
     let mut probed = PROBED.lock().unwrap_or_else(PoisonError::into_inner);
     sweep(
         ir,
