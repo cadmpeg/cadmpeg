@@ -269,6 +269,15 @@ fn an_open_edge_off_its_curve_is_ranged_between_the_feet_with_a_loss() {
         "{:#?}",
         report.losses
     );
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code.to_string() == "export/record.invalid"
+                && loss.message.contains(&edge)),
+        "{:#?}",
+        report.losses
+    );
     let (_, decoded) = write(&ir);
     let [start, end] = decoded.geometry.edges[0]
         .param_range()

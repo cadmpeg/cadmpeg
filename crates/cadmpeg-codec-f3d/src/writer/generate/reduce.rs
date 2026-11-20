@@ -520,8 +520,10 @@ impl<'a> Reduction<'a> {
     /// tolerance and its own is marked tolerant to that distance. An edge
     /// that runs against its line is written with its ends exchanged. A line
     /// or conic carrier that a vertex lies beyond the allowance from is ranged
-    /// between the vertices' feet on it, with a loss naming the distance. Any
-    /// other edge keeps no range.
+    /// between the vertices' feet on it, with a loss naming the distance and,
+    /// because the output's validation still finds the vertex off its curve,
+    /// `export:record.invalid` naming the edge (cadir-v11.md §3.4). Any other
+    /// edge keeps no range.
     fn state_open_edge_ranges(&mut self) -> Result<(), CodecError> {
         let linear = self.ir.tolerances.linear.get();
         let geometry = &self.ir.geometry;
@@ -555,6 +557,7 @@ impl<'a> Reduction<'a> {
         let mut exchanged = HashSet::new();
         let mut tolerant = HashMap::<&VertexId, f64>::new();
         let mut feet = Vec::new();
+        let mut invalid = Vec::new();
         for edge_index in open {
             let edge = &geometry.edges[edge_index];
             let (Some(curve), Some(ends)) = (edge.curve(), edge.ends.as_ref()) else {
@@ -658,6 +661,7 @@ impl<'a> Reduction<'a> {
                     edge.id,
                     off.join(", ")
                 )));
+                invalid.push(edge.id.to_string());
             }
             if exchange {
                 exchanged.insert(edge.id.clone());
@@ -694,6 +698,16 @@ impl<'a> Reduction<'a> {
             }
         }
         self.losses.extend(feet);
+        if !invalid.is_empty() {
+            self.losses.push(record_invalid(
+                EntityKind::Edge,
+                format!(
+                    "{} open edge(s) are written with a vertex off their curve, ranged between the vertices' feet: {}",
+                    invalid.len(),
+                    invalid.join(", ")
+                ),
+            ));
+        }
         Ok(())
     }
 
