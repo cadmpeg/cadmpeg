@@ -19,6 +19,7 @@ mod fusion_copy_paste;
 mod fusion_mirror_remove;
 mod fusion_patterns;
 mod fusion_profile_regions;
+mod fusion_reverse_normal;
 mod fusion_surface_revolve;
 mod history_deltas;
 mod history_scale;
@@ -525,10 +526,10 @@ fn inherit_replays_an_off_catalog_dialect_and_names_it() {
     assert_eq!(written, source);
 }
 
-/// A dialect this codec reads but cannot generate refuses under `Inherit` once
-/// its retained image is gone. There is no fall-through to the catalog row: a
-/// same-format conversion never silently changes what the archive is, and the
-/// refusal names both the source's dialect and the escape.
+/// A dialect this codec reads but cannot generate is written as the catalog
+/// default under `Inherit` once its retained image is gone. The report names
+/// the default as the target and charges the displacement of the source's
+/// dialect.
 #[test]
 fn inherit_writes_an_off_catalog_source_dialect_with_no_retained_image_as_the_default() {
     let result = decode(f3d_with_smbh_and_manifest_version(
@@ -550,6 +551,16 @@ fn inherit_writes_an_off_catalog_source_dialect_with_no_retained_image_as_the_de
             .any(|loss| loss.message.contains("f3d:manifest-3-2-0-0")),
         "{:#?}",
         report.losses
+    );
+    assert_eq!(
+        wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
+            &report,
+            "identity/target"
+        )
+        .as_ref()
+        .map(cadmpeg_core::dialect::DialectId::as_str),
+        Some(crate::dialect::TARGETS[0].id.as_str()),
+        "the report names the row the bytes are written as"
     );
 }
 

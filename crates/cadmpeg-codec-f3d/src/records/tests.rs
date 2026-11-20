@@ -1668,7 +1668,7 @@ fn null_locus_arena_preserves_base_wire_fields_and_order() {
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native
         .store(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut namespace,
         )
         .unwrap();

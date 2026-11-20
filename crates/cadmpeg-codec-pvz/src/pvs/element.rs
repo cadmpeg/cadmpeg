@@ -139,7 +139,7 @@ mod tests {
     type Parts = (u8, u8, Option<u16>, Vec<u8>, usize);
 
     fn read(bytes: &[u8]) -> Result<Parts, CodecError> {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         Element::read_stream(&ctx, View::over_retained(bytes)).map(|element| {
             (
                 element.family,
@@ -194,7 +194,7 @@ mod tests {
             )],
         )
         .encode();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let root = Element::read_stream(&ctx, View::over_retained(&tree)).unwrap();
         let definition = &root.children()[0];
         assert_eq!(definition.family, 0x20);
@@ -217,7 +217,7 @@ mod tests {
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
                 && limit.operation == super::ADMIT_ELEMENT));
 
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         assert_eq!(
             Element::read_stream(&ctx, View::over_retained(&tree))
                 .unwrap()

@@ -76,7 +76,8 @@ fn directed_subd_sum_fixture_carries_the_literal_axes_and_frame() {
 #[cfg(feature = "schema")]
 #[test]
 fn directed_subd_sum_fixture_matches_schema_shape() {
-    let schema = serde_json::to_value(crate::cadir_json_schema()).expect("serialize schema");
+    let schema = serde_json::to_value(schemars::schema_for!(crate::document::Topology))
+        .expect("serialize schema");
     let schema_text = schema.to_string();
     assert!(schema_text.contains("procedural_surfaces"));
     assert!(schema_text.contains("sharpness"));

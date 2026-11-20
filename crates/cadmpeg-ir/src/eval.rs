@@ -4088,6 +4088,72 @@ fn model_curve_differential_by_id_inner(
     scratch.settle(result)
 }
 
+/// The point of [`model_curve_differential_by_id_inner`], evaluated without
+/// its derivatives.
+fn model_curve_differential_point_by_id_inner(
+    admission: admission::EvaluationAdmission<'_, '_>,
+    index: &crate::index::ModelIndex<'_>,
+    curve_id: &crate::ids::CurveId,
+    parameter: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    let scratch = decode::Scratch::new(admission);
+    let result = (|| {
+        let depth_guard = ModelEvaluationDepthGuard::enter(admission)
+            .map_err(EvaluationFailure::ResourceLimit)?;
+        if !parameter.is_finite() {
+            return Err(EvaluationFailure::NoValue);
+        }
+        let curve = index
+            .curves(curve_id.as_str(), admission)
+            .map_err(EvaluationFailure::from)?
+            .ok_or(EvaluationFailure::NoValue)?;
+        admission.model_step()?;
+        if !depth_guard.bind(
+            ModelEvaluationIdentity::Curve(std::ptr::from_ref(curve)),
+            admission,
+        ) {
+            return Err(EvaluationFailure::NoValue);
+        }
+        if let Some(procedural) = index
+            .procedural_curves_for_curve(curve_id.as_str(), admission)
+            .map_err(EvaluationFailure::from)?
+            .and_then(|procedurals| procedurals.first().copied())
+        {
+            match procedural.definition() {
+                ProceduralCurveDefinition::Replica { source, transform } => {
+                    return placed_point(
+                        *transform,
+                        model_curve_differential_point_by_id_inner(
+                            admission, index, source, parameter,
+                        ),
+                    );
+                }
+                ProceduralCurveDefinition::Subset(definition_payload) => {
+                    let source_parameter = subset_source_parameter(
+                        *definition_payload.parameter_range(),
+                        *definition_payload.sense(),
+                        parameter,
+                    )?;
+                    return model_curve_differential_point_by_id_inner(
+                        admission,
+                        index,
+                        definition_payload.source(),
+                        source_parameter,
+                    );
+                }
+                ProceduralCurveDefinition::Helix(helix) => {
+                    return helix_differential(helix, parameter)
+                        .map(|differential| differential.point);
+                }
+                _ => {}
+            }
+        }
+        let solved = curve.geometry.solved().ok_or(EvaluationFailure::NoValue)?;
+        crate::eval::decode::curve_point_solved(admission, solved, parameter)
+    })();
+    scratch.settle(result)
+}
+
 /// Map a nonnegative local subset parameter into its ordered source range.
 fn subset_source_parameter(
     interval: ParameterInterval,
@@ -4403,10 +4469,13 @@ fn model_native_extrusion_point(
         extrusion_directrix_reversed(construction.revision_form()),
     )
     .map_err(|failure| failure.map(|()| UNREACHED_POINT))?;
-    let point =
-        model_curve_differential_by_id_inner(admission, index, directrix, carrier.parameter.get())
-            .map_err(|failure| failure.map(|point| offset(point, &[(v, direction)])))?
-            .point;
+    let point = model_curve_differential_point_by_id_inner(
+        admission,
+        index,
+        directrix,
+        carrier.parameter.get(),
+    )
+    .map_err(|failure| failure.map(|point| offset(point, &[(v, direction)])))?;
     admit_point(offset(point.get(), &[(v, direction)]))
 }
 
@@ -4579,14 +4648,13 @@ fn model_native_revolution_point(
     let (angle, _) = native_revolution_angle(construction, angular_parameter)?;
     let axis_origin = construction.axis_origin().get();
     let axis = unit_length_axis(construction.axis_direction());
-    let point = model_curve_differential_by_id_inner(
+    let point = model_curve_differential_point_by_id_inner(
         admission,
         index,
         construction.directrix(),
         carrier.parameter.get(),
     )
-    .map_err(|failure| failure.map(|point| revolved_point(point, axis_origin, axis, angle)))?
-    .point;
+    .map_err(|failure| failure.map(|point| revolved_point(point, axis_origin, axis, angle)))?;
     admit_point(revolved_point(point.get(), axis_origin, axis, angle))
 }
 
@@ -5760,10 +5828,33 @@ pub fn rolling_ball_jet_point(
     t: f64,
     s: f64,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
-    if !(0.0..=1.0).contains(&s) {
+    rolling_ball_jet_point_on_span(definition, t, s, 1.0)
+}
+
+/// Evaluate a rolling-ball jet over a declared normalized transverse span.
+pub fn rolling_ball_jet_point_on_span(
+    definition: &ProceduralSurfaceDefinition,
+    t: f64,
+    s: f64,
+    end: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    if !end.is_finite() || end <= 0.0 || !(0.0..=end).contains(&s) {
         return Err(EvaluationFailure::NoValue);
     }
-    rolling_ball_jet_transverse_point(definition, t, s)
+    rolling_ball_jet_transverse_point(definition, t, s, false)
+}
+
+/// Evaluate a varying-radius jet with the local radius of its first rail.
+pub fn variable_rolling_ball_jet_point_on_span(
+    definition: &ProceduralSurfaceDefinition,
+    t: f64,
+    s: f64,
+    end: f64,
+) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
+    if !end.is_finite() || end <= 0.0 || !(0.0..=end).contains(&s) {
+        return Err(EvaluationFailure::NoValue);
+    }
+    rolling_ball_jet_transverse_point(definition, t, s, true)
 }
 
 /// Measure the gap from an out-of-range transverse station to its nearest
@@ -5773,7 +5864,7 @@ pub fn rolling_ball_jet_boundary_gap(
     t: f64,
     s: f64,
 ) -> Result<f64, EvaluationFailure<Point3>> {
-    let outside = rolling_ball_jet_transverse_point(definition, t, s)?;
+    let outside = rolling_ball_jet_transverse_point(definition, t, s, false)?;
     let boundary = rolling_ball_jet_point(definition, t, s.clamp(0.0, 1.0))?;
     Ok(outside.distance(boundary.get()))
 }
@@ -5796,7 +5887,7 @@ pub fn rolling_ball_jet_extended_point(
     if (0.0..=1.0).contains(&s) {
         return rolling_ball_jet_point(definition, t, s);
     }
-    let outside = rolling_ball_jet_transverse_point(definition, t, s)?;
+    let outside = rolling_ball_jet_transverse_point(definition, t, s, false)?;
     let boundary = rolling_ball_jet_point(definition, t, s.clamp(0.0, 1.0))?;
     if outside.distance(boundary.get()) <= max_gap_mm {
         Ok(outside)
@@ -5809,6 +5900,7 @@ fn rolling_ball_jet_transverse_point(
     definition: &ProceduralSurfaceDefinition,
     t: f64,
     s: f64,
+    variable_radius: bool,
 ) -> Result<FinitePoint3, EvaluationFailure<Point3>> {
     let no_value = EvaluationFailure::NoValue;
     let unreached = EvaluationFailure::NonFinite(UNREACHED_POINT);
@@ -5837,8 +5929,10 @@ fn rolling_ball_jet_transverse_point(
         let first_radius = site.first_limit.distance(site.center.get());
         let second_radius = site.second_limit.distance(site.center.get());
         second_radius <= 0.0
-            || (first_radius - radius).abs()
-                > ROLLING_BALL_JET_RADIUS_TOLERANCE * first_radius.abs().max(radius.abs()).max(1.0)
+            || (!variable_radius
+                && (first_radius - radius).abs()
+                    > ROLLING_BALL_JET_RADIUS_TOLERANCE
+                        * first_radius.abs().max(radius.abs()).max(1.0))
     }) {
         return Err(no_value);
     }
@@ -5917,6 +6011,14 @@ fn rolling_ball_jet_transverse_point(
         return Err(unreached);
     }
     let first_radius = first_limit.vector_from(center);
+    let radius = if variable_radius {
+        first_limit.distance(center)
+    } else {
+        radius
+    };
+    if radius <= 0.0 || !radius.is_finite() {
+        return Err(no_value);
+    }
     let first_direction = first_radius.scale(1.0 / radius);
     let first_direction_squared = first_direction.dot(first_direction);
     if !first_direction_squared.is_finite() {

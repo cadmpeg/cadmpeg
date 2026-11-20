@@ -32,8 +32,12 @@ fn document(revision: bool) -> CadIr {
         .unwrap();
     let (mut ir, _, _) = decoded.into_parts();
     ir.source = None;
-    ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
-        .unwrap();
+    ir.set_native_unknowns(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        "f3d",
+        &[],
+    )
+    .unwrap();
     ir
 }
 
@@ -104,6 +108,7 @@ fn assert_reduced(ir: &CadIr) {
 #[test]
 fn sweep_string_laws_preserve_reserved_operator_text() {
     for revision in [false, true] {
+        let source = document(revision);
         for value in [
             "null_law",
             "TRANS",
@@ -112,7 +117,7 @@ fn sweep_string_laws_preserve_reserved_operator_text() {
             "COS",
             "arbitrary text",
         ] {
-            let mut ir = document(revision);
+            let mut ir = source.clone();
             edit_layout(&mut ir, |layout| {
                 let SweepSurfaceLayout::LawDriven {
                     first_law,
@@ -133,9 +138,10 @@ fn sweep_string_laws_preserve_reserved_operator_text() {
 #[test]
 fn formula_variables_refuse_text_including_nested_text() {
     for revision in [false, true] {
+        let source = document(revision);
         for value in ["arbitrary text", "COS", "TRANS", "null_law"] {
             for nested in [false, true] {
-                let mut ir = document(revision);
+                let mut ir = source.clone();
                 let expression = if nested {
                     LawExpression::Algebraic {
                         operator: "COS".into(),
@@ -227,6 +233,7 @@ fn sweep_slots_refuse_recursive_string_operators() {
 #[test]
 fn sweep_primitive_laws_follow_layout_discriminators() {
     for revision in [false, true] {
+        let source = document(revision);
         for expression in [
             LawExpression::Integer { value: 2 },
             LawExpression::Double { value: 2.0 },
@@ -238,7 +245,7 @@ fn sweep_primitive_laws_follow_layout_discriminators() {
             },
         ] {
             for first in [false, true] {
-                let mut ir = document(revision);
+                let mut ir = source.clone();
                 edit_layout(&mut ir, |layout| {
                     let SweepSurfaceLayout::LawDriven {
                         first_law,

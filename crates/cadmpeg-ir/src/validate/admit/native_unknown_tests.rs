@@ -5,7 +5,7 @@ use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 
 #[test]
 fn native_unknown_admission_matches_product_projection_without_mutation() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = crate::examples::unit_cube().unwrap();
     let old_id = "test:source:unknown#old";
     let new_id = "test:source:unknown#new";
@@ -31,7 +31,7 @@ fn native_unknown_admission_matches_product_projection_without_mutation() {
     let raw = vec![UnknownRecord::retained(
         new_id.try_into().unwrap(),
         72,
-        vec![23; 65536],
+        vec![23; 16],
         vec![ir.geometry.points[0].id.as_str().to_owned()],
     )];
     let pointer = raw[0].data().unwrap().as_ptr();
@@ -92,7 +92,7 @@ fn native_unknown_admission_matches_product_projection_without_mutation() {
 
 #[test]
 fn native_unknown_admission_keeps_unresolved_outgoing_link_findings() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let ir = crate::CadIr::empty();
     let raw = [UnknownRecord::retained(
         "test:source:unknown#0".try_into().unwrap(),
@@ -131,7 +131,7 @@ fn native_unknown_admission_preserves_outer_depth_refusal() {
     let raw = [UnknownRecord::retained(
         "test:source:unknown#0".try_into().unwrap(),
         0,
-        vec![42; 8192],
+        vec![42; 16],
         Vec::new(),
     )];
     let arena = DecodeArena::new();
@@ -153,7 +153,7 @@ fn native_unknown_admission_preserves_outer_depth_refusal() {
         matches!(ctx.finish_session(), Err(CodecError::ResourceLimit(sticky)) if sticky == limit)
     );
     assert!(ir.native.0.is_empty());
-    assert_eq!(raw[0].data().unwrap(), &[42; 8192]);
+    assert_eq!(raw[0].data().unwrap(), &[42; 16]);
 }
 
 #[test]
@@ -165,7 +165,7 @@ fn native_unknown_admission_preserves_product_link_grammar_failures() {
         "test:model:body#",
         "test:model:body#with space",
     ] {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let raw = [UnknownRecord::retained(
             "test:source:unknown#0".try_into().unwrap(),
             0,
@@ -191,7 +191,7 @@ fn native_unknown_admission_preserves_product_link_grammar_failures() {
 
 #[test]
 fn native_unknown_annotation_collision_preserves_first_native_arena() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for native_format in ["alpha", "zeta"] {
         let mut ir = crate::CadIr::empty();
         let id = "test:source:unknown#collision";
@@ -249,7 +249,7 @@ fn native_unknown_annotation_collision_preserves_first_native_arena() {
 
 #[test]
 fn native_unknown_admission_preserves_sorted_source_finding_order() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let ir = crate::CadIr::empty();
     let raw = (0..12)
         .map(|position| {
@@ -309,7 +309,7 @@ fn native_unknown_admission_preserves_sorted_source_finding_order() {
 
 #[test]
 fn native_unknown_admission_preserves_duplicate_source_product_failure() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let ir = crate::CadIr::empty();
     let raw = [7_u8, 19].map(|offset| {
         UnknownRecord::retained(

@@ -33,6 +33,9 @@ pub(crate) enum ExportLossCode {
     RecordResidualUnavailable,
     /// A value is written without a binding the target cannot hold (§3.2).
     ValueUnwritable,
+    /// A record of this kind is written with an Error the output's own
+    /// validation finds (§3.4, Refusals).
+    RecordInvalid(EntityKind),
 }
 
 impl ExportLossCode {
@@ -47,6 +50,7 @@ impl ExportLossCode {
             Self::ParameterRenamed => "parameter.renamed",
             Self::RecordResidualUnavailable => "record.residual-unavailable",
             Self::ValueUnwritable => "value.unwritable",
+            Self::RecordInvalid(_) => "record.invalid",
         }
     }
 
@@ -60,13 +64,14 @@ impl ExportLossCode {
             | Self::RecordResidualUnavailable
             | Self::ValueUnwritable => Severity::Warning,
             Self::ParameterRenamed => Severity::Info,
+            Self::RecordInvalid(_) => Severity::Error,
         }
     }
 
     /// Shared category of the omitted arena's content.
     const fn shared_taxonomy(self) -> LossTaxonomy {
         let kind = match self {
-            Self::ArenaOmitted(kind) => kind,
+            Self::ArenaOmitted(kind) | Self::RecordInvalid(kind) => kind,
             Self::NativeRecordsOmitted => return LossTaxonomy::PassthroughRecordOmitted,
             Self::OutputEmpty => return LossTaxonomy::NoExportableSolids,
             Self::EvaluationMissing
@@ -278,4 +283,12 @@ where
 #[must_use]
 pub fn output_empty(message: impl Into<String>) -> LossNote {
     ExportLossCode::OutputEmpty.note(message)
+}
+
+/// `export:record.invalid`: the writer wrote these records of `kind` from the
+/// canonical side, and the output's own validation finds an Error in them
+/// (§3.4, Refusals). The message names each record.
+#[must_use]
+pub fn record_invalid(kind: EntityKind, message: impl Into<String>) -> LossNote {
+    ExportLossCode::RecordInvalid(kind).note(message)
 }

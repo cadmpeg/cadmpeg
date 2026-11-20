@@ -78,7 +78,8 @@
           "sketches": [],
           "source_name": "Part",
           "storage": {
-            "kind": "embedded"
+            "document": {},
+            "kind": "file"
           },
           "tessellations": []
         }
