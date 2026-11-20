@@ -28,7 +28,7 @@ fn invalid_single_pcurve_is_omitted_instead_of_invalidating_topology() {
         .expect("decode source with invalid pcurve");
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| coedge.pcurves.is_empty()));
@@ -49,10 +49,10 @@ fn pcurve_requires_one_two_dimensional_definition_and_rejects_replica_cycles() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode pcurve recursion witness");
 
-    assert_eq!(decoded.ir().model.pcurves.len(), 1);
+    assert_eq!(decoded.ir().geometry.pcurves.len(), 1);
     let pcurve = decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#31")
@@ -107,7 +107,7 @@ fn surface_curve_retains_direct_surface_support() {
 
     let support = decoded
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| surface.id.as_str() == "step:data:surface#70")
@@ -136,7 +136,7 @@ fn pcurve_trimmed_carrier_is_not_promoted_to_a_3d_curve() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode pcurve trimmed carrier");
 
-    assert!(decoded.ir().model.curves.iter().all(|curve| {
+    assert!(decoded.ir().geometry.curves.iter().all(|curve| {
         curve.id.as_str() != "step:data:curve#71" && curve.id.as_str() != "step:data:curve#72"
     }));
     assert!(decoded.report().losses.iter().all(|loss| {
@@ -158,14 +158,14 @@ fn trimmed_curve_resolves_a_surface_curve_basis_carrier() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode surface-curve trim");
 
-    assert!(decoded.ir().model.curves.iter().any(|curve| {
+    assert!(decoded.ir().geometry.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#70"
             && matches!(curve.geometry.solved(), Some(SolvedCurveGeometry::Line(_)))
     }));
-    assert!(decoded.ir().model.procedural_curves.iter().any(|curve| {
+    assert!(decoded.ir().geometry.procedural_curves.iter().any(|curve| {
         decoded
             .ir()
-            .model
+            .geometry
             .procedural_curve_owner(&curve.id)
             .map(CurveId::as_str)
             == Some("step:data:curve#70")
@@ -195,7 +195,7 @@ fn pcurve_trimmed_opposed_sense_has_an_ordered_parameter_range() {
         .expect("decode opposed-sense pcurve trim");
     let pcurve = decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
@@ -227,7 +227,7 @@ fn pcurve_trimmed_stale_range_recovers_the_edge_use_interval() {
     let pcurve = cadmpeg_ir::ids::PcurveId::mint("step:data:pcurve#56").expect("identity grammar");
     let use_ = decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .flat_map(|coedge| &coedge.pcurves)
@@ -265,7 +265,7 @@ fn cylindrical_pcurve_coordinates_follow_surface_parameter_units() {
 
     let pcurve = decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
@@ -301,7 +301,7 @@ fn periodic_surface_pcurve_selection_seeds_line_parameter_branches() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode periodic cylindrical pcurve");
 
-    assert!(decoded.ir().model.coedges.iter().any(|coedge| {
+    assert!(decoded.ir().geometry.coedges.iter().any(|coedge| {
         coedge
             .pcurves
             .iter()
@@ -324,12 +324,12 @@ fn unsupported_optional_pcurve_does_not_discard_valid_topology() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode sheet with unsupported optional pcurve");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.faces.len(), 1);
-    assert_eq!(decoded.ir().model.edges.len(), 3);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.faces.len(), 1);
+    assert_eq!(decoded.ir().geometry.edges.len(), 3);
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| coedge.pcurves.is_empty()));
@@ -381,7 +381,7 @@ fn linear_extrusion_pcurve_uses_directrix_and_dimensionless_sweep_parameters() {
         .expect("decode linear extrusion pcurve");
     let pcurve = decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
@@ -398,13 +398,13 @@ fn linear_extrusion_pcurve_uses_directrix_and_dimensionless_sweep_parameters() {
     );
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .any(|surface| {
             decoded
                 .ir()
-                .model
+                .geometry
                 .procedural_surface_owner(&surface.id)
                 .map(SurfaceId::as_str)
                 == Some("step:data:surface#28")
@@ -442,7 +442,7 @@ fn decode_maps_a_two_dimensional_polyline_to_a_pcurve_nurbs() {
         .expect("decode polyline pcurve");
 
     assert!(matches!(
-        &decoded.ir().model.pcurves[0].geometry,
+        &decoded.ir().geometry.pcurves[0].geometry,
         PcurveGeometry::Nurbs { nurbs }
             if nurbs.degree() == 1
                 && nurbs.weights().is_none()
@@ -453,7 +453,7 @@ fn decode_maps_a_two_dimensional_polyline_to_a_pcurve_nurbs() {
             Point2::new(3.0, 2.0),
         ]
     ));
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
 }
 
 #[test]
@@ -468,7 +468,7 @@ fn planar_pcurve_coordinates_follow_the_document_length_unit() {
 
     let pcurve = decoded
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
@@ -518,7 +518,7 @@ fn degree_valued_cylindrical_pcurve_is_not_reinterpreted() {
 
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| coedge.pcurves.is_empty()));
@@ -537,7 +537,7 @@ fn cylindrical_pcurve_uses_surface_parameter_without_degree_repair() {
         .expect("decode pi-valued cylindrical pcurve");
     let pcurve = valid
         .ir()
-        .model
+        .geometry
         .pcurves
         .iter()
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#34")
@@ -563,7 +563,7 @@ fn cylindrical_pcurve_uses_surface_parameter_without_degree_repair() {
             &DecodeOptions::default(),
         )
         .expect("decode degree-looking cylindrical pcurve");
-    assert!(invalid.ir().model.pcurves.is_empty());
+    assert!(invalid.ir().geometry.pcurves.is_empty());
     assert!(invalid.report().losses.iter().any(|loss| {
         loss.code == StepLossCode::PcurveEndpointsDiscontinuous.kind()
             && loss.message.contains("curve #33")
@@ -594,7 +594,7 @@ fn inconsistent_optional_pcurve_is_omitted_and_retained_as_source_data() {
 
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| coedge.pcurves.is_empty()));
@@ -644,7 +644,7 @@ fn equivalent_same_surface_pcurve_candidates_remain_detached() {
 
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| coedge.pcurves.is_empty()));
@@ -666,7 +666,7 @@ fn seam_edge_uses_its_explicit_pcurve_reference() {
         .expect("decode seam edge selection witness");
     let coedge = decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id.as_str().contains("#22"))
@@ -693,7 +693,7 @@ fn seam_edge_uses_its_explicit_pcurve_reference() {
         .expect("decode reordered seam edge selection witness");
     let reordered_coedge = reordered
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id.as_str().contains("#22"))
@@ -721,7 +721,7 @@ fn invalid_seam_edge_reference_does_not_fall_back_to_another_pcurve() {
         .expect("decode invalid seam edge reference witness");
     let coedge = decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .find(|coedge| coedge.id.as_str().contains("#22"))
@@ -746,7 +746,7 @@ fn reordered_same_surface_pcurve_candidates_remain_detached() {
 
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| coedge.pcurves.is_empty()));
@@ -767,7 +767,7 @@ fn distinct_tied_seam_pcurve_candidates_are_reported_not_guessed() {
 
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| coedge.pcurves.is_empty()));
@@ -801,7 +801,7 @@ fn endpoint_continuity_does_not_break_a_multiple_candidate_tie() {
 
     assert!(decoded
         .ir()
-        .model
+        .geometry
         .coedges
         .iter()
         .all(|coedge| coedge.pcurves.is_empty()));
@@ -824,7 +824,7 @@ fn an_unambiguous_pcurve_still_binds() {
         )
         .expect("decode unambiguous pcurve");
 
-    assert!(decoded.ir().model.coedges.iter().any(|coedge| {
+    assert!(decoded.ir().geometry.coedges.iter().any(|coedge| {
         coedge
             .pcurves
             .iter()
@@ -846,8 +846,8 @@ fn ambiguous_pcurves_do_not_reject_the_body() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode solid with ambiguous seam pcurves");
 
-    assert_eq!(decoded.ir().model.bodies.len(), 1);
-    assert_eq!(decoded.ir().model.bodies[0].kind, BodyKind::Solid);
+    assert_eq!(decoded.ir().geometry.bodies.len(), 1);
+    assert_eq!(decoded.ir().geometry.bodies[0].kind, BodyKind::Solid);
     assert!(decoded
         .report()
         .losses
@@ -873,7 +873,7 @@ fn intersection_curve_binds_its_basis_curve_and_pcurves() {
 
     let edge = decoded
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .find(|edge| edge.id.as_str() == "step:data:edge#19")
@@ -882,7 +882,7 @@ fn intersection_curve_binds_its_basis_curve_and_pcurves() {
         edge.curve().map(CurveId::as_str),
         Some("step:data:curve#16")
     );
-    assert!(decoded.ir().model.coedges.iter().any(|coedge| {
+    assert!(decoded.ir().geometry.coedges.iter().any(|coedge| {
         coedge
             .pcurves
             .iter()
@@ -913,7 +913,7 @@ fn quasi_uniform_pcurve_is_decoded_from_its_2d_representation() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode quasi-uniform pcurve");
 
-    assert!(result.ir().model.pcurves.iter().any(|pcurve| {
+    assert!(result.ir().geometry.pcurves.iter().any(|pcurve| {
         matches!(
             &pcurve.geometry,
             cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs }
@@ -951,7 +951,7 @@ fn direct_boundary_curve_builds_a_curve_bounded_surface() {
 
         let boundary = result
             .ir()
-            .model
+            .geometry
             .curves
             .iter()
             .find(|curve| curve.id.as_str() == "step:data:curve#9")
@@ -964,7 +964,7 @@ fn direct_boundary_curve_builds_a_curve_bounded_surface() {
 
         let bounded = result
             .ir()
-            .model
+            .geometry
             .procedural_surfaces
             .iter()
             .find(|surface| surface.id.as_str() == "step:construction:curve_bounded_surface#11")
@@ -1002,7 +1002,7 @@ fn complex_surface_curve_pcurve_is_retained_by_curve_bounded_surface() {
 
     let (boundaries, boundary_pcurves) = decoded
         .ir()
-        .model
+        .geometry
         .procedural_surfaces
         .iter()
         .find_map(|surface| match surface.definition() {
@@ -1021,12 +1021,12 @@ fn complex_surface_curve_pcurve_is_retained_by_curve_bounded_surface() {
     assert!(
         decoded
             .ir()
-            .model
+            .geometry
             .pcurves
             .iter()
             .any(|pcurve| pcurve.id.as_str() == "step:data:pcurve#44"),
         "pcurves={:#?}, losses={:#?}",
-        decoded.ir().model.pcurves,
+        decoded.ir().geometry.pcurves,
         decoded.report().losses
     );
     assert_eq!(
@@ -1055,7 +1055,7 @@ fn free_surface_curve_keeps_its_three_dimensional_basis_reachable() {
 
     let basis = result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .find(|curve| curve.id.as_str() == "step:data:curve#83")

@@ -4,23 +4,42 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::ids::OccurrenceId;
-use cadmpeg_ir::products::{Occurrence, OccurrenceParent};
+use cadmpeg_ir::products::{Occurrence, OperandContainer};
 
 use crate::records::feature::assembly_features::DesignComponentOccurrence;
+use crate::records::feature::scope::DesignParameterScope;
 
 #[derive(Default)]
 pub(crate) struct LocalOccurrencePaths {
     paths: BTreeMap<(String, Vec<String>), Option<OccurrenceId>>,
     unplaced_external: Vec<String>,
-    external_occurrences: BTreeSet<OccurrenceId>,
+    projected_occurrence_is_external: BTreeMap<OccurrenceId, bool>,
 }
 
 impl LocalOccurrencePaths {
+    /// Paths over local and external occurrences, with each `Component
+    /// Insert` occurrence keyed by the source occurrence key of its carrier.
     pub(crate) fn new(
         native: &[DesignComponentOccurrence],
         external: &[crate::records::xref::XrefReference],
+        definitions: &[cadmpeg_ir::products::ProductDefinition],
         occurrences: &[Occurrence],
+        scopes: &[DesignParameterScope],
     ) -> Self {
+        let parents = crate::tree::parent_ids(definitions, occurrences);
+        let inserts = scopes
+            .iter()
+            .filter_map(|scope| {
+                let key = scope
+                    .component_insert_construction()?
+                    .occurrence_key
+                    .as_ref()?;
+                Some((
+                    scope.id.as_str(),
+                    (crate::ids::native_stream(&scope.id)?, key.value.as_str()),
+                ))
+            })
+            .collect::<BTreeMap<_, _>>();
         let unplaced_external = external
             .iter()
             .filter(|reference| !crate::xref::has_projected_placement(reference, occurrences))
@@ -30,15 +49,15 @@ impl LocalOccurrencePaths {
             .iter()
             .map(|reference| reference.id.as_str())
             .collect::<BTreeSet<_>>();
-        let external_occurrences = occurrences
+        let projected_occurrence_is_external = occurrences
             .iter()
-            .filter(|occurrence| {
-                occurrence
+            .map(|occurrence| {
+                let external = occurrence
                     .native_ref
                     .as_deref()
-                    .is_some_and(|id| external_ids.contains(id))
+                    .is_some_and(|id| external_ids.contains(id));
+                (occurrence.id.clone(), external)
             })
-            .map(|occurrence| occurrence.id.clone())
             .collect();
         let carriers = native
             .iter()
@@ -58,7 +77,7 @@ impl LocalOccurrencePaths {
             .collect::<BTreeMap<_, _>>();
         let mut result = Self {
             unplaced_external,
-            external_occurrences,
+            projected_occurrence_is_external,
             ..Self::default()
         };
         for leaf in occurrences {
@@ -78,6 +97,7 @@ impl LocalOccurrencePaths {
                                 .get(id)
                                 .map(|(stream, guid)| (*stream, guid.as_str()))
                         })
+                        .or_else(|| inserts.get(id).copied())
                 });
                 if let Some((source_stream, key)) = identity {
                     if stream.is_some_and(|stream| stream != source_stream) {
@@ -86,7 +106,7 @@ impl LocalOccurrencePaths {
                     stream = Some(source_stream);
                     keys.push(key.to_ascii_lowercase());
                 }
-                let OccurrenceParent::Occurrence { occurrence: parent } = &current.parent else {
+                let Some(parent) = parents.get(&current.id) else {
                     break;
                 };
                 let Some(parent) = instances.get(parent) else {
@@ -131,8 +151,24 @@ impl LocalOccurrencePaths {
     /// Keys left after an external occurrence continue inside its member, which
     /// the archive merge binds. Keys left after a local occurrence can name a
     /// reference that this document omitted.
-    pub(crate) fn refuses_residual_keys(&self, stream: &str, occurrence: &OccurrenceId) -> bool {
-        self.requires_external_binding(stream) && !self.external_occurrences.contains(occurrence)
+    pub(crate) fn refuses_residual_keys(
+        &self,
+        stream: &str,
+        occurrence: &OccurrenceId,
+        require_complete_local_path: bool,
+    ) -> bool {
+        (require_complete_local_path || self.requires_external_binding(stream))
+            && self.projected_occurrence_is_external.get(occurrence) != Some(&true)
+    }
+
+    pub(crate) fn has_projected_joint_operand(&self, container: &OperandContainer) -> bool {
+        match container {
+            OperandContainer::Root {} => true,
+            OperandContainer::Occurrence { occurrence, .. } => self
+                .projected_occurrence_is_external
+                .contains_key(occurrence),
+            OperandContainer::External { .. } => false,
+        }
     }
 
     pub(crate) fn ambiguous(&self, stream: &str, keys: &[String]) -> bool {
@@ -195,6 +231,37 @@ pub(crate) fn bind_feature_paths(
                     })
                     .is_some()
             }
+            FeatureDefinition::Operation(FeatureOperation::InsertComponents { components }) => {
+                let mut seen = BTreeSet::new();
+                let mapped = components
+                    .occurrences()
+                    .iter()
+                    .filter_map(resolve)
+                    .filter(|id| seen.insert(id.clone()))
+                    .collect::<Vec<_>>();
+                let mapping_complete = mapped.len() == components.occurrences().len();
+                let complete = components.is_resolved() && mapping_complete;
+                let native = components.native_reference().clone();
+                *components = match cadmpeg_ir::features::SelectionMembers::try_from(mapped) {
+                    Ok(occurrences) if complete => {
+                        cadmpeg_ir::features::InsertedComponents::Resolved {
+                            occurrences,
+                            native,
+                        }
+                    }
+                    Ok(occurrences) => cadmpeg_ir::features::InsertedComponents::Partial {
+                        occurrences,
+                        native,
+                    },
+                    Err(_) => cadmpeg_ir::features::InsertedComponents::Native { native },
+                };
+                if !mapping_complete {
+                    losses.push(crate::loss::F3dLossCode::FeatureOccurrencePathUnresolved.note(
+                        "a component insertion retains native membership for occurrence paths without a unique expanded target",
+                    ));
+                }
+                true
+            }
             FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) => {
                 seeds.iter_mut().all(|seed| {
                     let PatternSeed::Occurrences(ids) = seed else {
@@ -237,18 +304,126 @@ mod tests {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 
     #[test]
+    fn a_component_insert_occurrence_resolves_by_its_carrier_occurrence_key() {
+        use crate::records::feature::assembly_features::DesignComponentInsertConstruction;
+        use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
+        let stream = "f3d:Design/BulkStream.dat";
+        let key = "bc7c305e-42cc-4c2d-a213-063506349b08";
+        let nested = "d7dd44c5-9574-4a6d-9dd2-dc82af142924";
+        let scope_id = format!("{stream}:design-parameter-scope#100");
+        let mut scope =
+            DesignParameterScope::empty(&scope_id, DesignFeatureKind::ComponentInsert, 9);
+        if let DesignScopePayloadMut::ComponentInsert(slot) = scope.payload_mut() {
+            slot.construction = Some(DesignComponentInsertConstruction {
+                relation_record_index: 8,
+                carrier_record_index: 7,
+                occurrence_identity: Some(17),
+                neutron_role: "cccccccc-dddd-eeee-ffff-000000000000".into(),
+                neutron_role_offset: 259,
+                occurrence_key: Some(crate::records::identity::Located {
+                    value: key.to_ascii_uppercase().try_into().unwrap(),
+                    offset: 40,
+                }),
+                placement: None,
+            });
+        }
+        let id = OccurrenceId::mint("f3d:model:occurrence#insert").unwrap();
+        let mut occurrence = Occurrence::new(
+            id.clone(),
+            cadmpeg_ir::ids::ProductDefinitionId::mint("f3d:model:occurrence#insert/unresolved")
+                .unwrap(),
+            Some(cadmpeg_ir::transform::Transform::identity()),
+        );
+        occurrence.native_ref = Some(scope_id);
+        let keys = [key.to_owned(), nested.to_owned()];
+        let paths = LocalOccurrencePaths::new(
+            &[],
+            &[],
+            &[],
+            std::slice::from_ref(&occurrence),
+            std::slice::from_ref(&scope),
+        );
+        assert_eq!(paths.resolve(stream, &keys), Some((id, 1)));
+        assert_eq!(
+            LocalOccurrencePaths::new(&[], &[], &[], std::slice::from_ref(&occurrence), &[])
+                .resolve(stream, &keys),
+            None
+        );
+    }
+
+    #[test]
     fn residual_keys_are_refused_after_a_local_occurrence_only() {
         let local = OccurrenceId::mint("f3d:model:occurrence#local").unwrap();
         let external = OccurrenceId::mint("f3d:model:occurrence#external").unwrap();
         let stream = "f3d:Design/BulkStream.dat";
         let paths = LocalOccurrencePaths {
             unplaced_external: vec!["f3d:xref:reference#1".to_owned()],
-            external_occurrences: BTreeSet::from([external.clone()]),
+            projected_occurrence_is_external: BTreeMap::from([(external.clone(), true)]),
             paths: BTreeMap::new(),
         };
-        assert!(paths.refuses_residual_keys(stream, &local));
-        assert!(!paths.refuses_residual_keys(stream, &external));
-        assert!(!LocalOccurrencePaths::default().refuses_residual_keys(stream, &local));
+        for require_complete_local_path in [false, true] {
+            assert!(paths.refuses_residual_keys(stream, &local, require_complete_local_path));
+            assert!(!paths.refuses_residual_keys(stream, &external, require_complete_local_path));
+        }
+        let without_unplaced = LocalOccurrencePaths {
+            unplaced_external: Vec::new(),
+            ..paths
+        };
+        assert!(!without_unplaced.refuses_residual_keys(stream, &local, false));
+        assert!(without_unplaced.refuses_residual_keys(stream, &local, true));
+        assert!(!without_unplaced.refuses_residual_keys(stream, &external, true));
+    }
+
+    #[test]
+    fn component_set_paths_keep_known_members_when_another_path_is_ambiguous() {
+        use cadmpeg_ir::features::InsertedComponents;
+        let stream = "f3d:Design/BulkStream.dat";
+        let first = OccurrenceId::mint("f3d:model:occurrence#34").unwrap();
+        let second = OccurrenceId::mint("f3d:model:occurrence#35").unwrap();
+        let mapped = OccurrenceId::mint("f3d:model:occurrence#nested").unwrap();
+        let paths = LocalOccurrencePaths {
+            paths: BTreeMap::from([
+                (
+                    (stream.to_owned(), vec!["34".to_owned()]),
+                    Some(mapped.clone()),
+                ),
+                ((stream.to_owned(), vec!["35".to_owned()]), None),
+            ]),
+            ..Default::default()
+        };
+        let mut feature = Feature {
+            product_definition: None,
+            id: cadmpeg_ir::features::FeatureId::mint("f3d:model:feature#derive").unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("DerivedInstance".into()),
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+                FeatureDefinition::Operation(FeatureOperation::InsertComponents {
+                    components: InsertedComponents::resolved(
+                        vec![first, second],
+                        "fixture:scope#10".into(),
+                    )
+                    .unwrap(),
+                }),
+            ),
+            native_ref: Some(format!("{stream}:design-parameter-scope#1")),
+        };
+        let losses = bind_feature_paths(std::slice::from_mut(&mut feature), &paths);
+        assert!(
+            matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::InsertComponents {
+            components: InsertedComponents::Partial { occurrences, native }
+        }) if occurrences.as_slice() == [mapped] && native.as_str() == "fixture:scope#10")
+        );
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::FeatureOccurrencePathUnresolved.kind()
+        );
     }
 
     #[test]
@@ -256,7 +431,7 @@ mod tests {
         let id = OccurrenceId::mint("f3d:model:occurrence#34").unwrap();
         let paths = LocalOccurrencePaths {
             unplaced_external: Vec::new(),
-            external_occurrences: BTreeSet::new(),
+            projected_occurrence_is_external: BTreeMap::new(),
             paths: BTreeMap::from([(
                 (
                     "f3d:Design/BulkStream.dat".to_owned(),
@@ -320,15 +495,20 @@ mod tests {
                 .collect(),
             ..Default::default()
         };
-        let occurrences = table.references.iter().map(|reference| {
-            serde_json::from_value::<Occurrence>(serde_json::json!({
-                "id": crate::ids::neutral_xref_occurrence_id(reference.ordinal, 0),
-                "prototype": {"scope":"unresolved"}, "parent": {"kind":"root"},
-                "ordinal": reference.ordinal, "transform": cadmpeg_ir::transform::Transform::identity(),
-                "scale": [1.0, 1.0, 1.0], "native_ref": reference.id
-            })).unwrap()
-        }).collect::<Vec<_>>();
-        let paths = LocalOccurrencePaths::new(&[], &table.references, &occurrences);
+        let occurrences = table
+            .references
+            .iter()
+            .map(|reference| {
+                let mut occurrence = Occurrence::new(
+                    crate::ids::neutral_xref_occurrence_id(reference.ordinal, 0),
+                    crate::xref::document_definition_id("part.f3d"),
+                    Some(cadmpeg_ir::transform::Transform::identity()),
+                );
+                occurrence.native_ref = Some(reference.id.clone());
+                occurrence
+            })
+            .collect::<Vec<_>>();
+        let paths = LocalOccurrencePaths::new(&[], &table.references, &[], &occurrences, &[]);
         for ((stream, key), occurrence) in sources.iter().zip(&occurrences) {
             assert_eq!(
                 paths.resolve(stream, &[(*key).to_owned()]),
@@ -342,10 +522,9 @@ mod tests {
             .resolve("f3d:Design/BulkStream.dat", &["same-role".to_owned()])
             .is_none());
         let mut nested = occurrences.clone();
-        nested[1].parent = OccurrenceParent::Occurrence {
-            occurrence: nested[2].id.clone(),
-        };
-        let nested_paths = LocalOccurrencePaths::new(&[], &table.references, &nested);
+        let definitions = crate::tree::owned_by(&mut nested, &[None, Some(2), None]);
+        let nested_paths =
+            LocalOccurrencePaths::new(&[], &table.references, &definitions, &nested, &[]);
         assert_eq!(
             nested_paths.resolve(sources[1].0, &[key_b.to_owned()]),
             Some((nested[1].id.clone(), 1))
@@ -366,13 +545,9 @@ mod tests {
         }))
         .unwrap();
         let mut chain = occurrences.clone();
-        chain[1].parent = OccurrenceParent::Occurrence {
-            occurrence: chain[0].id.clone(),
-        };
-        chain[2].parent = OccurrenceParent::Occurrence {
-            occurrence: chain[1].id.clone(),
-        };
-        let chain_paths = LocalOccurrencePaths::new(&[], &table.references, &chain);
+        let definitions = crate::tree::owned_by(&mut chain, &[None, Some(0), Some(1)]);
+        let chain_paths =
+            LocalOccurrencePaths::new(&[], &table.references, &definitions, &chain, &[]);
         let stream = sources[0].0;
         let keys = |keys: &[&str]| keys.iter().map(|key| (*key).to_owned()).collect::<Vec<_>>();
         assert_eq!(
@@ -390,9 +565,10 @@ mod tests {
         let mut repeated = chain.clone();
         let mut second = chain[2].clone();
         second.id = OccurrenceId::mint("f3d:model:occurrence#second-c").unwrap();
-        second.parent = OccurrenceParent::Root {};
         repeated.push(second);
-        let repeated_paths = LocalOccurrencePaths::new(&[], &table.references, &repeated);
+        let definitions = crate::tree::owned_by(&mut repeated, &[None, Some(0), Some(1), None]);
+        let repeated_paths =
+            LocalOccurrencePaths::new(&[], &table.references, &definitions, &repeated, &[]);
         assert!(repeated_paths.ambiguous(stream, &keys(&[key_c])));
         assert_eq!(
             repeated_paths.resolve(stream, &keys(&[key_b, key_c])),

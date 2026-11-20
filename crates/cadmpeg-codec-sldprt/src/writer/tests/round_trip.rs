@@ -22,9 +22,12 @@ use crate::SldprtCodec;
 
 fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    ir.model.bodies[0].name = None;
-    ir.model.faces.iter_mut().for_each(|face| face.name = None);
-    ir.model
+    ir.geometry.bodies[0].name = None;
+    ir.geometry
+        .faces
+        .iter_mut()
+        .for_each(|face| face.name = None);
+    ir.geometry
         .edges
         .iter_mut()
         .for_each(|edge| edge.set_param_range(None));
@@ -123,8 +126,8 @@ fn mutated_semantic_write_round_trips() {
         )
         .expect("triangle fixture should decode");
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0].set_position(
+    let moved = decoded.ir_mut().geometry.points[0].position().get();
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
@@ -132,9 +135,9 @@ fn mutated_semantic_write_round_trips() {
         ))
         .expect("a finite position is a point"),
     );
-    let expected_z = decoded.ir().model.points[0].position().get().z;
-    let expected_bodies = decoded.ir().model.bodies.len();
-    let expected_faces = decoded.ir().model.faces.len();
+    let expected_z = decoded.ir().geometry.points[0].position().get().z;
+    let expected_bodies = decoded.ir().geometry.bodies.len();
+    let expected_faces = decoded.ir().geometry.faces.len();
 
     let mut encoded = Vec::new();
     crate::test_support::plan_fixture_write_with_native_envelope(
@@ -149,15 +152,15 @@ fn mutated_semantic_write_round_trips() {
     let validation = cadmpeg_ir::validate_neutral(round_trip.ir(), Vec::new())
         .expect("validate the neutral model");
     assert!(validation.is_ok(), "{:#?}", validation.findings);
-    assert_eq!(round_trip.ir().model.bodies.len(), expected_bodies);
-    assert_eq!(round_trip.ir().model.faces.len(), expected_faces);
+    assert_eq!(round_trip.ir().geometry.bodies.len(), expected_bodies);
+    assert_eq!(round_trip.ir().geometry.faces.len(), expected_faces);
     assert!(
         floats_agree(
-            round_trip.ir().model.points[0].position().get().z,
+            round_trip.ir().geometry.points[0].position().get().z,
             expected_z
         ),
         "mutated z drifted: got {} expected {}",
-        round_trip.ir().model.points[0].position().get().z,
+        round_trip.ir().geometry.points[0].position().get().z,
         expected_z
     );
 }
@@ -171,8 +174,8 @@ fn bake_transform_is_applied_and_output_stays_valid() {
         )
         .expect("triangle fixture should decode");
     let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(decoded);
-    let original_x = decoded.ir().model.points[0].position().get().x;
-    decoded.ir_mut().model.bodies[0].transform = Some(
+    let original_x = decoded.ir().geometry.points[0].position().get().x;
+    decoded.ir_mut().geometry.bodies[0].transform = Some(
         Transform::affine([
             [1.0, 0.0, 0.0, 10.0],
             [0.0, 1.0, 0.0, 0.0],
@@ -196,11 +199,11 @@ fn bake_transform_is_applied_and_output_stays_valid() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
     assert!(
         floats_agree(
-            round_trip.ir().model.points[0].position().get().x,
+            round_trip.ir().geometry.points[0].position().get().x,
             original_x + 10.0
         ),
         "baked translation drifted: got {} expected {}",
-        round_trip.ir().model.points[0].position().get().x,
+        round_trip.ir().geometry.points[0].position().get().x,
         original_x + 10.0
     );
 }

@@ -67,6 +67,7 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
                 .expect("valid PlaneSurface fixture"),
             )),
             source_object: None,
+            native_ref: None,
         };
         let local_plane =
             |surface_id, origin: [f64; 3], normal: [f64; 3]| crate::surface::PlaneLocalSystem {
@@ -97,7 +98,7 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
             row(35, crate::surface::SurfaceKind::Plane),
         ]);
         let mut ir = CadIr::empty();
-        ir.model.surfaces.extend([
+        ir.geometry.surfaces.extend([
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#31".to_string())
                     .expect("identity grammar"),
@@ -105,6 +106,7 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
                     translated_surface(),
                 )),
                 source_object: None,
+                native_ref: None,
             },
             plane(32, Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
             plane(33, Point3::new(0.0, 0.0, 2.0), Vector3::new(0.0, 0.0, -1.0)),
@@ -113,12 +115,14 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
+                native_ref: None,
             },
             Surface {
                 id: SurfaceId::mint("creo:visibgeom:surface#35".to_string())
                     .expect("identity grammar"),
                 geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
                 source_object: None,
+                native_ref: None,
             },
         ]);
         assert_eq!(
@@ -152,7 +156,7 @@ fn generated_nurbs_extent_reconciles_native_and_transferred_planes() {
         let mut local_only = ir.clone();
         for surface_id in [32, 33] {
             local_only
-                .model
+                .geometry
                 .surfaces
                 .iter_mut()
                 .find(|surface| {

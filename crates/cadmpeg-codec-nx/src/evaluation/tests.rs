@@ -22,18 +22,18 @@ fn model_body(id: &str) -> Body {
     Body {
         id: BodyId::mint(id.to_string()).expect("identity grammar"),
         kind: BodyKind::Solid,
-        regions: Vec::new(),
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     }
 }
 
 fn complete_block_ir() -> CadIr {
     let mut ir = CadIr::empty();
     let body = BodyId::mint("test:model:entity#body".to_string()).expect("identity grammar");
-    ir.model.bodies.push(model_body(body.as_str()));
+    ir.geometry.bodies.push(model_body(body.as_str()));
     ir.model.features.push(Feature {
         product_definition: None,
         id: FeatureId::mint("synthetic:test:id#block".to_string()).expect("identity grammar"),
@@ -96,7 +96,7 @@ fn attach_complete_active_configuration(ir: &mut CadIr) {
         parameter_overrides: BTreeMap::new(),
         bodies: Some(
             cadmpeg_ir::features::DistinctMembers::try_from(
-                ir.model
+                ir.geometry
                     .bodies
                     .iter()
                     .map(|body| body.id.clone())

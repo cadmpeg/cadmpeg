@@ -49,6 +49,7 @@ const EPS_TOPOLOGY_READ_DEGENERATE: f64 = 1.0e-10;
 const EPS_TOPOLOGY_READ_EXACT_GEOMETRY: f64 = 1.0e-12;
 
 mod admissions;
+pub(super) mod tolerances;
 
 pub(super) struct TopologyData {
     pub(super) body_by_root: BTreeMap<u64, Vec<BodyId>>,
@@ -557,7 +558,7 @@ pub(super) fn decode(
         }
     }
     let mut decoded_pcurves = BTreeSet::new();
-    for pcurve in &commit_session.document().model.pcurves {
+    for pcurve in &commit_session.document().geometry.pcurves {
         if let Some(id) = source_numeric_id(pcurve.id.as_str(), "pcurve") {
             decoded_pcurves.insert(id);
         }
@@ -720,9 +721,23 @@ pub(super) fn decode(
             );
             losses.push(StepLossCode::DecodeWarning.note(note));
         }
-        let Some(mut built) =
-            build_geometric_set(id, record, exchange, carrier_index, &mut losses)?
-        else {
+        let built = {
+            let document = commit_session.document();
+            let index = ModelIndex::new_model_only(document);
+            build_geometric_set(
+                id,
+                record,
+                GeometricSetSources {
+                    exchange,
+                    carrier_index,
+                    index: &index,
+                    tolerance: document.tolerances.linear.get(),
+                    ctx,
+                },
+                &mut losses,
+            )?
+        };
+        let Some(mut built) = built else {
             if mark_standalone_geometric_set(
                 id,
                 record,
@@ -805,17 +820,17 @@ pub(super) fn decode(
             result.claims.insert(id);
         }
     }
-    for face in &commit_session.document().model.faces {
+    for face in &commit_session.document().geometry.faces {
         if let Some(source) = source_numeric_id(face.id.as_str(), "face") {
             push_source_identity(&mut result.faces_by_source, source, face.id.clone());
         }
     }
-    for edge in &commit_session.document().model.edges {
+    for edge in &commit_session.document().geometry.edges {
         if let Some(source) = source_numeric_id(edge.id.as_str(), "edge") {
             push_source_identity(&mut result.edges_by_source, source, edge.id.clone());
         }
     }
-    for vertex in &commit_session.document().model.vertices {
+    for vertex in &commit_session.document().geometry.vertices {
         if let Some(source) = source_numeric_id(vertex.id.as_str(), "vertex") {
             push_source_identity(&mut result.vertices_by_source, source, vertex.id.clone());
         }
@@ -1171,15 +1186,18 @@ fn build_wire_set(
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
                 edge_id, edge, exchange, losses,
             )),
-            start: VertexId::from(ids::data(
-                kind!("vertex"),
-                IdentityKey::from(start).with_tail(&vertex_suffix),
-            )),
-            end: VertexId::from(ids::data(
-                kind!("vertex"),
-                IdentityKey::from(end).with_tail(&vertex_suffix),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::from(ids::data(
+                    kind!("vertex"),
+                    IdentityKey::from(start).with_tail(&vertex_suffix),
+                )),
+                VertexId::from(ids::data(
+                    kind!("vertex"),
+                    IdentityKey::from(end).with_tail(&vertex_suffix),
+                )),
             )),
             tolerance: None,
+            native_ref: None,
         });
         used_vertices.insert(start);
         used_vertices.insert(end);
@@ -1208,6 +1226,7 @@ fn build_wire_set(
             )),
             point: PointId::from(ids::data(kind!("point"), vertex.point)),
             tolerance: None,
+            native_ref: None,
         });
         typed.insert(vertex_id);
     }
@@ -1223,43 +1242,39 @@ fn build_wire_set(
         kind!("shell"),
         IdentityKey::from(id).with_tail(&suffix),
     ));
-    let shell_value = match Shell::new(
-        shell.clone(),
-        region.clone(),
-        Vec::new(),
-        wire_edges,
-        Vec::new(),
-    ) {
-        Ok(shell) => shell,
-        Err(error) => {
-            losses.push(
-                StepLossCode::DecodeWarning.note(format!("CONNECTED_EDGE_SET #{set_id}: {error}")),
-            );
-            return Ok(None);
-        }
-    };
+    if wire_edges.is_empty() {
+        losses.push(StepLossCode::DecodeWarning.note(format!(
+            "CONNECTED_EDGE_SET #{set_id}: {}",
+            cadmpeg_ir::features::BodySelectionError::Empty
+        )));
+        return Ok(None);
+    }
+    let shell_value = Shell::with_members(shell.clone(), region.clone(), wire_edges, Vec::new());
     let staged = staged_topology(StagedTopologyParts {
         typed,
+        points: Vec::new(),
         vertices: built_vertices,
         edges: built_edges,
         coedges: Vec::new(),
         loops: Vec::new(),
         faces: Vec::new(),
+        curves: Vec::new(),
         surfaces: Vec::new(),
         shells: vec![shell_value],
         region: Region {
             id: region.clone(),
             body: body.clone(),
             shells: vec![shell],
+            native_ref: None,
         },
         body: Body {
             id: body.clone(),
             kind: BodyKind::Wire,
-            regions: vec![region],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         },
     });
     let mut built = match staged {
@@ -1462,15 +1477,18 @@ fn build_shell_wire_set(
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
                 edge_id, edge, exchange, losses,
             )),
-            start: VertexId::from(ids::data(
-                kind!("vertex"),
-                IdentityKey::from(start).with_tail(&vertex_suffix),
-            )),
-            end: VertexId::from(ids::data(
-                kind!("vertex"),
-                IdentityKey::from(end).with_tail(&vertex_suffix),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                VertexId::from(ids::data(
+                    kind!("vertex"),
+                    IdentityKey::from(start).with_tail(&vertex_suffix),
+                )),
+                VertexId::from(ids::data(
+                    kind!("vertex"),
+                    IdentityKey::from(end).with_tail(&vertex_suffix),
+                )),
             )),
             tolerance: None,
+            native_ref: None,
         });
     }
     let mut vertices = Vec::new();
@@ -1488,6 +1506,7 @@ fn build_shell_wire_set(
             )),
             point: PointId::from(ids::data(kind!("point"), vertex.point)),
             tolerance: None,
+            native_ref: None,
         });
     }
     let body = BodyId::from(ids::data(
@@ -1506,42 +1525,40 @@ fn build_shell_wire_set(
             IdentityKey::from(vertex).with_tail(&vertex_suffix),
         )));
     }
-    let shell_value = match Shell::new(
-        shell.clone(),
-        region.clone(),
-        Vec::new(),
-        wire_edges,
-        free_vertex_ids,
-    ) {
-        Ok(shell) => shell,
-        Err(error) => {
-            losses
-                .push(StepLossCode::DecodeWarning.note(format!("wire shell #{shell_id}: {error}")));
-            return Ok(None);
-        }
-    };
+    if wire_edges.is_empty() && free_vertex_ids.is_empty() {
+        losses.push(StepLossCode::DecodeWarning.note(format!(
+            "wire shell #{shell_id}: {}",
+            cadmpeg_ir::features::BodySelectionError::Empty
+        )));
+        return Ok(None);
+    }
+    let shell_value =
+        Shell::with_members(shell.clone(), region.clone(), wire_edges, free_vertex_ids);
     let staged = staged_topology(StagedTopologyParts {
         typed,
+        points: Vec::new(),
         vertices,
         edges,
         coedges: Vec::new(),
         loops: Vec::new(),
         faces: Vec::new(),
+        curves: Vec::new(),
         surfaces: Vec::new(),
         shells: vec![shell_value],
         region: Region {
             id: region.clone(),
             body: body.clone(),
             shells: vec![shell],
+            native_ref: None,
         },
         body: Body {
             id: body.clone(),
             kind: BodyKind::Wire,
-            regions: vec![region],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         },
     });
     let mut built = match staged {
@@ -1597,10 +1614,16 @@ fn mark_standalone_geometric_set(
 fn build_geometric_set(
     id: u64,
     representation: &RawRecord,
-    exchange: &Exchange,
-    carrier_index: &CarrierIndex,
+    sources: GeometricSetSources<'_, '_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<Built>, CodecError> {
+    let GeometricSetSources {
+        exchange,
+        carrier_index,
+        index,
+        tolerance,
+        ctx,
+    } = sources;
     let Some(set_ids) = representation_item_values(representation) else {
         losses.push(StepLossCode::DecodeWarning.note(format!(
             "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no item list"
@@ -1615,8 +1638,8 @@ fn build_geometric_set(
         kind!("shell"),
         key_word!("geometric").dash(key_word!("set")).dash(id),
     ));
-    let mut shell_faces = Vec::new();
     let mut faces = Vec::new();
+    let mut bounded = BoundedFaceParts::default();
     for set_id in set_ids.iter().filter_map(ValueExt::reference) {
         let Some(set) = exchange.records().get(&set_id) else {
             losses.push(StepLossCode::DecodeWarning.note(format!(
@@ -1640,63 +1663,109 @@ fn build_geometric_set(
         for surface_step in items.iter().filter_map(ValueExt::reference) {
             let surface = SurfaceId::from(ids::data(kind!("surface"), surface_step));
             if carrier_index.surfaces.contains_key(&surface_step) {
-                let face = Face {
-                    id: FaceId::from(ids::data(
-                        kind!("face"),
-                        IdentityKey::from(surface_step)
-                            .dash(key_word!("geometric"))
+                let face_id = FaceId::from(ids::data(
+                    kind!("face"),
+                    IdentityKey::from(surface_step)
+                        .dash(key_word!("geometric"))
+                        .dash(key_word!("set"))
+                        .dash(id),
+                ));
+                let face_loops = match exchange.records().get(&surface_step) {
+                    Some(record) if record.partial("CURVE_BOUNDED_SURFACE").is_some() => {
+                        curve_bounded_face_loops(
+                            &face_id,
+                            &IdentityKeyTail::empty()
+                                .dash(key_word!("face"))
+                                .dash(surface_step)
+                                .dash(key_word!("geometric"))
+                                .dash(key_word!("set"))
+                                .dash(id),
+                            record,
+                            CurveBoundedSources {
+                                exchange,
+                                index,
+                                tolerance,
+                                ctx,
+                            },
+                            &mut bounded,
+                            losses,
+                        )?
+                    }
+                    _ => None,
+                };
+                let face_shell = if faces.is_empty() {
+                    shell_id.clone()
+                } else {
+                    ShellId::from(ids::data(
+                        kind!("shell"),
+                        key_word!("geometric")
                             .dash(key_word!("set"))
-                            .dash(id),
-                    )),
-                    shell: shell_id.clone(),
+                            .dash(id)
+                            .dash(key_word!("component"))
+                            .dash(faces.len()),
+                    ))
+                };
+                let face = Face {
+                    id: face_id,
+                    shell: face_shell,
                     surface,
                     sense: Sense::Forward,
-                    loops: cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new()),
+                    loops: face_loops.unwrap_or_else(|| {
+                        cadmpeg_ir::topology::FaceLoops::unspecified(Vec::new())
+                    }),
                     name: None,
                     color: None,
                     tolerance: None,
+                    native_ref: None,
                 };
-                shell_faces.push(face.id.clone());
                 faces.push(face);
             }
         }
     }
-    if shell_faces.is_empty() {
+    if faces.is_empty() {
         losses.push(StepLossCode::DecodeWarning.note(format!(
             "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no indexed surface member; set dropped"
         )));
         return Ok(None);
     }
-    let shell = Shell::new(
-        shell_id.clone(),
-        region.clone(),
-        shell_faces,
-        Vec::new(),
-        Vec::new(),
-    )
-    .map_err(CodecError::malformed)?;
+    // The members of a geometric set share no topology, so each face is
+    // its own shell of the one region.
+    let mut shells = Vec::new();
+    for face in &faces {
+        shells.push(Shell::new(face.shell.clone(), region.clone()));
+    }
+    let BoundedFaceParts {
+        points,
+        vertices,
+        edges,
+        coedges,
+        loops,
+    } = bounded;
     let staged = staged_topology(StagedTopologyParts {
         typed,
-        vertices: Vec::new(),
-        edges: Vec::new(),
-        coedges: Vec::new(),
-        loops: Vec::new(),
+        points,
+        vertices,
+        edges,
+        coedges,
+        loops,
         faces,
+        curves: Vec::new(),
         surfaces: Vec::new(),
-        shells: vec![shell],
         region: Region {
             id: region.clone(),
             body: body.clone(),
-            shells: vec![shell_id],
+            shells: shells.iter().map(|shell| shell.id.clone()).collect(),
+            native_ref: None,
         },
+        shells,
         body: Body {
             id: body,
             kind: BodyKind::Sheet,
-            regions: vec![region],
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         },
     });
     match staged {
@@ -1709,6 +1778,386 @@ fn build_geometric_set(
         }
         Err(StageError::Resource(error)) => Err(error),
     }
+}
+
+/// Samples per segment of a boundary whose winding is measured.
+const BOUNDARY_WINDING_SAMPLES: usize = 8;
+
+#[derive(Clone, Copy)]
+struct GeometricSetSources<'a, 'b> {
+    exchange: &'a Exchange,
+    carrier_index: &'a CarrierIndex,
+    index: &'a ModelIndex<'b>,
+    tolerance: f64,
+    ctx: &'a DecodeContext<'a>,
+}
+
+#[derive(Clone, Copy)]
+struct CurveBoundedSources<'a, 'b> {
+    exchange: &'a Exchange,
+    index: &'a ModelIndex<'b>,
+    tolerance: f64,
+    ctx: &'a DecodeContext<'a>,
+}
+
+/// Topology staged for the curve-bounded faces of one geometric set.
+#[derive(Default)]
+struct BoundedFaceParts {
+    points: Vec<cadmpeg_ir::topology::Point>,
+    vertices: Vec<Vertex>,
+    edges: Vec<Edge>,
+    coedges: Vec<Coedge>,
+    loops: Vec<Loop>,
+}
+
+/// One composite-curve segment as a bounded edge carrier, with the model
+/// points at its parameter ends.
+struct BoundarySegment {
+    curve: CurveId,
+    same_sense: bool,
+    range: [f64; 2],
+    ends: [Point3; 2],
+}
+
+/// The loops of a `CURVE_BOUNDED_SURFACE` face: one ring per boundary
+/// composite curve, one edge per segment. `None` when a boundary is not a
+/// closed chain of bounded segments.
+fn curve_bounded_face_loops(
+    face: &FaceId,
+    face_tail: &IdentityKeyTail,
+    record: &RawRecord,
+    sources: CurveBoundedSources<'_, '_>,
+    parts: &mut BoundedFaceParts,
+    losses: &mut Vec<LossNote>,
+) -> Result<Option<cadmpeg_ir::topology::FaceLoops>, CodecError> {
+    let Some(boundaries) = named_reference_values(record, "CURVE_BOUNDED_SURFACE", 2) else {
+        return Ok(None);
+    };
+    let support = entity_parameter(record, "CURVE_BOUNDED_SURFACE", 1)
+        .and_then(Value::reference)
+        .and_then(|support| {
+            sources
+                .index
+                .surfaces(
+                    SurfaceId::from(ids::data(kind!("surface"), support)).as_str(),
+                    cadmpeg_ir::index::StandardIndex,
+                )
+                .and_then(|surface| surface.geometry.solved())
+        });
+    let implicit_outer = entity_parameter(record, "CURVE_BOUNDED_SURFACE", 3)
+        .and_then(Value::logical)
+        .unwrap_or(false);
+    let mut measured = Vec::new();
+    for boundary_step in boundaries.iter().filter_map(ValueExt::reference) {
+        let Some(segments) = boundary_segments(boundary_step, sources)? else {
+            return Ok(None);
+        };
+        let flagged = sources
+            .exchange
+            .records()
+            .get(&boundary_step)
+            .is_some_and(|boundary| boundary.partial("OUTER_BOUNDARY_CURVE").is_some());
+        let area = match support {
+            Some(support) => boundary_parameter_area(support, &segments, sources)?,
+            None => None,
+        };
+        measured.push((boundary_step, segments, flagged, area));
+    }
+    let outer_index = measured
+        .iter()
+        .position(|(_, _, flagged, _)| *flagged)
+        .or_else(|| {
+            if implicit_outer {
+                None
+            } else {
+                largest_boundary(measured.iter().map(|(_, _, _, area)| *area))
+            }
+        });
+    if outer_index.is_none() && !implicit_outer {
+        losses.push(StepLossCode::DecodeWarning.note(format!(
+            "CURVE_BOUNDED_SURFACE face {face} left its {} boundaries unclassified: their parameter areas do not resolve the outer boundary",
+            measured.len()
+        )));
+    }
+    let mut staged = BoundedFaceParts::default();
+    let mut outer = None;
+    let mut inner = Vec::new();
+    for (position, (boundary_step, mut segments, _, area)) in measured.into_iter().enumerate() {
+        let is_outer = outer_index == Some(position);
+        if area.is_some_and(|area| (area > 0.0) != is_outer) {
+            segments.reverse();
+            for segment in &mut segments {
+                segment.same_sense = !segment.same_sense;
+            }
+        }
+        let key = IdentityKey::from(boundary_step).with_tail(face_tail);
+        let Some(loop_id) =
+            stage_boundary_loop(face, &key, &segments, sources.tolerance, &mut staged)
+        else {
+            return Ok(None);
+        };
+        if is_outer {
+            outer = Some(loop_id);
+        } else {
+            inner.push(loop_id);
+        }
+    }
+    if outer.is_none() && inner.is_empty() {
+        return Ok(None);
+    }
+    parts.points.append(&mut staged.points);
+    parts.vertices.append(&mut staged.vertices);
+    parts.edges.append(&mut staged.edges);
+    parts.coedges.append(&mut staged.coedges);
+    parts.loops.append(&mut staged.loops);
+    Ok(Some(match outer {
+        Some(outer) => cadmpeg_ir::topology::FaceLoops::classified(outer, inner),
+        None => cadmpeg_ir::topology::FaceLoops::unspecified(inner),
+    }))
+}
+
+/// The index of the outer boundary of a curve-bounded surface with no
+/// outer boundary curve and no implicit outer boundary: the sole boundary,
+/// or the boundary that encloses the largest parameter area when every
+/// boundary has a measured area.
+fn largest_boundary(areas: impl ExactSizeIterator<Item = Option<f64>>) -> Option<usize> {
+    if areas.len() == 1 {
+        return Some(0);
+    }
+    let areas = areas.collect::<Option<Vec<f64>>>()?;
+    areas
+        .iter()
+        .enumerate()
+        .max_by(|(_, left), (_, right)| left.abs().total_cmp(&right.abs()))
+        .map(|(index, _)| index)
+}
+
+/// The bounded segments of a composite boundary curve, in order.
+fn boundary_segments(
+    boundary_step: u64,
+    sources: CurveBoundedSources<'_, '_>,
+) -> Result<Option<Vec<BoundarySegment>>, CodecError> {
+    let CurveBoundedSources { index, ctx, .. } = sources;
+    let boundary = CurveId::from(ids::data(kind!("curve"), boundary_step));
+    let Some(SolvedCurveGeometry::Composite { segments, .. }) = index
+        .curves(boundary.as_str(), cadmpeg_ir::index::StandardIndex)
+        .and_then(|curve| curve.geometry.solved())
+    else {
+        return Ok(None);
+    };
+    let mut bounded = Vec::new();
+    for segment in segments {
+        let Some(range) = segment_parameter_range(index, &segment.curve) else {
+            return Ok(None);
+        };
+        let mut ends = [Point3::new(0.0, 0.0, 0.0); 2];
+        for (end, parameter) in ends.iter_mut().zip(range) {
+            match model_curve_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(ctx),
+                index,
+                &segment.curve,
+                parameter,
+            ) {
+                Ok(point) => *end = point.get(),
+                Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
+                    return Err(CodecError::ResourceLimit(limit));
+                }
+                Err(_) => return Ok(None),
+            }
+        }
+        bounded.push(BoundarySegment {
+            curve: segment.curve.clone(),
+            same_sense: segment.same_sense,
+            range,
+            ends,
+        });
+    }
+    Ok(Some(bounded))
+}
+
+/// The parameter interval of a bounded segment curve: a trimmed curve runs
+/// over `[0, span]`, a NURBS curve over its knot domain, and a circle or
+/// ellipse over one turn.
+fn segment_parameter_range(index: &ModelIndex<'_>, curve: &CurveId) -> Option<[f64; 2]> {
+    if let Some(procedural) = index
+        .procedural_curves_for_curve(curve.as_str(), cadmpeg_ir::index::StandardIndex)
+        .and_then(|procedurals| procedurals.first().copied())
+    {
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(subset) =
+            procedural.definition()
+        else {
+            return None;
+        };
+        let [start, end] = subset.parameter_range().endpoints();
+        let span = (end - start).abs();
+        return (span.is_finite() && span > 0.0).then_some([0.0, span]);
+    }
+    match index
+        .curves(curve.as_str(), cadmpeg_ir::index::StandardIndex)
+        .and_then(|curve| curve.geometry.solved())?
+    {
+        SolvedCurveGeometry::Nurbs(nurbs) => {
+            Some(cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)?.endpoints())
+        }
+        SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_) => {
+            Some([0.0, std::f64::consts::TAU])
+        }
+        _ => None,
+    }
+}
+
+/// Twice the signed area of a boundary in the parameter plane of the
+/// analytic surface `support`, from samples of its segments in traversal
+/// order. `None` when a sample has no parameters or the boundary wraps
+/// around a periodic parameter.
+fn boundary_parameter_area(
+    support: &SolvedSurfaceGeometry,
+    segments: &[BoundarySegment],
+    sources: CurveBoundedSources<'_, '_>,
+) -> Result<Option<f64>, CodecError> {
+    let periods =
+        surface_periodic_domains(support).map(|domain| domain.map(|[low, high]| high - low));
+    let mut uvs: Vec<[f64; 2]> = Vec::new();
+    for segment in segments {
+        for step in 0..BOUNDARY_WINDING_SAMPLES {
+            let fraction = index_fraction(step, BOUNDARY_WINDING_SAMPLES);
+            let fraction = if segment.same_sense {
+                fraction
+            } else {
+                1.0 - fraction
+            };
+            let [low, high] = segment.range;
+            let point = match model_curve_point_by_id(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Decode(sources.ctx),
+                sources.index,
+                &segment.curve,
+                low + (high - low) * fraction,
+            ) {
+                Ok(point) => point.get(),
+                Err(cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit)) => {
+                    return Err(CodecError::ResourceLimit(limit));
+                }
+                Err(_) => return Ok(None),
+            };
+            let Some(uv) = cadmpeg_ir::eval::analytic_surface_parameters_solved(support, point)
+            else {
+                return Ok(None);
+            };
+            let mut uv = [uv.get().u, uv.get().v];
+            if let Some(previous) = uvs.last() {
+                for axis in 0..2 {
+                    if let Some(period) = periods[axis] {
+                        uv[axis] += ((previous[axis] - uv[axis]) / period).round() * period;
+                    }
+                }
+            }
+            uvs.push(uv);
+        }
+    }
+    let (Some(first), Some(last)) = (uvs.first(), uvs.last()) else {
+        return Ok(None);
+    };
+    for axis in 0..2 {
+        if let Some(period) = periods[axis] {
+            if (last[axis] - first[axis]).abs() > period / 2.0 {
+                return Ok(None);
+            }
+        }
+    }
+    let mut area = 0.0;
+    for (current, next) in uvs.iter().zip(uvs.iter().cycle().skip(1)) {
+        area += current[0] * next[1] - next[0] * current[1];
+    }
+    Ok(Some(area))
+}
+
+/// Stages one ring loop over `segments`. Consecutive segments share the
+/// vertex where one ends and the next starts; `None` when they do not meet.
+fn stage_boundary_loop(
+    face: &FaceId,
+    key: &IdentityKey,
+    segments: &[BoundarySegment],
+    tolerance: f64,
+    parts: &mut BoundedFaceParts,
+) -> Option<LoopId> {
+    let traversal = |segment: &BoundarySegment| {
+        if segment.same_sense {
+            segment.ends
+        } else {
+            [segment.ends[1], segment.ends[0]]
+        }
+    };
+    let mut vertex_ids = Vec::new();
+    for (index, segment) in segments.iter().enumerate() {
+        let previous = &segments[(index + segments.len() - 1) % segments.len()];
+        let start = traversal(segment)[0];
+        if start.distance(traversal(previous)[1]) > tolerance {
+            return None;
+        }
+        let vertex_key = key.clone().with_tail(&IdentityKeyTail::empty().dash(index));
+        let point_id = PointId::from(ids::data(kind!("point"), vertex_key.clone()));
+        let vertex_id = VertexId::from(ids::data(kind!("vertex"), vertex_key));
+        parts.points.push(cadmpeg_ir::topology::Point::new(
+            point_id.clone(),
+            cadmpeg_ir::features::FinitePoint3::new(start)?,
+            None,
+        ));
+        parts.vertices.push(Vertex {
+            id: vertex_id.clone(),
+            point: point_id,
+            tolerance: None,
+            native_ref: None,
+        });
+        vertex_ids.push(vertex_id);
+    }
+    let loop_id = LoopId::from(ids::data(kind!("loop"), key.clone()));
+    let mut coedge_ids = Vec::new();
+    for (index, segment) in segments.iter().enumerate() {
+        let segment_key = key.clone().with_tail(&IdentityKeyTail::empty().dash(index));
+        let edge_id = EdgeId::from(ids::data(kind!("edge"), segment_key.clone()));
+        let coedge_id = CoedgeId::from(ids::data(kind!("coedge"), segment_key));
+        let first = vertex_ids[index].clone();
+        let second = vertex_ids[(index + 1) % vertex_ids.len()].clone();
+        let (start, end) = if segment.same_sense {
+            (first, second)
+        } else {
+            (second, first)
+        };
+        parts.edges.push(Edge {
+            id: edge_id.clone(),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(
+                Some(segment.curve.clone()),
+                Some(segment.range),
+            )
+            .ok()?,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(start, end)),
+            tolerance: None,
+            native_ref: None,
+        });
+        parts.coedges.push(Coedge {
+            id: coedge_id.clone(),
+            owner_loop: loop_id.clone(),
+            edge: edge_id,
+            radial_next: coedge_id.clone(),
+            sense: if segment.same_sense {
+                Sense::Forward
+            } else {
+                Sense::Reversed
+            },
+            pcurves: Vec::new(),
+            use_curve: None,
+            native_ref: None,
+        });
+        coedge_ids.push(coedge_id);
+    }
+    let ring = cadmpeg_ir::topology::LoopRing::new(coedge_ids, Vec::new()).ok()?;
+    parts.loops.push(Loop {
+        id: loop_id.clone(),
+        face: face.clone(),
+        boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+        native_ref: None,
+    });
+    Some(loop_id)
 }
 
 #[derive(Clone)]
@@ -2181,7 +2630,7 @@ fn drop_committed_surfaces(
     session: &mut CommitSession<'_, &mut CadIr>,
 ) -> Result<(), CodecError> {
     let mut refusal = None;
-    draft.model_mut().surfaces.retain(|surface| {
+    draft.geometry_mut().surfaces.retain(|surface| {
         if refusal.is_some() {
             return true;
         }
@@ -2225,11 +2674,13 @@ impl From<CodecError> for StageError {
 
 struct StagedTopologyParts {
     typed: HashSet<u64>,
+    points: Vec<cadmpeg_ir::topology::Point>,
     vertices: Vec<Vertex>,
     edges: Vec<Edge>,
     coedges: Vec<Coedge>,
     loops: Vec<Loop>,
     faces: Vec<Face>,
+    curves: Vec<cadmpeg_ir::geometry::Curve>,
     surfaces: Vec<Surface>,
     shells: Vec<Shell>,
     region: Region,
@@ -2239,17 +2690,22 @@ struct StagedTopologyParts {
 fn staged_topology(parts: StagedTopologyParts) -> Result<Built, StageError> {
     let StagedTopologyParts {
         typed,
+        points,
         vertices,
         edges,
         coedges,
         loops,
         faces,
+        curves,
         surfaces,
         shells,
         region,
         body,
     } = parts;
     let mut draft = ModelDraft::new();
+    for point in points {
+        draft.insert(point)?;
+    }
     for vertex in vertices {
         draft.insert(vertex)?;
     }
@@ -2264,6 +2720,9 @@ fn staged_topology(parts: StagedTopologyParts) -> Result<Built, StageError> {
     }
     for face in faces {
         draft.insert(face)?;
+    }
+    for curve in curves {
+        draft.insert(curve)?;
     }
     let mut surface_ids = BTreeSet::new();
     for surface in surfaces {
@@ -2608,6 +3067,7 @@ fn build_one(
         id: rid.clone(),
         body: bid.clone(),
         shells: Vec::new(),
+        native_ref: None,
     };
     let body = Body {
         id: bid,
@@ -2616,11 +3076,11 @@ fn build_one(
         } else {
             BodyKind::Sheet
         },
-        regions: vec![rid.clone()],
         transform: None,
         name: None,
         color: None,
         visible: None,
+        native_ref: None,
     };
     let mut used_v = BTreeSet::<(u64, u64)>::new();
     let mut used_e = BTreeSet::<(u64, u64)>::new();
@@ -2628,6 +3088,7 @@ fn build_one(
     let mut used_faces = BTreeSet::new();
     let mut radial = BTreeMap::<EdgeId, Vec<usize>>::new();
     let mut poly_edges = BTreeMap::<(u64, EdgeId), (u64, u64)>::new();
+    let mut curves = Vec::new();
     let mut poly_points = BTreeSet::<(u64, u64)>::new();
     let mut implicit_surface_ids = BTreeSet::new();
     let mut admissions = Vec::new();
@@ -2698,6 +3159,7 @@ fn build_one(
             return Err(BuildError::Absent);
         }
         let sid = shell_identity(id, shell_step, scope_root);
+        let first_face = faces.len();
         let mut face_ids = vec![];
         for face_step in face_steps.iter().filter_map(Value::reference) {
             if used_faces.contains(&(shell_step, face_step)) {
@@ -2795,12 +3257,19 @@ fn build_one(
                         )
                         .ok_or(BuildError::Absent)?,
                         source_object: None,
+                        native_ref: None,
                     });
                 }
                 surface_id
             };
             let surface_step = face_info.surface;
-            let face_same_sense = face_info.same_sense;
+            let face_same_sense = face_info.same_sense
+                != face_info.surface.is_some_and(|surface| {
+                    exchange
+                        .records()
+                        .get(&surface)
+                        .is_some_and(super::geometry::reversed_torus_record)
+                });
             let fid = FaceId::from(ids::data(
                 kind!("face"),
                 IdentityKey::from(face_step).with_tail(&face_suffix),
@@ -2882,6 +3351,7 @@ fn build_one(
                             ),
                             pcurves: Vec::new(),
                         },
+                        native_ref: None,
                     });
                     loop_ids.push((is_outer_bound, lid));
                     used_v.insert((shell_step, vertex_step));
@@ -2939,14 +3409,17 @@ fn build_one(
                         let end_point = points[(index + 1) % points.len()];
                         let (canonical_start, canonical_end) =
                             (start_point.min(end_point), start_point.max(end_point));
-                        let edge_id = poly_edge_id(
-                            canonical_start,
-                            canonical_end,
-                            id,
-                            shell_step,
-                            scope_edges,
-                            scope_root,
-                        );
+                        let edge_id = EdgeId::from(ids::data(
+                            kind!("edge"),
+                            poly_edge_key(
+                                canonical_start,
+                                canonical_end,
+                                id,
+                                shell_step,
+                                scope_edges,
+                                scope_root,
+                            ),
+                        ));
                         poly_edges
                             .entry((shell_step, edge_id.clone()))
                             .or_insert((canonical_start, canonical_end));
@@ -2975,6 +3448,7 @@ fn build_one(
                             },
                             pcurves: Vec::new(),
                             use_curve: None,
+                            native_ref: None,
                         });
                         radial.entry(edge_id).or_default().push(coedges.len() - 1);
                         typed.insert(loop_step);
@@ -2988,6 +3462,7 @@ fn build_one(
                         id: lid.clone(),
                         face: fid.clone(),
                         boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+                        native_ref: None,
                     });
                     loop_ids.push((is_outer_bound, lid));
                     typed.insert(bound_step);
@@ -3190,6 +3665,7 @@ fn build_one(
                         },
                         pcurves: pcurve_uses,
                         use_curve: None,
+                        native_ref: None,
                     });
                     radial
                         .entry(scoped_edge_id(
@@ -3220,6 +3696,7 @@ fn build_one(
                     id: lid.clone(),
                     face: fid.clone(),
                     boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+                    native_ref: None,
                 });
                 loop_ids.push((is_outer_bound, lid));
                 for claim in [bound_step, loop_step] {
@@ -3260,6 +3737,7 @@ fn build_one(
                 name,
                 color: None,
                 tolerance: None,
+                native_ref: None,
             });
             face_ids.push(fid);
             typed.insert(face_step);
@@ -3339,31 +3817,10 @@ fn build_one(
                     },
                 ))
             };
-            let mut component_faces = Vec::new();
             for face_index in component {
-                let face_id = face_ids[face_index].clone();
-                faces[face_index].shell = component_shell.clone();
-                component_faces.push(face_id);
+                faces[first_face + face_index].shell = component_shell.clone();
             }
-
-            shells.push(
-                match Shell::new(
-                    component_shell.clone(),
-                    rid.clone(),
-                    component_faces,
-                    vec![],
-                    vec![],
-                ) {
-                    Ok(shell) => shell,
-                    Err(error) => {
-                        losses.push(
-                            StepLossCode::DecodeWarning
-                                .note(format!("{shell_type} #{shell_step}: {error}")),
-                        );
-                        return Err(BuildError::Absent);
-                    }
-                },
-            );
+            shells.push(Shell::new(component_shell.clone(), rid.clone()));
             region.shells.push(component_shell);
         }
         typed.insert(shell_step);
@@ -3382,18 +3839,43 @@ fn build_one(
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(edge_curve_id_reported(
                 edge_id, e, exchange, losses,
             )),
-            start: scoped_vertex_id(start, id, shell_step, scope_edges, scope_root),
-            end: scoped_vertex_id(end, id, shell_step, scope_edges, scope_root),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                scoped_vertex_id(start, id, shell_step, scope_edges, scope_root),
+                scoped_vertex_id(end, id, shell_step, scope_edges, scope_root),
+            )),
             tolerance: None,
+            native_ref: None,
         });
     }
     for ((shell_step, edge_identity), (start, end)) in poly_edges {
+        let curve_id = CurveId::from(ids::data(
+            kind!("curve"),
+            poly_edge_key(start, end, id, shell_step, scope_edges, scope_root),
+        ));
+        let (curve, length) = require_carrier(
+            point_positions
+                .get(start)
+                .zip(point_positions.get(end))
+                .and_then(|(start, end)| poly_segment_curve(curve_id.clone(), *start, *end)),
+            failure,
+            start,
+            CarrierKind::PolyLoopPointCarrier,
+        )
+        .ok_or(BuildError::Absent)?;
+        curves.push(curve);
         edges.push(Edge {
             id: edge_identity,
-            carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(None),
-            start: scoped_poly_vertex_id(start, id, shell_step, scope_edges, scope_root),
-            end: scoped_poly_vertex_id(end, id, shell_step, scope_edges, scope_root),
+            carrier: cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, length]))
+                .map_err(|_| {
+                    note_failure(failure, start, CarrierKind::PolyLoopPointCarrier);
+                    BuildError::Absent
+                })?,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                scoped_poly_vertex_id(start, id, shell_step, scope_edges, scope_root),
+                scoped_poly_vertex_id(end, id, shell_step, scope_edges, scope_root),
+            )),
             tolerance: None,
+            native_ref: None,
         });
     }
     for (shell_step, vertex_id) in used_v {
@@ -3415,6 +3897,7 @@ fn build_one(
             id: scoped_vertex_id(vertex_id, id, shell_step, scope_edges, scope_root),
             point: PointId::from(ids::data(kind!("point"), v.point)),
             tolerance: None,
+            native_ref: None,
         });
         typed.insert(vertex_id);
     }
@@ -3430,6 +3913,7 @@ fn build_one(
             id: scoped_poly_vertex_id(point_id, id, shell_step, scope_edges, scope_root),
             point: PointId::from(ids::data(kind!("point"), point_id)),
             tolerance: None,
+            native_ref: None,
         });
         typed.insert(point_id);
     }
@@ -3483,14 +3967,14 @@ fn build_one(
             )
             .ok_or(BuildError::Absent)?;
             let current_end = match current.sense {
-                Sense::Forward => &current_edge.end,
-                Sense::Reversed => &current_edge.start,
+                Sense::Forward => current_edge.end(),
+                Sense::Reversed => current_edge.start(),
             };
             let next_start = match next.sense {
-                Sense::Forward => &next_edge.start,
-                Sense::Reversed => &next_edge.end,
+                Sense::Forward => next_edge.start(),
+                Sense::Reversed => next_edge.end(),
             };
-            if current_end != next_start {
+            if current_end.is_none() || current_end != next_start {
                 note_failure(failure, loop_source, CarrierKind::EdgeLoopContinuity);
                 return Err(BuildError::Absent);
             }
@@ -3498,11 +3982,13 @@ fn build_one(
     }
     let mut built = match staged_topology(StagedTopologyParts {
         typed,
+        points: Vec::new(),
         vertices,
         edges,
         coedges,
         loops,
         faces,
+        curves,
         surfaces,
         shells,
         region,
@@ -3740,42 +4226,56 @@ fn scoped_poly_vertex_id(
     }
 }
 
-fn poly_edge_id(
+fn poly_edge_key(
     start: u64,
     end: u64,
     root_id: u64,
     shell_step: u64,
     scoped: bool,
     scope_root: bool,
-) -> EdgeId {
+) -> IdentityKey {
     if scoped {
         if scope_root {
-            EdgeId::from(ids::data(
-                kind!("edge"),
-                key_word!("poly")
-                    .dash(start)
-                    .dash(end)
-                    .dash(key_word!("root"))
-                    .dash(root_id)
-                    .dash(key_word!("shell"))
-                    .dash(shell_step),
-            ))
+            key_word!("poly")
+                .dash(start)
+                .dash(end)
+                .dash(key_word!("root"))
+                .dash(root_id)
+                .dash(key_word!("shell"))
+                .dash(shell_step)
         } else {
-            EdgeId::from(ids::data(
-                kind!("edge"),
-                key_word!("poly")
-                    .dash(start)
-                    .dash(end)
-                    .dash(key_word!("shell"))
-                    .dash(shell_step),
-            ))
+            key_word!("poly")
+                .dash(start)
+                .dash(end)
+                .dash(key_word!("shell"))
+                .dash(shell_step)
         }
     } else {
-        EdgeId::from(ids::data(
-            kind!("edge"),
-            key_word!("poly").dash(start).dash(end),
-        ))
+        key_word!("poly").dash(start).dash(end)
     }
+}
+
+/// The straight segment of a poly loop between two points.
+fn poly_segment_curve(
+    id: CurveId,
+    start: Point3,
+    end: Point3,
+) -> Option<(cadmpeg_ir::geometry::Curve, f64)> {
+    let length = end.vector_from(start).norm();
+    let direction = UnitVector3::normalized(end.vector_from(start))?;
+    let origin = cadmpeg_ir::features::FinitePoint3::new(start)?;
+    Some((
+        cadmpeg_ir::geometry::Curve {
+            id,
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Line(
+                cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction),
+            )),
+            parameter_range: None,
+            source_object: None,
+            native_ref: None,
+        },
+        length,
+    ))
 }
 
 fn implicit_face_points(
@@ -5492,8 +5992,18 @@ fn most_specific<'a>(record: &RawRecord, chain: &[&'a str]) -> Option<&'a str> {
         .find(|name| record.partial(name).is_some())
 }
 
+/// The type that names a connected face set. ISO 10303-42 derives
+/// `OPEN_SHELL` and `CLOSED_SHELL` from `CONNECTED_FACE_SET`.
 fn connected_face_set_type(record: &RawRecord) -> Option<&'static str> {
-    most_specific(record, &["CONNECTED_FACE_SUB_SET", "CONNECTED_FACE_SET"])
+    most_specific(
+        record,
+        &[
+            "OPEN_SHELL",
+            "CLOSED_SHELL",
+            "CONNECTED_FACE_SUB_SET",
+            "CONNECTED_FACE_SET",
+        ],
+    )
 }
 
 fn connected_set_members<'a>(record: &'a RawRecord, set_type: &str) -> Option<&'a [Value]> {

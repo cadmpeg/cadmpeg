@@ -151,7 +151,7 @@ pub(crate) fn decoded_revision_loft_member(
     ir: &cadmpeg_ir::document::CadIr,
 ) -> cadmpeg_ir::geometry::LoftProfileMember {
     let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Loft(definition_payload) = &ir
-        .model
+        .geometry
         .procedural_surfaces
         .first()
         .expect("revision loft construction")
@@ -169,22 +169,26 @@ pub(crate) fn decoded_revision_loft_member(
 /// Byte-exact re-emission of the decoded construction's subtype span.
 pub(crate) fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::CadIr) -> Vec<u8> {
     let procedural = ir
-        .model
+        .geometry
         .procedural_surfaces
         .first()
         .expect("procedural construction");
     let surface = ir
-        .model
+        .geometry
         .surfaces
         .iter()
-        .find(|surface| ir.model.procedural_surface_owner(&procedural.id) == Some(&surface.id))
+        .find(|surface| ir.geometry.procedural_surface_owner(&procedural.id) == Some(&surface.id))
         .expect("solved surface");
     let Some(SolvedSurfaceGeometry::Nurbs(cache)) = surface.geometry.solved_cache() else {
         panic!("expected a solved NURBS cache")
     };
     let mut bytes = Vec::new();
     crate::writer::generate::native_geometry::native_procedural_surface(
-        &mut bytes, ir, surface, cache,
+        &mut bytes,
+        ir,
+        &crate::writer::generate::native_geometry::ProceduralOwners::new(ir),
+        surface,
+        cache,
     )
     .expect("regenerate procedural surface");
     let inner = bytes

@@ -67,8 +67,8 @@ pub(crate) struct DesignRevolveConstruction {
     /// both sides of the profile plane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) second_side: Option<DesignRevolveSecondSide>,
-    /// Solid flag of a referenced-angle form: `true` for a solid body and
-    /// `false` for a surface body.
+    /// Solid flag of a referenced-angle, Symmetric, or Two Sides form: `true`
+    /// for a solid body and `false` for a surface body.
     pub(crate) solid: Option<bool>,
     /// Whether the stored angle is negative, so that the profile turns toward
     /// the negative normal of its sketch plane.
@@ -167,7 +167,7 @@ struct DesignRevolveConstructionWire {
         deserialize_with = "deserialize_second_side"
     )]
     second_side: Option<DesignRevolveSecondSideWire>,
-    /// Solid flag of a referenced-angle form.
+    /// Solid flag of a referenced-angle, Symmetric, or Two Sides form.
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -278,6 +278,10 @@ pub(crate) struct DesignLoftConstruction {
         deserialize_with = "deserialize_reference_target"
     )]
     pub(crate) reference_target: Option<u64>,
+    /// Section records of the scope body's section list, in section order.
+    pub(crate) section_records: Vec<u32>,
+    /// Construction-operand groups of the scope body's rail list, in rail order.
+    pub(crate) rail_groups: Vec<u32>,
 }
 
 /// Fixed construction of a `Sweep` scope.
@@ -322,7 +326,53 @@ pub(crate) struct DesignPipeConstruction {
     /// Optional native point-selection pair.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) point_selection: Option<DesignPipePointSelection>,
+    /// Section shape read from the section frame after the prefix.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) section: Option<DesignPipeSection>,
 }
+
+/// Section-shape u32 of a `Pipe` and its offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct DesignPipeSection {
+    /// Stored section-shape value.
+    pub(crate) shape_value: u32,
+    /// Byte offset of the section-shape u32.
+    pub(crate) shape_offset: u64,
+}
+
+impl DesignPipeSection {
+    /// The shape the stored value names.
+    pub(crate) const fn shape(self) -> Option<DesignPipeSectionShape> {
+        DesignPipeSectionShape::from_stored(self.shape_value)
+    }
+}
+
+/// Section shape stored by a `Pipe` scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum DesignPipeSectionShape {
+    /// Stored value `0`.
+    Circular,
+    /// Stored value `1`.
+    Square,
+    /// Stored value `2`.
+    Triangular,
+}
+
+impl DesignPipeSectionShape {
+    /// The shape a stored u32 names.
+    pub(crate) const fn from_stored(value: u32) -> Option<Self> {
+        match value {
+            0 => Some(Self::Circular),
+            1 => Some(Self::Square),
+            2 => Some(Self::Triangular),
+            _ => None,
+        }
+    }
+}
+
+cadmpeg_core::named_optional_field!(deserialize_pipe_section, DesignPipeSection, "section");
 
 /// Point-data record and its recipe-selection input named by a `Pipe` scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -352,6 +402,8 @@ struct DesignPipeConstructionWire {
     record_indexes: [u32; 4],
     #[serde(default, deserialize_with = "deserialize_pipe_point_selection")]
     point_selection: Option<DesignPipePointSelection>,
+    #[serde(default, deserialize_with = "deserialize_pipe_section")]
+    section: Option<DesignPipeSection>,
 }
 
 impl TryFrom<DesignPipeConstructionWire> for DesignPipeConstruction {
@@ -377,6 +429,7 @@ impl TryFrom<DesignPipeConstructionWire> for DesignPipeConstruction {
             opaque_post_operation_offset: value.opaque_post_operation_offset,
             record_indexes: value.record_indexes,
             point_selection: value.point_selection,
+            section: value.section,
         })
     }
 }
@@ -401,6 +454,20 @@ impl DesignPipeConstruction {
                     && selection
                         .prefix_reference_offset
                         .checked_add(10)
+                        .is_some_and(|end| end <= table)
+            })
+            && self.section.is_none_or(|section| {
+                self.point_selection.is_none()
+                    && prefix_end
+                        .and_then(|end| {
+                            end.checked_add(u64_from_index(
+                                crate::layout::pipe_section_frame::SHAPE,
+                            ))
+                        })
+                        .is_some_and(|at| at == section.shape_offset)
+                    && section
+                        .shape_offset
+                        .checked_add(4)
                         .is_some_and(|end| end <= table)
             })
     }

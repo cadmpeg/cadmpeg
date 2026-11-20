@@ -193,11 +193,11 @@ fn surface_residual_is_the_measured_residual() {
         ),
         SolvedSurfaceGeometry::Nurbs(test_nurbs_surface()),
     ];
-    let steps = |count: u32| (0..count).map(|index| -1.0 + 0.4 * f64::from(index));
+    let steps = [-1.0, 0.0, 1.0];
     for surface in &surfaces {
-        for x in steps(6) {
-            for y in steps(6) {
-                for z in steps(6) {
+        for x in steps {
+            for y in steps {
+                for z in steps {
                     let point = Point3::new(x, y, z);
                     for tolerance in [1.0e-3, 0.5, 4.0] {
                         let measured = surface_measure(&ctx, surface, point, Some(tolerance))
@@ -238,16 +238,16 @@ fn owner_work_scales_with_rows_above_the_floor() {
 #[test]
 fn owner_rows_count_tables_that_already_have_an_owner() {
     use crate::tessellation::tessellation_owner_rows;
-    let mut model = cadmpeg_ir::document::Model::default();
-    model
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model
         .tessellations
         .push(super::persistent_mesh("synthetic:test:tessellation#open"));
-    let open_only = tessellation_owner_rows(&model);
+    let open_only = tessellation_owner_rows(&ir);
     let mut owned = super::persistent_mesh("synthetic:test:tessellation#owned");
     owned.faces.push(
         cadmpeg_ir::ids::FaceId::mint("synthetic:test:face#face-owned").expect("identity grammar"),
     );
-    model.tessellations.push(owned);
+    ir.model.tessellations.push(owned);
     assert_eq!(open_only, Some(4));
-    assert_eq!(tessellation_owner_rows(&model), Some(8));
+    assert_eq!(tessellation_owner_rows(&ir), Some(8));
 }

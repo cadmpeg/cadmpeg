@@ -14,6 +14,7 @@ use crate::design::DesignFeatureFamily;
 use crate::layout::compact_loft_operation_prefix as compact_loft;
 use crate::layout::compact_sweep_prologue as compact_sweep;
 use crate::layout::direction_pair_revolve_scope_frame as direction_pair_revolve;
+use crate::layout::loft_scope_body_head as loft_body;
 use crate::layout::marked_to_object_revolve_prologue as marked_to_object;
 use crate::layout::marker_one_revolve_prologue as revolve;
 use crate::layout::referenced_angle_revolve_prologue as referenced_revolve;
@@ -35,6 +36,8 @@ use cadmpeg_core::decode::View;
 /// Byte length of a marked record reference: marker `1`, the u32 record
 /// index, and six zero bytes.
 const MARKED_REFERENCE_LEN: usize = 11;
+
+const LOFT_RAIL_LIST_TRAILER_LEN: usize = 6;
 
 /// Prologue spelling of a to-object `Revolve` scope.
 #[derive(Clone, Copy)]
@@ -76,10 +79,14 @@ fn two_sided_revolve_construction(
             bytes.get(start + two_sided_revolve::PROJECT_AXIS),
             Some(0 | 1)
         )
-        || bytes.get(start + two_sided_revolve::SOLID) != Some(&1)
     {
         return None;
     }
+    let solid = match bytes.get(start + two_sided_revolve::SOLID)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
     let opposite_record_index = marked_record_reference(
         bytes,
         start + two_sided_revolve::OPPOSITE_ANGLE_REFERENCE_MARKER,
@@ -110,10 +117,73 @@ fn two_sided_revolve_construction(
                 angle_record_index: opposite_record_index,
                 angle_offset: opposite.evaluated_value_offset(),
             }),
-            solid: None,
+            solid: Some(solid),
             reversed: false,
         },
     ))
+}
+
+/// Largest difference from `2π` at which a referenced angle is a full turn.
+const FULL_TURN_TOLERANCE: f64 = 1e-9;
+
+/// Length of the fixed scope tail that carries a second marked reference.
+const SECOND_REFERENCE_TAIL: u64 = 88;
+
+/// Tail offset of the preceding history-state identity after a second marked
+/// tail reference.
+const SECOND_REFERENCE_PREVIOUS_STATE: u64 = 41;
+
+/// The record that the second marked reference of a scope's 88-byte fixed
+/// tail names.
+pub(super) fn tail_second_reference(bytes: &[u8], scope: &DesignParameterScope) -> Option<u64> {
+    let tail = scope
+        .paired_byte_offset()
+        .checked_sub(SECOND_REFERENCE_TAIL)?;
+    if scope.feature_ordinal_offset() != tail
+        || scope.previous_history_state_id_offset()
+            != tail.checked_add(SECOND_REFERENCE_PREVIOUS_STATE)
+    {
+        return None;
+    }
+    let marker = usize::try_from(tail)
+        .ok()?
+        .checked_add(super::parameter_scope::FIXED_TAIL_SECOND_REFERENCE)?;
+    if bytes.get(marker) != Some(&1)
+        || bytes.get(marker.checked_add(9)?..marker.checked_add(11)?) != Some(&[0; 2])
+    {
+        return None;
+    }
+    let target = View::u64_le_at(bytes, marker.checked_add(1)?)?;
+    (!scope
+        .reference_members()
+        .values()
+        .any(|&member| u64::from(member) == target))
+    .then_some(target)
+}
+
+pub(super) fn referenced_revolve_reference_loss(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    construction: &path_features::DesignRevolveConstruction,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    if design_feature_family(&scope.kind())? != DesignFeatureFamily::Revolve {
+        return None;
+    }
+    let length = parameter_scope_payload_length(scope)?;
+    construction.solid?;
+    let operation = construction
+        .operation_offset
+        .checked_sub(scope.byte_offset())?;
+    let base_length = match (length, usize::try_from(operation).ok()?) {
+        (361, referenced_revolve::OPERATION) => 351,
+        (379, unmarked_revolve::OPERATION) => 369,
+        _ => return None,
+    };
+    let target = tail_second_reference(bytes, scope)?;
+    Some(crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.note(format!(
+        "Revolve scope {} stores a second tail reference with target {target} in its {length}-byte referenced-angle frame; the decoder reads the other fields at the {base_length}-byte offsets (DR-657).",
+        scope.id
+    )))
 }
 
 /// A referenced-angle `Revolve` scope whose angle owner can store a negative angle.
@@ -130,18 +200,24 @@ fn referenced_angle_revolve_construction(
         parameter_scope_payload_length(scope)?,
         scope.reference_members().len(),
     ) {
-        (length @ (351 | 373), count @ (6 | 8))
-            if matches!(
+        (length @ (351 | 361 | 373), count @ (6 | 8))
+            if (matches!(
                 (
                     length,
                     count,
                     View::u32_le_at(bytes, start + referenced_revolve::OPERATION)
                 ),
                 (351, 6, Some(4)) | (373, 8, Some(1..=3))
-            ) && bytes.get(start + referenced_revolve::MARKER) == Some(&1)
+            ) || (length, count) == (361, 6)
+                && View::u32_le_at(bytes, start + referenced_revolve::OPERATION) == Some(4)
+                && tail_second_reference(bytes, scope).is_some())
+                && bytes.get(start + referenced_revolve::MARKER) == Some(&1)
                 && View::u32_le_at(bytes, start + referenced_revolve::ZERO_VALUE) == Some(0)
                 && View::u32_le_at(bytes, start + referenced_revolve::EXTENT_KIND) == Some(2)
-                && bytes.get(start + referenced_revolve::DIRECTION_KIND) == Some(&0) =>
+                && matches!(
+                    bytes.get(start + referenced_revolve::DIRECTION_KIND),
+                    Some(&(0 | 1))
+                ) =>
         {
             (
                 referenced_revolve::OPERATION,
@@ -151,10 +227,11 @@ fn referenced_angle_revolve_construction(
                 referenced_revolve::ANGLE_REFERENCE_MARKER,
             )
         }
-        (369, 8)
-            if bytes
-                .get(start + unmarked_revolve::ZERO_RUN..start + unmarked_revolve::OPERATION)?
-                == [0; 10]
+        (length @ (369 | 379), 8)
+            if (length == 369 || tail_second_reference(bytes, scope).is_some())
+                && bytes.get(
+                    start + unmarked_revolve::ZERO_RUN..start + unmarked_revolve::OPERATION,
+                )? == [0; 10]
                 && View::u32_le_at(bytes, start + unmarked_revolve::EXTENT_KIND)
                     == Some(unmarked_revolve::EXTENT_KIND_VALUE)
                 && bytes.get(start + unmarked_revolve::DIRECTION_KIND)
@@ -183,6 +260,12 @@ fn referenced_angle_revolve_construction(
     let angle_record_index = marked_record_reference(bytes, start + angle_reference)?;
     let angle = referenced_revolve_angle_owner(scope, parameter_owners, angle_record_index)?;
     let value = angle.evaluated_value().get();
+    // Direction kind 1 is read for a full turn, whose swept solid is the same in each direction (DR-657).
+    if bytes.get(start + referenced_revolve::DIRECTION_KIND) == Some(&1)
+        && (value.abs() - std::f64::consts::TAU).abs() > FULL_TURN_TOLERANCE
+    {
+        return None;
+    }
     Some(path_features::DesignRevolveConstruction {
         operation: extrude_operation_at(bytes, start + operation)?,
         operation_offset: u64::try_from(start + operation).ok()?,
@@ -364,7 +447,7 @@ pub(super) fn loft_reference_loss(
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
     let target = construction.reference_target?;
     Some(crate::loss::F3dLossCode::FeatureLoftReferenceUnresolved.note(format!(
-        "Loft scope {} stores a non-null marked reference with target {target} at prefix offset 33; the target and the Loft setting it selects are unresolved (DR-268), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.",
+        "Loft scope {} stores a non-null marked reference with target {target} at prefix offset 33; the Loft setting it selects is unresolved (DR-268), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.",
         scope.id
     )))
 }
@@ -388,6 +471,64 @@ pub(super) fn three_flag_loft_settings_loss(
         "Loft scope {} stores the three-flag {form} prefix with flag bytes {first:02x} {second:02x} {third:02x} at prefix offset {flags}; the Loft settings these flags select are unresolved (DR-294), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.",
         scope.id
     )))
+}
+
+pub(super) fn loft_lists_loss(
+    scope: &DesignParameterScope,
+    construction: &path_features::DesignLoftConstruction,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    construction.section_records.is_empty().then(|| {
+        crate::loss::F3dLossCode::FeatureLoftListsUnresolved.note(format!(
+            "Loft scope {} has no unique reading of the rail list and the section list in its scope body (DR-331), and the scope stays native.",
+            scope.id
+        ))
+    })
+}
+
+fn loft_scope_lists(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    body: usize,
+) -> Option<(Vec<u32>, Vec<u32>)> {
+    let members = scope.reference_members().values().collect::<Vec<_>>();
+    let counted = |at: &mut usize| -> Option<Vec<u32>> {
+        let count = usize::try_from(View::u32_le_at(bytes, *at)?).ok()?;
+        if count > members.len() {
+            return None;
+        }
+        *at += 4;
+        let mut targets = Vec::new();
+        for _ in 0..count {
+            let (target, _) = crate::bytes::take_reference(bytes, at)?.local()?;
+            targets.push(u32::try_from(target).ok()?);
+        }
+        Some(targets)
+    };
+    let reading = |selector: bool| -> Option<(Vec<u32>, Vec<u32>)> {
+        let mut at = body.checked_add(loft_body::LEN)?;
+        crate::bytes::take_reference(bytes, &mut at)?;
+        if selector {
+            View::u32_le_at(bytes, at)?;
+            at += 4;
+        }
+        crate::bytes::take_reference(bytes, &mut at)?;
+        let rails = counted(&mut at)?;
+        at = at.checked_add(LOFT_RAIL_LIST_TRAILER_LEN)?;
+        crate::bytes::take_reference(bytes, &mut at)?;
+        let sections = counted(&mut at)?;
+        let in_table =
+            |record: Option<u32>| record.is_some_and(|record| members.contains(&&record));
+        (sections.len() >= 2
+            && rails.iter().all(|rail| in_table(Some(*rail)))
+            && sections
+                .iter()
+                .all(|section| in_table(section.checked_add(1))))
+        .then_some((sections, rails))
+    };
+    match (reading(true), reading(false)) {
+        (Some(lists), None) | (None, Some(lists)) => Some(lists),
+        _ => None,
+    }
 }
 
 pub(super) fn exact_path_feature_construction(
@@ -574,9 +715,7 @@ pub(super) fn exact_path_feature_construction(
                 && bytes.get(start + compact_loft::ONE_RUN_4..start + compact_loft::OPERATION)
                     == Some(&[1; 4])
                 && bytes.get(start + compact_loft::ZERO_FLAG) == Some(&0)
-                && View::u32_le_at(bytes, start + compact_loft::ALL_ONES) == Some(u32::MAX)
-                && bytes.get(start + compact_loft::ZERO_RUN_11..start + compact_loft::LEN)
-                    == Some(&[0; 11]);
+                && View::u32_le_at(bytes, start + compact_loft::ALL_ONES) == Some(u32::MAX);
             let compact_three = bytes.get(
                 start + three_flag_compact_loft::ZERO_RUN_10
                     ..start + three_flag_compact_loft::FLAGS,
@@ -590,11 +729,7 @@ pub(super) fn exact_path_feature_construction(
                 )
                 && bytes.get(start + three_flag_compact_loft::ZERO_FLAG) == Some(&0)
                 && View::u32_le_at(bytes, start + three_flag_compact_loft::ALL_ONES)
-                    == Some(u32::MAX)
-                && bytes.get(
-                    start + three_flag_compact_loft::ZERO_RUN_11
-                        ..start + three_flag_compact_loft::LEN,
-                ) == Some(&[0; 11]);
+                    == Some(u32::MAX);
             let standard_prefix = bytes
                 .get(start + standard_loft::ZERO_RUN_9..start + standard_loft::PRESENCE)
                 == Some(&[0; 9])
@@ -624,19 +759,42 @@ pub(super) fn exact_path_feature_construction(
                 ) == Some(&[0; 4])
                 && bytes.get(start + three_flag_standard_loft::NULL_REFERENCE) == Some(&0);
             [
-                compact.then_some((compact_loft::OPERATION, None)),
-                compact_three.then_some((three_flag_compact_loft::OPERATION, None)),
-                standard.map(|target| (standard_loft::OPERATION, target)),
-                standard_three.then_some((three_flag_standard_loft::OPERATION, None)),
+                compact.then_some((compact_loft::OPERATION, None, compact_loft::ALL_ONES)),
+                compact_three.then_some((
+                    three_flag_compact_loft::OPERATION,
+                    None,
+                    three_flag_compact_loft::ALL_ONES,
+                )),
+                standard.map(|target| {
+                    let reference_len = if target.is_some() {
+                        MARKED_REFERENCE_LEN
+                    } else {
+                        1
+                    };
+                    (
+                        standard_loft::OPERATION,
+                        target,
+                        standard_loft::MARKED_REFERENCE + reference_len,
+                    )
+                }),
+                standard_three.then_some((
+                    three_flag_standard_loft::OPERATION,
+                    None,
+                    three_flag_standard_loft::NULL_REFERENCE + 1,
+                )),
             ]
             .into_iter()
             .flatten()
-            .find_map(|(offset, reference_target)| {
+            .find_map(|(offset, reference_target, body)| {
+                let (section_records, rail_groups) =
+                    loft_scope_lists(bytes, scope, start + body).unwrap_or_default();
                 Some(DesignPathFeatureConstruction::Loft(
                     path_features::DesignLoftConstruction {
                         operation: operation(start + offset)?,
                         operation_offset: u64::try_from(start + offset).ok()?,
                         reference_target,
+                        section_records,
+                        rail_groups,
                     },
                 ))
             })

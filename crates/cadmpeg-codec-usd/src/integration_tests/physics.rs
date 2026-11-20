@@ -54,9 +54,9 @@ fn physics_records_decode_in_ir_units() {
         drive.target_position.unwrap().get(),
         std::f64::consts::FRAC_PI_4
     ));
-    // Torque per degree in kilograms and centimetres, to newton millimetres
-    // per radian.
-    let expected = 10.0 * 2.0 * 0.01 * 0.01 * 1000.0 * 180.0 / std::f64::consts::PI;
+    // Torque per degree in kilograms and centimetres, to kilogram square
+    // millimetres per second squared per radian.
+    let expected = 10.0 * 2.0 * 10.0 * 10.0 * 180.0 / std::f64::consts::PI;
     assert!(close(drive.stiffness.unwrap().get(), expected));
 }
 
@@ -97,17 +97,17 @@ fn physics_records_survive_a_write() {
     assert!(after
         .rigid_bodies
         .iter()
-        .all(|body| matches!(body.target, PhysicsTarget::Occurrence { .. })));
+        .all(|body| matches!(body.target.entity, PhysicsTarget::Occurrence { .. })));
 }
 
 #[test]
 fn a_collider_of_a_brep_body_is_written_on_its_mesh_and_read_back() {
     let mut ir = decode("#usda 1.0\ndef Cylinder \"C\"\n{\n}\n").ir().clone();
-    let body = ir.model.bodies[0].id.clone();
+    let body = ir.geometry.bodies[0].id.clone();
     ir.model.colliders.push(cadmpeg_ir::physics::Collider {
         id: crate::ids::collider("collider"),
-        target: PhysicsTarget::Body { body },
-        shape: cadmpeg_ir::physics::ColliderShape::ConvexHull {},
+        target: PhysicsTarget::Body { body }.into(),
+        shape: cadmpeg_ir::physics::ColliderShape::ConvexHull,
         enabled: true,
         material: None,
         native_ref: None,
@@ -130,12 +130,12 @@ fn a_collider_of_a_brep_body_is_written_on_its_mesh_and_read_back() {
     let model = &again.ir().model;
     assert_eq!(model.colliders.len(), 1);
     assert!(matches!(
-        model.colliders[0].target,
+        model.colliders[0].target.entity,
         PhysicsTarget::Body { .. }
     ));
     assert!(matches!(
         model.colliders[0].shape,
-        cadmpeg_ir::physics::ColliderShape::ConvexHull {}
+        cadmpeg_ir::physics::ColliderShape::ConvexHull
     ));
 }
 
@@ -213,7 +213,7 @@ fn physx_settings_decode_in_ir_units() {
     assert!(matches!(
         solver_value(ir, "PhysxMimicJointAPI:transX", "physxMimicJoint:transX:referenceJoint"),
         Some(cadmpeg_ir::physics::solver::SolverValue::Targets { targets })
-            if matches!(targets.as_slice(), [cadmpeg_ir::physics::solver::SolverTarget::Joint { .. }])
+            if matches!(targets.as_slice(), [target] if matches!(target.entity, cadmpeg_ir::physics::solver::SolverTarget::Joint { .. }))
     ));
     let scene = &ir.model.physics_scenes[0];
     assert!(close(scene.gravity_magnitude.unwrap().get(), 9810.0));
@@ -422,4 +422,130 @@ fn initial_velocities_survive_a_write_and_unread_body_properties_are_reported() 
     let again = &second.ir().model.rigid_bodies[0];
     assert!(close(again.linear_velocity.unwrap().get().x, 100.0));
     assert!(again.starts_asleep);
+}
+
+/// A cylindrical joint is a generic joint that locks the other four degrees of
+/// freedom and limits the two it leaves free: the turn about z in degrees and
+/// the travel along z in metres.
+#[test]
+fn a_cylindrical_joint_limits_its_free_axes() {
+    let mut ir = decode(LAYER).ir().clone();
+    let joint = ir.model.assembly_joints.remove(0);
+    let JointOperands::Pair { connectors, .. } = joint.operands() else {
+        panic!("a paired joint");
+    };
+    let kind = PairedJointKind::Cylindrical {
+        angle: None,
+        distance: None,
+        angular_limits: JointLimits::new(
+            Some(-std::f64::consts::FRAC_PI_6),
+            Some(std::f64::consts::FRAC_PI_3),
+        ),
+        linear_limits: JointLimits::new(Some(0.0), Some(20.0)),
+    };
+    let cylindrical = cadmpeg_ir::products::AssemblyJoint::paired(
+        joint.id.clone(),
+        kind,
+        (**connectors).clone(),
+        None,
+    );
+    ir.model.assembly_joints.push(cylindrical);
+    let (text, _) = encode(&ir);
+    let prim = text
+        .split("def PhysicsJoint")
+        .nth(1)
+        .unwrap_or_else(|| panic!("no generic joint:\n{text}"));
+    for axis in ["transX", "transY", "rotX", "rotY", "rotZ", "transZ"] {
+        assert!(
+            prim.contains(&format!("\"PhysicsLimitAPI:{axis}\"")),
+            "{text}"
+        );
+    }
+    let value = |name: &str| -> f64 {
+        let at = prim
+            .find(&format!("float {name} = "))
+            .unwrap_or_else(|| panic!("no {name}:\n{text}"));
+        prim[at + name.len() + 9..]
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .parse()
+            .unwrap()
+    };
+    assert!(close(value("limit:rotZ:physics:low"), -30.0), "{text}");
+    assert!(close(value("limit:rotZ:physics:high"), 60.0), "{text}");
+    assert!(close(value("limit:transZ:physics:low"), 0.0), "{text}");
+    assert!(close(value("limit:transZ:physics:high"), 0.02), "{text}");
+}
+
+/// The `BrepArray` box with a mass of 2 kg centred at (5, 10, 15) mm, set on
+/// its one body.
+fn box_with_mass() -> cadmpeg_ir::CadIr {
+    let text = std::fs::read_to_string(format!(
+        "{}/tests/golden/fixtures/brep_array_box.usda",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .expect("fixture");
+    let mut ir = decode(&text).ir().clone();
+    let body = ir.geometry.bodies[0].id.clone();
+    ir.model
+        .mass_properties
+        .push(cadmpeg_ir::physics::MassProperties {
+            id: cadmpeg_ir::ids::MassPropertiesId::try_from("test:usd:mass#box".to_owned())
+                .expect("an id"),
+            target: PhysicsTarget::Body { body }.into(),
+            mass: cadmpeg_ir::scalar::PositiveReal::new(2.0),
+            density: None,
+            center_of_mass: cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+                5.0, 10.0, 15.0,
+            )),
+            inertia: None,
+            material: None,
+            native_ref: None,
+        });
+    ir
+}
+
+/// A body written as a group of prims (its B-rep and its mesh) carries its
+/// mass on the group prim, in kilograms and metres.
+#[test]
+fn a_group_body_carries_its_mass() {
+    let (text, report) = encode(&box_with_mass());
+    let group = text
+        .split("def Xform")
+        .find(|prim| prim.contains("def BrepArray"))
+        .expect("the body's group prim");
+    let head = group.split('{').next().unwrap_or_default();
+    assert!(head.contains("PhysicsMassAPI"), "{text}");
+    assert!(group.contains("float physics:mass = 2\n"), "{text}");
+    assert!(
+        group.contains("point3f physics:centerOfMass = (0.005, 0.01, 0.015)"),
+        "{text}"
+    );
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::UsdLossCode::ExportPhysicsNotWritten.kind()));
+}
+
+/// A body with a transform of its own is a group prim whose space is not the
+/// body's: its mass is not written, and a loss names the body.
+#[test]
+fn a_transformed_group_body_reports_its_mass() {
+    let mut ir = box_with_mass();
+    ir.geometry.bodies[0].transform = Some(
+        cadmpeg_ir::transform::Transform::affine([
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+        ])
+        .expect("a transform"),
+    );
+    let (text, report) = encode(&ir);
+    assert!(!text.contains("physics:mass"), "{text}");
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::UsdLossCode::ExportPhysicsNotWritten.kind()));
 }

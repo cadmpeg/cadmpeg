@@ -1,174 +1,190 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
-    "model": {
-      "appearance_bindings": [],
-      "appearances": [],
-      "assembly_joints": [],
-      "attributes": [],
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
       "bodies": [
         {
           "id": "catia:standard:body#unbound-points",
-          "kind": "wire",
-          "regions": [
-            "catia:standard:region#unbound-points"
-          ]
+          "kind": "wire"
         }
       ],
       "coedges": [],
-      "configurations": [],
       "curves": [
         {
           "geometry": {
-            "degree": 5,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              1.0,
-              1.0,
-              1.0,
-              1.0,
-              1.0,
-              1.0
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 1.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 1.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 1.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 2.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 2.0,
-                  "y": 0.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 2.0,
-                  "y": 0.0,
-                  "z": 0.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 5,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 1.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 1.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 1.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 2.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 2.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 2.0,
+                    "y": 0.0,
+                    "z": 0.0
+                  }
+                ]
+              }
             }
           },
           "id": "catia:rolling-ball:limit#16:0"
         },
         {
           "geometry": {
-            "degree": 5,
-            "kind": "nurbs",
-            "knots": [
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              0.0,
-              1.0,
-              1.0,
-              1.0,
-              1.0,
-              1.0,
-              1.0
-            ],
-            "periodic": false,
-            "poles": {
-              "form": "polynomial",
-              "points": [
-                {
-                  "x": 0.0,
-                  "y": 1.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 1.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 1.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 2.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 2.0,
-                  "z": 0.0
-                },
-                {
-                  "x": 0.0,
-                  "y": 2.0,
-                  "z": 0.0
-                }
-              ]
+            "kind": "solved",
+            "value": {
+              "degree": 5,
+              "kind": "nurbs",
+              "knots": [
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ],
+              "periodic": false,
+              "poles": {
+                "kind": "polynomial",
+                "points": [
+                  {
+                    "x": 0.0,
+                    "y": 1.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 1.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 1.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 2.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 2.0,
+                    "z": 0.0
+                  },
+                  {
+                    "x": 0.0,
+                    "y": 2.0,
+                    "z": 0.0
+                  }
+                ]
+              }
             }
           },
           "id": "catia:rolling-ball:limit#16:1"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "center": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "kind": "circle",
-            "radius": 5.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "center": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "kind": "circle",
+              "radius": 5.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "catia:standard:circle#0",
           "source_object": {
             "format": "catia",
+            "instance_path": [],
             "object_id": "cgm-edge-support:665544"
           }
         }
       ],
-      "drawings": [],
       "edges": [],
       "faces": [],
-      "features": [],
       "loops": [],
-      "occurrences": [],
-      "parameters": [],
       "pcurves": [],
-      "pmi": [],
       "points": [
         {
           "id": "catia:standard:pt#0",
@@ -195,8 +211,6 @@
           }
         }
       ],
-      "presentation_documents": [],
-      "presentation_layers": [],
       "procedural_curves": [],
       "procedural_surfaces": [
         {
@@ -326,7 +340,6 @@
           "surface": "catia:rolling-ball:surf#2"
         }
       ],
-      "product_definitions": [],
       "regions": [
         {
           "body": "catia:standard:body#unbound-points",
@@ -336,7 +349,6 @@
           ]
         }
       ],
-      "semantic_annotations": [],
       "shells": [
         {
           "id": "catia:standard:shell#unbound-points",
@@ -357,60 +369,63 @@
           "region": "catia:standard:region#unbound-points"
         }
       ],
-      "sketch_constraints": [],
-      "sketch_entities": [],
-      "sketches": [],
-      "spatial_sketch_entities": [],
-      "spatial_sketches": [],
-      "spreadsheets": [],
       "subds": [],
       "surfaces": [
         {
           "geometry": {
-            "construction": "catia:rolling-ball:construction#0",
-            "kind": "procedural"
+            "kind": "procedural",
+            "value": {
+              "construction": "catia:rolling-ball:construction#0"
+            }
           },
           "id": "catia:rolling-ball:surf#2"
         },
         {
           "geometry": {
-            "axis": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 1.0
-            },
-            "kind": "cylinder",
-            "origin": {
-              "x": 0.0,
-              "y": 0.0,
-              "z": 0.0
-            },
-            "radius": 5.0,
-            "ref_direction": {
-              "x": 1.0,
-              "y": 0.0,
-              "z": 0.0
+            "kind": "solved",
+            "value": {
+              "axis": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 1.0
+              },
+              "kind": "cylinder",
+              "origin": {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              "radius": 5.0,
+              "ref_direction": {
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0
+              }
             }
           },
           "id": "catia:standard:surf#0",
           "source_object": {
             "format": "catia",
+            "instance_path": [],
             "object_id": "cgm-carrier:ccbbaa"
           }
         },
         {
           "geometry": {
-            "kind": "unknown",
-            "record": "catia:payload:unknown#brep-stream"
+            "kind": "solved",
+            "value": {
+              "kind": "unknown",
+              "record": "catia:payload:unknown#brep-stream"
+            }
           },
           "id": "catia:standard:surf#1",
           "source_object": {
             "format": "catia",
+            "instance_path": [],
             "object_id": "cgm-carrier:332211"
           }
         }
       ],
-      "tessellations": [],
       "vertices": [
         {
           "id": "catia:standard:v#0",
@@ -424,7 +439,62 @@
           "id": "catia:standard:v#2",
           "point": "catia:standard:pt#2"
         }
+      ]
+    },
+    "ir_version": "11",
+    "model": {
+      "appearance_bindings": [],
+      "appearances": [],
+      "articulations": [],
+      "assembly_joints": [],
+      "assets": [],
+      "attributes": [],
+      "colliders": [],
+      "configurations": [],
+      "declared_measures": [],
+      "drawings": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
+      "features": [],
+      "history_bodies": [],
+      "mass_properties": [],
+      "occurrences": [],
+      "parameters": [],
+      "physical_materials": [],
+      "physics_scenes": [],
+      "pmi": [],
+      "point_clouds": [],
+      "presentation_documents": [],
+      "presentation_layers": [],
+      "product_definitions": [
+        {
+          "bodies": [
+            "catia:standard:body#unbound-points"
+          ],
+          "bom_properties": {},
+          "id": "catia:model:product-definition#root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
       ],
+      "rigid_bodies": [],
+      "semantic_annotations": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": [],
+      "tessellations": [],
       "view_presentations": []
     },
     "native": {
@@ -535,30 +605,38 @@
         "zero_entity_vertex_incidences": []
       }
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
-      "attributes": {
-        "brep_stream_len": "324",
-        "brep_stream_sha256": "7cc50f0a65a1b74cbab53eea06f88440daacdbf5ed50a4cd98ba1f994dda158e",
-        "external_reference_count": "0",
-        "fbb_face_rows": "2",
-        "fbb_runs": "1",
-        "file_size": "1174",
-        "finjpl_segment_count": "0",
-        "inner_offset": "603",
-        "outer_dir_offset": "1174",
-        "preview_count": "0",
-        "stream_count": "2",
-        "vertex_records": "3"
-      },
+      "attributes": {},
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
+            "declared": {},
             "dialect": "catia:standard-nested"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -566,7 +644,10 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
@@ -951,65 +1032,78 @@
       "unresolved_unreferenced_relation_expression_count": 0
     },
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
+          "declared": {},
           "dialect": "catia:standard-nested"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "geometry.unresolved-carriers",
-          "kind": "geometry_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.unresolved-carriers",
+            "kind": "geometry_not_transferred",
+            "namespace": "catia",
+            "strict_floor": "warning"
+          }
         },
         "message": "The transferred model retains 0 unresolved curve carriers and 1 unresolved surface carriers without exact procedural constructions. Surface carriers: catia:standard:surf#1.",
         "severity": "blocking"
       },
       {
         "code": {
-          "code": "geometry.carrier-summary",
-          "kind": "carrier_summary",
-          "namespace": "catia",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.carrier-summary",
+            "kind": "carrier_summary",
+            "namespace": "catia"
+          }
         },
         "message": "3 vertex point(s) were decoded verbatim from `05 08 01` records (3×f32 LE, millimetres, identity world placement) and 1 analytic surface carrier(s) were decoded from `SurfacicReps` `00 33` records: 0 plane, 1 cylinder, 0 cone, 0 sphere, 0 torus.",
         "severity": "info"
       },
       {
         "code": {
-          "code": "topology.boundary-graph-not-emitted",
-          "kind": "topology_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "topology.boundary-graph-not-emitted",
+            "kind": "topology_not_transferred",
+            "namespace": "catia",
+            "strict_floor": "warning"
+          }
         },
         "message": "The B-rep boundary graph was not emitted: 2 face outer-bound row(s) in 1 group(s) were detected, but the curve support table is absent or empty.",
         "severity": "blocking"
       },
       {
         "code": {
-          "code": "geometry.plane-parameters-invalid",
-          "kind": "geometry_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "kind": "namespaced",
+          "value": {
+            "code": "geometry.plane-parameters-invalid",
+            "kind": "geometry_not_transferred",
+            "namespace": "catia",
+            "strict_floor": "warning"
+          }
         },
         "message": "1 plane surface record(s) were located but not decoded because their tag-bridged parameter records were absent or invalid.",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "attributes.materials-metadata-not-transferred",
-          "kind": "attributes_not_transferred",
-          "namespace": "catia",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "attributes.materials-metadata-not-transferred",
+            "kind": "attributes_not_transferred",
+            "namespace": "catia"
+          }
         },
         "message": "Standard circles with an exact adjacent-carrier section normal or two non-collinear endpoint radii, plane-plane lines, and same-surface cylinder or cone generators are transferred as curves. Standard spline edges retain exact two-surface intersection constructions and their identity-bound support pcurves when present, but unbound serialized 3D NURBS caches, materials, and document metadata are not yet transferred.",
         "severity": "warning"
@@ -1023,7 +1117,10 @@
     ],
     "transfer": {
       "geometry_transferred": true,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
@@ -1034,59 +1131,66 @@
           "fields": {
             "links": "derived"
           },
-          "scope": "entity"
+          "kind": "entity"
         },
         "catia:rolling-ball:limit#16:0": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "catia:rolling-ball:limit#16:1": {
           "entity": "derived",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "catia:rolling-ball:surf#2": {
           "entity": "unknown",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "catia:standard:body#unbound-points": {
           "entity": "inferred",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "catia:standard:circle#0": {
           "fields": {
             "geometry.axis": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:region#unbound-points": {
           "entity": "inferred",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "catia:standard:shell#unbound-points": {
           "entity": "inferred",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "catia:standard:surf#1": {
           "entity": "unknown",
-          "scope": "entity"
+          "fields": {},
+          "kind": "entity"
         },
         "catia:standard:v#0": {
           "fields": {
             "point": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:v#1": {
           "fields": {
             "point": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         },
         "catia:standard:v#2": {
           "fields": {
             "point": "derived"
           },
-          "scope": "fields"
+          "kind": "fields"
         }
       },
       "provenance": {
@@ -1177,15 +1281,19 @@
         }
       }
     },
+    "decode_digest": "5beec6df26e8425c84382f62f41f9d35e44dc512a0a94e4c0f5ada2859c055ca",
+    "file_digests": {},
     "retained_records": {
       "catia:payload:unknown#brep-stream": {
         "bytes": {
           "data": "AUEB/wMAAAAAAAABAAIBSQH/AwAAAAAAAAAAAAAAAACAPwAAAAEAAjAEBP/S0tLSMAQE/9LS0tIBAQAQJAT//wAAAAECABAkBP//AAAAAQYDBQgBAAAAAAAAAAAAAAAABQgBAAAgQQAAAAAAAAAABQgBAAAAAAAAIEEAAAAAqrvMABoAMzMAAAAAAAAAAAAAAAAAAAAAAAAAAECgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAREiMwACADMyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP//ESIzAAIAMzIAAIA/AAAAQAAAQEAAAAAAAACAQAAAAAAAAIA/AAAAQAAAQEAAAIBAYERVZgASADM3AAAAAAAAAAAAAAAAQKAAAAAB",
-          "retention": "inline"
+          "kind": "inline"
         },
         "offset": 0,
-        "stream": "catia:MainDataStream+SurfacicReps"
+        "stream": "catia:MainDataStream+SurfacicReps",
+        "untyped": []
       }
-    }
+    },
+    "unrepresented": []
   }
 }

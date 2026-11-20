@@ -1,41 +1,93 @@
 {
   "ir": {
-    "decode_depth": "full",
-    "ir_version": "10",
+    "design": {
+      "arrangements": [],
+      "configurations": [],
+      "containers": [],
+      "evaluations": [],
+      "features": [],
+      "names": [],
+      "parameters": [],
+      "programs": [],
+      "publications": [],
+      "scopes": [],
+      "sheet_metal_rules": [],
+      "sketch_constraints": [],
+      "sketch_entities": [],
+      "sketches": [],
+      "spatial_sketch_constraints": [],
+      "spatial_sketch_entities": [],
+      "spatial_sketches": [],
+      "spreadsheets": []
+    },
+    "fragment": false,
+    "geometry": {
+      "bodies": [],
+      "coedges": [],
+      "curves": [],
+      "edges": [],
+      "faces": [],
+      "loops": [],
+      "pcurves": [],
+      "points": [],
+      "procedural_curves": [],
+      "procedural_surfaces": [],
+      "regions": [],
+      "shells": [],
+      "subds": [],
+      "surfaces": [],
+      "vertices": []
+    },
+    "ir_version": "11",
     "model": {
       "appearance_bindings": [],
       "appearances": [],
+      "articulations": [],
       "assembly_joints": [],
+      "assets": [],
       "attributes": [],
-      "bodies": [],
-      "coedges": [],
+      "colliders": [],
       "configurations": [],
-      "curves": [],
+      "declared_measures": [],
       "drawings": [
         {
+          "assets": [],
+          "curves": [],
           "id": "fcstd:model:drawing#First:entity",
           "kind": "page",
           "native_ref": "fcstd:native:drawing#First",
           "object": "fcstd:native:object#First",
           "order": 0,
           "parameters": {
-            "ProjectionType": "<Integer value=\"0\"/>",
             "Scale": "<Float value=\"1.0000000000000000\"/>"
           },
+          "projection": "first",
           "relationships": {
             "Template": [
               {
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "FirstTemplate"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#FirstTemplate:entity"
+                  "kind": "unresolved"
                 }
               }
             ],
             "Views": [
               {
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "FirstNote"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#FirstNote:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -45,6 +97,8 @@
           "template": "fcstd:model:drawing#FirstTemplate:entity"
         },
         {
+          "assets": [],
+          "curves": [],
           "id": "fcstd:model:drawing#FirstNote:entity",
           "kind": "annotation",
           "native_ref": "fcstd:native:drawing#FirstNote",
@@ -55,7 +109,6 @@
             "LockPosition": "<Bool value=\"false\"/>",
             "Rotation": "<Float value=\"0.0000000000000000\"/>",
             "Scale": "<Float value=\"1.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"0\"/>",
             "X": "<Float value=\"20.0000000000000000\"/>",
             "Y": "<Float value=\"30.0000000000000000\"/>"
           },
@@ -72,19 +125,23 @@
               }
             ]
           },
-          "rotation_degrees": 0.0,
+          "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewAnnotation",
-          "scale": 1.0
+          "scale": 1.0,
+          "scale_from": "sheet"
         },
         {
           "assets": [
             "fcstd:native:entry#techdraw-template.svg"
           ],
+          "curves": [],
           "id": "fcstd:model:drawing#FirstTemplate:entity",
           "kind": "template",
           "native_ref": "fcstd:native:drawing#FirstTemplate",
           "object": "fcstd:native:object#FirstTemplate",
           "order": 1,
+          "parameters": {},
+          "relationships": {},
           "runtime_type": "TechDraw::DrawSVGTemplate",
           "sheet": {
             "fields": [
@@ -178,29 +235,43 @@
           }
         },
         {
+          "assets": [],
+          "curves": [],
           "id": "fcstd:model:drawing#Second:entity",
           "kind": "page",
           "native_ref": "fcstd:native:drawing#Second",
           "object": "fcstd:native:object#Second",
           "order": 3,
           "parameters": {
-            "ProjectionType": "<Integer value=\"0\"/>",
             "Scale": "<Float value=\"1.0000000000000000\"/>"
           },
+          "projection": "first",
           "relationships": {
             "Template": [
               {
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "SecondTemplate"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#SecondTemplate:entity"
+                  "kind": "unresolved"
                 }
               }
             ],
             "Views": [
               {
+                "native": {
+                  "codec": "fcstd",
+                  "value": {
+                    "kind": "text",
+                    "value": "SecondNote"
+                  }
+                },
                 "target": {
-                  "kind": "local",
-                  "target": "fcstd:model:drawing#SecondNote:entity"
+                  "kind": "unresolved"
                 }
               }
             ]
@@ -210,6 +281,8 @@
           "template": "fcstd:model:drawing#SecondTemplate:entity"
         },
         {
+          "assets": [],
+          "curves": [],
           "id": "fcstd:model:drawing#SecondNote:entity",
           "kind": "annotation",
           "native_ref": "fcstd:native:drawing#SecondNote",
@@ -220,7 +293,6 @@
             "LockPosition": "<Bool value=\"false\"/>",
             "Rotation": "<Float value=\"0.0000000000000000\"/>",
             "Scale": "<Float value=\"1.0000000000000000\"/>",
-            "ScaleType": "<Integer value=\"0\"/>",
             "X": "<Float value=\"40.0000000000000000\"/>",
             "Y": "<Float value=\"30.0000000000000000\"/>"
           },
@@ -237,19 +309,23 @@
               }
             ]
           },
-          "rotation_degrees": 0.0,
+          "rotation": 0.0,
           "runtime_type": "TechDraw::DrawViewAnnotation",
-          "scale": 1.0
+          "scale": 1.0,
+          "scale_from": "sheet"
         },
         {
           "assets": [
             "fcstd:native:entry#techdraw-template1.svg"
           ],
+          "curves": [],
           "id": "fcstd:model:drawing#SecondTemplate:entity",
           "kind": "template",
           "native_ref": "fcstd:native:drawing#SecondTemplate",
           "object": "fcstd:native:object#SecondTemplate",
           "order": 4,
+          "parameters": {},
+          "relationships": {},
           "runtime_type": "TechDraw::DrawSVGTemplate",
           "sheet": {
             "fields": [
@@ -343,23 +419,39 @@
           }
         }
       ],
-      "edges": [],
-      "faces": [],
+      "feature_input_topologies": [],
+      "feature_result_topologies": [],
       "features": [],
-      "loops": [],
+      "history_bodies": [],
+      "mass_properties": [],
       "occurrences": [],
       "parameters": [],
-      "pcurves": [],
+      "physical_materials": [],
+      "physics_scenes": [],
       "pmi": [],
-      "points": [],
+      "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "procedural_curves": [],
-      "procedural_surfaces": [],
-      "product_definitions": [],
-      "regions": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "fcstd:model:product_definition#document:root",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
+      "rigid_bodies": [],
       "semantic_annotations": [
         {
+          "assets": [],
           "id": "fcstd:model:semantic-annotation#FirstNote:content",
           "kind": "text",
           "native_ref": "fcstd:native:annotation#FirstNote",
@@ -390,6 +482,7 @@
             30.0,
             0.0
           ],
+          "reference_anchors": [],
           "references": {
             "Owner": [
               {
@@ -409,6 +502,7 @@
           }
         },
         {
+          "assets": [],
           "id": "fcstd:model:semantic-annotation#SecondNote:content",
           "kind": "text",
           "native_ref": "fcstd:native:annotation#SecondNote",
@@ -439,6 +533,7 @@
             30.0,
             0.0
           ],
+          "reference_anchors": [],
           "references": {
             "Owner": [
               {
@@ -458,17 +553,15 @@
           }
         }
       ],
-      "shells": [],
       "sketch_constraints": [],
       "sketch_entities": [],
       "sketches": [],
+      "solver_settings": [],
+      "spatial_sketch_constraints": [],
       "spatial_sketch_entities": [],
       "spatial_sketches": [],
       "spreadsheets": [],
-      "subds": [],
-      "surfaces": [],
       "tessellations": [],
-      "vertices": [],
       "view_presentations": []
     },
     "native": {
@@ -507,7 +600,7 @@
           "carrier_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "design_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "document": "e8bf34055c74cf54337477bc1bcf132bd8e5eca917aa63a6696ffe71977f376e",
-          "drawings": "5a2f272fcd561cf3ac8c5d06496ef7263cfe2fd39906bb00e4bd1bf150b37b4b",
+          "drawings": "77cb108f1902671f37fa430e0ac6ce4689e652841fd52a94b8d94c6b92ffa797",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "entries": "6bed100e5bcd68bb9bba501e2ce992f22ad45a5daec19b35a0ab689b779cbf9f",
           "extensions": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -526,24 +619,39 @@
       },
       "__elided": "native arena values are omitted; the records are pinned by a digest over their canonical JSON"
     },
+    "process": {
+      "features": [],
+      "groups": [],
+      "machines": [],
+      "operations": [],
+      "parameters": [],
+      "presets": [],
+      "programs": [],
+      "setups": [],
+      "states": [],
+      "toolpaths": [],
+      "tools": []
+    },
+    "scope": {
+      "design": true,
+      "model": true,
+      "process": true
+    },
     "source": {
       "attributes": {
         "application_domains": "TechDraw",
-        "archive_entry_count": "3",
         "document_kind": "drawing",
         "document_local_sha256": "<elided: digest over tolerantly compared geometry>",
         "document_root": "Document",
-        "object_count": "6",
-        "physical_archive_bytes": "2851",
-        "physical_ledger_spans": "22",
         "program_version": "1.1R45039 (Git)"
       },
       "identity": {
-        "classification": "classified",
         "dialects": {
           "extra": [],
           "primary": {
-            "admission": "admitted",
+            "admission": {
+              "kind": "admitted"
+            },
             "declared": {
               "file_version": "1",
               "program_version": "1.1R45039 (Git)",
@@ -551,7 +659,8 @@
             },
             "dialect": "fcstd:schema-4"
           }
-        }
+        },
+        "kind": "classified"
       }
     },
     "tolerances": {
@@ -559,16 +668,21 @@
       "linear": 1e-6
     },
     "units": {
-      "length": "millimeter"
+      "angle": "radian",
+      "length": "millimeter",
+      "mass": "kilogram",
+      "time": "second"
     }
   },
   "report": {
+    "coverage": {},
     "identity": {
-      "classification": "classified",
       "dialects": {
         "extra": [],
         "primary": {
-          "admission": "admitted",
+          "admission": {
+            "kind": "admitted"
+          },
           "declared": {
             "file_version": "1",
             "program_version": "1.1R45039 (Git)",
@@ -576,45 +690,54 @@
           },
           "dialect": "fcstd:schema-4"
         }
-      }
+      },
+      "kind": "classified"
     },
     "losses": [
       {
         "code": {
-          "code": "drawing.style-not-transferred",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.style-not-transferred",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#FirstTemplate: SVG stroke, fill and font appearance remain in the asset; specified text em sizes are millimetres",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.style-not-transferred",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.style-not-transferred",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#FirstNote: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.style-not-transferred",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.style-not-transferred",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#SecondTemplate: SVG stroke, fill and font appearance remain in the asset; specified text em sizes are millimetres",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "drawing.style-not-transferred",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
+          "kind": "namespaced",
+          "value": {
+            "code": "drawing.style-not-transferred",
+            "kind": "record_not_typed",
+            "namespace": "fcstd"
+          }
         },
         "message": "fcstd:native:object#SecondNote: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
         "severity": "warning"
@@ -631,10 +754,20 @@
     ],
     "transfer": {
       "geometry_transferred": false,
-      "transfer": "full"
+      "kind": "full"
+    },
+    "transfer_ledger": {
+      "entries": []
     }
   },
   "source_fidelity": {
-    "annotations": {}
+    "annotations": {
+      "exactness": {},
+      "provenance": {}
+    },
+    "decode_digest": "1890643d11d5055048dbdf05d53e5335945907312201152f3d8856278de95091",
+    "file_digests": {},
+    "retained_records": {},
+    "unrepresented": []
   }
 }

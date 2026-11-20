@@ -8,6 +8,7 @@ use crate::records::configuration::table::{ConfigurationRow, ConfiguredValue};
 use crate::records::configuration::{DesignConfiguration, DesignConfigurationKind};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::{BTreeMap, HashSet};
 
 mod json;
@@ -184,6 +185,33 @@ impl ConfigurationTargets<'_> {
             .iter()
             .find(|feature| feature.id == id)
     }
+
+    /// The value of neutral parameter `id` whose evaluation in database
+    /// units is `evaluated`, typed as the parameter's own value.
+    fn parameter_value(
+        &self,
+        id: &cadmpeg_ir::features::ParameterId,
+        evaluated: FiniteReal,
+    ) -> Option<cadmpeg_ir::features::ParameterValue> {
+        use cadmpeg_ir::features::ParameterValue;
+        use cadmpeg_ir::scalar::{Angle, Length};
+
+        let parameter = self
+            .neutral_parameters
+            .iter()
+            .find(|parameter| &parameter.id == id)?;
+        match parameter.value.as_ref()? {
+            ParameterValue::Length(_) => {
+                Length::new(evaluated.get() * super::feature_project::DESIGN_LENGTH_TO_MILLIMETRE)
+                    .map(ParameterValue::Length)
+            }
+            ParameterValue::Angle(_) => Angle::new(evaluated.get()).map(ParameterValue::Angle),
+            ParameterValue::Real(_) => Some(ParameterValue::Real(evaluated)),
+            ParameterValue::Integer(_) | ParameterValue::Boolean(_) | ParameterValue::String(_) => {
+                None
+            }
+        }
+    }
 }
 
 /// Project the rows of the one populated table into the neutral configuration
@@ -267,7 +295,7 @@ fn project_row(
         native_ref: Some(document.id()),
     };
     for cell in &row.cells {
-        let (parameter, expression) = match &cell.value {
+        let (parameter, expression, evaluated) = match &cell.value {
             ConfiguredValue::Property { key, text } => {
                 let key = configuration_property_key("property:", key)?;
                 configuration.properties.insert(key, text.clone());
@@ -307,14 +335,25 @@ fn project_row(
             ConfiguredValue::Parameter {
                 record_index,
                 expression,
-            } => (targets.parameter(*record_index, None), expression),
+                value,
+            } => (targets.parameter(*record_index, None), expression, *value),
             ConfiguredValue::OwnedParameter {
                 owner_record_index,
                 expression,
-            } => (targets.owned_parameter(*owner_record_index), expression),
+                value,
+            } => (
+                targets.owned_parameter(*owner_record_index),
+                expression,
+                *value,
+            ),
         };
         match parameter {
             Some(parameter) => {
+                if let Some(value) = targets.parameter_value(&parameter, evaluated) {
+                    configuration
+                        .parameter_values
+                        .insert(parameter.clone(), value);
+                }
                 configuration
                     .parameter_overrides
                     .insert(parameter, expression.clone());

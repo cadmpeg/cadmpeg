@@ -36,6 +36,7 @@ fn axial_line_fixture(
                 .expect("valid cylinder fixture"),
             )),
             source_object: None,
+            native_ref: None,
         }],
         curves: vec![Curve {
             parameter_range: None,
@@ -44,6 +45,7 @@ fn axial_line_fixture(
                 LineCurve::try_new(line_origin, line_direction).expect("valid line fixture"),
             )),
             source_object: None,
+            native_ref: None,
         }],
         faces: vec![Face {
             id: face_id.clone(),
@@ -54,6 +56,7 @@ fn axial_line_fixture(
             name: None,
             color: None,
             tolerance: None,
+            native_ref: None,
         }],
         loops: vec![Loop {
             id: loop_id.clone(),
@@ -62,6 +65,7 @@ fn axial_line_fixture(
                 cadmpeg_ir::topology::LoopRing::new(vec![coedge_id.clone()], Vec::new())
                     .expect("valid loop ring"),
             ),
+            native_ref: None,
         }],
         coedges: vec![Coedge {
             id: coedge_id,
@@ -71,24 +75,30 @@ fn axial_line_fixture(
             sense: Sense::Forward,
             pcurves: Vec::new(),
             use_curve: None,
+            native_ref: None,
         }],
         edges: vec![Edge {
             id: edge_id,
             carrier: cadmpeg_ir::topology::EdgeCarrier::unbounded(Some(curve_id)),
-            start: start_vertex.clone(),
-            end: end_vertex.clone(),
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(
+                start_vertex.clone(),
+                end_vertex.clone(),
+            )),
             tolerance: None,
+            native_ref: None,
         }],
         vertices: vec![
             Vertex {
                 id: start_vertex,
                 point: start_point.clone(),
                 tolerance: None,
+                native_ref: None,
             },
             Vertex {
                 id: end_vertex,
                 point: end_point.clone(),
                 tolerance: None,
+                native_ref: None,
             },
         ],
         points: vec![

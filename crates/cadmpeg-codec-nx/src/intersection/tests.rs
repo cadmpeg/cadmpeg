@@ -33,21 +33,21 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
     use cadmpeg_ir::ids::{PcurveId, ProceduralCurveId};
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
-    let edge = ir.model.edges[0].clone();
+    let edge = ir.geometry.edges[0].clone();
     let incident = ir
-        .model
+        .geometry
         .coedges
         .iter()
         .filter(|coedge| coedge.edge == edge.id)
         .filter_map(|coedge| {
             let face = ir
-                .model
+                .geometry
                 .loops
                 .iter()
                 .find(|loop_| loop_.id == coedge.owner_loop)?
                 .face
                 .clone();
-            ir.model
+            ir.geometry
                 .faces
                 .iter()
                 .find(|candidate| candidate.id == face)
@@ -56,7 +56,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         .collect::<Vec<_>>();
     assert_eq!(incident.len(), 2);
     let curve = edge.curve().cloned().expect("cube edge curve");
-    let _attached = ir.model.add_procedural_curve(
+    let _attached = ir.geometry.add_procedural_curve(
         &curve,
         ProceduralCurve::new(
             ProceduralCurveId::mint("nx:test:intersection#0").expect("identity grammar"),
@@ -84,7 +84,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
 
     complete_intersection_supports_from_edge_incidence(&mut ir);
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        ir.model.procedural_curves[0].definition()
+        ir.geometry.procedural_curves[0].definition()
     else {
         panic!("intersection");
     };
@@ -98,7 +98,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         )
         .unwrap(),
     );
-    ir.model.pcurves.push(Pcurve {
+    ir.geometry.pcurves.push(Pcurve {
         id: pcurve_id.clone(),
         geometry: pcurve_geometry.clone(),
         metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -106,9 +106,10 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
             Some(cadmpeg_ir::units::FiniteVector::new([0.0, 1.0]).expect("finite fixture range")),
             None,
         ),
+        native_ref: None,
     });
     let second_face = ir
-        .model
+        .geometry
         .faces
         .iter()
         .find(|face| face.surface == incident[1])
@@ -116,14 +117,14 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         .id
         .clone();
     let second_loop = ir
-        .model
+        .geometry
         .loops
         .iter()
         .find(|loop_| loop_.face == second_face)
         .expect("second incident loop")
         .id
         .clone();
-    ir.model
+    ir.geometry
         .coedges
         .iter_mut()
         .find(|coedge| coedge.edge == edge.id && coedge.owner_loop == second_loop)
@@ -136,7 +137,7 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
 
     complete_intersection_pcurves_from_coedge_incidence(&mut ir);
     let ProceduralCurveDefinition::Intersection { context, .. } =
-        ir.model.procedural_curves[0].definition()
+        ir.geometry.procedural_curves[0].definition()
     else {
         panic!("intersection");
     };
@@ -578,17 +579,17 @@ fn intersection_pcurve_attachment_requires_face_incidence() {
         let edge =
             cadmpeg_ir::ids::EdgeId::mint("synthetic:cube:edge#0").expect("identity grammar");
         let surface = ir
-            .model
+            .geometry
             .coedges
             .iter()
             .find(|coedge| coedge.edge == edge && coedge.id.as_str().contains("bottom"))
             .and_then(|coedge| {
                 let loop_ = ir
-                    .model
+                    .geometry
                     .loops
                     .iter()
                     .find(|loop_| loop_.id == coedge.owner_loop)?;
-                ir.model
+                ir.geometry
                     .faces
                     .iter()
                     .find(|face| face.id == loop_.face)

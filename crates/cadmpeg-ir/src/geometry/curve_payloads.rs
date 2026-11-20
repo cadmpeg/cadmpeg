@@ -58,7 +58,6 @@ pub struct SurfaceOffsetCurveConstruction {
     base_endpoints: [Option<FiniteReal>; 2],
     /// Cache contract: the cache-first shared-context fields, or the legacy
     /// solved-cache tolerance the context-first layout states instead.
-    #[serde(default, skip_serializing_if = "CacheContract::is_bare_legacy")]
     cache: CacheContract<CacheFirstCurveForm<FiniteReal>>,
     /// Signed model-space offset distance.
     distance: FiniteReal,
@@ -86,11 +85,9 @@ struct SurfaceOffsetCurveConstructionWire {
     base_range: [f64; 2],
     /// Optional parameter endpoints following the embedded base curve in
     /// the cache-first layout.
-    #[serde(default)]
     base_endpoints: [Option<f64>; 2],
     /// Cache contract: the cache-first shared-context fields, or the legacy
     /// solved-cache tolerance the context-first layout states instead.
-    #[serde(default)]
     cache: CacheContract<CacheFirstCurveForm>,
     /// Signed model-space offset distance.
     distance: f64,
@@ -518,6 +515,7 @@ pub struct SpatialOffsetCurveConstruction {
     /// Reference direction controlling the offset frame.
     reference_direction: UnitVector3,
     /// Whether the source classifies the result as self-intersecting.
+    #[serde(skip_serializing_if = "Option::is_none")]
     self_intersect: Option<bool>,
 }
 
@@ -532,7 +530,7 @@ struct SpatialOffsetCurveConstructionWire {
     /// Reference direction controlling the offset frame.
     reference_direction: Vector3,
     /// Whether the source classifies the result as self-intersecting.
-    #[serde(deserialize_with = "cadmpeg_core::absent_key::nullable")]
+    #[serde(default, deserialize_with = "deserialize_self_intersect")]
     self_intersect: Option<bool>,
 }
 
@@ -775,7 +773,6 @@ pub struct SubsetCurveConstruction {
     /// Native parameter interval retained from the parent.
     parameter_range: ParameterInterval,
     /// Whether the subset follows increasing parent parameters.
-    #[serde(default = "crate::default_true")]
     sense: bool,
     /// Solved-cache fit contract this construction states itself.
     #[serde(
@@ -795,7 +792,6 @@ struct SubsetCurveConstructionWire {
     /// Native parameter interval retained from the parent.
     parameter_range: [f64; 2],
     /// Whether the subset follows increasing parent parameters.
-    #[serde(default = "crate::default_true")]
     sense: bool,
     /// Solved-cache fit contract this construction states itself.
     #[serde(default, deserialize_with = "deserialize_cache")]
@@ -1335,3 +1331,5 @@ cadmpeg_core::named_optional_field!(deserialize_range, CurveOffsetRange, "range"
 cadmpeg_core::named_optional_field!(deserialize_cache, LegacyCache, "cache");
 
 mod identity_rewrite;
+
+cadmpeg_core::named_optional_field!(deserialize_self_intersect, bool, "self_intersect");

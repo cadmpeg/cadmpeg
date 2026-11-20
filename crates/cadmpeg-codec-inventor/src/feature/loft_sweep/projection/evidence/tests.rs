@@ -3,35 +3,40 @@
 use super::*;
 use serde_json::json;
 
-fn model() -> Model {
-    let mut value = serde_json::to_value(Model::default()).expect("empty model");
-    let partial = json!({
-        "bodies": [{"id":"test:model:body#b", "kind":"solid", "regions":["test:model:region#r"]}],
+fn model() -> CadIr {
+    let mut partial = json!({
+        "bodies": [{"id":"test:model:body#b", "kind":"solid"}],
         "regions": [{"id":"test:model:region#r", "body":"test:model:body#b", "shells":["test:model:shell#s"]}],
-        "shells": [{"id":"test:model:shell#s", "region":"test:model:region#r", "members":[{"kind":"face","id":"test:model:face#f0"},{"kind":"face","id":"test:model:face#f1"},{"kind":"face","id":"test:model:face#f2"}]}],
-        "faces": (0..3).map(|i| json!({"id":format!("test:model:face#f{i}"),"shell":"test:model:shell#s", "surface":format!("test:model:surface#g{i}"), "sense":"forward", "loops":{"classification":"unspecified","loops":if i<2 {vec![format!("test:model:loop#l{i}")]} else {vec![]}}})).collect::<Vec<_>>(),
-        "loops": (0..2).map(|i|json!({"id":format!("test:model:loop#l{i}"), "face":format!("test:model:face#f{i}"), "boundary":{"kind":"ring","coedges":[format!("test:model:coedge#c{i}")]}})).collect::<Vec<_>>(),
-        "coedges": (0..2).map(|i|json!({"id":format!("test:model:coedge#c{i}"),"owner_loop":format!("test:model:loop#l{i}"), "edge":format!("test:model:edge#e{i}"), "radial_next":format!("test:model:coedge#c{i}"), "sense":"forward"})).collect::<Vec<_>>(),
-        "edges": (0..2).map(|i|json!({"id":format!("test:model:edge#e{i}"), "carrier":{"curve":format!("test:model:curve#c{i}"),"param_range":[0.0,std::f64::consts::TAU]}, "start":format!("test:model:vertex#v{i}"), "end":format!("test:model:vertex#v{i}")})).collect::<Vec<_>>(),
-        "curves": (0..2).map(|i|json!({"id":format!("test:model:curve#c{i}"), "geometry":{"kind":"circle", "center":{"x":0.0,"y":0.0,"z":f64::from(i)*5.0},"axis":{"x":0.0,"y":0.0,"z":1.0},"ref_direction":{"x":1.0,"y":0.0,"z":0.0},"radius":2.0}})).collect::<Vec<_>>(),
+        "shells": [{"id":"test:model:shell#s", "region":"test:model:region#r", "members":[]}],
+        "faces": (0..3).map(|i| json!({"id":format!("test:model:face#f{i}"),"shell":"test:model:shell#s", "surface":format!("test:model:surface#g{i}"), "sense":"forward", "loops":{"kind":"unspecified","loops":if i<2 {vec![format!("test:model:loop#l{i}")]} else {vec![]}}})).collect::<Vec<_>>(),
+        "loops": (0..2).map(|i|json!({"id":format!("test:model:loop#l{i}"), "face":format!("test:model:face#f{i}"), "boundary":{"kind":"ring","coedges":[format!("test:model:coedge#c{i}")], "vertex_uses": []}})).collect::<Vec<_>>(),
+        "coedges": (0..2).map(|i|json!({"id":format!("test:model:coedge#c{i}"),"owner_loop":format!("test:model:loop#l{i}"), "edge":format!("test:model:edge#e{i}"), "radial_next":format!("test:model:coedge#c{i}"), "sense":"forward", "pcurves": []})).collect::<Vec<_>>(),
+        "edges": (0..2).map(|i|json!({"id":format!("test:model:edge#e{i}"), "carrier":{"curve":format!("test:model:curve#c{i}"),"param_range":[0.0,std::f64::consts::TAU]}, "ends":{"start":format!("test:model:vertex#v{i}"), "end":format!("test:model:vertex#v{i}")}})).collect::<Vec<_>>(),
+        "curves": (0..2).map(|i|json!({"id":format!("test:model:curve#c{i}"), "geometry":{"kind": "solved", "value": {"kind":"circle", "center":{"x":0.0,"y":0.0,"z":f64::from(i)*5.0},"axis":{"x":0.0,"y":0.0,"z":1.0},"ref_direction":{"x":1.0,"y":0.0,"z":0.0},"radius":2.0}}})).collect::<Vec<_>>(),
         "surfaces": [
-            {"id":"test:model:surface#g0", "geometry":{"kind":"plane","origin":{"x":0.0,"y":0.0,"z":0.0},"normal":{"x":0.0,"y":0.0,"z":1.0},"u_axis":{"x":1.0,"y":0.0,"z":0.0}}},
-            {"id":"test:model:surface#g1", "geometry":{"kind":"plane","origin":{"x":0.0,"y":0.0,"z":5.0},"normal":{"x":0.0,"y":0.0,"z":1.0},"u_axis":{"x":1.0,"y":0.0,"z":0.0}}},
-            {"id":"test:model:surface#g2", "geometry":{"kind":"cylinder","origin":{"x":0.0,"y":0.0,"z":0.0},"axis":{"x":0.0,"y":0.0,"z":1.0},"ref_direction":{"x":1.0,"y":0.0,"z":0.0},"radius":2.0}}
+            {"id":"test:model:surface#g0", "geometry":{"kind": "solved", "value": {"kind":"plane","origin":{"x":0.0,"y":0.0,"z":0.0},"normal":{"x":0.0,"y":0.0,"z":1.0},"u_axis":{"x":1.0,"y":0.0,"z":0.0}}}},
+            {"id":"test:model:surface#g1", "geometry":{"kind": "solved", "value": {"kind":"plane","origin":{"x":0.0,"y":0.0,"z":5.0},"normal":{"x":0.0,"y":0.0,"z":1.0},"u_axis":{"x":1.0,"y":0.0,"z":0.0}}}},
+            {"id":"test:model:surface#g2", "geometry":{"kind": "solved", "value": {"kind":"cylinder","origin":{"x":0.0,"y":0.0,"z":0.0},"axis":{"x":0.0,"y":0.0,"z":1.0},"ref_direction":{"x":1.0,"y":0.0,"z":0.0},"radius":2.0}}}
         ],
         "attributes": (0..3).map(|i| {
             let mut values = vec![json!({"kind":"reference","value":"x"});5];
             values.push(json!({"kind":"string","value":"INV_NMX_SWEEPGENERATED_TAG"}));
             values.extend([1,44,1,17,-1].into_iter().map(|value|json!({"kind":"integer","value":value})));
             values.extend(match i {0=>vec![0,0,4],1=>vec![0,0,12],_=>vec![8,9,20]}.into_iter().chain([0;7]).map(|value|json!({"kind":"integer","value":value})));
-            json!({"id":format!("test:model:attribute#a{i}"),"name":"ATTRIB_CUSTOM-attrib","target":{"kind":"face","id":format!("test:model:face#f{i}")},"values":values})
+            json!({"id":format!("test:model:attribute#a{i}"),"name":"ATTRIB_CUSTOM-attrib","target":{"entity":{"kind":"face","value":format!("test:model:face#f{i}")}},"values":values})
         }).collect::<Vec<_>>()
     });
-    value
+    let partial = partial.as_object_mut().expect("partial model");
+    let attributes = partial.remove("attributes").expect("attributes");
+    let mut ir = CadIr::empty();
+    let mut geometry = serde_json::to_value(&ir.geometry).expect("empty topology");
+    geometry
         .as_object_mut()
-        .expect("model object")
-        .extend(partial.as_object().expect("partial model").clone());
-    serde_json::from_value(value).expect("synthetic owned solid")
+        .expect("topology object")
+        .extend(partial.clone());
+    ir.geometry = serde_json::from_value(geometry).expect("synthetic owned solid");
+    ir.model.attributes = serde_json::from_value(attributes).expect("synthetic attributes");
+    ir
 }
 
 #[test]
@@ -57,7 +62,7 @@ fn sweep_requires_its_own_caps_complete_spans_and_unchanged_radius() {
         .contains(&(section, name)))
     .is_none());
     let mut shifted = model.clone();
-    shifted.curves[1].geometry =
+    shifted.geometry.curves[1].geometry =
         cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(
             cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
                 Point3::new(1.0, 0.0, 5.0),
@@ -70,16 +75,19 @@ fn sweep_requires_its_own_caps_complete_spans_and_unchanged_radius() {
     assert!(sweep(&shifted, 17, 2.0, 8, &[(9, None)], ends).is_none());
 
     let mut missing = model.clone();
-    missing.attributes.pop();
+    missing.model.attributes.pop();
     assert!(sweep(&missing, 17, 2.0, 8, &[(9, None)], ends).is_none());
     let mut duplicate = model;
-    duplicate.attributes.push(duplicate.attributes[0].clone());
+    duplicate
+        .model
+        .attributes
+        .push(duplicate.model.attributes[0].clone());
     assert!(sweep(&duplicate, 17, 2.0, 8, &[(9, None)], ends).is_none());
 }
 
-fn cylinder_model(radius: f64) -> Model {
+fn cylinder_model(radius: f64) -> CadIr {
     let mut model = model();
-    model.surfaces[2].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+    model.geometry.surfaces[2].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
         cadmpeg_ir::geometry::analytic::CylinderSurface::try_new(
             Point3::new(0.0, 0.0, 0.0),
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -98,13 +106,13 @@ fn line_span() -> PathCurve {
     }
 }
 
-fn torus_model(center: Point3) -> Model {
+fn torus_model(center: Point3) -> CadIr {
     torus_model_with_minor(center, 2.0)
 }
 
-fn torus_model_with_minor(center: Point3, minor: f64) -> Model {
+fn torus_model_with_minor(center: Point3, minor: f64) -> CadIr {
     let mut model = model();
-    model.surfaces[2].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
+    model.geometry.surfaces[2].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
         cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
             center,
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
@@ -205,14 +213,14 @@ fn loft_result_requires_two_positional_sections_without_support_or_guidance() {
 fn loft_payload() -> serde_json::Value {
     let member = json!({
         "profile":{"curve":"test:model:curve#curve"},
-        "form":{"kind":"support", "type_code":1, "first_flag":false,
-            "subdata":{"form":"type211", "dimensions":[1,1], "row":[0.0,1.0]}}
+        "form":{"kind":"support", "type_code":1, "support_bounds":[null,null,null,null], "first_flag":false,
+            "subdata":{"kind":"type211", "dimensions":[1,1], "row":[0.0,1.0]}}
     });
     let entry = json!({"parameter":0.0, "profile":[member], "path":{"auxiliaries":[], "flag":-1}});
     json!({
         "sections":[{"entries":[entry,entry]}, {"entries":[]}],
         "parameters":{"kind":"ordered_ranges", "ranges":[[0.0,1.0],[0.0,1.0]]},
-        "closures":[0,0],"singularities":[0,0],"mode":0,"bridge":[]
+        "closures":[0,0],"singularities":[0,0],"mode":0,"bridge":[],"cache":{"kind":"legacy"}
     })
 }
 
@@ -223,7 +231,7 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
         ProceduralSurface, SurfaceGeometry,
     };
     let mut model = model();
-    for (i, attribute) in model.attributes.iter_mut().enumerate() {
+    for (i, attribute) in model.model.attributes.iter_mut().enumerate() {
         attribute.values.truncate(11);
         let (family, values) = match i {
             0 => ("INV_NMX_GEN_TAG", vec![0, 19, 260]),
@@ -251,12 +259,15 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
     let id = cadmpeg_ir::ids::ProceduralSurfaceId::mint("test:model:procedural-surface#loft")
         .expect("id");
     let payload = serde_json::from_value(loft_payload()).expect("payload");
-    model.procedural_surfaces.push(ProceduralSurface::new(
-        id.clone(),
-        ProceduralSurfaceDefinition::Loft(payload),
-        None,
-    ));
-    model.surfaces[2].geometry = SurfaceGeometry::Procedural {
+    model
+        .geometry
+        .procedural_surfaces
+        .push(ProceduralSurface::new(
+            id.clone(),
+            ProceduralSurfaceDefinition::Loft(payload),
+            None,
+        ));
+    model.geometry.surfaces[2].geometry = SurfaceGeometry::Procedural {
         construction: id,
         cache: Some(SolvedSurfaceGeometry::Nurbs(nurbs)),
     };
@@ -270,7 +281,7 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
         .contains(&(section, name)))
     .is_none());
     let mut different_last_curve = model.clone();
-    different_last_curve.attributes[2].values[17] = AttributeValue::Integer(5);
+    different_last_curve.model.attributes[2].values[17] = AttributeValue::Integer(5);
     assert!(loft(&different_last_curve, 17, [19, 23], |section, name| [
         (0, 8),
         (1, 5)
@@ -285,7 +296,10 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
     .is_none());
     let side_values = |values: [i64; 11]| {
         let mut swapped = model.clone();
-        for (slot, value) in swapped.attributes[2].values[11..].iter_mut().zip(values) {
+        for (slot, value) in swapped.model.attributes[2].values[11..]
+            .iter_mut()
+            .zip(values)
+        {
             *slot = AttributeValue::Integer(value);
         }
         swapped
@@ -314,13 +328,13 @@ fn loft_caps_and_side_members_must_name_the_ordered_section_sketches() {
         );
     }
     let mut wrong_curve = model.clone();
-    wrong_curve.attributes[2].values[12] = AttributeValue::Integer(99);
+    wrong_curve.model.attributes[2].values[12] = AttributeValue::Integer(99);
     assert!(
         loft(&wrong_curve, 17, [19, 23], |section, name| [(0, 8), (1, 3)]
             .contains(&(section, name)))
         .is_none()
     );
-    model.attributes[2].values[21] = AttributeValue::Integer(2);
+    model.model.attributes[2].values[21] = AttributeValue::Integer(2);
     assert!(loft(&model, 17, [19, 23], |section, name| [(0, 8), (1, 3)]
         .contains(&(section, name)))
     .is_none());
@@ -333,17 +347,20 @@ const SIDE_CLASS: &str =
 
 /// Two caps and one planar side of generator 17, plus one planar face named
 /// by a later generator 99.
-fn legacy_model() -> Model {
+fn legacy_model() -> CadIr {
     let mut model = model();
-    model.surfaces[2].geometry = serde_json::from_value(json!({
+    model.geometry.surfaces[2].geometry = serde_json::from_value(json!({"kind":"solved","value":{
         "kind":"plane","origin":{"x":0.0,"y":0.0,"z":0.0},
         "normal":{"x":1.0,"y":0.0,"z":0.0},"u_axis":{"x":0.0,"y":1.0,"z":0.0}
-    }))
+    }}))
     .expect("plane");
-    let mut later = model.faces[2].clone();
+    let mut later = model.geometry.faces[2].clone();
     later.id = serde_json::from_value(json!("test:model:face#f3")).expect("id");
-    model.faces.push(later);
-    model.attributes.push(model.attributes[2].clone());
+    model.geometry.faces.push(later);
+    model
+        .model
+        .attributes
+        .push(model.model.attributes[2].clone());
     let face = |i: usize| {
         AttributeTarget::Face(
             serde_json::from_value(json!(format!("test:model:face#f{i}"))).expect("face id"),
@@ -365,10 +382,11 @@ fn legacy_model() -> Model {
             vec![2, 5, 19, 258, 0, 0, 5, 23, 258, 0, 0],
         ),
     ];
-    for (attribute, (class, target, generator, tail)) in model.attributes.iter_mut().zip(attributes)
+    for (attribute, (class, target, generator, tail)) in
+        model.model.attributes.iter_mut().zip(attributes)
     {
         attribute.name = class.into();
-        attribute.target = face(target);
+        attribute.target = face(target).into();
         attribute.values.truncate(5);
         attribute.values.extend(
             [38, 1, generator, -1]
@@ -414,61 +432,62 @@ fn legacy_loft_requires_both_caps_and_one_side_for_each_section_curve() {
 #[test]
 fn legacy_loft_refuses_a_cap_side_or_name_that_is_not_the_positional_form() {
     let base = legacy_model();
-    let check = |model: &Model| legacy_loft(model, 17, [19, 23], legacy_curves);
+    let check = |model: &CadIr| legacy_loft(model, 17, [19, 23], legacy_curves);
     let mut missing_cap = base.clone();
-    missing_cap.attributes.remove(1);
+    missing_cap.model.attributes.remove(1);
     assert!(check(&missing_cap).is_none());
     let mut duplicate_cap = base.clone();
-    duplicate_cap.attributes[1].values[11] = AttributeValue::Integer(19);
+    duplicate_cap.model.attributes[1].values[11] = AttributeValue::Integer(19);
     assert!(check(&duplicate_cap).is_none());
     let mut foreign_cap = base.clone();
-    foreign_cap.attributes[1].values[11] = AttributeValue::Integer(40);
+    foreign_cap.model.attributes[1].values[11] = AttributeValue::Integer(40);
     assert!(check(&foreign_cap).is_none());
     // The side tail carries no member index; a member tail is the other carrier's form.
     let mut member = base.clone();
-    member.attributes[2].values[18] = AttributeValue::Integer(4);
-    member.attributes[2].values[19] = AttributeValue::Integer(1);
+    member.model.attributes[2].values[18] = AttributeValue::Integer(4);
+    member.model.attributes[2].values[19] = AttributeValue::Integer(1);
     assert!(check(&member).is_none());
     let mut curve_tail = base.clone();
-    curve_tail.attributes[2].values[14] = AttributeValue::Integer(257);
+    curve_tail.model.attributes[2].values[14] = AttributeValue::Integer(257);
     assert!(check(&curve_tail).is_none());
     let mut duplicate_side = base.clone();
-    let mut side = duplicate_side.attributes[2].clone();
+    let mut side = duplicate_side.model.attributes[2].clone();
     side.target = AttributeTarget::Face(
         serde_json::from_value(json!("test:model:face#f3")).expect("face id"),
-    );
+    )
+    .into();
     side.values[7] = AttributeValue::Integer(17);
-    duplicate_side.attributes[3] = side;
+    duplicate_side.model.attributes[3] = side;
     assert!(check(&duplicate_side).is_none());
     // Two names on one face: the face is not solely the generator's.
     let mut shared = base.clone();
-    shared.attributes[2].values[6] = AttributeValue::Integer(2);
-    shared.attributes[2]
+    shared.model.attributes[2].values[6] = AttributeValue::Integer(2);
+    shared.model.attributes[2]
         .values
         .insert(9, AttributeValue::Integer(5));
-    shared.attributes[2]
+    shared.model.attributes[2]
         .values
         .insert(10, AttributeValue::Integer(-1));
     assert!(check(&shared).is_none());
     // A side face on a non-planar surface.
     let mut curved = base.clone();
-    curved.surfaces[2].geometry = model().surfaces[2].geometry.clone();
+    curved.geometry.surfaces[2].geometry = model().geometry.surfaces[2].geometry.clone();
     assert!(check(&curved).is_none());
     // The generator names a face on a second body.
     let mut other_body = base.clone();
-    let mut body = other_body.bodies[0].clone();
+    let mut body = other_body.geometry.bodies[0].clone();
     body.id = serde_json::from_value(json!("test:model:body#b2")).expect("id");
-    let mut region = other_body.regions[0].clone();
+    let mut region = other_body.geometry.regions[0].clone();
     region.id = serde_json::from_value(json!("test:model:region#r2")).expect("id");
     region.body = body.id.clone();
-    let mut shell = other_body.shells[0].clone();
+    let mut shell = other_body.geometry.shells[0].clone();
     shell.id = serde_json::from_value(json!("test:model:shell#s2")).expect("id");
     shell.region = region.id.clone();
-    other_body.faces[3].shell = shell.id.clone();
-    other_body.attributes[3].values[7] = AttributeValue::Integer(17);
-    other_body.attributes[3].values[11] = AttributeValue::Integer(0);
-    other_body.bodies.push(body);
-    other_body.regions.push(region);
-    other_body.shells.push(shell);
+    other_body.geometry.faces[3].shell = shell.id.clone();
+    other_body.model.attributes[3].values[7] = AttributeValue::Integer(17);
+    other_body.model.attributes[3].values[11] = AttributeValue::Integer(0);
+    other_body.geometry.bodies.push(body);
+    other_body.geometry.regions.push(region);
+    other_body.geometry.shells.push(shell);
     assert!(check(&other_body).is_none());
 }

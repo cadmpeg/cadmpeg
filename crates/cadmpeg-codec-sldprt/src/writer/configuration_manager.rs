@@ -12,7 +12,7 @@ pub(super) fn validate(
         .into_iter()
         .filter(|attribute| attribute.name == "configuration_manager")
     {
-        let valid = attribute.target == AttributeTarget::Document
+        let valid = attribute.target.entity == AttributeTarget::Document
             && annotations
                 .provenance
                 .get(attribute.id.as_str())

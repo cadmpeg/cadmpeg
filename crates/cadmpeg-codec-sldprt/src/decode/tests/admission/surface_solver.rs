@@ -75,12 +75,23 @@ fn intersection_chart_edge_tolerance_is_the_chordal_error() {
     );
     let tolerances: Vec<f64> = decoded
         .ir()
-        .model
+        .geometry
         .edges
         .iter()
         .filter_map(|edge| edge.tolerance)
         .map(cadmpeg_ir::scalar::PositiveReal::get)
         .collect();
+    let approximations: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::SldprtLossCode::GeometryCarrierApproximated.kind())
+        .collect();
+    assert_eq!(approximations.len(), 1);
+    assert_eq!(
+        approximations[0].message,
+        "1 intersection chart curve(s) use approximate carriers; largest fit tolerance 1 mm."
+    );
     assert_eq!(tolerances.len(), 1);
     assert!((tolerances[0] - 1.0).abs() <= 1.0e-12);
 }
@@ -97,7 +108,7 @@ fn geometry_surface_solver_derives_intersection_pcurve() {
             .decode(&mut Cursor::new(&source), &options)
             .unwrap(),
     );
-    assert!(decoded.ir().model.pcurves.iter().any(|pcurve| {
+    assert!(decoded.ir().geometry.pcurves.iter().any(|pcurve| {
         decoded
             .source_fidelity()
             .annotations
@@ -105,5 +116,27 @@ fn geometry_surface_solver_derives_intersection_pcurve() {
             .get(pcurve.id.as_str())
             .and_then(|note| note.tag.as_deref())
             == Some("derived_intersection_nurbs_uv")
+    }));
+}
+
+#[test]
+fn exact_native_carriers_have_no_approximation_loss() {
+    use crate::test_support::parasolid::{edge_use, linear_nurbs_curve_carrier, triangle_body};
+    let mut body = triangle_body();
+    let old_edge = edge_use(40, 0);
+    let at = body
+        .windows(old_edge.len())
+        .position(|bytes| bytes == old_edge)
+        .unwrap();
+    body.splice(at..at + old_edge.len(), edge_use(40, 70));
+    body.extend(linear_nurbs_curve_carrier(70, 80));
+    let source = crate::test_support::container::sldprt_with_body(&body);
+    let decoded = crate::SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(!decoded.ir().geometry.curves.is_empty());
+    assert!(!decoded.ir().geometry.surfaces.is_empty());
+    assert!(!decoded.report().losses.iter().any(|loss| {
+        loss.code == crate::loss::SldprtLossCode::GeometryCarrierApproximated.kind()
     }));
 }

@@ -1209,7 +1209,7 @@ mod tests {
             false,
         )
         .unwrap();
-        ir.model.curves.push(crate::geometry::Curve {
+        ir.geometry.curves.push(crate::geometry::Curve {
             id: spine.clone(),
             geometry: crate::geometry::CurveGeometry::Solved(
                 crate::geometry::SolvedCurveGeometry::Nurbs(chart),

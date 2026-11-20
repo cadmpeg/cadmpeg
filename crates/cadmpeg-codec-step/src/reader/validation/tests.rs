@@ -154,7 +154,7 @@ fn a_property_of_a_face_has_no_body_target() {
 
     for property in [41, 46, 50, 57] {
         for measure in of_property(result.ir(), property) {
-            assert_eq!(measure.target, DeclaredTarget::Unresolved {}, "{measure:?}");
+            assert_eq!(measure.target, DeclaredTarget::Unresolved, "{measure:?}");
         }
     }
 }
@@ -259,7 +259,7 @@ fn a_product_definition_shape_property_targets_the_definition() {
         assert_eq!(measure.label.as_deref(), Some("validated"));
     }
     assert!(ir
-        .model
+        .geometry
         .points
         .iter()
         .all(|point| { !point.id.as_str().ends_with(&format!("#{}", 1009)) }));
@@ -289,7 +289,7 @@ fn aspect_part(
     let first = format!("step:data:body#{}", part.items[0]);
     let bodies = result
         .ir()
-        .model
+        .geometry
         .bodies
         .iter()
         .filter(|body| body.id.as_str() == first)
@@ -335,14 +335,14 @@ fn a_shape_aspect_of_a_face_has_no_body_target() {
         )
     });
     let [measure] = of_property(&ir, 1000).try_into().unwrap();
-    assert_eq!(measure.target, DeclaredTarget::Unresolved {});
+    assert_eq!(measure.target, DeclaredTarget::Unresolved);
 }
 
 #[test]
 fn a_shape_aspect_without_geometry_has_no_body_target() {
     let (ir, _) = aspect_part(|_| String::new());
     let [measure] = of_property(&ir, 1000).try_into().unwrap();
-    assert_eq!(measure.target, DeclaredTarget::Unresolved {});
+    assert_eq!(measure.target, DeclaredTarget::Unresolved);
 }
 
 #[test]
@@ -394,7 +394,7 @@ fn item_names_select_the_class_of_each_quantity() {
         assert!(
             !result
                 .ir()
-                .model
+                .geometry
                 .points
                 .iter()
                 .any(|point| point.id.as_str().ends_with(&format!("#{id}"))),

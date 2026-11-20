@@ -4,7 +4,7 @@ use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
 use crate::design::decode::scopes::work_geometry::{
-    exact_joint_origin_frame, exact_work_axis_construction, exact_work_plane_frame,
+    exact_joint_origin_frame, exact_work_plane_frame,
 };
 use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class_337_266;
 use crate::records::decal::DesignRecordHeader;
@@ -681,35 +681,25 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let construction = exact_work_axis_construction(
-        &axis_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&axis_bytes),
-        &axis_scope,
-        &std::collections::HashMap::new(),
-    )
-    .expect("exact two-point WorkAxis construction")
-    .construction;
-    assert_eq!(
-        construction.origin.map(cadmpeg_ir::scalar::FiniteReal::get),
-        [1.0, 2.0, 3.0]
+    let construction = super::read_work_axis(&axis_bytes, &axis_scope);
+    let candidate = &construction.candidates[0];
+    for (actual, expected) in candidate.origin.iter().zip([1.0, 2.0, 3.0]) {
+        assert!((actual.value().unwrap().get() - expected).abs() < 1.0e-12);
+    }
+    for (actual, expected) in candidate.displacement.iter().zip([0.0, -3.0, 4.0]) {
+        assert!((actual.value().unwrap().get() - expected).abs() < 1.0e-12);
+    }
+    assert!(
+        matches!(&candidate.source, Some(crate::records::feature::work_axes::DesignWorkAxisSource::TwoPoint {inputs, ..}) if inputs.references.len() == 2)
     );
     assert_eq!(
-        construction
-            .displacement
-            .map(cadmpeg_ir::scalar::FiniteReal::get),
-        [0.0, -3.0, 4.0]
+        candidate
+            .endpoints
+            .iter()
+            .map(|point| point.record_index)
+            .collect::<Vec<_>>(),
+        [102, 104]
     );
-    assert_eq!(construction.origin_offset, 25);
-    assert_eq!(construction.displacement_offset, 49);
-    assert!(matches!(
-        construction.source,
-        Some(
-            crate::records::feature::work_geometry::DesignWorkAxisSource::TwoPoint {
-                point_record_indices: [102, 104],
-                ..
-            }
-        )
-    ));
     if let crate::records::feature::scope::DesignScopePayloadMut::WorkAxis(slot) =
         axis_scope.payload_mut()
     {
@@ -735,8 +725,8 @@ fn fixed_kind_frames() -> (Vec<u8>, DesignParameterScope, [[f64; 4]; 4]) {
         axis_features.as_slice(), [Feature {
             evaluation,
             ..
-        }] if matches!((evaluation.definition(),), (FeatureDefinition::Operation(FeatureOperation::DatumAxis { origin, direction }),) if *origin == Point3::new(10.0, 20.0, 30.0)
-            && *direction == Vector3::new(0.0, -0.6, 0.8))));
+        }] if matches!((evaluation.definition(),), (FeatureDefinition::Operation(FeatureOperation::DatumAxis { axis }),) if axis.origin().unwrap().get() == Point3::new(10.0, 20.0, 30.0)
+            && axis.direction().unwrap().get() == Vector3::new(0.0, -0.6, 0.8))));
 
     let compact_at = bytes.len();
     let mut compact = vec![0; 321];

@@ -62,15 +62,15 @@ pub(super) fn check_carrier_reachability(
     let mut curves = BorrowedIdentities::new();
     let mut pcurves = BorrowedIdentities::new();
     let mut points = BorrowedIdentities::new();
-    for face in &ir.model.faces {
+    for face in &ir.geometry.faces {
         surfaces.insert_unique(face.surface.as_str(), ());
     }
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         if let Some(curve) = edge.curve() {
             curves.insert_unique(curve.as_str(), ());
         }
     }
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         if let Some(use_) = &coedge.use_curve {
             curves.insert_unique(use_.curve.as_str(), ());
         }
@@ -78,22 +78,22 @@ pub(super) fn check_carrier_reachability(
             pcurves.insert_unique(use_.pcurve.as_str(), ());
         }
     }
-    for surface in &ir.model.surfaces {
+    for surface in &ir.geometry.surfaces {
         if surface.source_object.is_some() {
             surfaces.insert_unique(surface.id.as_str(), ());
         }
     }
-    for curve in &ir.model.curves {
+    for curve in &ir.geometry.curves {
         if curve.source_object.is_some() {
             curves.insert_unique(curve.id.as_str(), ());
         }
     }
-    for loop_ in &ir.model.loops {
+    for loop_ in &ir.geometry.loops {
         for use_ in loop_.vertex_pcurves() {
             pcurves.insert_unique(use_.pcurve.as_str(), ());
         }
     }
-    for surface in &ir.model.procedural_surfaces {
+    for surface in &ir.geometry.procedural_surfaces {
         if let ProceduralSurfaceDefinition::CurveBounded {
             boundary_pcurves, ..
         } = surface.definition()
@@ -105,30 +105,30 @@ pub(super) fn check_carrier_reachability(
             );
         }
     }
-    for vertex in &ir.model.vertices {
+    for vertex in &ir.geometry.vertices {
         points.insert_unique(vertex.point.as_str(), ());
     }
-    for point in &ir.model.points {
+    for point in &ir.geometry.points {
         if point.source_object.is_some() {
             points.insert_unique(point.id.as_str(), ());
         }
     }
     let surface_owners = BorrowedIdentities::build(|add| {
-        for surface in &ir.model.surfaces {
+        for surface in &ir.geometry.surfaces {
             if let Some(procedural) = surface.geometry.procedural_construction() {
                 add(procedural.as_str(), &surface.id);
             }
         }
     });
     let curve_owners = BorrowedIdentities::build(|add| {
-        for curve in &ir.model.curves {
+        for curve in &ir.geometry.curves {
             if let Some(procedural) = curve.geometry.procedural_construction() {
                 add(procedural.as_str(), &curve.id);
             }
         }
     });
     for binding in &ir.model.appearance_bindings {
-        match &binding.target {
+        match &binding.target.entity {
             crate::appearance::AppearanceTarget::Surface(id) => {
                 surfaces.insert_unique(id.as_str(), ());
             }
@@ -148,7 +148,7 @@ pub(super) fn check_carrier_reachability(
         .iter()
         .flat_map(|layer| &layer.items)
     {
-        match item {
+        match &item.entity {
             crate::presentation::PresentationItem::Surface { surface } => {
                 surfaces.insert_unique(surface.as_str(), ());
             }
@@ -162,7 +162,7 @@ pub(super) fn check_carrier_reachability(
         }
     }
 
-    for procedural in &ir.model.procedural_surfaces {
+    for procedural in &ir.geometry.procedural_surfaces {
         if let Some(surface) = surface_owners.get_unique(procedural.id.as_str()).copied() {
             surfaces.insert_unique(surface.as_str(), ());
         }
@@ -634,7 +634,7 @@ pub(super) fn check_carrier_reachability(
             }
         }
     }
-    for procedural in &ir.model.procedural_curves {
+    for procedural in &ir.geometry.procedural_curves {
         if let Some(curve) = curve_owners.get_unique(procedural.id.as_str()).copied() {
             curves.insert_unique(curve.as_str(), ());
         }
@@ -829,7 +829,7 @@ pub(super) fn check_carrier_reachability(
         curves.insert_unique(link.as_ref(), ());
     }
     let composite_segments = BorrowedIdentities::build(|add| {
-        for curve in &ir.model.curves {
+        for curve in &ir.geometry.curves {
             if let CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) =
                 &curve.geometry
             {
@@ -855,7 +855,7 @@ pub(super) fn check_carrier_reachability(
     }
     macro_rules! check_orphans {
         ($arena:ident, $reachable:ident, $kind:literal) => {
-            for entity in &ir.model.$arena {
+            for entity in &ir.geometry.$arena {
                 let id = entity.id.as_str();
                 if !$reachable.contains(id) {
                     super::record_finding(
@@ -883,12 +883,12 @@ pub(super) fn check_parameter_domains(
     findings: &mut Vec<Finding>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let curves = crate::index::identities::BorrowedIdentities::build(|add| {
-        for curve in &ir.model.curves {
+        for curve in &ir.geometry.curves {
             add(curve.id.as_str(), &curve.geometry);
         }
     });
     let subset_spans = crate::index::identities::BorrowedIdentities::build(|add| {
-        for procedural in &ir.model.procedural_curves {
+        for procedural in &ir.geometry.procedural_curves {
             if let crate::geometry::ProceduralCurveDefinition::Subset(subset) =
                 procedural.definition()
             {
@@ -896,7 +896,7 @@ pub(super) fn check_parameter_domains(
             }
         }
     });
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         let Some([start, end]) = edge.param_range().map(crate::units::FiniteVector::get) else {
             continue;
         };
@@ -970,11 +970,11 @@ pub(super) fn check_parameter_domains(
         }
     }
     let pcurves = crate::index::identities::BorrowedIdentities::build(|add| {
-        for pcurve in &ir.model.pcurves {
+        for pcurve in &ir.geometry.pcurves {
             add(pcurve.id.as_str(), &pcurve.geometry);
         }
     });
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         if let Some(use_curve) = &coedge.use_curve {
             let [start, end] = use_curve.parameter_range.endpoints();
             match curves.get(use_curve.curve.as_str()).copied() {

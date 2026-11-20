@@ -38,7 +38,7 @@ fn unique_source_surface_geometry<'a>(
     source_carriers: &'a crate::decode::source_carriers::SourceUnitCarriers,
     surface_id: u32,
 ) -> Option<SourceSurfaceGeometry<'a>> {
-    let mut surfaces = ir.model.surfaces.iter().filter(|surface| {
+    let mut surfaces = ir.geometry.surfaces.iter().filter(|surface| {
         crate::identity::matches_numbered_identity(
             surface.id.as_str(),
             "creo:visibgeom:surface#",

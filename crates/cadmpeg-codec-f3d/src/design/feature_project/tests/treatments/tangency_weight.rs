@@ -3,7 +3,8 @@
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
 use crate::design::decode::parameters::parse_design_parameter_record;
-use crate::design::feature_project::{project_fillet_arm, ProjectInputs};
+use crate::design::feature_project::fillet::project;
+use crate::design::feature_project::ProjectInputs;
 use crate::design::test_support::parameter_record;
 use crate::records::topology::fillet::{DesignFilletRadiusGroup, DesignFilletRadiusLaw};
 
@@ -45,18 +46,21 @@ fn indexed_tangency_weight_with_a_unit_retains_the_native_feature(
             ..Default::default()
         };
         let definition = crate::test_support::with_decode_context(|ctx| {
-            project_fillet_arm(
+            project(
                 ctx,
                 &inputs,
                 &scope,
                 &[(0, &parameters[0]), (1, &parameters[1])],
                 "f3d:native/BulkStream.dat",
+                &mut Vec::new(),
             )
         })?;
-        let FeatureDefinition::Operation(FeatureOperation::Native {
-            parameters: expressions,
-            ..
-        }) = definition
+        let crate::design::feature_project::fillet::FilletProjection::Existing(
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                parameters: expressions,
+                ..
+            }),
+        ) = definition
         else {
             return Err("expected a native Fillet for a unit-bearing tangency weight".into());
         };

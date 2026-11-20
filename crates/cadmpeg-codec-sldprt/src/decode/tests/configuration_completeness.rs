@@ -49,13 +49,11 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
                 faces: faces.clone(),
                 anchor: cadmpeg_ir::features::DraftAnchor::PartingLine {
                     tool: faces,
-                    pull: cadmpeg_ir::features::DraftPull {
-                        direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                            1.0, 0.0, 0.0,
-                        ))
-                        .unwrap(),
-                        plane: None,
-                    },
+                    pull: cadmpeg_ir::features::DraftPull::new(
+                        cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0))
+                            .unwrap(),
+                        None,
+                    ),
                 },
                 angle: Some(cadmpeg_ir::scalar::SlopeAngle::new(0.1).unwrap()),
                 outward: None,
@@ -67,7 +65,7 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -93,19 +91,16 @@ fn complete_parting_line_draft_does_not_require_an_outward_flag() {
                 "native".into(),
             )
             .unwrap(),
-            pull: Some(cadmpeg_ir::features::DraftPull {
-                direction: cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(
-                    1.0, 0.0, 0.0,
-                ))
-                .unwrap(),
-                plane: None,
-            }),
+            pull: Some(cadmpeg_ir::features::DraftPull::new(
+                cadmpeg_ir::features::FeatureDirection3::new(Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+                None,
+            )),
         };
     });
     let mut neutral_plane_report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut neutral_plane_report,
     )
@@ -161,6 +156,8 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
                 .unwrap(),
                 op: cadmpeg_ir::features::BooleanKind::Join,
                 keep_tools: false,
+
+                destination: cadmpeg_ir::features::CombineDestination::default(),
             }),
         ),
         (
@@ -217,7 +214,7 @@ fn configuration_feature_states_drive_design_completeness_accounting() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -260,7 +257,7 @@ fn metadata_only_native_feature_does_not_report_missing_operation() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -540,7 +537,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
     let mut report = super::empty_report(true);
 
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )
@@ -562,7 +559,7 @@ fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
     ));
     report.losses.clear();
     append_design_losses(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &mut report,
     )

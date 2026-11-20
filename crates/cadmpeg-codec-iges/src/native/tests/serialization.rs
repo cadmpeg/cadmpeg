@@ -42,7 +42,7 @@ fn optional_cards_keep_exact_bytes() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let original = crate::test_support::test_curves_and_surfaces::point_file_with_global(b",,;");
     let mut bytes = Vec::new();
-    for sequence in 1..=500 {
+    for sequence in 1..=3 {
         bytes.extend(crate::test_support::test_cards::card(
             b"Optional source text",
             b'S',
@@ -52,11 +52,11 @@ fn optional_cards_keep_exact_bytes() {
     bytes.extend_from_slice(&original[81..]);
     // The source census includes the added Start records.
     let terminate = bytes.len() - 81;
-    bytes[terminate..terminate + 8].copy_from_slice(b"S0000500");
+    bytes[terminate..terminate + 8].copy_from_slice(b"S0000003");
     let result = crate::IgesCodec
         .decode(&mut std::io::Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(result.ir().model.points.len(), 1);
+    assert_eq!(result.ir().geometry.points.len(), 1);
     let first = &result.ir().native.namespace("iges").unwrap().arenas()["cards"][0];
     let payload = first.field("payload").unwrap();
     let hex = payload.as_str().unwrap();

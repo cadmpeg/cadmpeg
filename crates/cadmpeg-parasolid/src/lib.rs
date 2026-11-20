@@ -5,8 +5,9 @@
 //! This crate owns the `parasolid:` dialect rows and the schema-token grammar
 //! so hosts cannot disagree about the identity of the same declaration.
 //! [`records`] reads the neutral-binary node sequence through the base and
-//! embedded schema field lists, [`deltas`] owns the Deltas-stream grammar, and
-//! [`xmt`] carries stream-local node identity.
+//! embedded schema field lists, [`deltas`] owns the Deltas-stream grammar,
+//! [`topology`] classifies topology node fields, and [`xmt`] carries
+//! stream-local node identity.
 
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
@@ -24,6 +25,7 @@ pub mod geometry;
 pub mod records;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
+pub mod topology;
 pub mod xmt;
 
 /// Declared-key name for the source schema token.

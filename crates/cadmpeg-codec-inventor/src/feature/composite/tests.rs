@@ -6,6 +6,7 @@ use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::BodyId;
+use cadmpeg_ir::CadIr;
 
 use super::{definition, operands, project, resolve, Joins, MemberLink, Operands, CLASS_ID};
 use crate::feature::body_selection::tests::{body, carrier, metadata, root};
@@ -231,21 +232,21 @@ impl Fixture {
         inventory
     }
 
-    /// A model that holds the two current bodies and the native feature.
-    pub(crate) fn model(&self, ctx: &DecodeContext<'_>) -> cadmpeg_ir::document::Model {
-        let mut model = cadmpeg_ir::document::Model::default();
+    /// A document that holds the two current bodies and the native feature.
+    pub(crate) fn model(&self, ctx: &DecodeContext<'_>) -> CadIr {
+        let mut ir = CadIr::empty();
         for id in &self.bodies {
-            model.bodies.push(cadmpeg_ir::topology::Body {
+            ir.geometry.bodies.push(cadmpeg_ir::topology::Body {
                 id: id.clone(),
                 kind: cadmpeg_ir::topology::BodyKind::default(),
-                regions: vec![],
                 transform: None,
                 name: None,
                 color: None,
                 visible: None,
+                native_ref: None,
             });
         }
-        model.features.push(
+        ir.model.features.push(
             crate::feature::native_feature(
                 ctx,
                 &self.feature.identity,
@@ -254,14 +255,10 @@ impl Fixture {
             )
             .expect("native history feature"),
         );
-        model
+        ir
     }
 
-    pub(crate) fn project(
-        &self,
-        ctx: &DecodeContext<'_>,
-        model: &mut cadmpeg_ir::document::Model,
-    ) -> super::Projection {
+    pub(crate) fn project(&self, ctx: &DecodeContext<'_>, ir: &mut CadIr) -> super::Projection {
         let scope = Scope {
             metadata: &self.metadata,
             roots: &self.roots,
@@ -273,7 +270,7 @@ impl Fixture {
             &self.carrier,
             &scope,
             &self.keys,
-            model,
+            ir,
         )
         .expect("composite projection")
     }
@@ -302,11 +299,11 @@ fn composite_pairs_sources_and_results_into_distinct_current_bodies() {
 fn composite_projects_stored_geometry_with_ordered_result_bodies() {
     with_context(|ctx| {
         let fixture = fixture();
-        let mut model = fixture.model(ctx);
-        let projection = fixture.project(ctx, &mut model);
+        let mut ir = fixture.model(ctx);
+        let projection = fixture.project(ctx, &mut ir);
         assert_eq!(projection.transferred, 1);
         assert!(projection.losses.is_empty());
-        let feature = &model.features[0];
+        let feature = &ir.model.features[0];
         assert!(matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::StoredGeometry {})
@@ -323,7 +320,7 @@ fn composite_projects_stored_geometry_with_ordered_result_bodies() {
                 Some(&fixture.properties[ordinal].id())
             );
         }
-        let [result] = model.feature_result_topologies.as_slice() else {
+        let [result] = ir.model.feature_result_topologies.as_slice() else {
             panic!("one result topology")
         };
         assert_eq!(result.output_of, feature.id);
@@ -341,9 +338,9 @@ fn composite_projects_stored_geometry_with_ordered_result_bodies() {
         );
         assert!(result.faces().is_empty() && result.edges().is_empty());
         let joined = projection.bodies.into_iter().collect::<HashMap<_, _>>();
-        crate::feature::body_selection::project(&mut model, &joined, &fixture.inventory());
+        crate::feature::body_selection::project(&mut ir, &joined, &fixture.inventory());
         assert_eq!(
-            model.features[0].evaluation.outputs().as_slice(),
+            ir.model.features[0].evaluation.outputs().as_slice(),
             [body("target"), body("other")]
         );
     });
@@ -415,12 +412,15 @@ fn composite_keeps_native_construction_with_the_first_refused_join() {
         change(&mut fixture);
         assert_eq!(fixture.resolve(), Err(reason), "{reason}");
         with_context(|ctx| {
-            let mut model = fixture.model(ctx);
-            let projection = fixture.project(ctx, &mut model);
+            let mut ir = fixture.model(ctx);
+            let projection = fixture.project(ctx, &mut ir);
             assert_eq!(projection.transferred, 0);
             assert!(projection.bodies.is_empty());
-            assert!(model.feature_result_topologies.is_empty());
-            assert_eq!(model.features[0].evaluation.definition(), &definition(true));
+            assert!(ir.model.feature_result_topologies.is_empty());
+            assert_eq!(
+                ir.model.features[0].evaluation.definition(),
+                &definition(true)
+            );
             assert_eq!(projection.losses.len(), 1);
             assert_eq!(
                 projection.losses[0].code.local_code(),
@@ -625,7 +625,7 @@ fn composite_boolean_value_does_not_change_the_join() {
 fn composite_losses_report_missing_and_ambiguous_owners_once() {
     with_context(|ctx| {
         let fixture = fixture();
-        let mut model = fixture.model(ctx);
+        let mut ir = fixture.model(ctx);
         let scope = Scope {
             metadata: &fixture.metadata,
             roots: &fixture.roots,
@@ -639,7 +639,7 @@ fn composite_losses_report_missing_and_ambiguous_owners_once() {
             &fixture.carrier,
             &scope,
             &fixture.keys,
-            &mut model,
+            &mut ir,
         )
         .expect("projection");
         assert_eq!(
@@ -657,7 +657,7 @@ fn composite_losses_report_missing_and_ambiguous_owners_once() {
             &fixture.carrier,
             &scope,
             &fixture.keys,
-            &mut model,
+            &mut ir,
         )
         .expect("projection");
         assert_eq!(projection.losses.len(), 1);
@@ -672,7 +672,7 @@ fn composite_losses_report_missing_and_ambiguous_owners_once() {
             &fixture.carrier,
             &scope,
             &[],
-            &mut model
+            &mut ir
         )
         .expect("projection")
         .losses

@@ -7,8 +7,8 @@ use std::collections::{HashMap, HashSet};
 use crate::eval::{
     admission::EvaluationAdmission, decode::pcurve_uv, exact_blend_cap_point,
     exact_blend_rail_point, exact_intersection_point, finite_or_refusal, model_curve_point_by_id,
-    model_surface_point_by_id, nurbs_curve_parameter_domain, spine_rolling_ball_domain,
-    EvaluationFailure,
+    model_surface_point_by_id, nurbs_curve_parameter_domain, procedural_surface_breaks,
+    spine_rolling_ball_domain, EvaluationFailure,
 };
 use crate::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis},
@@ -215,20 +215,30 @@ impl<'a> Approximator<'a> {
         ) {
             return None;
         }
-        let grid = sample(
-            ranges,
-            seeds,
+        let breaks = keep_refusal(
+            &evaluation.refusal,
+            procedural_surface_breaks(index, owner, ranges)
+                .map_err(EvaluationFailure::<()>::ResourceLimit),
+        )?;
+        let Grid {
+            rows,
+            knots: [u_knots, v_knots],
+        } = sample(
+            [
+                Axis::new(ranges[0], &breaks[0], seeds[0])?,
+                Axis::new(ranges[1], &breaks[1], seeds[1])?,
+            ],
             false,
             tolerance,
             &mut self.samples,
             self.poles,
             &mut evaluate,
         )?;
-        let count = grid.rows.len().checked_mul(grid.rows.first()?.len())?;
+        let count = rows.len().checked_mul(rows.first()?.len())?;
         let surface = NurbsSurface::new(
-            NurbsSurfaceAxis::new(3, knots(ranges[0], grid.patches[0]), false),
-            NurbsSurfaceAxis::new(3, knots(ranges[1], grid.patches[1]), false),
-            NurbsPoleGrid::Polynomial { rows: grid.rows },
+            NurbsSurfaceAxis::new(3, u_knots, false),
+            NurbsSurfaceAxis::new(3, v_knots, false),
+            NurbsPoleGrid::Polynomial { rows },
             false,
         )
         .ok()?;
@@ -384,7 +394,7 @@ impl<'a> Approximator<'a> {
         let range = curve_domain(ir, index, owner)?;
         let slack = DOMAIN_SLACK_RELATIVE * (range[1] - range[0]).abs().max(1.0);
         let edges_inside = ir
-            .model
+            .geometry
             .edges
             .iter()
             .filter(|edge| edge.curve() == Some(owner))
@@ -411,38 +421,29 @@ impl<'a> Approximator<'a> {
             )
             .map(crate::features::FinitePoint3::get)
         };
-        // A uniform fit cannot converge across a corner that falls between its samples, so each
-        // smooth stretch is fitted alone and the stretches share a pole at the corner.
-        let mut breaks = vec![range[0]];
-        breaks.extend(curve_corner_parameters(procedural.definition(), range));
-        breaks.push(range[1]);
-        let mut points: Vec<Point3> = Vec::new();
-        let mut joined_knots: Vec<f64> = Vec::new();
-        for stretch in breaks.windows(2) {
-            let stretch = [*stretch.first()?, *stretch.get(1)?];
-            let grid = sample(
-                [stretch, [0.0, 1.0]],
-                [SEED_PATCHES, 1],
-                true,
-                tolerance,
-                &mut self.samples,
-                self.poles.checked_sub(points.len())?,
-                &mut evaluate,
-            )?;
-            let poles = grid.rows.into_iter().filter_map(|row| row.first().copied());
-            let stretch_knots = knots(stretch, grid.patches[0]);
-            if points.is_empty() {
-                points.extend(poles);
-                joined_knots.extend(stretch_knots);
-            } else {
-                points.extend(poles.skip(1));
-                joined_knots.pop();
-                joined_knots.extend(stretch_knots.into_iter().skip(4));
-            }
-        }
+        // A uniform fit cannot converge across a corner that falls between its samples, so
+        // supply known corner parameters as axis breaks.
+        let breaks = curve_corner_parameters(procedural.definition(), range);
+        let Grid {
+            rows,
+            knots: [knots, _],
+        } = sample(
+            [
+                Axis::new(range, &breaks, SEED_PATCHES)?,
+                Axis::new([0.0, 1.0], &[], 1)?,
+            ],
+            true,
+            tolerance,
+            &mut self.samples,
+            self.poles,
+            &mut evaluate,
+        )?;
+        let points: Vec<_> = rows
+            .into_iter()
+            .filter_map(|row| row.first().copied())
+            .collect();
         let count = points.len();
-        let curve =
-            NurbsCurve::new(3, joined_knots, NurbsPoles3::Polynomial { points }, false).ok()?;
+        let curve = NurbsCurve::new(3, knots, NurbsPoles3::Polynomial { points }, false).ok()?;
         self.poles = self.poles.checked_sub(count)?;
         Some(SolvedCurveGeometry::Nurbs(curve))
     }
@@ -765,7 +766,7 @@ fn trims_meet_vertices(
         ))
     };
     for face in ir
-        .model
+        .geometry
         .faces
         .iter()
         .filter(|face| &face.surface == surface)
@@ -781,8 +782,11 @@ fn trims_meet_vertices(
                 let Some(edge) = index.edges(coedge.edge.as_str(), StandardIndex) else {
                     return false;
                 };
+                let Some(ends) = &edge.ends else {
+                    return false;
+                };
                 let (Some((start, start_tolerance)), Some((end, end_tolerance))) =
-                    (vertex(edge.start.as_str()), vertex(edge.end.as_str()))
+                    (vertex(ends.start.as_str()), vertex(ends.end.as_str()))
                 else {
                     return false;
                 };
@@ -834,7 +838,7 @@ fn trims_meet_vertices(
 fn face_domain(ir: &CadIr, index: &ModelIndex<'_>, surface: &SurfaceId) -> Option<[[f64; 2]; 2]> {
     let mut bounds: Option<[[f64; 2]; 2]> = None;
     for face in ir
-        .model
+        .geometry
         .faces
         .iter()
         .filter(|face| &face.surface == surface)
@@ -1160,7 +1164,7 @@ fn curve_domain(ir: &CadIr, index: &ModelIndex<'_>, curve: &CurveId) -> Option<[
     {
         return Some(context.parameter_range().endpoints());
     }
-    ir.model
+    ir.geometry
         .edges
         .iter()
         .filter(|edge| edge.curve() == Some(curve))
@@ -1170,7 +1174,7 @@ fn curve_domain(ir: &CadIr, index: &ModelIndex<'_>, curve: &CurveId) -> Option<[
 
 struct Grid {
     rows: Vec<Vec<Point3>>,
-    patches: [usize; 2],
+    knots: [Vec<f64>; 2],
 }
 
 /// A grid count as a real; counts stay far below 2^53.
@@ -1182,15 +1186,124 @@ fn parameter(range: [f64; 2], fraction: f64) -> f64 {
     range[0] * (1.0 - fraction) + range[1] * fraction
 }
 
-/// Clamped knots of a piecewise cubic Bézier chain over `range`.
-fn knots(range: [f64; 2], patches: usize) -> Vec<f64> {
-    let mut knots = vec![range[0]];
-    for i in 0..=patches {
-        let knot = parameter(range, real(i) / real(patches));
-        knots.extend([knot; 3]);
+/// A run of uniform patches over one interval of a sampled axis.
+#[derive(Clone, Copy)]
+struct Span {
+    range: [f64; 2],
+    patches: usize,
+}
+
+/// One patch of a sampled axis: its span, and its place in the span.
+#[derive(Clone, Copy)]
+struct Patch {
+    span: usize,
+    range: [f64; 2],
+    index: usize,
+    count: usize,
+}
+
+impl Patch {
+    /// The axis parameter at `fraction` of the patch.
+    fn parameter(self, fraction: f64) -> f64 {
+        parameter(self.range, (real(self.index) + fraction) / real(self.count))
     }
-    knots.push(range[1]);
-    knots
+}
+
+/// One sampled parameter axis: the spans between carrier breaks, each split
+/// into uniform patches and refined on its own.
+struct Axis {
+    spans: Vec<Span>,
+}
+
+impl Axis {
+    /// The spans of `range` between `breaks`, which lie strictly inside it in
+    /// increasing order, sharing `seed` patches. An axis with as many breaks
+    /// as the patch limit has one span.
+    fn new(range: [f64; 2], breaks: &[f64], seed: usize) -> Option<Self> {
+        if !range[0].is_finite() || !range[1].is_finite() || range[0] >= range[1] {
+            return None;
+        }
+        let breaks: &[f64] = if breaks.len() < MAX_PATCHES {
+            breaks
+        } else {
+            &[]
+        };
+        let patches = (seed / (breaks.len() + 1)).max(1);
+        let ends: Vec<f64> = std::iter::once(range[0])
+            .chain(breaks.iter().copied())
+            .chain(std::iter::once(range[1]))
+            .collect();
+        Some(Self {
+            spans: ends
+                .windows(2)
+                .map(|pair| Span {
+                    range: [pair[0], pair[1]],
+                    patches,
+                })
+                .collect(),
+        })
+    }
+
+    fn patch_count(&self) -> usize {
+        self.spans.iter().map(|span| span.patches).sum()
+    }
+
+    fn patches(&self) -> Vec<Patch> {
+        self.spans
+            .iter()
+            .enumerate()
+            .flat_map(|(span, &Span { range, patches })| {
+                (0..patches).map(move |index| Patch {
+                    span,
+                    range,
+                    index,
+                    count: patches,
+                })
+            })
+            .collect()
+    }
+
+    /// The parameters at thirds of each patch and at the end of the axis.
+    fn samples(&self) -> Vec<f64> {
+        let mut samples: Vec<f64> = self
+            .spans
+            .iter()
+            .flat_map(|&Span { range, patches }| {
+                (0..3 * patches).map(move |step| parameter(range, real(step) / real(3 * patches)))
+            })
+            .collect();
+        samples.extend(self.spans.last().map(|span| parameter(span.range, 1.0)));
+        samples
+    }
+
+    /// Clamped knots of the piecewise cubic Bézier chain over the axis.
+    fn knots(&self) -> Vec<f64> {
+        let mut knots: Vec<f64> = self
+            .spans
+            .first()
+            .map(|span| span.range[0])
+            .into_iter()
+            .collect();
+        for &Span { range, patches } in &self.spans {
+            for i in 0..patches {
+                knots.extend([parameter(range, real(i) / real(patches)); 3]);
+            }
+        }
+        if let Some(span) = self.spans.last() {
+            knots.extend([parameter(span.range, 1.0); 3]);
+            knots.push(span.range[1]);
+        }
+        knots
+    }
+
+    /// Double the patches of each span in `grow`.
+    fn refine(&mut self, grow: &HashSet<usize>) {
+        for (index, span) in self.spans.iter_mut().enumerate() {
+            if grow.contains(&index) {
+                span.patches *= 2;
+            }
+        }
+    }
 }
 
 fn blend(points: [Point3; 4], weights: [f64; 4]) -> Point3 {
@@ -1249,31 +1362,28 @@ fn patch(rows: &[Vec<Point3>], i: usize, j: usize, u: f64, v: f64, curve: bool) 
     Some(bezier(columns, u))
 }
 
-/// Sample a cubic Bézier-chain carrier over `ranges`, and refine each axis
+/// Sample a cubic Bézier-chain carrier over `axes`, and refine each span
 /// whose probes miss `tolerance`.
 fn sample(
-    ranges: [[f64; 2]; 2],
-    seeds: [usize; 2],
+    mut axes: [Axis; 2],
     curve: bool,
     tolerance: f64,
     samples: &mut usize,
     poles_left: usize,
     evaluate: &mut Evaluate<'_>,
 ) -> Option<Grid> {
-    if !tolerance.is_finite()
-        || tolerance <= 0.0
-        || ranges
-            .iter()
-            .any(|r| !r[0].is_finite() || !r[1].is_finite() || r[0] >= r[1])
-    {
+    if !tolerance.is_finite() || tolerance <= 0.0 {
         return None;
     }
     let mut point = |u, v| {
         *samples = samples.checked_sub(1)?;
         evaluate(u, v)
     };
-    let mut patches = if curve { [seeds[0], 1] } else { seeds };
-    while patches[0] <= MAX_PATCHES && patches[1] <= MAX_PATCHES {
+    loop {
+        let patches = axes.each_ref().map(Axis::patch_count);
+        if patches.iter().any(|&count| count > MAX_PATCHES) {
+            return None;
+        }
         let width = 3 * patches[0] + 1;
         let height = if curve { 1 } else { 3 * patches[1] + 1 };
         if width
@@ -1282,12 +1392,11 @@ fn sample(
         {
             return None;
         }
+        let v_samples = axes[1].samples();
         let mut rows = Vec::with_capacity(width);
-        for row_index in 0..width {
-            let u = parameter(ranges[0], real(row_index) / real(3 * patches[0]));
+        for u in axes[0].samples() {
             let mut row = Vec::with_capacity(height);
-            for column in 0..height {
-                let v = parameter(ranges[1], real(column) / real(3 * patches[1]));
+            for &v in v_samples.iter().take(height) {
                 row.push(point(u, v)?);
             }
             if !curve {
@@ -1308,42 +1417,54 @@ fn sample(
             }
         }
         let v_probes: &[f64] = if curve { &PROBES[..1] } else { &PROBES };
-        let mut refine = [false; 2];
-        let mut interior = false;
-        for u_patch in 0..patches[0] {
-            for v_patch in 0..if curve { 1 } else { patches[1] } {
+        let v_patches = axes[1].patches();
+        let v_patches = if curve {
+            v_patches.get(..1)?
+        } else {
+            v_patches.as_slice()
+        };
+        let mut grow: [HashSet<usize>; 2] = Default::default();
+        let mut interior: [HashSet<usize>; 2] = Default::default();
+        for (u_index, u_patch) in axes[0].patches().into_iter().enumerate() {
+            for (v_index, &v_patch) in v_patches.iter().enumerate() {
                 for along_u in PROBES {
                     for &along_v in v_probes {
-                        let u = (real(u_patch) + along_u) / real(patches[0]);
-                        let v = (real(v_patch) + along_v) / real(patches[1]);
-                        let exact = point(parameter(ranges[0], u), parameter(ranges[1], v))?;
-                        let fit = patch(&rows, 3 * u_patch, 3 * v_patch, along_u, along_v, curve)?;
+                        let exact = point(u_patch.parameter(along_u), v_patch.parameter(along_v))?;
+                        let fit = patch(&rows, 3 * u_index, 3 * v_index, along_u, along_v, curve)?;
                         let residual = fit.distance(exact);
                         if residual.is_finite() && residual <= tolerance {
                             continue;
                         }
                         let on_v_knot = curve || along_v == 0.0 || along_v == 1.0;
                         let on_u_knot = along_u == 0.0 || along_u == 1.0;
-                        refine[0] |= on_v_knot;
-                        refine[1] |= on_u_knot;
-                        interior |= !on_v_knot && !on_u_knot;
+                        if on_v_knot {
+                            grow[0].insert(u_patch.span);
+                        }
+                        if on_u_knot {
+                            grow[1].insert(v_patch.span);
+                        }
+                        if !on_v_knot && !on_u_knot {
+                            interior[0].insert(u_patch.span);
+                            interior[1].insert(v_patch.span);
+                        }
                     }
                 }
             }
         }
-        if !refine[0] && !refine[1] {
-            if !interior {
-                return Some(Grid { rows, patches });
+        if grow.iter().all(HashSet::is_empty) {
+            if interior.iter().all(HashSet::is_empty) {
+                return Some(Grid {
+                    rows,
+                    knots: axes.each_ref().map(Axis::knots),
+                });
             }
-            refine = [true, !curve];
+            let [u_interior, v_interior] = interior;
+            grow = [u_interior, if curve { HashSet::new() } else { v_interior }];
         }
-        for (count, grow) in patches.iter_mut().zip(refine) {
-            if grow {
-                *count *= 2;
-            }
+        for (axis, grow) in axes.iter_mut().zip(&grow) {
+            axis.refine(grow);
         }
     }
-    None
 }
 
 #[cfg(test)]

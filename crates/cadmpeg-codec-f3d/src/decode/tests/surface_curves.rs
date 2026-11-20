@@ -40,7 +40,7 @@ fn generated_projection_decodes_and_writes_source_less() {
             .expect("projection decode"),
     );
     let ProceduralCurveDefinition::Projection(definition_payload) =
-        &result.ir().model.procedural_curves[0].definition()
+        &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("expected projection")
     };
@@ -53,7 +53,7 @@ fn generated_projection_decodes_and_writes_source_less() {
     assert!(*discontinuity_flag);
     assert!(result
         .ir()
-        .model
+        .geometry
         .curves
         .iter()
         .any(|curve| curve.id == *source));
@@ -67,7 +67,7 @@ fn generated_projection_decodes_and_writes_source_less() {
     );
 
     let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0].edit_definition(|definition| {
+    edited.geometry.procedural_curves[0].edit_definition(|definition| {
         let ProceduralCurveDefinition::Projection(definition_payload) = definition else {
             unreachable!()
         };
@@ -119,7 +119,7 @@ fn generated_projection_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated projection decode");
     assert!(matches!(
-        regenerated.ir().model.procedural_curves[0].definition(), ProceduralCurveDefinition::Projection(definition_payload) if matches!((definition_payload.context(), definition_payload.discontinuity_flag(), definition_payload.tail(),), (context, false, ProjectionTail::Ranged {
+        regenerated.ir().geometry.procedural_curves[0].definition(), ProceduralCurveDefinition::Projection(definition_payload) if matches!((definition_payload.context(), definition_payload.discontinuity_flag(), definition_payload.tail(),), (context, false, ProjectionTail::Ranged {
                 flag: false,
                 parameter_range,
                 role,
@@ -130,7 +130,11 @@ fn generated_projection_decodes_and_writes_source_less() {
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -141,7 +145,7 @@ fn generated_projection_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less projection round trip");
     let ProceduralCurveDefinition::Projection(definition_payload) =
-        &round_trip.ir().model.procedural_curves[0].definition()
+        &round_trip.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("expected round-trip projection")
     };
@@ -174,10 +178,10 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
             .expect("early-close projection decode"),
     );
     assert!(matches!(
-        result.ir().model.procedural_curves[0].definition(), ProceduralCurveDefinition::Projection(definition_payload) if matches!((definition_payload.discontinuity_flag(), definition_payload.tail(),), (true, ProjectionTail::EarlyClose { flag: true },))));
+        result.ir().geometry.procedural_curves[0].definition(), ProceduralCurveDefinition::Projection(definition_payload) if matches!((definition_payload.discontinuity_flag(), definition_payload.tail(),), (true, ProjectionTail::EarlyClose { flag: true },))));
 
     let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0].edit_definition(|definition| {
+    edited.geometry.procedural_curves[0].edit_definition(|definition| {
         let ProceduralCurveDefinition::Projection(definition_payload) = definition else {
             unreachable!()
         };
@@ -203,12 +207,16 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated early-close projection decode");
     assert!(matches!(
-        regenerated.ir().model.procedural_curves[0].definition(), ProceduralCurveDefinition::Projection(definition_payload) if matches!((definition_payload.tail(),), (ProjectionTail::EarlyClose { flag: false },))));
+        regenerated.ir().geometry.procedural_curves[0].definition(), ProceduralCurveDefinition::Projection(definition_payload) if matches!((definition_payload.tail(),), (ProjectionTail::EarlyClose { flag: false },))));
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -219,7 +227,7 @@ fn generated_early_close_projection_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less early-close projection round trip");
     assert!(matches!(
-        round_trip.ir().model.procedural_curves[0].definition(), ProceduralCurveDefinition::Projection(definition_payload) if matches!((definition_payload.discontinuity_flag(), definition_payload.tail(),), (true, ProjectionTail::EarlyClose { flag: true },))));
+        round_trip.ir().geometry.procedural_curves[0].definition(), ProceduralCurveDefinition::Projection(definition_payload) if matches!((definition_payload.discontinuity_flag(), definition_payload.tail(),), (true, ProjectionTail::EarlyClose { flag: true },))));
 }
 
 #[test]
@@ -237,7 +245,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
             .expect("three-surface intersection decode"),
     );
     let ProceduralCurveDefinition::ThreeSurfaceIntersection(definition_payload) =
-        &result.ir().model.procedural_curves[0].definition()
+        &result.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("expected three-surface intersection")
     };
@@ -249,7 +257,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
     assert!(context.sides().iter().all(|side| side.surface.is_some()));
     let third_surface = result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| Some(&surface.id) == third.surface.as_ref())
@@ -259,7 +267,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
     );
 
     let mut edited = result.ir().clone();
-    edited.model.procedural_curves[0].edit_definition(|definition| {
+    edited.geometry.procedural_curves[0].edit_definition(|definition| {
         let ProceduralCurveDefinition::ThreeSurfaceIntersection(definition_payload) = definition
         else {
             unreachable!()
@@ -298,12 +306,16 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated three-surface intersection decode");
     assert!(matches!(
-        regenerated.ir().model.procedural_curves[0].definition(), ProceduralCurveDefinition::ThreeSurfaceIntersection(definition_payload) if matches!((definition_payload.context(), definition_payload.selector(),), (context, -4,) if context.parameter_range().endpoints() == [-1.0, 2.0])));
+        regenerated.ir().geometry.procedural_curves[0].definition(), ProceduralCurveDefinition::ThreeSurfaceIntersection(definition_payload) if matches!((definition_payload.context(), definition_payload.selector(),), (context, -4,) if context.parameter_range().endpoints() == [-1.0, 2.0])));
 
     let (mut source_less, _, _) = result.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -314,7 +326,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less three-surface intersection round trip");
     let ProceduralCurveDefinition::ThreeSurfaceIntersection(definition_payload) =
-        &round_trip.ir().model.procedural_curves[0].definition()
+        &round_trip.ir().geometry.procedural_curves[0].definition()
     else {
         panic!("expected round-trip three-surface intersection")
     };
@@ -324,7 +336,7 @@ fn generated_three_surface_intersection_decodes_and_writes_source_less() {
     assert_eq!(*selector, 7);
     let third_surface = round_trip
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|surface| Some(&surface.id) == third.surface.as_ref())
@@ -355,7 +367,7 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
                 .unwrap_or_else(|error| panic!("{name} decode failed: {error}")),
         );
         let ProceduralCurveDefinition::SurfaceCurve { family } =
-            &result.ir().model.procedural_curves[0].definition()
+            &result.ir().geometry.procedural_curves[0].definition()
         else {
             panic!("expected {name} surface curve")
         };
@@ -364,7 +376,7 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
         assert!(context.sides().iter().all(|side| side.surface.is_some()));
 
         let mut edited = result.ir().clone();
-        edited.model.procedural_curves[0].edit_definition(|definition| {
+        edited.geometry.procedural_curves[0].edit_definition(|definition| {
             let ProceduralCurveDefinition::SurfaceCurve { family } = definition else {
                 unreachable!()
             };
@@ -408,7 +420,7 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
             .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("regenerated {name} decode failed: {error}"));
         assert!(matches!(
-            regenerated.ir().model.procedural_curves[0].definition(),
+            regenerated.ir().geometry.procedural_curves[0].definition(),
             ProceduralCurveDefinition::SurfaceCurve { ref family }
                 if family.context().parameter_range().endpoints() == [-1.0, 2.0]
         ));
@@ -416,7 +428,11 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
@@ -427,7 +443,7 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("{name} round trip failed: {error}"));
         assert!(matches!(
-            &round_trip.ir().model.procedural_curves[0].definition(),
+            &round_trip.ir().geometry.procedural_curves[0].definition(),
             ProceduralCurveDefinition::SurfaceCurve { family } if family.kind() == expected_family
         ));
     }
@@ -454,7 +470,7 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
                 .unwrap_or_else(|error| panic!("{name} decode failed: {error}")),
         );
         let ProceduralCurveDefinition::Silhouette(definition_payload) =
-            &result.ir().model.procedural_curves[0].definition()
+            &result.ir().geometry.procedural_curves[0].definition()
         else {
             panic!("expected {name} silhouette")
         };
@@ -463,7 +479,7 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
         let light_direction = definition_payload.light_direction();
         assert!(result
             .ir()
-            .model
+            .geometry
             .surfaces
             .iter()
             .any(|surface| surface.id == *cast_surface));
@@ -486,7 +502,7 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
         }
 
         let mut edited = result.ir().clone();
-        edited.model.procedural_curves[0].edit_definition(|definition| {
+        edited.geometry.procedural_curves[0].edit_definition(|definition| {
             let ProceduralCurveDefinition::Silhouette(definition_payload) = definition else {
                 unreachable!()
             };
@@ -516,7 +532,7 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
             .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("regenerated {name} decode failed: {error}"));
         assert!(matches!(
-            regenerated.ir().model.procedural_curves[0].definition(),
+            regenerated.ir().geometry.procedural_curves[0].definition(),
             ProceduralCurveDefinition::Silhouette(definition_payload)
                 if *definition_payload.light_direction()
                     == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
@@ -529,7 +545,11 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
         let (mut source_less, _, _) = result.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
@@ -540,7 +560,7 @@ fn generated_silhouette_curves_decode_and_write_source_less() {
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .unwrap_or_else(|error| panic!("{name} round trip failed: {error}"));
         assert!(matches!(
-            round_trip.ir().model.procedural_curves[0].definition(),
+            round_trip.ir().geometry.procedural_curves[0].definition(),
             ProceduralCurveDefinition::Silhouette { .. }
         ));
     }

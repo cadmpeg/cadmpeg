@@ -37,6 +37,7 @@ fn every_text_fixture_reads_the_same_as_its_crate_form() {
         });
         let from_text = decode(text);
         let from_crate = decode_bytes(&crate_bytes);
+        assert_eq!(from_text.ir().geometry, from_crate.ir().geometry, "{name}");
         assert_eq!(from_text.ir().model, from_crate.ir().model, "{name}");
     }
 }
@@ -125,5 +126,6 @@ def Xform "World" (
     }
     let from_text = decode(text);
     let from_crate = decode_bytes(&crate_bytes);
+    assert_eq!(from_text.ir().geometry, from_crate.ir().geometry);
     assert_eq!(from_text.ir().model, from_crate.ir().model);
 }

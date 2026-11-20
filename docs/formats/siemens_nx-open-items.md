@@ -468,11 +468,11 @@ face or feature set assigns either group a selection role. Compact values that e
 
 ### OM-19. Pattern-row scalar roles
 
-**Question.** Which owning-pattern relations assign each counted instance-row scalar its physical role, units, scale, and reference frame?
+**Question.** Which owning-pattern relations assign each counted instance-row scalar its physical role, units, and reference frame?
 
-**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." and `siemens_nx.md` §7.1 "`Pattern Feature` also admits the wide-row form" define shifted binary scalar encodings, exact values, row order, and boundaries. `siemens_nx.md` §7.1 "The pattern row schema index addresses the owning OM section class declaration" defines the instance-class identity.
+**Known.** `siemens_nx.md` §7.1 "`Pattern Feature` and `Pattern Geometry` payloads contain at most one transform lane." and `siemens_nx.md` §7.1 "`Pattern Feature` also admits the wide-row form" define the pattern atom encodings, the `1/4` value scale, exact values, row order, and boundaries. `siemens_nx.md` §7.1 "The pattern row schema index addresses the owning OM section class declaration" defines the instance-class identity.
 
-**Need.** Identify the owning pattern definition, scalar field roles, unit and scale rules, reference frame, and meaning of the fifth wide-row cell before constructing neutral pattern coordinates or controls.
+**Need.** Identify the owning pattern definition, scalar field roles, unit rules, reference frame, and meaning of the fifth wide-row cell before constructing neutral pattern coordinates or controls.
 
 **Conflict.** The instance class and terminal modes select object identity and byte layout; they do not assign pitch, span, angle, axis, or coordinate roles. Equality with an expression or a final-geometry coordinate does not bind a row to that expression or geometric instance. A rotation-matrix identity in four wide-row cells does not assign the fifth cell. Counted-row selectors have no resolved instance or frame relation.
 

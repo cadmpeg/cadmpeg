@@ -631,8 +631,8 @@ fn semantic_writer_preserves_opaque_auxiliary_blocks() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0].set_position(
+    let moved = decoded.ir_mut().geometry.points[0].position().get();
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
@@ -696,8 +696,8 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0].set_position(
+    let moved = decoded.ir_mut().geometry.points[0].position().get();
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
@@ -741,7 +741,7 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
         .model
         .appearance_bindings
         .iter()
-        .any(|binding| matches!(binding.target, AppearanceTarget::Face(_))));
+        .any(|binding| matches!(&binding.target.entity, AppearanceTarget::Face(_))));
     assert_eq!(
         regenerated.ir().model.tessellations[0].vertices()[0].z,
         125.0
@@ -791,8 +791,8 @@ fn semantic_writer_preserves_display_list_geometry() {
         )
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
-    let moved = decoded.ir_mut().model.points[0].position().get();
-    decoded.ir_mut().model.points[0].set_position(
+    let moved = decoded.ir_mut().geometry.points[0].position().get();
+    decoded.ir_mut().geometry.points[0].set_position(
         cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
             moved.x,
             moved.y,
@@ -900,10 +900,12 @@ fn semantic_writer_expands_indexed_tessellation() {
 
     let attributed = mesh
         .clone()
-        .with_triangle_groups(vec![cadmpeg_ir::tessellation::TessellationTriangleGroup {
-            source_id: Some("synthetic:test:group#0".into()),
-            triangles: vec![0, 1],
-        }])
+        .with_triangle_groups(vec![
+            cadmpeg_ir::tessellation::TessellationTriangleGroup::new(
+                Some("synthetic:test:group#0".into()),
+                vec![0, 1],
+            ),
+        ])
         .expect("valid triangle group partition");
     assert!(matches!(
         crate::writer::sequential_tessellation(&attributed),

@@ -745,7 +745,7 @@ fn decode_bounds_declared_brep_counts_by_record_tokens() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("vertex-list count")));
-    assert!(result.ir().model.vertices.is_empty());
+    assert!(result.ir().geometry.vertices.is_empty());
 }
 
 #[test]

@@ -34,7 +34,7 @@ pub(super) fn mark_supports(
         }
     }
     for (identity, source) in ir
-        .model
+        .geometry
         .surfaces
         .iter_mut()
         .map(|surface| {
@@ -43,13 +43,13 @@ pub(super) fn mark_supports(
                 &mut surface.source_object,
             )
         })
-        .chain(ir.model.curves.iter_mut().map(|curve| {
+        .chain(ir.geometry.curves.iter_mut().map(|curve| {
             (
                 source_numeric_id(curve.id.as_str(), "curve"),
                 &mut curve.source_object,
             )
         }))
-        .chain(ir.model.points.iter_mut().map(|point| {
+        .chain(ir.geometry.points.iter_mut().map(|point| {
             (
                 source_numeric_id(point.id.as_str(), "point"),
                 &mut point.source_object,

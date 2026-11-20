@@ -12,13 +12,12 @@ use super::pcurves::{
     pcurve_matches_edge_range_with_index_and_budget, pcurve_parameter_range, EndpointWitnesses,
     IntersectionEntityStarts, IntersectionIncidenceIndex, TransferBudget,
 };
-use super::{offset_store_control_counts, Scan};
+use super::Scan;
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::native::substrate::ParsedStreams;
 use crate::parasolid::{Stream, StreamKind};
-use crate::topology::{FaceLoopFailure, Graph, Node};
-use cadmpeg_core::bytes::assemble_u32_be;
+use crate::topology::{FaceLoop, FaceLoopFailure, Graph, Node, VertexFields};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
 use cadmpeg_core::CodecError;
@@ -92,7 +91,7 @@ pub(super) fn emit_topology(
 ) -> Result<EndpointWitnesses, CodecError> {
     // This scope appends carriers and preserves their identity and construction links.
     let mut procedural_admission =
-        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.model);
+        cadmpeg_ir::document::procedural::ProceduralAdmission::new(&ir.geometry);
 
     let &TopologyBudgets {
         exact_transfer: exact_transfer_budget,
@@ -125,22 +124,53 @@ pub(super) fn emit_topology(
             }
         }
     }
-    let mut face_loop_rings: BTreeMap<u32, Vec<(u32, Vec<u32>)>> = BTreeMap::new();
+    let mut face_boundaries: BTreeMap<u32, Vec<(u32, FaceLoop)>> = BTreeMap::new();
     let mut face_loop_failures: BTreeMap<u32, FaceLoopFailure> = BTreeMap::new();
     for face_xmt in &valid_face_xmts {
-        match graph.face_loop_rings(*face_xmt) {
-            Ok(rings) => {
-                face_loop_rings.insert(*face_xmt, rings);
+        match graph.face_loops(*face_xmt) {
+            Ok(loops) => {
+                face_boundaries.insert(*face_xmt, loops);
             }
             Err(failure) => {
                 face_loop_failures.insert(*face_xmt, failure);
             }
         }
     }
+    let mut point_positions: BTreeMap<PointId, Point3> = BTreeMap::new();
+    for point in &ir.geometry.points {
+        if !point_positions.contains_key(&point.id) {
+            point_positions.insert(point.id.clone(), point.position().get());
+        }
+    }
+    let vertex_point =
+        |vertex_xmt: u32| resolved_vertex_point(graph, points, &point_positions, vertex_xmt);
+    for (face_xmt, loops) in &mut face_boundaries {
+        loops.retain(|(loop_xmt, face_loop)| {
+            let FaceLoop::Vertex { fin_xmt, vertex } = face_loop else {
+                return true;
+            };
+            let vertex_xmt = vertex.map(u32::from);
+            if vertex_xmt.and_then(vertex_point).is_some() {
+                return true;
+            }
+            topology_losses.push(crate::loss::NxLossCode::TopologyVertexLoopUnresolved.note(
+                format!("parasolid#{stream_index} LOOP {loop_xmt} of FACE {face_xmt} is omitted: vertex-loop FIN {fin_xmt} names VERTEX {} without a resolved POINT", vertex_xmt.map_or_else(|| "null".to_owned(), |xmt| xmt.to_string())),
+            ));
+            false
+        });
+    }
     let mut valid_loop_rings: BTreeMap<u32, &[u32]> = BTreeMap::new();
-    for rings in face_loop_rings.values() {
-        for (loop_xmt, ring) in rings {
-            valid_loop_rings.insert(*loop_xmt, ring.as_slice());
+    let mut vertex_loop_vertices = BTreeSet::new();
+    for loops in face_boundaries.values() {
+        for (loop_xmt, face_loop) in loops {
+            match face_loop {
+                FaceLoop::Ring(ring) => {
+                    valid_loop_rings.insert(*loop_xmt, ring.as_slice());
+                }
+                FaceLoop::Vertex { vertex, .. } => {
+                    vertex_loop_vertices.extend(vertex.map(u32::from));
+                }
+            }
         }
     }
     let mut valid_fin_xmts = BTreeSet::new();
@@ -150,7 +180,7 @@ pub(super) fn emit_topology(
         }
     }
     let mut valid_edge_xmts = BTreeSet::new();
-    let mut valid_vertex_xmts = BTreeSet::new();
+    let mut valid_vertex_xmts = vertex_loop_vertices;
     for xmt in &valid_fin_xmts {
         if let Some(edge) = graph
             .get(NodeKind::Fin, *xmt)
@@ -179,14 +209,52 @@ pub(super) fn emit_topology(
         }
         if let Some(vertex) = graph
             .get(NodeKind::Fin, *xmt)
-            .and_then(Node::vertex_fin_fields)
+            .and_then(Node::vertex_loop_fin_fields)
             .and_then(|fields| fields.vertex.map(u32::from))
         {
             valid_vertex_xmts.insert(vertex);
         }
     }
-    let mut first_body_shells = BTreeMap::new();
+    let mut admitted_shell_faces: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+    for face in graph
+        .of_kind(NodeKind::Face)
+        .filter(|face| valid_face_xmts.contains(&face.xmt()))
+    {
+        let Some(face_fields) = face.face_fields() else {
+            continue;
+        };
+        let Some(shell) = face_fields.shell.map(u32::from) else {
+            continue;
+        };
+        if face_fields
+            .surface
+            .is_some_and(|surface| surfaces.contains_key(&u32::from(surface)))
+        {
+            admitted_shell_faces
+                .entry(shell)
+                .or_default()
+                .push(face.xmt());
+        }
+    }
+    let mut admitted_shells = Vec::new();
+    let mut shape_bodies = BTreeSet::new();
     for shell in graph.body_shape_shells() {
+        shape_bodies.extend(
+            shell
+                .shell_fields()
+                .and_then(|fields| fields.body.map(u32::from)),
+        );
+        if admitted_shell_faces.contains_key(&shell.xmt()) {
+            admitted_shells.push(shell);
+        } else {
+            topology_losses.push(crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
+                "parasolid#{stream_index} SHELL {} is withheld: no FACE of the shell is admitted",
+                shell.xmt()
+            )));
+        }
+    }
+    let mut first_body_shells = BTreeMap::new();
+    for &shell in &admitted_shells {
         if let Some(body) = shell
             .shell_fields()
             .and_then(|fields| fields.body.map(u32::from))
@@ -211,20 +279,20 @@ pub(super) fn emit_topology(
         }
         bodies.insert(body_xmt, id.clone());
 
-        ir.model.bodies.push(Body {
+        ir.geometry.bodies.push(Body {
             id,
             kind: cadmpeg_ir::topology::BodyKind::Solid,
-            regions: Vec::new(),
             transform: None,
             name: None,
             color: None,
             visible: None,
+            native_ref: None,
         });
     }
 
     let mut regions: BTreeMap<u32, (RegionId, BodyId)> = BTreeMap::new();
     let mut shells: BTreeMap<u32, ShellId> = BTreeMap::new();
-    for node in graph.body_shape_shells() {
+    for &node in &admitted_shells {
         let Some(fields) = node.shell_fields() else {
             continue;
         };
@@ -265,19 +333,12 @@ pub(super) fn emit_topology(
             }
             annotations.derived(region.as_str(), "body")?;
 
-            ir.model.regions.push(Region {
+            ir.geometry.regions.push(Region {
                 id: region.clone(),
                 body: body.clone(),
                 shells: Vec::new(),
+                native_ref: None,
             });
-            if let Some(parent) = ir
-                .model
-                .bodies
-                .iter_mut()
-                .find(|candidate| candidate.id == body)
-            {
-                parent.regions.push(region.clone());
-            }
             regions.insert(region_xmt, (region.clone(), body.clone()));
             region
         };
@@ -285,41 +346,25 @@ pub(super) fn emit_topology(
             scope.id_from_display(&cadmpeg_ir::identity_component!("shell"), node.xmt())?;
         annotate_node(annotations, shell_id.as_str(), source_stream, node, "SHELL");
         let mut shell_faces = Vec::new();
-        for face in graph
-            .of_kind(NodeKind::Face)
-            .filter(|face| valid_face_xmts.contains(&face.xmt()))
-        {
-            let Some(face_fields) = face.face_fields() else {
-                continue;
-            };
-            if face_fields.shell.map(u32::from) != Some(node.xmt())
-                || !face_fields
-                    .surface
-                    .is_some_and(|surface| surfaces.contains_key(&u32::from(surface)))
-            {
-                continue;
-            }
-
+        for face_xmt in admitted_shell_faces.get(&node.xmt()).into_iter().flatten() {
             shell_faces.push(
                 scope.id_from_display::<FaceId>(
                     &cadmpeg_ir::identity_component!("face"),
-                    face.xmt(),
+                    face_xmt,
                 )?,
             );
         }
 
-        ir.model.shells.push(
-            Shell::new(
-                shell_id.clone(),
-                region_id.clone(),
-                shell_faces,
-                Vec::new(),
-                Vec::new(),
-            )
-            .map_err(|message| cadmpeg_core::CodecError::Malformed(message.to_string()))?,
-        );
+        if shell_faces.is_empty() {
+            return Err(cadmpeg_core::CodecError::Malformed(
+                cadmpeg_ir::features::BodySelectionError::Empty.to_string(),
+            ));
+        }
+        ir.geometry
+            .shells
+            .push(Shell::new(shell_id.clone(), region_id.clone()));
         if let Some(parent) = ir
-            .model
+            .geometry
             .regions
             .iter_mut()
             .find(|candidate| candidate.id == region_id)
@@ -328,28 +373,35 @@ pub(super) fn emit_topology(
         }
         shells.insert(node.xmt(), shell_id);
     }
-    let mut point_positions: BTreeMap<PointId, Point3> = BTreeMap::new();
-    for point in &ir.model.points {
-        if !point_positions.contains_key(&point.id) {
-            point_positions.insert(point.id.clone(), point.position().get());
+    let mut shell_owners = BTreeSet::new();
+    for region in ir
+        .geometry
+        .regions
+        .iter()
+        .filter(|region| !region.shells.is_empty())
+    {
+        shell_owners.insert(region.body.clone());
+    }
+    let mut withheld_bodies = BTreeSet::new();
+    for body_xmt in shape_bodies {
+        let body = bodies.get(&body_xmt);
+        if body.is_none_or(|body| !shell_owners.contains(body)) {
+            topology_losses.push(crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
+                "parasolid#{stream_index} BODY {body_xmt} is withheld: no SHELL of the body is emitted"
+            )));
+            withheld_bodies.extend(body.cloned());
         }
     }
+    ir.geometry
+        .bodies
+        .retain(|body| !withheld_bodies.contains(&body.id));
     let mut vertices: BTreeMap<u32, VertexId> = BTreeMap::new();
     let mut vertex_positions: BTreeMap<VertexId, (Point3, Option<f64>)> = BTreeMap::new();
     for node in graph
         .of_kind(NodeKind::Vertex)
         .filter(|node| valid_vertex_xmts.contains(&node.xmt()))
     {
-        let Some(fields) = node.vertex_fields() else {
-            continue;
-        };
-        let Some(point_ref) = fields
-            .point
-            .and_then(|target| points.get(&u32::from(target)))
-        else {
-            continue;
-        };
-        let Some(point_position) = point_positions.get(point_ref).copied() else {
+        let Some((fields, point_ref, point_position)) = vertex_point(node.xmt()) else {
             continue;
         };
         let tolerance = decoded_tolerance(fields.tolerance());
@@ -362,10 +414,11 @@ pub(super) fn emit_topology(
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
 
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: vertex.clone(),
             point: point_ref.clone(),
             tolerance,
+            native_ref: None,
         });
         vertices.insert(node.xmt(), vertex.clone());
         vertex_positions.insert(
@@ -377,18 +430,18 @@ pub(super) fn emit_topology(
         );
     }
     let mut pcurve_indices: BTreeMap<PcurveId, usize> = BTreeMap::new();
-    for (index, pcurve) in ir.model.pcurves.iter().enumerate() {
+    for (index, pcurve) in ir.geometry.pcurves.iter().enumerate() {
         pcurve_indices.insert(pcurve.id.clone(), index);
     }
     let mut curve_indices: BTreeMap<CurveId, usize> = BTreeMap::new();
-    for (index, curve) in ir.model.curves.iter().enumerate() {
+    for (index, curve) in ir.geometry.curves.iter().enumerate() {
         if !curve_indices.contains_key(&curve.id) {
             curve_indices.insert(curve.id.clone(), index);
         }
     }
     let mut procedural_curve_ids: BTreeSet<CurveId> = BTreeSet::new();
-    for procedural in &ir.model.procedural_curves {
-        if let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) {
+    for procedural in &ir.geometry.procedural_curves {
+        if let Some(owner) = ir.geometry.procedural_curve_owner(&procedural.id) {
             procedural_curve_ids.insert(owner.clone());
         }
     }
@@ -439,7 +492,7 @@ pub(super) fn emit_topology(
                 let Some(pcurve_index) = pcurve_indices.get(pcurve_id) else {
                     return Ok(None);
                 };
-                let Some(pcurve) = ir.model.pcurves.get(*pcurve_index) else {
+                let Some(pcurve) = ir.geometry.pcurves.get(*pcurve_index) else {
                     return Ok(None);
                 };
                 let Some(surface_ref) = pcurve_supports.get(&xmt) else {
@@ -479,7 +532,7 @@ pub(super) fn emit_topology(
                 );
                 annotations.derived(carrier.as_str(), "geometry")?;
 
-                ir.model.curves.push(Curve {
+                ir.geometry.curves.push(Curve {
                     parameter_range: None,
                     id: carrier.clone(),
                     geometry: CurveGeometry::Procedural {
@@ -487,10 +540,11 @@ pub(super) fn emit_topology(
                         cache: None,
                     },
                     source_object: None,
+                    native_ref: None,
                 });
 
                 let _attached = procedural_admission.add_curve(
-                    &mut ir.model,
+                    &mut ir.geometry,
                     &carrier.clone(),
                     ProceduralCurve::new(
                         construction,
@@ -618,7 +672,7 @@ pub(super) fn emit_topology(
             {
                 orient_edge_range_for_geometry_with_budget(
                     &EdgeGeometryRange {
-                        geometry: &ir.model.curves[curve_index].geometry,
+                        geometry: &ir.geometry.curves[curve_index].geometry,
                         curve: carrier,
                         range,
                         start_position,
@@ -658,7 +712,7 @@ pub(super) fn emit_topology(
                 .zip(vertex_positions.get(&end).copied())
                 .is_some_and(|((curve_index, (start_position, _)), (end_position, _))| {
                     open_spline_runs_from_end_to_start(
-                        &ir.model.curves[curve_index].geometry,
+                        &ir.geometry.curves[curve_index].geometry,
                         start_position,
                         end_position,
                     )
@@ -669,13 +723,13 @@ pub(super) fn emit_topology(
             }
         }
 
-        ir.model.edges.push(Edge {
+        ir.geometry.edges.push(Edge {
             id: id.clone(),
             carrier: cadmpeg_ir::topology::EdgeCarrier::new(curve, param_range)
                 .map_err(CodecError::malformed)?,
-            start,
-            end,
+            ends: Some(cadmpeg_ir::topology::EdgeEnds::new(start, end)),
             tolerance: decoded_tolerance(fields.tolerance()),
+            native_ref: None,
         });
         edges.insert(node.xmt(), id);
         if against_source {
@@ -683,7 +737,7 @@ pub(super) fn emit_topology(
         }
     }
     let mut edge_curves_by_id: BTreeMap<EdgeId, CurveId> = BTreeMap::new();
-    for edge in &ir.model.edges {
+    for edge in &ir.geometry.edges {
         if let Some(curve) = edge.curve() {
             edge_curves_by_id.insert(edge.id.clone(), curve.clone());
         }
@@ -757,7 +811,7 @@ pub(super) fn emit_topology(
             let Some(fin) = graph.get(NodeKind::Fin, *fin_xmt) else {
                 return false;
             };
-            if let Some(vertex_fin) = fin.vertex_fin_fields() {
+            if let Some(vertex_fin) = fin.vertex_loop_fin_fields() {
                 return vertex_fin
                     .vertex
                     .is_some_and(|target| vertices.contains_key(&u32::from(target)));
@@ -800,12 +854,12 @@ pub(super) fn emit_topology(
     // unrelated coedge pcurve must not become a general admission shortcut.
     let mut endpoint_witnesses = EndpointWitnesses::new();
     let mut intersection_pcurves = IntersectionPcurveIndex::new();
-    for procedural in &ir.model.procedural_curves {
+    for procedural in &ir.geometry.procedural_curves {
         let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
         else {
             continue;
         };
-        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+        let Some(owner) = ir.geometry.procedural_curve_owner(&procedural.id) else {
             continue;
         };
         for side in context.sides() {
@@ -1074,7 +1128,7 @@ pub(super) fn emit_topology(
                     annotations.derived(pcurve_id.as_str(), "fit_tolerance")?;
                 }
 
-                ir.model.pcurves.push(Pcurve {
+                ir.geometry.pcurves.push(Pcurve {
                     id: pcurve_id.clone(),
                     geometry: geometry.clone(),
                     metadata: cadmpeg_ir::geometry::pcurve::PcurveMetadata::general(
@@ -1086,6 +1140,7 @@ pub(super) fn emit_topology(
                         ),
                         *fit_tolerance,
                     ),
+                    native_ref: None,
                 });
                 pcurve = Some(pcurve_id);
             }
@@ -1110,7 +1165,7 @@ pub(super) fn emit_topology(
         } else {
             fields.sense
         };
-        ir.model.coedges.push(Coedge {
+        ir.geometry.coedges.push(Coedge {
             id: id.clone(),
             owner_loop: loop_id.clone(),
             edge,
@@ -1118,56 +1173,68 @@ pub(super) fn emit_topology(
             sense,
             pcurves: pcurve_uses,
             use_curve: None,
+            native_ref: None,
         });
     }
     let mut face_loops: BTreeMap<FaceId, Vec<LoopId>> = BTreeMap::new();
-    for rings in face_loop_rings.values() {
-        for (loop_xmt, fin_xmts) in rings {
+    for (face_xmt, boundary) in &face_boundaries {
+        for (loop_xmt, face_loop) in boundary {
+            let fin_xmts = match face_loop {
+                FaceLoop::Ring(fin_xmts) => fin_xmts,
+                FaceLoop::Vertex { vertex, .. } => {
+                    let (Some(face), Some(vertex), Some(node)) = (
+                        faces.get(face_xmt),
+                        vertex.and_then(|target| vertices.get(&u32::from(target))),
+                        graph.get(NodeKind::Loop, *loop_xmt),
+                    ) else {
+                        continue;
+                    };
+                    let id: LoopId = scope
+                        .id_from_display(&cadmpeg_ir::identity_component!("loop"), *loop_xmt)?;
+                    annotate_node(annotations, id.as_str(), source_stream, node, "LOOP");
+                    ir.geometry.loops.push(Loop {
+                        id: id.clone(),
+                        face: face.clone(),
+                        boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
+                            vertex: vertex.clone(),
+                            pcurves: Vec::new(),
+                        },
+                        native_ref: None,
+                    });
+                    face_loops.entry(face.clone()).or_default().push(id);
+                    continue;
+                }
+            };
             let Some((id, face)) = loop_specs.get(loop_xmt) else {
                 continue;
             };
-            let vertex_fin = fin_xmts
-                .first()
-                .and_then(|fin_xmt| graph.get(NodeKind::Fin, *fin_xmt))
-                .and_then(Node::vertex_fin_fields);
-            let boundary = if let Some(vertex_fin) = vertex_fin {
-                vertex_fin
-                    .vertex
-                    .and_then(|target| vertices.get(&u32::from(target)))
-                    .map(|vertex| cadmpeg_ir::topology::LoopBoundary::Vertex {
-                        vertex: vertex.clone(),
-                        pcurves: Vec::new(),
-                    })
-            } else {
-                let mut coedges = Vec::new();
-                let mut all_resolved = true;
-                for fin_xmt in fin_xmts {
-                    let Some(fin_id) = fin_ids.get(fin_xmt) else {
-                        all_resolved = false;
-                        break;
-                    };
+            let mut coedges = Vec::new();
+            let mut all_resolved = true;
+            for fin_xmt in fin_xmts {
+                let Some(fin_id) = fin_ids.get(fin_xmt) else {
+                    all_resolved = false;
+                    break;
+                };
 
-                    coedges.push(fin_id.clone());
-                }
-                if all_resolved {
-                    cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new())
-                        .ok()
-                        .map(cadmpeg_ir::topology::LoopBoundary::Ring)
-                } else {
-                    None
-                }
+                coedges.push(fin_id.clone());
+            }
+            let ring = if all_resolved {
+                cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()).ok()
+            } else {
+                None
             };
-            let Some(boundary) = boundary else {
+            let Some(ring) = ring else {
                 topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
                     format!("parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face"),
                 ));
                 continue;
             };
 
-            ir.model.loops.push(Loop {
+            ir.geometry.loops.push(Loop {
                 id: id.clone(),
                 face: face.clone(),
-                boundary,
+                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+                native_ref: None,
             });
             let key: FaceId = face.clone();
 
@@ -1190,19 +1257,23 @@ pub(super) fn emit_topology(
             false
         };
         let mut loops = face_loops.remove(&pending.id).unwrap_or_default();
-        if loops.is_empty() && !boundary_failed {
+        let face_node = graph.get(NodeKind::Face, pending.xmt);
+        let has_null_loop_ref = face_node
+            .and_then(Node::face_fields)
+            .is_some_and(|fields| fields.loop_xmt.is_none());
+        if loops.is_empty() && !boundary_failed && has_null_loop_ref {
             loops = whole_sphere_pole_loops(
                 ir,
                 annotations,
                 &scope,
                 source_stream,
-                graph.get(NodeKind::Face, pending.xmt),
+                face_node,
                 &pending.id,
                 &pending.surface,
             )?;
         }
 
-        ir.model.faces.push(Face {
+        ir.geometry.faces.push(Face {
             id: pending.id,
             shell: pending.shell,
             surface: pending.surface,
@@ -1211,6 +1282,7 @@ pub(super) fn emit_topology(
             name: None,
             color: None,
             tolerance: pending.tolerance,
+            native_ref: None,
         });
     }
     attach_tolerant_edge_intersections_with_budget(
@@ -1247,32 +1319,43 @@ pub(super) fn emit_topology(
     intersection_index.complete_new_pcurves_from_stream(ir, intersection_starts.pcurves);
 
     let mut owned_edges: BTreeSet<EdgeId> = BTreeSet::new();
-    for coedge in &ir.model.coedges {
+    for coedge in &ir.geometry.coedges {
         owned_edges.insert(coedge.edge.clone());
     }
     let mut candidate_edges = BTreeSet::new();
     for edge in edges.into_values() {
         candidate_edges.insert(edge);
     }
-    ir.model
+    ir.geometry
         .edges
         .retain(|edge| !candidate_edges.contains(&edge.id) || owned_edges.contains(&edge.id));
     let mut retained_vertices: BTreeSet<VertexId> = BTreeSet::new();
-    for edge in &ir.model.edges {
-        for vertex in [&edge.start, &edge.end] {
+    for edge in &ir.geometry.edges {
+        for vertex in edge.vertices() {
             retained_vertices.insert(vertex.clone());
         }
     }
-    for loop_ in &ir.model.loops {
-        if let Some((vertex, _)) = loop_.singular_vertex() {
-            retained_vertices.insert(vertex.clone());
-        }
+    for loop_ in &ir.geometry.loops {
+        retained_vertices.extend(loop_.singular_vertex().map(|(vertex, _)| vertex.clone()));
     }
     let scope_prefix = scope.prefix();
-    ir.model.vertices.retain(|vertex| {
+    ir.geometry.vertices.retain(|vertex| {
         !vertex.id.as_str().starts_with(&scope_prefix) || retained_vertices.contains(&vertex.id)
     });
     Ok(endpoint_witnesses)
+}
+
+/// The fields, POINT, and position of a VERTEX whose point resolves.
+fn resolved_vertex_point<'points>(
+    graph: &Graph,
+    points: &'points BTreeMap<u32, PointId>,
+    point_positions: &BTreeMap<PointId, Point3>,
+    vertex_xmt: u32,
+) -> Option<(VertexFields, &'points PointId, Point3)> {
+    let (fields, point_xmt) = graph.resolved_vertex(vertex_xmt)?;
+    let point_ref = points.get(&point_xmt)?;
+    let position = point_positions.get(point_ref).copied()?;
+    Some((fields, point_ref, position))
 }
 
 pub(super) struct UnresolvedTopologyStream<'inputs> {
@@ -1323,12 +1406,13 @@ pub(super) fn retain_unresolved_topology_carriers(
         );
         annotations.exactness(id.as_str(), Exactness::Unknown);
 
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: id.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown {
                 record: Some(unknown.clone()),
             }),
             source_object: None,
+            native_ref: None,
         });
         surfaces.insert(surface_xmt, id);
     }
@@ -1355,13 +1439,14 @@ pub(super) fn retain_unresolved_topology_carriers(
         );
         annotations.exactness(id.as_str(), Exactness::Unknown);
 
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             parameter_range: None,
             id: id.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Unknown {
                 record: Some(unknown.clone()),
             }),
             source_object: None,
+            native_ref: None,
         });
         curves.insert(curve_xmt, id);
     }
@@ -1448,7 +1533,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     } = closed_edge;
 
     let parameter = {
-        let geometry = &ir.model.curves[curve_index].geometry;
+        let geometry = &ir.geometry.curves[curve_index].geometry;
         range.map_or_else(
             || match geometry {
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
@@ -1460,7 +1545,7 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
         )
     };
     let Some(position) = ({
-        let geometry = &ir.model.curves[curve_index].geometry;
+        let geometry = &ir.geometry.curves[curve_index].geometry;
         curve_point_cache.point_with_budget(curve, geometry, parameter, geometry_budget)?
     }) else {
         return Ok(None);
@@ -1488,14 +1573,15 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     );
     annotations.exactness(vertex.as_str(), Exactness::Inferred);
 
-    ir.model
+    ir.geometry
         .points
         .push(Point::new(point.clone(), position, None));
 
-    ir.model.vertices.push(Vertex {
+    ir.geometry.vertices.push(Vertex {
         id: vertex.clone(),
         point,
         tolerance,
+        native_ref: None,
     });
     Ok(Some(vertex))
 }
@@ -1515,7 +1601,7 @@ fn whole_sphere_pole_loops(
         return Ok(Vec::new());
     };
     let Some(sphere) = ir
-        .model
+        .geometry
         .surfaces
         .iter()
         .find(|candidate| &candidate.id == surface)
@@ -1560,21 +1646,23 @@ fn whole_sphere_pole_loops(
             Some("SPHERE_POLE_VERTEX"),
         );
         annotations.exactness(vertex.as_str(), Exactness::Inferred);
-        ir.model
+        ir.geometry
             .points
             .push(Point::new(point.clone(), position, None));
-        ir.model.vertices.push(Vertex {
+        ir.geometry.vertices.push(Vertex {
             id: vertex.clone(),
             point,
             tolerance: None,
+            native_ref: None,
         });
-        ir.model.loops.push(Loop {
+        ir.geometry.loops.push(Loop {
             id: id.clone(),
             face: face.clone(),
             boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
                 vertex,
                 pcurves: Vec::new(),
             },
+            native_ref: None,
         });
         loops.push(id);
     }
@@ -1879,63 +1967,6 @@ pub(super) fn source_meta(
     parsed: Option<&ParsedStreams<'_>>,
 ) -> Result<SourceMeta, cadmpeg_core::CodecError> {
     let mut attributes = BTreeMap::new();
-    insert_source_attribute(&mut attributes, "file_size", scan.container.physical_size);
-    insert_source_attribute(
-        &mut attributes,
-        "directory_entries",
-        scan.container.entries.len(),
-    );
-    insert_source_attribute(
-        &mut attributes,
-        "header_entry_count",
-        scan.container.entry_count(crate::container::Region::Header),
-    );
-    if let crate::container::ContainerLayout::Modern {
-        footer: Some(footer),
-        ..
-    } = scan.container.layout
-    {
-        insert_source_attribute(&mut attributes, "footer_offset", footer.offset);
-        insert_source_attribute(
-            &mut attributes,
-            "footer_entry_count",
-            scan.container.entry_count(crate::container::Region::Footer),
-        );
-        insert_source_attribute(
-            &mut attributes,
-            "footer_fingerprint",
-            format_args!("{:08x}", assemble_u32_be(footer.fingerprint)),
-        );
-    }
-    let (control_count, classified_control_count) = offset_store_control_counts(&scan.container);
-    if control_count != 0 {
-        insert_source_attribute(&mut attributes, "offset_store_control_count", control_count);
-        insert_source_attribute(
-            &mut attributes,
-            "classified_offset_store_control_count",
-            classified_control_count,
-        );
-        insert_source_attribute(
-            &mut attributes,
-            "unclassified_offset_store_control_count",
-            control_count - classified_control_count,
-        );
-    }
-    insert_source_attribute(
-        &mut attributes,
-        "partition_streams",
-        scan.count(StreamKind::Partition),
-    );
-    insert_source_attribute(
-        &mut attributes,
-        "deltas_streams",
-        scan.count(StreamKind::Deltas),
-    );
-    insert_source_attribute(
-        &mut attributes,
-        "plain_streams",
-        scan.count(StreamKind::Plain),
-    );
     for (index, path) in scan
         .container
         .external_reference_paths()
@@ -1946,13 +1977,6 @@ pub(super) fn source_meta(
             &mut attributes,
             format_args!("external_reference.{index}"),
             path,
-        );
-    }
-    if let Some((_, table)) = scan.container.rmfastload_object_id_table() {
-        insert_source_attribute(
-            &mut attributes,
-            "rmfastload_active_object_count",
-            table.object_ids.as_slice().len(),
         );
     }
     let mut preview_count = 0usize;
@@ -1997,20 +2021,8 @@ pub(super) fn source_meta(
             format_args!("jpeg_preview_{preview_count}_components"),
             components,
         );
-        insert_source_attribute(
-            &mut attributes,
-            format_args!("jpeg_preview_{preview_count}_byte_len"),
-            payload.len(),
-        );
-
-        insert_source_attribute(
-            &mut attributes,
-            format_args!("jpeg_preview_{preview_count}_sha256"),
-            LowerHex(&sha256(payload)),
-        );
         preview_count += 1;
     }
-    insert_source_attribute(&mut attributes, "jpeg_preview_count", preview_count);
     for (index, (ordinal, stream)) in scan
         .streams
         .iter()
@@ -2025,14 +2037,6 @@ pub(super) fn source_meta(
             uncached = cadmpeg_parasolid::records::DeltasRecords::read(&stream.inflated)?;
             &uncached
         };
-        let census = owner.census();
-        for (key, value) in [
-            ("instances", census.instance_count()),
-            ("schemas", census.schema_count()),
-            ("bytes_decoded", census.bytes_decoded()),
-        ] {
-            insert_source_attribute(&mut attributes, format_args!("deltas.{index}.{key}"), value);
-        }
         insert_source_attribute(
             &mut attributes,
             format_args!("deltas.{index}.selection"),
@@ -2043,25 +2047,11 @@ pub(super) fn source_meta(
             format_args!("deltas.{index}.grammar"),
             "sequential_owned_records",
         );
-        if let cadmpeg_parasolid::records::deltas::DeltasEnd::Stopped { offset, reason } =
-            owner.end()
-        {
-            insert_source_attribute(
-                &mut attributes,
-                format_args!("deltas.{index}.stop_offset"),
-                offset,
-            );
+        if let cadmpeg_parasolid::records::deltas::DeltasEnd::Stopped { reason, .. } = owner.end() {
             insert_source_attribute(
                 &mut attributes,
                 format_args!("deltas.{index}.stop_reason"),
                 format_args!("{reason:?}"),
-            );
-        }
-        for (name, count) in census.full_counts() {
-            insert_source_attribute(
-                &mut attributes,
-                format_args!("deltas.{index}.full.{name}"),
-                count,
             );
         }
     }
@@ -2134,7 +2124,6 @@ mod tests {
         Scan {
             container: Container {
                 data: Vec::new().into(),
-                physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
                 entries: Vec::new(),
                 fastload_table: None,
@@ -2142,6 +2131,7 @@ mod tests {
                 om_section_cache: std::sync::OnceLock::new(),
             },
             streams: Vec::new(),
+            untyped: std::cell::RefCell::default(),
         }
     }
 

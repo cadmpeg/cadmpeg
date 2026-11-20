@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::{chart_ending_on_edge_vertices, Approximator};
+use super::{chart_ending_on_edge_vertices, sample, Approximator, Axis, SEED_PATCHES};
+use crate::eval::admission::EvaluationAdmission;
 use crate::geometry::nurbs::NurbsCurve;
 use crate::geometry::pcurve::{LinePcurve, PcurveGeometry, PlacedPcurve};
 use crate::geometry::{
@@ -17,10 +18,10 @@ use crate::transform::Transform2;
 fn chart_snapping_moves_only_an_end_pole_within_the_fit_tolerance() {
     let ir = crate::examples::unit_cube().unwrap();
     let index = crate::index::ModelIndex::new_model_only(&ir);
-    let edge = &ir.model.edges[0];
+    let edge = &ir.geometry.edges[0];
     let curve = edge.curve().unwrap();
     let position = |id: &crate::ids::VertexId| {
-        let vertex = ir.model.vertices.iter().find(|v| &v.id == id).unwrap();
+        let vertex = ir.geometry.vertices.iter().find(|v| &v.id == id).unwrap();
         let point = ir
             .model
             .points
@@ -78,7 +79,7 @@ fn a_cornered_curve_on_a_spline_surface_is_fitted_with_a_pole_on_the_corner() {
     )
     .unwrap();
     let surface = SurfaceId::mint("test:approximation:surface#cornered").unwrap();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(spline)),
         source_object: None,
@@ -134,7 +135,7 @@ fn a_cornered_curve_on_a_spline_surface_is_fitted_with_a_pole_on_the_corner() {
         [Vec::new(), Vec::new(), Vec::new()],
     )
     .unwrap();
-    ir.model.procedural_curves.push(ProceduralCurve::new(
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
         construction.clone(),
         ProceduralCurveDefinition::SurfaceCurve {
             family: SurfaceCurveFamily::Parametric {
@@ -143,7 +144,7 @@ fn a_cornered_curve_on_a_spline_surface_is_fitted_with_a_pole_on_the_corner() {
             },
         },
     ));
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
             construction,
@@ -206,7 +207,7 @@ fn a_constant_parameter_curve_across_a_spline_surface_becomes_the_exact_isocurve
     )
     .unwrap();
     let surface = SurfaceId::mint("test:approximation:surface#spline").unwrap();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(spline)),
         source_object: None,
@@ -240,7 +241,7 @@ fn a_constant_parameter_curve_across_a_spline_surface_becomes_the_exact_isocurve
         [Vec::new(), Vec::new(), Vec::new()],
     )
     .unwrap();
-    ir.model.procedural_curves.push(ProceduralCurve::new(
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
         construction.clone(),
         ProceduralCurveDefinition::SurfaceCurve {
             family: SurfaceCurveFamily::Parametric {
@@ -249,7 +250,7 @@ fn a_constant_parameter_curve_across_a_spline_surface_becomes_the_exact_isocurve
             },
         },
     ));
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
             construction,
@@ -296,7 +297,7 @@ fn a_constant_parameter_curve_across_a_linear_sweep_becomes_the_moved_directrix(
         Point3::new(3.0, 0.0, 0.0),
     ];
     let directrix = CurveId::mint("test:approximation:curve#directrix").unwrap();
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: directrix.clone(),
         geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
             NurbsCurve::from_lanes(2, knots.clone(), poles.to_vec(), None, false).unwrap(),
@@ -306,7 +307,7 @@ fn a_constant_parameter_curve_across_a_linear_sweep_becomes_the_moved_directrix(
     });
     let surface = SurfaceId::mint("test:approximation:surface#sweep").unwrap();
     let sweep = ProceduralSurfaceId::mint("test:approximation:construction#sweep").unwrap();
-    ir.model.surfaces.push(Surface {
+    ir.geometry.surfaces.push(Surface {
         id: surface.clone(),
         geometry: SurfaceGeometry::Procedural {
             construction: sweep.clone(),
@@ -314,7 +315,7 @@ fn a_constant_parameter_curve_across_a_linear_sweep_becomes_the_moved_directrix(
         },
         source_object: None,
     });
-    ir.model.procedural_surfaces.push(ProceduralSurface::new(
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
         sweep,
         ProceduralSurfaceDefinition::LinearSweep(
             LinearSweepSurfaceConstruction::try_new(directrix, Vector3::new(0.0, 0.0, 2.0))
@@ -352,7 +353,7 @@ fn a_constant_parameter_curve_across_a_linear_sweep_becomes_the_moved_directrix(
         [Vec::new(), Vec::new(), Vec::new()],
     )
     .unwrap();
-    ir.model.procedural_curves.push(ProceduralCurve::new(
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
         construction.clone(),
         ProceduralCurveDefinition::SurfaceCurve {
             family: SurfaceCurveFamily::Parametric {
@@ -361,7 +362,7 @@ fn a_constant_parameter_curve_across_a_linear_sweep_becomes_the_moved_directrix(
             },
         },
     ));
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
             construction,
@@ -393,7 +394,7 @@ fn a_kinked_curve_on_a_plane_becomes_the_exact_spline_through_the_plane() {
     use crate::units::FinitePoint2;
 
     let mut ir = crate::examples::unit_cube().unwrap();
-    let plane = ir.model.faces[0].surface.clone();
+    let plane = ir.geometry.faces[0].surface.clone();
     let uv = [
         (0.0, 0.0),
         (0.1, 0.05),
@@ -442,7 +443,7 @@ fn a_kinked_curve_on_a_plane_becomes_the_exact_spline_through_the_plane() {
         [Vec::new(), Vec::new(), Vec::new()],
     )
     .unwrap();
-    ir.model.procedural_curves.push(ProceduralCurve::new(
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
         construction.clone(),
         ProceduralCurveDefinition::SurfaceCurve {
             family: SurfaceCurveFamily::Parametric {
@@ -451,7 +452,7 @@ fn a_kinked_curve_on_a_plane_becomes_the_exact_spline_through_the_plane() {
             },
         },
     ));
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
             construction,
@@ -499,7 +500,7 @@ fn fitting_retains_an_evaluation_resource_refusal() {
     let context = IntcurveSupportContext::try_new(
         [
             IntcurveSupportSide {
-                surface: Some(ir.model.faces[0].surface.clone()),
+                surface: Some(ir.geometry.faces[0].surface.clone()),
                 pcurve: Some(SupportPcurve::new(pcurve, None)),
             },
             IntcurveSupportSide {
@@ -511,7 +512,7 @@ fn fitting_retains_an_evaluation_resource_refusal() {
         [Vec::new(), Vec::new(), Vec::new()],
     )
     .unwrap();
-    ir.model.procedural_curves.push(ProceduralCurve::new(
+    ir.geometry.procedural_curves.push(ProceduralCurve::new(
         construction.clone(),
         ProceduralCurveDefinition::SurfaceCurve {
             family: SurfaceCurveFamily::Parametric {
@@ -520,7 +521,7 @@ fn fitting_retains_an_evaluation_resource_refusal() {
             },
         },
     ));
-    ir.model.curves.push(Curve {
+    ir.geometry.curves.push(Curve {
         id: curve.clone(),
         geometry: CurveGeometry::Procedural {
             construction,
@@ -528,6 +529,7 @@ fn fitting_retains_an_evaluation_resource_refusal() {
         },
         parameter_range: None,
         source_object: None,
+        native_ref: None,
     });
     let mut approximator = Approximator::new(&ir);
     assert!(approximator.curve(curve.as_str()).is_none());
@@ -538,4 +540,55 @@ fn fitting_retains_an_evaluation_resource_refusal() {
         refusal.dimension,
         cadmpeg_core::decode::ResourceDimension::RecursionDepth
     );
+}
+
+/// The sampled residual limit of a model whose linear tolerance is `1e-6`.
+const RESIDUAL: f64 = 2.5e-7;
+
+#[test]
+fn breaks_at_carrier_knots_fit_each_quadratic_span_at_the_seed() {
+    let square = NurbsCurve::from_lanes(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0],
+        vec![
+            Point3::new(-10.0, -10.0, 0.0),
+            Point3::new(10.0, -10.0, 0.0),
+            Point3::new(10.0, 10.0, 0.0),
+            Point3::new(-10.0, 10.0, 0.0),
+            Point3::new(-10.0, -10.0, 0.0),
+        ],
+        None,
+        false,
+    )
+    .unwrap();
+    let mut evaluations = 0_usize;
+    let mut extrusion = |u: f64, v: f64| {
+        evaluations += 1;
+        let point =
+            crate::eval::decode::nurbs_curve_point_at(EvaluationAdmission::Standard, &square, u)
+                .expect("the square has a point across its domain")
+                .get();
+        Some(Point3::new(point.x, point.y, point.z - v))
+    };
+    let mut samples = usize::MAX;
+    let grid = sample(
+        [
+            Axis::new([0.0, 3.0], &[1.0, 2.0], SEED_PATCHES).unwrap(),
+            Axis::new([-5.0, 0.0], &[], SEED_PATCHES).unwrap(),
+        ],
+        false,
+        RESIDUAL,
+        &mut samples,
+        usize::MAX,
+        &mut extrusion,
+    )
+    .expect("a cubic patch holds each quadratic span");
+    assert_eq!(
+        grid.knots[0],
+        [0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0]
+    );
+    assert_eq!(grid.rows.len(), 3 * 3 + 1);
+    // One level: the (3 * 3 + 1) by (3 * 4 + 1) grid, and 25 probes in each
+    // of the 3 by 4 patches.
+    assert_eq!(evaluations, 10 * 13 + 3 * 4 * 25);
 }

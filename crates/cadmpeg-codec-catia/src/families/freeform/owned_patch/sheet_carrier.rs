@@ -19,12 +19,18 @@ use crate::families::b2::records::{
     b2_plane_carriers_from_records, b2_plane_geometry, b2_sphere_geometry, b2_torus_geometry,
     cylinder_range_origin, B2Cone, B2Sphere, B2Torus,
 };
+use crate::layout::{
+    sheet_plane_explicit_v_a0_payload as explicit_v_a0,
+    sheet_plane_implicit_v_payload as implicit_v_a0,
+};
 use crate::wire::bytes::{allocation_reference, AllocationReference};
 use crate::wire::records::ConsolidatedRecord;
 
 use super::super::rolling_ball_patch::fit_rectangular_patch;
 use super::ruled::Ruled;
 use super::{near, surface_fit, SheetSurfaceFit};
+
+const MAX_ROLLING_EXTENSION_MM: f64 = 0.005;
 
 pub(super) const SPHERE_BRIDGE_RADIUS_TOLERANCE_MM: f64 = 1.0e-6;
 
@@ -61,6 +67,13 @@ impl Carrier<'_> {
         })
     }
 
+    pub(super) fn untransferred_plane_bounds(&self) -> Option<[[f64; 2]; 2]> {
+        match self {
+            Self::Plane(plane) => plane.bounds,
+            _ => None,
+        }
+    }
+
     pub(super) fn bounds(&self) -> Option<[[f64; 2]; 2]> {
         match self {
             Self::RollingBall(..) | Self::OwnedRollingBall { .. } => {
@@ -89,11 +102,11 @@ impl Carrier<'_> {
             ]),
             Self::Torus(torus, _) => Some([
                 torus
-                    .major_angular_range
+                    .major_angular_domain
                     .endpoints()
                     .map(|u| u * torus.major_scale.get()),
                 torus
-                    .minor_angular_range
+                    .minor_angular_domain
                     .endpoints()
                     .map(|v| v * torus.minor_scale.get()),
             ]),
@@ -220,6 +233,29 @@ impl Carrier<'_> {
         let (definition, _) = self.rolling_definition()?;
         let [u, s] = self.point([u, v]);
         eval::rolling_ball_jet_boundary_gap(definition, u, s).ok()
+    }
+
+    pub(super) fn evaluate_rolling_extension(&self, u: f64, v: f64) -> Option<Point3> {
+        let (definition, _) = self.rolling_definition()?;
+        eval::rolling_ball_jet_extended_point(definition, u, v, MAX_ROLLING_EXTENSION_MM)
+            .ok()
+            .map(FinitePoint3::get)
+    }
+
+    pub(super) fn solve_rolling_extension(
+        &self,
+        limits: [[f64; 2]; 2],
+    ) -> Option<SolvedSurfaceGeometry> {
+        let (ProceduralSurfaceDefinition::RollingBallJet(jet), _) = self.rolling_definition()?
+        else {
+            return None;
+        };
+        let surface = surface_fit::bounded(
+            jet.stations().iter().map(|s| s.knot.get()),
+            limits,
+            |u, v| self.evaluate_rolling_extension(u, v),
+        )?;
+        Some(SolvedSurfaceGeometry::Nurbs(surface))
     }
 
     pub(super) fn solved(
@@ -360,7 +396,7 @@ impl SpatialPlane {
             None
         };
         let origin_x = view.f64_le()?;
-        let compressed_origin = (layout, mask) == (0xb4, 0xd6);
+        let compressed_origin = matches!((layout, mask), (0xb4, 0xd6));
         let origin_y = if compressed_origin {
             0.0
         } else {
@@ -398,12 +434,36 @@ impl SpatialPlane {
             | (0x94, 0x10 | 0x60 | 0x68, None)
             | (0xa4, 0x50 | 0x58, None)
             | (0xb4, 0x58, None)
+            | (0xe4, 0x50, None)
             | (0xc4, 0x30 | 0x38 | 0x3c, None)
-            | (0xd4, 0xa0, None)
-            | (0xe4, 0x50, None) => (direction(mask)?, direction(layout & 0x70)?),
+            | (0xd4, 0x20, None) => (
+                direction(mask)?,
+                direction((layout & 0x70) | ((mask & 0x80) >> 4))?,
+            ),
+            (0xd4, 0xa0, None) => {
+                let v_mask = match bytes.len() {
+                    implicit_v_a0::LEN => 0x58,
+                    explicit_v_a0::LEN => 0x50,
+                    _ => return None,
+                };
+                (direction(mask)?, direction(v_mask)?)
+            }
+            (0xb4, 0xd0, None) => {
+                let y = view.f64_le()?;
+                if y.abs() != 1.0 {
+                    return None;
+                }
+                (
+                    UnitVector3::new(Vector3::new(0.0, y, 0.0))?,
+                    UnitVector3::Z_AXIS,
+                )
+            }
             (0xb4, 0xd6, None) => (direction(mask)?, UnitVector3::Z_AXIS),
             (0x08, 0, Some(0x18)) => (direction(0)?, direction(0)?),
-            (0x08, 0xe8, Some(0x1d)) => (UnitVector3::X_AXIS, UnitVector3::Y_AXIS),
+            (0x08, 0, Some(0x19)) => (direction(0)?, direction(0x10)?),
+            (0x08, 0x68 | 0xe8, Some(0x1d)) => {
+                (direction(mask)?, direction(0x50 | ((mask & 0x80) >> 4))?)
+            }
             _ => return None,
         };
         let bounds = if frame.is_none() {
@@ -545,6 +605,23 @@ mod tests {
     use super::*;
 
     #[test]
+    fn spatial_plane_retains_the_mirrored_chart_direction() {
+        let mut bytes = vec![0xb4, 0xd0];
+        for value in [3.0_f64, 4.0, 5.0, -1.0, -2.0, 3.0, 0.0, 4.0] {
+            bytes.extend(value.to_le_bytes());
+        }
+        let plane = SpatialPlane::read(&bytes).expect("bounded mirrored plane");
+        assert_eq!(plane.bounds, Some([[-2.0, 3.0], [0.0, 4.0]]));
+        let carrier = Carrier::Plane(plane);
+        assert_eq!(
+            carrier.evaluate([2.0, 3.0]),
+            Some(Point3::new(3.0, 2.0, 8.0))
+        );
+        bytes.push(0);
+        assert!(SpatialPlane::read(&bytes).is_none());
+    }
+
+    #[test]
     fn offset_cache_admits_a_trimmed_subdomain() {
         let mut bytes = vec![5];
         for value in [3.0_f64, -2.0, 0.0, 8.0, 12.0] {
@@ -585,5 +662,122 @@ mod tests {
         assert_eq!(chart.bounds(), Some([[0.0, 1.0], [-2.0, 2.0]]));
         bytes[24] ^= 0x01;
         assert!(SpatialCylinder::read(&bytes).is_none());
+    }
+    #[test]
+    fn bounded_plane_refuses_unestablished_selectors() {
+        for (prefix, frame) in [
+            ([0xb4, 0xde], &[3.0_f64][..]),
+            ([0xb4, 0x50], &[3.0, 4.0, 5.0, -1.0, 1.0][..]),
+            ([0xe4, 0x58], &[3.0, 4.0, 5.0, 1.0][..]),
+            ([0xd4, 0x68], &[3.0, 4.0, 5.0, -1.0][..]),
+            ([0xd4, 0xe8], &[3.0, 4.0, 5.0][..]),
+            ([0xa4, 0x00], &[3.0, 4.0, 5.0, 0.0, 1.0, 0.0, 0.6, 0.8][..]),
+        ] {
+            let mut bytes = prefix.to_vec();
+            for value in frame.iter().copied().chain([-4.0, 4.0, -6.0, 6.0]) {
+                bytes.extend(value.to_le_bytes());
+            }
+            assert!(SpatialPlane::read(&bytes).is_none(), "prefix {prefix:02x?}");
+        }
+    }
+
+    #[test]
+    fn unrestricted_plane_retains_the_signed_v_axis() {
+        for (mask, sign) in [(0xe8, 1.0), (0x68, -1.0), (0x68, 1.0)] {
+            let mut bytes = vec![0x08, mask, 0x1d];
+            for value in [3.0_f64, 4.0, 5.0] {
+                bytes.extend(value.to_le_bytes());
+            }
+            if mask == 0x68 {
+                bytes.extend(f64::to_le_bytes(sign));
+            }
+            let plane = SpatialPlane::read(&bytes).expect("implicit-axis plane");
+            assert_eq!(plane.bounds, None);
+            assert_eq!(
+                Carrier::Plane(plane).evaluate([2.0, 3.0]),
+                Some(Point3::new(5.0, 4.0 + 3.0 * sign, 5.0))
+            );
+            bytes.push(0);
+            assert!(SpatialPlane::read(&bytes).is_none());
+        }
+        for sign in [0.0_f64, 2.0, f64::NAN] {
+            let mut bytes = vec![0x08, 0x68, 0x1d];
+            for value in [3.0, 4.0, 5.0, sign] {
+                bytes.extend(value.to_le_bytes());
+            }
+            assert!(SpatialPlane::read(&bytes).is_none());
+        }
+    }
+
+    #[test]
+    fn bounded_plane_retains_implicit_and_explicit_v_components() {
+        for (mask, sign) in [(0xa0, 1.0), (0x20, -1.0), (0x20, 1.0)] {
+            let mut bytes = vec![0xd4, mask];
+            for value in [3.0_f64, 4.0, 5.0, -1.0, 0.0] {
+                bytes.extend(value.to_le_bytes());
+            }
+            if mask == 0x20 {
+                bytes.extend(f64::to_le_bytes(sign));
+            }
+            for value in [0.0_f64, 20.0, -10.0, 10.0] {
+                bytes.extend(value.to_le_bytes());
+            }
+            let plane = SpatialPlane::read(&bytes).expect("bounded signed-axis plane");
+            assert_eq!(plane.bounds, Some([[0.0, 20.0], [-10.0, 10.0]]));
+            assert_eq!(
+                Carrier::Plane(plane).evaluate([2.0, 3.0]),
+                Some(Point3::new(1.0, 4.0 + 3.0 * sign, 5.0))
+            );
+            bytes.push(0);
+            assert!(SpatialPlane::read(&bytes).is_none());
+        }
+    }
+
+    #[test]
+    fn packed_plane_omits_the_zero_x_component_of_v() {
+        let mut bytes = vec![0x08, 0x00, 0x19];
+        for value in [3.0_f64, 4.0, 5.0, 1.0, 0.0, 0.0, 0.6, 0.8] {
+            bytes.extend(value.to_le_bytes());
+        }
+        let plane = Carrier::Plane(SpatialPlane::read(&bytes).expect("packed plane"));
+        let point = plane.evaluate([2.0, 5.0]).expect("chart point");
+        assert!(point.distance(Point3::new(5.0, 7.0, 9.0)) < 1e-12);
+    }
+    #[test]
+    fn bounded_plane_preserves_the_82_byte_a0_frame_and_its_signed_v_axis() {
+        for sign in [-1.0_f64, 1.0] {
+            let mut bytes = vec![0xd4, 0xa0];
+            for value in [3.0_f64, 4.0, 5.0, -1.0, 0.0, sign, 0.0, 20.0, -10.0, 10.0] {
+                bytes.extend(value.to_le_bytes());
+            }
+            assert_eq!(bytes.len(), explicit_v_a0::LEN);
+            let plane = SpatialPlane::read(&bytes).expect("legacy explicit V frame");
+            assert_eq!(plane.bounds, Some([[0.0, 20.0], [-10.0, 10.0]]));
+            assert_eq!(
+                Carrier::Plane(plane).evaluate([2.0, 3.0]),
+                Some(Point3::new(1.0, 4.0 + 3.0 * sign, 5.0))
+            );
+            bytes.push(0);
+            assert!(SpatialPlane::read(&bytes).is_none());
+            bytes.truncate(explicit_v_a0::LEN - 1);
+            assert!(SpatialPlane::read(&bytes).is_none());
+        }
+    }
+    #[test]
+    fn packed_plane_refuses_unestablished_frame_forms() {
+        for (prefix, axes) in [
+            ([0x08, 0x00, 0x1a], vec![1.0_f64, 0.0, 0.0, 0.0, 1.0]),
+            ([0x08, 0x40, 0x1b], vec![0.0, 1.0, 1.0]),
+            ([0x08, 0x50, 0x1b], vec![1.0, 1.0]),
+            ([0x08, 0x58, 0x1b], vec![1.0]),
+            ([0x08, 0xd0, 0x1b], vec![1.0]),
+            ([0x08, 0xd8, 0x1b], vec![]),
+        ] {
+            let mut bytes = prefix.to_vec();
+            for value in [3.0_f64, 4.0, 5.0].into_iter().chain(axes) {
+                bytes.extend(value.to_le_bytes());
+            }
+            assert!(SpatialPlane::read(&bytes).is_none(), "prefix {prefix:02x?}");
+        }
     }
 }

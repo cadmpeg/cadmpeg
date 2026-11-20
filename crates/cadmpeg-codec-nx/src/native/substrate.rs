@@ -331,7 +331,6 @@ mod tests {
         let scan = crate::decode::Scan {
             container: crate::container::Container {
                 data: Vec::new().into(),
-                physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
                 entries: Vec::new(),
                 fastload_table: None,
@@ -351,6 +350,7 @@ mod tests {
                     ),
                 },
             }],
+            untyped: std::cell::RefCell::default(),
         };
 
         let topology = topology_streams(&scan).expect("test topology streams");
@@ -387,7 +387,6 @@ mod tests {
         let scan = crate::decode::Scan {
             container: crate::container::Container {
                 data: Vec::new().into(),
-                physical_size: 0,
                 layout: crate::container::test_modern_layout(0x06),
                 entries: Vec::new(),
                 fastload_table: None,
@@ -395,6 +394,7 @@ mod tests {
                 om_section_cache: std::sync::OnceLock::new(),
             },
             streams: vec![stream(0), stream(1)],
+            untyped: std::cell::RefCell::default(),
         };
 
         let parsed = ParsedStreams::parse(&scan).expect("test parsed streams");

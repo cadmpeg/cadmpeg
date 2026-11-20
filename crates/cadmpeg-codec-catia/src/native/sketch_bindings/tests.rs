@@ -305,15 +305,12 @@ fn local_point_pairs_preserve_bits_slots_and_shared_owners() {
 #[test]
 fn local_point_pairs_require_complete_finite_owner_values() {
     let finite = finite_pair(1.25_f64.to_bits(), 0.0_f64.to_bits());
-    let mut nullable = finite[..17].to_vec();
-    nullable.extend([0xe8, 0xfe, 0xfe]);
     let mut trailing = finite.clone();
     trailing.push(0x80);
     for value in [
         vec![0xfe],
         finite[..finite.len() - 1].to_vec(),
         trailing,
-        nullable,
         finite_pair(f64::NAN.to_bits(), 0.0_f64.to_bits()),
         finite_pair(1.25_f64.to_bits(), f64::INFINITY.to_bits()),
         finite_pair(f64::NEG_INFINITY.to_bits(), 0.0_f64.to_bits()),
@@ -339,6 +336,40 @@ fn local_point_pairs_require_complete_finite_owner_values() {
         rebind(&mut native);
         assert!(group(&native, 3).local_point_pairs.is_empty(), "{value:?}");
     }
+}
+
+#[test]
+fn a_zero_literal_owner_slot_is_the_coordinate_zero() {
+    let finite = finite_pair(1.25_f64.to_bits(), 0.0_f64.to_bits());
+    let mut zero_literal = finite[..17].to_vec();
+    zero_literal.extend([0xe8, 0xfe, 0xfe]);
+    let mut native = CatiaNative::decode(&sketch_bindings_source(
+        &roster(),
+        &zero_literal,
+        false,
+        false,
+        "2DPoint",
+    ));
+    let point = native
+        .entity_records
+        .iter_mut()
+        .find(|e| e.entity_id == 4)
+        .expect("point");
+    if let crate::native::entity_record::CatiaEntityRecordBody::Nested { value_payload, .. } =
+        &mut point.body
+    {
+        *value_payload = finite.clone();
+    }
+    rebind(&mut native);
+    let pairs = &group(&native, 3).local_point_pairs;
+    assert!(
+        pairs.iter().any(|pair| pair
+            .slots
+            .iter()
+            .map(|s| (s.bits, s.payload_offset))
+            .eq([(1.25_f64.to_bits(), 8), (0.0_f64.to_bits(), 17)])),
+        "{pairs:?}"
+    );
 }
 
 #[test]

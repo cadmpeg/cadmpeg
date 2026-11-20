@@ -92,7 +92,6 @@ fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
     crate::decode::Scan {
         container: crate::container::Container {
             data: Vec::new().into(),
-            physical_size: 0,
             layout: crate::container::test_modern_layout(0x06),
             entries: Vec::new(),
             fastload_table: None,
@@ -106,6 +105,7 @@ fn one_preview_summary_scan() -> crate::decode::Scan<'static> {
             inflated: Vec::new(),
             body: crate::parasolid::StreamBody::Preview,
         }],
+        untyped: std::cell::RefCell::default(),
     }
 }
 
@@ -170,6 +170,27 @@ fn legacy_cfb_nx_detection_uses_ug_part_directory_evidence() {
     let result = decode(bytes);
     assert!(!result.report().geometry_transferred());
     assert!(!result.source_fidelity().retained_records().is_empty());
+}
+
+#[test]
+fn a_parasolid_stream_kept_without_decoding_is_untyped_model_content() {
+    let result = decode(legacy_cfb_with_ug_part());
+    assert!(!result.report().geometry_transferred());
+    let streams = result
+        .source_fidelity()
+        .retained_records()
+        .values()
+        .filter(|record| {
+            record
+                .untyped()
+                .contains(&cadmpeg_core::decode::ArenaClass::Model)
+        })
+        .count();
+    assert!(streams > 0);
+    assert!(result
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_core::decode::ArenaClass::Model));
 }
 
 #[test]
@@ -261,8 +282,8 @@ fn legacy_cfb_text_wrapped_partition_transfers_its_geometry() {
     );
     let result = decode(part);
     assert!(result.report().geometry_transferred());
-    assert!(!result.ir().model.faces.is_empty());
-    assert!(!result.ir().model.surfaces.is_empty());
+    assert!(!result.ir().geometry.faces.is_empty());
+    assert!(!result.ir().geometry.surfaces.is_empty());
     assert_valid(&result);
 }
 
@@ -322,8 +343,8 @@ fn analytic_topology_pipeline_covers_every_supported_quadric_and_conic_family() 
     for stream in fixtures {
         let result = decode(prt_with_partition(&stream));
         assert!(result.report().geometry_transferred());
-        assert!(!result.ir().model.faces.is_empty());
-        assert!(!result.ir().model.surfaces.is_empty());
+        assert!(!result.ir().geometry.faces.is_empty());
+        assert!(!result.ir().geometry.surfaces.is_empty());
         assert_valid(&result);
     }
 }
@@ -407,20 +428,20 @@ fn freeform_pipeline_binds_nurbs_pcurves_offsets_blends_and_intersections() {
     let mut saw_procedural_curve = false;
     for stream in fixtures {
         let result = decode(prt_with_partition(&stream));
-        saw_nurbs |= result.ir().model.curves.iter().any(|curve| {
+        saw_nurbs |= result.ir().geometry.curves.iter().any(|curve| {
             matches!(
                 curve.geometry,
                 CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(_))
             )
-        }) || result.ir().model.surfaces.iter().any(|surface| {
+        }) || result.ir().geometry.surfaces.iter().any(|surface| {
             matches!(
                 surface.geometry,
                 SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_))
             )
         });
-        saw_pcurve |= !result.ir().model.pcurves.is_empty();
-        saw_procedural_surface |= !result.ir().model.procedural_surfaces.is_empty();
-        saw_procedural_curve |= !result.ir().model.procedural_curves.is_empty();
+        saw_pcurve |= !result.ir().geometry.pcurves.is_empty();
+        saw_procedural_surface |= !result.ir().geometry.procedural_surfaces.is_empty();
+        saw_procedural_curve |= !result.ir().geometry.procedural_curves.is_empty();
         assert_valid(&result);
     }
     assert!(saw_nurbs);
@@ -446,12 +467,12 @@ fn unselected_deltas_preserve_primary_geometry_and_topology() {
     for deltas in delta_fixtures {
         let result = decode(prt_with_streams(&[&partition, &deltas]));
         assert_eq!(
-            serde_json::to_value(&result.ir().model).unwrap(),
-            serde_json::to_value(&baseline.ir().model).unwrap()
+            serde_json::to_value((&result.ir().geometry, &result.ir().model)).unwrap(),
+            serde_json::to_value((&baseline.ir().geometry, &baseline.ir().model)).unwrap()
         );
         assert!(result.report().geometry_transferred());
-        assert_eq!(result.ir().model.bodies.len(), 1);
-        assert_eq!(result.ir().model.faces.len(), 1);
+        assert_eq!(result.ir().geometry.bodies.len(), 1);
+        assert_eq!(result.ir().geometry.faces.len(), 1);
         assert_valid(&result);
     }
 }

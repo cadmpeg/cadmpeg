@@ -65,6 +65,7 @@ fn has_extension(name: &str, extension: &str) -> bool {
 
 /// An admitted package: the archive and its member partition.
 pub(crate) struct Package<'a> {
+    root: View<'a>,
     archive: ArchiveSnapshot<'a>,
     /// Names of every member.
     names: BTreeSet<String>,
@@ -99,6 +100,7 @@ impl<'a> Package<'a> {
             )));
         }
         Ok(Self {
+            root,
             archive,
             names,
             structure,
@@ -133,6 +135,22 @@ impl<'a> Package<'a> {
         name: &str,
     ) -> Result<View<'a>, CodecError> {
         self.archive.open(ctx, name)
+    }
+
+    /// The stored bytes of member `name`, at their offsets in the package.
+    pub(crate) fn stored(&self, name: &str) -> Result<View<'a>, CodecError> {
+        let entry = self
+            .archive
+            .entry(name)
+            .ok_or_else(|| CodecError::malformed(format_args!("no member named {name:?}")))?;
+        let range = entry.stored_range()?;
+        usize::try_from(range.start)
+            .ok()
+            .zip(usize::try_from(range.end).ok())
+            .and_then(|(start, end)| View::over_retained(self.root.window()).child(start, end))
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("member {name:?} escapes the package"))
+            })
     }
 
     /// Summary entries for every member, with their package roles.

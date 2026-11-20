@@ -35,8 +35,8 @@ pub(crate) const SIMILARITY_GRAM_RELATIVE_DEVIATION: f64 = 1.0e-8;
 /// placement is rigid.
 pub(crate) const RIGID_SCALE_DEVIATION: f64 = 1.0e-8;
 
-/// Largest deviation of an occurrence's scale factor from 1 for which an
-/// ID-free comparison takes the occurrence as unscaled.
+/// Largest deviation of the length of an axis of an occurrence's transform
+/// from 1 for which the occurrence is taken as unscaled.
 pub(crate) const COMPARE_OCCURRENCE_SCALE_DEVIATION: f64 = 1.0e-8;
 
 /// Largest deviation of an entry of an occurrence's effective linear part
@@ -88,6 +88,11 @@ pub(crate) fn allowance(linear: f64, local: impl IntoIterator<Item = f64>) -> f6
 pub(crate) fn model_tolerance(linear: f64, local: impl IntoIterator<Item = f64>) -> f64 {
     largest(std::iter::once(linear).chain(local))
 }
+
+/// Ratio of the largest distance between the first and last pole columns of
+/// a clamped NURBS parameter to the control net's diagonal below which the
+/// surface closes at a seam in that parameter.
+pub(crate) const NURBS_SEAM_RATIO: f64 = 1.0e-6;
 
 #[cfg(test)]
 mod tests {

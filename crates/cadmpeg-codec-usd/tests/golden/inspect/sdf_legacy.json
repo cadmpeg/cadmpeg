@@ -7,28 +7,31 @@
         "prim_specs": "1",
         "property_specs": "2"
       },
-      "compression": "stored",
+      "kind": "stored",
       "name": "layer",
       "role": "document",
       "size": {
-        "form": "exact",
+        "kind": "exact",
         "size": 134
       }
     }
   ],
   "identity": {
-    "classification": "classified",
     "dialects": {
       "extra": [],
       "primary": {
-        "admission": "admitted",
+        "admission": {
+          "kind": "admitted"
+        },
         "declared": {
           "header": "#sdf 1.4.32"
         },
         "dialect": "usd:sdf-1.4.32"
       }
-    }
+    },
+    "kind": "classified"
   },
+  "losses": [],
   "notes": [
     "prim types: Xform 1"
   ]

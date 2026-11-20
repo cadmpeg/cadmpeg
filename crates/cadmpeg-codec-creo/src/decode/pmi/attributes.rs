@@ -9,6 +9,7 @@ use cadmpeg_core::CodecError;
 pub(super) enum Value<'a> {
     Text(&'a [u8]),
     Real(Option<f64>),
+    Logical(Option<bool>),
     Other,
 }
 
@@ -155,10 +156,15 @@ fn typed_value<'a>(view: &mut View<'a>, kind: u32, labeled: bool) -> Option<Valu
     Some(match kind {
         0x32 => real(view)?,
         0x33 => Value::Text(text(view)?),
-        0x34 | 0x35 => {
+        0x34 => {
             integer(view)?;
             Value::Other
         }
+        0x35 => Value::Logical(match integer(view)? {
+            Integer::Value(0) => Some(false),
+            Integer::Value(1) => Some(true),
+            Integer::Value(_) | Integer::Null => None,
+        }),
         _ => return None,
     })
 }

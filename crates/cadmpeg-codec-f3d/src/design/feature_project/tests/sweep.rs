@@ -169,6 +169,7 @@ fn guide_surface_input() -> (
     guide.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::FACES);
     let profile = crate::records::topology::sketch_profile::DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
+            sketch_absent: false,
             scope_reference_ordinal: 3,
             record_index: 2795,
             byte_offset: 32_000,

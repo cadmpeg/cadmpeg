@@ -109,7 +109,7 @@ fn metadata_edit_in_a_shared_feature_member_is_written_once() {
     let readback = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(readback.ir().model.vertices.len(), 3);
+    assert_eq!(readback.ir().geometry.vertices.len(), 3);
     let native = sldprt_native(readback.ir());
     assert_eq!(native.feature_input_lanes.len(), 1);
     assert_eq!(
@@ -147,7 +147,7 @@ fn a_real_feature_rename_survives_unchanged_metadata_in_the_same_member() {
         crate::writer::resolved_feature_payload(lane, &native.feature_histories, &renames).unwrap();
     assert_ne!(generated, original);
     let names = crate::resolved_features::names::object_names(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &generated,
         &lane.id,
     )
@@ -318,7 +318,7 @@ fn unsupported_manager_fields_cannot_patch_a_retained_member() {
     }
     ir.model.attributes.push(SourceAttribute {
         id: attribute_id,
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: "configuration_manager".into(),
         values: vec![
             AttributeValue::Integer(17),
@@ -443,7 +443,7 @@ fn source_unit_code_uses_its_separate_units_route() {
     .unwrap();
     ir.model.attributes.push(SourceAttribute {
         id,
-        target: AttributeTarget::Document,
+        target: AttributeTarget::Document.into(),
         name: "source_linear_unit_code".into(),
         values: vec![AttributeValue::Integer(1)],
     });
@@ -499,7 +499,7 @@ fn legacy_marker_metadata_edits_preserve_the_complete_marker_bytes() {
         let readback = SldprtCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
             .unwrap();
-        assert_eq!(readback.ir().model.vertices.len(), 3);
+        assert_eq!(readback.ir().geometry.vertices.len(), 3);
         assert_eq!(
             sldprt_native(readback.ir()).feature_input_lanes[0]
                 .sketch_entities
@@ -586,7 +586,7 @@ fn metadata_edits_preserve_unemitted_named_members_and_physical_duplicates() {
     let readback = SldprtCodec
         .decode(&mut Cursor::new(written), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(readback.ir().model.vertices.len(), 3);
+    assert_eq!(readback.ir().geometry.vertices.len(), 3);
 }
 
 #[test]

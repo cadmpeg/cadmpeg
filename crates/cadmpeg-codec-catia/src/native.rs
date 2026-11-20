@@ -1347,6 +1347,8 @@ enum CatiaAllocationReferenceEncoding {
     TaggedU8,
     /// `0a <u16le>`.
     TaggedU16,
+    /// `0e <u24le>`.
+    TaggedU24,
 }
 
 /// Wire addressing form of one fixed-nine owner identity.
@@ -2293,13 +2295,29 @@ pub(crate) struct CatiaRelationTypeInput {
 /// Evaluation state of one complete entity-record suffix value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum CatiaEntityEvaluation {
-    /// The `E7` form carries no evaluated scalar.
+    /// No evaluated scalar: the legacy scalar form's `E7`.
     Unset,
     /// The `E6` form carries one finite IEEE-754 binary64 scalar.
     Scalar {
         /// Exact stored binary64 bits.
         bits: u64,
     },
+    /// The `E7` form: the value 1.0 with no payload.
+    UnitLiteral,
+    /// The `E8` form: the value 0.0 with no payload.
+    ZeroLiteral,
+}
+
+impl CatiaEntityEvaluation {
+    /// The stored binary64 bits, or `None` for an unset evaluation.
+    pub(crate) fn bits(&self) -> Option<u64> {
+        match self {
+            Self::Unset => None,
+            Self::Scalar { bits } => Some(*bits),
+            Self::UnitLiteral => Some(1.0_f64.to_bits()),
+            Self::ZeroLiteral => Some(0.0_f64.to_bits()),
+        }
+    }
 }
 
 /// Wire encoding of one entity-record suffix evaluation.
@@ -2339,8 +2357,6 @@ pub(crate) enum CatiaEntitySuffixPayload {
         /// Typed value following the selector.
         value: CatiaEntitySuffixSchemaValue,
     },
-    /// One zero-payload `E8` control state.
-    ControlE8,
     /// One zero-payload `E9` control state.
     ControlE9,
     /// One zero-payload `37` separator.
@@ -2450,7 +2466,7 @@ pub(crate) enum CatiaEntitySuffixSchemaValue {
         /// Decoded atom value.
         value: u32,
     },
-    /// One direct unset or finite scalar evaluation.
+    /// One direct scalar evaluation.
     Evaluation {
         /// Byte offset of the evaluation opcode within the record suffix.
         #[serde(default)]
@@ -2458,8 +2474,6 @@ pub(crate) enum CatiaEntitySuffixSchemaValue {
         /// Decoded evaluation.
         evaluation: CatiaEntityEvaluation,
     },
-    /// One zero-payload `E8` control state.
-    ControlE8,
     /// One zero-payload `37` separator.
     Separator37,
     /// One nested source-schema selector.
@@ -2533,7 +2547,7 @@ pub(crate) struct CatiaRangeNominal {
     pub(crate) framing: CatiaRangeNominalFraming,
     /// Exact finite binary64 nominal bits.
     pub(crate) bits: u64,
-    /// Byte offset of `E6` within the record suffix.
+    /// Byte offset of the evaluation opcode within the record suffix.
     #[serde(default)]
     pub(crate) evaluation_opcode_offset: u64,
 }
@@ -4909,7 +4923,6 @@ fn entity_suffix_schema_selection(
             opcode_offset: *opcode_offset,
             evaluation: evaluation.clone(),
         },
-        CatiaEntitySuffixSchemaValue::ControlE8 => CatiaEntitySuffixSchemaValue::ControlE8,
         CatiaEntitySuffixSchemaValue::Separator37 => CatiaEntitySuffixSchemaValue::Separator37,
         CatiaEntitySuffixSchemaValue::SchemaSelector {
             offset, ordinal, ..
@@ -5422,12 +5435,13 @@ fn range_nominal(suffix_value: Option<&CatiaEntitySuffixValue>) -> Option<CatiaR
     };
     let CatiaEntitySuffixPayload::Evaluation {
         opcode_offset,
-        evaluation: CatiaEntityEvaluation::Scalar { bits },
+        ref evaluation,
         encoding: CatiaEntityEvaluationEncoding::Direct,
     } = suffix.payload
     else {
         return None;
     };
+    let bits = evaluation.bits()?;
     Some(CatiaRangeNominal {
         framing,
         bits,
@@ -5566,14 +5580,17 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
                     value_offset + 9,
                 )
             }
-            0xe7 => (
+            code @ (0xe7 | 0xe8) => (
                 CatiaEntitySuffixSelectedValue::Evaluation {
                     opcode_offset: u64_from_index(value_offset),
-                    evaluation: CatiaEntityEvaluation::Unset,
+                    evaluation: if code == 0xe7 {
+                        CatiaEntityEvaluation::UnitLiteral
+                    } else {
+                        CatiaEntityEvaluation::ZeroLiteral
+                    },
                 },
                 value_offset + 1,
             ),
-            0xe8 => (CatiaEntitySuffixSelectedValue::ControlE8, value_offset + 1),
             0x37 => (
                 CatiaEntitySuffixSelectedValue::Separator37,
                 value_offset + 1,
@@ -5604,15 +5621,18 @@ fn entity_suffix_value(suffix: &[u8]) -> Option<CatiaEntitySuffixValue> {
         )
     } else {
         match *suffix.get(payload_offset)? {
-            0xe7 => (
+            code @ (0xe7 | 0xe8) => (
                 CatiaEntitySuffixPayload::Evaluation {
                     opcode_offset: u64_from_index(payload_offset),
-                    evaluation: CatiaEntityEvaluation::Unset,
+                    evaluation: if code == 0xe7 {
+                        CatiaEntityEvaluation::UnitLiteral
+                    } else {
+                        CatiaEntityEvaluation::ZeroLiteral
+                    },
                     encoding: CatiaEntityEvaluationEncoding::Direct,
                 },
                 payload_offset + 1,
             ),
-            0xe8 => (CatiaEntitySuffixPayload::ControlE8, payload_offset + 1),
             0xe9 => (CatiaEntitySuffixPayload::ControlE9, payload_offset + 1),
             0x37 => (CatiaEntitySuffixPayload::Separator37, payload_offset + 1),
             0xe6 => {

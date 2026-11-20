@@ -11,9 +11,9 @@ pub(crate) fn make_first_face_surface_unknown(
     ir: &mut crate::CadIr,
     record: Option<UnknownId>,
 ) -> String {
-    let face = &ir.model.faces[0];
+    let face = &ir.geometry.faces[0];
     let surface_id = face.surface.as_str().to_owned();
-    for s in &mut ir.model.surfaces {
+    for s in &mut ir.geometry.surfaces {
         if s.id.as_str() == surface_id {
             s.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record });
             break;
@@ -22,8 +22,11 @@ pub(crate) fn make_first_face_surface_unknown(
     surface_id
 }
 
+pub(crate) mod admissibility;
+pub(crate) mod edit;
 pub(crate) mod evaluation_cycles;
 pub(crate) mod nurbs;
+pub(crate) mod wire;
 
 /// Run one IR operation under the service decode policy.
 pub(crate) fn with_service_decode_context<T>(

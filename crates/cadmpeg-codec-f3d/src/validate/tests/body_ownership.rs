@@ -67,7 +67,7 @@ fn layout(bodies: &[u64], form: u8) -> Vec<u8> {
 
 #[test]
 fn validator_and_decoder_admit_the_same_component_membership_tail() {
-    let decode = cadmpeg_test_support::service_decode_context();
+    let decode = cadmpeg_core::decode::test_support::service_decode_context();
     let mut native = crate::native::F3dNative {
         design_types: vec![
             registration(60, CONTAINER_GUID, "Body", 4, 0),
@@ -123,7 +123,11 @@ fn validator_and_decoder_admit_the_same_component_membership_tail() {
             crate::records::body_ownership::BodyOwnershipReferences::InlineTyped {
                 owner, ..
             } => owner[0] = 0,
-            crate::records::body_ownership::BodyOwnershipReferences::LocalSingle {
+            crate::records::body_ownership::BodyOwnershipReferences::LocalSingleZero {
+                owner,
+                ..
+            }
+            | crate::records::body_ownership::BodyOwnershipReferences::LocalSingle {
                 owner, ..
             }
             | crate::records::body_ownership::BodyOwnershipReferences::Local { owner, .. } => {

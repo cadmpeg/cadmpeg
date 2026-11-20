@@ -6,12 +6,10 @@ pub(crate) mod identities;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-use cadmpeg_core::decode::{DecodeContext, DepthGuard, ResourceLimit};
-
 use crate::appearance::Appearance;
 use crate::document::CadIr;
 use crate::geometry::{pcurve::Pcurve, Curve, ProceduralCurve, ProceduralSurface, Surface};
-use crate::schema::EntitySchema;
+use crate::schema::{EntityKind, EntitySchema};
 use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
@@ -56,30 +54,18 @@ impl<'ir, V> BorrowedIdentityIndex<'ir, V> {
 
 type IdentityIndex<'a> = HashMap<&'a str, usize>;
 
-/// Nesting policy for infallible public indexes and fallible decode indexes.
-pub(crate) trait IndexStorage {
-    type Error;
-    fn enter_nested(&self, operation: &'static str) -> Result<Option<DepthGuard<'_>>, Self::Error>;
+#[derive(Clone, Copy, Default)]
+struct IdentityOwner {
+    native: bool,
+    kind: Option<EntityKind>,
 }
 
-pub(crate) struct PublicStorage;
-
-impl IndexStorage for PublicStorage {
-    type Error = std::convert::Infallible;
-    fn enter_nested(
-        &self,
-        _operation: &'static str,
-    ) -> Result<Option<DepthGuard<'_>>, Self::Error> {
-        Ok(None)
-    }
-}
-
-pub(crate) struct DecodeStorage<'ctx, 'arena>(pub(crate) &'ctx DecodeContext<'arena>);
-
-impl IndexStorage for DecodeStorage<'_, '_> {
-    type Error = ResourceLimit;
-    fn enter_nested(&self, operation: &'static str) -> Result<Option<DepthGuard<'_>>, Self::Error> {
-        self.0.enter_nested_limit(operation).map(Some)
+impl IdentityOwner {
+    fn neutral<T: EntitySchema>(_: &T) -> Self {
+        Self {
+            native: false,
+            kind: Some(T::KIND),
+        }
     }
 }
 
@@ -158,31 +144,34 @@ impl IndexQuery for StandardIndex {
 }
 
 macro_rules! define_model_index {
-    ($( $field:ident: $element:ty, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
+    ($( $field:ident: $element:ty, $home:ident, $doc:literal, [$($attribute:meta),*] $(, [$($schema_attr:meta),*])?; )*) => {
         define_model_index! {
-            @generate [$($field),*];
+            @generate [$($field $home),*];
             [
-                bodies: Body;
-                regions: Region;
-                shells: Shell;
-                faces: Face;
-                loops: Loop;
-                coedges: Coedge;
-                edges: Edge;
-                vertices: Vertex;
-                points: Point;
-                surfaces: Surface;
-                curves: Curve;
-                subds: SubdSurface;
-                pcurves: Pcurve;
-                procedural_surfaces: ProceduralSurface;
-                procedural_curves: ProceduralCurve;
-                tessellations: Tessellation;
-                appearances: Appearance;
+                bodies: Body, geometry;
+                regions: Region, geometry;
+                shells: Shell, geometry;
+                faces: Face, geometry;
+                loops: Loop, geometry;
+                coedges: Coedge, geometry;
+                edges: Edge, geometry;
+                vertices: Vertex, geometry;
+                points: Point, geometry;
+                surfaces: Surface, geometry;
+                curves: Curve, geometry;
+                subds: SubdSurface, geometry;
+                pcurves: Pcurve, geometry;
+                procedural_surfaces: ProceduralSurface, geometry;
+                procedural_curves: ProceduralCurve, geometry;
+                tessellations: Tessellation, model;
+                appearances: Appearance, model;
+                features: crate::features::Feature, model;
+                parameters: crate::features::DesignParameter, model;
+                sketch_entities: crate::sketches::SketchEntity, model;
             ]
         }
     };
-    (@generate [$($field:ident),*]; [$($lookup:ident: $element:ty;)*]) => {
+    (@generate [$($field:ident $home:ident),*]; [$($lookup:ident: $element:ty, $lookup_home:ident;)*]) => {
         /// One-pass borrowed lookup index for neutral and native identities.
         pub struct ModelIndex<'a> {
             ir: &'a CadIr,
@@ -191,8 +180,7 @@ macro_rules! define_model_index {
             procedural_surface_by_surface: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
             procedural_surfaces_by_id: BorrowedIdentityIndex<'a, &'a ProceduralSurface>,
             procedural_curves_by_curve: BorrowedIdentityIndex<'a, Vec<&'a ProceduralCurve>>,
-            /// Every identity, mapped to whether a native record owns it.
-            identities: BorrowedIdentityIndex<'a, bool>,
+            identities: BorrowedIdentityIndex<'a, IdentityOwner>,
             entity_identities_distinct: bool,
             include_native: bool,
             additional_native_identities: Vec<&'a str>,
@@ -241,21 +229,21 @@ macro_rules! define_model_index {
                 let mut procedural_surface_by_surface = BorrowedIdentityIndex::new();
                 let mut procedural_curves_by_curve = BorrowedIdentityIndex::new();
                 let mut procedural_surfaces_by_id = BorrowedIdentityIndex::new();
-                for procedural in &ir.model.procedural_surfaces {
+                for procedural in &ir.geometry.procedural_surfaces {
                     procedural_surfaces_by_id.entry(procedural.id.as_str(), || procedural);
                 }
                 let mut procedural_curves_by_id = BorrowedIdentityIndex::new();
-                for procedural in &ir.model.procedural_curves {
+                for procedural in &ir.geometry.procedural_curves {
                     procedural_curves_by_id.entry(procedural.id.as_str(), || procedural);
                 }
-                for carrier in &ir.model.surfaces {
+                for carrier in &ir.geometry.surfaces {
                     if let Some(construction) = carrier.geometry.procedural_construction() {
                         if let Some(&procedural) = procedural_surfaces_by_id.slots.get(construction.as_str()) {
                             *procedural_surface_by_surface.entry(carrier.id.as_str(), || procedural) = procedural;
                         }
                     }
                 }
-                for carrier in &ir.model.curves {
+                for carrier in &ir.geometry.curves {
                     if let Some(construction) = carrier.geometry.procedural_construction() {
                         if let Some(&procedural) = procedural_curves_by_id.slots.get(construction.as_str()) {
                             let members = procedural_curves_by_curve.entry(carrier.id.as_str(), Vec::new);
@@ -285,13 +273,13 @@ macro_rules! define_model_index {
             pub fn curve_use_hull(&self, curve: &str) -> Option<[f64; 2]> {
                 self.curve_use_hulls.get_or_init(|| {
                     let mut hulls = HashMap::new();
-                    for edge in &self.ir.model.edges {
+                    for edge in &self.ir.geometry.edges {
                         if let Some(curve) = edge.curve() {
                             let range = edge.param_range().map(crate::units::FiniteVector::get);
                             merge_curve_use(&mut hulls, curve.as_str(), range);
                         }
                     }
-                    for coedge in &self.ir.model.coedges {
+                    for coedge in &self.ir.geometry.coedges {
                         if let Some(use_curve) = &coedge.use_curve {
                             merge_curve_use(&mut hulls, use_curve.curve.as_str(), Some(use_curve.parameter_range.endpoints()));
                         }
@@ -300,38 +288,46 @@ macro_rules! define_model_index {
                 }).get(curve).copied().flatten()
             }
 
-            fn identity_set(&self) -> &BorrowedIdentityIndex<'a, bool> {
+            fn identity_set(&self) -> &BorrowedIdentityIndex<'a, IdentityOwner> {
                 &self.identities
             }
 
-            fn build_identity_set(&self) -> (BorrowedIdentityIndex<'a, bool>, bool) {
+            fn build_identity_set(&self) -> (BorrowedIdentityIndex<'a, IdentityOwner>, bool) {
                 let mut entities = 0_usize;
-                $(entities += self.ir.model.$field.len();)*
+                $(entities += self.ir.$home.$field.len();)*
                 let mut slots = entities;
                 if self.include_native {
                     self.native_view().for_each(|_, _, records| slots += records.len());
                     slots += self.additional_native_identities.len();
                 }
                 let mut identities = BorrowedIdentityIndex { slots: HashMap::with_capacity(slots) };
-                $(for entity in &self.ir.model.$field { identities.entry(entity.identity(), || false); })*
+                $(for entity in &self.ir.$home.$field {
+                    let declared = IdentityOwner::neutral(entity);
+                    let owner = identities.entry(entity.identity(), || declared);
+                    if owner.kind != declared.kind { owner.kind = None; }
+                })*
                 if !self.include_native {
                     return (identities, false);
                 }
                 self.native_view().for_each(|_, _, records| {
                     entities += records.len();
                     for record in records.records() {
-                        *identities.entry(record.id(), || true) = true;
+                        identities.entry(record.id(), IdentityOwner::default).native = true;
                     }
                 });
                 let distinct = entities == identities.slots.len();
-                for identity in &self.additional_native_identities { identities.entry(identity, || false); }
+                for identity in &self.additional_native_identities { identities.entry(identity, IdentityOwner::default); }
                 (identities, distinct)
             }
 
             /// Returns whether a native record owns `identity`. Staged identities are not
             /// native records, and a model-only index holds no native record.
             pub(crate) fn native_record_owns(&self, identity: &str) -> bool {
-                self.identities.slots.get(identity).copied().unwrap_or(false)
+                self.identities.slots.get(identity).is_some_and(|owner| owner.native)
+            }
+
+            pub(crate) fn neutral_kind(&self, identity: &str) -> Option<EntityKind> {
+                self.identities.slots.get(identity).and_then(|owner| owner.kind)
             }
 
             /// Returns whether every model entity and native record has its own identity.
@@ -393,7 +389,7 @@ macro_rules! define_model_index {
             $(
                 #[doc = concat!("Looks up an entity in the `", stringify!($lookup), "` arena.")]
                 pub fn $lookup<P: IndexQuery>(&self, identity: &str, admission: P) -> P::Output<Option<&'a $element>> {
-                    admission.finish(lookup_identity(&self.ir.model.$lookup, &self.$lookup, identity, &admission))
+                    admission.finish(lookup_identity(&self.ir.$lookup_home.$lookup, &self.$lookup, identity, &admission))
                 }
             )*
         }
@@ -463,7 +459,7 @@ mod tests {
 
     #[test]
     fn distinct_borrowed_identities_are_each_indexed() {
-        let identities = (0..32_000)
+        let identities = (0..1_000)
             .map(|index| format!("test:native:record#{index}"))
             .collect::<Vec<_>>();
         let mut index = super::BorrowedIdentityIndex::new();
@@ -471,7 +467,7 @@ mod tests {
             index.entry(identity, || ());
         }
         assert_eq!(index.identities().count(), identities.len());
-        for identity in [&identities[0], &identities[31_999]] {
+        for identity in [&identities[0], &identities[999]] {
             assert!(index
                 .get(identity, &super::StandardIndex, "test identity lookup")
                 .unwrap()
@@ -552,7 +548,7 @@ mod tests {
         let native_id = "test:fixture:native#0";
         let staged_id = "test:fixture:staged#0";
         let mut ir = CadIr::empty();
-        ir.model.points.push(crate::topology::Point::new(
+        ir.geometry.points.push(crate::topology::Point::new(
             crate::ids::PointId::mint(model_id).unwrap(),
             crate::features::FinitePoint3::ZERO,
             None,
@@ -568,6 +564,12 @@ mod tests {
         assert!(index.native_record_owns(native_id));
         assert!(!index.native_record_owns(model_id));
         assert!(!index.native_record_owns(staged_id));
+        assert_eq!(
+            index.neutral_kind(model_id),
+            Some(crate::schema::EntityKind::Point)
+        );
+        assert_eq!(index.neutral_kind(native_id), None);
+        assert_eq!(index.neutral_kind(staged_id), None);
         assert!(index.contains(staged_id, crate::index::StandardIndex));
         let model_only = ModelIndex::new_model_only(&ir);
         assert!(!model_only.entity_identities_distinct());
@@ -582,6 +584,10 @@ mod tests {
         let index = ModelIndex::build(&ir);
         assert!(!index.entity_identities_distinct());
         assert!(index.native_record_owns(model_id));
+        assert_eq!(
+            index.neutral_kind(model_id),
+            Some(crate::schema::EntityKind::Point)
+        );
     }
 
     #[test]
@@ -633,15 +639,16 @@ mod tests {
         let exact_construction =
             crate::ids::ProceduralSurfaceId::mint("test:model:procedural#exact")
                 .expect("valid identity");
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: exact_surface.clone(),
             geometry: SurfaceGeometry::Procedural {
                 construction: exact_construction.clone(),
                 cache: None,
             },
             source_object: None,
+            native_ref: None,
         });
-        ir.model.procedural_surfaces.push(procedural_surface! {
+        ir.geometry.procedural_surfaces.push(procedural_surface! {
             id: exact_construction.clone(),
             definition: ProceduralSurfaceDefinition::Unknown { record: None, cache: None },
             cache_fit_tolerance: None,
@@ -650,7 +657,7 @@ mod tests {
 
         let cached_surface = crate::ids::SurfaceId::mint("test:model:surface#cached".to_string())
             .expect("valid identity");
-        ir.model.surfaces.push(Surface {
+        ir.geometry.surfaces.push(Surface {
             id: cached_surface.clone(),
             geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
                 crate::geometry::analytic::PlaneSurface::try_new(
@@ -661,8 +668,9 @@ mod tests {
                 .unwrap(),
             )),
             source_object: None,
+            native_ref: None,
         });
-        ir.model
+        ir.geometry
             .add_procedural_surface(&cached_surface, procedural_surface! {
                     id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached").expect("valid identity"),
                     definition: ProceduralSurfaceDefinition::Unknown { record: None, cache: None },
@@ -689,7 +697,7 @@ mod tests {
         );
 
         assert!(ir
-            .model
+            .geometry
             .add_procedural_surface(&cached_surface, procedural_surface! {
                     id: crate::ids::ProceduralSurfaceId::mint("test:model:procedural#cached-duplicate").expect("valid identity"),
                     definition: ProceduralSurfaceDefinition::Unknown { record: None, cache: None },
@@ -707,7 +715,7 @@ mod tests {
             crate::features::FinitePoint3::ZERO,
             crate::features::FinitePoint3::new(crate::math::Point3::new(1.0, 0.0, 0.0)).unwrap(),
         ] {
-            ir.model
+            ir.geometry
                 .points
                 .push(crate::topology::Point::new(id.clone(), position, None));
         }

@@ -115,7 +115,7 @@ impl super::Builder<'_, '_, '_, '_> {
             1.0
         };
         dim.dimension()
-            .factor(self.scale, self.kilograms_per_unit, radians)
+            .factor(self.scale, self.kilograms_per_unit, radians, 1.0)
     }
 
     /// The record that a relationship target names.
@@ -178,7 +178,9 @@ impl super::Builder<'_, '_, '_, '_> {
                         .iter()
                         .map(|path| self.physx_target(path))
                         .collect::<Option<Vec<_>>>()
-                        .map(|targets| SolverValue::Targets { targets }),
+                        .map(|targets| SolverValue::Targets {
+                            targets: targets.into_iter().map(Into::into).collect(),
+                        }),
                 };
                 match value {
                     Some(value) => {
@@ -194,7 +196,7 @@ impl super::Builder<'_, '_, '_, '_> {
                 id: crate::ids::solver_settings(&pending.path, &pending.schema),
                 solver: SOLVER.to_owned(),
                 schema: pending.schema,
-                target: pending.target,
+                target: pending.target.into(),
                 values,
                 native_ref: Some(pending.path),
             });

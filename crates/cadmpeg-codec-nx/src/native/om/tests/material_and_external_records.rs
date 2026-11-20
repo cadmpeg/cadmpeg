@@ -658,27 +658,27 @@ fn decode_selects_dominant_rmfastload_body() {
         .arena_as::<super::super::RmFastLoadObjectId>("rmfastload_object_ids")
         .expect("RMFastLoad object IDs");
 
-    assert_eq!(result.ir().model.bodies.len(), 1);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
     assert_eq!(tables.len(), 1);
     assert_eq!(tables[0].members.as_slice().len(), 50);
     assert_eq!(object_ids.len(), 50);
     assert_eq!(object_ids[0].value, 1_000);
     assert_eq!(object_ids[49].value, 1_049);
-    assert!(result.ir().model.bodies[0]
+    assert!(result.ir().geometry.bodies[0]
         .id
         .as_str()
         .starts_with("nx:s0:"));
-    assert_eq!(result.ir().model.faces.len(), 50);
-    assert_eq!(result.ir().model.surfaces.len(), 50);
+    assert_eq!(result.ir().geometry.faces.len(), 50);
+    assert_eq!(result.ir().geometry.surfaces.len(), 50);
     assert!(result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .all(|face| face.id.as_str().starts_with("nx:s0:")));
     assert!(result
         .ir()
-        .model
+        .geometry
         .surfaces
         .iter()
         .all(|surface| surface.id.as_str().starts_with("nx:s0:")));

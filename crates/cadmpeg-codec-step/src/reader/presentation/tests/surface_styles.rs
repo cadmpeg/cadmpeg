@@ -19,7 +19,7 @@ fn invalid_surface_side_is_opaque_and_does_not_transfer_color() {
     assert!(result.ir().model.appearance_bindings.is_empty());
     assert!(result
         .ir()
-        .model
+        .geometry
         .faces
         .iter()
         .all(|face| face.color.is_none()));

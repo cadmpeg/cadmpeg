@@ -30,7 +30,7 @@ fn face_on_unknown_surface_validates_clean() {
     // Preserve a raw record and point the unknown surface at it.
     let rec = UnknownId::mint("synthetic:cube:unknown#0").expect("valid identity");
     ir.set_native_unknowns(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         "synthetic",
         &[NativeUnknownRecord {
             id: rec.clone(),
@@ -47,7 +47,7 @@ fn face_on_unknown_surface_validates_clean() {
         report.findings
     );
     // The face and its topology stay in the graph.
-    assert_eq!(ir.model.faces.len(), 6);
+    assert_eq!(ir.geometry.faces.len(), 6);
     // The situation is surfaced as a count.
     assert_eq!(
         report.entity_counts.get("surfaces_unknown_geometry"),
@@ -91,9 +91,9 @@ fn unknown_surface_dangling_record_is_flagged() {
 #[test]
 fn orphan_carrier_is_flagged() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let mut orphan = ir.model.curves[0].clone();
+    let mut orphan = ir.geometry.curves[0].clone();
     orphan.id = CurveId::mint("test:model:entity#zz:orphan").expect("valid identity");
-    ir.model.curves.push(orphan);
+    ir.geometry.curves.push(orphan);
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
         .findings
@@ -104,11 +104,11 @@ fn orphan_carrier_is_flagged() {
 #[test]
 fn malformed_unknown_does_not_erase_another_records_carrier_link() {
     let mut ir = unit_cube().unwrap();
-    let mut carrier = ir.model.curves[0].clone();
+    let mut carrier = ir.geometry.curves[0].clone();
     carrier.id = CurveId::mint("test:model:curve#native-only").unwrap();
     let carrier_id = carrier.id.as_str().to_owned();
-    ir.model.curves.push(carrier);
-    ir.model.finalize();
+    ir.geometry.curves.push(carrier);
+    ir.finalize();
     let mut wire = serde_json::to_value(&ir).unwrap();
     wire["native"] = serde_json::json!({"test": {"unknowns": [
         {"id": "test:source:unknown#good", "links": [carrier_id]},
@@ -143,8 +143,8 @@ fn malformed_unknown_does_not_erase_another_records_carrier_link() {
 #[test]
 fn periodic_curve_parameter_domain_is_checked() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let curve_id = ir.model.edges[0].curve().cloned().unwrap();
-    ir.model
+    let curve_id = ir.geometry.edges[0].curve().cloned().unwrap();
+    ir.geometry
         .curves
         .iter_mut()
         .find(|curve| curve.id == curve_id)
@@ -158,8 +158,8 @@ fn periodic_curve_parameter_domain_is_checked() {
         )
         .unwrap(),
     ));
-    ir.model.edges[0].carrier =
-        crate::topology::EdgeCarrier::new(ir.model.edges[0].curve().cloned(), Some([0.0, 7.0]))
+    ir.geometry.edges[0].carrier =
+        crate::topology::EdgeCarrier::new(ir.geometry.edges[0].curve().cloned(), Some([0.0, 7.0]))
             .unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
@@ -167,8 +167,8 @@ fn periodic_curve_parameter_domain_is_checked() {
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));
 
-    ir.model.edges[0].carrier = crate::topology::EdgeCarrier::new(
-        ir.model.edges[0].curve().cloned(),
+    ir.geometry.edges[0].carrier = crate::topology::EdgeCarrier::new(
+        ir.geometry.edges[0].curve().cloned(),
         Some([-std::f64::consts::PI, std::f64::consts::PI]),
     )
     .unwrap();
@@ -182,8 +182,8 @@ fn periodic_curve_parameter_domain_is_checked() {
 #[test]
 fn periodic_nurbs_rejects_an_edge_wider_than_its_large_finite_period() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let curve_id = ir.model.edges[0].curve().cloned().unwrap();
-    ir.model
+    let curve_id = ir.geometry.edges[0].curve().cloned().unwrap();
+    ir.geometry
         .curves
         .iter_mut()
         .find(|curve| curve.id == curve_id)
@@ -198,7 +198,7 @@ fn periodic_nurbs_rejects_an_edge_wider_than_its_large_finite_period() {
         )
         .unwrap(),
     ));
-    ir.model.edges[0].carrier =
+    ir.geometry.edges[0].carrier =
         crate::topology::EdgeCarrier::new(Some(curve_id), Some([-f64::MAX, f64::MAX])).unwrap();
     assert!(validate_neutral(&ir, Vec::new())
         .expect("validate the neutral model")
@@ -276,13 +276,14 @@ fn cube_with_one_coedge_pcurve(
 ) -> crate::document::CadIr {
     let id = crate::ids::PcurveId::mint("synthetic:cube:pcurve#nested").expect("valid identity");
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
+    ir.geometry.pcurves.push(crate::geometry::pcurve::Pcurve {
         id: id.clone(),
         geometry,
         metadata: crate::geometry::pcurve::PcurveMetadata::default(),
+        native_ref: None,
     });
     let coedge = ir
-        .model
+        .geometry
         .coedges
         .iter_mut()
         .find(|coedge| {
@@ -496,8 +497,8 @@ fn carrier_law_walk_preserves_first_later_and_active_session_refusals() {
 fn carrier_reachability_follows_composite_segments_through_cycles_and_repeats() {
     use crate::geometry::{CompositeCurveSegment, CompositeCurveTransition};
     let mut ir = unit_cube().unwrap();
-    let root = ir.model.curves[0].id.clone();
-    let mut first = ir.model.curves[0].clone();
+    let root = ir.geometry.curves[0].id.clone();
+    let mut first = ir.geometry.curves[0].clone();
     first.id = "test:model:curve#first".try_into().unwrap();
     first.source_object = None;
     let mut second = first.clone();
@@ -507,7 +508,7 @@ fn carrier_reachability_follows_composite_segments_through_cycles_and_repeats() 
         same_sense: true,
         transition: CompositeCurveTransition::Discontinuous,
     };
-    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+    ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
         segments: vec![
             segment(first.id.clone()),
             segment(first.id.clone()),
@@ -525,8 +526,8 @@ fn carrier_reachability_follows_composite_segments_through_cycles_and_repeats() 
         segments: vec![segment(first.id.clone())].try_into().unwrap(),
         self_intersect: None,
     });
-    ir.model.curves.extend([first, second]);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    ir.geometry.curves.extend([first, second]);
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     super::check_carrier_reachability(
         &ctx,
@@ -540,24 +541,25 @@ fn carrier_reachability_follows_composite_segments_through_cycles_and_repeats() 
 #[test]
 fn carrier_reachability_preserves_orphan_arena_order() {
     let mut ir = unit_cube().unwrap();
-    let mut surface = ir.model.surfaces[0].clone();
+    let mut surface = ir.geometry.surfaces[0].clone();
     surface.id = "test:model:surface#orphan".try_into().unwrap();
     surface.source_object = None;
-    ir.model.surfaces.push(surface);
-    let mut curve = ir.model.curves[0].clone();
+    ir.geometry.surfaces.push(surface);
+    let mut curve = ir.geometry.curves[0].clone();
     curve.id = "test:model:curve#orphan".try_into().unwrap();
     curve.source_object = None;
-    ir.model.curves.push(curve);
-    ir.model.pcurves.push(crate::geometry::pcurve::Pcurve {
+    ir.geometry.curves.push(curve);
+    ir.geometry.pcurves.push(crate::geometry::pcurve::Pcurve {
         id: "test:model:pcurve#orphan".try_into().unwrap(),
         geometry: line_pcurve_leaf(),
         metadata: crate::geometry::pcurve::PcurveMetadata::default(),
+        native_ref: None,
     });
-    let mut point = ir.model.points[0].clone();
+    let mut point = ir.geometry.points[0].clone();
     point.id = "test:model:point#orphan".try_into().unwrap();
     point.source_object = None;
-    ir.model.points.push(point);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    ir.geometry.points.push(point);
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     super::check_carrier_reachability(
         &ctx,
@@ -588,7 +590,7 @@ fn an_edge_on_a_subset_curve_stays_in_the_local_domain() {
     let subset_cube = |range: [f64; 2]| {
         let mut ir = unit_cube().unwrap();
         let root = CurveId::mint("test:model:curve#root").unwrap();
-        ir.model.curves.push(Curve {
+        ir.geometry.curves.push(Curve {
             id: root.clone(),
             geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
                 LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(1.0, 0.0, 0.0))
@@ -596,11 +598,12 @@ fn an_edge_on_a_subset_curve_stays_in_the_local_domain() {
             )),
             parameter_range: None,
             source_object: None,
+            native_ref: None,
         });
-        let edge = ir.model.edges[0].clone();
+        let edge = ir.geometry.edges[0].clone();
         let curve = edge.curve().unwrap().clone();
         let construction = ProceduralCurveId::mint("test:model:construction#subset").unwrap();
-        ir.model
+        ir.geometry
             .curves
             .iter_mut()
             .find(|item| item.id == curve)
@@ -609,7 +612,7 @@ fn an_edge_on_a_subset_curve_stays_in_the_local_domain() {
             construction: construction.clone(),
             cache: None,
         };
-        ir.model
+        ir.geometry
             .add_procedural_curve(
                 &curve,
                 ProceduralCurve::new(
@@ -620,8 +623,8 @@ fn an_edge_on_a_subset_curve_stays_in_the_local_domain() {
                 ),
             )
             .unwrap();
-        ir.model.edges[0].set_param_range(Some(ParameterInterval::new(range).unwrap()));
-        let edge = ir.model.edges[0].id.clone();
+        ir.geometry.edges[0].set_param_range(Some(ParameterInterval::new(range).unwrap()));
+        let edge = ir.geometry.edges[0].id.clone();
         validate_neutral(&ir, Vec::new())
             .unwrap()
             .findings
@@ -717,8 +720,8 @@ fn periodic_pcurve_range_span_comparison_handles_width_overflow() {
 
 fn use_curve_on_a_line_nurbs(knot_end: f64, range: [f64; 2], periodic: bool) -> Vec<String> {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let curve_id = ir.model.edges[0].curve().cloned().unwrap();
-    ir.model
+    let curve_id = ir.geometry.edges[0].curve().cloned().unwrap();
+    ir.geometry
         .curves
         .iter_mut()
         .find(|curve| curve.id == curve_id)
@@ -733,7 +736,7 @@ fn use_curve_on_a_line_nurbs(knot_end: f64, range: [f64; 2], periodic: bool) -> 
         )
         .unwrap(),
     ));
-    ir.model.coedges[0].use_curve = Some(crate::topology::CoedgeUseCurve {
+    ir.geometry.coedges[0].use_curve = Some(crate::topology::CoedgeUseCurve {
         curve: curve_id,
         parameter_range: crate::topology::ParameterInterval::new(range).unwrap(),
     });
@@ -769,16 +772,16 @@ fn use_curve_on_a_periodic_carrier_may_cross_the_seam() {
 #[test]
 fn use_curve_on_a_procedural_carrier_has_no_domain_finding() {
     let mut ir = unit_cube().expect("valid unit cube fixture");
-    let curve_id = ir.model.edges[0].curve().cloned().unwrap();
+    let curve_id = ir.geometry.edges[0].curve().cloned().unwrap();
     let construction =
         crate::ids::ProceduralCurveId::mint("test:model:construction#use-curve").unwrap();
-    ir.model
+    ir.geometry
         .procedural_curves
         .push(crate::geometry::ProceduralCurve::new(
             construction.clone(),
             crate::geometry::ProceduralCurveDefinition::Exact { cache: None },
         ));
-    ir.model
+    ir.geometry
         .curves
         .iter_mut()
         .find(|curve| curve.id == curve_id)
@@ -787,7 +790,7 @@ fn use_curve_on_a_procedural_carrier_has_no_domain_finding() {
         construction,
         cache: None,
     };
-    ir.model.coedges[0].use_curve = Some(crate::topology::CoedgeUseCurve {
+    ir.geometry.coedges[0].use_curve = Some(crate::topology::CoedgeUseCurve {
         curve: curve_id,
         parameter_range: crate::topology::ParameterInterval::new([0.0, 1.0]).unwrap(),
     });

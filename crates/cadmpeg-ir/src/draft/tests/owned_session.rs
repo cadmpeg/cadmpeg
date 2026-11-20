@@ -6,7 +6,7 @@ use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 #[test]
 fn owned_commit_session_preserves_cross_candidate_references_and_rejections() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, None).unwrap();
     let point = "test:model:point#committed";
     let vertex = "test:model:vertex#committed";
@@ -26,9 +26,9 @@ fn owned_commit_session_preserves_cross_candidate_references_and_rejections() {
     assert!(session.contains(point).unwrap());
     assert!(session.contains(vertex).unwrap());
     let ir = session.into_parts().0;
-    assert_eq!(ir.model.points.len(), 1);
-    assert_eq!(ir.model.vertices.len(), 1);
-    assert_eq!(ir.model.vertices[0].point.as_str(), point);
+    assert_eq!(ir.geometry.points.len(), 1);
+    assert_eq!(ir.geometry.vertices.len(), 1);
+    assert_eq!(ir.geometry.vertices[0].point.as_str(), point);
     ctx.finish_session().unwrap();
 }
 
@@ -37,21 +37,21 @@ fn owned_commit_session_invalidates_positions_before_document_mutation() {
     let first = "test:model:point#first";
     let second = "test:model:point#second";
     let mut ir = CadIr::empty();
-    ir.model.points.push(super::point(first));
-    ir.model.points.push(super::point(second));
-    let ctx = cadmpeg_test_support::service_decode_context();
+    ir.geometry.points.push(super::point(first));
+    ir.geometry.points.push(super::point(second));
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(ir, &ctx, None).unwrap();
     assert!(session.contains(first).unwrap());
     assert!(session.contains(second).unwrap());
-    session.document_mut().unwrap().model.points.swap(0, 1);
+    session.document_mut().unwrap().geometry.points.swap(0, 1);
     assert!(session.contains(first).unwrap());
     assert!(session.contains(second).unwrap());
-    session.document_mut().unwrap().model.points.remove(0);
+    session.document_mut().unwrap().geometry.points.remove(0);
     assert!(session.contains(first).unwrap());
     assert!(!session.contains(second).unwrap());
     let ir = session.into_parts().0;
-    assert_eq!(ir.model.points.len(), 1);
-    assert_eq!(ir.model.points[0].id.as_str(), first);
+    assert_eq!(ir.geometry.points.len(), 1);
+    assert_eq!(ir.geometry.points[0].id.as_str(), first);
     ctx.finish_session().unwrap();
 }
 
@@ -93,7 +93,7 @@ fn staged_unknown_cache_moves_source_facts_and_extends_only_new_slots() {
     assert!(session.contains(&first_id).unwrap());
     assert!(session.contains(&second_id).unwrap());
     let (ir, records) = session.into_parts();
-    assert!(ir.model.points.is_empty());
+    assert!(ir.geometry.points.is_empty());
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].id().as_str(), first_id);
     assert_eq!(records[0].offset(), 17);
@@ -107,7 +107,7 @@ fn staged_unknown_cache_moves_source_facts_and_extends_only_new_slots() {
 #[test]
 fn staged_unknown_cache_resolves_draft_references_and_rejects_identity_collisions() {
     let target = "test:source:unknown#native";
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, None).unwrap();
     session
         .push_unknown(crate::unknown::UnknownRecord::retained(
@@ -131,17 +131,17 @@ fn staged_unknown_cache_resolves_draft_references_and_rejects_identity_collision
         .unwrap()
         .unwrap();
     let (ir, records) = session.into_parts();
-    assert_eq!(ir.model.vertices.len(), 2);
-    assert!(ir.model.points.is_empty());
+    assert_eq!(ir.geometry.vertices.len(), 2);
+    assert!(ir.geometry.points.is_empty());
     assert_eq!(records.len(), 1);
-    assert_eq!(ir.model.vertices[0].point.as_str(), target);
-    assert_eq!(ir.model.vertices[1].point.as_str(), target);
+    assert_eq!(ir.geometry.vertices[0].point.as_str(), target);
+    assert_eq!(ir.geometry.vertices[1].point.as_str(), target);
     ctx.finish_session().unwrap();
 }
 
 #[test]
 fn owned_source_session_replaces_native_unknown_identity_floor() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut ir = CadIr::empty();
     let old = "test:source:unknown#old";
     let other = "test:source:unknown#other";
@@ -172,7 +172,7 @@ fn owned_source_session_replaces_native_unknown_identity_floor() {
         .commit_model(super::vertex_draft("test:model:vertex#staged", staged))
         .unwrap()
         .unwrap();
-    assert_eq!(session.document().model.vertices.len(), 1);
+    assert_eq!(session.document().geometry.vertices.len(), 1);
     assert_eq!(
         session
             .document()
@@ -187,7 +187,7 @@ fn owned_source_session_replaces_native_unknown_identity_floor() {
 
 #[test]
 fn owned_source_session_clears_cached_source_positions() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, Some("test")).unwrap();
     let first = "test:source:unknown#first";
     let second = "test:source:unknown#second";
@@ -235,17 +235,21 @@ fn speculative_session_append_reuses_source_cache_across_candidates() {
     let source_pointer = session.unknowns()[0].data().unwrap().as_ptr();
     assert!(session.contains(source).unwrap());
     for identity in ["test:model:point#first", "test:model:point#second"] {
-        let model = crate::document::Model {
+        let geometry = crate::document::Topology {
             points: vec![super::point(identity)],
             ..Default::default()
         };
         session
             .try_append(
-                model,
+                geometry,
+                crate::document::Model::default(),
                 crate::native::Native::default(),
                 |combined, unknowns| {
                     assert_eq!(unknowns[0].data().unwrap().as_ptr(), source_pointer);
-                    assert_eq!(combined.model.points.last().unwrap().id.as_str(), identity);
+                    assert_eq!(
+                        combined.geometry.points.last().unwrap().id.as_str(),
+                        identity
+                    );
                     Ok(Ok::<_, ()>(()))
                 },
             )
@@ -255,7 +259,7 @@ fn speculative_session_append_reuses_source_cache_across_candidates() {
         assert!(session.contains(identity).unwrap());
     }
     assert!(session.contains("test:model:point#first").unwrap());
-    assert_eq!(session.document().model.points.len(), 2);
+    assert_eq!(session.document().geometry.points.len(), 2);
     let (_, unknowns) = session.into_parts();
     assert_eq!(unknowns[0].data().unwrap().as_ptr(), source_pointer);
     ctx.finish_session().unwrap();
@@ -263,7 +267,7 @@ fn speculative_session_append_reuses_source_cache_across_candidates() {
 
 #[test]
 fn speculative_session_append_extends_native_cache_and_preserves_rejected_positions() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, None).unwrap();
     for (format, arena, identity) in [
         ("middle", "middle", "test:native:record#first"),
@@ -279,9 +283,12 @@ fn speculative_session_append_extends_native_cache_and_preserves_rejected_positi
             ],
         );
         session
-            .try_append(crate::document::Model::default(), native, |_, _| {
-                Ok(Ok::<_, ()>(()))
-            })
+            .try_append(
+                crate::document::Topology::default(),
+                crate::document::Model::default(),
+                native,
+                |_, _| Ok(Ok::<_, ()>(())),
+            )
             .unwrap()
             .unwrap();
         assert!(session.contains(identity).unwrap());
@@ -289,18 +296,18 @@ fn speculative_session_append_extends_native_cache_and_preserves_rejected_positi
     }
     let rejected = "test:model:point#rejected";
     let before = session.document().clone();
-    let model = crate::document::Model {
+    let geometry = crate::document::Topology {
         points: vec![super::point(rejected)],
         ..Default::default()
     };
     assert_eq!(
         session
-            .try_append(model, crate::native::Native::default(), |_, _| Ok(Err::<
-                (),
-                _,
-            >(
-                "candidate rejection"
-            )))
+            .try_append(
+                geometry,
+                crate::document::Model::default(),
+                crate::native::Native::default(),
+                |_, _| Ok(Err::<(), _>("candidate rejection"))
+            )
             .unwrap(),
         Err("candidate rejection")
     );
@@ -313,19 +320,20 @@ fn speculative_session_append_extends_native_cache_and_preserves_rejected_positi
 #[test]
 fn speculative_session_append_keeps_original_resource_refusal_and_model() {
     use cadmpeg_core::CodecError;
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(CadIr::empty(), &ctx, None).unwrap();
     session
         .commit_model(super::point_draft("test:model:point#first"))
         .unwrap()
         .unwrap();
     let before = session.document().clone();
-    let model = crate::document::Model {
+    let geometry = crate::document::Topology {
         points: vec![super::point("test:model:point#refused")],
         ..Default::default()
     };
     let Err(CodecError::ResourceLimit(limit)) = session.try_append(
-        model,
+        geometry,
+        crate::document::Model::default(),
         crate::native::Native::default(),
         |_, _| -> Result<Result<(), ()>, CodecError> {
             let mut frames = Vec::new();

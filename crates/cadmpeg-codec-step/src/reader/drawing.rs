@@ -7,9 +7,12 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::design::names::{CodecId, NativeName, NativeNameValue};
+use cadmpeg_ir::design::refs::EntityRef;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
 use cadmpeg_ir::ids::{Identity, ProductDefinitionId, UnknownId};
+use cadmpeg_ir::references::{InstanceTarget, ReferenceEntity};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::{ReferenceSelection, ReferenceTarget};
 use serde::Serialize;
@@ -30,6 +33,7 @@ const DRAWING_ASSOCIATION_TYPES: &[&str] = &[
 
 struct TargetContext<'a> {
     target_identities: &'a BTreeMap<u64, BTreeSet<String>>,
+    entities: &'a BTreeMap<String, ReferenceEntity>,
     known_typed: &'a dyn SourceClaims,
     exchange: &'a Exchange,
     external_documents: &'a BTreeMap<u64, &'a str>,
@@ -122,6 +126,7 @@ impl TargetContext<'_> {
         target_resolution(
             id,
             self.target_identities,
+            self.entities,
             self.known_typed,
             self.exchange,
             self.external_documents,
@@ -220,8 +225,10 @@ pub(super) fn decode(
             external_documents.insert(id, entry.uri.as_str());
         }
     }
+    let entities = reference_entities(ir);
     let target_context = TargetContext {
         target_identities: &target_identities,
+        entities: &entities,
         known_typed,
         exchange,
         external_documents: &external_documents,
@@ -284,7 +291,7 @@ pub(super) fn decode(
                 position: None,
                 scale: None,
                 direction: None,
-                rotation_degrees: None,
+                rotation: None,
                 parameters: stored_parameters,
                 assets: Vec::new(),
                 ..Drawing::new(
@@ -293,7 +300,7 @@ pub(super) fn decode(
                     drawing_kind(name),
                     name.into(),
                     order,
-                    identity.into_string(),
+                    Some(identity.into_string()),
                 )
             },
         );
@@ -882,9 +889,94 @@ fn association_placeholder_reference(record: &RawRecord, parameters: &[Value]) -
     })
 }
 
+/// The entities of the geometry and the products, by identity, that a
+/// drawing reference can name.
+fn reference_entities(ir: &CadIr) -> BTreeMap<String, ReferenceEntity> {
+    let geometry = &ir.geometry;
+    geometry
+        .bodies
+        .iter()
+        .map(|record| EntityRef::Body(record.id.clone()))
+        .chain(
+            geometry
+                .faces
+                .iter()
+                .map(|record| EntityRef::Face(record.id.clone())),
+        )
+        .chain(
+            geometry
+                .edges
+                .iter()
+                .map(|record| EntityRef::Edge(record.id.clone())),
+        )
+        .chain(
+            geometry
+                .vertices
+                .iter()
+                .map(|record| EntityRef::Vertex(record.id.clone())),
+        )
+        .chain(
+            geometry
+                .surfaces
+                .iter()
+                .map(|record| EntityRef::Surface(record.id.clone())),
+        )
+        .chain(
+            geometry
+                .curves
+                .iter()
+                .map(|record| EntityRef::Curve(record.id.clone())),
+        )
+        .chain(
+            geometry
+                .subds
+                .iter()
+                .map(|record| EntityRef::Subd(record.id.clone())),
+        )
+        .map(ReferenceEntity::Topology)
+        .chain(
+            ir.model
+                .product_definitions
+                .iter()
+                .map(|record| ReferenceEntity::Definition(record.id.clone())),
+        )
+        .chain(
+            ir.model
+                .occurrences
+                .iter()
+                .map(|record| ReferenceEntity::Occurrence(record.id.clone())),
+        )
+        .map(|entity| (entity.id().to_owned(), entity))
+        .collect()
+}
+
+/// The reference a resolved identity is: an entity the document holds, or
+/// the source record by its STEP instance name.
+fn resolved_reference(
+    id: u64,
+    identity: &str,
+    entities: &BTreeMap<String, ReferenceEntity>,
+) -> Result<ReferenceSelection, CodecError> {
+    Ok(match entities.get(identity) {
+        Some(entity) => {
+            ReferenceSelection::new(ReferenceTarget::Entity(InstanceTarget::new(entity.clone())))
+        }
+        None => ReferenceSelection::unresolved(instance_name(id)?),
+    })
+}
+
+fn instance_name(id: u64) -> Result<NativeName, CodecError> {
+    let blank = || CodecError::malformed("STEP instance name is empty");
+    Ok(NativeName {
+        codec: CodecId::from(NonBlankString::new("step").ok_or_else(blank)?),
+        value: NativeNameValue::Text(NonBlankString::new(format!("#{id}")).ok_or_else(blank)?),
+    })
+}
+
 fn target_resolution(
     id: u64,
     target_identities: &BTreeMap<u64, BTreeSet<String>>,
+    entities: &BTreeMap<String, ReferenceEntity>,
     known_typed: &dyn SourceClaims,
     exchange: &Exchange,
     external_documents: &BTreeMap<u64, &str>,
@@ -895,10 +987,9 @@ fn target_resolution(
         .filter(|identities| identities.len() == 1)
         .and_then(|identities| identities.first())
     {
-        return Ok(TargetResolution::Resolved(ReferenceSelection::new(
-            ReferenceTarget::Local(identity.to_owned()),
-            Vec::new(),
-        )));
+        return Ok(TargetResolution::Resolved(resolved_reference(
+            id, identity, entities,
+        )?));
     }
     if let Some(uri) = external_documents.get(&id) {
         return Ok(TargetResolution::Resolved(ReferenceSelection::new(
@@ -906,26 +997,21 @@ fn target_resolution(
                 document: (*uri).to_owned(),
                 object: format!("#{id}"),
             },
-            Vec::new(),
         )));
     }
     let wrapper_ambiguity = match wrapper_target_resolution(id, target_identities, exchange, ctx)? {
         Some(WrapperTargetResolution::Singleton(identity)) => {
-            return Ok(TargetResolution::Resolved(ReferenceSelection::new(
-                ReferenceTarget::Local(identity),
-                Vec::new(),
-            )));
+            return Ok(TargetResolution::Resolved(resolved_reference(
+                id, &identity, entities,
+            )?));
         }
         Some(WrapperTargetResolution::Ambiguous(identities)) => Some(identities),
         None => None,
     };
-    if !known_typed.contains(id) {
-        if let Some(record) = exchange.records().get(&id) {
-            return Ok(TargetResolution::Resolved(ReferenceSelection::new(
-                ReferenceTarget::Local(opaque_record_id(id, record)?.into_string()),
-                Vec::new(),
-            )));
-        }
+    if !known_typed.contains(id) && exchange.records().contains_key(&id) {
+        return Ok(TargetResolution::Resolved(ReferenceSelection::unresolved(
+            instance_name(id)?,
+        )));
     }
     let ambiguity = target_identities
         .get(&id)
