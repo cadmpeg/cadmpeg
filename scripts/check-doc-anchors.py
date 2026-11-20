@@ -11,8 +11,19 @@ Each ``### ID.`` item may use only the declared fields Question, Known, Need,
 Conflict, and Note. Question, Known, and Need are required. A resolved item is
 deleted; a Resolved field is a schema error.
 
-Usage: scripts/check-doc-anchors.py [open-items.md ...]
-With no arguments it checks every docs/formats/*-open-items.md file.
+Every open-item ID a format document cites, such as ``DR-904``, names an item
+heading of the open-items document it cites. A citation resolves against the
+open-items document named right after the ID (``DR-904 in f3d-open-items.md``),
+else the last one the line names before the ID, else the document's own
+open-items document (``f3d.md`` and
+``f3d-coverage.md`` cite ``f3d-open-items.md``), else the only open-items
+document the file names. An ID whose prefix the target does not use (``UTF-8``)
+is no citation. ``former SE-08`` names a deleted item and is no citation.
+
+Usage: scripts/check-doc-anchors.py [doc.md ...]
+With no arguments it checks every docs/formats/*-open-items.md file for
+references and schema, and every docs/formats/*.md file for open-item citations.
+Arguments name the documents to check; the open-items ones get every check.
 """
 
 from __future__ import annotations
@@ -20,6 +31,8 @@ from __future__ import annotations
 import re
 import sys
 from pathlib import Path
+
+from preflight_open_items import items
 
 DOCS = Path(__file__).resolve().parent.parent / "docs" / "formats"
 
@@ -29,6 +42,9 @@ HEADING = re.compile(r"^#{2,6}\s+([\d.]+)\s+\S")
 ITEM_HEADING = re.compile(r"^### ([A-Z]{1,3}-\d+[A-Z]?)\.")
 FIELD = re.compile(r"^\*\*([A-Za-z][A-Za-z0-9 ./-]*)\.\*\*")
 CONFIDENCE_TAG = re.compile(r"\bConfidence:")
+OPEN_ITEMS_NAME = re.compile(r"[\w.-]+-open-items\.md")
+CITATION = re.compile(r"(?<!former )\b[A-Z]{1,4}-\d+[A-Z]?\b")
+NAMED_AFTER = re.compile(r"\s+in\s+\[?`?([\w.-]+-open-items\.md)")
 
 ALLOWED_FIELDS = frozenset({"Question", "Known", "Need", "Conflict", "Note"})
 REQUIRED_FIELDS = ("Question", "Known", "Need")
@@ -165,15 +181,62 @@ def check(path: Path) -> list[str]:
     return failures
 
 
+def own_open_items(name: str, headings: dict[str, set[str]]) -> str | None:
+    """The open-items document whose stem starts this file's name."""
+    owners = [
+        target
+        for target in headings
+        if name == target.removesuffix("-open-items.md") + ".md"
+        or name.startswith(target.removesuffix("open-items.md"))
+    ]
+    return max(owners, key=len, default=None)
+
+
+def check_citations(documents: list[Path]) -> list[str]:
+    """Fail on an open-item ID that names no item heading of its document."""
+    headings = {
+        path.name: {identifier for identifier, _, _ in items(path.read_text(encoding="utf-8"))}
+        for path in DOCS.glob("*-open-items.md")
+    }
+    prefixes = {
+        name: {identifier.split("-")[0] for identifier in ids}
+        for name, ids in headings.items()
+    }
+    failures: list[str] = []
+    for path in documents:
+        text = path.read_text(encoding="utf-8")
+        default = own_open_items(path.name, headings)
+        if default is None:
+            named = set(OPEN_ITEMS_NAME.findall(text)) & headings.keys()
+            default = named.pop() if len(named) == 1 else None
+        for number, line in enumerate(text.split("\n"), 1):
+            mentions = [(match.start(), match.group()) for match in OPEN_ITEMS_NAME.finditer(line)]
+            for citation in CITATION.finditer(line):
+                after = NAMED_AFTER.match(line, citation.end())
+                before = [name for start, name in mentions if start < citation.start()]
+                target = after.group(1) if after else (before[-1:] or [default])[0]
+                identifier = citation.group()
+                if target not in headings or identifier.split("-")[0] not in prefixes[target]:
+                    continue
+                if identifier not in headings[target]:
+                    failures.append(
+                        f"{path.name}:{number}: {identifier} names no item heading "
+                        f"in {target}"
+                    )
+    return failures
+
+
 def main(argv: list[str]) -> int:
-    paths = [Path(a) for a in argv[1:]] or sorted(DOCS.glob("*-open-items.md"))
-    if not paths:
-        print("check-doc-anchors: no open-items documents found")
+    documents = [Path(a) for a in argv[1:]] or sorted(DOCS.glob("*.md"))
+    if not documents:
+        print("check-doc-anchors: no format documents found")
         return 0
+    paths = [path for path in documents if path.name.endswith("-open-items.md")]
 
     failures: list[str] = []
     for path in paths:
         failures.extend(check(path))
+    failures.extend(check_citations(documents))
 
     for failure in failures:
         print(failure)
@@ -182,7 +245,8 @@ def main(argv: list[str]) -> int:
         return 1
     print(
         f"check-doc-anchors: {len(paths)} document(s) checked; "
-        "references resolve and field schema holds"
+        f"references resolve and field schema holds; "
+        f"open-item citations in {len(documents)} document(s) name headings"
     )
     return 0
 
