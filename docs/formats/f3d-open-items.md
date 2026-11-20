@@ -1060,7 +1060,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** The compatibility decoder selects advanced-ID omission. This selection is not proof of the physical omitted member. Neutral map-channel interpretation remains subject to MA-04.
 
-### DR-900. Protein stream header words
+### DR-904. Protein stream header words
 
 **Question.** What do the two i32 words and the u32 word at bytes 4 through 15 of a Protein stream header record?
 
@@ -1068,7 +1068,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** A stream whose pages include a page outside every record, or a stream that a producer extended in place, to relate the words to page allocation.
 
-### DR-901. Text of the Protein schema documents
+### DR-905. Text of the Protein schema documents
 
 **Question.** Which text do the nine schema documents of a Fusion Protein package hold, and does a reader take the property declarations from the package or from its own library schema of the same identifier and `SchemaVersion`?
 
@@ -1076,7 +1076,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** The declarations that a writer must emit beyond the serialized properties, so that a package with generated schema documents reads the same as one with library schema documents.
 
-### DR-902. Second form of the appearance of a Base Feature body
+### DR-906. Second form of the appearance of a Base Feature body
 
 **Question.** What selects the second form of the body's appearance and its twin in the Protein package of a Base Feature design?
 
@@ -1084,7 +1084,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Need.** The source property, for example a material or appearance setting of the design or of its template, that selects one form.
 
-### DR-903. Join from an instance record to its definition record
+### DR-907. Join from an instance record to its definition record
 
 **Question.** Which rule joins an instance record to its definition record when the definition's asset identifier differs from the instance's base asset identifier?
 

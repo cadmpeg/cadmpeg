@@ -16,7 +16,7 @@ Schema XML, ZIP entry order, and schema inheritance are a text grammar over name
 
 ## 2. Instance stream header
 
-`InstanceProperties.bin` and `DefinitionIteratorProperties.bin` start with a 16-byte stream header. The first header word is the little-endian u32 page size and equals `0x88`. Bytes 4 through 11 hold two little-endian i32 words, each `-1`. Bytes 12 through 15 hold the little-endian u32 `0`. Open item DR-900 in [`f3d-open-items.md`](f3d-open-items.md) holds the role of these three words.
+`InstanceProperties.bin` and `DefinitionIteratorProperties.bin` start with a 16-byte stream header. The first header word is the little-endian u32 page size and equals `0x88`. Bytes 4 through 11 hold two little-endian i32 words, each `-1`. Bytes 12 through 15 hold the little-endian u32 `0`. Open item DR-904 in [`f3d-open-items.md`](f3d-open-items.md) holds the role of these three words.
 
 The bytes after the header are an exact multiple of the page size. A header without at least one complete page is malformed.
 
@@ -137,7 +137,7 @@ A schema document declares one schema (§1). The nine schemas form these inherit
 | `StructuralAdvancedSchema` | `StructuralCommonSchema` | `Structural` | `7` |
 | `StructuralPlasticSchema` | `StructuralAdvancedSchema` | `Structural` | `7` |
 
-Open item DR-901 in [`f3d-open-items.md`](f3d-open-items.md) holds the text of the schema documents.
+Open item DR-905 in [`f3d-open-items.md`](f3d-open-items.md) holds the text of the schema documents.
 
 ## 9. Package of a Fusion Base Feature design
 
@@ -359,4 +359,4 @@ Appearance twin of the body (value block 288 bytes):
 | `swatch` | `PrismCommonSchema` | String | `Swatch-Torus` |
 | `version` | `CommonSchema` | Integer | 4 |
 
-A design with several bodies and one appearance has the same package; only the reference counts of the Protein asset manager change. The values that differ between packages are the GUIDs (basename, folder, package identifier, instance identifiers, and the base asset identifier of each `Opaque(R,G,B)` definition), the package time, and the colours of the per-face appearances. The table-of-contents order follows from the instance identifiers, and the page indices follow from that order and the record lengths. Open item DR-902 in [`f3d-open-items.md`](f3d-open-items.md) holds a second form of the body's appearance.
+A design with several bodies and one appearance has the same package; only the reference counts of the Protein asset manager change. The values that differ between packages are the GUIDs (basename, folder, package identifier, instance identifiers, and the base asset identifier of each `Opaque(R,G,B)` definition), the package time, and the colours of the per-face appearances. The table-of-contents order follows from the instance identifiers, and the page indices follow from that order and the record lengths. Open item DR-906 in [`f3d-open-items.md`](f3d-open-items.md) holds a second form of the body's appearance.
