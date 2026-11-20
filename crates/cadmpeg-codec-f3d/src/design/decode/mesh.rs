@@ -311,7 +311,6 @@ impl MeshBody {
             fusion_uuid: _,
             mesh_uuid: _,
             split_streams: _,
-            history_streams: _,
             face_group_metadata: _,
             vertices,
             triangles,
@@ -2126,7 +2125,6 @@ where
                 scope_body_ordinal: Some(scope_ordinals[body_record_index]),
                 words: body.words,
                 split_streams: Vec::new(),
-                history_streams: Vec::new(),
                 face_group_metadata: None,
                 placement: body.placement,
                 entry: entry_name.entry,
@@ -2216,7 +2214,6 @@ where
                     scope_body_ordinal: None,
                     words: body.words,
                     split_streams: Vec::new(),
-                    history_streams: Vec::new(),
                     face_group_metadata: None,
                     placement: body.placement,
                     entry: entry.entry,
@@ -2418,19 +2415,6 @@ pub(crate) fn mesh_guid_byte_losses(
         })
 }
 
-pub(crate) fn mesh_split_stream_losses(
-    features: &[DesignMeshFeature],
-) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
-    features.iter().flat_map(DesignMeshFeature::all_bodies).flat_map(|body| {
-        body.split_streams.iter().map(|stream| {
-            crate::loss::F3dLossCode::MeshSplitStreamAssumed.note(format!(
-                "mesh body {} stream {} reads its component segments in stored order; the native record retains the descriptor",
-                body.placement.record().record_index(), stream.name
-            ))
-        })
-    })
-}
-
 pub(crate) fn mesh_component_flag_losses(
     features: &[DesignMeshFeature],
 ) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
@@ -2444,19 +2428,6 @@ pub(crate) fn mesh_component_flag_losses(
                     body.placement.record().record_index(), stream.name
                 ))
             })
-    })
-}
-
-pub(crate) fn mesh_history_window_losses(
-    features: &[DesignMeshFeature],
-) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
-    features.iter().flat_map(DesignMeshFeature::all_bodies).flat_map(|body| {
-        body.history_streams.iter().map(|stream| {
-            crate::loss::F3dLossCode::MeshHistoryWindowAssumed.note(format!(
-                "mesh body {} stream {} uses its declared output length as the LZMA history bound; the native record retains its encoding",
-                body.placement.record().record_index(), stream.name
-            ))
-        })
     })
 }
 
@@ -2601,7 +2572,6 @@ pub(crate) fn decode_mesh_bodies(
                 .ok_or_else(|| CodecError::malformed("F3D joined mesh body index is invalid"))?;
             body.container_mesh_uuid = Some(container.mesh_uuid.clone());
             body.split_streams.clone_from(&container.split_streams);
-            body.history_streams.clone_from(&container.history_streams);
             body.face_group_metadata
                 .clone_from(&container.face_group_metadata);
             let body = design_records[design_ordinal][feature_ordinal]
@@ -4518,7 +4488,6 @@ mod tests {
         .unwrap();
         let container = || MeshContainer {
             split_streams: Vec::new(),
-            history_streams: Vec::new(),
             face_group_metadata: None,
             fusion_uuid: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".into(),
             mesh_uuid: crate::records::mesh::DesignMeshUuid::try_from(

@@ -1105,13 +1105,6 @@ pub(crate) struct DesignMeshFaceGroups {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct DesignMeshHistoryStream {
-    pub(crate) name: String,
-    pub(crate) encoding: NativeBytes<[u8; 2]>,
-    pub(crate) decoded_length: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct DesignMeshSplitStream {
     pub(crate) name: String,
     pub(crate) descriptor: NativeBytes<Vec<u8>>,
@@ -1128,7 +1121,6 @@ pub(crate) struct DesignMeshBody {
     pub(crate) scope_body_ordinal: Option<u32>,
     pub(crate) words: DesignMeshBodyWords,
     pub(crate) split_streams: Vec<DesignMeshSplitStream>,
-    pub(crate) history_streams: Vec<DesignMeshHistoryStream>,
     pub(crate) face_group_metadata: Option<DesignMeshFaceGroups>,
     /// Mesh-body record carrying placement and graph references.
     pub(crate) placement: DesignMeshPlacement,
@@ -1168,8 +1160,6 @@ struct DesignMeshBodyWire {
     body_words_offset: u64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     split_streams: Vec<DesignMeshSplitStream>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    history_streams: Vec<DesignMeshHistoryStream>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1362,7 +1352,6 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
                 + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::BODY_WORD),
             body_words: value.words,
             split_streams: value.split_streams,
-            history_streams: value.history_streams,
             face_group_metadata: value.face_group_metadata,
             body_record: value.placement.record,
             body_name: value.placement.body_name,
@@ -1556,7 +1545,6 @@ impl DesignMeshBody {
             scope_body_ordinal: value.scope_body_ordinal,
             words: value.body_words,
             split_streams: value.split_streams,
-            history_streams: value.history_streams,
             face_group_metadata: value.face_group_metadata,
             placement,
             entry,

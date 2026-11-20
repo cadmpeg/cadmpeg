@@ -1024,10 +1024,8 @@ pub(crate) enum F3dLossCode {
     /// Mesh attribute channels have no settled stored-element layout.
     MeshAttributeNotTransferred,
     MeshGuidBytesUninterpreted,
-    MeshSplitStreamAssumed,
     /// A packed-direction split component flag is read as payload-neutral.
     MeshComponentFlagAssumed,
-    MeshHistoryWindowAssumed,
     MeshOperationRecordsNative,
     MeshFaceGroupsAssumed,
     MeshBodyWordsNative,
@@ -1899,9 +1897,7 @@ impl F3dLossCode {
         Self::MeshContainerMissing,
         Self::MeshAttributeNotTransferred,
         Self::MeshGuidBytesUninterpreted,
-        Self::MeshSplitStreamAssumed,
         Self::MeshComponentFlagAssumed,
-        Self::MeshHistoryWindowAssumed,
         Self::MeshOperationRecordsNative,
         Self::MeshFaceGroupsAssumed,
         Self::MeshBodyWordsNative,
@@ -3005,9 +3001,7 @@ impl F3dLossCode {
             Self::MeshContainerMissing => "mesh.container-missing",
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
             Self::MeshGuidBytesUninterpreted => "mesh.guid-bytes-uninterpreted",
-            Self::MeshSplitStreamAssumed => "mesh.split-stream-assumed",
             Self::MeshComponentFlagAssumed => "mesh.component-flag-assumed",
-            Self::MeshHistoryWindowAssumed => "mesh.history-window-assumed",
             Self::MeshOperationRecordsNative => "mesh.operation-records-native",
             Self::MeshFaceGroupsAssumed => "mesh.face-groups-assumed",
             Self::MeshBodyWordsNative => "mesh.body-words-native",
@@ -3823,9 +3817,7 @@ impl F3dLossCode {
             | Self::MeshContainerUnjoined
             | Self::MeshContainerMissing
             | Self::MeshAttributeNotTransferred
-            | Self::MeshSplitStreamAssumed
             | Self::MeshComponentFlagAssumed
-            | Self::MeshHistoryWindowAssumed
             | Self::MeshOperationRecordsNative
             | Self::MeshFaceGroupsAssumed
             | Self::MeshBodyWordsNative
@@ -4027,9 +4019,7 @@ impl F3dLossCode {
             | Self::XrefOwnedPoseDisagrees
             | Self::XrefOwnedPoseNative
             | Self::MeshGuidBytesUninterpreted
-            | Self::MeshSplitStreamAssumed
             | Self::MeshComponentFlagAssumed
-            | Self::MeshHistoryWindowAssumed
             | Self::MeshOperationRecordsNative
             | Self::MeshFaceGroupsAssumed
             | Self::MeshBodyWordsNative
@@ -5349,9 +5339,7 @@ mod tests {
                 "mesh.container-missing",
                 "mesh.attribute-not-transferred",
                 "mesh.guid-bytes-uninterpreted",
-                "mesh.split-stream-assumed",
                 "mesh.component-flag-assumed",
-                "mesh.history-window-assumed",
                 "mesh.operation-records-native",
                 "mesh.face-groups-assumed",
                 "mesh.body-words-native",
