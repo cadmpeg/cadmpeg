@@ -355,22 +355,22 @@ impl<'a> SupportedPrototype<'a> {
     }
 }
 
-/// Every surface prototype record that binds to exactly one first-instance row,
-/// with the section and the absolute bounds of the surface array that hold it.
+/// A prototype record, its first-instance row, and the section and absolute
+/// bounds of the surface array that hold it.
+pub(in super::super) type PrototypeAssociation<'a> = (
+    SupportedPrototype<'a>,
+    &'a crate::surface::SurfaceRow,
+    &'a crate::container::Section,
+    (usize, usize),
+);
+
+/// Every surface prototype record that binds to exactly one first-instance row.
 ///
 /// A section whose declared extent runs past the scanned buffer is a refusal,
 /// because the prototype frame it states cannot be read.
 pub(in super::super) fn unique_surface_prototype_associations<'a>(
     scan: &'a ContainerScan<'_>,
-) -> Result<
-    Vec<(
-        SupportedPrototype<'a>,
-        &'a crate::surface::SurfaceRow,
-        &'a crate::container::Section,
-        (usize, usize),
-    )>,
-    cadmpeg_core::CodecError,
-> {
+) -> Result<Vec<PrototypeAssociation<'a>>, cadmpeg_core::CodecError> {
     let mut associations = Vec::new();
     let mut section_arrays = BTreeMap::<usize, Option<Vec<(usize, usize)>>>::new();
     for record in &scan.surfaces.prototype_records {
