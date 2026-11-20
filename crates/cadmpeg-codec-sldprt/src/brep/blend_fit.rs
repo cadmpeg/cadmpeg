@@ -53,6 +53,51 @@ pub(super) struct BlendFit {
     pub(super) fit_tolerance: f64,
 }
 
+/// Why a rolling ball has no fitted cache: the first failure of the fit.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum FitFailure {
+    /// A side is neither an analytic surface, a support pair of them, nor a
+    /// rolling ball.
+    Unsupported,
+    /// The face's vertices do not invert onto the spine.
+    SpineInterval,
+    /// A side has no foot near the ball centre at a spine parameter.
+    Foot { side: usize, s: f64 },
+    /// The ball centre does not solve at a spine parameter.
+    Center { s: f64 },
+    /// The ball does not touch a side at its radius.
+    Contact { side: usize, s: f64 },
+    /// The section is a half turn, which has no minor arc.
+    HalfTurn { s: f64 },
+    /// No fit within the split depth or the span count.
+    SpanLimit,
+    /// The fitted sections form no surface.
+    Surface,
+}
+
+impl std::fmt::Display for FitFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unsupported => f.write_str(
+                "a support is not an analytic surface, a support pair or a rolling ball",
+            ),
+            Self::SpineInterval => f.write_str("the face's vertices do not invert onto the spine"),
+            Self::Foot { side, s } => write!(
+                f,
+                "support {side} has no foot near the ball centre at spine parameter {s}"
+            ),
+            Self::Center { s } => write!(f, "no ball centre solves at spine parameter {s}"),
+            Self::Contact { side, s } => write!(
+                f,
+                "the ball at spine parameter {s} does not touch support {side} at its radius"
+            ),
+            Self::HalfTurn { s } => write!(f, "the section at spine parameter {s} is a half turn"),
+            Self::SpanLimit => f.write_str("no fit within the span limit"),
+            Self::Surface => f.write_str("the fitted sections form no surface"),
+        }
+    }
+}
+
 /// One homogeneous section: the three weighted controls of its arc as
 /// `[x·w, y·w, z·w, w]`.
 type Section = [[f64; 4]; 3];
@@ -78,6 +123,10 @@ pub(super) struct BlendGeometry<'a, 'ctx> {
     exact_spines: RefCell<Vec<ExactSpineEntry>>,
     /// The stored spine's points and parameters when it is a polyline.
     polyline: Option<SpinePolyline>,
+    /// The first failure of the current fit.
+    failure: Cell<Option<FitFailure>>,
+    /// The side whose foot the last centre solve did not find.
+    foot_miss: Cell<Option<usize>>,
 }
 
 /// A stored spine chart that is a polyline: one polynomial degree-one piece
@@ -321,8 +370,8 @@ fn spine_samples(
 }
 
 /// Fit the cache of a blend whose spine and supports are given, over the
-/// spine interval of `vertices`, or `None` when a support is not analytic,
-/// the spine has no evaluable interval there, or a section has no minor arc.
+/// spine interval of `vertices` widened by [`DOMAIN_MARGIN_FRACTION`], or the
+/// [`FitFailure`] that left it without one.
 ///
 /// # Errors
 ///
@@ -333,11 +382,13 @@ pub(super) fn fit(
     supports: [Side<'_, '_>; 2],
     signed_radius: f64,
     vertices: &[Point3],
-) -> Result<Option<BlendFit>, CodecError> {
+) -> Result<Result<BlendFit, FitFailure>, CodecError> {
     let [first, second] = supports;
     let fitter =
         BlendGeometry::with_sides(ctx, spine, [vec![first], vec![second]], signed_radius.abs());
-    let fitted = fitter.fit(vertices);
+    let fitted = fitter
+        .fit(vertices)
+        .ok_or_else(|| fitter.failure.get().unwrap_or(FitFailure::Surface));
     fitter.finish(fitted)
 }
 
@@ -437,6 +488,8 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
             last_parameter: RefCell::new(None),
             exact_spines: RefCell::new(Vec::new()),
             polyline: SpinePolyline::of(spine),
+            failure: Cell::new(None),
+            foot_miss: Cell::new(None),
         }
     }
 
@@ -470,6 +523,13 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
         })
     }
 
+    /// Record `failure` unless the fit already has one.
+    fn fail(&self, failure: FitFailure) {
+        if self.failure.get().is_none() {
+            self.failure.set(Some(failure));
+        }
+    }
+
     /// The index of the candidate of side `side` the ball at the stored spine
     /// point `point` rolls on: the one whose distance from it is nearest the
     /// radius.
@@ -487,6 +547,9 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
             if best.as_ref().is_none_or(|(best_gap, _)| gap < *best_gap) {
                 best = Some((gap, index));
             }
+        }
+        if best.is_none() {
+            self.foot_miss.set(Some(side));
         }
         best.map(|(_, index)| index)
     }
@@ -839,16 +902,19 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
     }
 
     fn fit(&self, vertices: &[Point3]) -> Option<BlendFit> {
-        if !(self.radius > 0.0 && self.radius.is_finite()) {
+        self.failure.set(None);
+        if !(self.radius > 0.0 && self.radius.is_finite() && self.analytic()) {
+            self.fail(FitFailure::Unsupported);
             return None;
         }
-        if !self.analytic() {
+        let Some([low, high]) = self.range(vertices) else {
+            self.fail(FitFailure::SpineInterval);
             return None;
-        }
-        let [low, high] = self.range(vertices)?;
+        };
         let margin = (high - low) * DOMAIN_MARGIN_FRACTION;
         let [low, high] = self.clamp([low - margin, high + margin]);
         if high.partial_cmp(&low) != Some(std::cmp::Ordering::Greater) {
+            self.fail(FitFailure::SpineInterval);
             return None;
         }
         // A polyline chart's speed jumps at its knots: fit each piece alone.
@@ -876,20 +942,27 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
             }
             fitted.push(nodes[0]);
             for pair in nodes.windows(2) {
-                self.split(
-                    pair[0],
-                    pair[1],
-                    [from, to],
-                    0,
-                    &mut fitted,
-                    &mut fit_tolerance,
-                )?;
-                if fitted.len() > MAX_SPANS {
+                if self
+                    .split(
+                        pair[0],
+                        pair[1],
+                        [from, to],
+                        0,
+                        &mut fitted,
+                        &mut fit_tolerance,
+                    )
+                    .is_none()
+                    || fitted.len() > MAX_SPANS
+                {
+                    self.fail(FitFailure::SpanLimit);
                     return None;
                 }
             }
         }
-        let surface = Self::surface(&fitted)?;
+        let Some(surface) = Self::surface(&fitted) else {
+            self.fail(FitFailure::Surface);
+            return None;
+        };
         Some(BlendFit {
             surface,
             fit_tolerance,
@@ -1097,6 +1170,7 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
     /// The ball center at spine parameter `s` solved from the stored spine
     /// point by Newton steps on the two offsets.
     fn solve_center(&self, s: f64, members: [&Side<'a, 'ctx>; 2]) -> Option<Point3> {
+        self.foot_miss.set(None);
         let solves = self.center_solves.get() + 1;
         self.center_solves.set(solves);
         if solves > MAX_CENTER_SOLVES {
@@ -1106,7 +1180,10 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
         for _ in 0..MAX_CENTER_STEPS {
             let mut planes = [(current, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 0.0)); 2];
             for slot in 0..2 {
-                let (foot, normal) = self.side_normal(members[slot], current)?;
+                let Some((foot, normal)) = self.side_normal(members[slot], current) else {
+                    self.foot_miss.set(Some(slot));
+                    return None;
+                };
                 let side = if current.vector_from(foot).dot(normal) < 0.0 {
                     -1.0
                 } else {
@@ -1180,14 +1257,29 @@ impl<'a, 'ctx> BlendGeometry<'a, 'ctx> {
 
     /// The exact homogeneous section at spine parameter `s`.
     fn section(&self, s: f64) -> Option<Section> {
-        let center = self.center(s)?;
-        let first = self.contact(0, center)?;
-        let second = self.contact(1, center)?;
+        self.foot_miss.set(None);
+        let Some(center) = self.center(s) else {
+            self.fail(match self.foot_miss.get() {
+                Some(side) => FitFailure::Foot { side, s },
+                None => FitFailure::Center { s },
+            });
+            return None;
+        };
+        let mut contacts = [center; 2];
+        for (side, contact) in contacts.iter_mut().enumerate() {
+            let Some(found) = self.contact(side, center) else {
+                self.fail(FitFailure::Contact { side, s });
+                return None;
+            };
+            *contact = found;
+        }
+        let [first, second] = contacts;
         let a = first.vector_from(center);
         let b = second.vector_from(center);
         let cosine = (a.dot(b) / (self.radius * self.radius)).clamp(-1.0, 1.0);
         let angle = cosine.acos();
         if std::f64::consts::PI - angle < MIN_HALF_TURN_GAP {
+            self.fail(FitFailure::HalfTurn { s });
             return None;
         }
         let middle = Point3::new(
@@ -1974,5 +2066,39 @@ mod tests {
             );
             assert!((tangent.y - 1.0).abs() < 1.0e-9, "{side}: {tangent:?}");
         }
+    }
+
+    #[test]
+    fn a_ball_between_parallel_supports_names_the_centre_it_cannot_solve() {
+        // A unit ball rolling along y cannot touch both z = 0 and z = 5.
+        let floor = plane(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        );
+        let ceiling = plane(
+            Point3::new(0.0, 0.0, 5.0),
+            Vector3::new(0.0, 0.0, -1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        );
+        let spine = line(Point3::new(1.0, 0.0, 1.0), Vector3::new(0.0, 1.0, 0.0));
+        let vertices = [Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 2.0, 0.0)];
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::service();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+        let failure = super::fit(
+            &ctx,
+            &spine,
+            [Side::Surface(&floor), Side::Surface(&ceiling)],
+            1.0,
+            &vertices,
+        )
+        .unwrap()
+        .map(|_| ())
+        .unwrap_err();
+        assert!(
+            matches!(failure, super::FitFailure::Center { .. }),
+            "{failure:?}"
+        );
     }
 }
