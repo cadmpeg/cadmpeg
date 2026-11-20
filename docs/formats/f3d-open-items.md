@@ -599,6 +599,14 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** The scope-order pairing must be confirmed or replaced for face groups before a Fillet with several selection sets and face selections transfers its radii as authored.
 
+### DR-891. Fixed Chamfer face groups
+
+**Question.** Does the fixed specification of a Chamfer scope apply to each role-`0x0000001000000000` face group beside the scope's one role-`0x0000000800000000` edge group, and in a two-distance scope, which distance applies to each side of a chamfer face that the transition inserts along a face-group edge?
+
+**Known.** Groups and the fixed scalars store no assignment cross-reference. The decoder applies the fixed specification of the edge-role group to each face-role group of the scope, and charges `feature.chamfer-fixed-face-group-assumed` for this assumption. In a user design, a fixed two-distance Chamfer with distances 0.5 mm and 0.5 mm, one edge-role group, and one face-role group puts every chamfer face along a face-group edge 0.500 mm from that edge, which is the stored setback. Equal distances give the same face for both orientations.
+
+**Need.** A fixed two-distance Chamfer with unequal distances, one edge-role group, and one face-role group shows which distance applies to each side of a face-group chamfer face.
+
 ### DR-101. Fixed typed occurrence path discriminator
 
 **Question.** What binding does the path discriminator of a fixed typed local component occurrence select?
