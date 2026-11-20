@@ -1604,3 +1604,50 @@ fn a_canvas_image_decodes_to_an_embedded_asset() {
     assert_eq!(assets[0]["media_type"], "image/png");
     assert_eq!(assets[0]["content"]["kind"], "embedded");
 }
+
+#[test]
+fn the_relation_joints_parallel_perpendicular_and_angle_have_neutral_families() {
+    let identity = json!([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0]
+    ]);
+    let snap = json!({"type": "point", "point": [0.0, 0.0, 0.0]});
+    let joint = |id: u64, kind: &str, angle: f64| {
+        json!({"id": id, "name": kind, "kind": kind,
+            "a": {"occurrence": 2, "snap": snap}, "b": {"occurrence": 3, "snap": snap},
+            "values": [], "limits": [], "flip": false, "offset": 0.0,
+            "offset_xy": [0.0, 0.0], "angle": angle})
+    };
+    let document = json!({
+        "format": "solidcraft/57", "name": "Relations", "units": "mm", "params": [],
+        "components": [{"id": 1, "name": "Leaf", "parent": 0, "identification_color_index": 0}],
+        "occurrences": [
+            {"id": 2, "component": 1, "parent": 0, "name": "A", "transform": identity, "grounded": false},
+            {"id": 3, "component": 1, "parent": 0, "name": "B", "transform": identity, "grounded": false}],
+        "assembly": {"joints": [
+            joint(1, "parallel", 0.0), joint(2, "perpendicular", 0.0), joint(3, "angle", 0.5),
+            joint(4, "point_on_plane", 0.0)]},
+        "features": []
+    });
+    let result = SolidcraftCodec
+        .decode(
+            &mut Cursor::new(serde_json::to_vec(&document).unwrap()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let model = serde_json::to_value(&result.ir().model).unwrap();
+    let joints = model["assembly_joints"].as_array().unwrap();
+    let kinds: Vec<_> = joints
+        .iter()
+        .map(|joint| joint["operands"]["value"]["kind"]["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["parallel", "perpendicular", "angle"]);
+    assert_eq!(joints[2]["operands"]["value"]["kind"]["angle"], 0.5);
+    // The tilt is the kind's, not a turn of the offset frame.
+    assert_eq!(
+        joints[2]["operands"]["value"]["offset_frames"][1][0],
+        json!([1.0, -0.0, 0.0, 0.0])
+    );
+}

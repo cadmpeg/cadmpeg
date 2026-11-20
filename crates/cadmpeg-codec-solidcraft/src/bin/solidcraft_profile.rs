@@ -31,7 +31,9 @@ const L6_GAPS: &[&str] = &[
     "SC-04: operations the neutral pattern and sweep models cannot state (a mirror that joins its copies, a path pattern whose copies turn, a sweep held by a direction or by two rails, a loft whose rails stretch it, a coil on a sketch profile)",
     "SC-05: periodic splines, fit splines with tangent handles, and the sketch pattern, slot, and arc-length relations",
 ];
-const L7_GAPS: &[&str] = &["snaps on geometry, joint links, and motion studies"];
+const L7_GAPS: &[&str] = &[
+    "SC-07: joints snapped on geometry, joints of the pin-slot, planar, point-on-plane, point-on-line, and line-on-plane kinds, joint links, and motion studies",
+];
 const L8_GAPS: &[&str] = &[
     "SC-06: the look of a whole component, the render setups, the metadata, the plugin data, the browser groups, and the canvas placement have no neutral record",
 ];

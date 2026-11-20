@@ -202,6 +202,16 @@ fn pair_kind(record: &Value) -> Option<Value> {
             "cylindrical"
         }
         "ball" => "ball",
+        "parallel" => "parallel",
+        "perpendicular" => "perpendicular",
+        "angle" => {
+            // The tilt of B's z from the mated position, about their common x.
+            set(
+                "angle",
+                record.get("angle").and_then(Value::as_f64).map(Value::from),
+            );
+            "angle"
+        }
         _ => return None,
     };
     kind.insert("kind".to_owned(), json!(name));
@@ -501,6 +511,13 @@ impl super::Walk<'_, '_> {
                 .and_then(Value::as_array)
                 .and_then(|xy| Some([xy.first()?.as_f64()?, xy.get(1)?.as_f64()?]))
                 .unwrap_or([0.0; 2]);
+            // A turn about z; the angle of an angle joint is a tilt, which
+            // the joint kind carries.
+            let turn = if joint.get("kind").and_then(Value::as_str) == Some("angle") {
+                0.0
+            } else {
+                number("angle")
+            };
             let sense = if joint.get("flip").and_then(Value::as_bool) == Some(true) {
                 "aligned"
             } else {
@@ -513,7 +530,7 @@ impl super::Walk<'_, '_> {
                     "connectors": [a, b],
                     "offset_frames": [
                         offset([lateral[0], lateral[1], 0.0], 0.0),
-                        offset([0.0, 0.0, number("offset")], number("angle")),
+                        offset([0.0, 0.0, number("offset")], turn),
                     ],
                     "frame_sense": sense,
                 }},

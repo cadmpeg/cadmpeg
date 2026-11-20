@@ -40,3 +40,10 @@
 - **Known:** A note decodes to a text annotation, a canvas image to an embedded asset, and a point cloud to a neutral cloud placed in the design. The neutral model has no record for an image placed on a plane, for a render setup, or for an application's own settings.
 - **Decision:** Each stays a retained record of its own section, with identity and digest, and survives a rewrite.
 - **Need:** A placed-image record, and a place for presentation settings, in the neutral model.
+
+## SC-07: Joints and motion without a neutral form
+
+- **Question:** Can a joint whose snap is on geometry, a joint of the pin-slot, planar, point-on-plane, point-on-line, or line-on-plane kinds, the joint links, and the motion studies be typed?
+- **Known:** A parallel, perpendicular, or angle joint maps to its neutral family; the angle of an angle joint is a tilt that the kind carries, not a turn of the offset frame. A snap on a face or a circular edge needs the frame of that geometry in the evaluated model, and the neutral plane and circle expose no accessor for it (the limit of SC-02). The neutral point-on-axis family states the origin of its first connector against the axis of its second, the reverse of SolidCraft's point-on-line, so mapping it would swap the operands. The other kinds, the gear and chain links, and the studies have no neutral family.
+- **Decision:** Each stays in the retained document, charged as `solidcraft/assembly.joint-unresolved` or `solidcraft/assembly.links-undecoded`.
+- **Need:** A public frame accessor on the neutral plane and circle carriers, and joint families for the pin-slot, planar, point-on-plane, and line-on-plane relations.

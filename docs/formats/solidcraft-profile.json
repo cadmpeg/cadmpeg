@@ -244,7 +244,7 @@
       "passed": false,
       "assertion": "components, joints and persistent names validate",
       "blockers": [
-        "snaps on geometry, joint links, and motion studies"
+        "SC-07: joints snapped on geometry, joints of the pin-slot, planar, point-on-plane, point-on-line, and line-on-plane kinds, joint links, and motion studies"
       ]
     },
     {
