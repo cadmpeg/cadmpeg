@@ -846,7 +846,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer of several result bodies must number the faces of each body. The edge and vertex tags of the earlier bodies against the start of the next run would settle it.
 
-### DR-890. Fields of a sketch-driven Extrude without an established rule
+### DR-911. Fields of a sketch-driven Extrude without an established rule
 
 **Question.** For a sketch-driven `Extrude`, what does the byte at offset 27 of the scope frame encode, and what selects the family discriminator of its parameter records, the body key of its body map, the order of its five scope references, and the 107-byte form of its `Body` owner?
 
