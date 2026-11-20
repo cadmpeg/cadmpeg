@@ -1599,6 +1599,14 @@ struct Tuple(Vec<u8>);
 """)
         self.assertEqual(len(self.findings("native_byte_array")), 7)
 
+    def test_a_tagged_reader_derive_is_checked(self) -> None:
+        self.write("crates/cadmpeg-codec-example/src/native.rs", """
+#[derive(cadmpeg_derive::DeserializeTagged)]
+#[serde(tag = "kind")]
+enum Value { Bytes { bytes: Vec<u8> } }
+""")
+        self.assertEqual(len(self.findings("native_byte_array")), 1)
+
     def test_manual_serialization_is_checked(self) -> None:
         self.write("crates/cadmpeg-codec-example/src/native.rs", """
 struct Manual { bytes: Vec<u8> }

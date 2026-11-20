@@ -162,7 +162,7 @@ fn attributes(tokens: &[TokenTree], at: &mut usize) -> Result<Vec<Vec<Item>>, St
         *at += 2;
         let meta = transparent(group.stream());
         let mut parts = meta.clone().into_iter();
-        let head = parts.next().map(ToString::to_string);
+        let head = parts.next().as_ref().map(ToString::to_string);
         match head.as_deref() {
             Some("serde") => match parts.next() {
                 Some(TokenTree::Group(arguments))
@@ -424,7 +424,12 @@ fn fields(owner: &str, variant: &str, stream: TokenStream) -> Result<Vec<Field>,
                 ));
             };
             let meta = transparent(group.stream());
-            let head = meta.clone().into_iter().next().map(ToString::to_string);
+            let head = meta
+                .clone()
+                .into_iter()
+                .next()
+                .as_ref()
+                .map(ToString::to_string);
             match head.as_deref() {
                 Some("serde") => serde.push(format!("#[{meta}]")),
                 Some("cfg_attr") if names_serde(&meta) => {

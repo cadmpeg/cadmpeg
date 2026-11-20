@@ -74,8 +74,9 @@ cadmpeg-codec-usd = { path = "crates/cadmpeg-codec-usd", version = "0.6.12" }
 # types in cadmpeg-ir and cadmpeg-core depend on that refusal, and an
 # older 1.x makes every one of them an inert deny with no compile error.
 serde = { version = "1.0.229", features = ["derive"] }
-# `unbounded_depth` adds `disable_recursion_limit`, used only to read back
-# native record text whose nesting cadmpeg-ir bounded when it wrote it.
+# `unbounded_depth` adds `disable_recursion_limit`, used to read back text
+# whose nesting a bounded writer or parser already checked: native record
+# text, and the payload text of a `DeserializeTagged` enum.
 serde_json = { version = "1", features = ["float_roundtrip", "raw_value", "unbounded_depth"] }
 serde-value = "0.7"
 schemars = "1.2"

@@ -339,7 +339,9 @@ pub const SHARED_LOSS_NAMESPACE: &str = "shared";
 /// one is `{ "kind": "namespaced", "value": { "namespace": "rhino", "code":
 /// "brep.trim-pcurve-dropped", "kind": "pcurve_omitted" } }`, carrying
 /// `strict_floor` exactly when the code pins one.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, cadmpeg_derive::DeserializeTagged)]
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, cadmpeg_derive::DeserializeTagged,
+)]
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(
     tag = "kind",
