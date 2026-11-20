@@ -8,6 +8,9 @@
 //! projection did not resolve is a feature of the family its record type
 //! establishes, or a native feature named by that type.
 //!
+//! The decoder does not read the rollback marker of a timeline, so each
+//! timeline is stated built through its last item, and one loss names it.
+//!
 //! A Base Feature is stored geometry (§5.10) where the v10 projection names
 //! its bodies and each is a body of the current geometry, whose records the
 //! state after it holds; otherwise its bodies are typed with the carrier
@@ -27,9 +30,11 @@ use cadmpeg_ir::features::{
     BodySelection, Feature as LegacyFeature, FeatureId, FeatureOperation as LegacyOperation,
 };
 use cadmpeg_ir::ids::IdentityKeyTail;
+use cadmpeg_ir::report::loss::LossNote;
 
 use super::operation::{family, kind_family, Family};
 use crate::ids::native_stream;
+use crate::loss::F3dLossCode;
 use crate::records::entity_header::{DesignFeatureTimeline, SegmentType};
 
 /// The containers and features of one document's timelines.
@@ -45,13 +50,15 @@ pub(super) struct Projected {
 /// The timeline containers and item features of every document of the
 /// decode, keyed by the document's identity prefix (empty for the root
 /// document, `xref/…/occurrence-N/` for a referenced design). `bodies` are
-/// the bodies of the current geometry.
+/// the bodies of the current geometry. Each timeline charges one loss to
+/// `losses` for its unread rollback marker.
 pub(super) fn project(
     ctx: &DecodeContext<'_>,
     features: &[LegacyFeature],
     timelines: &[DesignFeatureTimeline],
     types: &[SegmentType],
     bodies: &BTreeSet<&str>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<String, Projected>, CodecError> {
     let mut streams = BTreeMap::<&str, Vec<&DesignFeatureTimeline>>::new();
     for timeline in timelines {
@@ -98,8 +105,12 @@ pub(super) fn project(
                     .ok_or_else(|| CodecError::malformed("F3D timeline ordinal exceeds u64"))?;
             }
             ctx.charge_entities(1, "project F3D v11 timeline")?;
+            let id = container_id(timeline.id());
+            losses.push(F3dLossCode::HistoryRollbackUnread.note(format!(
+                "timeline {id}: rollback marker not read; stated built through its last item"
+            )));
             projected.containers.push(Container::Ordered {
-                id: container_id(timeline.id()),
+                id,
                 kind: OrderedKind::Timeline,
                 members,
                 folders: Vec::new(),

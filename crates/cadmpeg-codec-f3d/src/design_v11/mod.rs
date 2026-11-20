@@ -18,8 +18,8 @@
 //! lists it under. The scope holds the parameters (§5.12) and configurations
 //! (§5.11) of its document, and its current state, at the end of its first
 //! timeline, holds the bodies of the definitions it spans. The user
-//! parameters of a referenced design without a scope of its own belong to no
-//! scope here.
+//! parameters and configuration rows of a referenced design without a scope
+//! of its own belong to no scope here, and a loss names each of them.
 
 mod configurations;
 mod operation;
@@ -73,7 +73,14 @@ pub(crate) fn project(
         .iter()
         .map(|body| body.id.as_str())
         .collect::<BTreeSet<_>>();
-    let documents = timeline::project(ctx, &ir.model.features, &timelines, &types, &current)?;
+    let documents = timeline::project(
+        ctx,
+        &ir.model.features,
+        &timelines,
+        &types,
+        &current,
+        losses,
+    )?;
     let mut scopes = BTreeMap::new();
     let mut hosted = Vec::new();
     for (prefix, projected) in documents {
@@ -121,8 +128,10 @@ pub(crate) fn project(
         scoped_configurations = configurations::project(
             &ir.model.configurations,
             &definitions,
+            &hosted_prefixes,
             &features,
             &scoped_parameters,
+            losses,
         );
     }
     let mut spans = span(&ir.model.product_definitions, &scopes);

@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The parameters of a Fusion design (§5.12) with their expressions (§5.13).
 //!
-//! Each parameter the decoder reads is a parameter of the scope of the
-//! document that holds it: a model parameter owned by the feature of its
-//! timeline item, or a user parameter. Its value is the cache the decoder
+//! A parameter of the design is a parameter of the scope of the document
+//! that holds it: a model parameter owned by the feature of a timeline item,
+//! or a user parameter. A model parameter whose owner is unresolved or is a
+//! feature with no timeline item, a parameter with a blank name, and a
+//! parameter of a document with no scope of its own stay v10 parameters, and
+//! one loss per class names them. Its value is the cache the decoder
 //! read, in canonical units. An expression that is one number with a unit,
 //! or a bare number of a dimensionless parameter, is a `Neutral` literal in
 //! the unit the text states, and a name of one parameter alone is a `Neutral`
@@ -49,10 +52,10 @@ const UNRESOLVED_OWNER: &str = "owner_record_index";
 /// `features` holds the ids of the scopes' features. A parameter owned by a
 /// document's parameter scope, the root's or a referenced design's, is a user
 /// parameter of that document's scope. A model parameter whose owner is no
-/// such feature has no owner the scope states, so it is no parameter here.
-/// A document in `hosted`, or one `scopes` does not key, has no scope of its
-/// own, so its user parameters stay v10 parameters and one loss in `losses`
-/// names each of them.
+/// such feature, or is unresolved, has no owner the scope states. A document
+/// in `hosted`, or one `scopes` does not key, has no scope of its own for its
+/// user parameters. These parameters, and those with a blank name, stay v10
+/// parameters, and one loss per class in `losses` names them.
 pub(super) fn project(
     legacy: &[LegacyParameter],
     scopes: &BTreeMap<String, ProductDefinitionId>,
@@ -73,38 +76,75 @@ pub(super) fn project(
                 .zip(referenced_document_parameters.as_deref())
                 .is_some_and(|(path, local)| path.ends_with(local))
     };
+    let mut outside = Vec::new();
+    let mut unresolved = Vec::new();
     let mut unscoped = Vec::new();
+    let mut blank = Vec::new();
     let scoped = legacy
         .iter()
         .filter_map(|parameter| {
-            let stream = parameter.native_ref.as_deref().and_then(native_stream)?;
+            let id = parameter.id.as_str();
+            let Some(stream) = parameter.native_ref.as_deref().and_then(native_stream) else {
+                unscoped.push(id);
+                return None;
+            };
             let prefix = document_prefix(stream);
             let owner = match &parameter.owner {
                 Some(owner) if is_document_parameters(owner) => None,
                 Some(owner) if features.contains(owner.as_str()) => Some(owner),
-                Some(_) => return None,
-                None if parameter.properties.contains_key(UNRESOLVED_OWNER) => return None,
+                Some(_) => {
+                    outside.push(id);
+                    return None;
+                }
+                None if parameter.properties.contains_key(UNRESOLVED_OWNER) => {
+                    unresolved.push(id);
+                    return None;
+                }
                 None => None,
             };
             let scope = match scopes.get(prefix) {
                 Some(scope) if owner.is_some() || !hosted.contains(prefix) => scope,
                 Some(_) | None => {
-                    if owner.is_none() {
-                        unscoped.push(parameter.id.as_str());
-                    }
+                    unscoped.push(id);
                     return None;
                 }
             };
-            let name = NonBlankString::new(parameter.name.clone())?;
+            let Some(name) = NonBlankString::new(parameter.name.clone()) else {
+                blank.push(id);
+                return None;
+            };
             Some((parameter, scope, owner, name))
         })
         .collect::<Vec<_>>();
-    if !unscoped.is_empty() {
-        losses.push(F3dLossCode::ParameterReferencedDesignUnscoped.note(format!(
-            "{} user parameter(s) of documents with no design scope of their own stay v10 parameters: {}",
-            unscoped.len(),
-            unscoped.join(" ")
-        )));
+    for (code, ids, what) in [
+        (
+            F3dLossCode::ParameterOwnerOutsideTimeline,
+            outside,
+            "model parameter(s) whose owner is a feature with no timeline item",
+        ),
+        (
+            F3dLossCode::ParameterOwnerUnresolvedOmitted,
+            unresolved,
+            "model parameter(s) whose owner is unresolved",
+        ),
+        (
+            F3dLossCode::ParameterReferencedDesignUnscoped,
+            unscoped,
+            "parameter(s) of documents with no design scope of their own",
+        ),
+        (
+            F3dLossCode::ParameterNameBlank,
+            blank,
+            "parameter(s) with a blank name",
+        ),
+    ] {
+        if !ids.is_empty() {
+            losses.push(code.note(format!(
+                "{} {what} stay v10 parameters, which the design omits: {}",
+                ids.len(),
+                ids.join(" ")
+            )));
+        }
     }
     let names = scoped
         .iter()

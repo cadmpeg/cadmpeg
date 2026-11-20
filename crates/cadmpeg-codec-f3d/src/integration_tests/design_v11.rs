@@ -111,6 +111,20 @@ fn a_timeline_is_one_ordered_container_of_the_root_scope() {
     };
     assert_eq!(*kind, OrderedKind::Timeline);
     assert_eq!(*rollback, Rollback::End);
+    let rollback_losses = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::F3dLossCode::HistoryRollbackUnread.kind())
+        .collect::<Vec<_>>();
+    let [loss] = rollback_losses.as_slice() else {
+        panic!("one rollback loss: {rollback_losses:#?}")
+    };
+    assert!(
+        loss.message.contains(container.id().as_str()),
+        "{}",
+        loss.message
+    );
     let position = ir
         .model
         .features

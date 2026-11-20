@@ -114,8 +114,16 @@ fn each_item_of_a_listing_timeline_is_one_feature_in_item_order() {
     ];
     let timelines = [timeline(STREAM, 1, &[]), timeline(STREAM, 0, &[10, 20, 30])];
     let types = [record_type(GROUND, vec![30])];
+    let mut losses = Vec::new();
     let documents = crate::test_support::with_decode_context(|ctx| {
-        super::timeline::project(ctx, &features, &timelines, &types, &BTreeSet::new())
+        super::timeline::project(
+            ctx,
+            &features,
+            &timelines,
+            &types,
+            &BTreeSet::new(),
+            &mut losses,
+        )
     })
     .unwrap();
     assert_eq!(documents.keys().collect::<Vec<_>>(), [""]);
@@ -134,6 +142,19 @@ fn each_item_of_a_listing_timeline_is_one_feature_in_item_order() {
     assert_eq!(*kind, OrderedKind::Timeline);
     assert!(folders.is_empty());
     assert_eq!(*rollback, Rollback::End);
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}")
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::HistoryRollbackUnread.kind()
+    );
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Warning);
+    assert!(
+        loss.message.contains(container.id().as_str()),
+        "{}",
+        loss.message
+    );
     let ids = projected
         .features
         .iter()
@@ -170,11 +191,20 @@ fn each_item_of_a_listing_timeline_is_one_feature_in_item_order() {
 
 #[test]
 fn a_stream_whose_timelines_list_no_item_states_no_container() {
+    let mut losses = Vec::new();
     let documents = crate::test_support::with_decode_context(|ctx| {
-        super::timeline::project(ctx, &[], &[timeline(STREAM, 0, &[])], &[], &BTreeSet::new())
+        super::timeline::project(
+            ctx,
+            &[],
+            &[timeline(STREAM, 0, &[])],
+            &[],
+            &BTreeSet::new(),
+            &mut losses,
+        )
     })
     .unwrap();
     assert!(documents.is_empty());
+    assert!(losses.is_empty(), "{losses:?}");
 }
 
 #[test]
@@ -186,6 +216,7 @@ fn an_item_of_an_unregistered_type_is_a_native_timeline_item() {
             &[timeline(STREAM, 0, &[7])],
             &[],
             &BTreeSet::new(),
+            &mut Vec::new(),
         )
     })
     .unwrap();
@@ -337,7 +368,7 @@ fn a_base_feature_whose_bodies_are_current_is_stored_geometry() {
         let current = current.iter().copied().collect::<BTreeSet<_>>();
         let timelines = [timeline(STREAM, 0, &[10])];
         crate::test_support::with_decode_context(|ctx| {
-            super::timeline::project(ctx, &[feature], &timelines, &[], &current)
+            super::timeline::project(ctx, &[feature], &timelines, &[], &current, &mut Vec::new())
         })
         .unwrap()
         .remove("")
@@ -521,7 +552,27 @@ fn parameters_state_literals_and_source_text_in_their_scope() {
     let mut losses = Vec::new();
     let projected =
         super::parameters::project(&legacy, &scopes, &BTreeSet::new(), &features, &mut losses);
-    assert!(losses.is_empty(), "{losses:?}");
+    let [outside, unresolved] = losses.as_slice() else {
+        panic!("two losses: {losses:?}")
+    };
+    assert_eq!(
+        outside.code,
+        crate::loss::F3dLossCode::ParameterOwnerOutsideTimeline.kind()
+    );
+    assert!(
+        outside.message.ends_with(legacy[8].id.as_str()),
+        "{}",
+        outside.message
+    );
+    assert_eq!(
+        unresolved.code,
+        crate::loss::F3dLossCode::ParameterOwnerUnresolvedOmitted.kind()
+    );
+    assert!(
+        unresolved.message.ends_with(legacy[6].id.as_str()),
+        "{}",
+        unresolved.message
+    );
     let by_name = projected
         .iter()
         .map(|parameter| (parameter.name.as_ref().unwrap().as_str(), parameter))
@@ -695,6 +746,63 @@ fn a_hosted_referenced_designs_user_parameters_stay_off_the_scope_that_hosts_it(
 }
 
 #[test]
+fn each_class_of_parameter_the_design_omits_charges_one_loss_naming_them() {
+    use crate::loss::F3dLossCode;
+    const OWNER: &str = "f3d:model:feature#extrude:20";
+    const OUTSIDE: &str = "f3d:model:feature#unlisted:9";
+    let mut blank = parameter("blank", None, "1 mm", None, &[], &[]);
+    blank.name = "  ".to_owned();
+    let mut loose = parameter("loose", None, "1 mm", None, &[], &[]);
+    loose.native_ref = None;
+    let legacy = [
+        parameter("kept", Some(OWNER), "1 mm", None, &[], &[]),
+        parameter("first", Some(OUTSIDE), "1 mm", None, &[], &[]),
+        parameter("second", Some(OUTSIDE), "1 mm", None, &[], &[]),
+        parameter(
+            "unowned",
+            None,
+            "1 mm",
+            None,
+            &[],
+            &[("owner_record_index", "77")],
+        ),
+        loose,
+        blank,
+    ];
+    let scopes = BTreeMap::from([(String::new(), crate::tree::file_root_id())]);
+    let mut losses = Vec::new();
+    let projected = super::parameters::project(
+        &legacy,
+        &scopes,
+        &BTreeSet::new(),
+        &BTreeSet::from([OWNER]),
+        &mut losses,
+    );
+    let [kept] = projected.as_slice() else {
+        panic!("one parameter: {projected:?}")
+    };
+    assert_eq!(kept.id, legacy[0].id);
+    let expected = [
+        (F3dLossCode::ParameterOwnerOutsideTimeline, &legacy[1..3]),
+        (F3dLossCode::ParameterOwnerUnresolvedOmitted, &legacy[3..4]),
+        (
+            F3dLossCode::ParameterReferencedDesignUnscoped,
+            &legacy[4..5],
+        ),
+        (F3dLossCode::ParameterNameBlank, &legacy[5..6]),
+    ];
+    assert_eq!(losses.len(), expected.len(), "{losses:?}");
+    for (loss, (code, omitted)) in losses.iter().zip(expected) {
+        assert_eq!(loss.code, code.kind());
+        let words = loss.message.split_whitespace().collect::<Vec<_>>();
+        assert_eq!(words[0], omitted.len().to_string(), "{}", loss.message);
+        for parameter in omitted {
+            assert!(words.contains(&parameter.id.as_str()), "{}", loss.message);
+        }
+    }
+}
+
+#[test]
 fn the_active_row_is_the_base_and_other_rows_state_their_cells() {
     use cadmpeg_ir::features::{
         ConfigurationEvaluation, ConfigurationFeatureState, ConfigurationId,
@@ -743,12 +851,16 @@ fn the_active_row_is_the_base_and_other_rows_state_their_cells() {
         )]),
         native_ref: Some("f3d:configuration:entry#FusionAssetName[Active]/table".to_owned()),
     };
+    let mut losses = Vec::new();
     let projected = super::configurations::project(
         &[row("wide", true), row("narrow", false)],
         &scopes,
+        &BTreeSet::new(),
         &features,
         &parameters,
+        &mut losses,
     );
+    assert!(losses.is_empty(), "{losses:?}");
     assert_eq!(
         projected.active[&root].as_str(),
         "f3d:configuration:variant#wide"
@@ -777,4 +889,134 @@ fn the_active_row_is_the_base_and_other_rows_state_their_cells() {
         narrow.overrides.features[&FeatureId::mint(OWNER).unwrap()].suppressed,
         Some(true)
     );
+}
+
+#[test]
+fn rows_and_cells_the_design_omits_are_named_by_one_loss_per_class() {
+    use crate::loss::F3dLossCode;
+    use cadmpeg_ir::features::{
+        ConfigurationEvaluation, ConfigurationFeatureState, ConfigurationId,
+        DesignConfiguration as LegacyConfiguration, ParameterId,
+    };
+    const OWNER: &str = "f3d:model:feature#extrude:20";
+    const UNLISTED: &str = "f3d:model:feature#unlisted:9";
+    const HOSTED: &str = "xref/role-1/reference-0/occurrence-0/";
+    const UNKEYED: &str = "xref/role-1/reference-1/occurrence-0/";
+    const INACTIVE: &str = "xref/role-1/reference-2/occurrence-0/";
+    let root = crate::tree::file_root_id();
+    let inactive_scope =
+        ProductDefinitionId::mint(format!("f3d:{INACTIVE}archive:product-definition#0")).unwrap();
+    let scopes = BTreeMap::from([
+        (String::new(), root.clone()),
+        (HOSTED.to_owned(), root.clone()),
+        (INACTIVE.to_owned(), inactive_scope),
+    ]);
+    let hosted = BTreeSet::from([HOSTED.to_owned()]);
+    let features = BTreeSet::from([OWNER]);
+    let parameters = super::parameters::project(
+        &[parameter("d1", Some(OWNER), "10 mm", None, &[], &[])],
+        &scopes,
+        &hosted,
+        &features,
+        &mut Vec::new(),
+    );
+    let d1 = parameters[0].id.clone();
+    let ghost = ParameterId::mint("f3d:model:parameter#ghost").unwrap();
+    let suppressed = |id: &str| {
+        (
+            FeatureId::mint(id).unwrap(),
+            ConfigurationFeatureState {
+                evaluation: ConfigurationEvaluation::Suppressed {},
+                dependencies: DistinctMembers::default(),
+                definition: LegacyDefinition::Operation(LegacyOperation::Unresolved {
+                    family: UnresolvedFamily::Extrude,
+                }),
+            },
+        )
+    };
+    let row = |prefix: &str, key: &str, active: bool| LegacyConfiguration {
+        id: ConfigurationId::mint(format!("f3d:{prefix}configuration:variant#{key}")).unwrap(),
+        ordinal: 0,
+        active,
+        source_index: None,
+        name: Some(key.to_owned()),
+        material: None,
+        properties: BTreeMap::new(),
+        parameter_overrides: BTreeMap::from([
+            (d1.clone(), "12 mm".to_owned()),
+            (ghost.clone(), "3 mm".to_owned()),
+        ]),
+        bodies: None,
+        parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::from([suppressed(OWNER), suppressed(UNLISTED)]),
+        native_ref: Some(format!("f3d:{prefix}configuration:entry#table")),
+    };
+    let legacy = [
+        row("", "base", true),
+        row("", "variant", false),
+        row(HOSTED, "hosted_base", true),
+        row(HOSTED, "hosted_variant", false),
+        row(UNKEYED, "unkeyed", true),
+        row(INACTIVE, "orphan", false),
+    ];
+    let mut losses = Vec::new();
+    let projected = super::configurations::project(
+        &legacy,
+        &scopes,
+        &hosted,
+        &features,
+        &parameters,
+        &mut losses,
+    );
+    assert_eq!(
+        projected.active,
+        BTreeMap::from([(root, legacy[0].id.clone())])
+    );
+    let [base, variant] = projected.records.as_slice() else {
+        panic!("two configurations: {:?}", projected.records)
+    };
+    assert_eq!((&base.id, &variant.id), (&legacy[0].id, &legacy[1].id));
+    assert_eq!(
+        variant.overrides.parameters.keys().collect::<Vec<_>>(),
+        [&d1]
+    );
+    assert_eq!(
+        variant.overrides.features.keys().collect::<Vec<_>>(),
+        [&FeatureId::mint(OWNER).unwrap()]
+    );
+    let [unscoped, inactive, unstated] = losses.as_slice() else {
+        panic!("three losses: {losses:?}")
+    };
+    assert_eq!(
+        unscoped.code,
+        F3dLossCode::ConfigurationReferencedDesignUnscoped.kind()
+    );
+    let named = unscoped.message.split_whitespace().collect::<Vec<_>>();
+    assert_eq!(named[0], "3", "{}", unscoped.message);
+    for row in &legacy[2..5] {
+        assert!(named.contains(&row.id.as_str()), "{}", unscoped.message);
+    }
+    assert_eq!(
+        inactive.code,
+        F3dLossCode::ConfigurationScopeWithoutActiveRow.kind()
+    );
+    assert!(
+        inactive.message.ends_with(legacy[5].id.as_str()),
+        "{}",
+        inactive.message
+    );
+    assert_eq!(
+        unstated.code,
+        F3dLossCode::ConfigurationOverrideUnstated.kind()
+    );
+    assert!(unstated.message.starts_with("2 "), "{}", unstated.message);
+    for cell in [ghost.as_str(), UNLISTED] {
+        assert!(
+            unstated
+                .message
+                .contains(&format!("{cell} in {}", legacy[1].id)),
+            "{}",
+            unstated.message
+        );
+    }
 }

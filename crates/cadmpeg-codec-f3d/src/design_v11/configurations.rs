@@ -8,7 +8,9 @@
 //! parameter its cells set, with the value the cell caches, and the
 //! suppression of each feature its cells toggle. A scope whose active row
 //! does not resolve states no configurations, since a scope with
-//! configurations names its active one (part 10).
+//! configurations names its active one (part 10). The rows of a document
+//! with no scope of its own state no configuration. A loss names each row
+//! and each cell the design omits.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -21,8 +23,11 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::ids::ProductDefinitionId;
 
+use cadmpeg_ir::report::loss::LossNote;
+
 use super::parameters::{cache, expression};
 use super::timeline::document_prefix;
+use crate::loss::F3dLossCode;
 
 /// The configurations of the scopes keyed by document prefix in `scopes`,
 /// and each scope's active configuration.
@@ -31,28 +36,47 @@ pub(super) struct Configurations {
     pub(super) active: BTreeMap<ProductDefinitionId, ConfigurationId>,
 }
 
-/// `features` holds the ids of the scopes' features and `parameters` their
-/// parameters.
+/// A document in `hosted`, or one `scopes` does not key, has no scope of its
+/// own. `features` holds the ids of the scopes' features and `parameters`
+/// their parameters. Each class of row or cell the design omits charges one
+/// loss to `losses`.
 pub(super) fn project(
     legacy: &[LegacyConfiguration],
     scopes: &BTreeMap<String, ProductDefinitionId>,
+    hosted: &BTreeSet<String>,
     features: &BTreeSet<&str>,
     parameters: &[DesignParameter],
+    losses: &mut Vec<LossNote>,
 ) -> Configurations {
     let mut out = Configurations {
         records: Vec::new(),
         active: BTreeMap::new(),
     };
+    let mut unscoped = Vec::new();
+    let mut placed = Vec::new();
     for row in legacy {
-        let home = row.native_ref.as_deref().unwrap_or(row.id.as_str());
-        let Some(scope) = scopes.get(document_prefix(home)) else {
+        let prefix = document_prefix(row.native_ref.as_deref().unwrap_or(row.id.as_str()));
+        match scopes.get(prefix) {
+            Some(scope) if !hosted.contains(prefix) => {
+                if row.active {
+                    out.active.insert(scope.clone(), row.id.clone());
+                }
+                placed.push((row, scope));
+            }
+            Some(_) | None => unscoped.push(row.id.as_str()),
+        }
+    }
+    let mut inactive = Vec::new();
+    let mut unstated = Vec::new();
+    for (row, scope) in placed {
+        if !out.active.contains_key(scope) {
+            inactive.push(row.id.as_str());
             continue;
-        };
+        }
         let overrides = if row.active {
-            out.active.insert(scope.clone(), row.id.clone());
             Overrides::default()
         } else {
-            overrides(row, scope, features, parameters)
+            overrides(row, scope, features, parameters, &mut unstated)
         };
         out.records.push(DesignConfiguration {
             id: row.id.clone(),
@@ -66,16 +90,41 @@ pub(super) fn project(
             native_ref: row.native_ref.clone(),
         });
     }
-    out.records
-        .retain(|configuration| out.active.contains_key(&configuration.scope));
+    for (code, count, what, named) in [
+        (
+            F3dLossCode::ConfigurationReferencedDesignUnscoped,
+            unscoped.len(),
+            "configuration row(s) of documents with no design scope of their own stay v10 configurations",
+            unscoped.join(" "),
+        ),
+        (
+            F3dLossCode::ConfigurationScopeWithoutActiveRow,
+            inactive.len(),
+            "configuration row(s) of scopes whose active row does not resolve stay v10 configurations",
+            inactive.join(" "),
+        ),
+        (
+            F3dLossCode::ConfigurationOverrideUnstated,
+            unstated.len(),
+            "configuration cell(s) set a parameter or feature the design does not state, so their rows omit them",
+            unstated.join("; "),
+        ),
+    ] {
+        if count != 0 {
+            losses.push(code.note(format!("{count} {what}: {named}")));
+        }
+    }
     out
 }
 
+/// The overrides of `row`'s cells; each cell that sets a parameter or feature
+/// the design does not state is named in `unstated`.
 fn overrides(
     row: &LegacyConfiguration,
     scope: &ProductDefinitionId,
     features: &BTreeSet<&str>,
     parameters: &[DesignParameter],
+    unstated: &mut Vec<String>,
 ) -> Overrides {
     let scoped = parameters
         .iter()
@@ -89,6 +138,7 @@ fn overrides(
     let mut overrides = Overrides::default();
     for (id, text) in &row.parameter_overrides {
         let Some(parameter) = scoped.get(id) else {
+            unstated.push(format!("{id} in {}", row.id));
             continue;
         };
         overrides.parameters.insert(
@@ -111,6 +161,8 @@ fn overrides(
                     definition: None,
                 },
             );
+        } else {
+            unstated.push(format!("{id} in {}", row.id));
         }
     }
     overrides
