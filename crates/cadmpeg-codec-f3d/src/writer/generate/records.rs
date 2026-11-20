@@ -422,7 +422,11 @@ pub(super) fn encode_document_parameters(
         {
             return Err(CodecError::InvalidInput(format!(
                 "F3D Design parameter {} has discriminator {:?}, expected {expected_discriminator} for {}",
-                parameter.id, parameter.family_discriminator().map(|value| value.value.code()), parameter.source_kind()
+                parameter.id,
+                parameter
+                    .family_discriminator()
+                    .map(|value| value.value.code()),
+                parameter.source_kind()
             )));
         }
         let crate::records::parameters::DesignParameterSource::User {
@@ -686,7 +690,7 @@ fn encode_sketch_curve_identity(
             return Err(CodecError::NotImplemented(format!(
                 "source-less sketch curve {} has no writable geometry",
                 curve.id
-            )))
+            )));
         }
     }
     write_reference(&mut record, owner_reference);

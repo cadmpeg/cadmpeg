@@ -222,7 +222,7 @@ fn native_procedural_surface_definition(
             return Err(CodecError::malformed(format_args!(
                 "surface {} has multiple procedural constructions",
                 solved_surface.id
-            )))
+            )));
         }
     };
     match procedural.definition() {
@@ -878,7 +878,7 @@ fn native_procedural_surface_definition(
                     return Err(CodecError::NotImplemented(format!(
                         "source-less F3D sweep surface {} lacks its native construction graph",
                         procedural.id
-                    )))
+                    )));
                 }
             }
         }
@@ -1330,61 +1330,61 @@ fn native_procedural_surface_definition(
             return Err(CodecError::malformed(format_args!(
                 "source-less F3D helix surface {} must use its cacheless native carrier",
                 procedural.id
-            )))
+            )));
         }
         ProceduralSurfaceDefinition::RollingBallJet(_) => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
-            )))
+            )));
         }
         ProceduralSurfaceDefinition::LinearSweep { .. } => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
-            )))
+            )));
         }
         ProceduralSurfaceDefinition::AxisRevolution { .. } => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
-            )))
+            )));
         }
         ProceduralSurfaceDefinition::ParallelOffset(_) => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
-            )))
+            )));
         }
         ProceduralSurfaceDefinition::DegenerateTorus { .. } => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
-            )))
+            )));
         }
         ProceduralSurfaceDefinition::CurveBounded { .. } => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
-            )))
+            )));
         }
         ProceduralSurfaceDefinition::Subset(_) => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
-            )))
+            )));
         }
         ProceduralSurfaceDefinition::Replica { .. } => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
-            )))
+            )));
         }
         ProceduralSurfaceDefinition::Unknown { .. } => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
-            )))
+            )));
         }
     }
     Ok(true)
@@ -2042,7 +2042,7 @@ fn native_cacheless_procedural_surface_definition(
             return Err(CodecError::malformed(format_args!(
                 "surface {} has multiple procedural constructions",
                 surface.id
-            )))
+            )));
         }
     };
     if let ProceduralSurfaceDefinition::Extrusion(definition_payload) = procedural.definition() {
@@ -4534,7 +4534,7 @@ fn encode_native_rolling_ball(
         BlendRadiusLaw::Law { .. } => {
             return Err(CodecError::NotImplemented(
                 "source-less rb_blend_spl_sur explicit radius law is not defined".into(),
-            ))
+            ));
         }
     };
     native_f64(bytes, start / LEN_TO_MM);
@@ -5051,7 +5051,7 @@ pub(crate) fn native_procedural_curve(
         _ => {
             return Err(CodecError::malformed(format_args!(
                 "curve {curve_id} has multiple procedural constructions"
-            )))
+            )));
         }
     };
     if matches!(
@@ -5786,13 +5786,13 @@ pub(crate) fn native_procedural_curve(
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D offset curve {} lacks a defined native offset-law grammar",
                     procedural.id
-                )))
+                )));
             }
             cadmpeg_ir::geometry::ProceduralCurveDefinition::BlendSpine { .. } => {
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D blend-spine curve {} lacks its native blend construction",
                     procedural.id
-                )))
+                )));
             }
             cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact { .. }
             | cadmpeg_ir::geometry::ProceduralCurveDefinition::Law { .. }
@@ -5814,7 +5814,7 @@ pub(crate) fn native_procedural_curve(
                 return Err(CodecError::NotImplemented(format!(
                     "source-less F3D procedural curve {} has no native helix grammar",
                     procedural.id
-                )))
+                )));
             }
         };
     native_curve_base(bytes, "intcurve")?;
@@ -5861,7 +5861,7 @@ pub(super) fn native_cacheless_procedural_curve(
         _ => {
             return Err(CodecError::malformed(format_args!(
                 "curve {curve_id} has multiple procedural constructions"
-            )))
+            )));
         }
     };
     if procedural.cache_fit_tolerance().is_some() {
