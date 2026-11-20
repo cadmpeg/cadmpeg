@@ -1465,29 +1465,71 @@ fn unique_round_edge_origin_candidate(
     }
 }
 
-fn round_edge_envelopes_for_plane(
-    round_edges: &[&CurveTopologyRow],
-    plane_id: u32,
-    round_cylinder_ids: &BTreeSet<u32>,
-    parameters: &crate::decode::uniqueness::UniqueById<crate::surface::SurfaceParameterRecord>,
-) -> Vec<crate::surface::Type24RoundEdgeEnvelope> {
-    let mut envelopes = Vec::new();
-    for topology in round_edges {
-        let envelope = (|| {
-            let cylinder_id = topology
-                .bounded_face_ids()
-                .find(|face_id| *face_id != plane_id && round_cylinder_ids.contains(face_id))?;
-            if !topology.bounds_face(plane_id) {
-                return None;
-            }
-            let record = parameters.get(cylinder_id)?;
-            record.type24_round_edge_envelope()
-        })();
-        if let Some(envelope) = envelope {
-            envelopes.push(envelope);
+/// The uniquely identified topology rows that bound a uniquely identified
+/// round-feature cylinder, in row order.
+struct RoundEdges<'a> {
+    cylinder_ids: BTreeSet<u32>,
+    topology: Vec<&'a CurveTopologyRow>,
+}
+
+impl<'a> RoundEdges<'a> {
+    fn new(
+        scan: &'a ContainerScan<'_>,
+        schema_classes: &crate::decode::sketch_transfer::recipe::FeatureSchemaClasses,
+    ) -> Self {
+        let cylinder_ids =
+            crate::identity::uniquely_identified_rows(&scan.surfaces.rows, |row| row.id)
+                .into_iter()
+                .filter(|row| {
+                    row.kind == crate::surface::SurfaceKind::Cylinder
+                        && schema_classes.get(row.feature_id) == Some(SchemaClass::Round)
+                })
+                .map(|row| row.id)
+                .collect::<BTreeSet<_>>();
+        let topology =
+            crate::identity::uniquely_identified_rows(&scan.curves.topology_rows, |row| row.id)
+                .into_iter()
+                .filter(|topology| {
+                    topology
+                        .bounded_face_ids()
+                        .any(|face_id| cylinder_ids.contains(&face_id))
+                })
+                .collect();
+        Self {
+            cylinder_ids,
+            topology,
         }
     }
-    envelopes
+
+    fn envelopes_for_plane(
+        &self,
+        plane_id: u32,
+        parameters: &crate::decode::uniqueness::UniqueById<crate::surface::SurfaceParameterRecord>,
+    ) -> Vec<crate::surface::Type24RoundEdgeEnvelope> {
+        let mut envelopes = Vec::new();
+        for topology in &self.topology {
+            if let Some(envelope) = self.envelope(topology, plane_id, parameters) {
+                envelopes.push(envelope);
+            }
+        }
+        envelopes
+    }
+
+    fn envelope(
+        &self,
+        topology: &CurveTopologyRow,
+        plane_id: u32,
+        parameters: &crate::decode::uniqueness::UniqueById<crate::surface::SurfaceParameterRecord>,
+    ) -> Option<crate::surface::Type24RoundEdgeEnvelope> {
+        let cylinder_id = topology
+            .bounded_face_ids()
+            .find(|face_id| *face_id != plane_id && self.cylinder_ids.contains(face_id))?;
+        if !topology.bounds_face(plane_id) {
+            return None;
+        }
+        let record = parameters.get(cylinder_id)?;
+        record.type24_round_edge_envelope()
+    }
 }
 
 fn select_round_edge_origin_branches(
@@ -1499,24 +1541,7 @@ fn select_round_edge_origin_branches(
         crate::decode::uniqueness::UniqueById::new(&scan.surfaces.parameters, |record| {
             record.surface_id
         });
-    let round_cylinder_ids =
-        crate::identity::uniquely_identified_rows(&scan.surfaces.rows, |row| row.id)
-            .into_iter()
-            .filter(|row| {
-                row.kind == crate::surface::SurfaceKind::Cylinder
-                    && schema_classes.get(row.feature_id) == Some(SchemaClass::Round)
-            })
-            .map(|row| row.id)
-            .collect::<BTreeSet<_>>();
-    let round_edges =
-        crate::identity::uniquely_identified_rows(&scan.curves.topology_rows, |row| row.id)
-            .into_iter()
-            .filter(|topology| {
-                topology
-                    .bounded_face_ids()
-                    .any(|face_id| round_cylinder_ids.contains(&face_id))
-            })
-            .collect::<Vec<_>>();
+    let round_edges = RoundEdges::new(scan, &schema_classes);
     for frame in &scan.planes.local_systems {
         let decoded_frame = frame.frame();
         if frame.classification != crate::surface::LocalSystemClassification::Simple {
@@ -1544,12 +1569,7 @@ fn select_round_edge_origin_branches(
         if existing.len() != 1 || !plane_candidates_equivalent(existing[0], base) {
             continue;
         }
-        let envelopes = round_edge_envelopes_for_plane(
-            &round_edges,
-            frame.surface_id,
-            &round_cylinder_ids,
-            &parameters,
-        );
+        let envelopes = round_edges.envelopes_for_plane(frame.surface_id, &parameters);
         let (options, count) = stored_parameter_origin_sign_candidates(base);
         let Some(selected) = unique_round_edge_origin_candidate(&options[..count], &envelopes)
         else {
@@ -1869,7 +1889,8 @@ fn memoized_plane_candidates<'s>(
 pub(in crate::decode) fn placed_planes(
     scan: &ContainerScan,
 ) -> Result<BTreeMap<u32, PlaneEquation>, cadmpeg_core::CodecError> {
-    let candidates_by_plane: &BTreeMap<_, _> = &memoized_plane_candidates(scan)?;
+    let memo = memoized_plane_candidates(scan)?;
+    let candidates_by_plane: &BTreeMap<_, _> = &memo;
     let mut placed = BTreeMap::new();
     for (id, candidates) in candidates_by_plane {
         if let Some(plane) =
@@ -1891,7 +1912,8 @@ pub(in crate::decode) struct PlacedPlaneSurface {
 pub(in crate::decode) fn placed_plane_surfaces(
     scan: &ContainerScan,
 ) -> Result<BTreeMap<u32, PlacedPlaneSurface>, cadmpeg_core::CodecError> {
-    let candidates_by_plane: &BTreeMap<_, _> = &memoized_plane_candidates(scan)?;
+    let memo = memoized_plane_candidates(scan)?;
+    let candidates_by_plane: &BTreeMap<_, _> = &memo;
     let mut placed = BTreeMap::new();
     for (id, candidates) in candidates_by_plane {
         if let Some(surface) = agreed_plane_surface(candidates) {
