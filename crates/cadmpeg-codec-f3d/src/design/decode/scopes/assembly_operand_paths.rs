@@ -824,10 +824,15 @@ fn exact_assembly_operand_path(
                         }
                         position += 4;
                         if type_guid.is_some() {
-                            pair_words.push(crate::records::identity::Located {
-                                value: View::u32_le_at(bytes.get(..limit)?, position)?,
-                                offset: u64::try_from(position).ok()?,
-                            });
+                            if let Some(word) = bytes
+                                .get(..limit)
+                                .and_then(|slice| View::u32_le_at(slice, position))
+                            {
+                                pair_words.push(crate::records::identity::Located {
+                                    value: word,
+                                    offset: u64::try_from(position).ok()?,
+                                });
+                            }
                         }
                         // After its pair word, a typed path can store a list count
                         // and per list a key count and that many occurrence
