@@ -17592,6 +17592,184 @@ anchor = "a zero byte, u32 `1`, a reference to the body-presentation owner, and 
 
 
 [[record]]
+name = "sketch_extrude_profile_loop_entry"
+kind = "byte"
+section = "Records of a sketch-driven Extrude"
+anchor = "Each loop entry is 40 bytes in the layout"
+size = 40
+note = "One entry of a loop of the profile identity record `N + 3`. Offsets are relative to the start of the entry."
+
+[[record.field]]
+name = "kind"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "u32 kind `3`, the u64 sketch-curve primary identity"
+value = 3
+
+[[record.field]]
+name = "primary_identity"
+offset = 4
+type = "u64"
+source = "spec"
+anchor = "the u64 sketch-curve primary identity, the u64 secondary identity"
+
+[[record.field]]
+name = "secondary_identity"
+offset = 12
+type = "u64"
+source = "spec"
+anchor = "the u64 sketch-curve primary identity, the u64 secondary identity"
+
+[[record.field]]
+name = "traversal_flag"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "the u32 traversal flag, two u32 operands, and eight zero bytes"
+
+[[record.field]]
+name = "first_operand"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "the u32 traversal flag, two u32 operands, and eight zero bytes"
+
+[[record.field]]
+name = "second_operand"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "the u32 traversal flag, two u32 operands, and eight zero bytes"
+
+[[record.field]]
+name = "zero_run_8"
+offset = 32
+type = "bytes[8]"
+source = "spec"
+anchor = "the u32 traversal flag, two u32 operands, and eight zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+
+[[record]]
+name = "sketch_extrude_circle_curve_record"
+kind = "byte"
+section = "Records of a sketch-driven Extrude"
+anchor = "The curve record of the side-face entry of a hole circle has the layout"
+size = 81
+note = "Offsets are relative to the curve record's primary indexed header. The record ends at offset 81. The sense is `0xffffffff` for a hole circle and `1` for an exterior circle."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`"
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "one"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`"
+value = 1
+
+[[record.field]]
+name = "zero_word"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`"
+value = 0
+
+[[record.field]]
+name = "curve_count"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1`"
+value = 1
+
+[[record.field]]
+name = "entry_kind"
+offset = 33
+type = "u32"
+source = "spec"
+anchor = "it stores one entry of kind `3` with the primary identity of the circle"
+value = 3
+
+[[record.field]]
+name = "primary_identity"
+offset = 37
+type = "u64"
+source = "spec"
+anchor = "it stores one entry of kind `3` with the primary identity of the circle"
+
+[[record.field]]
+name = "secondary_identity"
+offset = 45
+type = "u64"
+source = "spec"
+anchor = "secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+value = 0
+
+[[record.field]]
+name = "sense"
+offset = 53
+type = "u32"
+source = "spec"
+anchor = "secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+
+[[record.field]]
+name = "first_operand"
+offset = 57
+type = "u32"
+source = "spec"
+anchor = "secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+value = 1
+
+[[record.field]]
+name = "second_operand"
+offset = 61
+type = "u32"
+source = "spec"
+anchor = "secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+value = 1
+
+[[record.field]]
+name = "entry_zero_run_8"
+offset = 65
+type = "bytes[8]"
+source = "spec"
+anchor = "secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "first_list_count"
+offset = 73
+type = "u32"
+source = "spec"
+anchor = "then two empty curve-identity lists, each the u32 count `0`"
+value = 0
+
+[[record.field]]
+name = "second_list_count"
+offset = 77
+type = "u32"
+source = "spec"
+anchor = "then two empty curve-identity lists, each the u32 count `0`"
+value = 0
+
+
+[[record]]
 name = "early_distance_extrude_absent_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"

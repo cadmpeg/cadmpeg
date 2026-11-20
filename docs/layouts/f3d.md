@@ -5499,6 +5499,45 @@ Offsets are relative to the `Body` owner's primary indexed header.
 | 81 | 11 | `presentation_owner_repeat` | `bytes[11]` | little | spec | a zero byte, u32 `1`, a reference to the body-presentation owner, and a reference to the component aggregate |
 | 92 | 11 | `component_aggregate` | `bytes[11]` | little | spec | a zero byte, u32 `1`, a reference to the body-presentation owner, and a reference to the component aggregate |
 
+## `sketch_extrude_profile_loop_entry`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 40 B
+
+One entry of a loop of the profile identity record `N + 3`. Offsets are relative to the start of the entry.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `kind` | `u32` | little | spec | u32 kind `3`, the u64 sketch-curve primary identity · value `3` |
+| 4 | 8 | `primary_identity` | `u64` | little | spec | the u64 sketch-curve primary identity, the u64 secondary identity |
+| 12 | 8 | `secondary_identity` | `u64` | little | spec | the u64 sketch-curve primary identity, the u64 secondary identity |
+| 20 | 4 | `traversal_flag` | `u32` | little | spec | the u32 traversal flag, two u32 operands, and eight zero bytes |
+| 24 | 4 | `first_operand` | `u32` | little | spec | the u32 traversal flag, two u32 operands, and eight zero bytes |
+| 28 | 4 | `second_operand` | `u32` | little | spec | the u32 traversal flag, two u32 operands, and eight zero bytes |
+| 32 | 8 | `zero_run_8` | `bytes[8]` | little | spec | the u32 traversal flag, two u32 operands, and eight zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+
+## `sketch_extrude_circle_curve_record`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 81 B
+
+Offsets are relative to the curve record's primary indexed header. The record ends at offset 81. The sense is `0xffffffff` for a hole circle and `1` for an exterior circle.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `one` | `u32` | little | spec | After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1` · value `1` |
+| 25 | 4 | `zero_word` | `u32` | little | spec | After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1` · value `0` |
+| 29 | 4 | `curve_count` | `u32` | little | spec | After ten zero bytes, u32 `1`, u32 `0`, and the curve count `1` · value `1` |
+| 33 | 4 | `entry_kind` | `u32` | little | spec | it stores one entry of kind `3` with the primary identity of the circle · value `3` |
+| 37 | 8 | `primary_identity` | `u64` | little | spec | it stores one entry of kind `3` with the primary identity of the circle |
+| 45 | 8 | `secondary_identity` | `u64` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `0` |
+| 53 | 4 | `sense` | `u32` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes |
+| 57 | 4 | `first_operand` | `u32` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `1` |
+| 61 | 4 | `second_operand` | `u32` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `1` |
+| 65 | 8 | `entry_zero_run_8` | `bytes[8]` | little | spec | secondary identity `0`, sense `0xffffffff`, operands `1` and `1`, and eight zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 73 | 4 | `first_list_count` | `u32` | little | spec | then two empty curve-identity lists, each the u32 count `0` · value `0` |
+| 77 | 4 | `second_list_count` | `u32` | little | spec | then two empty curve-identity lists, each the u32 count `0` · value `0` |
+
 ## `early_distance_extrude_absent_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 34 B
