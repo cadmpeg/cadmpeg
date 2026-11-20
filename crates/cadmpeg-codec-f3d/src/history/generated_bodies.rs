@@ -2,7 +2,7 @@
 //! Body selections that name the bodies of earlier features.
 
 use super::stored_bodies::ActiveBodies;
-use super::{historical_body_slot, stable_ref, FeatureBodySelectionInputs};
+use super::{FeatureBodySelectionInputs, historical_body_slot, stable_ref};
 use crate::history_records::AsmHistory;
 use crate::loss::F3dLossCode;
 use cadmpeg_ir::report::loss::LossNote;
@@ -33,7 +33,7 @@ pub(crate) fn bind_generated_body_selections(
     losses: &mut Vec<LossNote>,
 ) -> Vec<cadmpeg_ir::features::FeatureResultTopology> {
     use cadmpeg_ir::features::{
-        patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation, GeneratedBodyRef,
+        BodySelection, FeatureDefinition, FeatureOperation, GeneratedBodyRef, patterns::PatternSeed,
     };
 
     let live = inputs
@@ -176,14 +176,27 @@ pub(crate) fn bind_generated_body_selections(
             };
             let history = scope_history(scope, scope_histories, inputs.histories);
             let stream = crate::ids::native_stream(&scope.id);
-            let producers = slots
+            let mut fell_back = history.is_none();
+            let mut producers = slots
                 .iter()
                 .map(|slot| producer(history, stream, *slot))
                 .collect::<Option<Vec<_>>>();
-            if history.is_none() {
+            if producers.is_none() && history.is_some() {
+                fell_back = true;
+                producers = slots
+                    .iter()
+                    .map(|slot| producer(None, stream, *slot))
+                    .collect::<Option<Vec<_>>>();
+            }
+            if fell_back {
                 losses.push(F3dLossCode::FeatureGeneratedBodyHistoryUnresolved.note(format!(
-                    "Feature {} selects body slots {slots:?} of {native} with no resolved ASM history: {}.",
+                    "Feature {} selects body slots {slots:?} of {native} with {}: {}.",
                     feature.id,
+                    if history.is_some() {
+                        "no producer in its bound ASM history"
+                    } else {
+                        "no resolved ASM history"
+                    },
                     if producers.is_some() {
                         "the one state of any history that inserts each slot is taken as its producer"
                     } else {
