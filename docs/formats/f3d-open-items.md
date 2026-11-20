@@ -1060,6 +1060,40 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** The compatibility decoder selects advanced-ID omission. This selection is not proof of the physical omitted member. Neutral map-channel interpretation remains subject to MA-04.
 
+### DR-900. Protein stream header words
+
+**Question.** What do the two i32 words and the u32 word at bytes 4 through 15 of a Protein stream header record?
+
+**Known.** `protein.md` §2 "`InstanceProperties.bin` and `DefinitionIteratorProperties.bin` start with" gives the values `-1`, `-1`, and `0`. Every stream holds consecutive records with no page outside a record (`protein.md` §3).
+
+**Need.** A stream whose pages include a page outside every record, or a stream that a producer extended in place, to relate the words to page allocation.
+
+### DR-901. Text of the Protein schema documents
+
+**Question.** Which text do the nine schema documents of a Fusion Protein package hold, and does a reader take the property declarations from the package or from its own library schema of the same identifier and `SchemaVersion`?
+
+**Known.** `protein.md` §8 "A schema document declares one schema" gives the schemas, their bases, `type` values, and `SchemaVersion` values. `protein.md` §9 "The tables below give each instance record's value block" gives every serialized property with its declaring schema and carrier. A schema document also declares non-serialized properties, labels, bounds, user-interface and implementation members. The text of a schema document is the same in every package that has its identifier and `SchemaVersion`.
+
+**Need.** The declarations that a writer must emit beyond the serialized properties, so that a package with generated schema documents reads the same as one with library schema documents.
+
+### DR-902. Second form of the appearance of a Base Feature body
+
+**Question.** What selects the second form of the body's appearance and its twin in the Protein package of a Base Feature design?
+
+**Known.** `protein.md` §9 "The Protein package of a Fusion Base Feature design" gives the common form: the twin has base asset identifier `PrismOpaque` and the definition `Opaque(R,G,B)`, and the appearance has the colour `(246, 246, 243)`. In the second form, the twin is a copy of the appearance aspect: base asset identifier `PrismMaterial-022_physmat_aspects:Prism-374`, `AssetLibID` `C1EEA57C-3F56-45FC-B8CB-A9EC46A9994C`, the aspect's values, and a definition record equal to the aspect's definition. The appearance then has `generic_diffuse` equal to the aspect's `opaque_albedo`, `generic_glossiness` `0.7015873193740845`, and `generic_reflectivity_at_0deg` `0.0529`. The other values and records equal the common form. The packages of the second form share the physical-material identifier and the appearance identifier.
+
+**Need.** The source property, for example a material or appearance setting of the design or of its template, that selects one form.
+
+### DR-903. Join from an instance record to its definition record
+
+**Question.** Which rule joins an instance record to its definition record when the definition's asset identifier differs from the instance's base asset identifier?
+
+**Known.** `protein.md` §6 "`AssetData/AssetTableOfContents.bin` lists the instance records" pairs each instance record with one definition record by page index. In the package of `protein.md` §9 "The Protein package of a Fusion Base Feature design", the structural aspect has base asset identifier `PrismMaterial-022_physmat_aspects_1:StructuralPlastic-004` and definition asset identifier `StructuralPlastic-004`, and the twin has base asset identifier `PrismOpaque` and definition asset identifier `Opaque(R,G,B)`.
+
+**Conflict.** `protein.md` §5 "The Boolean flag does not select the metadata layout" joins a definition to an instance through equal asset and base asset identifiers. That join finds no definition for these two instances, and the table of contents finds one.
+
+**Need.** A decision whether the decoder joins through the table of contents when the package has one.
+
 ## 4. T-splines
 
 ### TS-05. Form selection-group scalar and flags
