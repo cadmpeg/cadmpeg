@@ -159,7 +159,7 @@ one of its rows is not compared. Cause codes follow the reason discipline.
 
 | Code | When |
 | --- | --- |
-| `compare.occurrence-placement` | A document's occurrences place bodies non-trivially. |
+| `compare.occurrence-placement` | A document's occurrences place bodies non-trivially, and its instances do not enumerate: an occurrence chain repeats, a placement is not finite, or the instances exceed 2²⁰. |
 | `compare.unavailable` | A quantity is unavailable for a `budget`, `unsupported` or `placement` reason on at least one side and has no comparable candidates. |
 | `compare.ambiguous-class` | Bodies whose compatibility is not transitive. |
 | `compare.unmeasured-body` | A body with no comparable quantity. |
@@ -752,9 +752,34 @@ and matches bodies by their measured geometry, not by their IDs.
   identity within `1e-8` and whose translation is within
   `tolerances.linear` of zero, every product definition that lists bodies,
   other than a root definition, is the prototype of exactly one occurrence,
-  and no body is listed by two definitions. Otherwise it is `occurrences`:
-  the document row `occurrences` is not compared
-  (`compare.occurrence-placement`), and the bodies are still compared.
+  and no body is listed by two definitions. Otherwise it is `occurrences`,
+  and the comparison also compares the documents' instances. An instance is
+  a path of occurrences from a root definition, placed by
+  `T(o₁) ∘ … ∘ T(oₙ)`. `T(oⱼ)` is the transform of `oⱼ`, the identity where
+  it states none, replaced by the transform a nested override of an
+  occurrence above it states for the path from that occurrence to `oⱼ`;
+  where two occurrences above it state one, the outer one holds
+  (`docs/cadir-v11.md` §8.1). Suppression resolves the same way, and a
+  suppressed instance places nothing below it. An occurrence whose
+  prototype is of `External` storage places nothing. An instance shows its
+  prototype's bodies, or the bodies that a definition above it lists for
+  its path in `instance_bodies`, the outermost such definition first. A
+  root definition's bodies, and a body no definition lists, are placed once
+  at the identity. The row `instances` compares the number of instances of
+  the paired bodies `exact`. The row `instance_placement` (mm) matches each
+  pair's instances in one document to its instances in the other one to
+  one, each to the nearest unmatched one, and agrees when the pair's
+  instance counts are equal and every matched distance is within
+  `floor × L + tolerances.linear(a) + tolerances.linear(b)`. The distance
+  of two placements is the length of their translation difference plus
+  `L` times the largest difference of a linear coefficient; the row's
+  `difference` is the largest matched distance, absent when a count
+  differs. The `occurrences` row then states each document's class and
+  takes no part in the verdict. When an occurrence chain repeats, a
+  placement does not compose to a finite transform, or a document has more
+  than 2²⁰ instances, the `occurrences` row is not compared
+  (`compare.occurrence-placement`) and the instance rows are absent. The
+  bodies are compared in either case.
 - Tolerance. A value compares within
   `t = e_a + e_b + u_a + u_b + floor × max(|a|, |b|, L^d)`, with `e` the
   numeric error, `u` the model uncertainty, `L` the larger document box
@@ -793,7 +818,9 @@ and matches bodies by their measured geometry, not by their IDs.
   unmatched; another class is ambiguous (`compare.ambiguous-class`). A body
   with no comparable quantity is unmeasured (`compare.unmeasured-body`).
 - Document rows: `body_count` (`exact`), total `area` and `closed_volume`
-  when measured on both sides, the union box, and `occurrences`.
+  when measured on both sides, the union box, `occurrences`, and, when a
+  document's placement is `occurrences`, `instances` and
+  `instance_placement`.
 - Verdict: `disagree` when a compared row disagrees or a body is
   unmatched; else `inconclusive` when a cause applies, including
   `compare.nothing-compared`; else `agree`. Surface-kind counts and `visible`

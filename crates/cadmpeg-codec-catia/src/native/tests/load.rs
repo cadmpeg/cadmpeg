@@ -305,7 +305,7 @@ fn native_load_rejects_noncanonical_value_block_views() {
     orphaned_selections[0].parent = "catia:missing-value-block".to_string();
     canonical_namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "value_schema_selections",
             &orphaned_selections,
         )
@@ -967,7 +967,7 @@ fn native_store_paths_cover_every_declared_arena() {
     let mut rich_owned = cadmpeg_ir::NativeNamespace::default();
     rich.clone()
         .store_owned(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut rich_owned,
         )
         .expect("store populated owned CATIA namespace");
