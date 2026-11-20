@@ -968,7 +968,7 @@ pub(super) fn validate_source_less_design_links(
         bodies,
         "body-visibility",
         [id()],
-        |visibility, (ordinal, body)| {
+        |visibility, (_, body)| {
             if body.visible != Some(visibility.visible) {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D body visibility {} conflicts with body {} visibility",
@@ -976,7 +976,7 @@ pub(super) fn validate_source_less_design_links(
                     visibility.body
                 )));
             }
-            let emitted_key = source_less_body_key(attributes, body, ordinal)?;
+            let emitted_key = source_less_body_key(attributes, body)?;
             if u64::try_from(emitted_key).ok() != Some(visibility.asm_body_key()) {
                 return Err(CodecError::InvalidInput(format!(
                     "F3D body visibility {} uses an ASM key different from body {}",

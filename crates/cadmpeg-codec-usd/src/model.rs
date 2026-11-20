@@ -920,9 +920,8 @@ impl Builder<'_, '_, '_, '_> {
         let mut groups: Vec<TessellationTriangleGroup> = mesh
             .subsets
             .iter()
-            .map(|subset| TessellationTriangleGroup {
-                source_id: Some(subset.path.clone()),
-                triangles: subset.triangles.clone(),
+            .map(|subset| {
+                TessellationTriangleGroup::new(Some(subset.path.clone()), subset.triangles.clone())
             })
             .collect();
         if !groups.is_empty() {
@@ -937,10 +936,7 @@ impl Builder<'_, '_, '_, '_> {
                 .filter(|triangle| !claimed.contains(triangle))
                 .collect();
             if !rest.is_empty() {
-                groups.push(TessellationTriangleGroup {
-                    source_id: None,
-                    triangles: rest,
-                });
+                groups.push(TessellationTriangleGroup::new(None, rest));
             }
         }
         let coordinates = mesh

@@ -57,7 +57,7 @@ mod move_owners;
 mod paste_copy;
 mod path_pattern;
 mod pattern_seeds;
-mod reverse_normal;
+pub(crate) mod reverse_normal;
 mod revolve_target;
 pub(crate) mod shell_fallback;
 mod silhouette_split;
@@ -72,7 +72,7 @@ mod unstitch;
 mod work_axes;
 
 /// Millimetres per Design length unit (the Design stream stores centimetres).
-const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
+pub(super) const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
 const EPS_FEATURE_PROJECT_PROJECT_OFFSET_FACES_E9: f64 = 1.0e-9;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E12: f64 = 1.0e-12;
 const EPS_FEATURE_PROJECT_MATRIX_AXIS_ANGLE_E8: f64 = 1.0e-8;
@@ -324,11 +324,24 @@ fn authored_scope_ordinals_for_stream<'a>(
             "multiple nonempty Design timelines have no shared authored order".into(),
         ));
     }
+    let mut items = Vec::new();
+    for timeline in stream_timelines {
+        items.extend(timeline.frame().items().iter().map(|item| item.value));
+    }
+    let mut linked_scopes = reverse_normal::linked_scopes_outside(scopes, &items);
+    let shared_links = reverse_normal::shared_timeline_links(&scopes_by_record, &items);
     let mut item_ordinals = HashMap::<u64, u64>::new();
     let mut next_ordinal = 0_u64;
-    for timeline in stream_timelines {
-        for item in timeline.frame().items().iter().map(|item| item.value) {
-            if item_ordinals.insert(item, next_ordinal).is_some() {
+    for item in items {
+        let followers = u32::try_from(item)
+            .ok()
+            .and_then(|record| scopes_by_record.get(&record))
+            .and_then(|scope| reverse_normal::timeline_link(scope))
+            .filter(|link| !shared_links.contains(link))
+            .and_then(|link| linked_scopes.remove(link))
+            .unwrap_or_default();
+        for record in std::iter::once(item).chain(followers) {
+            if item_ordinals.insert(record, next_ordinal).is_some() {
                 return Err(CodecError::Malformed(
                     "Design timeline item identity is not unique".into(),
                 ));
@@ -1249,17 +1262,20 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     }
                 }
-                Some(DesignFeatureFamily::Thread) => scope
-                    .thread_construction()
-                    .and_then(|construction| {
-                        construction
-                            .nominal_size
-                            .value()
-                            .ok()
-                            .and_then(cadmpeg_ir::scalar::PositiveLength::new)
+                Some(DesignFeatureFamily::Thread) => {
+                    let resolved = scope.thread_construction().and_then(|construction| {
+                        thread_nominal_diameter(&scope.id, construction, &mut projection_losses)
                             .map(|size| (construction, size))
-                    })
-                    .map_or_else(
+                    });
+                    if resolved.is_none() {
+                        projection_losses.push(
+                            crate::loss::F3dLossCode::ThreadConstructionUnresolved.note(format!(
+                                "Thread {} has no admitted Thread construction; it stays an unresolved Thread.",
+                                scope.id
+                            )),
+                        );
+                    }
+                    resolved.map_or_else(
                         || {
                             Ok::<_, CodecError>(FeatureDefinition::Operation(
                                 FeatureOperation::Unresolved {
@@ -1354,7 +1370,8 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 },
                             ))
                         },
-                    )?,
+                    )?
+                }
                 Some(DesignFeatureFamily::SheetMetalBaseFace) => {
                     base_face::project(scope, inputs, &mut projection_losses)
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
@@ -7647,12 +7664,25 @@ fn project_rectangular_pattern_scalars(
         },
         |distribution| !distribution.total_extent.value,
     );
-    let symmetric = distribution.is_some_and(|distribution| distribution.symmetric.value);
-    if symmetric {
-        // The extent of a symmetric direction has no settled measurement.
-        if !adjacent || construction.u_extent() == 0.0 {
-            return None;
-        }
+    let direction_one_active = construction.u_count() > 1 && construction.u_extent() != 0.0;
+    let stored_symmetric = distribution.is_some_and(|distribution| distribution.symmetric.value);
+    let symmetric = stored_symmetric && direction_one_active;
+    if stored_symmetric && !direction_one_active {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureRectangularPatternInactiveSymmetricDropped.note(format!(
+                "RectangularPattern scope {} drops the symmetric flag of its inactive direction one.",
+                scope.id
+            )),
+        );
+    }
+    let payload_names_direction_one = construction.secondary_direction().is_some();
+    if symmetric && !adjacent {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricTotalExtentAssumed.note(format!(
+                "RectangularPattern scope {} reads the total extent of its symmetric direction one as the span from the first to the last instance.",
+                scope.id
+            )),
+        );
     }
     for (axis, (count, extent)) in [
         (construction.u_count(), construction.u_extent()),
@@ -7661,6 +7691,22 @@ fn project_rectangular_pattern_scalars(
     .into_iter()
     .enumerate()
     {
+        let payload_direction = axis == 1 && construction.secondary_direction().is_some();
+        let axis_active = count > 1 && extent != 0.0;
+        let record =
+            if payload_direction || !(axis_active || (axis == 0 && payload_names_direction_one)) {
+                None
+            } else {
+                direction_records.next()
+            };
+        if let (false, Some(record)) = (axis_active, record) {
+            losses.push(
+                crate::loss::F3dLossCode::FeatureRectangularPatternDirectionOneRecordAssumed.note(format!(
+                    "RectangularPattern scope {} reads direction record {} as the record of its inactive direction one: the pattern payload names it as the U-direction record.",
+                    scope.id, record.record_index
+                )),
+            );
+        }
         let Some(intervals) = PatternIntervals::new(count) else {
             continue;
         };
@@ -7671,14 +7717,18 @@ fn project_rectangular_pattern_scalars(
             ));
             continue;
         }
-        let stored_direction = if axis == 1 && construction.secondary_direction().is_some() {
+        let axis_adjacent = match (distribution, record) {
+            (None, Some(record)) => record.distance_type == 7,
+            _ => adjacent,
+        };
+        let stored_direction = if payload_direction {
             construction.secondary_direction().and_then(|record| {
                 cadmpeg_ir::units::UnitVector3::normalized(Vector3::from(
                     record.value.map(cadmpeg_ir::scalar::FiniteReal::get),
                 ))
             })
         } else {
-            direction_records.next().and_then(
+            record.and_then(
                 crate::records::feature::patterns::DesignRectangularPatternDirection::direction,
             )
         };
@@ -7689,7 +7739,7 @@ fn project_rectangular_pattern_scalars(
                 direction
             }
         });
-        let divisor = if adjacent {
+        let divisor = if axis_adjacent {
             1.0
         } else {
             f64::from(intervals.get())
@@ -7717,7 +7767,14 @@ fn project_rectangular_pattern_scalars(
                     if 1.0 - run.as_raw().dot(*record.as_raw())
                         > EPS_RECTANGULAR_PATTERN_DIRECTION_AGREEMENT =>
                 {
-                    None
+                    losses.push(
+                        crate::loss::F3dLossCode::FeatureRectangularPatternDirectionRecordDisagrees
+                            .note(format!(
+                                "RectangularPattern scope {} keeps the direction of its generated-instance run; its direction record states another direction.",
+                                scope.id
+                            )),
+                    );
+                    Some(run)
                 }
                 (run, record) => run.or(record),
             };
@@ -7747,13 +7804,21 @@ fn project_rectangular_pattern_scalars(
     .ok()?;
     if let Some(record) = construction
         .directions()
-        .first()
-        .filter(|record| distribution.is_none() && record.distance_type == 10)
+        .iter()
+        .find(|record| distribution.is_none() && record.distance_type == 10)
     {
         losses.push(crate::loss::F3dLossCode::FeatureRectangularPatternDistanceFormAssumed.note(format!(
             "RectangularPattern scope {} reads its distances as seed-to-final-instance extents: direction record {} stores distance type 10 without a readable distribution block.",
             scope.id, record.record_index
         )));
+    }
+    if direction.is_none() {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureRectangularPatternDirectionUnresolved.note(format!(
+                "RectangularPattern scope {} keeps its first direction unresolved: it has no admitted direction record or generated-instance run.",
+                scope.id
+            )),
+        );
     }
     if !dropped.is_empty() {
         losses.push(
@@ -7770,6 +7835,36 @@ fn project_rectangular_pattern_scalars(
         seeds,
         pattern,
     }))
+}
+
+/// The nominal diameter of a Thread construction in millimetres, with the
+/// losses of the values the neutral thread does not carry.
+fn thread_nominal_diameter(
+    scope_id: &str,
+    construction: &crate::records::feature::thread::DesignThreadConstruction,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Option<cadmpeg_ir::scalar::PositiveLength> {
+    let size = if construction.nominal_size.is_decimal() {
+        cadmpeg_ir::scalar::PositiveLength::new(construction.nominal_size.value()?)?
+    } else {
+        let size = cadmpeg_ir::scalar::PositiveLength::new(
+            construction.diameters.major() * DESIGN_LENGTH_TO_MILLIMETRE,
+        )?;
+        losses.push(
+            crate::loss::F3dLossCode::ThreadFractionalSizeDiameterAssumed.note(format!(
+                "Thread {scope_id} reads the diameter of its fractional nominal size as its stored major diameter, {} mm.",
+                size.get()
+            )),
+        );
+        size
+    };
+    if !construction.angle.is_sixty() {
+        losses.push(crate::loss::F3dLossCode::ThreadAngleNative.note(format!(
+            "Thread {scope_id} retains its {}-degree profile angle in its native construction.",
+            construction.angle.degrees()
+        )));
+    }
+    Some(size)
 }
 
 /// Tap type of a simple Hole.
