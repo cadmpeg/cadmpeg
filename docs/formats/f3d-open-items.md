@@ -1576,6 +1576,18 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Note.** An ambiguous interval retains its native scope, ordered references, state identities, and candidate histories with `feature.output-state-chain-unbound`.
 
+### DR-910. Generated-body selections with an unresolved history
+
+**Question.** Which native relation selects the history of a body-pattern seed or `RemoveBody` operand when scope-history bindings and state identities leave several candidate histories?
+
+**Known.** Generated-body selections use the scope-history map and state tests in DR-150. When every selected slot is absent from the live bodies and the selecting history stays unresolved, the decoder takes, for each slot, the one state of any history that inserts it and the one same-stream scope with that state as the producer, and reports `feature.generated-body-history-unresolved` with the selecting feature, the body slots and that assumption. Without such a state and scope, it retains the Historical pattern seed or native `RemoveBody` group with the same loss.
+
+**Need.** Controlled designs with repeated endpoint pairs and one omitted seed body, with the native reference chain from the selecting scope to its history.
+
+**Conflict.** None.
+
+**Note.** The producer rule is in `f3d.md` §3.1.
+
 ### DR-151. Result ownership of copied feature scopes
 
 **Question.** How does a copied feature scope relate its construction component to the product definition of its result bodies?
@@ -3689,15 +3701,3 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** Paired saves with different property targets or entry widths, and the corresponding final body geometry.
 
 **Note.** The decoder retains positional pairing with `feature.owned-body-pairing-assumed` for the typed body runs.
-
-### DR-900. Generated-body selections with an unresolved history
-
-**Question.** Which native relation selects the history of a body-pattern seed or `RemoveBody` operand when scope-history bindings and state identities leave several candidate histories?
-
-**Known.** Generated-body selections use the scope-history map and state tests in DR-150. When every selected slot is absent from the live bodies and the selecting history stays unresolved, the decoder takes, for each slot, the one state of any history that inserts it and the one same-stream scope with that state as the producer, and reports `feature.generated-body-history-unresolved` with the selecting feature, the body slots and that assumption. Without such a state and scope, it retains the Historical pattern seed or native `RemoveBody` group with the same loss.
-
-**Need.** Controlled designs with repeated endpoint pairs and one omitted seed body, with the native reference chain from the selecting scope to its history.
-
-**Conflict.** None.
-
-**Note.** The producer rule is in `f3d.md` §3.1.
