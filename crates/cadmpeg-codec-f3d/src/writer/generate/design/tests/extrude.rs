@@ -44,26 +44,44 @@ const EVALUATION_MISSING: &str = "export/evaluation.missing";
 /// The cube's bottom square on `XY`, drawn counterclockwise about +Z as
 /// four lines whose corners are four points with two roles each.
 fn square() -> Source {
+    square_drawn([false; 4])
+}
+
+/// [`square`] with line `l<i + 1>` drawn from its counterclockwise end to
+/// its start where `against[i]`.
+fn square_drawn(against: [bool; 4]) -> Source {
     let mut sketch = Source::new(
         "profile",
         picked(principal(PrincipalEntity::XyPlane)),
         frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
     );
     let corners = [(0.0, 0.0), (SIDE, 0.0), (SIDE, SIDE), (0.0, SIDE)];
+    let role = |line: usize, start: bool| {
+        if start == against[line] {
+            DefiningRole::End
+        } else {
+            DefiningRole::Start
+        }
+    };
     for (index, (u, v)) in corners.iter().enumerate() {
+        let before = (index + 3) % 4;
         let start_of = format!("l{}", index + 1);
-        let end_of = format!("l{}", (index + 3) % 4 + 1);
+        let end_of = format!("l{}", before + 1);
         sketch.entity(
             &format!("p{}", index + 1),
             PlanarCurve::Point(point2(*u, *v)),
             &[
-                (start_of.as_str(), DefiningRole::Start),
-                (end_of.as_str(), DefiningRole::End),
+                (start_of.as_str(), role(index, true)),
+                (end_of.as_str(), role(before, false)),
             ],
         );
     }
-    for (index, start) in corners.iter().enumerate() {
-        let end = corners[(index + 1) % 4];
+    for (index, corner) in corners.iter().enumerate() {
+        let (start, end) = if against[index] {
+            (corners[(index + 1) % 4], *corner)
+        } else {
+            (*corner, corners[(index + 1) % 4])
+        };
         sketch.entity(
             &format!("l{}", index + 1),
             PlanarCurve::Line {
@@ -122,12 +140,17 @@ fn blind() -> Span<Length> {
 /// the current state after the datum. `later` adds a `Sketch` of one line
 /// after the extrude.
 fn sketch_and_extrude(span: Span<Length>, later: bool) -> CadIr {
+    sketch_and_extrude_of(square(), span, later)
+}
+
+/// [`sketch_and_extrude`] with `profile` as the extrude's sketch.
+fn sketch_and_extrude_of(profile: Source, span: Span<Length>, later: bool) -> CadIr {
     let mut ir = scoped_cube();
     let extrude_id = FeatureId::mint(EXTRUDE).expect("identity grammar");
     ir.design
         .features
         .retain(|record| record.id.as_str() != SKETCH && record.id != extrude_id);
-    let sketch = square().add_to(&mut ir);
+    let sketch = profile.add_to(&mut ir);
     ir.design.features.push(feature(
         "extrude",
         FeatureOperation::Extrude(Box::new(extrude(span))),
@@ -414,6 +437,41 @@ fn caps_and_sides_are_named_by_the_walk() {
         assert_eq!(link.sketch_curve_id, expected, "token {token}");
     }
     assert_eq!(on_cap, 4);
+}
+
+/// f3d.md §3.1, "Sketch links of the start cap": the sense of a link is
+/// the traversal flag of its exterior loop entry. `l4` (identity 108) is
+/// drawn against the ring, so its entry's flag is 1.
+#[test]
+fn a_cap_link_takes_the_traversal_flag_of_its_loop_entry() {
+    let profile = square_drawn([false, false, false, true]);
+    let (report, decoded) = write(&sketch_and_extrude_of(profile, blind(), false));
+    assert_eq!(
+        kinds(&decoded),
+        ["sketch", "extrude"],
+        "{:#?}",
+        report.losses
+    );
+    let native = crate::test_support::native_test::f3d_native(&decoded);
+    let mut senses = native
+        .sketch_curve_links
+        .iter()
+        .map(|link| (link.sketch_curve_id, link.sense.map(i64::from)))
+        .collect::<Vec<_>>();
+    senses.sort_unstable();
+    assert_eq!(
+        senses,
+        [
+            (105, Some(0)),
+            (105, Some(0)),
+            (106, Some(0)),
+            (106, Some(0)),
+            (107, Some(0)),
+            (107, Some(0)),
+            (108, Some(1)),
+            (108, Some(1)),
+        ]
+    );
 }
 
 fn u32_at(bytes: &[u8], at: usize) -> u32 {
