@@ -49,12 +49,72 @@ pub(super) fn parameter(
     resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
     refusal: &mut LaneRefusals,
 ) -> Option<f64> {
+    let record = records.get(vertex)?;
+    if record.family() != Family::B || record.class() != 0x5d {
+        return None;
+    }
+    let vertex_bytes = payload(bytes, record)?;
+    let mut at = 0;
+    let reference = allocation_reference(vertex_bytes, &mut at)?;
+    if vertex_bytes.get(at..)? != [0] {
+        return None;
+    }
+    roster_parameter(
+        bytes,
+        records,
+        [vertex, curve],
+        domain,
+        reference,
+        resolve,
+        refusal,
+    )
+}
+
+pub(super) fn wide_parameter(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+    vertex: usize,
+    curve: usize,
+    domain: Domain<'_>,
+    resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
+    refusal: &mut LaneRefusals,
+) -> Option<f64> {
+    let record = records.get(vertex)?;
+    if record.family() != Family::B || record.class() != 0x5d {
+        return None;
+    }
+    let reference = vertex_roster_reference(payload(bytes, record)?)?;
+    if reference.encoding != AllocationReferenceEncoding::TaggedU24 {
+        return None;
+    }
+    roster_parameter(
+        bytes,
+        records,
+        [vertex, curve],
+        domain,
+        reference,
+        resolve,
+        refusal,
+    )
+    .filter(|t| {
+        domain.range[0].min(domain.range[1]) <= *t && *t <= domain.range[0].max(domain.range[1])
+    })
+}
+
+fn roster_parameter(
+    bytes: &[u8],
+    records: &[ConsolidatedRecord],
+    [vertex, curve]: [usize; 2],
+    domain: Domain<'_>,
+    reference: AllocationReference,
+    resolve: &impl Fn(usize, AllocationReference) -> Option<usize>,
+    refusal: &mut LaneRefusals,
+) -> Option<f64> {
     let typed = |index: usize, class: u8| {
         let record = records.get(index)?;
         (record.family() == Family::B && record.class() == class).then_some(record)
     };
-    let vertex_bytes = payload(bytes, typed(vertex, 0x5d)?)?;
-    let roster = resolve(vertex, vertex_roster_reference(vertex_bytes)?)?;
+    let roster = resolve(vertex, reference)?;
     let roster_bytes = payload(bytes, typed(roster, 0x05)?)?;
     let count = roster_bytes.first()?.checked_sub(0x80)?;
     let mut at = 1;
