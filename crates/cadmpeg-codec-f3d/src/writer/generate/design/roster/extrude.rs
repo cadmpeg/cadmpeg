@@ -526,7 +526,7 @@ impl Item<'_> {
             .u32(1)
             .u32(count(self.plan.ring.len())?);
         for entry in &self.plan.ring {
-            self.curve_entry(out, entry.curve, u32::from(entry.reversed))?;
+            self.curve_entry(out, entry.curve, entry.traversal_flag())?;
         }
         out.byte(1).u32(0);
         out.header(&classes.object, regions).zeros(8);

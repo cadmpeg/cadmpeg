@@ -42,6 +42,15 @@ pub(super) struct LoopEntry {
     pub(super) reversed: bool,
 }
 
+impl LoopEntry {
+    /// The entry's traversal flag: `1` when the ring runs the curve from
+    /// its end point (f3d.md §3.1, "Side-face walk"). The loop entry and
+    /// the sketch links of its side face's start-cap edges store it.
+    pub(super) fn traversal_flag(self) -> u32 {
+        u32::from(self.reversed)
+    }
+}
+
 /// The extrude the design writes as an `Extrude` item.
 #[derive(Debug)]
 pub(super) struct ExtrudePlan<'a> {
@@ -765,8 +774,6 @@ const FIRST_SIDE_TOKEN: u64 = 3;
 /// curve is one piece.
 const LINK_ROLE: i64 = 1;
 const LINK_CLOSURE: i64 = 1;
-/// The sketch link's sense (f3d-open-items.md DR-916).
-const LINK_SENSE: i64 = 0;
 /// The Design reference of the result body's group.
 const BODY_REFERENCE: i64 = 1;
 
@@ -774,7 +781,9 @@ const BODY_REFERENCE: i64 = 1;
 /// faces" and "Side-face walk"; f3d-open-items.md DR-916): the body group
 /// `(3, "E", 1, 0, 0)`, the caps `(1, "1", [E])` and `(1, "2", [E])`, side
 /// token `t` `(digits(t), t, [E])` in ring order from `3`, and on each side
-/// face's edge with the start cap the sketch link of its curve.
+/// face's edge with the start cap the sketch link of its curve, whose sense
+/// is the traversal flag of its exterior loop entry (f3d.md §3.1, "Sketch
+/// links of the start cap").
 pub(super) fn stamp(
     plan: &ExtrudePlan<'_>,
     sketches: &[PlannedSketch<'_>],
@@ -816,9 +825,9 @@ pub(super) fn stamp(
                 ordinal: 0,
             });
     }
-    let sense = SketchLinkSense::try_from(LINK_SENSE)
-        .map_err(|error| CodecError::Malformed(error.into()))?;
     for (entry, coedges) in plan.ring.iter().zip(&plan.links) {
+        let sense = SketchLinkSense::try_from(i64::from(entry.traversal_flag()))
+            .map_err(|error| CodecError::Malformed(error.into()))?;
         let curve = super::roster::sketches::curve_identity(sketches, plan.sketch, entry.curve)?;
         let curve = i64::try_from(curve)
             .map_err(|_| CodecError::NotImplemented("sketch curve identity".into()))?;
