@@ -94,12 +94,10 @@ fn physics_records_survive_a_write() {
             }
         }
     }
-    assert!(
-        after
-            .rigid_bodies
-            .iter()
-            .all(|body| matches!(body.target.entity, PhysicsTarget::Occurrence { .. }))
-    );
+    assert!(after
+        .rigid_bodies
+        .iter()
+        .all(|body| matches!(body.target.entity, PhysicsTarget::Occurrence { .. })));
 }
 
 #[test]
@@ -525,12 +523,10 @@ fn a_group_body_carries_its_mass() {
         group.contains("point3f physics:centerOfMass = (0.005, 0.01, 0.015)"),
         "{text}"
     );
-    assert!(
-        !report
-            .losses
-            .iter()
-            .any(|loss| loss.code == crate::loss::UsdLossCode::ExportPhysicsNotWritten.kind())
-    );
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::UsdLossCode::ExportPhysicsNotWritten.kind()));
 }
 
 /// A body with a transform of its own is a group prim whose space is not the
@@ -548,12 +544,10 @@ fn a_transformed_group_body_reports_its_mass() {
     );
     let (text, report) = encode(&ir);
     assert!(!text.contains("physics:mass"), "{text}");
-    assert!(
-        report
-            .losses
-            .iter()
-            .any(|loss| loss.code == crate::loss::UsdLossCode::ExportPhysicsNotWritten.kind())
-    );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::UsdLossCode::ExportPhysicsNotWritten.kind()));
 }
 
 /// `LAYER` with its hinge replaced by a generic joint that applies

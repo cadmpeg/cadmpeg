@@ -2,7 +2,7 @@
 //! The `UsdPhysics` schemas (spec §16): joints, rigid bodies, mass,
 //! collision, articulation roots, and physics materials, in scene units.
 
-use crate::schema::{Issues, boolean, token, vector};
+use crate::schema::{boolean, token, vector, Issues};
 use crate::stage::Prim;
 
 /// The joint prim types (spec §16.4).

@@ -24,7 +24,7 @@ use cadmpeg_ir::physics::solver::SolverTarget;
 
 use crate::schema::physics::{Drive, JointData, JointType, Limit};
 use crate::schema::physx::Holder;
-use crate::schema::xform::{Affine, compose, quaternion};
+use crate::schema::xform::{compose, quaternion, Affine};
 use crate::stage::Prim;
 
 /// A joint prim collected for the pass after the traversal.
