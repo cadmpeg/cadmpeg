@@ -184,7 +184,11 @@ pub(crate) fn regenerated_procedural_surface_span(ir: &cadmpeg_ir::document::Cad
     };
     let mut bytes = Vec::new();
     crate::writer::generate::native_geometry::native_procedural_surface(
-        &mut bytes, ir, surface, cache,
+        &mut bytes,
+        ir,
+        &crate::writer::generate::native_geometry::ProceduralOwners::new(ir),
+        surface,
+        cache,
     )
     .expect("regenerate procedural surface");
     let inner = bytes

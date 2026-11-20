@@ -2399,6 +2399,20 @@ profile-derived axes.
 
 ---
 
+### 3.4 Partition marks and the rollback position
+
+A `Contents/Config-<N>-Partition` section holds two Parasolid transmits in order: the partition (`TRANSMIT FILE (partition)`) and its deltas (`TRANSMIT FILE (deltas)`), each in its own zlib member. The deltas transmit opens with a PARTITION node (type 3) and the PMARK node (type 4) its `current_pmark` names, both with the base schema fields (`parasolid.md`). That PMARK's `id` is the current mark: the mark the stored partition is at. Following `preceding` through the PMARK nodes of the transmit from the current mark gives the main line back to the initial mark, whose `preceding` is null.
+
+The first twelve bytes of a `moPMarkRecord_c` body (§2.3) are its head: the mark, a little-endian u32 at +0; the form, a little-endian u32 at +4; and the form word, a little-endian u32 at +8. The form is `0` or `1`, or a feature identifier in the id-range form, whose form word is `1`. The mark is the `id` of the PMARK set after the feature that holds the record. `Contents/Config-<N>` declares `moPMarkRecord_c`, so each record in `Config-<N>-ResolvedFeatures` opens with that class's token: u16 `8000|index`, or `7fff` and u32 `80000000|index` for an index of `7fff` and above.
+
+The records follow the order of their features. A record's feature is the innermost named object (`moNodeName_c` header) that holds it. The rollback position of the feature tree joins the current mark of the active configuration to these records:
+
+- The current mark is the mark of the last record: the bar stands after the feature of that record.
+- The current mark is the mark of record k and every later record's mark lies off the main line: the features of the later records are not built. The bar stands after the feature of record k and before the first of them that is not suppressed; where each of them is suppressed, the tree is built through its end.
+- Otherwise the marks do not fix the position: the current mark follows the last record's mark on the main line (a later feature holds no tagged record), or it is the mark of no record.
+
+A feature that holds no record sets no mark. Where such a feature lies after the feature at the current mark and before the first unbuilt feature that is not suppressed (or the end of the tree), the marks do not place the bar before or after it.
+
 ## 4. Typed topology records
 
 Primary ownership chain:
