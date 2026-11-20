@@ -1498,11 +1498,41 @@ fn closed_edge_start(
     Ok(Some((first.get(), [low, high])))
 }
 
-/// The model positions of the vertices a walked face's coedges start at.
 /// Share of the ball radius a fitted blend cache may miss a face vertex by;
 /// a larger miss is another branch of the rolling ball.
 const BLEND_VERTEX_MISS_RADIUS_FRACTION: f64 = 0.25;
 
+/// Why the rolling-ball fit of a blend has no side, by side.
+const BLEND_SIDE_UNRESOLVED: [&str; 2] = [
+    "support 0 is not an analytic or NURBS surface, a pair of them or a rolling ball",
+    "support 1 is not an analytic or NURBS surface, a pair of them or a rolling ball",
+];
+
+/// What one fit step did for a blend left without a cache.
+enum BlendStep {
+    /// The step did not run, for the reason given.
+    NotRun(&'static str),
+    /// The step ran and found no cache, for the reason given.
+    NoCache(String),
+    /// The step's cache missed a face vertex by more than a quarter of the
+    /// radius, by this many millimetres.
+    Missed(f64),
+}
+
+impl std::fmt::Display for BlendStep {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotRun(why) => write!(f, "not run, {why}"),
+            Self::NoCache(why) => f.write_str(why),
+            Self::Missed(miss) => write!(
+                f,
+                "its cache misses a face vertex by {miss} mm, more than a quarter of the radius"
+            ),
+        }
+    }
+}
+
+/// The model positions of the vertices a walked face's coedges start at.
 fn face_vertex_positions(t: &topology::Tables, face: &WalkedFace) -> Vec<cadmpeg_ir::math::Point3> {
     let mut positions = Vec::new();
     for (_, ring) in &face.loops {
@@ -4648,12 +4678,16 @@ fn decode_graph_inner(
                             attr,
                         )
                     };
+                    let mut sections = BlendStep::NotRun("the spine curve does not resolve");
                     let solved = match (
                         carriers.curve(blend.spine),
                         support_geometry(support_attrs[0])?,
                         support_geometry(support_attrs[1])?,
                     ) {
                         (Some(spine_carrier), Some(first_geometry), Some(second_geometry)) => {
+                            sections = BlendStep::NoCache(
+                                "no sections fit over the face's spine stretch".into(),
+                            );
                             blend_surface::solve(
                                 ctx,
                                 &blend_surface::BlendInputs {
@@ -4668,14 +4702,29 @@ fn decode_graph_inner(
                                 },
                             )?
                         }
-                        _ => None,
+                        (Some(_), None, _) => {
+                            sections = BlendStep::NotRun("support 0 states no solved surface");
+                            None
+                        }
+                        (Some(_), _, None) => {
+                            sections = BlendStep::NotRun("support 1 states no solved surface");
+                            None
+                        }
+                        (None, _, _) => None,
                     };
                     let (cache, off_vertex) = match solved {
                         Some(solved) if solved.holds => (Some(solved.cache), None),
-                        Some(solved) => (None, Some(solved.cache)),
+                        Some(solved) => {
+                            sections = BlendStep::NoCache(
+                                "its cache does not pass through every face vertex within its fit tolerance"
+                                    .into(),
+                            );
+                            (None, Some(solved.cache))
+                        }
                         None => (None, None),
                     };
                     // Fallback for blends `blend_surface::solve` leaves without a cache.
+                    let mut rolling = BlendStep::NotRun("the spine curve does not resolve");
                     let cache = match (cache, carriers.curve(blend.spine)) {
                         (Some(cache), _) => Some(cache),
                         (None, Some(spine)) => {
@@ -4701,19 +4750,32 @@ fn decode_graph_inner(
                                 };
                             }
                             let fitted = match sides {
-                                [Some(first), Some(second)] => super::blend_fit::fit(
+                                [Some(first), Some(second)] => match super::blend_fit::fit(
                                     ctx,
                                     &spine.carrier().geometry,
                                     [first, second],
                                     blend.signed_radius,
                                     &vertices,
-                                )?
-                                .map(|fit| blend_surface::BlendCache {
-                                    surface: fit.surface,
-                                    fit_tolerance: fit.fit_tolerance,
-                                }),
-                                _ => None,
+                                )? {
+                                    Ok(fit) => Some(blend_surface::BlendCache {
+                                        surface: fit.surface,
+                                        fit_tolerance: fit.fit_tolerance,
+                                    }),
+                                    Err(failure) => {
+                                        rolling = BlendStep::NoCache(failure.to_string());
+                                        None
+                                    }
+                                },
+                                [None, _] => {
+                                    rolling = BlendStep::NotRun(BLEND_SIDE_UNRESOLVED[0]);
+                                    None
+                                }
+                                [_, None] => {
+                                    rolling = BlendStep::NotRun(BLEND_SIDE_UNRESOLVED[1]);
+                                    None
+                                }
                             };
+                            let from_fit = fitted.is_some();
                             // The cache states its largest vertex miss; a miss of
                             // a sizeable share of the radius is another branch.
                             match fitted.or(off_vertex) {
@@ -4731,13 +4793,38 @@ fn decode_graph_inner(
                                         cache.fit_tolerance = cache.fit_tolerance.max(miss);
                                         Some(cache)
                                     }
-                                    _ => None,
+                                    miss => {
+                                        let step = miss.map_or_else(
+                                            || {
+                                                BlendStep::NoCache(
+                                                    "the face's vertices do not project onto the spine"
+                                                        .into(),
+                                                )
+                                            },
+                                            BlendStep::Missed,
+                                        );
+                                        if from_fit {
+                                            rolling = step;
+                                        } else {
+                                            sections = step;
+                                        }
+                                        None
+                                    }
                                 },
                                 None => None,
                             }
                         }
                         (None, None) => None,
                     };
+                    if cache.is_none() {
+                        out.losses.push(
+                            crate::loss::SldprtLossCode::GeometryBlendCacheUnsolved.note(format!(
+                                "{}: the rolling-ball blend of radius {} mm has no solved cache and keeps its construction alone; section solve: {sections}; rolling-ball fit: {rolling}",
+                                id_face(f.bridge_attr).as_str(),
+                                blend.signed_radius.abs(),
+                            )),
+                        );
+                    }
                     let admitted_payload = BlendRadiusLaw::constant(blend.signed_radius)
                         .and_then(|radius| {
                             cadmpeg_ir::geometry::surface_payloads::BlendSurfacePayload::try_new(
