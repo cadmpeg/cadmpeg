@@ -892,16 +892,21 @@ A consolidated `b2/b3/b4 <flag> 27` plane carrier has a width-coded frame with f
 
 The one-component layout stores `+18` direction component (`f64le`): X for `e4` and Y for `d4`. The 50-byte implicit-axis payload has bounds at `+18`; the 58-byte one-component direction payload has bounds at `+26`; the 58-byte spatial-origin payload has bounds at `+26`; the 66-byte two-component direction payload has bounds at `+34`. Each bounds lane is `u_min,u_max,v_min,v_max` (`4×f64le`) and exhausts the payload. Both intervals are strictly increasing. All scalars are finite. U is horizontal and its hypot length differs from one by at most `1e-12`; no bound supplies a direction component. For selectors `ec`, `e4`, `c4`, `dc`, and `d4`, `origin=(point_x,point_y,0)`. For selectors `d8` and `d0`, `origin=(origin_x,origin_y,origin_z)`. Selector `d0` stores a Y component of magnitude one. In all selectors, `v_axis=(0,0,1)`, `normal=unit(u_axis×v_axis)`, and `P(U,V)=origin+U·u_axis+V·v_axis`. Header width and frame flag do not change the scalar layout. An unknown selector retains its complete nonempty finite lane without a neutral plane frame. A known selector with a different lane length, non-unit direction, or unordered bounds is invalid.
 
+Sheet-owned class-`27` plane selectors retain their axis components and signs. Selector `08 68 1d` stores origin XYZ and V's signed Y component, with U=(1,0,0) and V=(0,v_y,0). Selector `08 e8 1d` has the same axes with v_y=1 and omits the direction scalar. These unrestricted payloads end after the frame scalars.
+
+Selector `d4 a0` stores origin XYZ, U's X and Z components, and four bounds, with U=(u_x,0,u_z) and V=(0,1,0). This implicit-V form is 74 bytes. The 82-byte `d4 a0` form stores V's signed Y component between U and the four bounds. Its V axis is (0,v_y,0), with v_y equal to -1 or +1. Selector `d4 20` adds V's signed Y component before those bounds. Each axis is a unit vector and the completed frame is orthonormal. The bounds are ordered U and V intervals. The [CATIA record layouts](../layouts/catia.md) give their field offsets and lengths.
+
 A packed consolidated class-`27` plane chart has packed marker `08`, a two-byte little-endian control word, origin `(x,y,z)`, and a scalar lane. The control word selects the chart axes and the scalar order after the origin:
 
 | Control word | U axis | V axis | Scalars after the origin | Payload bytes |
 |---|---|---|---|---:|
+| `1900` | `(u_x,u_y,u_z)` | `(0,v_y,v_z)` | `u_x,u_y,u_z,v_y,v_z` | 67 |
 | `1968` | `(1,0,0)` | `(0,v_y,v_z)` | `v_y,v_z` | 43 |
 | `1960` | `(u_x,0,0)` | `(0,v_y,v_z)` | `u_x,v_y,v_z` | 51 |
 | `1c38` | `(0,0,1)` | `(v_x,v_y,0)` | `v_x,v_y` | 43 |
 | `1c30` | `(0,0,u_z)` | `(v_x,v_y,0)` | `u_z,v_x,v_y` | 51 |
 
-An implicit U component gives a 43-byte payload. Its two V components follow the origin. An explicit U component gives a 51-byte payload. Its U component follows the origin, then its two V components exhaust the payload. Every coordinate and direction component is finite. Each axis has hypot length within `1e-12` of one. The chart is `P(U,V)=origin+U·u_axis+V·v_axis`, with normal `u_axis×v_axis`. The [CATIA record layouts](../layouts/catia.md) give both fixed payload layouts. The B-family frame bounds the complete packed payload.
+An implicit U component gives a 43-byte payload. Its two V components follow the origin. An explicit U component gives a 51-byte payload. Its U component follows the origin, then its two V components exhaust the payload. Control `1900` stores all three U components and two V components in a 67-byte payload. Every coordinate and direction component is finite. Each axis has hypot length within `1e-12` of one. The chart is `P(U,V)=origin+U·u_axis+V·v_axis`, with normal `u_axis×v_axis`. The [CATIA record layouts](../layouts/catia.md) give the fixed payload layouts. The B-family frame bounds the complete packed payload.
 
 A consolidated pcurve side binds to a known plane chart only when both endpoint lifts reach serialized object-stream vertices within `2e-3` mm and exactly one carrier wins all support candidates. Every definition site lifts through the same chart, and the neutral pcurve chart is identity. Multiple matching carriers leave the side unresolved.
 

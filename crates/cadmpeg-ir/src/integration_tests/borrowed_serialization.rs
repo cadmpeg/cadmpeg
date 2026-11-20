@@ -10,14 +10,13 @@ use serde_json::json;
 fn check_wire<T: Serialize + DeserializeOwned>(wire: &serde_json::Value) {
     let value: T = serde_json::from_value(wire.clone()).unwrap();
     assert_eq!(serde_json::to_value(&value).unwrap(), *wire);
-    let expected = serde_value::to_value(&value).unwrap();
     let arena = DecodeArena::new();
     let mut policy = DecodePolicy::service();
     policy.limits.max_retained_bytes = 0;
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
     let projected =
         crate::schema::structural::project(&ctx, &value, "project borrowed owner").unwrap();
-    assert_eq!(*projected, expected);
+    assert_eq!(projected, *wire);
     drop(projected);
     ctx.finish_session().unwrap();
     let arena = DecodeArena::new();

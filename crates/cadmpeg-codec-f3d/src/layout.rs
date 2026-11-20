@@ -11415,3 +11415,21 @@ pub(crate) mod motion_link_rotation_relation {
     /// Offset of `second_angle` (`f64`, little-endian). Spec §Assembly operands.
     pub(crate) const SECOND_ANGLE: usize = 115;
 }
+
+/// Byte offsets for the `sketch_item_geometry_member_run_head` record.
+///
+/// Spec §Records of a Sketch item. Record length 5 B.
+///
+/// ```text
+/// Offsets are relative to the end of the display name. The `N` member references and the closing reference follow. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+/// ```
+pub(crate) mod sketch_item_geometry_member_run_head {
+    /// Record length in bytes. Spec §Records of a Sketch item.
+    pub(crate) const LEN: usize = 5;
+    /// Offset of `zero_byte` (`u8`). Spec §Records of a Sketch item.
+    pub(crate) const ZERO_BYTE: usize = 0;
+    /// Stated value of `zero_byte` (`u8`). Spec §Records of a Sketch item.
+    pub(crate) const ZERO_BYTE_VALUE: u8 = 0;
+    /// Offset of `member_count` (`u32`, little-endian). Spec §Records of a Sketch item.
+    pub(crate) const MEMBER_COUNT: usize = 1;
+}
