@@ -675,50 +675,51 @@ fn internal_unit_variants_are_their_kind_alone() {
 
 #[cfg(feature = "schema")]
 mod schema {
-    use schemars::{schema_for, JsonSchema};
+    use schemars::{JsonSchema, SchemaGenerator};
 
     use super::super::*;
     use crate::design::ops::sketch::{TextAlign, TextContent, TextHorizontalBox, TextVerticalBox};
     use crate::scalar::PositiveLength;
 
-    fn generates<T: JsonSchema>() {
-        let schema = serde_json::to_value(schema_for!(T)).unwrap();
-        assert!(schema.is_object(), "{}", T::schema_name());
+    fn generates<T: JsonSchema>(generator: &mut SchemaGenerator) {
+        let schema = T::json_schema(generator);
+        assert!(schema.as_object().is_some(), "{}", T::schema_name());
     }
 
     #[test]
     fn every_shared_type_has_a_schema() {
-        generates::<TextContent>();
-        generates::<TextAlign>();
-        generates::<TextHorizontalBox>();
-        generates::<TextVerticalBox>();
-        generates::<ToolDisposition>();
-        generates::<PairElement>();
-        generates::<SheetCutNormal>();
-        generates::<Joint>();
-        generates::<JointConnector>();
-        generates::<Alignment>();
-        generates::<JointKind>();
-        generates::<JointMotion>();
-        generates::<JointOffset>();
-        generates::<AxisLimits>();
-        generates::<Coupling>();
-        generates::<JointDrive>();
-        generates::<DriveAxis>();
-        generates::<DriveMode>();
-        generates::<TangentContact>();
-        generates::<WidthMode>();
-        generates::<SlotPosition>();
-        generates::<PathPosition>();
-        generates::<PathAxisControl>();
-        generates::<PathRollControl>();
-        generates::<RadialDimension<PositiveLength>>();
-        generates::<Law<Length>>();
-        generates::<Bounds<Length>>();
-        generates::<Bounds<Angle>>();
-        generates::<Law<Fraction>>();
-        generates::<Law<Angle>>();
-        generates::<Span<Length>>();
-        generates::<Limit<Length>>();
+        let mut generator = SchemaGenerator::default();
+        generates::<TextContent>(&mut generator);
+        generates::<TextAlign>(&mut generator);
+        generates::<TextHorizontalBox>(&mut generator);
+        generates::<TextVerticalBox>(&mut generator);
+        generates::<ToolDisposition>(&mut generator);
+        generates::<PairElement>(&mut generator);
+        generates::<SheetCutNormal>(&mut generator);
+        generates::<Joint>(&mut generator);
+        generates::<JointConnector>(&mut generator);
+        generates::<Alignment>(&mut generator);
+        generates::<JointKind>(&mut generator);
+        generates::<JointMotion>(&mut generator);
+        generates::<JointOffset>(&mut generator);
+        generates::<AxisLimits>(&mut generator);
+        generates::<Coupling>(&mut generator);
+        generates::<JointDrive>(&mut generator);
+        generates::<DriveAxis>(&mut generator);
+        generates::<DriveMode>(&mut generator);
+        generates::<TangentContact>(&mut generator);
+        generates::<WidthMode>(&mut generator);
+        generates::<SlotPosition>(&mut generator);
+        generates::<PathPosition>(&mut generator);
+        generates::<PathAxisControl>(&mut generator);
+        generates::<PathRollControl>(&mut generator);
+        generates::<RadialDimension<PositiveLength>>(&mut generator);
+        generates::<Law<Length>>(&mut generator);
+        generates::<Bounds<Length>>(&mut generator);
+        generates::<Bounds<Angle>>(&mut generator);
+        generates::<Law<Fraction>>(&mut generator);
+        generates::<Law<Angle>>(&mut generator);
+        generates::<Span<Length>>(&mut generator);
+        generates::<Limit<Length>>(&mut generator);
     }
 }
