@@ -8,7 +8,9 @@
 //! `d·(p + q)`, for a pcurve of degree `d` and weight `w` on a surface of
 //! degrees `(p, q)`; a lower power of `w` can clear the denominator too.
 //! Each piece is recovered by interpolation in the Bernstein basis at the
-//! lowest degree, and the lowest power of `w`, that reproduces it.
+//! lowest degree, and the lowest power of `w`, that reproduces it. The
+//! pieces join at knots of full multiplicity, which are then removed as far
+//! as the curve allows.
 
 use cadmpeg_core::convert::f64_from_index;
 use cadmpeg_ir::math::portable::Portable;
@@ -379,11 +381,18 @@ pub(crate) fn lifted(
             }
         })
         .unzip();
-    Some(NurbsCurveRecord {
-        order: degree + 1,
+    let reduced = Nurbs {
+        degree,
+        knots,
         points,
         weights,
-        knots,
+    }
+    .without_knots(agreement);
+    Some(NurbsCurveRecord {
+        order: degree + 1,
+        points: reduced.points,
+        weights: reduced.weights,
+        knots: reduced.knots,
         form: Form::Open,
     })
 }
