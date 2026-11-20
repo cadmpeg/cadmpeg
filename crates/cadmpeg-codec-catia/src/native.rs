@@ -1347,6 +1347,8 @@ enum CatiaAllocationReferenceEncoding {
     TaggedU8,
     /// `0a <u16le>`.
     TaggedU16,
+    /// `0e <u24le>`.
+    TaggedU24,
 }
 
 /// Wire addressing form of one fixed-nine owner identity.

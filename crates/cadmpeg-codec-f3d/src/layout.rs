@@ -7847,6 +7847,18 @@ pub(crate) mod typed_reference_profile_chain_record {
     pub(crate) const SKETCH_SCOPE_REFERENCE: usize = 31;
 }
 
+/// Byte offsets for the `typed_reference_sketchless_profile_chain_record` record.
+///
+/// Spec §3.1. Record length 82 B.
+pub(crate) mod typed_reference_sketchless_profile_chain_record {
+    /// Offset of `zero_run_14` (`bytes[14]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_14: usize = 11;
+    /// Offset of `chain_marker` (`bytes[6]`). Spec §3.1.
+    pub(crate) const CHAIN_MARKER: usize = 25;
+    /// Offset of `selection_reference` (`bytes[51]`). Spec §3.1.
+    pub(crate) const SELECTION_REFERENCE: usize = 31;
+}
+
 /// Byte offsets for the `typed_reference_profile_identity_record` record.
 ///
 /// Spec §3.1. Record length 76 B.
@@ -10323,8 +10335,8 @@ pub(crate) mod reverse_normal_prefix {
     pub(crate) const GROUP_COUNT_VALUE: u32 = 0x0000_0001;
     /// Offset of `group_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const GROUP_REFERENCE: usize = 25;
-    /// Offset of `null_guid` (`bytes[76]`). Spec §3.1.
-    pub(crate) const NULL_GUID: usize = 36;
+    /// Offset of `link_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const LINK_GUID: usize = 36;
     /// Offset of `zero_tail` (`bytes[3]`). Spec §3.1.
     pub(crate) const ZERO_TAIL: usize = 112;
 }
@@ -10349,8 +10361,8 @@ pub(crate) mod shifted_reverse_normal_prefix {
     pub(crate) const GROUP_COUNT_VALUE: u32 = 0x0000_0001;
     /// Offset of `group_reference` (`bytes[11]`). Spec §3.1.
     pub(crate) const GROUP_REFERENCE: usize = 29;
-    /// Offset of `null_guid` (`bytes[76]`). Spec §3.1.
-    pub(crate) const NULL_GUID: usize = 40;
+    /// Offset of `link_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const LINK_GUID: usize = 40;
     /// Offset of `zero_tail` (`bytes[3]`). Spec §3.1.
     pub(crate) const ZERO_TAIL: usize = 116;
 }
