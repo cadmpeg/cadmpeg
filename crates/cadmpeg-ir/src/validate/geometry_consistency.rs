@@ -649,21 +649,6 @@ fn vertex_positions(ir: &CadIr) -> BorrowedIdentities<'_, (Point3, Option<f64>)>
     })
 }
 
-/// The bounded domain of a curve that an edge with no range runs over: its
-/// stored interval, or the effective knot domain of a clamped NURBS curve.
-fn bounded_curve_domain(curve: &crate::geometry::Curve) -> Option<[f64; 2]> {
-    if let Some(range) = curve.parameter_range {
-        return Some(range.endpoints());
-    }
-    match curve.geometry.solved() {
-        Some(SolvedCurveGeometry::Nurbs(nurbs)) if !nurbs.periodic() => {
-            crate::eval::nurbs_curve_parameter_domain(nurbs)
-                .map(crate::topology::IncreasingParameterInterval::endpoints)
-        }
-        _ => None,
-    }
-}
-
 /// Whether a curve carrier is open: a bounded carrier whose ends do not
 /// coincide within `bound`, or an unbounded line, parabola, or hyperbola. A
 /// carrier that neither its kind nor an evaluation decides is not open.
@@ -715,7 +700,12 @@ pub(super) fn vertexless_edge_on_open_carrier(
             cache_fit_tolerance.map(crate::geometry::FitTolerance::get),
         ],
     );
-    carrier_is_open(ctx, &curve.geometry, bounded_curve_domain(curve), bound)
+    carrier_is_open(
+        ctx,
+        &curve.geometry,
+        crate::eval::bounded_curve_domain(curve),
+        bound,
+    )
 }
 
 /// An edge's curve evaluated at its parameter range must land on the edge's
@@ -735,7 +725,7 @@ pub(super) fn check_edge_endpoint_consistency(
     });
     let curve_domains = BorrowedIdentities::build(|add| {
         for curve in &ir.geometry.curves {
-            if let Some(domain) = bounded_curve_domain(curve) {
+            if let Some(domain) = crate::eval::bounded_curve_domain(curve) {
                 add(curve.id.as_str(), domain);
             }
         }

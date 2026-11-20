@@ -617,6 +617,11 @@ impl<'a> Reduction<'a> {
                 linear,
                 &[edge_tolerance, start_tolerance, end_tolerance, fit],
             );
+            // On a bounded curve the start inverts from the domain's start
+            // and the end from its end, the ends validation checks an
+            // unranged edge at: on a curve shorter than the allowance, or
+            // closed, the end would otherwise invert to the start's parameter.
+            let domain = cadmpeg_ir::eval::bounded_curve_domain(carrier);
             let parameters = |tolerance| -> Result<Option<[f64; 2]>, CodecError> {
                 let invert = |point, seed| {
                     cadmpeg_ir::eval::model_curve_parameter_near_point_in_index_with_tolerance(
@@ -624,10 +629,10 @@ impl<'a> Reduction<'a> {
                     )
                     .map(|parameter| parameter.map(cadmpeg_ir::scalar::FiniteReal::get))
                 };
-                let Some(first) = invert(start, 0.0)? else {
+                let Some(first) = invert(start, domain.map_or(0.0, |[low, _]| low))? else {
                     return Ok(None);
                 };
-                Ok(invert(end, first)?.map(|last| [first, last]))
+                Ok(invert(end, domain.map_or(first, |[_, high]| high))?.map(|last| [first, last]))
             };
             let gap = |point: Point3, parameter| match cadmpeg_ir::eval::model_curve_point_by_id(
                 EvaluationAdmission::Decode(&ctx),

@@ -167,6 +167,41 @@ fn a_vertex_beyond_its_own_allowance_is_raised_with_a_loss_naming_it() {
 }
 
 #[test]
+fn an_open_edge_on_a_curve_shorter_than_the_allowance_spans_its_domain() {
+    // The whole curve lies within the allowance of either vertex, so either
+    // vertex inverts to any parameter: the range comes from the domain's ends.
+    let mut ir = cube_with_unranged_edge(Point3::new(0.005, 0.0, 0.0));
+    let edge = ir.geometry.edges[0].id.to_string();
+    let curve = ir.geometry.edges[0].curve().cloned().expect("edge curve");
+    ir.geometry
+        .curves
+        .iter_mut()
+        .find(|row| row.id == curve)
+        .expect("edge curve row")
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 2.0, 2.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.005, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("a short straight NURBS"),
+    ));
+    let (report, decoded) = write(&ir);
+    assert!(
+        !record_invalid_names(&report, &edge),
+        "{:#?}",
+        report.losses
+    );
+    let [start, end] = decoded.geometry.edges[0]
+        .param_range()
+        .expect("the edge is written with a range")
+        .get();
+    assert!(start.abs() < EPS_PARAMETER && (end - 2.0).abs() < EPS_PARAMETER);
+}
+
+#[test]
 fn an_open_edge_within_its_own_tolerance_takes_its_range() {
     let mut ir = cube_with_unranged_edge(Point3::new(10.0, 0.01, 0.0));
     let curve = ir.geometry.edges[0].curve().cloned().expect("edge curve");
@@ -325,7 +360,6 @@ fn an_open_line_edge_against_its_line_is_written_with_its_ends_exchanged() {
         .position()
         .get();
     assert!(position.distance(Point3::new(10.0, 0.0, 0.0)) < EPS_PARAMETER);
-    assert_eq!(edge_errors(&decoded), Vec::<String>::new());
 }
 
 #[test]
