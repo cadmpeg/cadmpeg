@@ -15,10 +15,11 @@ use std::collections::{HashMap, HashSet};
 /// operands resolved through their recipe identity, and a Reverse Normal
 /// resolved in its input state name ASM body slots. Body slots are local to
 /// one ASM history. A pattern seed or body deletion reads its slots in the
-/// history bound to the selecting scope (see [`scope_history`]). When every selected
-/// slot is absent from the model bodies, the one projected feature of the same
-/// Design stream whose transition in that history inserts the slot generates
-/// the body, and the selection names it there.
+/// history bound to the selecting scope (see [`scope_history`]), else in every
+/// history with a loss. When every selected slot is absent from the model
+/// bodies, the one projected feature of the same Design stream whose
+/// transition in that history inserts the slot generates the body, and the
+/// selection names it there.
 /// A Reverse Normal reads its slots in its bound history: see
 /// [`reverse_normal_binding`]. The generating feature becomes a dependency of
 /// the selecting feature. Returns the result states of the producers of
@@ -173,8 +174,7 @@ pub(crate) fn bind_generated_body_selections(
             let Some(scope) = scope else {
                 continue;
             };
-            let history = scope_history(scope, scope_histories, inputs.histories)
-                .or_else(|| own_history(inputs.histories, scope));
+            let history = scope_history(scope, scope_histories, inputs.histories);
             let stream = crate::ids::native_stream(&scope.id);
             let producers = slots
                 .iter()
@@ -259,53 +259,6 @@ pub(crate) fn bind_generated_body_selections(
             ))
         })
         .collect()
-}
-
-/// The fallback history of `scope` when [`scope_history`] binds none: the one
-/// history that holds both of its states, else the one that holds either, else
-/// the only history of the file.
-fn own_history<'a>(
-    histories: &'a [AsmHistory],
-    scope: &crate::records::feature::scope::DesignParameterScope,
-) -> Option<&'a AsmHistory> {
-    let holds = |history: &AsmHistory, state_id: i64| {
-        history
-            .states()
-            .iter()
-            .any(|state| state.state_id == state_id)
-    };
-    let unique = |mut matching: std::vec::IntoIter<&'a AsmHistory>| {
-        let history = matching.next()?;
-        matching.next().is_none().then_some(history)
-    };
-    let states = [scope.history_state_id(), scope.previous_history_state_id()];
-    let both = histories
-        .iter()
-        .filter(|history| {
-            states
-                .iter()
-                .all(|state| state.is_some_and(|state_id| holds(history, state_id)))
-        })
-        .collect::<Vec<_>>();
-    if !both.is_empty() {
-        return unique(both.into_iter());
-    }
-    let either = histories
-        .iter()
-        .filter(|history| {
-            states
-                .iter()
-                .flatten()
-                .any(|state_id| holds(history, *state_id))
-        })
-        .collect::<Vec<_>>();
-    if !either.is_empty() {
-        return unique(either.into_iter());
-    }
-    match histories {
-        [history] => Some(history),
-        _ => None,
-    }
 }
 
 /// A generating feature, the identity of the history state whose transition

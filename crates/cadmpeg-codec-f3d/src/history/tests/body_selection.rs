@@ -529,7 +529,12 @@ fn generated_case(
             0,
             None,
             false,
-            vec![history_state(77, vec![1]), history_state(2, Vec::new())],
+            vec![
+                history_state(80, vec![1]),
+                history_state(79, vec![1]),
+                history_state(77, vec![1]),
+                history_state(2, Vec::new()),
+            ],
         )],
     )
 }
@@ -984,7 +989,7 @@ fn a_shared_state_pair_uses_the_unique_direct_history() {
 }
 
 #[test]
-fn a_partly_stored_state_pair_uses_the_unique_endpoint_history() {
+fn a_partly_stored_state_pair_binds_through_every_history_with_a_loss() {
     use cadmpeg_ir::features::{
         patterns::PatternSeed, BodySelection, FeatureDefinition, FeatureOperation,
     };
@@ -1000,7 +1005,8 @@ fn a_partly_stored_state_pair_uses_the_unique_endpoint_history() {
         ),
         named_history("other", vec![history_state(99, Vec::new())]),
     ];
-    let (pattern, results) = generated_case_in(&[], false, &histories);
+    let (pattern, results, losses) =
+        generated_case_with_bindings(&[], false, &histories, &std::collections::HashMap::new());
     assert!(matches!(
         pattern.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. })
@@ -1010,4 +1016,8 @@ fn a_partly_stored_state_pair_uses_the_unique_endpoint_history() {
     ));
     assert_eq!(pattern.dependencies.len(), 1);
     assert_eq!(results.len(), 1);
+    let [loss] = losses.as_slice() else {
+        panic!("one unresolved history loss: {losses:?}");
+    };
+    assert!(loss.message.contains("taken as its producer"));
 }
