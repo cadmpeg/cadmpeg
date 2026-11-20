@@ -58,3 +58,42 @@ fn a_new_body_loft_with_a_sheet_output_is_a_surface_loft() {
         "../../../../corpus/f3d/reverse_normal_loft.f3d"
     ));
 }
+
+#[test]
+fn a_loft_pass_refusal_keeps_the_decode_and_charges_a_loss() {
+    let bytes = include_bytes!("../../../../corpus/f3d/reverse_normal_loft.f3d");
+    let full = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode the corpus file");
+    crate::history::history_bodies::inject_loft_pass_refusal();
+    let contained = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("a Loft pass refusal is contained");
+
+    assert_eq!(contained.ir(), full.ir());
+    let messages = |code: crate::loss::F3dLossCode| {
+        contained
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code == code.kind())
+            .map(|loss| loss.message.as_str())
+            .collect::<Vec<_>>()
+    };
+    let bounded = messages(crate::loss::F3dLossCode::FeatureHistoryBodyBounded);
+    assert_eq!(bounded.len(), 1, "{bounded:?}");
+    assert!(
+        bounded[0].contains("output bodies at its own history state exceed the Loft pass budget"),
+        "{}",
+        bounded[0]
+    );
+    let inferred = messages(crate::loss::F3dLossCode::FeatureLoftSolidInferred);
+    assert_eq!(inferred.len(), 1);
+    assert!(
+        inferred[0].ends_with(
+            "projects solid false because its 1 output bodies are sheet bodies in the final model (DR-331)."
+        ),
+        "{}",
+        inferred[0]
+    );
+}

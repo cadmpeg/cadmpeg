@@ -268,12 +268,15 @@ fn result_state_wants<'a>(
 /// Kinds of the output bodies of each projected Loft, decoded at the Loft's own
 /// history state. A Loft is absent when any of its output bodies does not
 /// decode at that state.
+///
+/// The pass runs in a context resumed from a checkpoint and never commits its
+/// charges, so a refusal inside it leaves the session budget unchanged.
 pub(crate) fn loft_result_kinds(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
     inputs: Inputs<'_>,
-) -> Result<HashMap<cadmpeg_ir::features::FeatureId, Vec<cadmpeg_ir::topology::BodyKind>>, CodecError>
-{
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> HashMap<cadmpeg_ir::features::FeatureId, Vec<cadmpeg_ir::topology::BodyKind>> {
     let mut wants = BTreeMap::<usize, Vec<Want<'_>>>::new();
     let mut expected = HashMap::new();
     for feature in inputs.features {
@@ -301,11 +304,24 @@ pub(crate) fn loft_result_kinds(
             .or_default()
             .extend(feature_wants);
     }
+    if wants.is_empty() {
+        return HashMap::new();
+    }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let local = ctx.checkpoint().resume(&arena);
+    local.take_trace();
     let mut bodies = Vec::new();
     let work = WorkBudget::new(MAX_HISTORY_BODY_WORK);
     let mut discarded = Vec::new();
+    #[cfg(test)]
+    if INJECTED_LOFT_PASS_REFUSAL.with(std::cell::Cell::take) {
+        let limit = local.policy().limits.max_entities;
+        local
+            .charge_entities(limit.saturating_add(1), "injected Loft pass charge")
+            .expect_err("the injected charge exceeds the entity limit");
+    }
     let result = fill_requests(
-        ctx,
+        &local,
         scan,
         inputs.histories,
         &wants,
@@ -313,15 +329,21 @@ pub(crate) fn loft_result_kinds(
         &work,
         &mut discarded,
     );
-    match result {
-        Err(error) if matches!(error, CodecError::ResourceLimit(_)) => return Err(error),
-        Err(_) => {
-            if let Some(limit) = ctx.resource_refusal() {
-                return Err(CodecError::ResourceLimit(limit));
-            }
-            return Ok(HashMap::new());
-        }
-        Ok(()) => {}
+    let bounded = F3dLossCode::FeatureHistoryBodyBounded.kind();
+    losses.extend(discarded.into_iter().filter(|loss| loss.code == bounded));
+    if let Some(limit) = local.resource_refusal() {
+        let mut refused = expected.keys().collect::<Vec<_>>();
+        refused.sort();
+        losses.extend(refused.into_iter().map(|feature| {
+            F3dLossCode::FeatureHistoryBodyBounded.note(format!(
+                "{feature} output bodies at its own history state exceed the Loft pass budget: {}",
+                CodecError::ResourceLimit(limit)
+            ))
+        }));
+        return HashMap::new();
+    }
+    if result.is_err() {
+        return HashMap::new();
     }
     let mut kinds = HashMap::<_, Vec<_>>::new();
     for body in &bodies {
@@ -333,7 +355,17 @@ pub(crate) fn loft_result_kinds(
         }
     }
     kinds.retain(|feature, kinds| expected.get(feature) == Some(&kinds.len()));
-    Ok(kinds)
+    kinds
+}
+
+#[cfg(test)]
+thread_local! {
+    static INJECTED_LOFT_PASS_REFUSAL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+#[cfg(test)]
+pub(crate) fn inject_loft_pass_refusal() {
+    INJECTED_LOFT_PASS_REFUSAL.with(|slot| slot.set(true));
 }
 
 #[cfg(test)]

@@ -887,8 +887,12 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         derived_snapshots,
         &mut losses,
     )?;
-    let loft_result_kinds =
-        crate::history::history_bodies::loft_result_kinds(ctx, scan, history_body_inputs)?;
+    let loft_result_kinds = crate::history::history_bodies::loft_result_kinds(
+        ctx,
+        scan,
+        history_body_inputs,
+        &mut losses,
+    );
     model.history_bodies = history_bodies;
     design.history_body_consumers.remaining_work = remaining_work;
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
