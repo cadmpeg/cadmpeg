@@ -3873,6 +3873,19 @@ Parsed by:
 | 34 | 2 | `final_token` | `u16` | little | spec | a nonzero u16 final token |
 | 36 | 4 | `zero_tail` | `bytes[4]` | little | spec | four zero tail bytes |
 
+## `pmark_record_head`
+
+Spec §3.4 · layout: byte offsets · size: 12 B
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/rollback.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `mark` | `u32` | little | spec | the mark, a little-endian u32 at +0 |
+| 4 | 4 | `form` | `u32` | little | spec | the form, a little-endian u32 at +4 |
+| 8 | 4 | `form_word` | `u32` | little | spec | the form word, a little-endian u32 at +8 |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

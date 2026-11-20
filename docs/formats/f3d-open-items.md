@@ -823,7 +823,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What do the `Dc<Family>MetaType` counters and the u64 context value of the timeline context record count?
 
-**Known.** `f3d.md` §3.1 "**Timeline context.**" gives the record layout. A design with one `Sketch` and one `Extrude` stores the counters `1` and `1` and the context value `2`. In a stream with serializer magic `1234`, each counter is at least the largest family ordinal of the timeline items of its family, and it can exceed it. Counters can name families that have no item in the timeline. The context value can equal the number of timeline items, be `0`, or exceed both the number of items and the sum of the counters. A design whose timeline holds one `Base Feature` item stores the counter `DcBaseFeatureMetaType = 1` and the context value `0`.
+**Known.** `f3d.md` §3.1 "**Timeline context.**" gives the record layout. A design with one `Sketch` and one `Extrude` stores the counters `1` and `1` and the context value `2`. In a stream with serializer magic `1234`, each counter is at least the largest family ordinal of the timeline items of its family, and it can exceed it. Counters can name families that have no item in the timeline. The context value can equal the number of timeline items, be `0`, or exceed both the number of items and the sum of the counters. A design whose timeline holds one `Base Feature` item stores the counter `DcBaseFeatureMetaType = 1` and the context value `0`. `f3d.md` §3.1 "**Design records of Sketch items.**" gives the counter of `Sketch` items and the context value of a design whose timeline holds only `Sketch` items, or only `Sketch` and `Extrude` items, and whose parameters keep their `d<n>` names. In a design whose timeline also holds items of other families, `DcSketchMetaType` can exceed the number of `Sketch` items, and the timeline context can omit it. A design whose parameters were renamed can store a context value below the largest `n` of its remaining `d<n>` names.
 
 **Need.** A writer must write correct values for designs with other item sets. The counters against the ordinals of deleted items, and the context value against the rolled-back position and the deleted items, would settle it.
 
@@ -839,7 +839,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What does a sketch placement path name when it references no tracked entity identity?
 
-**Known.** `f3d.md` §3.1 "**Sketch placement.**" gives the path of a sketch on a construction plane. A placement can also reference a path of type `5662F619-2281-4AD9-93DC-1FCFDA1062E7`.
+**Known.** `f3d.md` §3.1 "**Sketch placement.**" and "**Placement path.**" give the path of a sketch on an origin plane or a construction plane, of type `5A1BF548-241F-46FD-9FB5-E4B05126EB9D`. A placement can also reference a path of type `5662F619-2281-4AD9-93DC-1FCFDA1062E7`.
 
 **Need.** The placement of a sketch on a body face.
 
@@ -847,7 +847,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What does the u32 at offset 29 of the item-tail companion (type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`) encode?
 
-**Known.** `f3d.md` §3.1 "**Item-tail companion.**" gives the record. The word is `0`, `2`, or `3`. A `Sketch` or `Extrude` item with `s0` and `s1` equal to `0` can store `0` or `2`. A `Base Feature` item stores `0`.
+**Known.** `f3d.md` §3.1 "**Item-tail companion.**" gives the record. The word is `0`, `2`, or `3`. A `Sketch` or `Extrude` item with `s0` and `s1` equal to `0` can store `0` or `2`. Most `Sketch` items store `0`. The placement and the placement path of a `Sketch` item each reference an item-tail companion too. A `Base Feature` item stores `0`.
 
 **Need.** A writer must choose the word for each item it writes.
 
@@ -858,6 +858,22 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 **Known.** `f3d.md` §3.1 "**Names in the B-rep of a Base Feature.**" gives the face tokens in each body and the start of the first body. In the one single-item design with several result bodies, the first face token of a later body is the first face token of the body before it, plus that body's face count and edge count, plus `1`. Where a design's bodies carry a `Base Feature` identity but its timeline holds other items, the gap between one body's run and the next is mostly `0`, sometimes `1`, and sometimes neither, so no rule is established. Body ordinals and first face tokens increase in the order of the bodies in the B-rep stream. Some designs also tag edges and vertices of a result body.
 
 **Need.** A writer of several result bodies must number the faces of each body. The edge and vertex tags of the earlier bodies against the start of the next run would settle it.
+
+### DR-901. Sketch item bytes outside the stated rules
+
+**Question.** What do the varying flags, words, names, and record forms of the records of a `Sketch` item encode, how does Fusion assign dimension suffixes, relation ordinals, and point and curve identities, and what does a persistent-id table store for `Sketch` items followed by a `Base Feature`?
+
+**Known.** `f3d.md` §3.1 "**Sketch container.**" and the paragraphs around it give the records of a `Sketch` item with their fixed bytes. These fields vary across sketches whose other fields agree: the scope's property-block presence byte `P` and flag `F`; the container's u32 after its dimension-frame run (`0` or `1`) and its sketch word (`6` or `7` in the `EntityGenesis` form); the container's u8 after its sketch word; the point flag bytes 1, 4, and 6 and the point state byte; the curve flag `A`; the `EntityGenesis` value of a relation (absent, `0`, `2`, `4`, `32`, `128`, or `1024`), of a point (`0`, `2`, `8`, `258`, `4096`, or `4098`), and of a line or circular curve (`0`, `2`, `4`, `8`, `128`, `130`, `256`, `258`, `512`, or `4096`); the point selector (`0`, `1`, `2`, or `4`); the three bytes of the placement tracking flag; and the dimension owner's u64 parameter number, which equals the `n` of the parameter name `d<n>` in most owners. Most `Sketch` scopes store the family name `Sketch`, and other scopes store a localized family name. Most container entity names are `0_` followed by the decimal record index of the container, and other names start with `1_`. Most placement tracking flags store `01 01 00`. Most points store no four zero bytes before the sketch container reference. Most circular curves store the normal `(0, 0, 1)`, and another circular curve stores another normal. Most 42-byte line tails store zero in their three pad bytes and in their twelve bytes before the f32 `1.0` values; other 42-byte line tails store `01` in their third pad byte and the f32 `0.4` in those twelve bytes. A line's curve tail is 44 bytes after one point reference and 42 bytes after two or three in the common form, with zero pad bytes; some lines store a 46-byte or 53-byte tail, whose extra 4 or 11 bytes may be a reference field. The first run of a container also lists relations of types other than `60403D47-0C49-49B0-BDE8-1679608164A2` and `24DB790E-3DCD-4336-AFA3-6F119EF2239B`. Curve flag `A` mostly equals flag byte 4 of the curve's end points. Most origin points store the flags `00 00 00 01 01 01 00 00` and state `0`; other origin points store other flags or another state, and some of them keep state `0` and clear flag byte 4. A dimension's four records are either frame, parameter, owner, companion or frame, owner, parameter, companion, and one sketch can use both arrangements. Their record indices are mostly consecutive. In most sketches the source-kind suffix of the `j`-th dimension of one kind in prefix order is `j + 1`, so the first linear dimension is `Linear Dimension-2`; other sketches store other suffixes. A member's relation ordinal is mostly the number of relations and dimension frames with a smaller record index that name the member; other ordinals are larger, and an ordinal can be smaller. In most sketch collections, the `pt_tag` of the points and the `crv_primary_id` of the curves are distinct, start at `100`, and give the origin point of the first sketch identity `100`. In most sketch collections, `crv_tag_id_idx` is one more than the largest identity of the sketches it lists, and in the others it is larger. A design whose timeline holds only `Sketch` items lists its `Sketch` identities in the pairs and none in the forward run; a design with one `Base Feature` lists it in both.
+
+**Need.** A writer must choose each of these bytes, suffixes, ordinals, and identities, and must write the persistent-id table of `Sketch` items before a `Base Feature`. The flags against the sketch's solved state and the constraints that hold each entity, the owner's parameter number against the creation order of the design's parameters, the suffixes, ordinals, and identities against the deleted dimensions, relations, points, and curves of the sketch, and a design whose timeline holds `Sketch` items and a `Base Feature` would settle them.
+
+### DR-910. Cross-segment references in the records of a Sketch item
+
+**Question.** Which reference fields of the records of a `Sketch` item can name a record of another segment, which segment does each such reference name, and when does Fusion write the fifteen-byte form?
+
+**Known.** `f3d.md` §3.1 "This subsection gives the records of one `Sketch` timeline item" gives the record sizes and offsets of a record whose references are all same-segment references or null references, and a fifteen-byte reference moves every later offset of its record by four bytes. Scopes, placements, placement paths, sketch containers, points, relations, dimension frames, and dimension owners of `Sketch` items store fifteen-byte references.
+
+**Need.** A writer must choose the form of each reference it writes. The field that holds each fifteen-byte reference, and the segment it names against the segments of the design, would settle it.
 
 ### DR-888. Nonzero one-byte ordinal prefix of an attributed local occurrence
 
@@ -3802,3 +3818,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** A save with a zero-distance direction one beside a pattern payload, with its direction records and instance positions.
 
 **Note.** The decoder reads the record that the payload names as the direction-one record, takes direction two from the payload V displacement, and charges `feature.rectangular-pattern-direction-one-record-assumed`. A payload without a V displacement leaves the one record to direction two.
+
+### DR-892. Packed-direction split component flag `Z`
+
+**Question.** What does the `Z: true` key in the descriptor of a packed-direction split component encode?
+
+**Known.** The flagged components inflate to their declared byte counts, the two components have equal lengths divisible by four, and every value read as f32 is finite and lies in [-1, 1]. Unflagged packed-direction components store the same layout.
+
+**Need.** Paired containers of one mesh saved with and without the flag, or decoded corner normals of a flagged stream compared with the triangle normals.
+
+**Note.** The decoder reads the flagged payload with the `{T: 3}` layout, retains the flag on the native split-stream record, and reports `mesh.component-flag-assumed`.

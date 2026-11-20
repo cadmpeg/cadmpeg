@@ -498,4 +498,241 @@ fn a_body_without_a_retained_key_takes_a_key_no_other_body_holds() {
     );
 }
 
+/// The unit cube with the surface of each face not named in `kept` replaced
+/// by an undecoded carrier, which F3D has no form for.
+fn cube_with_unknown_surfaces(kept: &[&str]) -> CadIr {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture");
+    let replaced = ir
+        .geometry
+        .faces
+        .iter()
+        .filter(|face| {
+            !face
+                .name
+                .as_deref()
+                .is_some_and(|name| kept.contains(&name))
+        })
+        .map(|face| face.surface.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(replaced.len(), 6 - kept.len());
+    for surface in replaced {
+        let row = ir
+            .geometry
+            .surfaces
+            .iter_mut()
+            .find(|row| row.id == surface)
+            .expect("the face's surface");
+        row.geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+            cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
+        );
+    }
+    ir
+}
+
+/// Face `face` of the unit cube on a rolling-ball blend with no solved cache,
+/// whose construction F3D cannot write without one.
+fn cube_with_cacheless_blend(face: usize) -> CadIr {
+    use cadmpeg_ir::geometry::{
+        surface_payloads::BlendSurfacePayload, BlendCrossSection, BlendRadiusLaw, BlendSupport,
+        CacheContract, ProceduralSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
+    };
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture");
+    let construction =
+        cadmpeg_ir::ids::ProceduralSurfaceId::mint("generated:test:blend#0").expect("identity");
+    let supports = [2, 3].map(|support| {
+        Some(BlendSupport {
+            surface: ir.geometry.faces[support].surface.clone(),
+            reversed: false,
+        })
+    });
+    let payload = BlendSurfacePayload::try_new(
+        supports,
+        None,
+        BlendRadiusLaw::constant(1.0).expect("finite radius"),
+        BlendCrossSection::Circular,
+        CacheContract::from_form(None),
+    )
+    .expect("a cacheless rolling-ball blend");
+    ir.geometry.procedural_surfaces.push(ProceduralSurface::new(
+        construction.clone(),
+        ProceduralSurfaceDefinition::Blend(payload),
+        None,
+    ));
+    let surface = ir.geometry.faces[face].surface.clone();
+    ir.geometry
+        .surfaces
+        .iter_mut()
+        .find(|row| row.id == surface)
+        .expect("the face's surface")
+        .geometry = SurfaceGeometry::Procedural {
+        construction,
+        cache: None,
+    };
+    ir
+}
+
+fn assert_valid(ir: &CadIr) {
+    let validation =
+        cadmpeg_ir::validate::validate_neutral(ir, Vec::new()).expect("validate the neutral model");
+    assert!(
+        validation.is_ok(),
+        "validation findings: {:#?}",
+        validation.findings
+    );
+}
+
+#[test]
+fn a_face_on_a_carrier_with_no_form_is_dropped_and_the_body_written_as_a_sheet() {
+    let ir = cube_with_cacheless_blend(0);
+    let face = ir.geometry.faces[0].id.to_string();
+    let surface = ir.geometry.faces[0].surface.to_string();
+    let report = assert_written_with_loss(
+        &ir,
+        None,
+        &F3dLossCode::WriterFaceOmitted.kind().to_string(),
+        &format!("face {face} (surface {surface})"),
+    );
+    assert!(
+        !charges(&report, &F3dLossCode::WriterBodyOmitted.kind().to_string()),
+        "{:#?}",
+        report.losses
+    );
+    let (_, decoded) = write(&ir);
+    assert_eq!(decoded.geometry.bodies.len(), 1);
+    assert_eq!(
+        decoded.geometry.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Sheet
+    );
+    assert_eq!(decoded.geometry.faces.len(), 5);
+    assert_valid(&decoded);
+}
+
+#[test]
+fn a_face_on_an_edge_with_no_curve_form_is_dropped() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture");
+    let edge = ir.geometry.edges[0].id.clone();
+    let curve = ir.geometry.edges[0]
+        .curve()
+        .cloned()
+        .expect("a cube edge curve");
+    ir.geometry
+        .curves
+        .iter_mut()
+        .find(|row| row.id == curve)
+        .expect("the edge's curve")
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Unknown { record: None });
+    let users = ir
+        .geometry
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.edge == edge)
+        .filter_map(|coedge| {
+            ir.geometry
+                .loops
+                .iter()
+                .find(|row| row.id == coedge.owner_loop)
+        })
+        .map(|row| row.face.to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(users.len(), 2);
+    let report = assert_written_with_loss(
+        &ir,
+        None,
+        &F3dLossCode::WriterFaceOmitted.kind().to_string(),
+        &format!("edge {edge} on curve {curve}"),
+    );
+    for face in &users {
+        assert!(
+            report
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(&format!("face {face} (edge"))),
+            "{:#?}",
+            report.losses
+        );
+    }
+    let (_, decoded) = write(&ir);
+    assert_eq!(decoded.geometry.faces.len(), 4);
+    assert_eq!(
+        decoded.geometry.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Sheet
+    );
+}
+
+#[test]
+fn faces_left_apart_are_written_in_separate_shells() {
+    let ir = cube_with_unknown_surfaces(&["top face", "bottom face"]);
+    let (report, decoded) = write(&ir);
+    assert!(
+        charges(&report, &F3dLossCode::WriterFaceOmitted.kind().to_string()),
+        "{:#?}",
+        report.losses
+    );
+    assert_eq!(decoded.geometry.faces.len(), 2);
+    assert_eq!(decoded.geometry.shells.len(), 2);
+    assert_eq!(decoded.geometry.regions.len(), 1);
+    assert_eq!(decoded.geometry.regions[0].shells.len(), 2);
+    for shell in &decoded.geometry.shells {
+        assert_eq!(
+            decoded
+                .geometry
+                .faces
+                .iter()
+                .filter(|face| face.shell == shell.id)
+                .count(),
+            1
+        );
+    }
+    let validation = cadmpeg_ir::validate::validate_neutral(&decoded, Vec::new())
+        .expect("validate the neutral model");
+    assert!(
+        !validation.findings.iter().any(|finding| finding.check
+            == cadmpeg_ir::report::check::Check::ShellTopology
+            && finding.severity == cadmpeg_ir::report::Severity::Error),
+        "{:#?}",
+        validation.findings
+    );
+}
+
+#[test]
+fn a_body_with_no_writable_face_is_still_dropped() {
+    let ir = cube_with_unknown_surfaces(&[]);
+    let body = ir.geometry.bodies[0].id.to_string();
+    let report = assert_written_with_loss(
+        &ir,
+        None,
+        &F3dLossCode::WriterBodyOmitted.kind().to_string(),
+        &body,
+    );
+    assert!(
+        charges(&report, "export/output.empty"),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        !charges(&report, &F3dLossCode::WriterFaceOmitted.kind().to_string()),
+        "{:#?}",
+        report.losses
+    );
+}
+
+#[test]
+fn a_carrier_whose_encoding_fails_still_drops_its_body() {
+    let mut ir = cube_with_cacheless_blend(0);
+    let duplicate = ir.geometry.procedural_surfaces[0].clone();
+    ir.geometry.procedural_surfaces.push(duplicate);
+    let report = assert_written_with_loss(
+        &ir,
+        None,
+        &F3dLossCode::WriterBodyOmitted.kind().to_string(),
+        "multiple procedural constructions",
+    );
+    assert!(
+        !charges(&report, &F3dLossCode::WriterFaceOmitted.kind().to_string()),
+        "{:#?}",
+        report.losses
+    );
+}
+
 mod edge_ranges;
