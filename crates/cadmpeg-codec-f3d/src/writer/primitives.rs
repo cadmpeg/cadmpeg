@@ -56,8 +56,12 @@ pub(crate) fn validate_assembly_projection(
     };
     // The decoder projects joints over the expanded instance tree, then names
     // each instance's occurrence.
-    let expanded =
-        crate::tree::expand(&target.model.product_definitions, &target.model.occurrences)?;
+    let expanded = crate::tree::expand(
+        &cadmpeg_core::decode::ResourceLimits::default(),
+        &target.model.product_definitions,
+        &target.model.occurrences,
+        &std::collections::BTreeMap::new(),
+    )?;
     let mut inserts = crate::design::components::ComponentInserts::decide(
         &native.design_parameter_scopes,
         &native.design_feature_timelines,
