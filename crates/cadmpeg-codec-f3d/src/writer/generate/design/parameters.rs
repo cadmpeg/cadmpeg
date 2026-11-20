@@ -390,6 +390,31 @@ impl ParameterPlan {
         encode_document_parameters(&records, collection)
     }
 
+    /// The user parameter records of class `class_tag` at `indices`, each
+    /// with a tail that names `collection`, as records of `out`.
+    pub(in crate::writer::generate) fn roster_records(
+        &self,
+        class_tag: &crate::records::references::DesignClassTag,
+        indices: &[u32],
+        collection: u32,
+        out: &mut super::frames::DesignRecords,
+    ) -> Result<(), CodecError> {
+        for (ordinal, (parameter, record_index)) in
+            self.written.iter().zip(indices.iter().copied()).enumerate()
+        {
+            let record = parameter.record(class_tag.clone(), record_index, ordinal)?;
+            out.primaries.push((record_index, out.bytes.len()));
+            out.bytes
+                .extend(encode_document_parameters(&[record], collection)?);
+        }
+        Ok(())
+    }
+
+    /// The number of written parameters.
+    pub(in crate::writer::generate) fn written_count(&self) -> usize {
+        self.written.len()
+    }
+
     /// The ids of the written parameters.
     pub(in crate::writer::generate) fn written(&self) -> impl Iterator<Item = &ParameterId> {
         self.written.iter().map(|parameter| &parameter.source)
