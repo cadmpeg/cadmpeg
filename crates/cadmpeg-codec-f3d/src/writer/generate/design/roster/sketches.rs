@@ -254,10 +254,6 @@ struct Classes {
     frame: crate::records::references::DesignClassTag,
     point: crate::records::references::DesignClassTag,
     companion: crate::records::references::DesignClassTag,
-    line: crate::records::references::DesignClassTag,
-    circular: crate::records::references::DesignClassTag,
-    relation: crate::records::references::DesignClassTag,
-    tangency: crate::records::references::DesignClassTag,
     stamps: crate::records::references::DesignClassTag,
     item_companion: crate::records::references::DesignClassTag,
     tracked: crate::records::references::DesignClassTag,
@@ -281,10 +277,6 @@ impl Classes {
             frame: class(types::SKETCH_FRAME)?,
             point: class(types::SKETCH_POINT)?,
             companion: class(types::SKETCH_POINT_COMPANION)?,
-            line: class(types::SKETCH_LINE)?,
-            circular: class(types::SKETCH_CIRCULAR_CURVE)?,
-            relation: class(types::SKETCH_RELATION)?,
-            tangency: class(types::SKETCH_TANGENCY)?,
             stamps: class(types::RECORD_TIMESTAMPS)?,
             item_companion: class(types::ITEM_TAIL_COMPANION)?,
             tracked: class(types::TRACKED_RESULTS)?,
@@ -512,7 +504,7 @@ impl Item<'_> {
                 .copied()
                 .ok_or_else(|| CodecError::malformed(format_args!("sketch point {index}")))
         };
-        let (class, genesis_value, payload) = match curve.geometry {
+        let (row, genesis_value, payload) = match curve.geometry {
             CurveGeometry::Line { start, end } => {
                 let ([x0, y0], [x1, y1]) = (at(start)?, at(end)?);
                 let (dx, dy) = (x1 - x0, y1 - y0);
@@ -523,7 +515,7 @@ impl Item<'_> {
                     (1.0, 0.0)
                 };
                 (
-                    &self.classes.line,
+                    types::SKETCH_LINE,
                     GENESIS,
                     [x0, y0, 0.0, dx, dy, 0.0, ux, uy, 0.0, 0.0, 0.0, 1.0],
                 )
@@ -536,7 +528,7 @@ impl Item<'_> {
             } => {
                 let [cx, cy] = at(center)?;
                 (
-                    &self.classes.circular,
+                    types::SKETCH_CIRCULAR_CURVE,
                     CIRCULAR_GENESIS,
                     [
                         cx, cy, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, radius, angles[0], angles[1],
@@ -546,7 +538,7 @@ impl Item<'_> {
             CurveGeometry::Circle { center, radius } => {
                 let [cx, cy] = at(center)?;
                 (
-                    &self.classes.circular,
+                    types::SKETCH_CIRCULAR_CURVE,
                     CIRCULAR_GENESIS,
                     [
                         cx,
@@ -565,7 +557,12 @@ impl Item<'_> {
                 )
             }
         };
-        out.record(class, record).zeros(9).byte(1).u32(3);
+        // A class is looked up where the design writes a record of its type:
+        // the type table lists the types of the written records.
+        out.record(&self.ctx.class(row.guid)?, record)
+            .zeros(9)
+            .byte(1)
+            .u32(3);
         genesis(out, genesis_value)?;
         property(out, "crv_primary_id", identity)?;
         property(out, "crv_secondary_id", 0)?;
@@ -608,12 +605,12 @@ impl Item<'_> {
             ascending.sort_unstable();
             ascending.dedup();
             let tangent = relation.kind == RelationKind::Tangent;
-            let class = if tangent {
-                &self.classes.tangency
+            let row = if tangent {
+                types::SKETCH_TANGENCY
             } else {
-                &self.classes.relation
+                types::SKETCH_RELATION
             };
-            out.record(class, *record)
+            out.record(&self.ctx.class(row.guid)?, *record)
                 .zeros(8)
                 .byte(1)
                 .u32(count(ascending.len())?);
