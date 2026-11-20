@@ -17592,66 +17592,6 @@ anchor = "a zero byte, u32 `1`, a reference to the body-presentation owner, and 
 
 
 [[record]]
-name = "sketch_extrude_profile_loop_entry"
-kind = "byte"
-section = "Records of a sketch-driven Extrude"
-anchor = "Each loop entry is 40 bytes in the layout"
-size = 40
-note = "One entry of a loop of the profile identity record `N + 3`. Offsets are relative to the start of the entry."
-
-[[record.field]]
-name = "kind"
-offset = 0
-type = "u32"
-source = "spec"
-anchor = "u32 kind `3`, the u64 sketch-curve primary identity"
-value = 3
-
-[[record.field]]
-name = "primary_identity"
-offset = 4
-type = "u64"
-source = "spec"
-anchor = "the u64 sketch-curve primary identity, the u64 secondary identity"
-
-[[record.field]]
-name = "secondary_identity"
-offset = 12
-type = "u64"
-source = "spec"
-anchor = "the u64 sketch-curve primary identity, the u64 secondary identity"
-
-[[record.field]]
-name = "traversal_flag"
-offset = 20
-type = "u32"
-source = "spec"
-anchor = "the u32 traversal flag, two u32 operands, and eight zero bytes"
-
-[[record.field]]
-name = "first_operand"
-offset = 24
-type = "u32"
-source = "spec"
-anchor = "the u32 traversal flag, two u32 operands, and eight zero bytes"
-
-[[record.field]]
-name = "second_operand"
-offset = 28
-type = "u32"
-source = "spec"
-anchor = "the u32 traversal flag, two u32 operands, and eight zero bytes"
-
-[[record.field]]
-name = "zero_run_8"
-offset = 32
-type = "bytes[8]"
-source = "spec"
-anchor = "the u32 traversal flag, two u32 operands, and eight zero bytes"
-value = [0, 0, 0, 0, 0, 0, 0, 0]
-
-
-[[record]]
 name = "sketch_extrude_circle_curve_record"
 kind = "byte"
 section = "Records of a sketch-driven Extrude"
@@ -28575,7 +28515,7 @@ kind = "byte"
 section = "3.1"
 anchor = "Each entry is u32 `2`, the u64 sketch-curve primary identity"
 size = 40
-note = "The entry kind is 2 with typed references and 3 with compact references."
+note = "The entry kind is 2 with typed references and 3 with compact references. The traversal flag is the first of the three operands; DR-124 tracks its reading in typed entries."
 
 [[record.field]]
 name = "kind"
@@ -28599,9 +28539,23 @@ source = "spec"
 anchor = "the u64 sketch-curve secondary identity"
 
 [[record.field]]
-name = "entry_fields"
+name = "traversal_flag"
 offset = 20
-type = "u32[3]"
+type = "u32"
+source = "spec"
+anchor = "The first operand of a compact entry is its traversal flag."
+
+[[record.field]]
+name = "second_operand"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "three u32 operands, and eight zero bytes"
+
+[[record.field]]
+name = "third_operand"
+offset = 28
+type = "u32"
 source = "spec"
 anchor = "three u32 operands, and eight zero bytes"
 

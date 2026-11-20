@@ -5499,22 +5499,6 @@ Offsets are relative to the `Body` owner's primary indexed header.
 | 81 | 11 | `presentation_owner_repeat` | `bytes[11]` | little | spec | a zero byte, u32 `1`, a reference to the body-presentation owner, and a reference to the component aggregate |
 | 92 | 11 | `component_aggregate` | `bytes[11]` | little | spec | a zero byte, u32 `1`, a reference to the body-presentation owner, and a reference to the component aggregate |
 
-## `sketch_extrude_profile_loop_entry`
-
-Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 40 B
-
-One entry of a loop of the profile identity record `N + 3`. Offsets are relative to the start of the entry.
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 4 | `kind` | `u32` | little | spec | u32 kind `3`, the u64 sketch-curve primary identity · value `3` |
-| 4 | 8 | `primary_identity` | `u64` | little | spec | the u64 sketch-curve primary identity, the u64 secondary identity |
-| 12 | 8 | `secondary_identity` | `u64` | little | spec | the u64 sketch-curve primary identity, the u64 secondary identity |
-| 20 | 4 | `traversal_flag` | `u32` | little | spec | the u32 traversal flag, two u32 operands, and eight zero bytes |
-| 24 | 4 | `first_operand` | `u32` | little | spec | the u32 traversal flag, two u32 operands, and eight zero bytes |
-| 28 | 4 | `second_operand` | `u32` | little | spec | the u32 traversal flag, two u32 operands, and eight zero bytes |
-| 32 | 8 | `zero_run_8` | `bytes[8]` | little | spec | the u32 traversal flag, two u32 operands, and eight zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
-
 ## `sketch_extrude_circle_curve_record`
 
 Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 81 B
@@ -8729,7 +8713,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 40 B
 
-The entry kind is 2 with typed references and 3 with compact references.
+The entry kind is 2 with typed references and 3 with compact references. The traversal flag is the first of the three operands; DR-124 tracks its reading in typed entries.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/operands.rs`
@@ -8739,7 +8723,9 @@ Parsed by:
 | 0 | 4 | `kind` | `u32` | little | spec | Each entry is u32 `2`, the u64 sketch-curve primary identity |
 | 4 | 8 | `primary_id` | `u64` | little | spec | the u64 sketch-curve primary identity |
 | 12 | 8 | `secondary_id` | `u64` | little | spec | the u64 sketch-curve secondary identity |
-| 20 | 12 | `entry_fields` | `u32[3]` | little | spec | three u32 operands, and eight zero bytes |
+| 20 | 4 | `traversal_flag` | `u32` | little | spec | The first operand of a compact entry is its traversal flag. |
+| 24 | 4 | `second_operand` | `u32` | little | spec | three u32 operands, and eight zero bytes |
+| 28 | 4 | `third_operand` | `u32` | little | spec | three u32 operands, and eight zero bytes |
 | 32 | 8 | `zero_tail` | `bytes[8]` | little | spec | three u32 operands, and eight zero bytes |
 
 ## `compact_reference_profile_selection_prefix`
