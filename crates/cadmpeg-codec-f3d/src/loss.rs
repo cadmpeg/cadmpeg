@@ -133,6 +133,12 @@ pub(crate) enum F3dLossCode {
     /// A construction tracking path has no matching indexed type registration.
     ConstructionTrackingPathUntyped,
     ConstructionClosingFlagAssumed,
+    /// Planar sketch-curve tails with two opaque bytes read the byte before
+    /// the u32 lane as the tail marker.
+    SketchCurveTailMarkerAssumed,
+    /// Planar sketch-curve tails with two opaque bytes read a u32 lane of `1`
+    /// as construction geometry.
+    SketchCurveTailConstructionAssumed,
     /// A Chamfer's non-face group is read as its edge group despite its role.
     ChamferEdgeRoleAssumed,
     ChamferDefinitionUnresolved,
@@ -1243,6 +1249,8 @@ impl F3dLossCode {
         Self::SphereDiameterSourceAssumed,
         Self::ConstructionTrackingPathUntyped,
         Self::ConstructionClosingFlagAssumed,
+        Self::SketchCurveTailMarkerAssumed,
+        Self::SketchCurveTailConstructionAssumed,
         Self::ChamferEdgeRoleAssumed,
         Self::ChamferDefinitionUnresolved,
         Self::ChamferSelectionUnresolved,
@@ -2001,6 +2009,8 @@ impl F3dLossCode {
 
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
             Self::ConstructionClosingFlagAssumed => "feature.construction-closing-flag-assumed",
+            Self::SketchCurveTailMarkerAssumed => "sketch.curve-tail-marker-assumed",
+            Self::SketchCurveTailConstructionAssumed => "sketch.curve-tail-construction-assumed",
             Self::ChamferEdgeRoleAssumed => "feature.chamfer-edge-role-assumed",
             Self::ChamferDefinitionUnresolved => "feature.chamfer-definition-unresolved",
             Self::ChamferSelectionUnresolved => "feature.chamfer-selection-unresolved",
@@ -3071,6 +3081,8 @@ impl F3dLossCode {
             | Self::PlacementConstructionUntyped
             | Self::ConstructionTrackingPathUntyped
             | Self::ConstructionClosingFlagAssumed
+            | Self::SketchCurveTailMarkerAssumed
+            | Self::SketchCurveTailConstructionAssumed
             | Self::ChamferEdgeRoleAssumed
             | Self::ChamferDefinitionUnresolved
             | Self::ChamferSelectionUnresolved
@@ -3747,6 +3759,8 @@ impl F3dLossCode {
             | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
             Self::ScopeOwnerUnresolved
             | Self::ConstructionClosingFlagAssumed
+            | Self::SketchCurveTailMarkerAssumed
+            | Self::SketchCurveTailConstructionAssumed
             | Self::ChamferEdgeRoleAssumed
             | Self::ChamferDefinitionUnresolved
             | Self::ChamferSelectionUnresolved
@@ -4525,6 +4539,8 @@ mod tests {
                 "feature.sphere-diameter-source-assumed",
                 "feature.tracking-path-untyped",
                 "feature.construction-closing-flag-assumed",
+                "sketch.curve-tail-marker-assumed",
+                "sketch.curve-tail-construction-assumed",
                 "feature.chamfer-edge-role-assumed",
                 "feature.chamfer-definition-unresolved",
                 "feature.chamfer-selection-unresolved",
