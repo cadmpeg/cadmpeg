@@ -528,6 +528,19 @@ fn generated_case(
     cadmpeg_ir::features::Feature,
     Vec<cadmpeg_ir::features::FeatureResultTopology>,
 ) {
+    generated_case_in(live, selector, false)
+}
+
+/// With `split`, states 80 and 79 of the selecting feature hold no body and
+/// form history `history`, and states 77 and 2 form `other-history`.
+fn generated_case_in(
+    live: &[cadmpeg_ir::topology::Body],
+    selector: GeneratedSelector,
+    split: bool,
+) -> (
+    cadmpeg_ir::features::Feature,
+    Vec<cadmpeg_ir::features::FeatureResultTopology>,
+) {
     use crate::history_records::{AsmDeltaState, AsmHistoricalTopology};
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternSeed},
@@ -642,13 +655,30 @@ fn generated_case(
             versions,
         )
     };
-    let histories = [crate::test_support::history::history(
-        "history".into(),
-        0,
-        None,
-        false,
-        vec![state(77, vec![1]), state(2, Vec::new())],
-    )];
+    let history =
+        |id: &str, states| crate::test_support::history::history(id.into(), 0, None, false, states);
+    let histories = if split {
+        vec![
+            history(
+                "history",
+                vec![state(80, Vec::new()), state(79, Vec::new())],
+            ),
+            history(
+                "other-history",
+                vec![state(77, vec![1]), state(2, Vec::new())],
+            ),
+        ]
+    } else {
+        vec![history(
+            "history",
+            vec![
+                state(80, vec![1]),
+                state(79, vec![1]),
+                state(77, vec![1]),
+                state(2, Vec::new()),
+            ],
+        )]
+    };
     let inputs = FeatureBodySelectionInputs {
         scopes: &scopes,
         groups: &groups,
@@ -789,4 +819,19 @@ fn a_moved_body_the_final_model_omits_is_generated_by_the_feature_that_inserts_i
         .iter()
         .any(|dependency| dependency.as_str() == "f3d:test:feature#extrude"));
     assert_eq!(results.len(), 1);
+}
+
+#[test]
+fn a_moved_body_that_another_history_inserts_stays_historical() {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+    let (moved, results) = generated_case_in(&[], GeneratedSelector::Move, true);
+    assert!(results.is_empty());
+    assert!(matches!(
+        moved.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::MoveBody {
+            bodies: BodySelection::Historical { .. },
+            ..
+        })
+    ));
+    assert!(moved.dependencies.is_empty());
 }
