@@ -356,6 +356,8 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) loop_arrays: LoopArrayScan,
     /// Feature rows, definitions, operations, and the implicit entity graph.
     pub(crate) features: FeatureScan,
+    /// Plane candidates derived from the other fields.
+    pub(crate) plane_candidates: crate::decode::analytic::planes::PlaneCandidateMemo,
 }
 
 /// Native model name and its source position.
@@ -3280,6 +3282,7 @@ pub(crate) fn scan_bytes<'a>(
             legacy_rounds: legacy_rounds.rounds,
             dimensions: model_dimensions,
         },
+        plane_candidates: crate::decode::analytic::planes::PlaneCandidateMemo::default(),
     })
 }
 

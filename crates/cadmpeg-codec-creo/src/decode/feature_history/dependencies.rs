@@ -415,6 +415,7 @@ pub(in super::super) fn reconcile_feature_links(
     prototype_dependencies: &BTreeMap<u32, Vec<u32>>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let output_index = super::outputs::FeatureOutputIndex::new(scan, ir);
     let mut output_updates = Vec::new();
     for (index, feature) in ir.model.features.iter().enumerate() {
         let Some(feature_id) = feature
@@ -426,7 +427,7 @@ pub(in super::super) fn reconcile_feature_links(
             continue;
         };
         let outputs = cadmpeg_ir::features::DistinctMembers::try_from(
-            super::outputs::feature_output_bodies(ctx, scan, ir, feature_id)?,
+            output_index.output_bodies(ctx, feature_id)?,
         )
         .map_err(cadmpeg_core::CodecError::from)?;
         output_updates.push((index, outputs));
