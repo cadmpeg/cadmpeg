@@ -79,6 +79,9 @@ with Compute Optimized unless stated.
 - `optimized_symmetric_pattern.f3d`: quantity 3 at 10 mm, Symmetric. The copies
   are at −10, 0 and +10 mm; the −10 mm copy cuts the plate edge. 7842.92 mm³,
   10 faces.
+- `optimized_symmetric_extent_pattern.f3d`: quantity 3, Extent 20 mm,
+  Symmetric. The copies are at −20, 0 and +20 mm; the −20 mm copy lies outside
+  the plate. 7874.34 mm³, 8 faces.
 - `two_target_pattern.f3d`: two plates at x 0–40 and 41–81 mm and one 21 × 4 mm
   slot cut through both, patterned along Y with quantity 3 at 10 mm, Compute
   Adjust. 2 bodies, 14800 mm³, 36 faces.

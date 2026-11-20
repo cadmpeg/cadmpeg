@@ -449,8 +449,9 @@ pub(crate) enum F3dLossCode {
     /// A rectangular-pattern direction record of distance type 10 without a
     /// readable distribution block is read as a seed-to-final-instance extent.
     FeatureRectangularPatternDistanceFormAssumed,
-    /// The total extent of a symmetric rectangular-pattern direction is read
-    /// as the span from the first to the last instance.
+    /// The extent distance of an even-count symmetric rectangular-pattern
+    /// direction is read as the distance from the seed to the final instance
+    /// along the direction.
     FeatureRectangularPatternSymmetricTotalExtentAssumed,
     /// The symmetric flag of an inactive rectangular-pattern direction is
     /// dropped.

@@ -129,6 +129,31 @@ fn an_optimized_pattern_reads_its_extent_and_symmetric_distribution() {
 }
 
 #[test]
+fn a_symmetric_extent_direction_spaces_its_copies_by_the_extent_on_each_side() {
+    // Fusion translates the symmetric Extent copies by -20, 0 and +20 mm.
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../../corpus/f3d/optimized_symmetric_extent_pattern.f3d"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode the corpus file");
+    assert!(!result.report().losses.iter().any(|loss| loss.code
+        == crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricTotalExtentAssumed.kind()));
+    let ir = decoded(include_bytes!(
+        "../../../../corpus/f3d/optimized_symmetric_extent_pattern.f3d"
+    ));
+    let pattern = &definition(&ir, "R-Pattern 1")["value"]["value"]["pattern"];
+    assert_eq!(pattern["kind"], "linear", "{pattern}");
+    assert_eq!(pattern["direction"], json!({"x": 1.0, "y": 0.0, "z": 0.0}));
+    assert_eq!(pattern["spacing"], 20.0);
+    assert_eq!(pattern["count"], 3);
+    assert_eq!(pattern["symmetric"], true);
+    assert_eq!(distribution_symmetry(&ir), [true]);
+}
+
+#[test]
 fn a_pattern_of_a_cut_through_two_bodies_reads_its_distribution() {
     // Fusion translates the copies by 0, 10 and 20 mm along Y.
     let ir = decoded(include_bytes!(
@@ -190,5 +215,77 @@ fn each_direction_of_a_rectangular_pattern_reads_its_own_symmetric_byte() {
         assert_eq!(second["spacing"], 10.0);
         assert_eq!(second["count"], second_count);
         assert_eq!(second["symmetric"], second_symmetric, "{pattern}");
+    }
+}
+
+/// The Design `BulkStream.dat` member of a Fusion archive, which Fusion
+/// stores with Zstandard.
+fn design_bulk_stream(bytes: &[u8]) -> Vec<u8> {
+    const NAME: &str = "FusionAssetName[Active]/FusionDesignSegmentType1/BulkStream.dat";
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).expect("archive");
+    let index = archive.index_for_name(NAME).expect("Design BulkStream");
+    assert!(crate::zip_write::is_zstd_member(&mut archive, index).expect("method"));
+    let mut member = archive.by_index_raw(index).expect("raw member");
+    crate::zip_write::expand_zstd_member(
+        &mut member,
+        NAME,
+        cadmpeg_core::decode::u64_from_index(bytes.len()),
+    )
+    .expect("expand BulkStream")
+}
+
+#[test]
+fn the_payload_stores_the_symmetric_byte_of_direction_two_after_that_of_direction_one() {
+    use crate::layout::rectangular_pattern_payload_prefix as prefix;
+    let files: [(&[u8], [u8; 2]); 4] = [
+        (
+            include_bytes!("../../../../corpus/f3d/sym_q3_dir1only.f3d"),
+            [1, 0],
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/sym_q3_dir2only.f3d"),
+            [0, 1],
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/sym_q3_both.f3d"),
+            [1, 1],
+        ),
+        (
+            include_bytes!("../../../../corpus/f3d/sym_q4_dir2only.f3d"),
+            [0, 1],
+        ),
+    ];
+    for (bytes, symmetric) in files {
+        let ir = decoded(bytes);
+        let stream = design_bulk_stream(bytes);
+        let [distribution] = ir["native"]["f3d"]["design_parameter_scopes"]
+            .as_array()
+            .expect("scopes")
+            .iter()
+            .filter_map(|scope| {
+                scope["rectangular_pattern_construction"]["distribution"].as_object()
+            })
+            .collect::<Vec<_>>()[..]
+        else {
+            panic!("one distribution block");
+        };
+        let offset = |field: &str| {
+            usize::try_from(distribution[field]["offset"].as_u64().expect("offset")).unwrap()
+        };
+        let start = offset("symmetric") - prefix::SYMMETRIC;
+        assert_eq!(offset("symmetric_two"), start + prefix::SYMMETRIC_TWO);
+        assert_eq!(
+            stream[start + prefix::SENTINEL..start + prefix::SENTINEL + 4],
+            [0xff; 4]
+        );
+        assert_eq!(
+            [
+                stream[start + prefix::SYMMETRIC],
+                stream[start + prefix::SYMMETRIC_TWO]
+            ],
+            symmetric
+        );
+        // Distance type 0: each distance owner is the adjacent spacing.
+        assert_eq!(stream[offset("total_extent")], 0);
     }
 }

@@ -1004,6 +1004,18 @@ sha256 = "263b912b53d60c5c7d8d41d85e013feff02d83515423dbc3ccb106909e238186"
 notes = "CC0 Fusion API save. Rectangular pattern of a cut feature, Compute Optimized, Symmetric, quantity 3 at 10 mm spacing; Fusion translates the copies by -10, 0 and +10 mm."
 
 [[file]]
+filename = "f3d/optimized_symmetric_extent_pattern.f3d"
+format = "f3d"
+dialect = "f3d:manifest-3-2-0-0"
+author = "ZorbaTHut"
+authoring_app = "Autodesk Fusion"
+authoring_app_version = "2706.1.17"
+acquisition_date = "2026-11-16"
+license = "CC0-1.0"
+sha256 = "c7aacc14d91a90f9d2d06dcedec78647092347a134cc8cb6822a6c099614f0ad"
+notes = "CC0 Fusion API save. Rectangular pattern of a cut feature, Compute Optimized, Symmetric, quantity 3 at 20 mm Extent; Fusion translates the copies by -20, 0 and +20 mm."
+
+[[file]]
 filename = "f3d/two_target_pattern.f3d"
 format = "f3d"
 dialect = "f3d:manifest-3-2-0-0"

@@ -7808,13 +7808,15 @@ fn project_rectangular_pattern_scalars(
                 direction
             }
         });
-        let divisor = if axis_adjacent {
-            1.0
-        } else {
-            f64::from(intervals.get())
+        let divisor = match (axis_adjacent, symmetric) {
+            (true, _) => 1.0,
+            // The extent runs from the seed to the final instance along the
+            // direction, which holds half of the count.
+            (false, true) => f64::from(count / 2),
+            (false, false) => f64::from(intervals.get()),
         };
         let spacing = PositiveLength::new(extent.abs() * 10.0 / divisor)?;
-        if symmetric && !axis_adjacent {
+        if symmetric && !axis_adjacent && count % 2 == 0 {
             symmetric_extents.push(["one", "two"][axis]);
         }
         active.push((count, spacing, direction, symmetric));
@@ -7895,7 +7897,7 @@ fn project_rectangular_pattern_scalars(
         losses.push(
             crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricTotalExtentAssumed.note(
                 format!(
-                    "RectangularPattern scope {} reads the total extent of its symmetric direction {} as the span from the first to the last instance.",
+                    "RectangularPattern scope {} reads the extent of even-count symmetric direction {} as the distance from the seed to the final instance along the direction (DR-344).",
                     scope.id,
                     symmetric_extents.join(" and ")
                 ),

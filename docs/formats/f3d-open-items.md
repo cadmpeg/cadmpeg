@@ -2681,15 +2681,15 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 ### DR-344. Symmetric rectangular-pattern directions
 
-**Question.** How does a symmetric direction measure a seed-to-final-instance extent?
+**Question.** Which side of the seed does the extent of a symmetric direction with an even count measure?
 
-**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the symmetric bytes of direction one at payload offset 109 and of direction two at offset 110. A three-instance symmetric direction with adjacent spacing places one instance on each side of the seed at that spacing. A symmetric direction with an even count places half of the count along the direction: a four-instance symmetric direction at 10 mm spacing places instances at −10, 0, 10, and 20 mm, and a 120-instance direction places 60 instances along the direction and 59 against it. The decoder projects a symmetric direction with adjacent spacing as a linear pattern with `symmetric` set.
+**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the symmetric bytes of direction one at payload offset 109 and of direction two at offset 110. A three-instance symmetric direction with adjacent spacing places one instance on each side of the seed at that spacing. A symmetric direction with an even count places half of the count along the direction: a four-instance symmetric direction at 10 mm spacing places instances at −10, 0, 10, and 20 mm, and a 120-instance direction places 60 instances along the direction and 59 against it. `f3d.md` gives the extent of an odd-count symmetric direction: it runs from the seed to the final instance on either side. An even-count symmetric direction has one more instance along the direction than against it. The decoder reads its extent from the seed to the final instance along the direction and charges `feature.rectangular-pattern-symmetric-total-extent-assumed`.
 
-**Need.** Saves of a symmetric direction with an extent distance, compared against the instance positions.
+**Need.** A save of an even-count symmetric direction with an extent distance, compared against the instance positions.
 
 **Conflict.** None.
 
-**Note.** In one design, R-Pattern 3 stores zero at payload byte `133223`, the direction-one symmetric field. Its two counts are two. In this case adjacent distance and total extent give the same 15 mm spacing. The decoder reads the extent of a symmetric direction with an extent distance as the span from the first to the last instance, divides it into one interval fewer than the count, keeps the count and the direction, and charges `feature.rectangular-pattern-symmetric-total-extent-assumed`.
+**Note.** In one design, R-Pattern 3 stores zero at payload byte `133223`, the direction-one symmetric field. Its two counts are two. In this case adjacent distance and total extent give the same 15 mm spacing.
 
 ### DR-298. SurfaceTrim cell-table entries outside the removal reading
 
