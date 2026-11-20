@@ -83,13 +83,13 @@ PR CI tests only the packages a change reaches ([`scripts/ci_scope.py`](scripts/
 
 A PR merges directly after its own CI run passes. Main can move between that run and the merge, so the main run is the first test of the merged tree. A push to main cancels the in-progress main run. Each main run tests the packages that changed since the last successful main run, so the commits of a cancelled or failed run stay in scope until a main run passes. The `main` ruleset names the required checks by job name, so a renamed or added gate job also needs a ruleset change. A failing scheduled run opens a `scheduled-failure` issue for its workflow, assigned to the login in the `SCHEDULE_ALERT_ASSIGNEE` repository variable. The next passing scheduled run closes it.
 
-The `JsonSchema` derives sit behind a `schema` feature that is off by default, because only `cadmpeg_ir::cadir_json_schema()` consumes them and building them costs 26% of `cadmpeg-ir`'s compile time. Run the schema side when you change IR or native record types:
+The `JsonSchema` derives sit behind a `schema` feature that no dependent enables, because building them costs 14% of `cadmpeg-ir`'s generated code. `cadmpeg query schema` and the repro privacy projection read the committed output of `cadmpeg_ir::cadir_json_schema()` and `decode_sidecar_json_schema()` in [`crates/cadmpeg-ir/schema/`](crates/cadmpeg-ir/schema/). The schema gate compares those files with the derives. When you change IR or native record types, regenerate them and review the diff:
 
 ```sh
-cargo test -p cadmpeg-ir --features schema --lib
+UPDATE_GOLDEN=1 cargo test -p cadmpeg-ir --features schema --lib
 ```
 
-Annex A of [`docs/cadir-v11.md`](docs/cadir-v11.md) states the schema of each type the specification names and does not state, generated from `cadir_json_schema()`. The schema gate checks it; a change to one of those types regenerates it:
+Annex A of [`docs/cadir-v11.md`](docs/cadir-v11.md) states the schema of each type the specification names and does not state, generated from `crates/cadmpeg-ir/schema/cadir.schema.json`. The schema gate checks it; a change to one of those types regenerates it:
 
 ```sh
 python3 scripts/generate-annex-a.py --write
