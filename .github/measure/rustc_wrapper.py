@@ -10,6 +10,10 @@ rss = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
 kib = rss // 1024 if platform.system() == "Darwin" else rss
 name = args[args.index("--crate-name") + 1] if "--crate-name" in args else "-"
 kind = "test" if "--test" in args else "lib/bin"
-with open(os.environ["RUSTC_LOG"], "a") as log:
-    log.write(f"{wall:.1f}\t{kib}\t{name}\t{kind}\n")
+default = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "measure", "rustc.tsv")
+try:
+    with open(os.environ.get("RUSTC_LOG") or default, "a") as log:
+        log.write(f"{wall:.1f}\t{kib}\t{name}\t{kind}\n")
+except OSError:
+    pass
 sys.exit(code)
