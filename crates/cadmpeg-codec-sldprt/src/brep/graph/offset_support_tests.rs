@@ -30,7 +30,7 @@ fn offset(support: u16, distance: f64) -> Vec<F> {
 fn indexed_support(nodes: &[(u16, u16, Vec<F>)], profile: Option<CurveCarrier>) -> CarrierIndex {
     let (bytes, start) = sequence_of(nodes);
     let records = topology::nodes::sequence(&bytes).unwrap();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut carriers = super::super::index::index_carriers_with_nodes(
         &ctx,
         &bytes[start..],
@@ -56,7 +56,7 @@ fn emit_support(
     profile: Option<CurveCarrier>,
 ) -> (cadmpeg_ir::CadIr, SurfaceId) {
     let carriers = indexed_support(nodes, profile);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut out = Brep::default();
     let mut annotations = AnnotationBuilder::new();
     let source = StreamHandle::new(cadmpeg_ir::stream_name!("offset-fixture"));
@@ -259,7 +259,7 @@ fn offset_support_alias_keeps_a_resolved_sweep_with_chart_boundaries() {
         withheld_forward_links: 0,
         unlinked_loops: HashSet::new(),
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert!(!face_has_exact_boundary(&face, &tables, &HashSet::new()));
     assert!(sweep_face_can_alias(&ctx, &face, &tables, &carriers, &HashSet::new()).unwrap());
     face.loops = vec![(6, vec![70])];

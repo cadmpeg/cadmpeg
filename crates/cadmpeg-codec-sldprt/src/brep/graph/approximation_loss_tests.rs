@@ -6,7 +6,7 @@ use cadmpeg_ir::topology::EdgeCarrier;
 
 #[test]
 fn inverse_boundary_cache_reports_distance_and_exact_isocurve_has_no_loss() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let body = crate::test_support::parasolid::triangle_body();
     let source_stream = cadmpeg_ir::stream_name!("approximation");
     let source_stream = StreamHandle::new(source_stream);

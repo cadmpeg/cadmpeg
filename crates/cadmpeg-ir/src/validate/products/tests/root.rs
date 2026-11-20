@@ -25,7 +25,7 @@ fn root(id: &str) -> ProductDefinition {
 }
 
 fn root_findings(ir: &CadIr) -> Vec<Finding> {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut findings = Vec::new();
     super::super::check_products(&ctx, ir, &mut findings).unwrap();
     findings
@@ -151,7 +151,7 @@ fn the_root_rule_rolls_back_no_decoder_candidate() {
         crate::validate::admit::CATIA_ADMISSION_CHECKS,
     ] {
         let report = crate::validate::admit::admit(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &ir,
             allowed,
             Vec::new(),

@@ -221,7 +221,7 @@ mod tests {
         ir.native
             .namespace_mut("fcstd")
             .set_arena(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 "string_tables",
                 &[wire],
             )
@@ -253,7 +253,7 @@ mod tests {
         let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
         namespace
             .set_arena(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 "string_tables",
                 &records,
             )
@@ -278,7 +278,7 @@ mod tests {
         let mut rewritten = cadmpeg_ir::native::NativeNamespace::default();
         rewritten
             .set_arena(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 "string_tables",
                 tables.as_slice(),
             )
@@ -315,7 +315,7 @@ mod tests {
             let mut namespace = cadmpeg_ir::native::NativeNamespace::default();
             namespace
                 .set_arena(
-                    &cadmpeg_test_support::service_decode_context(),
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
                     "string_tables",
                     &records,
                 )

@@ -922,7 +922,7 @@ mod tests {
         let mut losses = Vec::new();
         crate::test_support::zip_test::with_scan(&archive(true), |scan| {
             super::project_decal_images(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 std::slice::from_ref(&scope),
                 std::slice::from_ref(&image),
@@ -954,7 +954,7 @@ mod tests {
         let mut losses = Vec::new();
         crate::test_support::zip_test::with_scan(&archive(true), |scan| {
             super::project_decal_images(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 std::slice::from_ref(&scope),
                 std::slice::from_ref(&image),
@@ -1053,7 +1053,7 @@ mod tests {
         let mut losses = Vec::new();
         let assets = crate::test_support::zip_test::with_scan(archive, |scan| {
             super::project_decal_images(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 std::slice::from_ref(&scope),
                 std::slice::from_ref(image),
@@ -1358,7 +1358,7 @@ mod tests {
         let mut losses = Vec::new();
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             super::project_decal_images(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 &[scope],
                 &[],
@@ -1405,7 +1405,7 @@ mod tests {
         let mut losses = Vec::new();
         let assets = crate::test_support::zip_test::with_scan(&archive(false), |scan| {
             super::project_decal_images(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 std::slice::from_ref(&scope),
                 &[],

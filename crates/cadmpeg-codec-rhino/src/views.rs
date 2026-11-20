@@ -1779,7 +1779,7 @@ mod tests {
         ));
         let record = Record::long(NAMED_CPLANES, 0..bytes.len(), 0..bytes.len());
         let values = super::parse_named_cplanes(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &record,
             archive,
@@ -1831,7 +1831,7 @@ mod tests {
     fn malformed_named_view_list_install_reports_and_retains_the_list() {
         let scan = malformed_view_scan(super::NAMED_VIEWS);
         let installed = super::install(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut cadmpeg_ir::document::CadIr::empty(),
         )
@@ -1845,7 +1845,7 @@ mod tests {
         let bytes = [0_u8];
         let record = Record::long(super::NAMED_VIEWS, 0..bytes.len(), 0..bytes.len());
         let (_, losses) = super::parse_list(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &record,
             ArchiveVersion::V5,
@@ -1860,7 +1860,7 @@ mod tests {
     fn malformed_named_cplane_install_reports_and_retains_the_list() {
         let scan = malformed_view_scan(super::NAMED_CPLANES);
         let installed = super::install(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut cadmpeg_ir::document::CadIr::empty(),
         )
@@ -1873,7 +1873,7 @@ mod tests {
     fn malformed_active_view_install_retains_the_list() {
         let scan = malformed_view_scan(super::ACTIVE_VIEWS);
         let installed = super::install(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &scan,
             &mut cadmpeg_ir::document::CadIr::empty(),
         )
@@ -1895,7 +1895,7 @@ mod tests {
         let archive = ArchiveVersion::V5;
         let (bytes, record) = one_end_marker_view(archive);
         let admitted = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             &record,
             archive,
@@ -1954,7 +1954,7 @@ mod tests {
     fn view_attributes_read_one_clipping_plane() {
         let bytes = view_attributes_with_page(4, "", true, [0; 16], [0; 16], [0; 16]);
         let (attributes, _) = parse_attributes(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             0..bytes.len(),
             ArchiveVersion::V5,
@@ -2033,7 +2033,7 @@ mod tests {
     fn construction_plane_scales_spatial_fields_and_reads_depth_flag() {
         let bytes = construction_plane();
         let value = parse_cplane(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &bytes,
             0..bytes.len(),
             crate::test_support::millimeter_scale(2.0),
@@ -2211,7 +2211,7 @@ mod tests {
         trace.extend([0xde, 0xad, 0xbe, 0xef]);
         let mut losses = Vec::new();
         let (trace, _) = parse_trace_image(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &trace,
             0..trace.len(),
             archive,
@@ -2234,7 +2234,7 @@ mod tests {
         wallpaper.extend([0xca, 0xfe]);
         let mut losses = Vec::new();
         let (wallpaper, _) = parse_wallpaper(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &wallpaper,
             0..wallpaper.len(),
             archive,
@@ -2255,7 +2255,7 @@ mod tests {
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &body,
             &record,
             archive,
@@ -2280,7 +2280,7 @@ mod tests {
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &body,
             &record,
             archive,
@@ -2311,7 +2311,7 @@ mod tests {
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &body,
             &record,
             archive,
@@ -2356,7 +2356,7 @@ mod tests {
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &body,
             &record,
             archive,
@@ -2398,7 +2398,7 @@ mod tests {
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
 
         let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &body,
             &record,
             archive,
@@ -2448,7 +2448,7 @@ mod tests {
         body.extend(anonymous_chunk(archive, 4, &clipping_plane));
 
         let (value, _) = parse_attributes(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &body,
             0..body.len(),
             archive,
@@ -2494,7 +2494,7 @@ mod tests {
             .position(|window| window == f64::NAN.to_le_bytes())
             .expect("the nonfinite margin is in the payload");
         let error = parse_attributes(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &body,
             0..body.len(),
             archive,
@@ -2532,7 +2532,7 @@ mod tests {
         body.extend([0xa1, 0xb2, 0xc3]);
 
         let (value, _) = parse_attributes(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &body,
             0..body.len(),
             archive,
@@ -2599,7 +2599,7 @@ mod tests {
         body.extend(make_view(&attributes));
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
         let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &body,
             &record,
             archive,
@@ -2621,7 +2621,7 @@ mod tests {
             0..corrupted_body.len(),
         );
         let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &corrupted_body,
             &record,
             archive,
@@ -2697,7 +2697,7 @@ mod tests {
             body.extend(view);
             let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
             parse_list(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &body,
                 &record,
                 archive,
@@ -2824,7 +2824,7 @@ mod tests {
         body.extend(make_view(&viewport_userdata));
         let record = Record::long(super::NAMED_VIEWS, 0..body.len(), 0..body.len());
         let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &body,
             &record,
             archive,
@@ -2850,7 +2850,7 @@ mod tests {
             0..corrupted_body.len(),
         );
         let (views, losses) = parse_list(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &corrupted_body,
             &record,
             archive,
