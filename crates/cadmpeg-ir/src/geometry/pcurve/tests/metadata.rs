@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 use crate::geometry::pcurve::{
     admit_pcurve_fit_tolerance, admit_pcurve_parameter_range, PcurveGeneralForm, PcurveInlineForm,

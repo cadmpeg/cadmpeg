@@ -81,7 +81,7 @@ fn active_face_substitutions_have_a_distinct_loss_note() {
 
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -138,7 +138,7 @@ fn sketch_geometry_flag_is_retained_with_a_loss_note() {
 
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -178,7 +178,7 @@ fn history_past_its_binding_bound_reports_a_loss() {
 
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -244,7 +244,7 @@ fn recipe_side_search_past_its_work_cap_reports_a_loss() {
 
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -303,7 +303,7 @@ fn capped_rectangular_pattern_instance_search_reports_a_loss() {
 
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -1491,7 +1491,7 @@ fn refused_edge_flange_payload_reports_its_retained_scope_loss() {
     };
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -1519,7 +1519,7 @@ fn emboss_native_and_refused_prefixes_have_exact_scope_losses() {
         cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(true));
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -1562,7 +1562,7 @@ fn emboss_native_and_refused_prefixes_have_exact_scope_losses() {
         cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer::full(true));
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -1649,7 +1649,7 @@ fn move_transform_refusal_reports_exact_loss_for_transform_or_selection() {
         };
         report_design_projection_gaps(
             &mut report,
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &ir,
             &native,
         )
@@ -1702,7 +1702,7 @@ fn typed_profile_ambiguous_selection_retains_profile_loss() {
     };
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &F3dNative::default(),
     )
@@ -1786,7 +1786,7 @@ fn stored_body_scope_keeps_opaque_payload_loss_after_history_projection() {
     };
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )
@@ -1841,7 +1841,7 @@ fn counted_partial_profile_selection_reports_one_loss() {
     };
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &F3dNative::default(),
     )
@@ -1878,7 +1878,7 @@ fn refused_assemble_payloads_report_the_retained_scope_loss() {
     };
     report_design_projection_gaps(
         &mut report,
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ir,
         &native,
     )

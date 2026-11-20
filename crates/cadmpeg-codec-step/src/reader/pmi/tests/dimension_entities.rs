@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::test_support::exchange::decode_inline;
-use cadmpeg_ir::pmi::{DimensionKind, PmiAnnotation, PmiDefinition, PmiDimension, PmiTarget};
+use cadmpeg_ir::pmi::{
+    PmiAnnotation, PmiDefinition, PmiDimension, PmiDimensionKind as DimensionKind, PmiTarget,
+};
 use cadmpeg_ir::references::InstanceTarget;
 
 fn dimensions(ir: &cadmpeg_ir::CadIr) -> Vec<(&PmiAnnotation, &PmiDimension)> {
@@ -47,9 +49,9 @@ fn only_dimension_entities_decode_as_dimensions() {
     let dimensions = dimensions(result.ir());
     assert_eq!(dimensions.len(), 1);
     let (annotation, relation) = dimensions[0];
-    assert_eq!(relation.kind(), &directed_location());
+    assert_eq!(relation.dimension, DimensionKind::DirectedLocation);
     assert!(relation
-        .nominal()
+        .literal_nominal()
         .is_some_and(|value| (value.value.get() - 7.5).abs() < 1.0e-12));
     assert_eq!(annotation.targets, vec![aspect("#6"), aspect("#7")]);
 }
@@ -67,7 +69,7 @@ fn dimension_subtype_names_keep_their_kind() {
     );
     let mut kinds = dimensions(result.ir())
         .into_iter()
-        .map(|(annotation, relation)| (annotation.name.clone(), relation.kind().clone()))
+        .map(|(annotation, relation)| (annotation.name.clone(), relation.dimension.clone()))
         .collect::<Vec<_>>();
     kinds.sort_by(|a, b| a.0.cmp(&b.0));
     assert_eq!(
@@ -96,7 +98,7 @@ fn a_directed_location_with_a_ratio_nominal_keeps_its_named_kind() {
     );
     let dimensions = dimensions(result.ir());
     assert_eq!(dimensions.len(), 1);
-    assert_eq!(dimensions[0].1.kind(), &directed_location());
+    assert_eq!(dimensions[0].1.dimension, directed_location());
 }
 
 fn ratio_nominal_dimension(dimension: &str) -> cadmpeg_ir::codec::DecodeResult {
@@ -123,13 +125,13 @@ fn a_size_dimension_with_a_ratio_nominal_keeps_its_entity_kind() {
         let dimensions = dimensions(result.ir());
         assert_eq!(dimensions.len(), 1, "{dimension}");
         assert_eq!(
-            dimensions[0].1.kind(),
-            &DimensionKind::Other("dimensional_size".to_owned()),
+            dimensions[0].1.dimension,
+            DimensionKind::Other("dimensional_size".to_owned()),
             "{dimension}"
         );
         assert!(dimensions[0]
             .1
-            .nominal()
+            .literal_nominal()
             .is_some_and(|value| (value.value.get() - 7.5).abs() < 1.0e-12));
         assert!(result.report().losses.iter().any(|loss| {
             loss.code == crate::loss::StepLossCode::PmiDimensionKindQuantityMismatch.kind()
@@ -206,8 +208,8 @@ fn a_mismatched_subtype_or_angular_dimension_keeps_its_own_entity_name() {
         let dimensions = dimensions(result.ir());
         assert_eq!(dimensions.len(), 1, "{dimension}");
         assert_eq!(
-            dimensions[0].1.kind(),
-            &DimensionKind::Other(kind.to_owned()),
+            dimensions[0].1.dimension,
+            DimensionKind::Other(kind.to_owned()),
             "{dimension}"
         );
         assert!(
@@ -256,11 +258,11 @@ fn limits_that_no_kind_accepts_are_omitted_from_the_dimension() {
         let result = measured_dimension("DIMENSIONAL_SIZE(#6,'w')", items);
         let dimensions = dimensions(result.ir());
         assert_eq!(dimensions.len(), 1, "{items:?}");
-        assert_eq!(dimensions[0].1.kind(), &kind, "{items:?}");
-        assert!(dimensions[0].1.tolerance().is_none(), "{items:?}");
+        assert_eq!(dimensions[0].1.dimension, kind, "{items:?}");
+        assert!(dimensions[0].1.tolerance.as_ref().is_none(), "{items:?}");
         assert!(dimensions[0]
             .1
-            .nominal()
+            .literal_nominal()
             .is_some_and(|value| (value.value.get() - 7.5).abs() < 1.0e-12));
         assert!(
             has_loss(
@@ -300,11 +302,34 @@ fn a_size_dimension_with_angle_limits_keeps_its_entity_kind() {
     let dimensions = dimensions(result.ir());
     assert_eq!(dimensions.len(), 1);
     assert_eq!(
-        dimensions[0].1.kind(),
-        &DimensionKind::Other("dimensional_size".to_owned())
+        dimensions[0].1.dimension,
+        DimensionKind::Other("dimensional_size".to_owned())
     );
     assert!(result.report().losses.iter().any(|loss| {
         loss.code == crate::loss::StepLossCode::PmiDimensionKindQuantityMismatch.kind()
             && loss.message.contains("in place of Size")
     }));
+}
+
+#[test]
+fn incomplete_dimensional_limits_record_a_loss() {
+    let result = decode_inline(
+        &crate::test_support::pmi_limits::LIMIT_DIMENSION.replace("(#12,#11,#13)", "(#12,#11)"),
+    );
+    let limits = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::StepLossCode::DimensionalLimitsOmitted.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(limits.len(), 1, "{:#?}", result.report().losses);
+    assert!(limits[0]
+        .message
+        .contains("#15 has 0 lower and 1 upper limit measures"));
+    assert!(result.ir().model.pmi.iter().any(|annotation| matches!(
+        &annotation.definition,
+        PmiDefinition::Dimension(relation)
+            if relation.tolerance.as_ref().is_none()
+                && relation.literal_nominal().is_some_and(|value| (value.value.get() - 35.0).abs() < 1.0e-12)
+    )));
 }

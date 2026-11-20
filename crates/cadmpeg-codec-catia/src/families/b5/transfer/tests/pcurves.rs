@@ -1515,7 +1515,7 @@ fn decimal_object_id_keys_transfer_to_an_admissible_model() {
     );
 
     assert!(crate::assemble::neutral_model_is_admissible(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &mut ir,
         &[]
     )

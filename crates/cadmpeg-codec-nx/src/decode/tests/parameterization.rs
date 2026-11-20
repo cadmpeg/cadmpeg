@@ -177,29 +177,30 @@ fn offset_surface_parameter_solver_preserves_support_parameters() {
 
 #[test]
 fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
+    let stream = offset_surface_topology_partition_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let surface = result
+        .ir()
+        .geometry
+        .procedural_surface_owner(&result.ir().geometry.procedural_surfaces[0].id)
+        .expect("offset surface owner")
+        .clone();
+    let index = cadmpeg_ir::index::ModelIndex::build(result.ir());
+    let seed = Point2::new(12.0, 7.0);
+    let mut point = cadmpeg_ir::eval::model_surface_point_by_id(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &surface,
+        seed.u,
+        seed.v,
+    )
+    .unwrap()
+    .get();
+    point.x += 0.01;
+
     for work_limit in [256, 32768] {
         crate::test_support::with_decode_context(|geometry_ctx| {
-            let stream = offset_surface_topology_partition_stream();
-            let mut cur = Cursor::new(prt_with_partition(&stream));
-            let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-            let surface = result
-                .ir()
-                .geometry
-                .procedural_surface_owner(&result.ir().geometry.procedural_surfaces[0].id)
-                .expect("offset surface owner")
-                .clone();
-            let seed = Point2::new(12.0, 7.0);
-            let mut point = cadmpeg_ir::eval::model_surface_point_by_id(
-                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
-                &cadmpeg_ir::index::ModelIndex::build(result.ir()),
-                &surface,
-                seed.u,
-                seed.v,
-            )
-            .unwrap()
-            .get();
-            point.x += 0.01;
-
             let actual = offset_surface_parameters_with_tolerance(
                 geometry_ctx,
                 result.ir(),
@@ -212,7 +213,6 @@ fn offset_surface_parameter_solver_accepts_a_seed_within_fit_tolerance() {
 
             assert_eq!(actual, seed);
 
-            let index = cadmpeg_ir::index::ModelIndex::build(result.ir());
             let geometry_budget = crate::decode::geometry_work::GeometryWorkBudget::from_context(
                 geometry_ctx,
                 work_limit,

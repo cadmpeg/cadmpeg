@@ -159,7 +159,7 @@ fn numerical_0922_wide_surface_chart_keeps_inverse_and_bound() {
         let s = bilinear(d, 1.);
         let endpoints = [Point2::new(d[0], 0.), Point2::new(d[1], 1.)];
         let bound = crate::eval::nurbs_surface_parameter_segment_chord_bound(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &s,
             endpoints,
             [Point3::new(0., 0., 0.), Point3::new(1., 1., 0.)],
@@ -187,7 +187,7 @@ fn numerical_0922_far_surface_query_keeps_inverse() {
     for z in [1., 1e200] {
         let budget = cadmpeg_core::decode::WorkBudget::new(100_000);
         let result = crate::eval::nurbs_surface_closest_parameter_with_budget(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &s,
             Point3::new(0.5, 0.5, z),
             None,
@@ -259,7 +259,7 @@ fn numerical_0922b_finite_chord_bound() {
         )
         .unwrap();
         let r = nurbs_surface_parameter_segment_chord_bound(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &surf,
             [Point2::new(0., 0.), Point2::new(1., 1.)],
             [Point3::new(0., 0., 0.), Point3::new(s, s, s)],

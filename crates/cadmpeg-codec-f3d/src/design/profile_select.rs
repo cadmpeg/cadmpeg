@@ -1828,6 +1828,7 @@ fn copy_bound_planar_profile(
         | PlanarProfileRef::SketchProfiles { .. }
         | PlanarProfileRef::SketchRegions { .. }
         | PlanarProfileRef::SketchSelection { .. }
+        | PlanarProfileRef::SketchEntities { .. }
         | PlanarProfileRef::Native(_) => Ok(profile.clone()),
         _ => Err(CodecError::malformed(
             "bound planar profile has unsupported resolved form",
@@ -2603,12 +2604,19 @@ pub(in crate::design) fn transition_profile_selection(
         .iter()
         .map(|(step_state, step_prev_id)| {
             let before_step = resolution.profile_work.inferred_counts();
-            let sel = transition_profile_selection_step(
+            let sel = resolution.profile_work.reusing_arrangement(
                 sketch,
-                resolution,
-                history,
-                step_state,
-                *step_prev_id,
+                resolution.entities,
+                resolution.linear_tolerance,
+                || {
+                    transition_profile_selection_step(
+                        sketch,
+                        resolution,
+                        history,
+                        step_state,
+                        *step_prev_id,
+                    )
+                },
             )?;
             let after_step = resolution.profile_work.inferred_counts();
             let step_delta = (after_step.0 - before_step.0, after_step.1 - before_step.1);
@@ -5757,6 +5765,11 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             continue;
         }
         let Some(profile) = profile else {
+            if let Some(selected) =
+                resolve_entity_selection_profile(group, &resolution.path_resolution())
+            {
+                resolved_revolve_profiles.insert(group.id.clone(), (selected, None));
+            }
             continue;
         };
         let mut matches = resolution.placements.iter().filter(|placement| {

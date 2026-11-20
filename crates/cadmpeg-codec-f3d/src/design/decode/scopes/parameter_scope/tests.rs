@@ -343,6 +343,20 @@ fn sketch_scope_reference_offsets_refuse_second_unique_marker() {
 }
 
 #[test]
+fn sketch_scope_reference_offsets_admit_typed_container_references() {
+    let mut frame = vec![0; 3];
+    frame.push(1);
+    frame.extend_from_slice(&4137u64.to_le_bytes());
+    frame.extend_from_slice(&36u32.to_le_bytes());
+    frame.extend_from_slice(b"44A64366-4BD3-4B24-881A-F94C206E8F2D");
+    frame.extend_from_slice(&[0, 0]);
+    assert_eq!(first_marked_reference_offsets(&frame).get(&4137), Some(&3));
+    assert!(first_marked_reference_offsets(&frame[..frame.len() - 1]).is_empty());
+    frame[16] = b'X';
+    assert!(first_marked_reference_offsets(&frame).is_empty());
+}
+
+#[test]
 fn canvas_scope_admits_its_complete_98_byte_tail_and_rejects_broken_links() {
     use super::parse_parameter_scope;
     use crate::design::test_support::indexed_record_offsets_for_test;
@@ -767,7 +781,7 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
     with_scan(&archive, |scan| {
         for type_rows in [&types[..], &[][..]] {
             let scopes = super::decode_parameter_scopes(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 &super::ParameterScopeSources {
                     types: type_rows,
@@ -794,7 +808,7 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
                     .map(|offset| offset - 6);
                 let english = DesignParameterScope::try_new(english).unwrap();
                 assert!(super::equivalent_scope_variant_payload(
-                    &cadmpeg_test_support::service_decode_context(),
+                    &cadmpeg_core::decode::test_support::service_decode_context(),
                     scope,
                     &english,
                 )
@@ -919,4 +933,71 @@ fn only_the_class_guid_selects_the_path_pattern_family() {
         super::scope_feature_kind("PathPattern", None),
         Some(DesignFeatureKind::native("PathPattern"))
     );
+}
+
+#[test]
+fn sketch_scope_binding_selects_the_container_shared_with_its_placement() {
+    use crate::records::entity_header::{
+        DesignEntityHeader, DesignEntityRegistration, DESIGN_MODULE_SKETCH,
+    };
+    use crate::records::identity::ReferenceRun;
+    use crate::test_support::{indexed_header, push_reference_u64};
+    let stream = "f3d:Design/BulkStream.dat";
+    let entities = [173u32, 174].map(|suffix| DesignEntityHeader {
+        id: format!("{stream}:design-entity-header#{suffix}"),
+        byte_offset: u64::from(suffix),
+        entity_id: format!("0_{suffix}").try_into().unwrap(),
+        class_tag: "281".to_owned().try_into().unwrap(),
+        optional_slot_present: false,
+        registration: DesignEntityRegistration::new(
+            Some(DESIGN_MODULE_SKETCH.to_owned()),
+            None,
+            ReferenceRun::unlocated(Vec::new()),
+        )
+        .unwrap(),
+    });
+    let typed = |bytes: &mut Vec<u8>, suffix: u32| {
+        bytes.push(1);
+        bytes.extend_from_slice(&u64::from(suffix).to_le_bytes());
+        bytes.extend_from_slice(&36u32.to_le_bytes());
+        bytes.extend_from_slice(b"44A64366-4BD3-4B24-881A-F94C206E8F2D");
+        bytes.extend_from_slice(&[0, 0]);
+    };
+    for selected in [173u32, 174] {
+        let mut bytes = Vec::new();
+        push_reference_u64(&mut bytes, 173);
+        typed(&mut bytes, 174);
+        typed(&mut bytes, 185);
+        let frame_end = bytes.len();
+        indexed_header(&mut bytes, *b"356", 185);
+        bytes.extend_from_slice(&[0; 10]);
+        typed(&mut bytes, selected);
+        bytes.resize(frame_end + 201, 0);
+        indexed_header(&mut bytes, *b"259", 185);
+        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let (entity, at) = super::sketch_scope_entity(
+            &bytes,
+            &bytes[..frame_end],
+            177,
+            stream,
+            &entities,
+            &records,
+        )
+        .expect("shared container binding");
+        assert_eq!(entity.entity_id.suffix(), u64::from(selected));
+        assert_eq!(at, if selected == 173 { 1 } else { 12 });
+        let mut typed_frame = Vec::new();
+        typed(&mut typed_frame, selected);
+        typed(&mut typed_frame, 185);
+        let (entity, at) =
+            super::sketch_scope_entity(&bytes, &typed_frame, 177, stream, &entities, &records)
+                .expect("typed container and placement binding");
+        assert_eq!(entity.entity_id.suffix(), u64::from(selected));
+        assert_eq!(at, 1);
+        let (entity, at) =
+            super::sketch_scope_entity(&bytes, &bytes[..62], 177, stream, &entities, &records)
+                .expect("plain container binding");
+        assert_eq!(entity.entity_id.suffix(), 173);
+        assert_eq!(at, 1);
+    }
 }

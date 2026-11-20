@@ -62,9 +62,10 @@ use super::surfaces::exact_surface_untrim_operation;
 use super::surfaces::surface_extend_loss;
 use super::thicken_shell::exact_thicken_operation;
 use super::thread::exact_thread_construction;
-use super::thread::thread_modeled_flag_loss;
-use super::work_geometry::exact_joint_origin_frame;
-use super::work_geometry::exact_work_plane_frame;
+use super::thread::{thread_modeled_entries_loss, thread_modeled_flag_loss};
+use super::work_geometry::{
+    direct_joint_origin_frame, exact_joint_origin_frame, exact_work_plane_frame,
+};
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
@@ -90,7 +91,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Design records that parameter-scope decoding reads.
 #[derive(Debug, Clone, Copy, Default)]
@@ -172,14 +173,24 @@ pub(crate) fn decode_parameter_scopes(
                 crate::design::decode::meta::unambiguous_design_primary_frames(bytes, metadata).ok()
             })
             .unwrap_or_default();
-        let browser_nodes = metadata
-            .as_ref()
-            .filter(|_| needs_browser_metadata)
-            .and_then(|metadata| {
-                crate::design::decode::presentation::browser_node_suffixes(bytes, metadata).ok()
-            })
-            .unwrap_or_default();
+        let paste_metadata = metadata.as_ref().filter(|_| needs_browser_metadata);
+        let paste_nodes = super::base_feature::PasteNodes {
+            sources: paste_metadata
+                .and_then(|metadata| {
+                    crate::design::decode::presentation::browser_node_suffixes(bytes, metadata).ok()
+                })
+                .unwrap_or_default(),
+            copies: paste_metadata
+                .and_then(|metadata| {
+                    crate::design::decode::presentation::presentation_scene_node_guids(
+                        bytes, metadata,
+                    )
+                    .ok()
+                })
+                .unwrap_or_default(),
+        };
         let stream_scope_start = out.len();
+        let mut direct_joint_origin_offsets = HashSet::new();
         let mut mesh_scope_ranges = HashMap::new();
         if class_types.values().any(|info| {
             !info.entities.is_empty()
@@ -319,32 +330,16 @@ pub(crate) fn decode_parameter_scopes(
                 let frame = start
                     .zip(end)
                     .and_then(|(start, end)| bytes.get(start..end));
-                let mut unique_match = None;
-                let mut multiple_matches = false;
-                if let Some(frame) = frame {
-                    // One pass over the frame: the first offset of every
-                    // marked reference (a one byte, a u32 suffix, six zero
-                    // bytes), then each eligible entity looks its suffix up.
-                    let first_at = first_marked_reference_offsets(frame);
-                    for entity in entities {
-                        if native_stream(&entity.id) != Some(stream.as_str())
-                            || !entity.in_sketch_module()
-                            || entity.entity_id.suffix() > u64::from(u32::MAX)
-                        {
-                            continue;
-                        }
-                        let Ok(suffix) = u32::try_from(entity.entity_id.suffix()) else {
-                            continue;
-                        };
-                        if let Some(at) = first_at.get(&suffix) {
-                            if unique_match.replace((entity, at + 1)).is_some() {
-                                multiple_matches = true;
-                            }
-                        }
-                    }
-                }
-                if let Some((entity, relative_offset)) = unique_match.filter(|_| !multiple_matches)
-                {
+                if let Some((entity, relative_offset)) = frame.and_then(|frame| {
+                    sketch_scope_entity(
+                        bytes,
+                        frame,
+                        scope.record_index,
+                        &stream,
+                        entities,
+                        &records,
+                    )
+                }) {
                     let Some(entity_reference_offset) = scope
                         .byte_offset()
                         .checked_add(u64_from_index(relative_offset))
@@ -401,11 +396,21 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             if scope.kind() == scope::DesignFeatureKind::JointOrigin {
-                if let Some(frame) = exact_joint_origin_frame(bytes, &records, &scope) {
+                let framed =
+                    match direct_joint_origin_frame(bytes, &records, &scope, &stream_types) {
+                        Some((frame, carrier)) => {
+                            direct_joint_origin_offsets.insert(scope.byte_offset());
+                            Some((frame, Some(carrier)))
+                        }
+                        None => exact_joint_origin_frame(bytes, &records, &scope)
+                            .map(|frame| (frame, None)),
+                    };
+                if let Some((frame, carrier)) = framed {
                     if let scope::DesignScopePayloadMut::JointOrigin(slot) = scope.payload_mut() {
                         *slot = Some(scope::DesignJointOriginTransform {
                             joint_origin_transform: frame.transform,
                             joint_origin_transform_offset: frame.transform_offset,
+                            carrier,
                             reference: frame.reference.map(|(record_index, offset)| {
                                 scope::DesignJointOriginReference {
                                     joint_origin_reference: record_index,
@@ -697,13 +702,18 @@ pub(crate) fn decode_parameter_scopes(
                     losses.extend(three_flag_loft_settings_loss(bytes, &scope, value));
                     losses.extend(loft_lists_loss(&scope, value));
                 }
+                if let crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(
+                    value,
+                ) = &construction
+                {
+                    losses.extend(referenced_revolve_reference_loss(bytes, &scope, value));
+                }
                 match (scope.payload_mut(), construction) {
                     (
                         scope::DesignScopePayloadMut::Revolve(slot),
                         crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(value),
                     ) => {
                         *slot = Some(value);
-                        losses.extend(referenced_revolve_reference_loss(bytes, &scope));
                         if let Some(length) = marker_one_revolve_assumed_length(bytes, &scope) {
                             losses.push(crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.note(
                                 format!("Revolve scope {} reads its {length}-byte token-independent frame with the marker-one field offsets (DR-269).", scope.id),
@@ -749,6 +759,9 @@ pub(crate) fn decode_parameter_scopes(
                         .as_ref()
                         .and_then(|construction| thread_modeled_flag_loss(&scope, construction)),
                 );
+                losses.extend(construction.as_ref().and_then(|construction| {
+                    thread_modeled_entries_loss(bytes, &scope, construction)
+                }));
                 if let scope::DesignScopePayloadMut::Thread(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -905,7 +918,7 @@ pub(crate) fn decode_parameter_scopes(
                         stream_view,
                         &scope,
                         owners,
-                        &browser_nodes,
+                        &paste_nodes,
                         &mut losses,
                     )?,
                     None => None,
@@ -919,6 +932,12 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
 
+            if scope.kind() == scope::DesignFeatureKind::MotionLink {
+                let link = super::motion_link::read(stream_view, &records, &scope, &stream_types);
+                if let scope::DesignScopePayloadMut::MotionLink(slot) = scope.payload_mut() {
+                    *slot = link;
+                }
+            }
             out.push(scope);
         }
         super::edge_flange::bind(
@@ -942,7 +961,12 @@ pub(crate) fn decode_parameter_scopes(
             &stream_types,
             &mut out[stream_scope_start..],
         )?;
-        bind_joint_origin_frames_from_assemblies(bytes, &mut out[stream_scope_start..]);
+        bind_joint_origin_frames_from_assemblies(
+            bytes,
+            &mut out[stream_scope_start..],
+            &direct_joint_origin_offsets,
+            &mut losses,
+        );
         bind_axial_assembly_operand_targets(bytes, &records, &mut out[stream_scope_start..])?;
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -963,13 +987,68 @@ pub(crate) fn decode_parameter_scopes(
     })
 }
 
+fn sketch_scope_entity<'a>(
+    bytes: &[u8],
+    frame: &[u8],
+    scope_record_index: u32,
+    stream: &str,
+    entities: &'a [crate::records::entity_header::DesignEntityHeader],
+    records: &IndexedRecordOffsets,
+) -> Option<(&'a crate::records::entity_header::DesignEntityHeader, usize)> {
+    let first_at = first_marked_reference_offsets(frame);
+    let candidates = entities
+        .iter()
+        .filter_map(|entity| {
+            if native_stream(&entity.id) != Some(stream) || !entity.in_sketch_module() {
+                return None;
+            }
+            let suffix = u32::try_from(entity.entity_id.suffix()).ok()?;
+            Some((entity, *first_at.get(&suffix)?))
+        })
+        .collect::<Vec<_>>();
+    if let [(entity, at)] = candidates.as_slice() {
+        return Some((entity, at + 1));
+    }
+    let (entity, _) = candidates.first()?;
+    if let Some(placement) = crate::design::decode::sketch::parse_scope_sketch_placement(
+        bytes,
+        frame,
+        scope_record_index,
+        &entity.entity_id,
+        records,
+    ) {
+        let start = usize::try_from(placement.byte_offset()).ok()?;
+        let end = usize::try_from(placement.paired_byte_offset()).ok()?;
+        let placement_references = first_marked_reference_offsets(bytes.get(start..end)?);
+        let mut shared = candidates.iter().copied().filter(|(entity, _)| {
+            u32::try_from(entity.entity_id.suffix())
+                .ok()
+                .is_some_and(|suffix| placement_references.contains_key(&suffix))
+        });
+        if let (Some((entity, at)), None) = (shared.next(), shared.next()) {
+            return Some((entity, at + 1));
+        }
+    }
+    let mut plain = candidates.into_iter().filter_map(|(entity, _)| {
+        let at = memchr::memchr_iter(1, frame).find(|at| {
+            crate::bytes::local_reference_target(frame, *at, false).map(u64::from)
+                == Some(entity.entity_id.suffix())
+        })?;
+        Some((entity, at))
+    });
+    match (plain.next(), plain.next()) {
+        (Some((entity, at)), None) => Some((entity, at + 1)),
+        _ => None,
+    }
+}
+
 fn first_marked_reference_offsets(frame: &[u8]) -> HashMap<u32, usize> {
     let mut first_at = HashMap::new();
     for at in memchr::memchr_iter(1, frame) {
-        if at + 11 <= frame.len() && frame[at + 5..at + 11] == [0; 6] {
-            if let Some(suffix) = View::u32_le_at(frame, at + 1) {
-                first_at.entry(suffix).or_insert(at);
-            }
+        if let Some(suffix) = crate::bytes::local_reference_target(frame, at, false)
+            .or_else(|| crate::bytes::typed_local_reference_target(frame, at))
+        {
+            first_at.entry(suffix).or_insert(at);
         }
     }
     first_at

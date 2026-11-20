@@ -296,6 +296,7 @@ fn a_reciprocal_thread_projects_after_its_hole() {
             panic!("Thread scope");
         };
         *construction = Some(DesignThreadConstruction {
+            angle: crate::records::feature::thread::DesignThreadAngle::SIXTY,
             form: DesignThreadForm::Compact(Some(Located {
                 value: NonZeroU32::new(owner).unwrap(),
                 offset: 0,
@@ -1163,6 +1164,7 @@ fn owned_base_feature_takes_its_timeline_object_position() {
                     owner_record,
                     owner_reference_offset: 0,
                     copy_sources: Vec::new(),
+                    owner_timeline_name: None,
                 },
             );
         }

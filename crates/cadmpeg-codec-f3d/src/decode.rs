@@ -2133,7 +2133,7 @@ fn report_parameter_trailer_flags(
             &mut report.losses,
             F3dLossCode::ParameterTrailerFlagUninterpreted,
             format_args!(
-                "{} decoded parameter(s) in {} set byte 3 of the compact expression trailer; the flag is not interpreted, and their driven and favorite flags are assumed false.",
+                "{} decoded parameter(s) in {} set an uninterpreted flag in the compact expression trailer.",
                 parameters.count, parameters.stream
             ),
         );
@@ -2423,11 +2423,9 @@ fn report_design_projection_gaps(
             == Some(crate::records::feature::extrude::DesignExtrudeExtent::SymmetricDistance)
             && prologue.distance_tail().is_none()
         {
-            let fixed_lane_only = scope
-                .fixed_extrude_parameters()
-                .is_some_and(|fixed| fixed.along_distance.is_some())
-                && !crate::ids::native_stream(&scope.id)
-                    .is_some_and(|stream| along_scopes.contains(&(stream, scope.record_index)));
+            let indexed_along = crate::ids::native_stream(&scope.id)
+                .is_some_and(|stream| along_scopes.contains(&(stream, scope.record_index)));
+            let each_side = scope.assumes_symmetric_distance_each_side(indexed_along);
             let reading = matches!(
                 feature.evaluation.definition(),
                 cadmpeg_ir::features::FeatureDefinition::Operation(
@@ -2437,7 +2435,7 @@ fn report_design_projection_gaps(
                     },
                 )
             ) && prologue.side_extent_discriminators() != Some([1, 1]);
-            let reading = reading.then_some(if fixed_lane_only {
+            let reading = reading.then_some(if each_side {
                 "each side"
             } else {
                 "the whole travel"
@@ -3868,7 +3866,8 @@ impl<'a> F3dDecodeSession<'a> {
                     self.native.xref_designs = table.designs;
                     self.native.xref_references = table.references;
                 }
-                if let DesignState::Projected(design) = design {
+                if let DesignState::Projected(mut design) = design {
+                    let consumers = std::mem::take(&mut design.history_body_consumers);
                     design.store(&mut self.native);
                     crate::design::decode::sketch_owners::attach(
                         ctx,
@@ -3881,6 +3880,15 @@ impl<'a> F3dDecodeSession<'a> {
                         scan,
                         &self.native,
                         &mut self.ir,
+                        &mut self.report.losses,
+                    )?;
+                    crate::history::history_bodies::fill_consumed(
+                        ctx,
+                        scan,
+                        &mut self.ir.model,
+                        &self.native,
+                        Some(&index.primary_model_brep_name),
+                        &consumers,
                         &mut self.report.losses,
                     )?;
                     report_design_projection_gaps(&mut self.report, ctx, &self.ir, &self.native)?;
@@ -4099,12 +4107,23 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 crate::scene::collect(ctx, &scan, &mut decoded.ir, &mut decoded.body.losses)?;
             if has_scene {
                 let sources = crate::scene::sources(ctx, &scan, &decoded.ir)?;
-                crate::scene::bind(ctx, &mut decoded.ir, &sources, &mut decoded.body.losses)?;
+                crate::scene::bind(
+                    ctx,
+                    &mut decoded.ir,
+                    &sources,
+                    &std::collections::BTreeMap::new(),
+                    &mut decoded.body.losses,
+                )?;
             }
             let owned =
                 crate::tree::own_once(ctx, &mut decoded.ir, &std::collections::BTreeMap::new())?;
             decoded.body.losses.extend(owned);
             crate::design::owners::release_unbound(&mut decoded.ir.model);
+            decoded.ir.state_root_definition(
+                ctx,
+                crate::tree::file_root_id(),
+                cadmpeg_ir::products::ExternalDocument::default(),
+            )?;
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
                 ctx,
@@ -4689,10 +4708,10 @@ fn project_mesh_bodies(
         )?;
         let mut triangle_groups = Vec::new();
         for group in std::mem::take(&mut body.triangle_groups) {
-            triangle_groups.push(cadmpeg_ir::tessellation::TessellationTriangleGroup {
-                source_id: Some(group.source_id),
-                triangles: group.triangles,
-            });
+            triangle_groups.push(cadmpeg_ir::tessellation::TessellationTriangleGroup::new(
+                Some(group.source_id),
+                group.triangles,
+            ));
         }
         let channels = mesh_attribute_channels(
             &body.attributes,

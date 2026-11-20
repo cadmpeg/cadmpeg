@@ -253,7 +253,7 @@ pub(crate) fn parse_native_parameter_literal(
     parse_parameter_literal(expression)
 }
 
-pub(super) fn native_parameter_is_length(
+pub(crate) fn native_parameter_is_length(
     feature: &Feature,
     name: &str,
     expression: Option<&str>,
@@ -809,7 +809,7 @@ fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> {
 }
 
 /// One identifier token of the expression it borrows from.
-pub(super) struct ExpressionIdentifier<'a> {
+pub(crate) struct ExpressionIdentifier<'a> {
     raw: &'a str,
     following: &'a str,
     value: Cow<'a, str>,
@@ -850,8 +850,13 @@ impl<'a> ExpressionIdentifier<'a> {
     }
 
     /// The identifier text, with the quotes and doubled quotes resolved.
-    pub(super) fn value(&self) -> &str {
+    pub(crate) fn value(&self) -> &str {
         &self.value
+    }
+
+    /// The token as the source spells it, quotes included.
+    pub(crate) fn raw(&self) -> &'a str {
+        self.raw
     }
 
     /// Whether the source spelled this identifier in quotes.
@@ -861,7 +866,7 @@ impl<'a> ExpressionIdentifier<'a> {
 
     /// Whether the token is expression syntax — a literal, a constant, or a function name
     /// applied to a following argument list — rather than a name to resolve.
-    pub(super) fn is_syntax(&self) -> bool {
+    pub(crate) fn is_syntax(&self) -> bool {
         if self.quoted {
             return false;
         }
@@ -882,7 +887,7 @@ impl<'a> ExpressionIdentifier<'a> {
     }
 
     /// The expression text that follows this token.
-    pub(super) fn following(&self) -> &'a str {
+    pub(crate) fn following(&self) -> &'a str {
         self.following
     }
 
@@ -894,7 +899,7 @@ impl<'a> ExpressionIdentifier<'a> {
     }
 }
 
-pub(super) fn expression_identifier_tokens(
+pub(crate) fn expression_identifier_tokens(
     expression: &str,
 ) -> Option<Vec<ExpressionIdentifier<'_>>> {
     let mut identifiers = Vec::new();

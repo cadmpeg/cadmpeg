@@ -68,29 +68,35 @@
             "kind": "dimension",
             "modifiers": [],
             "nominal": {
-              "quantity": "length",
-              "value": 12.0
+              "kind": "literal",
+              "value": {
+                "quantity": "length",
+                "value": 12.0
+              }
             },
             "tolerance": {
-              "fit": {
-                "form_variance": "H",
-                "grade": "7",
-                "source": "ISO 286",
-                "zone_variance": ""
-              },
-              "kind": "plus_minus_fit",
-              "lower": {
-                "quantity": "length",
-                "value": -0.1
-              },
-              "upper": {
-                "quantity": "length",
-                "value": 0.2
+              "kind": "fit",
+              "value": {
+                "deviations": {
+                  "kind": "unchecked",
+                  "lower": -0.1,
+                  "upper": 0.2
+                },
+                "fit": {
+                  "form_variance": "H",
+                  "grade": "7",
+                  "source": {
+                    "kind": "iso286"
+                  },
+                  "zone": "hole"
+                }
               }
             }
           },
           "id": "step:presentation:pmi#10",
           "name": "width",
+          "native_options": {},
+          "source_settings": {},
           "targets": [
             {
               "entity": {
@@ -102,9 +108,6 @@
         },
         {
           "definition": {
-            "constraints": {
-              "zones": []
-            },
             "kind": "geometric_tolerance",
             "magnitude": {
               "quantity": "length",
@@ -113,10 +116,13 @@
             "modifiers": [],
             "tolerance": {
               "kind": "flatness"
-            }
+            },
+            "zones": []
           },
           "id": "step:presentation:pmi#12",
           "name": "surface flatness",
+          "native_options": {},
+          "source_settings": {},
           "targets": [
             {
               "entity": {
@@ -134,19 +140,17 @@
             "kind": "dimension",
             "modifiers": [],
             "tolerance": {
-              "kind": "plus_minus",
-              "lower": {
-                "quantity": "length",
-                "value": -0.1
-              },
-              "upper": {
-                "quantity": "length",
-                "value": 0.2
+              "kind": "deviations",
+              "value": {
+                "lower": -0.1,
+                "upper": 0.2
               }
             }
           },
           "id": "step:presentation:pmi#25",
           "name": "datum feature size",
+          "native_options": {},
+          "source_settings": {},
           "targets": [
             {
               "entity": {
@@ -162,6 +166,8 @@
             "kind": "datum"
           },
           "id": "step:presentation:pmi#7",
+          "native_options": {},
+          "source_settings": {},
           "targets": [
             {
               "entity": {
@@ -187,13 +193,30 @@
           },
           "id": "step:presentation:pmi#8",
           "name": "primary system",
+          "native_options": {},
+          "source_settings": {},
           "targets": []
         }
       ],
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "step:product:product#document",
+          "instance_bodies": [],
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],

@@ -94,3 +94,49 @@ the Combine.
 - `combine_tools_n1.f3d`: one tool. 1 body, 9480 mm³, 12 faces.
 - `combine_tools_n2.f3d`: two tools. 1 body, 9960 mm³, 18 faces.
 - `combine_tools_n3.f3d`: three tools. 1 body, 10440 mm³, 24 faces.
+
+# Fusion API fixtures: surface revolves
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design. A Sketch on the XZ origin plane is revolved about
+the Z origin axis as a new surface body (isSolid false), with an angle extent of
+90 deg and Symmetric on. The API reported the body count, area and face count
+after the Revolve.
+
+- `symmetric_surface_revolve.f3d`: a closed rectangle at x 5–10 mm, z 0–10 mm.
+  1 surface body, 706.85835 mm², 4 faces: cylinders at radius 5 and 10 mm and
+  two planar annular faces.
+- `open_profile_surface_revolve.f3d`: one open line from (10, 0, 0) to
+  (10, 0, 10) mm, selected through createOpenProfile. 1 surface body,
+  314.15927 mm², 1 cylindrical face.
+
+# Fusion API fixtures: Copy/Paste Bodies
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design. Each pastes boxes of 10 × 10 mm (5, 6, 7 or 8 mm
+tall) into a new component `Target`, whose occurrence is at y + 30 mm, with one
+Copy/Paste Bodies operation. The API reported the body count, volume and face
+count after the operation.
+
+- `copy_paste_one_body.f3d`: one 5 mm box. 2 bodies, 1000 mm³, 12 faces.
+- `copy_paste_two_bodies.f3d`: two boxes of one component. 4 bodies, 2600 mm³,
+  24 faces.
+- `copy_paste_two_components.f3d`: one box from each of two components.
+  4 bodies, 2600 mm³, 24 faces.
+- `copy_paste_three_bodies.f3d`: three boxes of one component. 6 bodies,
+  3600 mm³, 36 faces.
+
+# Fusion API fixtures: Reverse Normal
+
+These files are CC0. Each was written through the Fusion API in Autodesk Fusion
+2706.1.17 from a new design. Each Sketch on the XZ origin plane holds a closed
+rectangle, revolved about the Z origin axis as a new surface body (isSolid
+false), with an angle extent of 90 deg and Symmetric on. A Reverse Normal of
+the surface bodies follows. The API reported the timeline, the body count and
+face count after each feature, and the bodies that the Reverse Normal selects.
+
+- `reverse_normal_revolve.f3d`: a rectangle at x 5–10 mm, z 0–10 mm, and a
+  Reverse Normal of its one body. 1 surface body, 4 faces.
+- `reverse_normal_two_revolves.f3d`: rectangles at x 5–10 mm and x 15–20 mm,
+  z 0–10 mm, each revolved by its own Revolve, and one Reverse Normal of both
+  bodies. 2 surface bodies, 8 faces.

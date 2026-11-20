@@ -165,7 +165,7 @@ fn assert_compact_slider(joint_version: u32, ordinary_locator: bool) {
     types.remove(&9);
     assert!(read(&types).is_none());
 
-    let occurrences = [(100, paths[0]), (101, paths[1])].map(|(index, path)| {
+    let mut occurrences = [(100, paths[0]), (101, paths[1])].map(|(index, path)| {
         DesignComponentOccurrence::try_new(DesignComponentOccurrenceDraft {
             id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{index}"),
             class_tag: "271".to_owned().try_into().unwrap(),
@@ -183,6 +183,65 @@ fn assert_compact_slider(joint_version: u32, ordinary_locator: bool) {
         panic!("As-built alignment slot");
     };
     *slot = Some(alignment);
+    if ordinary_locator {
+        use crate::design::components::{project_local_components, LocalComponentSources};
+        use crate::design::decode::components::{ComponentDefinition, StreamComponents};
+        use crate::records::xref::XrefCurrentPose;
+
+        let mut rows = Transform::identity().rows();
+        rows[0][3] = 4.0;
+        occurrences[0].current_pose = Some(XrefCurrentPose {
+            carrier_record_index: 400,
+            frame_bytes: Vec::new().into(),
+            transform: Some(rows.try_into().unwrap()),
+        });
+        let root = ComponentDefinition {
+            root_entity: 1,
+            context_uuid: "77777777-7777-7777-7777-777777777777"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            name: None,
+        };
+        let roots = std::iter::once((1, root))
+            .chain(occurrences.iter().map(|carrier| {
+                (
+                    carrier.component_record_index,
+                    ComponentDefinition {
+                        root_entity: carrier.component_record_index,
+                        context_uuid: carrier.component_guid.clone(),
+                        name: None,
+                    },
+                )
+            }))
+            .collect();
+        let components = [(
+            "f3d:Design/BulkStream.dat".into(),
+            StreamComponents {
+                roots,
+                root_component: Some(1),
+                ..Default::default()
+            },
+        )]
+        .into();
+        let model = project_local_components(&LocalComponentSources {
+            scopes: std::slice::from_ref(&scope),
+            occurrences: &occurrences,
+            paths: &[],
+            components: &components,
+            body_bindings: &[],
+            bodies: Some(&Default::default()),
+            hidden_bodies: None,
+            limits: Default::default(),
+        })
+        .unwrap();
+        let placed = model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.native_ref.as_ref() == Some(&occurrences[0].id))
+            .unwrap();
+        assert!((placed.transform.unwrap().rows()[0][3] - 40.0).abs() < f64::EPSILON);
+    }
     let motion = DesignJointMotion {
         id: "f3d:Design/BulkStream.dat:design-joint-motion#4000".into(),
         joint_record_index: 9,
@@ -909,7 +968,7 @@ fn unadmitted_rigid_group_frames_emit_a_loss() {
         );
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             let decoded = decode_parameter_scopes(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 &ParameterScopeSources::default(),
             )

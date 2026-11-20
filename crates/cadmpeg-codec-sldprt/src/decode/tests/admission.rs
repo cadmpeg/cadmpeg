@@ -280,31 +280,45 @@ fn decode_keeps_container_stream_and_model_entity_admission_additive() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("decode triangle body");
-    let model_entities = decoded.ir().entity_count();
+    let ir = decoded.ir();
+    // Each design scope's root definition is a model record admitted with
+    // the design records.
+    let design_entities = ir.design.entity_count() + ir.design.scopes.len();
+    let model_entities = ir.entity_count() - design_entities;
     assert!(container_entities > 0);
     assert!(stream_entities > 0);
     assert!(model_entities > 0);
+    assert!(design_entities > 0);
 
-    let previous_undercount = cadmpeg_core::decode::u64_from_index(
-        (container_entities + stream_entities).max(model_entities),
-    );
-    let mut options = DecodeOptions::default();
-    options.policy.limits.max_entities = previous_undercount;
-    let error = SldprtCodec
-        .decode(&mut Cursor::new(fixture.clone()), &options)
-        .expect_err("container, stream, and model cardinalities must remain additive");
-    assert!(
+    let refusal = |max_entities: usize| {
+        let mut options = DecodeOptions::default();
+        options.policy.limits.max_entities = cadmpeg_core::decode::u64_from_index(max_entities);
+        SldprtCodec
+            .decode(&mut Cursor::new(fixture.clone()), &options)
+            .expect_err("container, stream, model, and design cardinalities must remain additive")
+    };
+    let refused_at = |error: &cadmpeg_ir::DecodeFailure, operation: &str| {
         matches!(
             error,
             cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
                 if limit.dimension == ResourceDimension::Entities
-                    && limit.operation == "admit SLDPRT entities"
-        ),
+                    && limit.operation == operation
+        )
+    };
+    let previous_undercount = (container_entities + stream_entities).max(model_entities);
+    let error = refusal(previous_undercount);
+    assert!(refused_at(&error, "admit SLDPRT entities"), "{error:?}");
+    let error =
+        refusal(container_entities + stream_entities + model_entities + design_entities - 1);
+    assert!(
+        refused_at(&error, "admit SLDPRT design records"),
         "{error:?}"
     );
 
-    options.policy.limits.max_entities =
-        cadmpeg_core::decode::u64_from_index(container_entities + stream_entities + model_entities);
+    let mut options = DecodeOptions::default();
+    options.policy.limits.max_entities = cadmpeg_core::decode::u64_from_index(
+        container_entities + stream_entities + model_entities + design_entities,
+    );
     SldprtCodec
         .decode(&mut Cursor::new(fixture), &options)
         .expect("the exact additive entity limit must admit the fixture");

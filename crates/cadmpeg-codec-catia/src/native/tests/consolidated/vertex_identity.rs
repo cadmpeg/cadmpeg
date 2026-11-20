@@ -318,7 +318,7 @@ fn native_namespace_retains_resolved_consolidated_edge_supports_and_loci() {
 
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "consolidated_cylinders",
             &Vec::<crate::native::CatiaConsolidatedCylinder>::new(),
         )
@@ -388,7 +388,7 @@ fn native_namespace_retains_resolved_consolidated_plane_supports() {
 
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "consolidated_plane_carriers",
             &Vec::<crate::native::CatiaConsolidatedPlaneCarrier>::new(),
         )
@@ -434,7 +434,7 @@ fn native_namespace_retains_resolved_consolidated_torus_supports() {
 
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "consolidated_tori",
             &Vec::<crate::native::CatiaConsolidatedTorus>::new(),
         )
@@ -467,7 +467,7 @@ fn native_namespace_retains_resolved_consolidated_sphere_supports() {
 
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "consolidated_spheres",
             &Vec::<crate::native::CatiaConsolidatedSphere>::new(),
         )

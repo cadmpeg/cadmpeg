@@ -55,7 +55,7 @@ mod tests {
 
     fn structure() -> DesignEdgeRecipeStructure {
         crate::design::decode::operands::edge_recipe_structure(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             PROGRAM,
         )
         .unwrap()
@@ -66,7 +66,7 @@ mod tests {
     fn primary_reference_program_refuses_each_truncation() {
         for end in 0..PROGRAM.len() {
             assert!(crate::design::decode::operands::edge_recipe_structure(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &PROGRAM[..end],
             )
             .unwrap()
