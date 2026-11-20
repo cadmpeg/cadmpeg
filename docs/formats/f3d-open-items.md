@@ -823,7 +823,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What selects the 37-byte or the 33-byte form of a side-face entry and the token-string form of a body entry (type `335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A`), what does the reference that other body entries (type `ABA79BE7-D8D2-4C17-B59B-C2035E111F77`) store in place of the null reference name, and what do the two operands after the sense word of a curve-record entry (type `2DEE34BE-FA70-4D54-979C-164D86FDA786`) encode?
 
-**Known.** `f3d.md` §3.1 "**Tracked entries of an `Extrude`.**" gives the three records and the key of a side-face entry. Streams with serializer magic `1234` store both side-face forms. A body entry can also store each side token as its own LP-ASCII string, with no offset list, and other body-entry prefixes occur. One curve record of a side-face entry stores one counted curve list in place of two. The GUID of a body entry is the browser-node GUID of the result body.
+**Known.** `f3d.md` §3.1 "**Tracked entries of an `Extrude`.**" gives the three records and the key of a side-face entry. Streams with serializer magic `1234` store both side-face forms. A body entry can also store each side token as its own LP-ASCII string, with no offset list, and other body-entry prefixes occur. One curve record of a side-face entry stores one counted curve list in place of two. The GUID of a body entry is the browser-node GUID of the result body. The side-face entries of an `Extrude` in a design whose timeline lists `Sketch` items and one `Extrude` are in the 37-byte form, and `f3d.md` §3.1 "**Tracked results of a circle profile.**" gives the curve record of a circle profile. In other designs, the tracked-results table of one `Extrude` holds side-face entries of the 37-byte form, of the 33-byte form, or of both forms. Entries with the same sense word in their curve entry and the same scope byte at offset 27 occur in both forms.
 
 **Need.** A writer must choose the side-face form and fill the body entry's reference and the curve entries' operands.
 
@@ -831,9 +831,9 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What do the `Dc<Family>MetaType` counters and the u64 context value of the timeline context record count?
 
-**Known.** `f3d.md` §3.1 "**Timeline context.**" gives the record layout. A design with one `Sketch` and one `Extrude` stores the counters `1` and `1` and the context value `2`. In a stream with serializer magic `1234`, each counter is at least the largest family ordinal of the timeline items of its family, and it can exceed it. Counters can name families that have no item in the timeline. The context value can equal the number of timeline items, be `0`, or exceed both the number of items and the sum of the counters. A design whose timeline holds one `Base Feature` item stores the counter `DcBaseFeatureMetaType = 1` and the context value `0`. `f3d.md` §3.1 "**Design records of Sketch items.**" gives the counter of `Sketch` items and the context value of a design whose timeline holds only `Sketch` items, or only `Sketch` and `Extrude` items, and whose parameters keep their `d<n>` names. In a design whose timeline also holds items of other families, `DcSketchMetaType` can exceed the number of `Sketch` items, and the timeline context can omit it. A design whose parameters were renamed can store a context value below the largest `n` of its remaining `d<n>` names.
+**Known.** `f3d.md` §3.1 "**Timeline context.**" gives the record layout. A design with one `Sketch` and one `Extrude` stores the counters `1` and `1` and the context value `2`. In a stream with serializer magic `1234`, each counter is at least the largest family ordinal of the timeline items of its family, and it can exceed it. Counters can name families that have no item in the timeline. The context value can equal the number of timeline items, be `0`, or exceed both the number of items and the sum of the counters. A design whose timeline holds one `Base Feature` item stores the counter `DcBaseFeatureMetaType = 1` and the context value `0`. `f3d.md` §3.1 "**Design records of Sketch items.**" gives the counter of `Sketch` items and the context value of a design whose timeline holds only `Sketch` items, or only `Sketch` and `Extrude` items, and whose parameters keep their `d<n>` names. In a design whose timeline also holds items of other families, `DcSketchMetaType` can exceed the number of `Sketch` items, and the timeline context can omit it. A design whose parameters were renamed can store a context value below the largest `n` of its remaining `d<n>` names. A design whose timeline lists `Sketch`, `Extrude`, and `Sketch` stores the context value `2` or `3`; `Sketch`, `Extrude`, `Sketch`, `Sketch` stores `4`; and `Sketch`, `Extrude`, `Sketch`, `Extrude` stores `4`. In each, `DcSketchMetaType` and `DcExtrudeFeatureMetaType` are the numbers of items of their families. The timeline context of a design whose timeline lists `Sketch` items and one `Extrude` references one browser-node member, the result body's.
 
-**Need.** A writer must write correct values for designs with other item sets. The counters against the ordinals of deleted items, and the context value against the rolled-back position and the deleted items, would settle it.
+**Need.** A writer must write correct values for designs with other item sets. The counters against the ordinals of deleted items, and the context value against the rolled-back position and the deleted items, would settle it. A design whose timeline lists two or more `Sketch` items before its first `Extrude` would give the value for that case.
 
 ### DR-883. Extrude side-face walk outside one-sided loops of lines
 
@@ -855,7 +855,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What does the u32 at offset 29 of the item-tail companion (type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`) encode?
 
-**Known.** `f3d.md` §3.1 "**Item-tail companion.**" gives the record. The word is `0`, `2`, or `3`. A `Sketch` or `Extrude` item with `s0` and `s1` equal to `0` can store `0` or `2`. Most `Sketch` items store `0`. The placement and the placement path of a `Sketch` item each reference an item-tail companion too. A `Base Feature` item stores `0`.
+**Known.** `f3d.md` §3.1 "**Item-tail companion.**" gives the record. The word is `0`, `2`, or `3`. A `Sketch` or `Extrude` item with `s0` and `s1` equal to `0` can store `0` or `2`. Most `Sketch` items store `0`. The placement and the placement path of a `Sketch` item each reference an item-tail companion too. A `Base Feature` item stores `0`. In a design whose timeline lists `Sketch` items and one `Extrude`, the start record, profile group, and profile selection of the `Extrude` each reference their own companion, which stores `0`.
 
 **Need.** A writer must choose the word for each item it writes.
 
@@ -971,6 +971,35 @@ In the design with three solid bodies, records 193 to 200 are the further design
 **Conflict.** None.
 
 **Note.** Each carrier GUID, occurrence key, owner entity, and component reference of the frame resolves. The prefix value is the single field outside the specified grammar.
+
+### DR-911. Fields of a sketch-driven Extrude without an established rule
+
+**Question.** For a sketch-driven `Extrude`, what does the byte at offset 27 of the scope frame encode, and what selects the family discriminator of its parameter records, the body key of its body map, the order of its five scope references, and the 107-byte form of its `Body` owner?
+
+**Known.** `f3d.md` §3.1 "**Sketch-driven Extrude scope frame.**", "**Extrude parameter owners.**", and "**Result body.**" give the records. The table `sketch_extrude_scope_frame` in `docs/layouts/f3d.toml` records the byte at offset 27 as a gap. The byte is `0` or `1`, and both values occur in one design. The value `1` occurs with positive and with negative `AlongDistance` values. The two parameter records of one `Extrude` store the same family discriminator, and the values `6`, `4`, and `0` occur. The body key is `0` or `6`. The five scope references occur in the order of the list in `f3d.md` and in the order `AlongDistance` owner, `TaperAngle` owner, start record, profile group, profile selection. The `Body` owner also has a 107-byte form, with a different zero run and different words at offsets 22, 41, and 64.
+
+**Need.** A writer must fill each field and choose each form. A design that stores both values of the scope byte, compared item by item against its edit history, would settle the first.
+
+### DR-919. Member order of the owner collection and dependency table of a sketch-driven Extrude
+
+**Question.** In a design whose timeline lists one `Sketch` and then an `Extrude`, in what order do the owner collection, the record of type `B65B5682-9355-44C7-8AFC-823058C4A36B`, and the dependency table (type `B13113CC-031E-4F93-8240-C4C10728869F`) list their records, and what adds a record of type `BFB592FE-03DD-4DAA-A4AC-14D02ABB672A` to them?
+
+**Known.** `f3d.md` §3.1 "This subsection gives the records of an `Extrude` item that creates a new solid body" gives the records. The three lists each name the same ten records. In the common form, the owner collection lists ten members in this order: the record of type `5D15E992-1E93-4D79-A553-10D2624148AE`, the `Sketch` scope, the placement path, the sketch placement, the profile group, the profile selection, the `AlongDistance` owner, the `TaperAngle` owner, the start record, and the `Extrude` scope. The `B65B5682` record lists them in this order: the `5D15E992` record, the placement path, the sketch placement, the `Sketch` scope, the profile selection, the profile group, the `AlongDistance` owner, the `TaperAngle` owner, the start record, and the `Extrude` scope. The input map of the dependency table stores these entries in this order, each with the records it reads and their flags: the `Sketch` scope reads the `5D15E992` record (`0x1000`) and the sketch placement (`1`); the sketch placement reads the placement path (`1`); the `Extrude` scope reads the `5D15E992` record (`0x1000`) and the start record (`1`); the profile group reads the profile selection (`1`); the profile selection reads the `Sketch` scope (`4`); and the start record reads the profile group (`1`), the `AlongDistance` owner (`1`), and the `TaperAngle` owner (`1`). The dependent map stores the same edges by the record read, in this order of read records: the `5D15E992` record, the `Sketch` scope, the placement path, the sketch placement, the profile group, the start record, the profile selection, the `AlongDistance` owner, and the `TaperAngle` owner. The three lists of some designs also hold one record of type `BFB592FE-03DD-4DAA-A4AC-14D02ABB672A`.
+
+**Need.** A writer must write the three lists. The position of the `BFB592FE` record in each list, against the edit history of the designs that hold it, would settle the question.
+
+### DR-916. Records of a sketch-driven Extrude in a design with further items
+
+**Question.** In a design whose timeline holds items other than `Sketch` items and one `Extrude`, which records do the record-timestamp tables of a sketch-driven `Extrude`'s records list, which presentation records does its result body hold, which coedges carry a `sketch_attrib_def` attribute, and which persistent identity does a later `Sketch` scope own?
+
+**Known.** `f3d.md` §3.1 "This subsection gives the records of an `Extrude` item that creates a new solid body" gives the records. In a design whose timeline lists `Sketch` items and one `Extrude`:
+
+- The record-timestamp table of the `Extrude` scope lists the record of type `5D15E992-1E93-4D79-A553-10D2624148AE`, the `Extrude` scope, and the start record. The table of the start record lists the profile group, the `AlongDistance` owner, and the `TaperAngle` owner. The table of the profile group lists the profile selection. The table of the profile selection lists the `Sketch` scope.
+- The body-presentation owner is the only presentation record of the result body.
+- The coedge of each side face on the edge that the side face shares with the start cap carries a `sketch_attrib_def` attribute that names the sketch curve of the side face. The start cap's coedge on the same edge carries an attribute with the same values. The other coedges of the side faces and the coedges of the end cap carry no `sketch_attrib_def` attribute.
+- When further `Sketch` items follow the `Extrude`, each later `Sketch` scope owns the next persistent identity after `302`.
+
+**Need.** A writer of a design with further items must fill these tables, presentation records, attributes, and identities. Designs whose timeline holds several `Extrude` items or other features, compared record by record with these lists, would settle it.
 
 ## 2. External references
 
