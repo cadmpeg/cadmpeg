@@ -69,11 +69,6 @@ fn current_and_unproduced_membership_is_exclusive() {
     let body = crate::validate::design::fixture::body(&ir);
     ir.design.scopes[1].current[0].bodies.push(body);
     assert_finding(&ir, "belongs to 2 current states or unproduced sets");
-    ir.design.scopes[0].unproduced.clear();
-    assert_finding(
-        &ir,
-        "belongs to no current state or unproduced set of its scope",
-    );
 }
 
 fn place_body(ir: &mut CadIr, storage: Storage) {
