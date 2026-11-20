@@ -2570,7 +2570,7 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Conflict.** None.
 
-**Note.** R-Pattern 3 in `Parametric_extrusion_generator.f3d` stores zero at payload byte `133223`, the direction-one symmetric field. Its two counts are two. In this case adjacent distance and total extent give the same 15 mm spacing. The decoder reads the extent of a symmetric direction with an extent distance as the span from the first to the last instance, divides it into one interval fewer than the count, keeps the count and the direction, and charges `feature.rectangular-pattern-symmetric-extent-assumed`.
+**Note.** R-Pattern 3 in `Parametric_extrusion_generator.f3d` stores zero at payload byte `133223`, the direction-one symmetric field. Its two counts are two. In this case adjacent distance and total extent give the same 15 mm spacing. The decoder reads the extent of a symmetric direction with an extent distance as the span from the first to the last instance, divides it into one interval fewer than the count, keeps the count and the direction, and charges `feature.rectangular-pattern-symmetric-total-extent-assumed`.
 
 ### DR-298. SurfaceTrim cell-table entries outside the removal reading
 

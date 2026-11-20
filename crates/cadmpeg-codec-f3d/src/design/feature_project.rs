@@ -7657,7 +7657,7 @@ fn project_rectangular_pattern_scalars(
     }
     if symmetric && !adjacent {
         losses.push(
-            crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricExtentAssumed.note(format!(
+            crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricTotalExtentAssumed.note(format!(
                 "RectangularPattern scope {} reads the total extent of its symmetric direction one as the span from the first to the last instance.",
                 scope.id
             )),

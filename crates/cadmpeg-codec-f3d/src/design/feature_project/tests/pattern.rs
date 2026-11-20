@@ -1086,7 +1086,8 @@ fn a_symmetric_extent_direction_keeps_its_count_and_charges_the_extent_reading()
     let (spacing, count) = single_direction(symmetric);
     assert!((spacing - 30.0).abs() < EPS_SPACING);
     assert_eq!(count, 3);
-    let assumed = crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricExtentAssumed.kind();
+    let assumed =
+        crate::loss::F3dLossCode::FeatureRectangularPatternSymmetricTotalExtentAssumed.kind();
     assert_eq!(
         losses.iter().filter(|loss| loss.code == assumed).count(),
         1,
