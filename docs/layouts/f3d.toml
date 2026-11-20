@@ -26456,7 +26456,7 @@ kind = "byte"
 section = "3.1"
 anchor = "A planar sketch-curve record can store two opaque bytes in place of the three"
 size = 24
-note = "N = 1, two opaque bytes. Offsets are relative to the end of the 96-byte analytic payload. The decoder reads `tail_byte` as the tail marker (DR-890) and a `lane` of 1 as construction geometry (DR-891)."
+note = "N = 1, two opaque bytes. Offsets are relative to the end of the 96-byte analytic payload. The decoder reads `tail_byte` as the tail marker (DR-890) and a `lane` of 1 as construction geometry (DR-898)."
 
 [[record.field]]
 name = "reference_marker"
@@ -26521,7 +26521,7 @@ kind = "byte"
 section = "3.1"
 anchor = "A planar sketch-curve record can store two opaque bytes in place of the three"
 size = 33
-note = "N = 2, two opaque bytes. Offsets are relative to the end of the 96-byte analytic payload. The decoder reads `tail_byte` as the tail marker (DR-890) and a `lane` of 1 as construction geometry (DR-891)."
+note = "N = 2, two opaque bytes. Offsets are relative to the end of the 96-byte analytic payload. The decoder reads `tail_byte` as the tail marker (DR-890) and a `lane` of 1 as construction geometry (DR-898)."
 
 [[record.field]]
 name = "first_reference_marker"
@@ -26607,7 +26607,7 @@ kind = "byte"
 section = "3.1"
 anchor = "A planar sketch-curve record can store two opaque bytes in place of the three"
 size = 44
-note = "N = 3, two opaque bytes. Offsets are relative to the end of the 96-byte analytic payload. The decoder reads `tail_byte` as the tail marker (DR-890) and a `lane` of 1 as construction geometry (DR-891)."
+note = "N = 3, two opaque bytes. Offsets are relative to the end of the 96-byte analytic payload. The decoder reads `tail_byte` as the tail marker (DR-890) and a `lane` of 1 as construction geometry (DR-898)."
 
 [[record.field]]
 name = "first_reference_marker"

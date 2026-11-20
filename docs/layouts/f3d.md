@@ -8167,7 +8167,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 24 B
 
-N = 1, two opaque bytes. Offsets are relative to the end of the 96-byte analytic payload. The decoder reads `tail_byte` as the tail marker (DR-890) and a `lane` of 1 as construction geometry (DR-891).
+N = 1, two opaque bytes. Offsets are relative to the end of the 96-byte analytic payload. The decoder reads `tail_byte` as the tail marker (DR-890) and a `lane` of 1 as construction geometry (DR-898).
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
@@ -8187,7 +8187,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 33 B
 
-N = 2, two opaque bytes. Offsets are relative to the end of the 96-byte analytic payload. The decoder reads `tail_byte` as the tail marker (DR-890) and a `lane` of 1 as construction geometry (DR-891).
+N = 2, two opaque bytes. Offsets are relative to the end of the 96-byte analytic payload. The decoder reads `tail_byte` as the tail marker (DR-890) and a `lane` of 1 as construction geometry (DR-898).
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`
@@ -8210,7 +8210,7 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 44 B
 
-N = 3, two opaque bytes. Offsets are relative to the end of the 96-byte analytic payload. The decoder reads `tail_byte` as the tail marker (DR-890) and a `lane` of 1 as construction geometry (DR-891).
+N = 3, two opaque bytes. Offsets are relative to the end of the 96-byte analytic payload. The decoder reads `tail_byte` as the tail marker (DR-890) and a `lane` of 1 as construction geometry (DR-898).
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs`

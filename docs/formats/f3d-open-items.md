@@ -3698,7 +3698,7 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 
 **Need.** A two-opaque-byte tail with a nonzero byte before the u32 lane, and the counted region member lists that name or omit that curve.
 
-### DR-891. Construction flag of the two-opaque-byte planar curve tail
+### DR-898. Construction flag of the two-opaque-byte planar curve tail
 
 **Question.** Does a u32 lane of `1` in a two-opaque-byte planar sketch-curve tail mark construction geometry?
 
