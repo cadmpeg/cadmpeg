@@ -131,6 +131,8 @@ pub(super) struct Reduction<'a> {
     neutral_dropped: bool,
     /// Why the design scope is written without its `Sketch` items.
     sketch_failure: Option<String>,
+    /// Why the design scope writes its extrude in the Base Feature.
+    extrude_failure: Option<String>,
 }
 
 impl<'a> Reduction<'a> {
@@ -141,6 +143,7 @@ impl<'a> Reduction<'a> {
             design_dropped: false,
             neutral_dropped: false,
             sketch_failure: None,
+            extrude_failure: None,
         }
     }
 
@@ -167,6 +170,12 @@ impl<'a> Reduction<'a> {
     /// failure with them.
     pub(super) fn sketch_failure(&self) -> Option<&str> {
         self.sketch_failure.as_deref()
+    }
+
+    /// Why the design scope writes its extrude in the Base Feature, after a
+    /// failure with its `Extrude` item.
+    pub(super) fn extrude_failure(&self) -> Option<&str> {
+        self.extrude_failure.as_deref()
     }
 
     /// The losses, with `export:output.empty` when no geometry is written.
@@ -236,7 +245,9 @@ impl<'a> Reduction<'a> {
         let progressed = match stage {
             Stage::Archive => false,
             Stage::NeutralDesign => {
-                self.drop_sketches(&reason) || self.drop_neutral_design(&reason)
+                self.drop_extrude(&reason)
+                    || self.drop_sketches(&reason)
+                    || self.drop_neutral_design(&reason)
             }
             Stage::Brep => {
                 self.drop_unwritable_bodies(&reason, Stage::Brep, &writes_alone)?
@@ -950,6 +961,20 @@ impl<'a> Reduction<'a> {
             &format!("of the Design stream, because the source-less generator cannot write them consistently ({reason})"),
             dropped,
         ));
+        true
+    }
+
+    /// Write the design scope's extrude in the Base Feature: the design plan
+    /// names it with the reason.
+    fn drop_extrude(&mut self, reason: &str) -> bool {
+        if !self.writes_neutral_design()
+            || self.extrude_failure.is_some()
+            || self.sketch_failure.is_some()
+            || !super::design::writes_extrude(&self.ir)
+        {
+            return false;
+        }
+        self.extrude_failure = Some(reason.to_owned());
         true
     }
 
