@@ -1502,7 +1502,7 @@ fn a_sketch_with_an_unbound_dimension_or_an_entity_without_a_curve_is_unresolved
 
 /// Assert that the sketch of [`sketch_and_extrude`], after `change`, stays
 /// `Unresolved` for `reason`, and its extrude with it, and that its vertical
-/// dimension still states its parameter's quantity.
+/// dimension and the extrude's depth still state their parameters' quantity.
 fn assert_sketch_unresolved(change: impl FnOnce(&mut CadIr), reason: &str) {
     use cadmpeg_ir::design::units::Quantity;
 
@@ -1513,6 +1513,10 @@ fn assert_sketch_unresolved(change: impl FnOnce(&mut CadIr), reason: &str) {
     let sketch = timeline_feature(&timeline, "Sketch1");
     let height = entries.owned(&sketch.id, "D2").unwrap();
     assert_eq!(typed.bound.get(height), Some(&Quantity::LENGTH), "{reason}");
+    let depth = entries
+        .owned(&timeline_feature(&timeline, "Boss").id, "D1")
+        .unwrap();
+    assert_eq!(typed.bound.get(depth), Some(&Quantity::LENGTH), "{reason}");
     assert_eq!(
         sketch.definition.operation,
         FeatureOperation::Unresolved {

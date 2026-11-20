@@ -8,7 +8,8 @@
 //! no body yet is a new body (§6). An extrude whose start, limits, draft, or
 //! profile the decoder reads only in part stays `Unresolved`, and so does one
 //! whose sketch the timeline lists after it, which its `Input` profile pick
-//! cannot see.
+//! cannot see. An extrude whose sketch stays `Unresolved` still binds its
+//! blind depths, each a length.
 
 use std::collections::{HashMap, HashSet};
 
@@ -54,7 +55,10 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Extrud
     let sketch_of = features
         .iter()
         .filter_map(|feature| match &feature.definition.operation {
-            FeatureOperation::Sketch(sketch) => Some((feature.id.clone(), sketch.clone())),
+            FeatureOperation::Sketch(sketch) => Some((feature.id.clone(), Some(sketch.clone()))),
+            FeatureOperation::Unresolved {
+                family: OperationFamily::Sketch,
+            } => Some((feature.id.clone(), None)),
             _ => None,
         })
         .collect::<HashMap<_, _>>();
@@ -74,10 +78,19 @@ pub(super) fn project(features: &mut [Feature], context: &Context<'_>) -> Extrud
         };
         match family {
             Some(OperationFamily::Extrude) => {
-                match extrude(feature, context, &sketch_of, &preceding, body_before) {
-                    Ok((extrude, bound)) => {
+                let mut bound = Vec::new();
+                let typed = extrude(
+                    feature,
+                    context,
+                    &sketch_of,
+                    &preceding,
+                    body_before,
+                    &mut bound,
+                );
+                out.bound.extend(bound);
+                match typed {
+                    Ok(extrude) => {
                         feature.definition.operation = FeatureOperation::Extrude(Box::new(extrude));
-                        out.bound.extend(bound);
                     }
                     Err(reason) => out.unprojected.push((feature.id.clone(), reason)),
                 }
@@ -102,10 +115,11 @@ type Bound = Vec<(ParameterId, Quantity)>;
 fn extrude(
     feature: &Feature,
     context: &Context<'_>,
-    sketch_of: &HashMap<FeatureId, SketchId>,
+    sketch_of: &HashMap<FeatureId, Option<SketchId>>,
     preceding: &HashSet<SketchId>,
     body_before: bool,
-) -> Result<(Extrude, Bound), &'static str> {
+    bound: &mut Bound,
+) -> Result<Extrude, &'static str> {
     let source = context
         .model
         .features
@@ -135,18 +149,13 @@ fn extrude(
         return Err("the extrude states an option of another format");
     }
     let sketch = match profile {
-        ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)) => sketch,
+        ProfileRef::Planar(PlanarProfileRef::Sketch(sketch)) => Some(sketch),
         ProfileRef::Planar(PlanarProfileRef::Feature(owner)) => sketch_of
             .get(owner)
-            .ok_or("the extrude's profile feature states no sketch")?,
+            .ok_or("the extrude's profile feature states no sketch")?
+            .as_ref(),
         _ => return Err("the extrude's profile is no whole sketch"),
     };
-    if !context.sketches.contains(sketch) {
-        return Err("the extrude's sketch is not stated");
-    }
-    if !preceding.contains(sketch) {
-        return Err("the extrude's sketch follows it in the timeline");
-    }
     let direction = match direction {
         v10::ExtrudeDirection::ProfileNormal {} => {
             ExtrudeDirection::ProfileNormal { reversed: None }
@@ -156,9 +165,13 @@ fn extrude(
     if !matches!(start, v10::ExtrudeStart::ProfilePlane {}) {
         return Err("the extrude starts off the profile plane");
     }
-    let depths = Depths::new(feature, context);
-    let mut bound = Vec::new();
-    let span = span(extent, &depths, &mut bound)?;
+    let span = span(extent, &Depths::new(feature, context), bound)?;
+    let sketch = sketch
+        .filter(|sketch| context.sketches.contains(*sketch))
+        .ok_or("the extrude's sketch is not stated")?;
+    if !preceding.contains(sketch) {
+        return Err("the extrude's sketch follows it in the timeline");
+    }
     let boolean = match op {
         v10::BooleanOp::Join if !body_before => Some(Boolean::NewBody),
         v10::BooleanOp::Join => Some(apply(BooleanOp::Join)),
@@ -167,32 +180,29 @@ fn extrude(
         v10::BooleanOp::NewBody => Some(Boolean::NewBody),
         v10::BooleanOp::Unresolved => None,
     };
-    Ok((
-        Extrude {
-            profile: selection(vec![pick(PickTarget::Sketch(sketch.clone()))])?,
-            loops: None,
-            direction: Some(direction),
-            origin: Some(ExtrudeOrigin::ProfilePlane),
-            span: Some(span),
-            draft: None,
-            fit: None,
-            outside: None,
-            sheet_cut: None,
-            output: SolidOutput {
-                body: solid.map(|solid| {
-                    if solid {
-                        BodyForm::Solid
-                    } else {
-                        BodyForm::Sheet
-                    }
-                }),
-                boolean,
-            },
-            native_options: NativeOptions::new(),
-            source_settings: NativeOptions::new(),
+    Ok(Extrude {
+        profile: selection(vec![pick(PickTarget::Sketch(sketch.clone()))])?,
+        loops: None,
+        direction: Some(direction),
+        origin: Some(ExtrudeOrigin::ProfilePlane),
+        span: Some(span),
+        draft: None,
+        fit: None,
+        outside: None,
+        sheet_cut: None,
+        output: SolidOutput {
+            body: solid.map(|solid| {
+                if solid {
+                    BodyForm::Solid
+                } else {
+                    BodyForm::Sheet
+                }
+            }),
+            boolean,
         },
-        bound,
-    ))
+        native_options: NativeOptions::new(),
+        source_settings: NativeOptions::new(),
+    })
 }
 
 fn apply(op: BooleanOp) -> Boolean {
