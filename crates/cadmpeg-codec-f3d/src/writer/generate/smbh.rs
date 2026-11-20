@@ -4,7 +4,8 @@
 
 use cadmpeg_asm::brep::records::{EndpointSlot, EvaluatedToleranceSlot};
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::hash::Hash;
 
 use crate::native::F3dNative;
 use cadmpeg_core::CodecError;
@@ -34,8 +35,9 @@ use super::{
     native_geometry::{
         native_cacheless_procedural_curve, native_cacheless_procedural_surface, native_nurbs_curve,
         native_nurbs_surface, native_pcurve, native_procedural_curve, native_procedural_surface,
-        native_ref_pcurve_companion, native_smbh_header, pcurve_support_geometry, NativePcurveForm,
+        native_ref_pcurve_companion, native_smbh_header, NativePcurveForm,
     },
+    pcurve_supports::PcurveSupports,
     preconditions::{validate_source_less_body_kinds, validate_source_less_wire_ownership},
     records::{native_tolerant_coedge_extension, tolerant_coedge_range},
 };
@@ -69,6 +71,17 @@ pub(super) fn encode_smbh(
         return encode_wire_body_smbh(target, native, attributes, &topology);
     }
     encode_face_topology_smbh(target, native, attributes, &topology)
+}
+
+/// The position of each id in `ids`. A repeated id keeps its first position.
+fn first_positions<'a, K: Eq + Hash + 'a>(
+    ids: impl Iterator<Item = &'a K>,
+) -> HashMap<&'a K, usize> {
+    let mut positions = HashMap::new();
+    for (position, id) in ids.enumerate() {
+        positions.entry(id).or_insert(position);
+    }
+    positions
 }
 
 #[derive(Debug)]
@@ -114,6 +127,7 @@ impl<'a> NativeRecordPlan<'a> {
         let ref_pcurve_start = native_record_index(pcurve_start, geometry.pcurves.len())?;
         let mut ref_pcurve_count = 0usize;
         let mut pcurves = Vec::new();
+        let supports = PcurveSupports::new(geometry);
         for pcurve in &geometry.pcurves {
             let form = native_pcurve_form(pcurve, || {
                 let companion_ref = native_record_index(ref_pcurve_start, ref_pcurve_count)?;
@@ -122,7 +136,7 @@ impl<'a> NativeRecordPlan<'a> {
             })?;
             pcurves.push(PlannedPcurve {
                 geometry: &pcurve.geometry,
-                support: pcurve_support_geometry(geometry, &pcurve.id)?,
+                support: supports.geometry(&pcurve.id)?,
                 form,
             });
         }
@@ -224,10 +238,11 @@ pub(super) fn unwritable_pcurves(
         }
     }
     let mut scratch = Vec::new();
+    let supports = PcurveSupports::new(geometry);
     for pcurve in &geometry.pcurves {
         scratch.clear();
         let written = native_pcurve_form(pcurve, || Ok(0)).and_then(|form| {
-            let support = pcurve_support_geometry(geometry, &pcurve.id)?;
+            let support = supports.geometry(&pcurve.id)?;
             native_pcurve(&mut scratch, &pcurve.geometry, &form, support)?;
             if let NativePcurveForm::Reference { uv_offset, .. } = form {
                 native_ref_pcurve_companion(&mut scratch, &pcurve.geometry, uv_offset, support)?;
@@ -831,6 +846,18 @@ fn encode_face_topology_smbh(
         attribute: attribute_start,
         pcurves,
     } = plan;
+    let shell_positions = first_positions(geometry.shells.iter().map(|shell| &shell.id));
+    let face_positions = first_positions(geometry.faces.iter().map(|face| &face.id));
+    let loop_positions = first_positions(geometry.loops.iter().map(|loop_| &loop_.id));
+    let surface_positions = first_positions(geometry.surfaces.iter().map(|surface| &surface.id));
+    let coedge_positions = first_positions(geometry.coedges.iter().map(|coedge| &coedge.id));
+    let mut shell_face_positions = HashMap::<&ShellId, Vec<usize>>::new();
+    for (position, face) in geometry.faces.iter().enumerate() {
+        shell_face_positions
+            .entry(&face.shell)
+            .or_default()
+            .push(position);
+    }
 
     let mut records = Vec::new();
     native_ident(&mut records, "asmheader")?;
@@ -915,15 +942,11 @@ fn encode_face_topology_smbh(
         let first_shell = region.shells.first().ok_or_else(|| {
             CodecError::malformed(format_args!("region {} has no shell", region.id))
         })?;
-        let shell_ordinal = geometry
-            .shells
-            .iter()
-            .position(|shell| shell.id == *first_shell)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "region references missing shell {first_shell}"
-                ))
-            })?;
+        let shell_ordinal = shell_positions.get(first_shell).copied().ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "region references missing shell {first_shell}"
+            ))
+        })?;
         let next = if ordinal + 1 == siblings.len() {
             -1
         } else {
@@ -965,24 +988,19 @@ fn encode_face_topology_smbh(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("region does not own shell {}", shell.id))
             })?;
-        let first_face = geometry
-            .faces
-            .iter()
-            .position(|face| face.shell == shell.id)
-            .map(|ordinal| native_record_index(face_start, ordinal))
+        let first_face = shell_face_positions
+            .get(&shell.id)
+            .and_then(|positions| positions.first())
+            .map(|ordinal| native_record_index(face_start, *ordinal))
             .transpose()?
             .unwrap_or(-1);
         let next = if ordinal + 1 == region.shells.len() {
             -1
         } else {
             let id = &region.shells[ordinal + 1];
-            let position = geometry
-                .shells
-                .iter()
-                .position(|item| item.id == *id)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!("region references missing shell {id}"))
-                })?;
+            let position = shell_positions.get(id).copied().ok_or_else(|| {
+                CodecError::malformed(format_args!("region references missing shell {id}"))
+            })?;
             native_record_index(shell_start, position)?
         };
         native_ident(&mut records, "shell")?;
@@ -1017,44 +1035,28 @@ fn encode_face_topology_smbh(
         vertex_start,
     )?;
 
-    let mut shell_face_positions = HashMap::<&ShellId, Vec<usize>>::new();
-    for (position, face) in geometry.faces.iter().enumerate() {
-        shell_face_positions
-            .entry(&face.shell)
-            .or_default()
-            .push(position);
-    }
     for (face_ordinal_global, face) in geometry.faces.iter().enumerate() {
-        let shell_ordinal = geometry
-            .shells
-            .iter()
-            .position(|shell| shell.id == face.shell)
+        let shell_ordinal = shell_positions
+            .get(&face.shell)
+            .copied()
             .ok_or_else(|| CodecError::malformed(format_args!("face {} has no shell", face.id)))?;
         let siblings = shell_face_positions
             .get(&geometry.shells[shell_ordinal].id)
             .map_or(&[][..], Vec::as_slice);
-        let ordinal = siblings
-            .iter()
-            .position(|position| *position == face_ordinal_global)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!("shell does not own face {}", face.id))
-            })?;
+        let ordinal = siblings.binary_search(&face_ordinal_global).map_err(|_| {
+            CodecError::malformed(format_args!("shell does not own face {}", face.id))
+        })?;
         let first_loop = face.loops.iter().next().ok_or_else(|| {
             CodecError::NotImplemented(
                 "source-less F3D face generation requires every face to own a loop".into(),
             )
         })?;
-        let loop_position = geometry
-            .loops
-            .iter()
-            .position(|loop_| &loop_.id == first_loop)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!("face references missing loop {first_loop}"))
-            })?;
-        let surface_position = geometry
-            .surfaces
-            .iter()
-            .position(|surface| surface.id == face.surface)
+        let loop_position = loop_positions.get(first_loop).copied().ok_or_else(|| {
+            CodecError::malformed(format_args!("face references missing loop {first_loop}"))
+        })?;
+        let surface_position = surface_positions
+            .get(&face.surface)
+            .copied()
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "face references missing surface {}",
@@ -1095,30 +1097,26 @@ fn encode_face_topology_smbh(
             native_record_index(surface_start, surface_position)?,
         );
         records.push(native_bool(
-            native_face_sense(geometry, topology, face) == Sense::Reversed,
+            native_face_sense(
+                topology,
+                face,
+                &geometry.surfaces[surface_position].geometry,
+            ) == Sense::Reversed,
         ));
         native_face_sidedness(&mut records, topology, face);
         records.push(0x11);
     }
 
     for loop_ in &geometry.loops {
-        let face_position = geometry
-            .faces
-            .iter()
-            .position(|face| face.id == loop_.face)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!("loop references missing face {}", loop_.face))
-            })?;
+        let face_position = face_positions.get(&loop_.face).copied().ok_or_else(|| {
+            CodecError::malformed(format_args!("loop references missing face {}", loop_.face))
+        })?;
         let first = loop_.coedges().first().ok_or_else(|| {
             CodecError::malformed(format_args!("loop {} has no coedges", loop_.id))
         })?;
-        let coedge_position = geometry
-            .coedges
-            .iter()
-            .position(|coedge| coedge.id == *first)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!("loop references missing coedge {first}"))
-            })?;
+        let coedge_position = coedge_positions.get(first).copied().ok_or_else(|| {
+            CodecError::malformed(format_args!("loop references missing coedge {first}"))
+        })?;
         native_ident(&mut records, "loop")?;
         native_ref(&mut records, -1);
         native_i64(&mut records, -1);
@@ -1135,13 +1133,9 @@ fn encode_face_topology_smbh(
                 ))
             })?;
         let next_loop = if let Some(next_id) = face.loops.iter().nth(ordinal + 1) {
-            let position = geometry
-                .loops
-                .iter()
-                .position(|candidate| candidate.id == *next_id)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!("face references missing loop {next_id}"))
-                })?;
+            let position = loop_positions.get(next_id).copied().ok_or_else(|| {
+                CodecError::malformed(format_args!("face references missing loop {next_id}"))
+            })?;
             native_record_index(loop_start, position)?
         } else {
             -1
@@ -1335,8 +1329,10 @@ fn encode_face_topology_smbh(
                 coedge.id
             )));
         }
-        let Some((next_id, previous_id)) =
-            cadmpeg_ir::topology::coedge_ring_neighbors(&geometry.loops, coedge)
+        let Some((next_id, previous_id)) = loop_positions
+            .get(&coedge.owner_loop)
+            .and_then(|position| geometry.loops[*position].ring_neighbors_of(coedge))
+            .or_else(|| cadmpeg_ir::topology::coedge_ring_neighbors(&geometry.loops, coedge))
         else {
             return Err(CodecError::malformed(format_args!(
                 "coedge {} is absent from its owning loop ring",
@@ -1597,6 +1593,20 @@ fn encode_source_less_edges_vertices_points(
         .enumerate()
         .map(|(ordinal, point)| (&point.id, ordinal))
         .collect();
+    let edge_positions = first_positions(geometry.edges.iter().map(|edge| &edge.id));
+    let mut first_edge_uses = HashMap::new();
+    for (ordinal, edge) in geometry.edges.iter().enumerate() {
+        if let Some(start) = edge.start() {
+            first_edge_uses
+                .entry(start)
+                .or_insert((ordinal, EndpointSlot::Start));
+        }
+        if let Some(end) = edge.end() {
+            first_edge_uses
+                .entry(end)
+                .or_insert((ordinal, EndpointSlot::End));
+        }
+    }
     for (edge_ordinal, edge) in geometry.edges.iter().enumerate() {
         let Some(ends) = &edge.ends else {
             return Err(CodecError::NotImplemented(format!(
@@ -1747,7 +1757,13 @@ fn encode_source_less_edges_vertices_points(
             native_ref(records, wire);
             native_i64(records, -1);
         } else {
-            let (edge, endpoint_index) = vertex_ownership(target, topology, vertex)?;
+            let (edge, endpoint_index) = vertex_ownership(
+                geometry,
+                topology,
+                vertex,
+                &edge_positions,
+                &first_edge_uses,
+            )?;
             native_ref(records, native_record_index(edge_start, edge)?);
             native_i64(records, i64::from(endpoint_index.code()));
         }
@@ -1774,16 +1790,16 @@ fn encode_source_less_edges_vertices_points(
 }
 
 fn vertex_ownership(
-    target: &CadIr,
+    geometry: &cadmpeg_ir::document::Topology,
     topology: &NativeGenerationIndex<'_>,
     vertex: &cadmpeg_ir::topology::Vertex,
+    edge_positions: &HashMap<&cadmpeg_ir::ids::EdgeId, usize>,
+    first_edge_uses: &HashMap<&VertexId, (usize, EndpointSlot)>,
 ) -> Result<(usize, EndpointSlot), CodecError> {
-    let geometry = &target.geometry;
     if let Some(metadata) = topology.vertex_ownerships.get(vertex.id.as_str()) {
-        let ordinal = geometry
-            .edges
-            .iter()
-            .position(|edge| edge.id == metadata.owning_edge)
+        let ordinal = edge_positions
+            .get(&metadata.owning_edge)
+            .copied()
             .ok_or_else(|| {
                 CodecError::malformed(format_args!(
                     "vertex {} references missing owning edge {}",
@@ -1805,19 +1821,9 @@ fn vertex_ownership(
         }
         return Ok((ordinal, metadata.endpoint_index));
     }
-    geometry
-        .edges
-        .iter()
-        .enumerate()
-        .find_map(|(ordinal, edge)| {
-            if edge.start() == Some(&vertex.id) {
-                Some((ordinal, EndpointSlot::Start))
-            } else if edge.end() == Some(&vertex.id) {
-                Some((ordinal, EndpointSlot::End))
-            } else {
-                None
-            }
-        })
+    first_edge_uses
+        .get(&vertex.id)
+        .copied()
         .ok_or_else(|| CodecError::malformed(format_args!("vertex {} has no edge", vertex.id)))
 }
 
@@ -1840,23 +1846,17 @@ fn native_face_sidedness(
 }
 
 fn native_face_sense(
-    geometry: &cadmpeg_ir::document::Topology,
     topology: &NativeGenerationIndex<'_>,
     face: &cadmpeg_ir::topology::Face,
+    surface: &SurfaceGeometry,
 ) -> Sense {
     let carrier_flipped = topology.face_sidedness.get(face.id.as_str()).map_or_else(
         || {
-            geometry
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == face.surface)
-                .is_some_and(|surface| {
-                    matches!(
-                        surface.geometry.solved(),
-                        Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Torus(torus))
-                            if torus.minor_radius().get() < 0.0
-                    )
-                })
+            matches!(
+                surface.solved(),
+                Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Torus(torus))
+                    if torus.minor_radius().get() < 0.0
+            )
         },
         |metadata| metadata.carrier_flipped,
     );
@@ -1991,13 +1991,15 @@ fn apply_native_edge_owners(
     coedge_start: i64,
     owners: &mut BTreeMap<cadmpeg_ir::ids::EdgeId, i64>,
 ) -> Result<(), CodecError> {
+    let edges = target
+        .geometry
+        .edges
+        .iter()
+        .map(|edge| &edge.id)
+        .collect::<HashSet<_>>();
+    let coedge_positions = first_positions(target.geometry.coedges.iter().map(|coedge| &coedge.id));
     for ownership in topology.edge_ownerships {
-        if !target
-            .geometry
-            .edges
-            .iter()
-            .any(|edge| edge.id == ownership.edge)
-        {
+        if !edges.contains(&ownership.edge) {
             return Err(CodecError::malformed(format_args!(
                 "F3D edge ownership {} references missing edge {}",
                 ownership.id(),
@@ -2007,13 +2009,8 @@ fn apply_native_edge_owners(
         let owner = match &ownership.owner_coedge {
             None => -1,
             Some(owner) => {
-                if let Some((ordinal, coedge)) = target
-                    .geometry
-                    .coedges
-                    .iter()
-                    .enumerate()
-                    .find(|(_, coedge)| coedge.id == *owner)
-                {
+                if let Some(&ordinal) = coedge_positions.get(owner) {
+                    let coedge = &target.geometry.coedges[ordinal];
                     if coedge.edge != ownership.edge {
                         return Err(CodecError::malformed(format_args!(
                             "F3D edge ownership {} selects a coedge of another edge",
@@ -2084,7 +2081,13 @@ mod tests {
             ));
             let mut face = geometry.faces[0].clone();
             face.sense = Sense::Reversed;
-            assert_eq!(native_face_sense(&geometry, &index, &face), expected);
+            let carrier = &geometry
+                .surfaces
+                .iter()
+                .find(|candidate| candidate.id == surface)
+                .expect("face surface")
+                .geometry;
+            assert_eq!(native_face_sense(&index, &face, carrier), expected);
         }
     }
 

@@ -6648,12 +6648,37 @@ fn meridian_line(
     }
 }
 
+fn has_sphere_surface(surfaces: &[Surface]) -> bool {
+    surfaces.iter().any(|surface| {
+        matches!(
+            surface.geometry.solved(),
+            Some(SolvedSurfaceGeometry::Sphere(_))
+        )
+    })
+}
+
+fn vertex_positions<'a>(vertices: &'a [Vertex], points: &[Point]) -> HashMap<&'a VertexId, Point3> {
+    let mut point_positions = HashMap::with_capacity(points.len());
+    for point in points {
+        point_positions
+            .entry(&point.id)
+            .or_insert(point.position().get());
+    }
+    vertices
+        .iter()
+        .filter_map(|vertex| Some((&vertex.id, *point_positions.get(&vertex.point)?)))
+        .collect()
+}
+
 fn derive_spherical_pcurves(
     ctx: &DecodeContext<'_>,
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if !has_sphere_surface(&out.surfaces) {
+        return Ok(());
+    }
     let loop_faces = out
         .loops
         .iter()
@@ -6679,14 +6704,7 @@ fn derive_spherical_pcurves(
         .iter()
         .map(|curve| (&curve.id, curve))
         .collect::<std::collections::HashMap<_, _>>();
-    let vertex_points = out
-        .vertices
-        .iter()
-        .filter_map(|vertex| {
-            let point = out.points.iter().find(|point| point.id == vertex.point)?;
-            Some((&vertex.id, point.position().get()))
-        })
-        .collect::<std::collections::HashMap<_, _>>();
+    let vertex_points = vertex_positions(&out.vertices, &out.points);
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         if !coedge.pcurves.is_empty() {
@@ -9055,6 +9073,9 @@ fn synthesize_sphere_seams(
     annotations: &mut AnnotationBuilder,
     source_stream: &cadmpeg_ir::annotations::StreamHandle,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    if !has_sphere_surface(&out.surfaces) {
+        return Ok(());
+    }
     let surface_geometry = out
         .surfaces
         .iter()
@@ -9081,16 +9102,7 @@ fn synthesize_sphere_seams(
         .iter()
         .map(|curve| (&curve.id, &curve.geometry))
         .collect::<std::collections::HashMap<_, _>>();
-    let vertex_points = out
-        .vertices
-        .iter()
-        .filter_map(|vertex| {
-            out.points
-                .iter()
-                .find(|point| point.id == vertex.point)
-                .map(|point| (&vertex.id, point.position().get()))
-        })
-        .collect::<std::collections::HashMap<_, _>>();
+    let vertex_points = vertex_positions(&out.vertices, &out.points);
     let mut existing = Vec::new();
     for face in &out.faces {
         let Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface))) =
