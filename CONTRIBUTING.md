@@ -89,6 +89,12 @@ The `JsonSchema` derives sit behind a `schema` feature that is off by default, b
 cargo test -p cadmpeg-ir --features schema --lib
 ```
 
+`crates/cadmpeg-ir/schema/cadir.schema.json` holds the output of `cadir_json_schema()`. Fragment privacy (`cadmpeg-ir::repro`) reads it, so `cadmpeg-registry` builds without the derives. The schema gate checks it; a change to an IR type regenerates it:
+
+```sh
+UPDATE_GOLDEN=1 cargo test -p cadmpeg-ir --features schema --lib golden
+```
+
 Annex A of [`docs/cadir-v11.md`](docs/cadir-v11.md) states the schema of each type the specification names and does not state, generated from `cadir_json_schema()`. The schema gate checks it; a change to one of those types regenerates it:
 
 ```sh

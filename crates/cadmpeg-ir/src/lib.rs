@@ -173,6 +173,10 @@ pub fn cadir_json_schema() -> schemars::Schema {
     schemars::schema_for!(CadIr)
 }
 
+/// Text of [`cadir_json_schema`], committed so that builds without the
+/// `schema` feature can read it.
+pub(crate) const CADIR_JSON_SCHEMA: &str = include_str!("../schema/cadir.schema.json");
+
 /// Generate the JSON Schema for the decode sidecar (`<stem>.fidelity.json`).
 ///
 /// Requires the `schema` feature.
@@ -180,6 +184,9 @@ pub fn cadir_json_schema() -> schemars::Schema {
 pub fn decode_sidecar_json_schema() -> schemars::Schema {
     schemars::schema_for!(source_fidelity::DecodeSidecar)
 }
+
+#[cfg(all(test, feature = "schema"))]
+mod golden_tests;
 
 #[cfg(test)]
 mod integration_tests;
