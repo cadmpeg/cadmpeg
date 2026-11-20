@@ -14,7 +14,7 @@
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::{IdentityKey, PointCloudId};
+use cadmpeg_ir::ids::{IdentityKey, PointCloudId, ProductDefinitionId};
 use cadmpeg_ir::point_cloud::PointCloud;
 use cadmpeg_ir::report::loss::LossNote;
 use serde_json::{json, Value};
@@ -186,6 +186,11 @@ pub(crate) fn clouds<'a>(
 ) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
     let namespace = cadmpeg_ir::identity_namespace!("solidcraft", "design", "point-cloud");
+    // The design is the root definition, whose frame holds the points.
+    let root = ProductDefinitionId::compose(
+        &cadmpeg_ir::identity_namespace!("solidcraft", "design", "product"),
+        IdentityKey::encode_segment("0"),
+    );
     let Some(records) = document.get("point_clouds").and_then(Value::as_array) else {
         return Ok(losses);
     };
@@ -238,6 +243,7 @@ pub(crate) fn clouds<'a>(
         let id = PointCloudId::compose(&namespace, IdentityKey::encode_segment(&key));
         let wire = json!({
             "id": id,
+            "definition": root,
             "name": name,
             "positions": placed,
             "normals": [],

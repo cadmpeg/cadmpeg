@@ -264,7 +264,6 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-solidcraft` | `src/cache/value.rs` | `MAX_VALUES` | `20_000_000` | 2 | Values in one `SCBREP05` slice. Excess refuses that slice as malformed. |
 | `cadmpeg-codec-solidcraft` | `src/cache/value.rs` | `MAX_ITEMS` | `1_000_000` | 2 | Entries in one collection of a `SCBREP05` slice, checked against the remaining bytes. Excess refuses that slice as malformed. |
 | `cadmpeg-codec-solidcraft` | `src/cache/value.rs` | `MAX_STRING` | `1 << 20` | 2 | Bytes in one string of a `SCBREP05` slice, checked against the remaining bytes. Excess refuses that slice as malformed. |
-| `cadmpeg-codec-solidcraft` | `src/history/assembly.rs` | `MAX_DEPTH` | `64` | 2 | Components nested inside components. Occurrences below the limit are not placed. No loss at this site. |
 | `cadmpeg-codec-solidcraft` | `src/history/expr.rs` | `MAX_DEPTH` | `64` | 2 | Operator nesting of one expression. Excess leaves the expression without a value. No loss at this site. |
 | `cadmpeg-codec-solidcraft` | `src/history/expr.rs` | `MAX_REFERENCES` | `64` | 2 | Parameter references chained in one evaluation. Excess leaves the parameter without a value. No loss at this site. |
 | `cadmpeg-codec-solidcraft` | `src/points.rs` | `MAX_POINTS` | `20_000_000` | 2 | Points in one point cloud, checked against the blob length before any point is read. Excess leaves the cloud in the retained section and charges `solidcraft/document.section-undecoded`. |
@@ -577,16 +576,16 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 355.
+Production `MAX_*` constants: 354.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
 | 1    | Format or reader invariant | 43    |
-| 2    | Per-input bound            | 86    |
+| 2    | Per-input bound            | 85    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 172   |
 | N    | Not a decode bound         | 54    |
-|      | Total                      | 355   |
+|      | Total                      | 354   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
@@ -597,7 +596,7 @@ By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-mea
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 28,
 `cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 38,
 `cadmpeg-codec-catia` 79, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11,
-`cadmpeg-codec-solidcraft` 10, and `cadmpeg-tessellate` 4.
+`cadmpeg-codec-solidcraft` 9, and `cadmpeg-tessellate` 4.
 
 ## Routing
 

@@ -184,12 +184,12 @@
     }
   ],
   "write_assertions": {
-    "replay_identical": true,
+    "independent_native_acceptance": true,
     "parameter_edit_round_trip": true,
-    "unsupported_target_rejected": true,
-    "unsupported_edit_rejected": true,
+    "replay_identical": true,
     "source_less_generated": true,
-    "independent_native_acceptance": true
+    "unsupported_edit_rejected": true,
+    "unsupported_target_rejected": true
   },
   "gates": [
     {

@@ -76,6 +76,9 @@ pub(crate) enum SolidcraftLossCode {
     SketchConstraintNative,
     /// A joint has no neutral form.
     AssemblyJointUnresolved,
+    /// A placement of a component the document does not hold, or one that
+    /// makes a component contain itself, is not placed.
+    AssemblyOccurrenceUnplaced,
     /// Joint links and motion studies were retained without decoding.
     AssemblyLinksUndecoded,
     /// A change the design lists as pending and the decoder does not read.
@@ -113,6 +116,7 @@ impl SolidcraftLossCode {
         Self::SketchPlaneUnresolved,
         Self::SketchConstraintNative,
         Self::AssemblyJointUnresolved,
+        Self::AssemblyOccurrenceUnplaced,
         Self::AssemblyLinksUndecoded,
         Self::PendingChangeUnread,
     ];
@@ -148,6 +152,7 @@ impl SolidcraftLossCode {
             Self::SketchPlaneUnresolved => "history.sketch-plane-unresolved",
             Self::SketchConstraintNative => "history.sketch-constraint-native",
             Self::AssemblyJointUnresolved => "assembly.joint-unresolved",
+            Self::AssemblyOccurrenceUnplaced => "assembly.occurrence-unplaced",
             Self::AssemblyLinksUndecoded => "assembly.links-undecoded",
             Self::PendingChangeUnread => "document.pending-change-unread",
         }
@@ -183,6 +188,7 @@ impl SolidcraftLossCode {
             | Self::SketchPlaneUnresolved
             | Self::SketchConstraintNative
             | Self::AssemblyJointUnresolved
+            | Self::AssemblyOccurrenceUnplaced
             | Self::AssemblyLinksUndecoded
             | Self::PendingChangeUnread => Severity::Warning,
             Self::DocumentUnreadable => Severity::Error,
@@ -203,7 +209,9 @@ impl SolidcraftLossCode {
             | Self::SketchCurveUntyped
             | Self::SketchPlaneUnresolved
             | Self::SketchConstraintNative => LossTaxonomy::FeatureHistoryRetained,
-            Self::AssemblyJointUnresolved => LossTaxonomy::AssemblyPlacementsNotTransferred,
+            Self::AssemblyJointUnresolved | Self::AssemblyOccurrenceUnplaced => {
+                LossTaxonomy::AssemblyPlacementsNotTransferred
+            }
             Self::AssemblyLinksUndecoded
             | Self::PendingChangeUnread
             | Self::ParametersUndecoded
@@ -279,6 +287,7 @@ mod tests {
                 "history.sketch-plane-unresolved",
                 "history.sketch-constraint-native",
                 "assembly.joint-unresolved",
+                "assembly.occurrence-unplaced",
                 "assembly.links-undecoded",
                 "document.pending-change-unread",
             ]

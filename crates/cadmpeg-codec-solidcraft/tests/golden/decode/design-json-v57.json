@@ -103,45 +103,7 @@
       ],
       "history_bodies": [],
       "mass_properties": [],
-      "occurrences": [
-        {
-          "id": "solidcraft:design:occurrence#root",
-          "name": "Block",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "solidcraft:design:product#0",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        }
-      ],
+      "occurrences": [],
       "parameters": [
         {
           "dependencies": [],
@@ -169,10 +131,17 @@
           "bodies": [],
           "bom_properties": {},
           "id": "solidcraft:design:product#0",
+          "instance_bodies": [],
           "kind": "part",
           "label": "Block",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Block",
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
           "tessellations": []
         }
       ],
@@ -223,7 +192,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "ff807e404ca41a8ffcb931e24bf60fa24c72cda75478408466286a30147bb23b",
+        "document_local_sha256": "1148fef1a1a5504466249589b2034fdf335f295226f2ccb7617cf3758bf93181",
         "document_name": "Block",
         "feature_records": "1",
         "parameter_records": "1",

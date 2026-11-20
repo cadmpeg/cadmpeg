@@ -82,45 +82,7 @@
       ],
       "history_bodies": [],
       "mass_properties": [],
-      "occurrences": [
-        {
-          "id": "solidcraft:design:occurrence#root",
-          "name": "Imported",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "solidcraft:design:product#0",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        }
-      ],
+      "occurrences": [],
       "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
@@ -133,10 +95,17 @@
           "bodies": [],
           "bom_properties": {},
           "id": "solidcraft:design:product#0",
+          "instance_bodies": [],
           "kind": "part",
           "label": "Imported",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Imported",
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
           "tessellations": []
         }
       ],
@@ -191,7 +160,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "92d7e26275b6fe63749bfd6ecd0e6a0e400df4a853abe1afb026f52646fd4fec",
+        "document_local_sha256": "0ce3dcba70638b2bf25ee028ba6cd4ff3dfd9c1e628e7a30a3225596eb4d1af5",
         "document_name": "Imported",
         "feature_records": "1",
         "parameter_records": "0",

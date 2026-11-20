@@ -2977,45 +2977,7 @@
       ],
       "history_bodies": [],
       "mass_properties": [],
-      "occurrences": [
-        {
-          "id": "solidcraft:design:occurrence#root",
-          "name": "Probe",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "solidcraft:design:product#0",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        }
-      ],
+      "occurrences": [],
       "parameters": [],
       "physical_materials": [],
       "physics_scenes": [],
@@ -3030,10 +2992,17 @@
           ],
           "bom_properties": {},
           "id": "solidcraft:design:product#0",
+          "instance_bodies": [],
           "kind": "part",
           "label": "Probe",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Probe",
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
           "tessellations": []
         }
       ],
@@ -3100,7 +3069,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "cb7664ede2e884c02c2c77cb5e7003521a469fb92a4910660e4a677577130f49",
+        "document_local_sha256": "e009235ed4de98cb33c84ce94904352ba3c8855054d50c8a136ba867e6cca382",
         "document_name": "Probe",
         "feature_records": "3",
         "parameter_records": "0",

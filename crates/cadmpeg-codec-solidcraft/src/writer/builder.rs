@@ -127,14 +127,19 @@ fn feature(neutral: &Value, id: u64, index: usize) -> Result<Value, CodecError> 
         .get("kind")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let mut record = json!({
-        "id": id,
-        "name": name.map_or_else(|| format!("{kind}{id}"), str::to_owned),
-        "suppressed": neutral.get("suppressed").and_then(Value::as_bool) == Some(true),
-        "type": kind,
-        "operation": operation,
-    });
-    let fields = record.as_object_mut().expect("a record is an object");
+    let mut fields = serde_json::Map::from_iter([
+        ("id".to_owned(), json!(id)),
+        (
+            "name".to_owned(),
+            json!(name.map_or_else(|| format!("{kind}{id}"), str::to_owned)),
+        ),
+        (
+            "suppressed".to_owned(),
+            json!(neutral.get("suppressed").and_then(Value::as_bool) == Some(true)),
+        ),
+        ("type".to_owned(), json!(kind)),
+        ("operation".to_owned(), json!(operation)),
+    ]);
     match kind {
         "box" => {
             if !is_identity_rotation(placement)? {
@@ -196,7 +201,7 @@ fn feature(neutral: &Value, id: u64, index: usize) -> Result<Value, CodecError> 
             )))
         }
     }
-    Ok(record)
+    Ok(Value::Object(fields))
 }
 
 /// The document of `ir`.

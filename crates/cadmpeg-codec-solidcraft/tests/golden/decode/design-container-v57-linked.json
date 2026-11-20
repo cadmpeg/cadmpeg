@@ -103,45 +103,7 @@
       ],
       "history_bodies": [],
       "mass_properties": [],
-      "occurrences": [
-        {
-          "id": "solidcraft:design:occurrence#root",
-          "name": "Block",
-          "ordinal": 0,
-          "parent": {
-            "kind": "root"
-          },
-          "prototype": {
-            "definition": "solidcraft:design:product#0",
-            "kind": "local"
-          },
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ],
-          "transform": [
-            [
-              1.0,
-              0.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              1.0,
-              0.0,
-              0.0
-            ],
-            [
-              0.0,
-              0.0,
-              1.0,
-              0.0
-            ]
-          ]
-        }
-      ],
+      "occurrences": [],
       "parameters": [
         {
           "dependencies": [],
@@ -169,20 +131,33 @@
           "bodies": [],
           "bom_properties": {},
           "id": "solidcraft:design:product#0",
+          "instance_bodies": [],
           "kind": "part",
           "label": "Block",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Block",
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
           "tessellations": []
         },
         {
           "bodies": [],
           "bom_properties": {},
           "id": "solidcraft:design:product#3",
+          "instance_bodies": [],
           "kind": "part",
           "label": "Arm",
+          "occurrences": [],
+          "representations": [],
           "sketches": [],
           "source_name": "Arm",
+          "storage": {
+            "kind": "embedded"
+          },
           "tessellations": []
         }
       ],
@@ -241,7 +216,7 @@
     },
     "source": {
       "attributes": {
-        "document_local_sha256": "80b888033b343995006a804dec7c28b0005fc49c062af28f04a8fa506ec21732",
+        "document_local_sha256": "26e06be6ff0619e41ed6f505d288bf7efc337151e4525de2712c9578db430e7f",
         "document_name": "Block",
         "feature_records": "1",
         "parameter_records": "1",

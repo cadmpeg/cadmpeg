@@ -205,7 +205,13 @@ impl Inputs<'_> {
     fn split_face(&self, record: &Value, dependencies: &mut BTreeSet<u64>) -> Option<Value> {
         let targets = picked(record, "faces", "face_names")?;
         let tool = self.split_plane(record.get("plane")?, dependencies)?;
-        Some(json!({"kind": "split_face", "value": {"targets": targets, "tool": tool}}))
+        // A plane carries on without end, so the tool meets each face's
+        // surface wherever it lies.
+        Some(json!({"kind": "split_face", "value": {
+            "targets": targets,
+            "tool": tool,
+            "method": {"kind": "surface_intersection", "extend": true},
+        }}))
     }
 
     /// A taper of faces about an XY, XZ or YZ origin plane. The plane's

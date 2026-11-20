@@ -728,18 +728,33 @@ fn components_occurrences_and_joints_form_the_product_structure() {
             .collect()
     };
     assert_eq!(ids("product_definitions"), ["0", "1", "5"]);
-    // The pin sits in a leaf with two occurrences, so it is placed twice.
-    assert_eq!(ids("occurrences"), ["2", "2/6", "3", "3/6", "root"]);
+    // Each placement is one occurrence, owned by the definition it sits in:
+    // the design places the two leaves, and the leaf places the pin once.
+    assert_eq!(ids("occurrences"), ["2", "3", "6"]);
+    let owned = |definition: &str| -> Vec<String> {
+        let row = model["product_definitions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"].as_str().unwrap().ends_with(definition))
+            .unwrap();
+        row["occurrences"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|id| id.as_str().unwrap().rsplit('#').next().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(owned("#0"), ["2", "3"]);
+    assert_eq!(owned("#1"), ["6"]);
+    assert!(owned("#5").is_empty());
     let pin = model["occurrences"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|row| row["id"].as_str().unwrap().ends_with("#3/6"))
+        .find(|row| row["id"].as_str().unwrap().ends_with("#6"))
         .unwrap();
-    assert_eq!(
-        pin["parent"]["occurrence"],
-        "solidcraft:design:occurrence#3"
-    );
+    assert_eq!(pin["prototype"], "solidcraft:design:product#5");
     assert_eq!(pin["transform"][0], json!([1.0, 0.0, 0.0, 10.0]));
     assert_eq!(pin["transform"][2], json!([0.0, 0.0, 1.0, 30.0]));
     assert_eq!(

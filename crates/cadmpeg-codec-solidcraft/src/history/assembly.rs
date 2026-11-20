@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Components, occurrences, and joints.
 //!
-//! The design is its root component, product 0. Each other component is a
-//! product definition that owns the bodies, sketches, and features that were
-//! authored in its frame. An occurrence places a component inside a parent
-//! component with a rigid transform; the neutral occurrence tree holds one
-//! occurrence per placed instance, so a component that sits in a component
-//! with two occurrences is placed twice. The root occurrence is the design.
+//! The design is its root component, product 0, the definition of the root
+//! file. Each other component is a product definition that owns the bodies,
+//! sketches, and features that were authored in its frame. An occurrence
+//! places a component with a rigid transform and belongs to the definition
+//! of the component it sits in, in source order. One occurrence stands for
+//! each placement, however many times the component that holds it is itself
+//! placed. A placement of a component the document does not hold, or one that
+//! would make a component contain itself, is not placed. A hidden path of
+//! occurrences hides the outermost occurrence, or overrides the nested one.
 //!
 //! A joint mates a frame of one occurrence to a frame of another. An
 //! explicit frame or point snap is a connector frame; a snap on geometry
@@ -28,8 +31,6 @@ use super::sketch::{cross, dot, V3};
 use super::{id, malformed};
 use crate::loss::SolidcraftLossCode;
 
-/// Deepest chain of components inside components.
-const MAX_DEPTH: usize = 64;
 /// How far from zero a frame axis may be and still be absent.
 const AXIS_EPSILON: f64 = 1.0e-12;
 /// How far from zero a transform's last column may be.
@@ -40,6 +41,24 @@ const AFFINE_EPSILON: f64 = 1.0e-9;
 pub(super) struct Outcome {
     /// The losses of the assembly.
     pub(super) losses: Vec<LossNote>,
+    /// The placements that name no component or would make a component
+    /// contain itself.
+    pub(super) unplaced: usize,
+}
+
+/// Whether `from` places `to`, directly or through the components it places.
+fn reaches(places: &BTreeMap<u64, BTreeSet<u64>>, from: u64, to: u64) -> bool {
+    let mut seen = BTreeSet::new();
+    let mut pending = vec![from];
+    while let Some(component) = pending.pop() {
+        if component == to {
+            return true;
+        }
+        if seen.insert(component) {
+            pending.extend(places.get(&component).into_iter().flatten().copied());
+        }
+    }
+    false
 }
 
 /// What the assembly reads of the walk over the features.
@@ -235,7 +254,15 @@ impl super::Walk<'_, '_> {
             "solidcraft components",
         )?;
         self.definitions(document, components, &known, owned)?;
-        let placed = self.occurrences(document, occurrences, &known)?;
+        let placed = self.occurrences(document, occurrences, &known, &mut outcome)?;
+        if outcome.unplaced > 0 {
+            outcome
+                .losses
+                .push(SolidcraftLossCode::AssemblyOccurrenceUnplaced.note(format!(
+                    "{} placements name no component the document holds, or would make a                      component contain itself, so they are not placed",
+                    outcome.unplaced
+                )));
+        }
         self.ownership(document, &known, owned);
         self.joints(document, &placed, &mut outcome)?;
         Ok(outcome)
@@ -282,9 +309,20 @@ impl super::Walk<'_, '_> {
                 .filter(|(_, component)| *component == component_id)
                 .map(|(sketch, _)| sketch)
                 .collect();
+            // The design is the root file's definition, which holds no
+            // identity of its own; a component is stored in that file.
+            let storage = if component_id == 0 {
+                json!({"kind": "file", "document": {}})
+            } else {
+                json!({"kind": "embedded"})
+            };
             let mut record = json!({
                 "id": id("product", &component_id.to_string()),
                 "kind": "part",
+                "storage": storage,
+                "occurrences": [],
+                "instance_bodies": [],
+                "representations": [],
                 "bom_properties": properties,
                 "bodies": bodies,
                 "sketches": sketches,
@@ -301,41 +339,20 @@ impl super::Walk<'_, '_> {
         Ok(())
     }
 
-    /// Places the occurrences: the root occurrence, then one occurrence per
-    /// placed instance. Returns the first instance of each occurrence.
+    /// Places the occurrences. Each placement is one occurrence, owned by the
+    /// definition of the component it sits in, in source order. A placement of
+    /// a component the document does not hold, and one that would make a
+    /// component contain itself, is not placed and is counted as unresolved.
+    /// Returns the occurrence and the component of each placement.
     fn occurrences(
         &mut self,
         document: &Map<String, Value>,
         occurrences: &[Value],
         known: &BTreeSet<u64>,
+        outcome: &mut Outcome,
     ) -> Result<BTreeMap<u64, (String, String)>, CodecError> {
-        let root = id("occurrence", "root");
-        let mut root_record = json!({
-            "id": root,
-            "prototype": {"kind": "local", "definition": id("product", "0")},
-            "parent": {"kind": "root"},
-            "ordinal": 0,
-            "transform": identity(),
-            "scale": [1.0, 1.0, 1.0],
-        });
-        if let Some(name) = document.get("name").and_then(Value::as_str) {
-            root_record["name"] = json!(name);
-        }
-        let root_occurrence: Occurrence = serde_json::from_value(root_record).map_err(malformed)?;
-        self.ir.model.occurrences.push(root_occurrence);
-        let mut inside: BTreeMap<u64, Vec<&Value>> = BTreeMap::new();
-        for occurrence in occurrences {
-            inside
-                .entry(
-                    occurrence
-                        .get("parent")
-                        .and_then(Value::as_u64)
-                        .unwrap_or(0),
-                )
-                .or_default()
-                .push(occurrence);
-        }
-        let hidden: BTreeSet<String> = document
+        // The occurrence ids along each hidden path, outermost first.
+        let hidden: Vec<Vec<u64>> = document
             .get("visibility")
             .and_then(|visibility| visibility.get("hidden_occurrences"))
             .and_then(Value::as_array)
@@ -343,68 +360,94 @@ impl super::Walk<'_, '_> {
                 paths
                     .iter()
                     .filter_map(|path| {
-                        let ids: Option<Vec<String>> = path
-                            .as_array()?
+                        path.as_array()?
                             .iter()
-                            .map(|step| Some(step.as_u64()?.to_string()))
-                            .collect();
-                        Some(ids?.join("/"))
+                            .map(Value::as_u64)
+                            .collect::<Option<Vec<u64>>>()
                     })
                     .collect()
             })
             .unwrap_or_default();
+        self.ctx
+            .charge_entities(u64_from_index(occurrences.len()), "solidcraft occurrences")?;
         let mut first = BTreeMap::new();
-        let mut stack = vec![(0_u64, root, String::new(), 0_usize)];
-        while let Some((component, parent, parent_key, depth)) = stack.pop() {
-            let Some(children) = inside.get(&component) else {
+        let mut owner: BTreeMap<u64, Vec<String>> = BTreeMap::new();
+        // The components each component places, to refuse a cycle.
+        let mut places: BTreeMap<u64, BTreeSet<u64>> = BTreeMap::new();
+        let mut unplaced = 0_usize;
+        for occurrence in occurrences {
+            let Some(occurrence_id) = occurrence.get("id").and_then(Value::as_u64) else {
                 continue;
             };
-            self.ctx
-                .charge_entities(u64_from_index(children.len()), "solidcraft occurrences")?;
-            for (ordinal, occurrence) in children.iter().enumerate() {
-                let Some(occurrence_id) = occurrence.get("id").and_then(Value::as_u64) else {
-                    continue;
-                };
-                let key = if parent_key.is_empty() {
-                    occurrence_id.to_string()
-                } else {
-                    format!("{parent_key}/{occurrence_id}")
-                };
-                let target = occurrence.get("component").and_then(Value::as_u64);
-                let prototype = match target.filter(|target| known.contains(target)) {
-                    Some(target) => {
-                        json!({"kind": "local", "definition": id("product", &target.to_string())})
-                    }
-                    None => json!({"kind": "unresolved"}),
-                };
-                let mut record = json!({
-                    "id": id("occurrence", &key),
-                    "prototype": prototype,
-                    "parent": {"kind": "occurrence", "occurrence": parent},
-                    "ordinal": ordinal,
-                    "transform": occurrence.get("transform").and_then(rows).unwrap_or_else(identity),
-                    "scale": [1.0, 1.0, 1.0],
-                });
-                if let Some(name) = occurrence.get("name").and_then(Value::as_str) {
-                    record["name"] = json!(name);
-                }
-                if hidden.contains(&key) {
+            let parent = occurrence
+                .get("parent")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let target = occurrence
+                .get("component")
+                .and_then(Value::as_u64)
+                .filter(|target| known.contains(target));
+            let Some(target) = target.filter(|target| !reaches(&places, *target, parent)) else {
+                unplaced += 1;
+                continue;
+            };
+            let ir_id = id("occurrence", &occurrence_id.to_string());
+            let mut record = json!({
+                "id": ir_id,
+                "prototype": id("product", &target.to_string()),
+                "transform": occurrence.get("transform").and_then(rows).unwrap_or_else(identity),
+                "overrides": [],
+            });
+            if let Some(name) = occurrence.get("name").and_then(Value::as_str) {
+                record["name"] = json!(name);
+            }
+            let mut overrides = Vec::new();
+            for path in hidden
+                .iter()
+                .filter(|path| path.first() == Some(&occurrence_id))
+            {
+                if path.len() == 1 {
                     record["visible"] = json!(false);
-                }
-                let placed: Occurrence = serde_json::from_value(record).map_err(malformed)?;
-                let ir_id = id("occurrence", &key);
-                first.entry(occurrence_id).or_insert_with(|| {
-                    (
-                        ir_id.clone(),
-                        target.map_or_else(String::new, |t| t.to_string()),
-                    )
-                });
-                self.ir.model.occurrences.push(placed);
-                if let Some(target) = target.filter(|_| depth < MAX_DEPTH) {
-                    stack.push((target, ir_id, key, depth + 1));
+                } else {
+                    let steps: Vec<Value> = path[1..]
+                        .iter()
+                        .map(|step| {
+                            json!({"occurrence": {
+                                "kind": "occurrence",
+                                "value": id("occurrence", &step.to_string()),
+                            }})
+                        })
+                        .collect();
+                    overrides.push(json!({"path": steps, "visible": false}));
                 }
             }
+            if !overrides.is_empty() {
+                record["overrides"] = Value::Array(overrides);
+            }
+            let placed: Occurrence = serde_json::from_value(record).map_err(malformed)?;
+            first
+                .entry(occurrence_id)
+                .or_insert_with(|| (ir_id.clone(), target.to_string()));
+            places.entry(parent).or_default().insert(target);
+            owner.entry(parent).or_default().push(ir_id);
+            self.ir.model.occurrences.push(placed);
         }
+        for definition in &mut self.ir.model.product_definitions {
+            let component = definition
+                .id
+                .as_str()
+                .rsplit('#')
+                .next()
+                .and_then(|key| key.parse::<u64>().ok());
+            let Some(ids) = component.and_then(|component| owner.remove(&component)) else {
+                continue;
+            };
+            definition.occurrences = ids
+                .into_iter()
+                .map(|occurrence| serde_json::from_value(json!(occurrence)).map_err(malformed))
+                .collect::<Result<_, _>>()?;
+        }
+        outcome.unplaced = unplaced;
         Ok(first)
     }
 
