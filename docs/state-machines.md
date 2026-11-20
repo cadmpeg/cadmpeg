@@ -208,7 +208,7 @@ Ranked by user-visible impact. “Reachable” means a constructor, deserializer
 | Inventor container transfers B-rep | Depth harness: non-design arenas match Full. Container bulk frames stay `Unavailable` without a kernel stream. README “does not inflate bulk geometry streams” refers to those frames. |
 | FreeCAD `TopologyOccurrence.source_index` starts at 1 | Bind tests pad `names[0]` and index from 1. Legacy maps pad to the parsed index. |
 | `validate_neutral().is_ok()` ignores `losses` | Documented: findings vs decode losses are separate. |
-| Measurement feeds codecs | Production codec crates list `cadmpeg-measure` only in `[dev-dependencies]`. |
+| Measurement feeds codecs | Codec crates list `cadmpeg-measure` in `[dev-dependencies]`. `cadmpeg-codec-f3d` also lists it in `[dependencies]`: its writer reads body boxes. The source-policy rule `measurement_use` keeps production uses in `crates/cadmpeg-codec-f3d/src/writer/`, so no decoder measures. |
 | Mutex / retry races into illegal states | No conflicting transition found. |
 
 ## Issues

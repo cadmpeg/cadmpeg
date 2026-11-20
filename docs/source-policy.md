@@ -81,6 +81,9 @@ CPU affinity mask, capped by `PYTHON_CPU_COUNT` when it is set. Set
   into the designs it encodes. A decoder or encoder selects its layout, carrier,
   sense, units, and interpretation from format semantics. Codec round-trip
   tests use measurement as an oracle.
+- Production code of a codec crate names `cadmpeg_measure` only under
+  `crates/cadmpeg-codec-f3d/src/writer/` (`measurement_use`). The Fusion
+  decoder and every other codec module stay free of measurement.
 - Every test a `scripts/test_*.py` file declares is collected. A test case class
   or a free `test_` function declared at or after the file's
   `if __name__ == "__main__":` block fails: discovery imports the module and

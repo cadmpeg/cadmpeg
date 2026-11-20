@@ -96,6 +96,26 @@ class MeasurementDependencyTests(TempSourceCase):
                       '[dependencies]\nmeasure = { package = "cadmpeg-measure", version = "0" }\n')
         self.assertEqual(len(self.findings("measurement_dependency")), 1)
 
+    def test_fusion_writer_use_passes(self) -> None:
+        self.write("crates/cadmpeg-codec-f3d/src/writer/generate/values.rs",
+                   "use cadmpeg_measure::body_boxes;\n")
+        self.assertEqual(self.findings("measurement_use"), [])
+
+    def test_fusion_decoder_use_fails(self) -> None:
+        self.write("crates/cadmpeg-codec-f3d/src/reader/body.rs",
+                   "fn f() {}\nuse cadmpeg_measure::body_boxes;\n")
+        findings = self.findings("measurement_use")
+        self.assertEqual([(item.path, item.line) for item in findings],
+                         [("crates/cadmpeg-codec-f3d/src/reader/body.rs", 2)])
+
+    def test_codec_test_and_comment_uses_pass(self) -> None:
+        self.write("crates/cadmpeg-codec-step/src/reader.rs",
+                   "// cadmpeg_measure reads the output.\n"
+                   "#[cfg(test)]\nmod tests {\n    use cadmpeg_measure::body_boxes;\n}\n")
+        self.write("crates/cadmpeg-codec-f3d/src/integration_tests/boxes.rs",
+                   "use cadmpeg_measure::body_boxes;\n")
+        self.assertEqual(self.findings("measurement_use"), [])
+
 
 class ForeignNativeNamespaceTests(TempSourceCase):
     def codec(self, name: str = "step", format_id: str = "step") -> str:

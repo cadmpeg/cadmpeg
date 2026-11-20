@@ -793,6 +793,12 @@ def scan_patterns(path: Path, source: str) -> list[Finding]:
                     report("foreign_native_namespace", code.count("\n", 0, access.start()) + 1,
                            "Codec crates read only their own native namespace; the convert gate assumes it (ExportPlan::carried_errors).")
 
+    if codec is not None and not relative_path(path).startswith(MEASUREMENT_WRITER_ROOT):
+        for use in re.finditer(r"\bcadmpeg_measure\b", code):
+            report("measurement_use", code.count("\n", 0, use.start()) + 1,
+                   f"Codec production code uses cadmpeg_measure only under {MEASUREMENT_WRITER_ROOT}; "
+                   "a decoder selects its layout, carrier and interpretation from format semantics.")
+
     layout_source = re.match(
         r"// SPDX-License-Identifier: Apache-2\.0\n"
         r"//! Byte-offset and value constants generated from `(docs/layouts/[A-Za-z0-9_-]+\.toml)`\.\n",
@@ -1612,6 +1618,7 @@ def scan_authoring_paths() -> list[Finding]:
 
 MEASUREMENT_CRATE = "cadmpeg-measure"
 MEASUREMENT_CONSUMERS = {"cadmpeg", "cadmpeg-registry", "cadmpeg-codec-f3d"}
+MEASUREMENT_WRITER_ROOT = "crates/cadmpeg-codec-f3d/src/writer/"
 PRODUCTION_DEPENDENCY_HEADER = re.compile(
     r"^\s*\[\s*(?:target\.[^\]]+?\.)?(?:build-)?dependencies\s*(?:\.|\])"
 )
@@ -1630,7 +1637,7 @@ def dependency_packages(table: object) -> set[str]:
 
 
 def scan_measurement_dependency() -> list[Finding]:
-    """Report a production dependency on the measurement crate outside document-check consumers."""
+    """Report a production dependency on the measurement crate outside MEASUREMENT_CONSUMERS."""
     findings: list[Finding] = []
     for manifest in sorted((ROOT / "crates").glob("*/Cargo.toml")):
         if manifest.parent.name in MEASUREMENT_CONSUMERS:
