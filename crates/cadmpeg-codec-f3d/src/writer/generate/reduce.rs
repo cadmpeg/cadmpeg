@@ -26,7 +26,7 @@ use cadmpeg_ir::eval::decode::curve_point_solved;
 use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
-    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+    CurveGeometry, FitTolerance, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{EdgeId, PointId, ShellId, VertexId};
 use cadmpeg_ir::math::Point3;
@@ -38,6 +38,7 @@ use cadmpeg_ir::topology::{
     BodyKind, Color, EdgeCarrier, EdgeEnds, FaceLoops, LoopBoundary, Point, Sense, Shell,
     ShellMember, Vertex,
 };
+use cadmpeg_ir::units::coincidence_allowance;
 use serde_json::Value;
 
 use crate::loss::F3dLossCode;
@@ -497,9 +498,9 @@ impl<'a> Reduction<'a> {
     /// A closed edge on a point carrier with no stated range collapses to its
     /// vertex. ASM stores a collapsed edge with a null curve reference
     /// (asm.md §6.3, `degenerate_curve`), so such an edge whose vertex lies at
-    /// the point within the vertex allowance is written curveless.
+    /// the point within the coincidence allowance is written curveless.
     fn write_point_edges_curveless(&mut self) {
-        let linear = self.ir.tolerances.linear.get();
+        let linear = self.ir.tolerances.linear;
         let geometry = &self.ir.geometry;
         let vertices = vertex_positions(geometry);
         let points = geometry
@@ -530,7 +531,7 @@ impl<'a> Reduction<'a> {
                 };
                 ends.start == ends.end
                     && position.distance(*point)
-                        <= vertex_allowance(
+                        <= coincidence_allowance(
                             linear,
                             &[edge.tolerance.map(PositiveReal::get), *tolerance],
                         )
@@ -548,17 +549,19 @@ impl<'a> Reduction<'a> {
 
     /// An open edge that states no parameter range spans its vertices; the
     /// F3D edge record stores the range, so the writer states the vertices'
-    /// parameters on the carrier. A vertex inverts within the vertex
-    /// allowance, and a vertex farther from its carrier than the document
-    /// tolerance and its own is marked tolerant to that distance. An edge
-    /// that runs against its line is written with its ends exchanged. A line
-    /// or conic carrier that a vertex lies beyond the allowance from is ranged
-    /// between the vertices' feet on it, with a loss naming the distance and,
-    /// because the output's validation still finds the vertex off its curve,
-    /// `export:record.invalid` naming the edge (cadir-v11.md §3.4). Any other
-    /// edge keeps no range.
+    /// parameters on the carrier. The vertices invert within the edge's
+    /// coincidence allowance, the bound validation checks the edge's ends
+    /// against. A vertex farther from its carrier than its own allowance
+    /// (f3d.md §2: the edge's, its own and the cache-fit tolerances) is raised
+    /// to that distance, with `geometry.vertex-tolerance-widened` naming it.
+    /// An edge that runs against its line is written with its ends exchanged.
+    /// A line or conic carrier that a vertex lies beyond the edge's allowance
+    /// from is ranged between the vertices' feet on it, with a loss naming the
+    /// distance and, because the output's validation finds the vertex off its
+    /// curve, `export:record.invalid` naming the edge (cadir-v11.md §3.4). Any
+    /// other edge keeps no range.
     fn state_open_edge_ranges(&mut self) -> Result<(), CodecError> {
-        let linear = self.ir.tolerances.linear.get();
+        let linear = self.ir.tolerances.linear;
         let geometry = &self.ir.geometry;
         let open = geometry
             .edges
@@ -580,6 +583,7 @@ impl<'a> Reduction<'a> {
         let arena = DecodeArena::new();
         let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
         let index = cadmpeg_ir::index::ModelIndex::new_model_only(&self.ir);
+        let owners = ProceduralOwners::new(&self.ir);
         let vertices = vertex_positions(geometry);
         let curves = geometry
             .curves
@@ -603,13 +607,15 @@ impl<'a> Reduction<'a> {
             ) else {
                 continue;
             };
-            let allowance = vertex_allowance(
+            let fit = owners
+                .curve(curve)
+                .last()
+                .and_then(|construction| construction.cache_fit_tolerance())
+                .map(FitTolerance::get);
+            let edge_tolerance = edge.tolerance.map(PositiveReal::get);
+            let allowance = coincidence_allowance(
                 linear,
-                &[
-                    edge.tolerance.map(PositiveReal::get),
-                    start_tolerance,
-                    end_tolerance,
-                ],
+                &[edge_tolerance, start_tolerance, end_tolerance, fit],
             );
             let parameters = |tolerance| -> Result<Option<[f64; 2]>, CodecError> {
                 let invert = |point, seed| {
@@ -683,7 +689,9 @@ impl<'a> Reduction<'a> {
                     off.push(format!(
                         "vertex {vertex} lies {distance:.6} mm off its curve"
                     ));
-                } else if within && distance > own.map_or(linear, |own| own.max(linear)) {
+                } else if within
+                    && distance > coincidence_allowance(linear, &[edge_tolerance, own, fit])
+                {
                     let raised = tolerant.entry(vertex).or_insert(distance);
                     *raised = raised.max(distance);
                 }
@@ -705,7 +713,16 @@ impl<'a> Reduction<'a> {
         let tolerant = tolerant
             .into_iter()
             .filter_map(|(vertex, distance)| Some((vertex.clone(), PositiveReal::new(distance)?)))
-            .collect::<HashMap<_, _>>();
+            .collect::<BTreeMap<_, _>>();
+        let widened = tolerant
+            .iter()
+            .map(|(vertex, tolerance)| {
+                F3dLossCode::VertexToleranceWidened.note(format!(
+                    "vertex {vertex}: tolerance raised to {:.6} mm, its distance from the end of an edge's curve",
+                    tolerance.get()
+                ))
+            })
+            .collect::<Vec<_>>();
         let geometry = &mut self.ir.to_mut().geometry;
         for (edge_index, carrier) in stated {
             let edge = &mut geometry.edges[edge_index];
@@ -730,6 +747,7 @@ impl<'a> Reduction<'a> {
                 vertex.tolerance = Some(*tolerance);
             }
         }
+        self.losses.extend(widened);
         self.losses.extend(feet);
         if !invalid.is_empty() {
             self.losses.push(record_invalid(
@@ -1506,20 +1524,6 @@ impl<'a> Reduction<'a> {
         }
         dropped
     }
-}
-
-/// The kernel's linear resolution in millimetres: `resabs`, 1e-6 cm, which
-/// every ASM stream states (asm.md §1).
-const ASM_LINEAR_RESOLUTION_MM: f64 = 1.0e-5;
-
-/// The distance within which a vertex lies on its edge's carrier: the largest
-/// of the document tolerance, the ASM linear resolution, and `tolerances`.
-fn vertex_allowance(linear: f64, tolerances: &[Option<f64>]) -> f64 {
-    tolerances
-        .iter()
-        .flatten()
-        .copied()
-        .fold(linear.max(ASM_LINEAR_RESOLUTION_MM), f64::max)
 }
 
 /// Each vertex's position and stated tolerance, by vertex id.

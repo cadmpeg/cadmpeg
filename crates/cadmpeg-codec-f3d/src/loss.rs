@@ -1136,7 +1136,8 @@ pub(crate) enum F3dLossCode {
     SketchRegionBodyOmitted,
     /// Edges reference a procedural 3D curve with no decodable B-spline cache.
     ProceduralCurveUndecoded,
-    /// Vertex tolerance is widened to cover exact cache endpoints.
+    /// Vertex tolerance is widened to cover the ends of its edges' curves:
+    /// exact cache endpoints on read, the vertices of a ranged open edge on write.
     VertexToleranceWidened,
     /// A cache-first spring support pcurve has no admitted endpoint relation.
     SpringSupportPcurveUnresolved,

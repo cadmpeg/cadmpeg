@@ -23,7 +23,7 @@ use crate::report::{
 use crate::scalar::{ExtendedReal, FiniteReal};
 use crate::topology::{ParameterInterval, Sense};
 
-use crate::units::COINCIDENCE_TOLERANCE;
+use crate::units::{coincidence_allowance, COINCIDENCE_TOLERANCE};
 use cadmpeg_core::decode::{DecodeContext, ResourceLimit};
 use cadmpeg_core::CodecError;
 
@@ -99,15 +99,6 @@ fn worse_mismatch(first: f64, second: f64) -> f64 {
     }
 }
 
-/// The coincidence allowance combines the document-wide uncertainty with any
-/// stored edge, vertex, face, or carrier tolerances.
-fn allowance(document_tolerance: crate::scalar::PositiveLength, tolerances: &[Option<f64>]) -> f64 {
-    tolerances.iter().flatten().copied().fold(
-        COINCIDENCE_TOLERANCE.max(document_tolerance.get()),
-        f64::max,
-    )
-}
-
 /// Two independently evaluated procedural carriers can each consume the
 /// baseline coincidence allowance. The solved cache's explicit fit tolerance
 /// widens that allowance when it is larger.
@@ -115,7 +106,7 @@ fn procedural_support_allowance(
     document_tolerance: crate::scalar::PositiveLength,
     cache_fit_tolerance: Option<f64>,
 ) -> f64 {
-    COINCIDENCE_TOLERANCE + allowance(document_tolerance, &[cache_fit_tolerance])
+    COINCIDENCE_TOLERANCE + coincidence_allowance(document_tolerance, &[cache_fit_tolerance])
 }
 
 /// Embedded support pcurves must map through their surfaces onto the curve
@@ -717,7 +708,7 @@ pub(super) fn vertexless_edge_on_open_carrier(
     if edge.param_range().is_some() {
         return Ok(false);
     }
-    let bound = allowance(
+    let bound = coincidence_allowance(
         linear,
         &[
             edge.tolerance.map(crate::scalar::PositiveReal::get),
@@ -806,7 +797,7 @@ pub(super) fn check_edge_endpoint_consistency(
         ) else {
             continue;
         };
-        let bound = allowance(
+        let bound = coincidence_allowance(
             ir.tolerances.linear,
             &[
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
@@ -891,7 +882,7 @@ pub(super) fn check_edge_endpoint_consistency(
         ) else {
             continue;
         };
-        let bound = allowance(
+        let bound = coincidence_allowance(
             ir.tolerances.linear,
             &[
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
@@ -1037,7 +1028,7 @@ pub(super) fn check_pcurve_surface_consistency(
             Some(curve) => curves.get(curve.as_str()).copied(),
             None => None,
         };
-        let bound = allowance(
+        let bound = coincidence_allowance(
             ir.tolerances.linear,
             &[
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
@@ -1054,7 +1045,7 @@ pub(super) fn check_pcurve_surface_consistency(
         // carrier fit tolerance may qualify the final image, but must not let
         // inverse recovery move an explicitly ranged occurrence onto a
         // different, merely nearby part of the carrier.
-        let recovery_bound = allowance(
+        let recovery_bound = coincidence_allowance(
             ir.tolerances.linear,
             &[
                 edge.tolerance.map(crate::scalar::PositiveReal::get),

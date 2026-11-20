@@ -72,12 +72,27 @@ fn geometry_omitted() -> String {
     F3dLossCode::WriterGeometryOmitted.kind().to_string()
 }
 
+fn widened() -> String {
+    F3dLossCode::VertexToleranceWidened.kind().to_string()
+}
+
+fn record_invalid_names(report: &cadmpeg_ir::report::export::ExportReport, edge: &str) -> bool {
+    report
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "export/record.invalid" && loss.message.contains(edge))
+}
+
 #[test]
-fn an_open_edge_within_the_kernel_resolution_takes_its_range() {
-    let ir = cube_with_unranged_edge(Point3::new(10.0, 3.0e-6, 0.0));
+fn an_open_edge_within_the_coincidence_allowance_takes_its_exact_range() {
+    let ir = cube_with_unranged_edge(Point3::new(10.0, 0.005, 0.0));
+    let edge = ir.geometry.edges[0].id.to_string();
     let (report, decoded) = write(&ir);
+    for code in [geometry_omitted(), widened()] {
+        assert!(!charges(&report, &code), "{code}: {:#?}", report.losses);
+    }
     assert!(
-        !charges(&report, &geometry_omitted()),
+        !record_invalid_names(&report, &edge),
         "{:#?}",
         report.losses
     );
@@ -86,11 +101,68 @@ fn an_open_edge_within_the_kernel_resolution_takes_its_range() {
         .expect("the edge is written with a range")
         .get();
     assert!(start.abs() < EPS_PARAMETER && (end - 10.0).abs() < EPS_PARAMETER);
+    assert_eq!(decoded.geometry.vertices[1].tolerance, None);
+    assert_eq!(edge_errors(&decoded), Vec::<String>::new());
+}
+
+#[test]
+fn an_open_edge_just_beyond_the_allowance_keeps_the_feet_and_both_charges() {
+    let ir = cube_with_unranged_edge(Point3::new(10.0, 0.02, 0.0));
+    let edge = ir.geometry.edges[0].id.to_string();
+    let (report, decoded) = write(&ir);
+    assert!(
+        charges(&report, &geometry_omitted()),
+        "{:#?}",
+        report.losses
+    );
+    assert!(record_invalid_names(&report, &edge), "{:#?}", report.losses);
+    assert!(!charges(&report, &widened()), "{:#?}", report.losses);
+    let [start, end] = decoded.geometry.edges[0]
+        .param_range()
+        .expect("the edge is written with a range")
+        .get();
+    assert!(start.abs() < EPS_PARAMETER && (end - 10.0).abs() < EPS_PARAMETER);
+    // The charge is true: the output's own validation reports the edge.
+    assert_ne!(edge_errors(&decoded), Vec::<String>::new());
+}
+
+#[test]
+fn a_vertex_beyond_its_own_allowance_is_raised_with_a_loss_naming_it() {
+    let mut ir = cube_with_unranged_edge(Point3::new(10.0, 0.03, 0.0));
+    let ends = ir.geometry.edges[0].ends.clone().expect("edge ends");
+    let edge = ir.geometry.edges[0].id.to_string();
+    ir.geometry
+        .vertices
+        .iter_mut()
+        .find(|vertex| vertex.id == ends.start)
+        .expect("start vertex")
+        .tolerance = Some(PositiveReal::new(0.05).expect("positive"));
+    let (report, decoded) = write(&ir);
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.code.to_string() == widened()
+                && loss.message.contains(&format!("vertex {}:", ends.end))
+                && loss.message.contains("0.030000 mm")),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        !charges(&report, &geometry_omitted()),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        !record_invalid_names(&report, &edge),
+        "{:#?}",
+        report.losses
+    );
     let tolerance = decoded.geometry.vertices[1]
         .tolerance
-        .expect("the vertex off the line is written tolerant")
+        .expect("the raised vertex is written tolerant")
         .get();
-    assert!(tolerance > 2.9e-6, "{tolerance}");
+    assert!((tolerance - 0.03).abs() < 1.0e-9, "{tolerance}");
     assert_eq!(edge_errors(&decoded), Vec::<String>::new());
 }
 
