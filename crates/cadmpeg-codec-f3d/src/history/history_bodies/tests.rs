@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
+
+mod historical_split;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_core::decode::{DecodeArena, DecodePolicy};

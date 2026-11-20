@@ -854,7 +854,6 @@ fn fill_history(
                 let subtypes = subtypes.get_or_insert_with(|| {
                     archive_subtypes(archive, header.metadata.save_format_version)
                 });
-                let by_identity = want.identity.is_some();
                 let resolved;
                 let want = match &want.identity {
                     None => want,
@@ -910,10 +909,16 @@ fn fill_history(
                     (&header.metadata, subtypes),
                     want,
                     (produced, consumed),
-                    (ordinal, bodies.len(), by_identity || join.is_some()),
+                    (ordinal, bodies.len(), consumed.is_some() || join.is_some()),
                 ) {
                     Ok(Some(built)) => {
-                        place(bodies, &mut joinable, built, want.slot, (by_identity, join));
+                        place(
+                            bodies,
+                            &mut joinable,
+                            built,
+                            want.slot,
+                            (consumed.is_some(), join),
+                        );
                     }
                     Ok(None) => {
                         losses.push(F3dLossCode::FeatureHistoryBodyUndecoded.note(format!(
@@ -1031,13 +1036,13 @@ fn build(
 }
 
 /// Add a built nest, or join its producing feature onto the equal consumed
-/// nest that `join` names. A nest found by identity stays open to a join.
+/// nest that `join` names.
 fn place(
     bodies: &mut Vec<HistoryBody>,
     joinable: &mut Vec<Joinable>,
     built: Built,
     slot: i64,
-    (by_identity, join): (bool, Option<usize>),
+    (consumed, join): (bool, Option<usize>),
 ) {
     let equal =
         join.filter(|&position| built.records.as_ref() == Some(&joinable[position].topology));
@@ -1048,7 +1053,7 @@ fn place(
         nest.state = built.body.state;
         return;
     }
-    if by_identity {
+    if consumed {
         if let Some(topology) = built.records {
             joinable.push(Joinable {
                 slot,
