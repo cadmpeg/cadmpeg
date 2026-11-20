@@ -121,7 +121,7 @@ pub(crate) enum SldprtLossCode {
     /// endpoints coincide.
     SketchLineDegenerate,
     /// A sketch line keeps the chord its marker reading gives although its
-    /// `sgSketch` curve record states an arc.
+    /// `sgSketch` curve record states an arc or another form.
     SketchArcRecordConflict,
     /// A sketch handle takes its `sgSketch` curve record's geometry by
     /// point-record position, a reading the format does not establish for a

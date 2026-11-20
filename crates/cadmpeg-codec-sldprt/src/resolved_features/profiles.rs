@@ -48,8 +48,8 @@ use super::relation_geometry::{declared_entity_handle_circular_marker, owned_rel
 use super::relation_loci::same_dimension_length;
 use super::scalars::FeatureObjectNames;
 use super::sketch_lists::{
-    chord_record, identifier_trailer_line_record, listed_record_geometry, ChordConflict,
-    ChordRecord, ListedReading, SketchRecordLists,
+    chord_record, identifier_trailer_line_record, listed_record_geometry,
+    unchecked_record_conflict, ChordConflict, ChordRecord, ListedReading, SketchRecordLists,
 };
 use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
@@ -1086,8 +1086,11 @@ pub(crate) struct HeldMarkerGeometry {
     /// sketch, by sketch and marker reference.
     listed: HashMap<(SketchId, String), ListedGeometry>,
     /// Why the `sgSketch` curve record of a line's marker leaves the line in
-    /// place although it states an arc, by sketch and marker reference.
+    /// place although it states another form, by sketch and marker reference.
     chord_conflicts: HashMap<(SketchId, String), ChordConflict>,
+    /// The conflict of each marker's `sgSketch` curve record with a line
+    /// that a later reading gives the marker, by marker reference.
+    unchecked: HashMap<String, ChordConflict>,
 }
 
 /// The geometry an `sgSketch` curve record gives a marker by point-record
@@ -1105,7 +1108,7 @@ struct ListedGeometry {
 /// per entity. Curve-record geometry charges `sketch.handle-reading-assumed`
 /// for a line with an identifier trailer and for a handle whose read
 /// endpoints coincide. Charges one loss for each line whose curve record
-/// states an arc that the line's chord does not carry.
+/// states another form.
 pub(crate) fn finalize_unread_marker_entities(
     sketch_entities: &mut Vec<SketchEntity>,
     held: HeldMarkerGeometry,
@@ -1115,7 +1118,8 @@ pub(crate) fn finalize_unread_marker_entities(
     let HeldMarkerGeometry {
         handles,
         mut listed,
-        mut chord_conflicts,
+        chord_conflicts,
+        unchecked,
     } = held;
     sketch_entities.extend(handles);
     for entity in sketch_entities.iter_mut() {
@@ -1188,15 +1192,16 @@ pub(crate) fn finalize_unread_marker_entities(
         let Some(marker) = entity.native_ref.as_deref() else {
             continue;
         };
-        let Some(conflict) = chord_conflicts.remove(&(entity.sketch.clone(), marker.to_owned()))
+        let Some(conflict) = chord_conflicts
+            .get(&(entity.sketch.clone(), marker.to_owned()))
+            .or_else(|| unchecked.get(marker))
         else {
             continue;
         };
         losses.push(SldprtLossCode::SketchArcRecordConflict.note(format!(
-            "sketch {} entity {}: the sgSketch curve record of marker {marker} states an arc {}; the entity keeps the line its marker reading gives",
+            "sketch {} entity {}: the sgSketch curve record of marker {marker} {conflict}; the entity keeps the line its marker reading gives",
             entity.sketch,
             entity.id(),
-            conflict.reason()
         )));
     }
 }
@@ -1323,6 +1328,13 @@ pub(crate) fn project_marker_backed_sketches(
         let mut markers_by_id = HashMap::new();
         for marker in &lane.sketch_entities {
             markers_by_id.insert(marker.id(), marker);
+            if let Some(conflict) = index_from_u64(marker.offset()).and_then(|offset| {
+                unchecked_record_conflict(&lane.native_payload, &record_lists, offset)
+            }) {
+                held_geometry
+                    .unchecked
+                    .insert(marker.id().to_owned(), conflict);
+            }
         }
         let names = FeatureObjectNames::new(&lane.names);
         let markers_by_feature = markers_by_owner(&lane.sketch_entities);

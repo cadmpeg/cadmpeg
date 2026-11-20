@@ -9,8 +9,8 @@ use cadmpeg_ir::sketches::{
 };
 
 use super::{
-    finalize_unread_marker_entities, project_marker_backed_sketches, HeldMarkerGeometry,
-    ListedGeometry,
+    finalize_unread_marker_entities, project_marker_backed_sketches, ChordConflict,
+    HeldMarkerGeometry, ListedGeometry,
 };
 use crate::loss::SldprtLossCode;
 use crate::records::{
@@ -553,4 +553,28 @@ fn held_geometry_of_a_trailer_line_or_a_degenerate_handle_charges_the_assumed_re
     assert!(losses[0].message.contains("identifier trailer"));
     assert!(losses[1].message.contains(entities[1].id().as_str()));
     assert!(losses[1].message.contains("coincide"));
+}
+
+/// A line that a later reading gives a marker whose curve record states
+/// another form charges one loss naming the entity and the form; a line whose
+/// marker has no such record charges none.
+#[test]
+fn a_later_line_on_a_marker_whose_record_is_not_a_line_charges_the_conflict() {
+    let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: Point2::new(0.0, 0.0),
+        end: Point2::new(1.0, 0.0),
+    })
+    .unwrap();
+    let mut entities = vec![entity("relation", line.clone()), entity("plain", line)];
+    let mut held = HeldMarkerGeometry::default();
+    held.unchecked
+        .insert("marker-relation".to_owned(), ChordConflict::Unchecked);
+    let mut losses = Vec::new();
+    finalize_unread_marker_entities(&mut entities, held, &mut losses);
+    let [loss] = losses.as_slice() else {
+        panic!("one loss: {losses:?}");
+    };
+    assert_eq!(loss.code, SldprtLossCode::SketchArcRecordConflict.kind());
+    assert!(loss.message.contains(entities[0].id().as_str()));
+    assert!(loss.message.contains("does not compare the record"));
 }

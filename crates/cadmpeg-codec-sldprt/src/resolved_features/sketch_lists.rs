@@ -395,7 +395,8 @@ pub(super) enum ChordRecord {
     Conflict(ChordConflict),
 }
 
-/// Why a sensed curve record leaves its marker's chord in place.
+/// Why the curve record of a marker leaves the line a marker reading gave it
+/// in place.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ChordConflict {
     /// A point record the record indexes writes no planar coordinates.
@@ -408,29 +409,58 @@ pub(super) enum ChordConflict {
     NoArc,
     /// The record's arc does not pass through both endpoints of the chord.
     MissesChord,
+    /// The record has sense `1` or `-1` and selector bit 0 set (open item
+    /// EV-27).
+    OpenSelector,
+    /// The record has sense `1` or `-1` and no four i32 `-2` after its
+    /// centre index: an ellipse.
+    Ellipse,
+    /// The record's sense word has a curve type other than `0` and is not
+    /// `1` or `-1`.
+    OtherSense(i32),
+    /// The record is an arc, and the line comes from a reading that does not
+    /// compare the two.
+    Unchecked,
 }
 
-impl ChordConflict {
-    /// The reason, as the tail of a sentence about the record's arc.
-    pub(super) const fn reason(self) -> &'static str {
+impl std::fmt::Display for ChordConflict {
+    /// What the record states, as the predicate of a sentence about it.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::PointUnread => "whose point records are not all read",
-            Self::FullCircle => "whose equal endpoint indices make a full circle",
-            Self::OtherEndpoints => "between point records at other positions",
-            Self::NoArc => "whose endpoints and centre define no arc",
-            Self::MissesChord => {
-                "between the line's endpoint point records, but the arc misses the line's endpoints"
+            Self::PointUnread => f.write_str("states an arc whose point records are not all read"),
+            Self::FullCircle => {
+                f.write_str("states an arc whose equal endpoint indices make a full circle")
             }
+            Self::OtherEndpoints => f.write_str("states an arc between point records at other positions"),
+            Self::NoArc => f.write_str("states an arc whose endpoints and centre define no arc"),
+            Self::MissesChord => f.write_str(
+                "states an arc between the line's endpoint point records, but the arc misses the line's endpoints",
+            ),
+            Self::OpenSelector => f.write_str(
+                "states an arc sense with selector bit 0 set, whose indices are open item EV-27",
+            ),
+            Self::Ellipse => f.write_str(
+                "states an ellipse: sense `1` or `-1` without the four i32 `-2` after its centre index",
+            ),
+            Self::OtherSense(sense) => write!(
+                f,
+                "has sense word {sense}, which reads as neither a line nor an arc"
+            ),
+            Self::Unchecked => f.write_str(
+                "states an arc, and the line comes from a reading that does not compare the record with it",
+            ),
         }
     }
 }
 
-/// The reading of the listed curve record at `offset` when its sense is `1`
-/// or `-1` and a marker reading gave it the straight chord `chord`: the
-/// record's arc when its two endpoint point records project onto the chord's
-/// endpoints in either order and the arc itself ends at both chord endpoints,
-/// each within the linear resolution, and the conflict otherwise. `None` when
-/// the offset starts no listed curve record with an arc sense.
+/// The reading of the listed curve record at `offset` when a marker reading
+/// gave it the straight chord `chord`: for an arc record, the record's arc
+/// when its two endpoint point records project onto the chord's endpoints in
+/// either order and the arc itself ends at both chord endpoints, each within
+/// the linear resolution, and the conflict otherwise; for a record whose form
+/// [`curve_form`] does not read, the conflict its sense and selector give.
+/// `None` when the offset starts no listed curve record or the record states
+/// a line.
 pub(super) fn chord_record(
     payload: &[u8],
     lists: &SketchRecordLists,
@@ -441,15 +471,17 @@ pub(super) fn chord_record(
     let ListedRecord::Curve { sketch, .. } = lists.record(offset)? else {
         return None;
     };
-    let CurveForm::Arc {
-        start,
-        end,
-        center,
-        counterclockwise,
-    } = curve_form(payload, offset, ListedReading::Complete)?
-    else {
-        return None;
-    };
+    let (start, end, center, counterclockwise) =
+        match curve_form(payload, offset, ListedReading::Complete) {
+            Some(CurveForm::Arc {
+                start,
+                end,
+                center,
+                counterclockwise,
+            }) => (start, end, center, counterclockwise),
+            Some(CurveForm::Line { .. }) => return None,
+            None => return unread_form_conflict(payload, offset).map(ChordRecord::Conflict),
+        };
     if start == end {
         return Some(ChordRecord::Conflict(ChordConflict::FullCircle));
     }
@@ -499,6 +531,46 @@ pub(super) fn chord_record(
         ChordRecord::Arc(arc)
     } else {
         ChordRecord::Conflict(ChordConflict::MissesChord)
+    })
+}
+
+/// The conflict of the listed curve record at `offset` with a line that a
+/// reading other than [`chord_record`] gave its marker: [`ChordConflict::Unchecked`]
+/// for an arc record and the form conflict for a record whose form
+/// [`curve_form`] does not read. `None` when the offset starts no listed
+/// curve record or the record states a line.
+pub(super) fn unchecked_record_conflict(
+    payload: &[u8],
+    lists: &SketchRecordLists,
+    offset: usize,
+) -> Option<ChordConflict> {
+    let ListedRecord::Curve { .. } = lists.record(offset)? else {
+        return None;
+    };
+    match curve_form(payload, offset, ListedReading::Complete) {
+        Some(CurveForm::Arc { .. }) => Some(ChordConflict::Unchecked),
+        Some(CurveForm::Line { .. }) => None,
+        None => unread_form_conflict(payload, offset),
+    }
+}
+
+/// The conflict of a curve record that [`curve_form`] does not read: `None`
+/// when the low half of its sense word is `0`, and otherwise by its sense
+/// word and selector.
+fn unread_form_conflict(payload: &[u8], offset: usize) -> Option<ChordConflict> {
+    let fields = curve_fields(payload, offset)?;
+    let sense = View::i32_le_at(payload, fields.checked_add(SENSE)?)?;
+    if sense & LINE_TYPE_MASK == 0 {
+        return None;
+    }
+    if sense != COUNTERCLOCKWISE && sense != CLOCKWISE {
+        return Some(ChordConflict::OtherSense(sense));
+    }
+    let selector = View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?;
+    Some(if selector & SELECTOR_OPEN_BIT != 0 {
+        ChordConflict::OpenSelector
+    } else {
+        ChordConflict::Ellipse
     })
 }
 
