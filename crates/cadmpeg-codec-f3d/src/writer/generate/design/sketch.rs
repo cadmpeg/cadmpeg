@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::design::construction::{
-    Construction, ConstructionInput, FrameValue, InputReference, Relation, Subject, kinds,
+    kinds, Construction, ConstructionInput, FrameValue, InputReference, Relation, Subject,
 };
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;

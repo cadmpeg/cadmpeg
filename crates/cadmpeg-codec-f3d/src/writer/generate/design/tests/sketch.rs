@@ -4,8 +4,8 @@
 //! archive's Design segment.
 
 use cadmpeg_ir::design::construction::{
-    Construction, ConstructionInput, FrameValue, InputReference, InputRole, Relation, Subject,
-    kinds,
+    kinds, Construction, ConstructionInput, FrameValue, InputReference, InputRole, Relation,
+    Subject,
 };
 use cadmpeg_ir::design::container::Container;
 use cadmpeg_ir::design::dimension::Dimension;
@@ -29,7 +29,7 @@ use cadmpeg_ir::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 
 use super::roster::segment;
-use super::{EXTRUDE, loss, scoped_cube, write, write_bytes};
+use super::{loss, scoped_cube, write, write_bytes, EXTRUDE};
 use crate::loss::F3dLossCode;
 
 const TOLERANCE: f64 = 1e-9;
@@ -678,12 +678,10 @@ fn the_id_table_lists_sketches_then_the_base_feature() {
     );
     let native = crate::test_support::native_test::f3d_native(&decoded);
     assert!(!native.persistent_subentity_tags.is_empty());
-    assert!(
-        native
-            .persistent_subentity_tags
-            .iter()
-            .all(|tag| tag.design_references == [-304])
-    );
+    assert!(native
+        .persistent_subentity_tags
+        .iter()
+        .all(|tag| tag.design_references == [-304]));
 }
 
 #[test]
@@ -977,13 +975,11 @@ fn a_failure_in_the_sketch_records_keeps_the_design() {
         )),
         "{missing}"
     );
-    assert!(
-        loss(
-            &report,
-            &F3dLossCode::WriterSketchContentOmitted.kind().to_string()
-        )
-        .is_empty()
-    );
+    assert!(loss(
+        &report,
+        &F3dLossCode::WriterSketchContentOmitted.kind().to_string()
+    )
+    .is_empty());
 }
 
 /// The model-space position of the decoded sketch point `id`.
@@ -1157,7 +1153,7 @@ fn a_tangent_contact_at_the_ends_is_written_as_a_coincidence_or_named() {
 
 #[test]
 fn a_tangent_contact_at_the_ends_writes_its_endpoint_branch() {
-    use super::super::sketch::{RelationKind, TangencyEnds, plan};
+    use super::super::sketch::{plan, RelationKind, TangencyEnds};
     let mut ir = scoped_cube();
     let id = tangent_sketch().add_to(&mut ir);
     let plan = plan(&ir, &[&id]);
@@ -1194,7 +1190,7 @@ fn a_tangent_contact_at_the_ends_writes_its_endpoint_branch() {
 
 #[test]
 fn a_tangent_via_a_shared_endpoint_writes_its_branch_and_branchless_uses_shared_class() {
-    use super::super::sketch::{RelationKind, TangencyEnds, plan};
+    use super::super::sketch::{plan, RelationKind, TangencyEnds};
     use super::super::types;
     let mut ir = scoped_cube();
     let front = frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
