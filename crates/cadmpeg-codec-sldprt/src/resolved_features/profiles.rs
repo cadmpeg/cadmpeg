@@ -1209,38 +1209,54 @@ impl<'a> TerminalRelationCarriers<'a> {
 }
 
 /// Whether the sketch marker at `offset` with `geometry` is construction
-/// geometry: a selected construction line, a selected compact roster axis, or
-/// a list curve with selector bit 3, except a full circle with profile role
-/// `1` (DI-72). Both marker projection paths use this one predicate.
+/// geometry, and whether that reading is the selector-bit-3 assumption for a
+/// list line with profile role `1` (DI-72). Construction is a selected
+/// construction line, a selected compact roster axis, or a list curve with
+/// selector bit 3, except a full circle with profile role `1`. Both marker
+/// projection paths use this one predicate.
 fn marker_is_construction(
     payload: &[u8],
     record_lists: &SketchRecordLists,
     offset: usize,
     geometry: &SketchGeometry,
-) -> bool {
+) -> (bool, bool) {
     let listed_kind = record_lists.listed_curve_kind(payload, offset);
-    let role_one_circle = marker_profile_curve_role(payload, offset) == Some(1)
+    let role_one = marker_profile_curve_role(payload, offset) == Some(1);
+    let role_one_circle = role_one
         && (matches!(
             geometry.definition(),
             SketchGeometryDefinition::Circle { .. }
         ) || listed_kind == Some(FramedCurve::Circle));
-    !role_one_circle
+    let listed_construction = listed_kind.is_some() && construction_record(payload, offset);
+    let construction = !role_one_circle
         && (marker_is_selected_construction_line(payload, offset)
             || current_compact_roster_selected_axis(payload, offset)
-            || (listed_kind.is_some() && construction_record(payload, offset)))
+            || listed_construction);
+    let assumed =
+        construction && listed_construction && listed_kind == Some(FramedCurve::Line) && role_one;
+    (construction, assumed)
+}
+
+pub(crate) struct MarkerSketchEntities<'a> {
+    pub(crate) projected: &'a mut Vec<SketchEntity>,
+    pub(crate) held: &'a mut Vec<SketchEntity>,
 }
 
 pub(crate) fn project_marker_backed_sketches(
     ctx: &DecodeContext<'_>,
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &mut Vec<Sketch>,
-    sketch_entities: &mut Vec<SketchEntity>,
-    held_handles: &mut Vec<SketchEntity>,
+    entities: MarkerSketchEntities<'_>,
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let MarkerSketchEntities {
+        projected: sketch_entities,
+        held: held_handles,
+    } = entities;
     let metadata_ids = history_metadata_ids(histories);
 
     let native_features = crate::records::HistoryFeatures::new(histories);
@@ -2204,14 +2220,15 @@ pub(crate) fn project_marker_backed_sketches(
                     } else {
                         geometry
                     };
-                    let construction = index_from_u64(marker.offset()).is_some_and(|offset| {
-                        marker_is_construction(
-                            &lane.native_payload,
-                            &record_lists,
-                            offset,
-                            &geometry,
-                        )
-                    });
+                    let construction =
+                        index_from_u64(marker.offset()).map_or((false, false), |offset| {
+                            marker_is_construction(
+                                &lane.native_payload,
+                                &record_lists,
+                                offset,
+                                &geometry,
+                            )
+                        });
                     Ok((geometry, construction))
                 })();
                 let entity = match entity {
@@ -2219,7 +2236,7 @@ pub(crate) fn project_marker_backed_sketches(
                     Err(MarkerGeometryFailure::Absent) => None,
                     Err(MarkerGeometryFailure::Codec(error)) => return Err(error),
                 };
-                if let Some((geometry, construction)) = entity {
+                if let Some((geometry, (construction, assumed))) = entity {
                     let mut endpoint_refs = Vec::new();
                     let listed_ends = index_from_u64(marker.offset()).and_then(|offset| {
                         record_lists.listed_curve_ends(&lane.native_payload, offset)
@@ -2263,6 +2280,17 @@ pub(crate) fn project_marker_backed_sketches(
                         SketchGeometryDefinition::Native { native_kind }
                             if native_kind.as_str() == ARC_POINTS_PLACEHOLDER
                     );
+                    if assumed {
+                        losses.push(
+                            crate::loss::SldprtLossCode::SketchListedLineConstructionAssumed.note(
+                                format!(
+                                    "Sketch {sketch_id} (feature {}) marker {} is marked construction from selector bit 3 with profile role 1 (DI-72)",
+                                    native_feature.name,
+                                    marker.id()
+                                ),
+                            ),
+                        );
+                    }
                     let entity = SketchEntity::new(entity_id, sketch_id.clone(), geometry)
                         .with_construction(construction)
                         .with_native_ref(Some(marker.id().to_owned()))
@@ -3626,8 +3654,9 @@ mod detached_legacy_sketch_tests {
     use super::super::bindings::bind_detached_legacy_sketch_objects;
     use super::{
         assemble_sketch_block_profile, compact_linear_dimensions, legacy_config_collinear_sketch,
-        legacy_config_hex_sketch, project_marker_backed_sketches, SketchBlockInstancePlacement,
-        SketchBlockProfileInput, SortedOffsets, TerminalRelationCarriers,
+        legacy_config_hex_sketch, project_marker_backed_sketches, MarkerSketchEntities,
+        SketchBlockInstancePlacement, SketchBlockProfileInput, SortedOffsets,
+        TerminalRelationCarriers,
     };
     use crate::layout::current_terminal_relation_carrier as terminal;
     use crate::records::FeatureInputLane;
@@ -4417,10 +4446,13 @@ mod detached_legacy_sketch_tests {
             &ctx,
             &mut features,
             &mut sketches,
-            &mut sketch_entities,
-            &mut Vec::new(),
+            MarkerSketchEntities {
+                projected: &mut sketch_entities,
+                held: &mut Vec::new(),
+            },
             &[history],
             &[lane],
+            &mut Vec::new(),
         )
         .expect("marker profile projection fits service policy");
 
@@ -4518,10 +4550,13 @@ mod detached_legacy_sketch_tests {
             &ctx,
             &mut features,
             &mut sketches,
-            &mut sketch_entities,
-            &mut Vec::new(),
+            MarkerSketchEntities {
+                projected: &mut sketch_entities,
+                held: &mut Vec::new(),
+            },
             &[history],
             &[lane],
+            &mut Vec::new(),
         )
         .expect("marker profile projection fits service policy");
 
@@ -4614,10 +4649,13 @@ mod detached_legacy_sketch_tests {
                 &ctx,
                 &mut features,
                 &mut sketches,
-                &mut sketch_entities,
-                &mut Vec::new(),
+                MarkerSketchEntities {
+                    projected: &mut sketch_entities,
+                    held: &mut Vec::new(),
+                },
                 std::slice::from_ref(&history),
                 std::slice::from_ref(&lane),
+                &mut Vec::new(),
             )
             .expect("marker profile projection fits service policy");
 
@@ -4790,10 +4828,13 @@ mod detached_legacy_sketch_tests {
             &service,
             &mut [],
             &mut Vec::new(),
-            &mut Vec::new(),
-            &mut Vec::new(),
+            MarkerSketchEntities {
+                projected: &mut Vec::new(),
+                held: &mut Vec::new(),
+            },
             &[history],
             &[],
+            &mut Vec::new(),
         )
         .unwrap();
     }

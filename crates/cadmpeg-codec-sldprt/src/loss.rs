@@ -120,6 +120,8 @@ pub(crate) enum SldprtLossCode {
     SketchLineDegenerate,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,
+    /// A list line with profile role 1 is marked construction from selector bit 3 (DI-72).
+    SketchListedLineConstructionAssumed,
     /// Native sketch relation has no projected neutral constraint.
     SketchRelationUnprojected,
     /// Native sketch relation is claimed by multiple neutral objects.
@@ -364,6 +366,7 @@ impl SldprtLossCode {
         Self::SketchHandleUnresolved,
         Self::SketchLineDegenerate,
         Self::SketchProfileRejected,
+        Self::SketchListedLineConstructionAssumed,
         Self::SketchRelationUnprojected,
         Self::SketchRelationMultiplyProjected,
         Self::FeatureNativeKindRetained,
@@ -491,6 +494,7 @@ impl SldprtLossCode {
             Self::SketchNativeConstraint => "sketch.native-constraint",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchProfileRejected => "sketch.profile-rejected",
+            Self::SketchListedLineConstructionAssumed => "sketch.listed-line-construction-assumed",
             Self::SketchHandleUnresolved => "sketch.handle-unresolved",
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
@@ -657,6 +661,7 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchProfileRejected
+            | Self::SketchListedLineConstructionAssumed
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
             | Self::FeatureNativeKindRetained
@@ -859,6 +864,7 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchProfileRejected
+            | Self::SketchListedLineConstructionAssumed
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
             | Self::FeatureNativeKindRetained
@@ -1084,6 +1090,7 @@ mod tests {
                 "sketch.handle-unresolved",
                 "sketch.line-degenerate",
                 "sketch.profile-rejected",
+                "sketch.listed-line-construction-assumed",
                 "sketch.relation-unprojected",
                 "sketch.relation-multiply-projected",
                 "feature.native-kind-retained",

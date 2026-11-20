@@ -6,9 +6,13 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::sketches::{SketchEntity, SketchGeometry, SketchGeometryDefinition};
 
-use super::{marker_is_construction, project_marker_backed_sketches, SketchRecordLists};
+use super::{
+    marker_is_construction, project_marker_backed_sketches, MarkerSketchEntities, SketchRecordLists,
+};
+use crate::loss::SldprtLossCode;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputLane, FeatureSource, SketchInputKind,
 };
@@ -91,8 +95,11 @@ fn sketch_with_line(
 }
 
 /// The entity `project_marker_backed_sketches` emits for the curve record at
-/// `curve`, and its input kind.
-fn projected_curve(payload: Vec<u8>, curve: usize) -> (SketchInputKind, Option<SketchEntity>) {
+/// `curve`, its input kind, and the projection losses.
+fn projected_curve(
+    payload: Vec<u8>,
+    curve: usize,
+) -> (SketchInputKind, Option<SketchEntity>, Vec<LossNote>) {
     let mut markers = sketch_input_entities(&payload, "lane");
     for marker in &mut markers {
         marker.feature_ref = Some("feature-native".into());
@@ -164,6 +171,7 @@ fn projected_curve(payload: Vec<u8>, curve: usize) -> (SketchInputKind, Option<S
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     let mut held = Vec::new();
+    let mut losses = Vec::new();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         &[],
@@ -175,24 +183,27 @@ fn projected_curve(payload: Vec<u8>, curve: usize) -> (SketchInputKind, Option<S
         &ctx,
         &mut features,
         &mut sketches,
-        &mut entities,
-        &mut held,
+        MarkerSketchEntities {
+            projected: &mut entities,
+            held: &mut held,
+        },
         &histories,
         &lanes,
+        &mut losses,
     )
     .expect("projection fits service policy");
     let entity = entities
         .into_iter()
         .chain(held)
         .find(|entity| entity.native_ref.as_deref() == Some(marker_id.as_str()));
-    (kind, entity)
+    (kind, entity, losses)
 }
 
 /// `docs/formats/sldprt.md` §2.3: the curve type selects the curve; the +17
 /// value is no relation code. A line that the list reading takes no geometry
 /// from stays a line handle, not a relation.
 fn assert_unresolved_line_handle(payload: Vec<u8>, curve: usize) {
-    let (kind, entity) = projected_curve(payload, curve);
+    let (kind, entity, _) = projected_curve(payload, curve);
     assert_eq!(kind, SketchInputKind::LineOrCircle);
     let entity = entity.expect("the curve record keeps an entity");
     assert!(matches!(
@@ -223,7 +234,7 @@ fn a_line_with_equal_endpoint_indices_and_a_relation_code_is_a_line_handle() {
 #[test]
 fn a_readable_line_with_a_relation_code_is_a_line() {
     let (payload, curve) = sketch_with_line(CODE_FOUR, 4, [0, 1], 0, u32::MAX);
-    let (kind, entity) = projected_curve(payload, curve);
+    let (kind, entity, _) = projected_curve(payload, curve);
     assert_eq!(kind, SketchInputKind::LineOrCircle);
     assert!(matches!(
         entity.expect("the line is projected").geometry.definition(),
@@ -234,7 +245,7 @@ fn a_readable_line_with_a_relation_code_is_a_line() {
 #[test]
 fn a_curve_record_with_another_selector_keeps_its_relation_kind() {
     let (payload, curve) = sketch_with_line(CODE_FOUR, 68, [0, 1], 0, u32::MAX);
-    let (kind, _) = projected_curve(payload, curve);
+    let (kind, _, _) = projected_curve(payload, curve);
     assert!(matches!(kind, SketchInputKind::Relation(_)));
 }
 
@@ -256,18 +267,19 @@ fn selector_twelve_role_one_circle_construction_agrees_between_projection_paths(
     payload.extend_from_slice(&[0; 10]);
     let lists = SketchRecordLists::new(&payload);
     assert!(lists.readable_curve(&payload, curve));
-    let (_, entity) = projected_curve(payload.clone(), curve);
+    let (_, entity, losses) = projected_curve(payload.clone(), curve);
     let entity = entity.expect("the listed circle is projected");
     assert!(matches!(
         entity.geometry.definition(),
         SketchGeometryDefinition::Circle { .. }
     ));
     assert!(!entity.construction);
+    assert!(losses.is_empty());
     let held = SketchGeometry::native(cadmpeg_core::nonblank_const!("sldprt:synthetic-circle"));
     for geometry in [&entity.geometry, &held] {
         assert_eq!(
             marker_is_construction(&payload, &lists, curve, geometry),
-            entity.construction
+            (entity.construction, false)
         );
     }
 }
@@ -278,19 +290,18 @@ fn selector_twelve_roster_line_is_construction() {
     let role = curve + crate::layout::current_extended_zero_tail_92_profile_curve::ROLE;
     payload[role..role + 2].copy_from_slice(&0u16.to_le_bytes());
     let lists = SketchRecordLists::new(&payload);
-    let (_, entity) = projected_curve(payload.clone(), curve);
+    let (_, entity, losses) = projected_curve(payload.clone(), curve);
     let entity = entity.expect("the listed line is projected");
     assert!(matches!(
         entity.geometry.definition(),
         SketchGeometryDefinition::Line { .. }
     ));
     assert!(entity.construction);
-    assert!(marker_is_construction(
-        &payload,
-        &lists,
-        curve,
-        &entity.geometry
-    ));
+    assert!(losses.is_empty());
+    assert_eq!(
+        marker_is_construction(&payload, &lists, curve, &entity.geometry),
+        (true, false)
+    );
 }
 
 #[test]
@@ -303,15 +314,24 @@ fn selector_twelve_role_one_line_is_construction_on_both_paths() {
                 payload[curve..curve + prefix.len()].copy_from_slice(prefix);
             }
             let lists = SketchRecordLists::new(&payload);
-            let (_, entity) = projected_curve(payload.clone(), curve);
+            let (_, entity, losses) = projected_curve(payload.clone(), curve);
             let entity = entity.expect("the listed line keeps an entity");
             assert!(entity.construction);
-            assert!(marker_is_construction(
-                &payload,
-                &lists,
-                curve,
-                &entity.geometry
-            ));
+            assert_eq!(
+                marker_is_construction(&payload, &lists, curve, &entity.geometry),
+                (true, true)
+            );
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                SldprtLossCode::SketchListedLineConstructionAssumed.kind()
+            );
+            assert!(losses[0].message.contains(entity.sketch.as_str()));
+            assert!(losses[0].message.contains("generated-profile"));
+            assert!(losses[0]
+                .message
+                .contains(entity.native_ref.as_deref().expect("marker reference")));
+            assert!(losses[0].message.contains("selector bit 3"));
         }
     }
 }

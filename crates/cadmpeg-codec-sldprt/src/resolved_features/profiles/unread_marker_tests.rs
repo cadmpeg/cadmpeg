@@ -8,7 +8,9 @@ use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
 };
 
-use super::{finalize_unread_marker_entities, project_marker_backed_sketches};
+use super::{
+    finalize_unread_marker_entities, project_marker_backed_sketches, MarkerSketchEntities,
+};
 use crate::loss::SldprtLossCode;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputLane, FeatureSource, SketchInputEntity,
@@ -127,10 +129,13 @@ fn projected_entities(
         &ctx,
         &mut features,
         &mut sketches,
-        &mut entities,
-        &mut held,
+        MarkerSketchEntities {
+            projected: &mut entities,
+            held: &mut held,
+        },
         &histories,
         &lanes,
+        &mut Vec::new(),
     )
     .expect("marker profile projection fits service policy");
     (entities, held)
