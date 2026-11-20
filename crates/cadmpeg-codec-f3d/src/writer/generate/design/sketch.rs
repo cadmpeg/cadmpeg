@@ -9,7 +9,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::design::construction::{
-    kinds, Construction, ConstructionInput, FrameValue, InputReference, Relation, Subject,
+    Construction, ConstructionInput, FrameValue, InputReference, Relation, Subject, kinds,
 };
 use cadmpeg_ir::design::dimension::Dimension;
 use cadmpeg_ir::design::feature::FeatureOperation;
@@ -565,8 +565,12 @@ impl<'a> PlannedSketch<'a> {
         match contact {
             Contact::Via(p) => {
                 let p = point(p)?;
+                let ends = match (self.end(a, p), self.end(b, p)) {
+                    (Some(at_a), Some(at_b)) => Some(Self::tangency_ends(at_a, at_b)),
+                    _ => None,
+                };
                 Ok(Touch {
-                    ends: None,
+                    ends,
                     joins: [a, b]
                         .into_iter()
                         .filter(|curve| self.end(*curve, p).is_none())
@@ -583,22 +587,28 @@ impl<'a> PlannedSketch<'a> {
                         _ => {
                             return Err(
                                 "its contact points are not ends of its curves as the writer bounds them",
-                            )
+                            );
                         }
                     },
                 };
-                let ((start_a, [ax, ay]), (start_b, [bx, by])) = (at_a, at_b);
                 Ok(Touch {
-                    ends: Some(TangencyEnds {
-                        starts: [start_a, start_b],
-                        aligned: ax * bx + ay * by > 0.0,
-                    }),
+                    ends: Some(Self::tangency_ends(at_a, at_b)),
                     joins: (p != q)
                         .then_some([Entity::Point(p), Entity::Point(q)])
                         .into_iter()
                         .collect(),
                 })
             }
+        }
+    }
+
+    /// The endpoint branch bytes of a tangency whose contact is at a stored end of
+    /// both curves.
+    fn tangency_ends(at_a: (bool, [f64; 2]), at_b: (bool, [f64; 2])) -> TangencyEnds {
+        let ((start_a, [ax, ay]), (start_b, [bx, by])) = (at_a, at_b);
+        TangencyEnds {
+            starts: [start_a, start_b],
+            aligned: ax * bx + ay * by > 0.0,
         }
     }
 

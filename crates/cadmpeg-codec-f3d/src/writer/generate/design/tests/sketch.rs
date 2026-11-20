@@ -4,8 +4,8 @@
 //! archive's Design segment.
 
 use cadmpeg_ir::design::construction::{
-    kinds, Construction, ConstructionInput, FrameValue, InputReference, InputRole, Relation,
-    Subject,
+    Construction, ConstructionInput, FrameValue, InputReference, InputRole, Relation, Subject,
+    kinds,
 };
 use cadmpeg_ir::design::container::Container;
 use cadmpeg_ir::design::dimension::Dimension;
@@ -29,7 +29,7 @@ use cadmpeg_ir::sketches::{SketchConstraintId, SketchEntityId, SketchId};
 use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
 
 use super::roster::segment;
-use super::{loss, scoped_cube, write, write_bytes, EXTRUDE};
+use super::{EXTRUDE, loss, scoped_cube, write, write_bytes};
 use crate::loss::F3dLossCode;
 
 const TOLERANCE: f64 = 1e-9;
@@ -678,10 +678,12 @@ fn the_id_table_lists_sketches_then_the_base_feature() {
     );
     let native = crate::test_support::native_test::f3d_native(&decoded);
     assert!(!native.persistent_subentity_tags.is_empty());
-    assert!(native
-        .persistent_subentity_tags
-        .iter()
-        .all(|tag| tag.design_references == [-304]));
+    assert!(
+        native
+            .persistent_subentity_tags
+            .iter()
+            .all(|tag| tag.design_references == [-304])
+    );
 }
 
 #[test]
@@ -975,11 +977,13 @@ fn a_failure_in_the_sketch_records_keeps_the_design() {
         )),
         "{missing}"
     );
-    assert!(loss(
-        &report,
-        &F3dLossCode::WriterSketchContentOmitted.kind().to_string()
-    )
-    .is_empty());
+    assert!(
+        loss(
+            &report,
+            &F3dLossCode::WriterSketchContentOmitted.kind().to_string()
+        )
+        .is_empty()
+    );
 }
 
 /// The model-space position of the decoded sketch point `id`.
@@ -1153,7 +1157,7 @@ fn a_tangent_contact_at_the_ends_is_written_as_a_coincidence_or_named() {
 
 #[test]
 fn a_tangent_contact_at_the_ends_writes_its_endpoint_branch() {
-    use super::super::sketch::{plan, RelationKind, TangencyEnds};
+    use super::super::sketch::{RelationKind, TangencyEnds, plan};
     let mut ir = scoped_cube();
     let id = tangent_sketch().add_to(&mut ir);
     let plan = plan(&ir, &[&id]);
@@ -1186,4 +1190,110 @@ fn a_tangent_contact_at_the_ends_writes_its_endpoint_branch() {
         .filter(|relation| relation.kind == RelationKind::Coincident)
         .count();
     assert_eq!(joins, 1);
+}
+
+#[test]
+fn a_tangent_via_a_shared_endpoint_writes_its_branch_and_branchless_uses_shared_class() {
+    use super::super::sketch::{RelationKind, TangencyEnds, plan};
+    use super::super::types;
+    let mut ir = scoped_cube();
+    let front = frame([0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    let mut sketch = Source::new(
+        "tangent-via",
+        picked(principal(PrincipalEntity::XyPlane)),
+        front,
+    );
+    let p0 = sketch.point("p0", 0.0, 0.0);
+    let joint = sketch.point("joint", 10.0, 0.0);
+    let arc_end = sketch.point("arc-end", 20.0, 10.0);
+    let line = sketch.entity(
+        "line",
+        PlanarCurve::Line {
+            start: point2(0.0, 0.0),
+            end: point2(10.0, 0.0),
+        },
+        [p0, joint.clone()],
+    );
+    let arc = sketch.entity(
+        "arc",
+        PlanarCurve::Arc {
+            center: point2(10.0, 10.0),
+            radius: PositiveLength::new(10.0).unwrap(),
+            start_angle: Angle::new(-std::f64::consts::FRAC_PI_2).unwrap(),
+            end_angle: Angle::new(0.0).unwrap(),
+            sense: Sense::Forward,
+        },
+        [joint.clone(), arc_end],
+    );
+    sketch
+        .constraint(
+            "via-end",
+            SketchRelation::Tangent {
+                a: line.clone(),
+                b: arc.clone(),
+                contact: Some(Contact::Via(joint)),
+            },
+        )
+        .constraint(
+            "no-contact",
+            SketchRelation::Tangent {
+                a: line,
+                b: arc,
+                contact: None,
+            },
+        );
+    let id = sketch.add_to(&mut ir);
+    let planned = plan(&ir, &[&id]);
+    let [item] = planned.items.as_slice() else {
+        panic!("one written sketch: {:?}", planned.unwritten);
+    };
+    let tangents = item
+        .relations
+        .iter()
+        .filter_map(|relation| match relation.kind {
+            RelationKind::Tangent(ends) => Some(ends),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        tangents,
+        [
+            Some(TangencyEnds {
+                starts: [false, true],
+                aligned: true,
+            }),
+            None,
+        ]
+    );
+    let Some(Container::Ordered { members, .. }) = ir.design.containers.first_mut() else {
+        panic!("the cube's timeline");
+    };
+    members.insert(0, Member::Feature(id));
+    let (_, decoded, bytes) = write_bytes(&ir);
+    let design = segment(&bytes, "FusionDesignSegmentType1");
+    let tangency_records = design
+        .primary
+        .keys()
+        .filter(|index| design.type_of(**index) == Some(types::SKETCH_TANGENCY.guid))
+        .count();
+    let shared_records = design
+        .primary
+        .keys()
+        .filter(|index| design.type_of(**index) == Some(types::SKETCH_RELATION.guid))
+        .count();
+    assert_eq!(
+        tangency_records, 1,
+        "only Via(shared-end) uses SKETCH_TANGENCY"
+    );
+    assert_eq!(
+        shared_records, 1,
+        "branchless tangency uses shared SKETCH_RELATION"
+    );
+    let decoded_tangents = decoded
+        .model
+        .sketch_constraints
+        .iter()
+        .filter(|c| format!("{:?}", c.definition.kind()).starts_with("Tangent"))
+        .count();
+    assert_eq!(decoded_tangents, 2);
 }
