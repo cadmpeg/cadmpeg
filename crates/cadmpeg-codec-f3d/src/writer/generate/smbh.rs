@@ -591,6 +591,62 @@ fn encode_wire_body_smbh(
     Ok(bytes)
 }
 
+/// Whether the B-rep stream has no form for `surface`: the carriers the face
+/// encoder's surface loop refuses. An error encoding a cacheless construction
+/// is the encoder's to report, not a missing form.
+pub(super) fn surface_has_no_form(
+    target: &CadIr,
+    surface: &cadmpeg_ir::geometry::Surface,
+) -> Result<bool, CodecError> {
+    use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
+
+    match surface.geometry.solved() {
+        Some(
+            SolvedSurfaceGeometry::Plane(_)
+            | SolvedSurfaceGeometry::Cylinder(_)
+            | SolvedSurfaceGeometry::Cone(_)
+            | SolvedSurfaceGeometry::Sphere(_)
+            | SolvedSurfaceGeometry::Torus(_)
+            | SolvedSurfaceGeometry::Nurbs(_),
+        ) => Ok(false),
+        Some(SolvedSurfaceGeometry::Polygonal(_) | SolvedSurfaceGeometry::Transformed(_)) => {
+            Ok(true)
+        }
+        None | Some(SolvedSurfaceGeometry::Unknown { .. }) => {
+            native_cacheless_procedural_surface(&mut Vec::new(), target, surface)
+                .map(|written| !written)
+        }
+    }
+}
+
+/// Whether the B-rep stream has no form for `curve`: the carriers
+/// [`encode_source_less_curves`] refuses, with the error rule of
+/// [`surface_has_no_form`].
+pub(super) fn curve_has_no_form(
+    target: &CadIr,
+    curve: &cadmpeg_ir::geometry::Curve,
+) -> Result<bool, CodecError> {
+    match curve.geometry.solved() {
+        Some(
+            SolvedCurveGeometry::Line(_)
+            | SolvedCurveGeometry::Circle(_)
+            | SolvedCurveGeometry::Ellipse(_)
+            | SolvedCurveGeometry::Nurbs(_)
+            | SolvedCurveGeometry::Degenerate(_),
+        ) => Ok(false),
+        Some(
+            SolvedCurveGeometry::Parabola(_)
+            | SolvedCurveGeometry::Hyperbola(_)
+            | SolvedCurveGeometry::Composite { .. }
+            | SolvedCurveGeometry::Polyline(_)
+            | SolvedCurveGeometry::Transformed(_)
+            | SolvedCurveGeometry::Unknown { .. },
+        ) => Ok(true),
+        None => native_cacheless_procedural_curve(&mut Vec::new(), target, &curve.id)
+            .map(|written| !written),
+    }
+}
+
 fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecError> {
     let geometry = &target.geometry;
     for carrier in &geometry.curves {
