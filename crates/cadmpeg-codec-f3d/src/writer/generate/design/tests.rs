@@ -11,17 +11,19 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::design::container::{Container, Folder, OrderedKind, Rollback};
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
-use cadmpeg_ir::design::evaluation::{CurrentState, EvaluationStatus};
+use cadmpeg_ir::design::evaluation::{
+    CurrentState, Evaluation, EvaluationStatus, StateBase, StateContent, StateDelta,
+};
 use cadmpeg_ir::design::expr::{
     BinaryOp, Expression, ExpressionDialect, ExpressionToken, Neutral, Node,
 };
 use cadmpeg_ir::design::feature::{Feature, FeatureDefinition, FeatureOperation, OperationFamily};
-use cadmpeg_ir::design::ids::{ArrangementId, ContainerId};
+use cadmpeg_ir::design::ids::{ArrangementId, ContainerId, EvaluationId};
 use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::parameter::{
     DesignParameter, ParameterDefinition, ParameterOwner, ParameterValue,
 };
-use cadmpeg_ir::design::refs::{Member, Position};
+use cadmpeg_ir::design::refs::{Evaluated, Member, Position};
 use cadmpeg_ir::design::scope::{DesignScope, OccurrenceDesign};
 use cadmpeg_ir::design::selection::{OccurrencePath, PathStep, StepRef};
 use cadmpeg_ir::design::units::{Quantity, Unit, UnitFactor, UnitSymbol, ValueKind};
@@ -1014,6 +1016,77 @@ fn a_stale_current_state_and_its_pose_are_charged() {
         "{:#?}",
         report.losses
     );
+}
+
+#[test]
+fn a_stale_and_a_current_evaluation_are_each_charged_once_by_name() {
+    let mut ir = scoped_cube();
+    let timeline = ContainerId::mint("test:design:container#timeline").expect("identity grammar");
+    let stale = EvaluationId::mint("test:design:evaluation#tool").expect("identity grammar");
+    let current = EvaluationId::mint("test:design:evaluation#start").expect("identity grammar");
+    ir.design.evaluations.extend([
+        Evaluation {
+            id: stale.clone(),
+            scope: root(),
+            configuration: None,
+            of: Evaluated::Tool(FeatureId::mint(EXTRUDE).expect("identity grammar")),
+            status: EvaluationStatus::Stale,
+            content: None,
+            native_ref: None,
+        },
+        Evaluation {
+            id: current.clone(),
+            scope: root(),
+            configuration: None,
+            of: Evaluated::State(Position::Start(timeline.clone())),
+            status: EvaluationStatus::Current,
+            content: Some(StateContent {
+                base: StateBase::Empty,
+                delta: StateDelta::default(),
+            }),
+            native_ref: None,
+        },
+    ]);
+    let root = root();
+    let stale = format!("{stale}: {root} tool body of {EXTRUDE} (stale)");
+    let current = format!("{current}: {root} state at the start of {timeline}");
+    for dropped in [false, true] {
+        super::FAIL_NEXT_PLAN.with(|fail| fail.set(dropped));
+        let (report, _) = write(&ir);
+        assert!(
+            loss(&report, "export/evaluation.stale")
+                .iter()
+                .any(|message| message.contains(&stale)),
+            "dropped {dropped}: {:#?}",
+            report.losses
+        );
+        assert!(
+            loss(
+                &report,
+                &F3dLossCode::WriterDesignRecordOmitted.kind().to_string()
+            )
+            .iter()
+            .any(|message| message.contains("evaluation") && message.contains(&current)),
+            "dropped {dropped}: {:#?}",
+            report.losses
+        );
+        let charged_by_name = [
+            "design.scopes",
+            "design.containers",
+            "design.features",
+            "design.parameters",
+            "design.evaluations",
+        ];
+        assert!(
+            !loss(&report, "export/arena.omitted").iter().any(|message| {
+                charged_by_name
+                    .iter()
+                    .any(|arena| message.contains(&format!("`{arena}`")))
+            }),
+            "dropped {dropped}: {:#?}",
+            report.losses
+        );
+    }
 }
 
 #[test]
