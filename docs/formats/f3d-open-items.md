@@ -846,6 +846,30 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer of several result bodies must number the faces of each body. The edge and vertex tags of the earlier bodies against the start of the next run would settle it.
 
+### DR-893. Layouts of the remaining records of a Base Feature design
+
+**Question.** What are the field layouts of the records of a `Base Feature` design's Design stream that `f3d.md` §3.1 "**Record roster.**" lists without a layout, and of its Browser segment?
+
+**Known.** `f3d.md` §3.1 "**Record roster.**" gives each record's type, version, length, and order. "**Component aggregate.**", "**Origin records.**", "**Body-reference records.**", "**ACT segment of a Base Feature design.**", and the records that the timeline context names have stated layouts. The other records have fixed lengths except the Protein asset manager, the root instance (252 or 384 bytes), the snapshot body-map companions, and the `Body` owners. Apart from their record indices, class tags, GUIDs, names, and the Protein asset list, their bytes are the same in every one-body design. The Browser segment (segment ID `2`, segment type code `6`) holds 31 records for one body; each references Design records across segments.
+
+**Need.** A writer of a design that Fusion opens writes every record of the roster and the Browser segment. Field tables for these records, in particular the Protein asset manager, the `AssetSettings` record, the unit-system groups, the `Body` owners, the root instance, and the Browser records.
+
+### DR-894. Count before the parameter-collection companion
+
+**Question.** What does the u32 `c` at offset 30 of the parameter collection (type `B0556F58-EE09-46A7-B18F-E296F48E5B13`, type version `4`) count?
+
+**Known.** `f3d.md` §3.1 "**Component records.**" gives the layout. `c` is at least the parameter count `n` and often equal to it.
+
+**Need.** A writer stores `c = n`. Collections with `c > n` against their deleted or unused parameters would settle the meaning.
+
+### DR-895. Evaluation duration and epoch of an item tail
+
+**Question.** What unit does the evaluation duration of a feature item tail use, and what selects the evaluation epoch?
+
+**Known.** `f3d.md` §3.1 "**Record timestamps and evaluation values.**" gives epoch `252` for every item of a stream with MetaStream generation words `1234, 8, 36`, and a positive duration for a `Base Feature` item. Streams with other generation words store other epochs, and two of them store more than one epoch value.
+
+**Need.** A writer must choose both values. The relation between the epoch and the generation words in the other streams.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences
