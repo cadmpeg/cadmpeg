@@ -4124,6 +4124,7 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
                 crate::tree::file_root_id(),
                 cadmpeg_ir::products::ExternalDocument::default(),
             )?;
+            crate::design_v11::project(ctx, &mut decoded.ir, &mut decoded.body.losses)?;
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
                 ctx,

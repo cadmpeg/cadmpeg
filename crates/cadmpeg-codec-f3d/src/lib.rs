@@ -92,6 +92,7 @@ mod clock;
 mod container;
 mod decode;
 mod design;
+mod design_v11;
 mod dialect;
 mod f3z;
 pub use f3z::{
