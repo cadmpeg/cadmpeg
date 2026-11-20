@@ -5322,6 +5322,183 @@ Parsed by:
 | 4 | 1 | `zero_separator` | `u8` | little | spec | one zero byte follows the ordinal |
 | 5 | 4 | `first_side_extent` | `u32` | little | spec | the first-side value `2` follows that byte |
 
+## `sketch_extrude_scope_frame`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 349 B
+
+Offsets are relative to the scope's primary indexed header. The feature item tail of 78 + 2L bytes starts at offset 349.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/extrude.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The indexed header is followed by nine zero bytes |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | The indexed header is followed by nine zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `flag` | `u8` | little | spec | nine zero bytes, the byte `1`, six zero bytes · value `1` |
+| 21 | 6 | `zero_run_6` | `bytes[6]` | little | spec | nine zero bytes, the byte `1`, six zero bytes · value `[0, 0, 0, 0, 0, 0]` |
+| 28 | 42 | `operation_fields` | `bytes[42]` | little | spec | The layout `current_extrude_operation_fields`: operation 4, direction 1, face-extend option 2, direction reversal 0, geometry kind 1, start support 0, three zero bytes, and the unit profile normal. |
+| 70 | 2 | `absent_slots_0_1` | `bytes[2]` | little | spec | two absent slots · value `[0, 0]` |
+| 72 | 11 | `along_distance_owner` | `bytes[11]` | little | spec | the `AlongDistance` owner, the start record, an absent slot |
+| 83 | 11 | `start_record` | `bytes[11]` | little | spec | the `AlongDistance` owner, the start record, an absent slot |
+| 94 | 1 | `absent_slot_4` | `u8` | little | spec | the `AlongDistance` owner, the start record, an absent slot · value `0` |
+| 95 | 11 | `taper_angle_owner` | `bytes[11]` | little | spec | the `TaperAngle` owner, and an absent slot |
+| 106 | 1 | `absent_slot_6` | `u8` | little | spec | the `TaperAngle` owner, and an absent slot · value `0` |
+| 107 | 17 | `extent_fields` | `bytes[17]` | little | spec | The layout `current_extrude_non_target_extent_pair`: first-side extent 1, five zero bytes, target option 0, and second-side extent 0. |
+| 124 | 23 | `zero_run_23` | `bytes[23]` | little | spec | Then come twenty-three zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 147 | 4 | `profile_group_count` | `u32` | little | spec | the profile-group count `1` and the profile group · value `1` |
+| 151 | 11 | `profile_group` | `bytes[11]` | little | spec | the profile-group count `1` and the profile group |
+| 162 | 4 | `zero_word_162` | `u32` | little | spec | a zero u32, the result-body node count `1` · value `0` |
+| 166 | 4 | `body_node_count` | `u32` | little | spec | the result-body node count `1` and the browser-node member of the result body · value `1` |
+| 170 | 11 | `body_node` | `bytes[11]` | little | spec | the result-body node count `1` and the browser-node member of the result body |
+| 181 | 4 | `zero_word_181` | `u32` | little | spec | a zero u32, the body-operand group count `0` · value `0` |
+| 185 | 4 | `body_operand_group_count` | `u32` | little | spec | the body-operand group count `0` · value `0` |
+| 189 | 4 | `zero_guid_length` | `u32` | little | spec | the LP-UTF16 zero GUID `00000000-0000-0000-0000-000000000000` · value `36` |
+| 193 | 72 | `zero_guid_utf16` | `u16[36]` | little | spec | the LP-UTF16 zero GUID `00000000-0000-0000-0000-000000000000` |
+| 265 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes, the scope-reference count `5` · value `[0, 0, 0]` |
+| 268 | 4 | `scope_reference_count` | `u32` | little | spec | the scope-reference count `5` · value `5` |
+| 272 | 55 | `scope_references` | `bytes[55]` | little | spec | Five eleven-byte references. |
+| 327 | 4 | `current_history_state` | `u32` | little | spec | the current history-state identity |
+| 331 | 4 | `family_name_length` | `u32` | little | spec | the LP-UTF16 family name `Extrude` · value `7` |
+| 335 | 14 | `family_name_utf16` | `u16[7]` | little | spec | the LP-UTF16 family name `Extrude` |
+
+Unstated regions:
+
+- `27..28` (1 B): One byte between the six zero bytes and the operation fields.
+
+## `sketch_extrude_start_record`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 100 B
+
+Offsets are relative to the start record's primary indexed header. The paired indexed header starts at offset 100.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | After ten zero bytes it stores a reference to the `Extrude` scope, u32 `1` |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | After ten zero bytes it stores a reference to the `Extrude` scope, u32 `1` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 11 | `extrude_scope` | `bytes[11]` | little | spec | After ten zero bytes it stores a reference to the `Extrude` scope, u32 `1` |
+| 32 | 4 | `one` | `u32` | little | spec | After ten zero bytes it stores a reference to the `Extrude` scope, u32 `1` · value `1` |
+| 36 | 11 | `selection_identity` | `bytes[11]` | little | spec | a reference to its persistent selection identity (type `C46D3EEB-40E1-43FA-83DC-9CB204335417`) |
+| 47 | 4 | `epoch` | `u32` | little | spec | the evaluation epoch, the f64 evaluation duration, the second evaluation epoch, a reference to its item-tail companion (type |
+| 51 | 8 | `duration` | `f64` | little | spec | the evaluation epoch, the f64 evaluation duration, the second evaluation epoch, a reference to its item-tail companion (type |
+| 59 | 4 | `second_epoch` | `u32` | little | spec | the evaluation epoch, the f64 evaluation duration, the second evaluation epoch, a reference to its item-tail companion (type |
+| 63 | 11 | `companion` | `bytes[11]` | little | spec | a reference to its item-tail companion (type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`) |
+| 74 | 3 | `flags` | `bytes[3]` | little | spec | the bytes `01 00 00`, a reference to its record-timestamp table (type · value `[1, 0, 0]` |
+| 77 | 11 | `timestamp_table` | `bytes[11]` | little | spec | a reference to its record-timestamp table (type `6CCF41D5-40BE-48ED-A834-18F3EAED6C57`) |
+| 88 | 1 | `zero` | `u8` | little | spec | a zero byte, and a second reference to the `Extrude` scope · value `0` |
+| 89 | 11 | `extrude_scope_repeat` | `bytes[11]` | little | spec | a zero byte, and a second reference to the `Extrude` scope |
+
+## `sketch_extrude_profile_group`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 124 B
+
+Offsets are relative to the profile group's primary indexed header. The paired indexed header starts at offset 124.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | After ten zero bytes it stores the member count `1`, a reference to the profile selection |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | After ten zero bytes it stores the member count `1`, a reference to the profile selection · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `member_count` | `u32` | little | spec | After ten zero bytes it stores the member count `1`, a reference to the profile selection · value `1` |
+| 25 | 11 | `profile_selection` | `bytes[11]` | little | spec | After ten zero bytes it stores the member count `1`, a reference to the profile selection |
+| 36 | 2 | `zero_run_2` | `bytes[2]` | little | spec | a reference to the profile selection, two zero bytes, u32 `1`, a reference to its identity wrapper · value `[0, 0]` |
+| 38 | 4 | `one` | `u32` | little | spec | a reference to the profile selection, two zero bytes, u32 `1`, a reference to its identity wrapper · value `1` |
+| 42 | 11 | `identity_wrapper` | `bytes[11]` | little | spec | a reference to the profile selection, two zero bytes, u32 `1`, a reference to its identity wrapper |
+| 53 | 8 | `operand_role` | `u64` | little | spec | the u64 operand role `0x0000004100000000` (profile), ten zero bytes · value `279172874240` |
+| 61 | 10 | `zero_run_10_after_role` | `bytes[10]` | little | spec | the u64 operand role `0x0000004100000000` (profile), ten zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 71 | 4 | `epoch` | `u32` | little | spec | the second evaluation epoch, a reference to its item-tail companion, the bytes `01 00 00`, a reference to its record-timestamp table, a zero byte, and a reference to the `Extrude` scope |
+| 75 | 8 | `duration` | `f64` | little | spec | the second evaluation epoch, a reference to its item-tail companion, the bytes `01 00 00`, a reference to its record-timestamp table, a zero byte, and a reference to the `Extrude` scope |
+| 83 | 4 | `second_epoch` | `u32` | little | spec | the second evaluation epoch, a reference to its item-tail companion, the bytes `01 00 00`, a reference to its record-timestamp table, a zero byte, and a reference to the `Extrude` scope |
+| 87 | 11 | `companion` | `bytes[11]` | little | spec | the second evaluation epoch, a reference to its item-tail companion, the bytes `01 00 00`, a reference to its record-timestamp table, a zero byte, and a reference to the `Extrude` scope |
+| 98 | 3 | `flags` | `bytes[3]` | little | spec | the second evaluation epoch, a reference to its item-tail companion, the bytes `01 00 00`, a reference to its record-timestamp table, a zero byte, and a reference to the `Extrude` scope · value `[1, 0, 0]` |
+| 101 | 11 | `timestamp_table` | `bytes[11]` | little | spec | the second evaluation epoch, a reference to its item-tail companion, the bytes `01 00 00`, a reference to its record-timestamp table, a zero byte, and a reference to the `Extrude` scope |
+| 112 | 1 | `zero` | `u8` | little | spec | the second evaluation epoch, a reference to its item-tail companion, the bytes `01 00 00`, a reference to its record-timestamp table, a zero byte, and a reference to the `Extrude` scope · value `0` |
+| 113 | 11 | `extrude_scope` | `bytes[11]` | little | spec | the second evaluation epoch, a reference to its item-tail companion, the bytes `01 00 00`, a reference to its record-timestamp table, a zero byte, and a reference to the `Extrude` scope |
+
+## `sketch_extrude_profile_selection_tail`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 94 B
+
+Offsets are relative to the end of the owner text, at selection offset 116 + 2c for an owner text of c code units. The paired indexed header starts at offset 94.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `one_first` | `u32` | little | spec | It stores u32 `1`, u32 `0`, u32 `1`, a reference to its persistent selection identity · value `1` |
+| 4 | 4 | `zero_word` | `u32` | little | spec | It stores u32 `1`, u32 `0`, u32 `1`, a reference to its persistent selection identity · value `0` |
+| 8 | 4 | `one_second` | `u32` | little | spec | It stores u32 `1`, u32 `0`, u32 `1`, a reference to its persistent selection identity · value `1` |
+| 12 | 11 | `selection_identity` | `bytes[11]` | little | spec | It stores u32 `1`, u32 `0`, u32 `1`, a reference to its persistent selection identity |
+| 23 | 8 | `operand_role` | `u64` | little | spec | the u64 operand role `0x0000004100000000` (profile), ten zero bytes · value `279172874240` |
+| 31 | 10 | `zero_run_10` | `bytes[10]` | little | spec | the u64 operand role `0x0000004100000000` (profile), ten zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 41 | 4 | `epoch` | `u32` | little | spec | the second evaluation epoch, a reference to its item-tail companion `N + 2` |
+| 45 | 8 | `duration` | `f64` | little | spec | the second evaluation epoch, a reference to its item-tail companion `N + 2` |
+| 53 | 4 | `second_epoch` | `u32` | little | spec | the second evaluation epoch, a reference to its item-tail companion `N + 2` |
+| 57 | 11 | `companion` | `bytes[11]` | little | spec | the second evaluation epoch, a reference to its item-tail companion `N + 2` |
+| 68 | 3 | `flags` | `bytes[3]` | little | spec | the bytes `01 00 00`, a reference to its record-timestamp table `N + 1` · value `[1, 0, 0]` |
+| 71 | 11 | `timestamp_table` | `bytes[11]` | little | spec | a reference to its record-timestamp table `N + 1`, a zero byte, and a reference to the `Extrude` scope |
+| 82 | 1 | `zero` | `u8` | little | spec | a reference to its record-timestamp table `N + 1`, a zero byte, and a reference to the `Extrude` scope · value `0` |
+| 83 | 11 | `extrude_scope` | `bytes[11]` | little | spec | a reference to its record-timestamp table `N + 1`, a zero byte, and a reference to the `Extrude` scope |
+
+## `sketch_extrude_parameter_owner_tail`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 65 B
+
+Offsets are relative to the scalar envelope, which starts at owner offset 39 after `design_parameter_owner_prefix`. The paired indexed header starts at offset 65.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `envelope_marker` | `u8` | little | spec | the direct `00 + f64` scalar envelope · value `0` |
+| 1 | 8 | `scalar` | `f64` | little | spec | The scalar is the distance in centimetres or the taper angle in radians |
+| 9 | 11 | `parameter` | `bytes[11]` | little | spec | The tail stores the scalar envelope, a reference to the owner's parameter, the owned ordinal, four zero bytes |
+| 20 | 4 | `owned_ordinal` | `u32` | little | spec | The tail stores the scalar envelope, a reference to the owner's parameter, the owned ordinal, four zero bytes |
+| 24 | 4 | `zero_run_4` | `bytes[4]` | little | spec | The tail stores the scalar envelope, a reference to the owner's parameter, the owned ordinal, four zero bytes · value `[0, 0, 0, 0]` |
+| 28 | 11 | `repeated_scope` | `bytes[11]` | little | spec | the repeated scope field with marker `01`, variant `0`, and flag byte `0` |
+| 39 | 1 | `variant_marker` | `u8` | little | spec | the repeated scope field with marker `01`, variant `0`, and flag byte `0` · value `1` |
+| 40 | 1 | `variant` | `u8` | little | spec | the repeated scope field with marker `01`, variant `0`, and flag byte `0` · value `0` |
+| 41 | 1 | `flag` | `u8` | little | spec | the repeated scope field with marker `01`, variant `0`, and flag byte `0` · value `0` |
+| 42 | 11 | `companion` | `bytes[11]` | little | spec | a reference to the companion and one zero byte, and a reference to the `Extrude` scope |
+| 53 | 1 | `zero` | `u8` | little | spec | a reference to the companion and one zero byte, and a reference to the `Extrude` scope · value `0` |
+| 54 | 11 | `extrude_scope` | `bytes[11]` | little | spec | a reference to the companion and one zero byte, and a reference to the `Extrude` scope |
+
+## `sketch_extrude_body_presentation_owner_prefix`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 25 B
+
+Offsets are relative to the body-presentation owner's primary indexed header. The name code units start at offset 25.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | ends with the code-unit count of its LP-UTF16 name |
+| 21 | 4 | `name_length` | `u32` | little | spec | ends with the code-unit count of its LP-UTF16 name |
+
+Unstated regions:
+
+- `11..21` (10 B): Ten bytes between the indexed header and the name.
+
+## `sketch_extrude_body_owner`
+
+Spec §Records of a sketch-driven Extrude · layout: byte offsets · size: 103 B
+
+Offsets are relative to the `Body` owner's primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | After eleven zero bytes it stores u32 `1`, u32 `1`, a reference to the body-presentation owner |
+| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | After eleven zero bytes it stores u32 `1`, u32 `1`, a reference to the body-presentation owner · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 22 | 4 | `first_count` | `u32` | little | spec | After eleven zero bytes it stores u32 `1`, u32 `1`, a reference to the body-presentation owner · value `1` |
+| 26 | 4 | `second_count` | `u32` | little | spec | After eleven zero bytes it stores u32 `1`, u32 `1`, a reference to the body-presentation owner · value `1` |
+| 30 | 11 | `presentation_owner` | `bytes[11]` | little | spec | After eleven zero bytes it stores u32 `1`, u32 `1`, a reference to the body-presentation owner |
+| 41 | 1 | `body_map_companion_marker` | `u8` | little | spec | the byte `1`, a reference to the snapshot body-map companion · value `1` |
+| 42 | 11 | `body_map_companion` | `bytes[11]` | little | spec | the byte `1`, a reference to the snapshot body-map companion |
+| 53 | 11 | `body_map` | `bytes[11]` | little | spec | a reference to the body map (type `74CA4562-59F8-4C97-8AD1-F8297C21F9AA`) |
+| 64 | 1 | `component_record_marker` | `u8` | little | spec | the byte `1`, a reference to a 42-byte record of type `372234A0-2A6C-4122-8047-E74DBA04F326` · value `1` |
+| 65 | 11 | `component_record` | `bytes[11]` | little | spec | the byte `1`, a reference to a 42-byte record of type `372234A0-2A6C-4122-8047-E74DBA04F326` |
+| 76 | 1 | `zero` | `u8` | little | spec | a zero byte, u32 `1`, a reference to the body-presentation owner, and a reference to the component aggregate · value `0` |
+| 77 | 4 | `third_count` | `u32` | little | spec | a zero byte, u32 `1`, a reference to the body-presentation owner, and a reference to the component aggregate · value `1` |
+| 81 | 11 | `presentation_owner_repeat` | `bytes[11]` | little | spec | a zero byte, u32 `1`, a reference to the body-presentation owner, and a reference to the component aggregate |
+| 92 | 11 | `component_aggregate` | `bytes[11]` | little | spec | a zero byte, u32 `1`, a reference to the body-presentation owner, and a reference to the component aggregate |
+
 ## `early_distance_extrude_absent_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 34 B

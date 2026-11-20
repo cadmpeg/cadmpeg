@@ -834,7 +834,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What does the u32 at offset 29 of the item-tail companion (type `5FBE538E-139B-46D4-BCAF-CC796D1E1F78`) encode?
 
-**Known.** `f3d.md` §3.1 "**Item-tail companion.**" gives the record. The word is `0`, `2`, or `3`. A `Sketch` or `Extrude` item with `s0` and `s1` equal to `0` can store `0` or `2`. A `Base Feature` item stores `0`. The start record, profile group, and profile selection of a sketch-driven `Extrude` each reference their own companion, which stores `0`. In streams with serializer magic `1234`, the word `2` occurs on one `Sketch` and one `Extrude` item.
+**Known.** `f3d.md` §3.1 "**Item-tail companion.**" gives the record. The word is `0`, `2`, or `3`. A `Sketch` or `Extrude` item with `s0` and `s1` equal to `0` can store `0` or `2`. A `Base Feature` item stores `0`. In a design whose timeline lists `Sketch` items and one `Extrude`, the start record, profile group, and profile selection of the `Extrude` each reference their own companion, which stores `0`.
 
 **Need.** A writer must choose the word for each item it writes.
 
@@ -846,15 +846,23 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** A writer of several result bodies must number the faces of each body. The edge and vertex tags of the earlier bodies against the start of the next run would settle it.
 
+### DR-890. Fields of a sketch-driven Extrude without an established rule
+
+**Question.** For a sketch-driven `Extrude`, what does the byte at offset 27 of the scope frame encode, and what selects the family discriminator of its parameter records, the body key of its body map, the order of its five scope references, and the 107-byte form of its `Body` owner?
+
+**Known.** `f3d.md` §3.1 "**Sketch-driven Extrude scope frame.**", "**Extrude parameter owners.**", and "**Result body.**" give the records. The table `sketch_extrude_scope_frame` in `docs/layouts/f3d.toml` records the byte at offset 27 as a gap. The byte is `0` or `1`, and both values occur in one design. The value `1` occurs with positive and with negative `AlongDistance` values. The two parameter records of one `Extrude` store the same family discriminator, and the values `6`, `4`, and `0` occur. The body key is `0` or `6`. The five scope references occur in the order of the list in `f3d.md` and in the order `AlongDistance` owner, `TaperAngle` owner, start record, profile group, profile selection. The `Body` owner also has a 107-byte form, with a different zero run and different words at offsets 22, 41, and 64.
+
+**Need.** A writer must fill each field and choose each form. A design that stores both values of the scope byte, compared item by item against its edit history, would settle the first.
+
+### DR-891. Member order of the owner collection and dependency table of a sketch-driven Extrude
+
+**Question.** In a design whose timeline lists one `Sketch` and then an `Extrude`, in what order do the owner collection, the record of type `B65B5682-9355-44C7-8AFC-823058C4A36B`, and the dependency table (type `B13113CC-031E-4F93-8240-C4C10728869F`) list their records, and what adds a record of type `BFB592FE-03DD-4DAA-A4AC-14D02ABB672A` to them?
+
+**Known.** `f3d.md` §3.1 "**Owner collection and dependency table of a `Sketch` and an `Extrude`.**" gives the ten records that the three lists name. In the common form, the owner collection lists ten members in this order: the record of type `5D15E992-1E93-4D79-A553-10D2624148AE`, the `Sketch` scope, the placement path, the sketch placement, the profile group, the profile selection, the `AlongDistance` owner, the `TaperAngle` owner, the start record, and the `Extrude` scope. The `B65B5682` record lists them in this order: the `5D15E992` record, the placement path, the sketch placement, the `Sketch` scope, the profile selection, the profile group, the `AlongDistance` owner, the `TaperAngle` owner, the start record, and the `Extrude` scope. The input map of the dependency table stores these entries in this order, each with the records it reads and their flags: the `Sketch` scope reads the `5D15E992` record (`0x1000`) and the sketch placement (`1`); the sketch placement reads the placement path (`1`); the `Extrude` scope reads the `5D15E992` record (`0x1000`) and the start record (`1`); the profile group reads the profile selection (`1`); the profile selection reads the `Sketch` scope (`4`); and the start record reads the profile group (`1`), the `AlongDistance` owner (`1`), and the `TaperAngle` owner (`1`). The dependent map stores the same edges by the record read, in this order of read records: the `5D15E992` record, the `Sketch` scope, the placement path, the sketch placement, the profile group, the start record, the profile selection, the `AlongDistance` owner, and the `TaperAngle` owner. The three lists of some designs also hold one record of type `BFB592FE-03DD-4DAA-A4AC-14D02ABB672A`.
+
+**Need.** A writer must write the three lists. The position of the `BFB592FE` record in each list, against the edit history of the designs that hold it, would settle the question.
+
 ## 2. External references
-
-### DR-890. Words of a sketch-driven Extrude without an established rule
-
-**Question.** What do the byte at offset 27 of the `Extrude` scope, the u32 at offset 22 of the parameter record (type `7A6A3D31-BE74-4E19-9115-20642944C2E4`), and the body key at offset 25 of the body map (type `74CA4562-59F8-4C97-8AD1-F8297C21F9AA`) of a sketch-driven `Extrude` encode?
-
-**Known.** `f3d.md` §3.1 "**Sketch-driven Extrude scope frame.**", "**Extrude parameter owners.**", and "**Result body.**" give the three records. The scope byte is `0` or `1`, and both values occur in one design. It does not follow the sign of the `AlongDistance` value. The parameter word is `6`, `4`, or `0`. The body key is `0` or `6`. The `Body` owner of an Extrude's result body is 103 bytes in its common form; a 107-byte form also occurs, with a different zero run and different words at offsets 22, 41 and 64.
-
-**Need.** A writer must fill the three fields. A design that stores both values of the scope byte, compared item by item against its edit history, would settle the first.
 
 ### DR-111. Component-path poses of nested occurrences
 
