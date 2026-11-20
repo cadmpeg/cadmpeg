@@ -4653,6 +4653,11 @@ fn project_mesh_bodies(
         ));
     report
         .losses
+        .extend(crate::design::decode::mesh::mesh_component_flag_losses(
+            &native.design_mesh_features,
+        ));
+    report
+        .losses
         .extend(crate::design::decode::mesh::mesh_history_window_losses(
             &native.design_mesh_features,
         ));
