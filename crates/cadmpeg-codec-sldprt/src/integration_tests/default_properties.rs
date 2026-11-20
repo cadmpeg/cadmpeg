@@ -280,3 +280,46 @@ fn source_less_writer_writes_the_part_and_names_its_saved_properties() {
     plan.write_to(&mut bytes).unwrap();
     assert!(!bytes.is_empty());
 }
+
+/// A carrier whose retained bytes the fidelity does not hold is not written, and every saved
+/// property the document states is named.
+#[test]
+fn a_carrier_without_retained_bytes_writes_the_part_and_names_every_property() {
+    let mut decoded = fixture();
+    let carrier_id = decoded
+        .source_fidelity()
+        .annotations
+        .provenance
+        .iter()
+        .find(|(id, provenance)| {
+            id.starts_with("sldprt:file:block#") && provenance.stream() == MEMBER
+        })
+        .map(|(id, _)| id.clone())
+        .unwrap();
+    crate::test_support::make_retained_record_unavailable(
+        decoded.source_fidelity_mut(),
+        &carrier_id,
+    );
+    let saved = {
+        let mut ir = decoded.ir_mut();
+        let row = ir
+            .model
+            .attributes
+            .iter_mut()
+            .filter(is_property)
+            .find(|row| row.name == "SavedName")
+            .unwrap();
+        row.values = vec![Some(AttributeValue::float(1.0).unwrap())];
+        row.id.as_str().to_owned()
+    };
+    let (bytes, losses) = crate::test_support::write_with_unwritten_attributes(
+        decoded.ir(),
+        decoded.source_fidelity(),
+    )
+    .unwrap();
+    let scan = crate::test_support::container::scan(&bytes);
+    assert!(scan
+        .sections()
+        .all(|section| section.name() != Some(MEMBER)));
+    losses.assert_charged(Held::Nothing, "saved-property edits", &saved);
+}

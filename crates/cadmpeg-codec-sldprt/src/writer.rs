@@ -142,8 +142,9 @@ pub(crate) fn write_semantic_with_records(
         // No serializer writes a saved property: an edited one is charged and
         // its carrier is emitted as the source stored it, or not at all.
         let edited = match (source_scan.as_ref(), baseline) {
-            (Some(scan), Some(baseline)) => {
-                default_properties::validate_retention(scan, retained_records, annotations)?;
+            (Some(scan), Some(baseline))
+                if default_properties::carried(scan, retained_records, annotations) =>
+            {
                 default_properties::edited_properties(&normalized, &baseline.ir, scan)
             }
             _ => default_properties::stated_properties(&normalized),
@@ -419,13 +420,34 @@ pub(crate) fn write_semantic_with_records(
     let written_dialect =
         crate::dialect::SldprtDialect::from_declaration(written_declaration.as_deref()).id();
 
-    if let Some(scan) = source_scan.as_ref() {
-        default_properties::validate_emitted(scan, &sections)?;
-    }
     let type_ids = section_type_ids(source_scan.as_ref(), &sections)?;
     let envelope = envelope::build(&sections, &type_ids, source_scan.as_ref())?;
     writer.write_all(&envelope.bytes)?;
     losses.extend(envelope.losses());
+    let written_streams = sections
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .chain(generated_partition_sections.iter().map(String::as_str))
+        .collect::<HashSet<_>>();
+    losses.extend(cadmpeg_ir::codec::write::native_records_omitted(
+        "SLDPRT",
+        "because a native envelope holds no compound-file stream",
+        retained_records
+            .iter()
+            .filter(|record| {
+                record
+                    .id
+                    .as_str()
+                    .starts_with("sldprt:file:compound-stream#")
+            })
+            .filter(|record| {
+                annotations
+                    .provenance
+                    .get(record.id.as_str())
+                    .is_none_or(|provenance| !written_streams.contains(provenance.stream()))
+            })
+            .map(|record| record.id.as_str()),
+    ));
     losses.extend(cadmpeg_ir::codec::write::value_unwritable(
         "SLDPRT",
         "cuts these texts at a character boundary to their field's width",

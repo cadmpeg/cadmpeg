@@ -197,12 +197,18 @@ pub(crate) fn serialize_history_in_native_envelope_after_refusal(
 }
 
 pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {
+    make_retained_record_unavailable(fidelity, crate::SOURCE_IMAGE_ID);
+}
+
+/// Replace retained record `id` by its digest: the fidelity names the record
+/// and holds none of its bytes.
+pub(crate) fn make_retained_record_unavailable(fidelity: &mut SourceFidelity, id: &str) {
     let unavailable = {
         let record = fidelity
-            .retained_record(crate::SOURCE_IMAGE_ID)
-            .expect("decode retains the source image");
+            .retained_record(id)
+            .expect("decode retains the record");
         let digest = cadmpeg_ir::hash::digest::Sha256Digest::try_from(record.sha256().as_str())
-            .expect("decoded source image digest");
+            .expect("decoded record digest");
         cadmpeg_ir::RetainedSourceRecord::from_bytes(
             record.stream().to_owned(),
             record.offset(),
@@ -211,20 +217,17 @@ pub(crate) fn make_source_image_unavailable(fidelity: &mut SourceFidelity) {
                 sha256: digest,
             },
         )
-        .expect("source image extent")
+        .expect("record extent")
     };
     fidelity
-        .remove_retained_record(crate::SOURCE_IMAGE_ID)
-        .expect("decode retains the source image");
+        .remove_retained_record(id)
+        .expect("decode retains the record");
     fidelity
         .insert_retained_record(
-            crate::SOURCE_IMAGE_ID
-                .to_owned()
-                .try_into()
-                .expect("source image identity"),
+            id.to_owned().try_into().expect("record identity"),
             unavailable,
         )
-        .expect("source image identity is unique");
+        .expect("record identity is unique");
 }
 
 pub(crate) mod allocation;

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use std::collections::{BTreeMap, HashSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
 
@@ -93,58 +92,30 @@ pub(super) fn stated_properties(ir: &CadIr) -> BTreeMap<String, Held> {
         .collect()
 }
 
-pub(super) fn validate_retention(
+/// Whether every saved-property owner of the source is a retained native
+/// member that the write emits as stored: one retained record with the
+/// owner's bytes under the owner's stream. A compound-file owner never is.
+pub(super) fn carried(
     scan: &ContainerScan<'_>,
     records: &[crate::SourceRecord<'_>],
     annotations: &cadmpeg_ir::Annotations,
-) -> Result<(), CodecError> {
-    for owner in scan.sections().filter(|section| is_owner(*section)) {
-        if matches!(owner, Section::Compound(_)) {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT saved properties in compound streams require a retained compound writer"
-                    .into(),
-            ));
-        }
-        let id = owner.native_id();
-        let mut retained = records.iter().filter(|record| record.id == id);
-        let record = retained.next().ok_or_else(|| {
-            CodecError::NotImplemented(
-                "SLDPRT saved-property carrier has no retained source record".into(),
-            )
-        })?;
-        if retained.next().is_some()
-            || record.data != Some(owner.payload())
-            || annotations
+) -> bool {
+    scan.sections()
+        .filter(|section| is_owner(*section))
+        .all(|owner| {
+            if matches!(owner, Section::Compound(_)) {
+                return false;
+            }
+            let id = owner.native_id();
+            let mut retained = records.iter().filter(|record| record.id == id);
+            matches!(
+                (retained.next(), retained.next()),
+                (Some(record), None) if record.data == Some(owner.payload())
+            ) && annotations
                 .provenance
                 .get(id.as_str())
-                .is_none_or(|provenance| provenance.stream() != owner.source_stream().as_str())
-        {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT saved-property carrier differs from its complete source owner".into(),
-            ));
-        }
-    }
-    Ok(())
-}
-
-pub(super) fn validate_emitted(
-    scan: &ContainerScan<'_>,
-    sections: &[(String, Vec<u8>)],
-) -> Result<(), CodecError> {
-    for owner in scan.sections().filter(|section| is_owner(*section)) {
-        let mut emitted = sections
-            .iter()
-            .filter(|(name, _)| name == owner.source_stream().as_str());
-        if matches!(owner, Section::Compound(_))
-            || emitted
-                .next()
-                .is_none_or(|(_, payload)| payload != owner.payload())
-            || emitted.next().is_some()
-        {
-            return Err(CodecError::NotImplemented("SLDPRT saved-property carrier must be emitted unchanged under its source namespace".into()));
-        }
-    }
-    Ok(())
+                .is_some_and(|provenance| provenance.stream() == owner.source_stream().as_str())
+        })
 }
 
 fn same_attribute(left: &SourceAttribute, right: &SourceAttribute) -> bool {
