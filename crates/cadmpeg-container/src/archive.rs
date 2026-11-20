@@ -96,6 +96,7 @@ pub struct EntryRecord {
     declaration: Declaration,
     utf8_name: bool,
     local_header_error: Option<&'static str>,
+    metadata_error: Option<&'static str>,
     unreadable_range: Option<ByteRange>,
 }
 
@@ -216,48 +217,56 @@ impl<'a> ArchiveSnapshot<'a> {
         root: View<'a>,
         repeats: bool,
     ) -> Result<Self, CodecError> {
-        let index = match ZipIndex::admit(ctx, root.window())? {
-            Admission::Indexed(index) => index,
-            Admission::Unreadable(error) => return local::recover(root, error),
-        };
-        let (archive_central_start, archive_offset) = if repeats {
-            (
-                index.admitted.central_start,
-                index.admitted.archive_offset.ok_or_else(|| {
-                    CodecError::malformed("ZIP directory offset exceeds its position")
-                })?,
-            )
+        let (index, admitted) = if repeats {
+            let admitted = match directory_admission(ctx, root.window())? {
+                Admission::Indexed(admitted) => admitted,
+                Admission::Unreadable(error) => return local::recover(root, error),
+            };
+            (None, admitted)
         } else {
-            (
-                index.archive.central_directory_start(),
-                index.archive.offset(),
-            )
+            let index = match ZipIndex::admit(ctx, root.window())? {
+                Admission::Indexed(index) => index,
+                Admission::Unreadable(error) => return local::recover(root, error),
+            };
+            let admitted = index.admitted;
+            (Some(index), admitted)
         };
-        let central_entry_count = if repeats {
-            index.admitted.entry_count
-        } else {
-            let count = count_central_names(root.window(), archive_central_start)?;
-            if count != index.archive.len() {
-                return Err(CodecError::Malformed(
-                    "ZIP central directory contains duplicate entry names".into(),
-                ));
-            }
-            count
-        };
+        let (archive_central_start, archive_offset, central_entry_count) =
+            if let Some(index) = &index {
+                let start = index.archive.central_directory_start();
+                let count = count_central_names(root.window(), start)?;
+                if count != index.archive.len() {
+                    return Err(CodecError::Malformed(
+                        "ZIP central directory contains duplicate entry names".into(),
+                    ));
+                }
+                (start, index.archive.offset(), count)
+            } else {
+                (
+                    admitted.central_start,
+                    admitted.archive_offset.ok_or_else(|| {
+                        CodecError::malformed("ZIP directory offset exceeds its position")
+                    })?,
+                    admitted.entry_count,
+                )
+            };
         let mut names = BTreeSet::new();
         let mut entries = Vec::new();
         let mut central = archive_central_start;
         for ordinal in 0..central_entry_count {
-            let name = if repeats {
-                index::declaration_name(root.window(), central, index.admitted.entries_end)?.into()
-            } else {
-                index
+            let (name, metadata_error) = if let Some(index) = &index {
+                let name = index
                     .archive
                     .name_for_index(ordinal)
                     .ok_or_else(|| CodecError::malformed("ZIP indexed name is absent"))?
                     .map_err(|error| {
                         CodecError::malformed(format_args!("invalid ZIP entry name: {error}"))
-                    })?
+                    })?;
+                (name, None)
+            } else {
+                let (name, error) =
+                    index::declaration_name(root.window(), central, admitted.entries_end)?;
+                (name.into(), error)
             };
             if !names.insert(name.clone().into_owned()) && !repeats {
                 return Err(CodecError::malformed(format_args!(
@@ -271,13 +280,14 @@ impl<'a> ArchiveSnapshot<'a> {
                 archive_offset,
                 archive_central_start,
             )?;
-            let (record, next) = match admission {
+            let (mut record, next) = match admission {
                 Admission::Indexed(record) => record,
                 Admission::Unreadable(error) => {
                     drop(index);
                     return local::recover(root, error);
                 }
             };
+            record.metadata_error = metadata_error;
             entries.push(record);
             central = next;
         }
@@ -370,7 +380,7 @@ impl<'a> ArchiveSnapshot<'a> {
         let entry = self
             .entry(name)
             .ok_or_else(|| CodecError::malformed(format_args!("ZIP entry {name} is absent")))?;
-        if let Some(error) = entry.local_header_error {
+        if let Some(error) = entry.metadata_error.or(entry.local_header_error) {
             return Err(CodecError::malformed(format_args!(
                 "{}: {error}",
                 entry.name
@@ -528,6 +538,9 @@ impl<'a> ArchiveSnapshot<'a> {
             if let Some(error) = entry.local_header_error {
                 attributes.insert("local_header_error".to_owned(), error.to_owned());
             }
+            if let Some(error) = entry.metadata_error {
+                attributes.insert("metadata_error".to_owned(), error.to_owned());
+            }
             if let ZipCompression::Unsupported(method) = entry.compression {
                 attributes.insert("compression".to_owned(), format!("{method:?}"));
             }
@@ -563,7 +576,7 @@ impl<'a> ArchiveSnapshot<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct DirectoryPreflight {
     end_record: usize,
     central_start: u64,

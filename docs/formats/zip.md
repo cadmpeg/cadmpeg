@@ -6,6 +6,8 @@ The central-directory file header is 46 bytes in little-endian order. Its signat
 
 The effective member name uses UTF-8 when general flag bit 11 is set and CP437 otherwise. A Unicode Path extra field (`0x7075`) with a matching raw-name CRC-32 and valid UTF-8 content supplies the effective name. Repeated names are compared by effective name.
 
+Timestamp, Unicode Comment, and alignment extra fields carry optional metadata. Their values are independent of the effective member name, payload sizes, and local-header position.
+
 Encryption, compression support, payload checksum, and expansion validity concern a member's readable contents. They do not change its central-directory identity or bounded stored extent. An unreadable member has no admitted expanded payload. ZIP structural extents and unique entry identities must remain available before any member is interpreted.
 
 ## 2. Local member frames

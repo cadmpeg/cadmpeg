@@ -441,3 +441,47 @@ fn unreadable_step_named_asset_keeps_the_canonical_step_geometry() {
     patch(&mut bytes, "notes/export.step", 16, 14, &0u32.to_le_bytes());
     retained(&bytes);
 }
+
+#[test]
+fn invalid_optional_timestamp_omits_one_member_and_keeps_history_and_step() {
+    let mut bytes = members(&fixture("plate-fillet"), |rows| {
+        rows.insert("notes/time.txt".into(), b"x".to_vec());
+    });
+    let offset = central(&bytes, "notes/time.txt");
+    let name_end = offset + 46 + "notes/time.txt".len();
+    assert_eq!(View::u16_le_at(&bytes, offset + 30), Some(0));
+    bytes.splice(name_end..name_end, [0x55, 0x54, 0, 0]);
+    bytes[offset + 30..offset + 32].copy_from_slice(&4_u16.to_le_bytes());
+    let footer = bytes.len() - 22;
+    let size = View::u32_le_at(&bytes, footer + 12).unwrap();
+    bytes[footer + 12..footer + 16].copy_from_slice(&(size + 4).to_le_bytes());
+    let result = decode(&bytes);
+    assert_eq!(has(&result, OnshapeLossCode::MemberUnreadable), 1);
+    assert!(result.report().losses.iter().any(|note| {
+        OnshapeLossCode::MemberUnreadable.matches(note) && note.message.contains("notes/time.txt")
+    }));
+    assert!(result.ir().model.assets.iter().all(|asset| {
+        asset
+            .name
+            .as_ref()
+            .is_none_or(|name| name.as_str() != "notes/time.txt")
+    }));
+    assert_eq!(result.ir().model.features.len(), 3);
+    assert_eq!(result.ir().geometry.bodies.len(), 1);
+    validate(result);
+}
+
+#[test]
+fn broken_central_directory_refuses_the_bundle() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let mut bytes = fixture("plate-fillet");
+    let offset = central(&bytes, "manifest.json");
+    bytes[offset..offset + 4].fill(0);
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service()).unwrap();
+    let Err(error) = crate::archive::Bundle::open(&ctx, root) else {
+        panic!("broken directory must refuse the bundle")
+    };
+    assert!(error.to_string().contains("the ZIP directory is invalid"));
+}

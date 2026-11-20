@@ -189,6 +189,7 @@ fn descriptor_crc_equal_to_optional_signature_keeps_unsigned_layout() {
         }),
         utf8_name: false,
         local_header_error: None,
+        metadata_error: None,
         unreadable_range: None,
     };
     assert_eq!(

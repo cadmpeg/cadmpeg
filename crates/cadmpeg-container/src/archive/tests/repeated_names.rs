@@ -91,3 +91,55 @@ fn repeated_name_inventory_stops_at_the_admitted_directory_count_and_extent() {
         b"first"
     );
 }
+
+#[test]
+fn invalid_optional_metadata_is_isolated_to_its_member() {
+    for effective in ["notes/time.txt", "notes/水.txt"] {
+        let mut damaged = unicode_entry("notes/time.txt", effective, b"x");
+        damaged.extra.extend_from_slice(&[0x55, 0x54, 0, 0]);
+        let bytes = zip_fixture::archive(&[
+            RawEntry::stored("manifest.json", b"{}"),
+            damaged,
+            RawEntry::stored("geometry.step", b"geometry"),
+        ]);
+        let arena = DecodeArena::new();
+        let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+            .expect("root context");
+        let ordinary = ArchiveSnapshot::new(&ctx, root).expect("recovery snapshot");
+        assert!(ordinary.recovery_reason().is_some());
+        let snapshot = ArchiveSnapshot::with_repeated_names(&ctx, root).expect("opt-in snapshot");
+        assert!(snapshot.recovery_reason().is_none());
+        assert_eq!(snapshot.entries().len(), 3);
+        assert!(snapshot.entry(effective).is_some());
+        assert!(snapshot.open(&ctx, effective).is_err());
+        assert_eq!(
+            snapshot
+                .open(&ctx, "manifest.json")
+                .expect("readable manifest")
+                .window(),
+            b"{}"
+        );
+        assert_eq!(
+            snapshot
+                .open(&ctx, "geometry.step")
+                .expect("readable geometry")
+                .window(),
+            b"geometry"
+        );
+    }
+}
+
+#[test]
+fn repeated_names_recover_a_broken_directory() {
+    let mut bytes = zip_fixture::archive(&[RawEntry::stored("manifest.json", b"{}")]);
+    let central = bytes
+        .windows(4)
+        .position(|w| w == b"PK\x01\x02")
+        .expect("central header");
+    bytes[central..central + 4].fill(0);
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("root context");
+    let snapshot = ArchiveSnapshot::with_repeated_names(&ctx, root).expect("recovery snapshot");
+    assert!(snapshot.recovery_reason().is_some());
+}
