@@ -408,6 +408,11 @@ fn a_line_reads_point_positions_whatever_its_trailer_and_identity() {
             identity == u32::MAX
         );
         assert_eq!(
+            identifier_trailer_line_record(&sample.payload, sample.line),
+            identity != u32::MAX
+        );
+        assert!(!identifier_trailer_line_record(&sample.payload, sample.arc));
+        assert_eq!(
             geometry(&sample, sample.line),
             expected(SketchGeometryDefinition::Line {
                 start: Point2::new(10.0, 0.0),

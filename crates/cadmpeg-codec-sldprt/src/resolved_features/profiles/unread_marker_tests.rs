@@ -8,7 +8,10 @@ use cadmpeg_ir::sketches::{
     SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
 };
 
-use super::{finalize_unread_marker_entities, project_marker_backed_sketches, HeldMarkerGeometry};
+use super::{
+    finalize_unread_marker_entities, project_marker_backed_sketches, HeldMarkerGeometry,
+    ListedGeometry,
+};
 use crate::loss::SldprtLossCode;
 use crate::records::{
     Feature as NativeFeature, FeatureHistory, FeatureInputLane, FeatureSource, SketchInputEntity,
@@ -332,7 +335,10 @@ fn a_placeholder_with_held_curve_record_geometry_takes_it_without_a_loss() {
     let mut held = HeldMarkerGeometry::default();
     held.listed.insert(
         (read.sketch.clone(), "marker-read".to_owned()),
-        line.clone(),
+        ListedGeometry {
+            geometry: line.clone(),
+            identifier_trailer: false,
+        },
     );
     let mut entities = vec![read, other_sketch];
     let mut losses = Vec::new();
@@ -343,4 +349,48 @@ fn a_placeholder_with_held_curve_record_geometry_takes_it_without_a_loss() {
         Some("sldprt:line-or-circle-handle")
     );
     assert_eq!(losses.len(), 1);
+}
+
+/// Held curve-record geometry from a line with an identifier trailer, or
+/// replacing a handle whose read endpoints coincide, still types the entity
+/// and charges `sketch.handle-reading-assumed`.
+#[test]
+fn held_geometry_of_a_trailer_line_or_a_degenerate_handle_charges_the_assumed_reading() {
+    let line = SketchGeometry::try_from(SketchGeometryDefinition::Line {
+        start: Point2::new(0.0, 0.0),
+        end: Point2::new(1.0, 0.0),
+    })
+    .unwrap();
+    let mut entities = vec![
+        entity("trailer", placeholder("sldprt:marker-geometry:1")),
+        entity(
+            "degenerate",
+            placeholder("sldprt:marker-geometry:degenerate-line"),
+        ),
+        entity("positional", placeholder("sldprt:marker-geometry:2")),
+    ];
+    let mut held = HeldMarkerGeometry::default();
+    for (entity, identifier_trailer) in entities.iter().zip([true, false, false]) {
+        held.listed.insert(
+            (entity.sketch.clone(), entity.native_ref.clone().unwrap()),
+            ListedGeometry {
+                geometry: line.clone(),
+                identifier_trailer,
+            },
+        );
+    }
+    let mut losses = Vec::new();
+    finalize_unread_marker_entities(&mut entities, held, &mut losses);
+    assert!(entities.iter().all(|entity| entity.geometry == line));
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>(),
+        vec![SldprtLossCode::SketchHandleReadingAssumed.kind(); 2]
+    );
+    assert!(losses[0].message.contains(entities[0].id().as_str()));
+    assert!(losses[0].message.contains("identifier trailer"));
+    assert!(losses[1].message.contains(entities[1].id().as_str()));
+    assert!(losses[1].message.contains("coincide"));
 }

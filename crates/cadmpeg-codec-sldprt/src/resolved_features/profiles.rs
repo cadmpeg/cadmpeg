@@ -47,7 +47,9 @@ use super::reference_geometry::reference_plane_frame_key;
 use super::relation_geometry::{declared_entity_handle_circular_marker, owned_relation_parameters};
 use super::relation_loci::same_dimension_length;
 use super::scalars::FeatureObjectNames;
-use super::sketch_lists::{listed_record_geometry, ListedReading, SketchRecordLists};
+use super::sketch_lists::{
+    identifier_trailer_line_record, listed_record_geometry, ListedReading, SketchRecordLists,
+};
 use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
     current_undetailed_bounded_curve_is_line, marker_curve_endpoint_markers,
@@ -1081,13 +1083,24 @@ pub(crate) struct HeldMarkerGeometry {
     handles: Vec<SketchEntity>,
     /// The geometry the `sgSketch` curve record of a marker gives in a
     /// sketch, by sketch and marker reference.
-    listed: HashMap<(SketchId, String), SketchGeometry>,
+    listed: HashMap<(SketchId, String), ListedGeometry>,
+}
+
+/// The geometry an `sgSketch` curve record gives a marker by point-record
+/// position.
+#[derive(Debug)]
+struct ListedGeometry {
+    geometry: SketchGeometry,
+    /// The record is a line with an identifier trailer (open item EV-29).
+    identifier_trailer: bool,
 }
 
 /// Adds the held arc handles, gives every marker entity that no recovery
 /// pass resolved its `sgSketch` curve record's geometry where the record
 /// gives one, and otherwise the marker role as its native kind with one loss
-/// per entity.
+/// per entity. Curve-record geometry charges `sketch.handle-reading-assumed`
+/// for a line with an identifier trailer and for a handle whose read
+/// endpoints coincide.
 pub(crate) fn finalize_unread_marker_entities(
     sketch_entities: &mut Vec<SketchEntity>,
     held: HeldMarkerGeometry,
@@ -1109,12 +1122,27 @@ pub(crate) fn finalize_unread_marker_entities(
         else {
             continue;
         };
-        if let Some(geometry) = entity
+        if let Some(read) = entity
             .native_ref
             .clone()
             .and_then(|marker| listed.remove(&(entity.sketch.clone(), marker)))
         {
-            entity.geometry = geometry;
+            let reason = if read.identifier_trailer {
+                Some("the record is a line with an identifier trailer (open item EV-29)")
+            } else if native_kind.as_str() == DEGENERATE_LINE_PLACEHOLDER {
+                Some("the two read endpoints of the handle coincide")
+            } else {
+                None
+            };
+            if let Some(reason) = reason {
+                losses.push(SldprtLossCode::SketchHandleReadingAssumed.note(format!(
+                    "sketch {} entity {}: handle {} takes the geometry of its `sgSketch` curve record by point-record position; {reason}",
+                    entity.sketch,
+                    entity.id(),
+                    entity.native_ref.as_deref().unwrap_or("without a native reference"),
+                )));
+            }
+            entity.geometry = read.geometry;
             continue;
         }
         let (role, code) = match placeholder {
@@ -2184,7 +2212,17 @@ pub(crate) fn project_marker_backed_sketches(
                             roster
                         } else {
                             if let Some(complete) = read(ListedReading::Complete) {
-                                listed.push((marker.id().to_owned(), complete));
+                                let identifier_trailer = index_from_u64(marker.offset())
+                                    .is_some_and(|offset| {
+                                        identifier_trailer_line_record(&lane.native_payload, offset)
+                                    });
+                                listed.push((
+                                    marker.id().to_owned(),
+                                    ListedGeometry {
+                                        geometry: complete,
+                                        identifier_trailer,
+                                    },
+                                ));
                             }
                             geometry
                         }
