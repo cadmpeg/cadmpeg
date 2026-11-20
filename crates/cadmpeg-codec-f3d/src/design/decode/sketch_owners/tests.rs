@@ -42,7 +42,7 @@ fn collection_links_support_both_versions_and_local_reference_forms() {
             reference(&mut bytes, 2, false);
             reference(&mut bytes, 7, typed);
             let collection = parse_collection(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 View::over_retained(&bytes),
                 version,
             )
@@ -51,7 +51,7 @@ fn collection_links_support_both_versions_and_local_reference_forms() {
             assert_eq!(collection.owner, Some(7));
             bytes.extend([0xff; 3]);
             let collection = parse_collection(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 View::over_retained(&bytes),
                 version,
             )

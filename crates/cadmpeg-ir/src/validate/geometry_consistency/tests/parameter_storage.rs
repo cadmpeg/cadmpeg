@@ -26,7 +26,7 @@ fn declared_parameter_candidates_keep_order() {
         metadata: crate::geometry::pcurve::PcurveMetadata::default(),
         native_ref: None,
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let ranges =
         super::super::pcurve_parameter_ranges(&ctx, &pcurve, Some([2.0, 3.0]), Some([0.0, 1.0]))
             .unwrap()

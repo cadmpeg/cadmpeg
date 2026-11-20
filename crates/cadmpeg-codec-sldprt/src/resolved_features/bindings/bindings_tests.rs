@@ -153,7 +153,7 @@ fn dissected_profile_scalar_tail_belongs_to_parent_extrusion() {
     };
 
     bind_scalar_operands(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_ref(&history),
         std::slice::from_mut(&mut lane),
     )
@@ -913,7 +913,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
     };
 
     bind_detached_legacy_sketch_objects(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_ref(&history),
         &HashSet::default(),
         &mut lane,
@@ -941,7 +941,7 @@ fn detached_spatial_relation_group_binds_by_its_complete_dimension_signature() {
     let mut ambiguous_history = history;
     ambiguous_history.features.push(second);
     bind_detached_legacy_sketch_objects(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         std::slice::from_ref(&ambiguous_history),
         &HashSet::default(),
         &mut ambiguous,

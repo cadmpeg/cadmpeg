@@ -9712,7 +9712,7 @@ mod tests {
         ];
         assert_eq!(
             super::edge_parameter_range(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 &carrier,
                 Some(endpoints),
                 [None; 2],
@@ -9751,7 +9751,7 @@ mod tests {
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 3.175),
         ];
         let (range, reversed) = super::edge_parameter_range(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &carrier,
             Some(endpoints),
             [None; 2],

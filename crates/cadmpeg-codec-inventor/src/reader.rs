@@ -213,7 +213,7 @@ mod tests {
 
     #[test]
     fn utf16_preflight_counts_utf8_bytes_and_rejects_invalid_pairs() {
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let euro = [0xac, 0x20];
         assert_eq!(
             utf16_text(

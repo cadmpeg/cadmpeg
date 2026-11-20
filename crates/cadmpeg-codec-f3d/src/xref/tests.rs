@@ -77,7 +77,7 @@ fn xref_record_frame_scan_preserves_boundaries() {
 
 #[test]
 fn redirections_keep_neutron_role_and_data_independent() {
-    let table = super::parse(&cadmpeg_test_support::service_decode_context(),
+    let table = super::parse(&cadmpeg_core::decode::test_support::service_decode_context(),
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role-guid","dataType":"STRING"}},{"neutronData":{"value":"data-guid","dataType":"STRING"}}]}]}"#,
     )
     .expect("redirections JSON");
@@ -97,7 +97,11 @@ fn malformed_redirections_shapes_are_not_admitted_as_leaf_tables() {
     ];
     for bytes in cases {
         assert!(
-            super::parse(&cadmpeg_test_support::service_decode_context(), bytes).is_err(),
+            super::parse(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                bytes
+            )
+            .is_err(),
             "malformed table admitted: {bytes:?}"
         );
     }
@@ -153,7 +157,7 @@ fn redirections_property_keys_are_not_collapsed_before_admission() {
         ("wrong type", format!("[{{{role}}},{{\"neutronData\":{{\"value\":\"independent\",\"dataType\":\"NUMBER\"}}}}]"), false),
     ] {
         let json = format!(r#"{prefix},"references":[{{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":{properties}}}]}}"#);
-        assert_eq!(super::parse(&cadmpeg_test_support::service_decode_context(), json.as_bytes()).is_ok(), valid, "{label}");
+        assert_eq!(super::parse(&cadmpeg_core::decode::test_support::service_decode_context(), json.as_bytes()).is_ok(), valid, "{label}");
         let document = f3d_with_redirections_json("assembly-design", json.as_bytes());
         for depth in [cadmpeg_core::decode::DecodeDepth::Full, cadmpeg_core::decode::DecodeDepth::Container] {
             let container_only = depth == cadmpeg_core::decode::DecodeDepth::Container;
@@ -239,7 +243,7 @@ fn external_reference_placements_project_as_root_occurrences_in_millimetres() {
 
 #[test]
 fn external_reference_admission_and_projection_check_affine_transforms() {
-    let mut table = super::parse(&cadmpeg_test_support::service_decode_context(),
+    let mut table = super::parse(&cadmpeg_core::decode::test_support::service_decode_context(),
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"root.f3d","displayName":"root","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":[{"from":"root.f3d","relativePath":"part.f3d","type":"XREF","properties":[{"neutronRole":{"value":"role","dataType":"STRING"}},{"neutronData":{"value":"data","dataType":"STRING"}}]}]}"#,
     ).unwrap();
     let mut rows = cadmpeg_ir::transform::Transform::identity().rows();
@@ -320,7 +324,7 @@ fn reflected_matrix_is_reported_by_complete_document_admission() {
 
 #[test]
 fn component_reference_data_is_an_open_json_object() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let value = super::parse_component_reference_data(
         &ctx,
         br#"{"schema":7,"references":[{"id":"component"}],"extension":{"x":true}}"#,
@@ -1623,7 +1627,7 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
         vec![(2, selected)]
     );
     let mut reference = super::parse(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         redirections_json("root.f3d", &[("part.f3d", "role")]).as_bytes(),
     )
     .unwrap()
@@ -1659,7 +1663,7 @@ fn component_insert_selection_uses_stream_and_role_not_class_tag() {
 
 #[test]
 fn redirections_leaf_form_parses_empty_object_references() {
-    let table = crate::xref::parse(&cadmpeg_test_support::service_decode_context(),
+    let table = crate::xref::parse(&cadmpeg_core::decode::test_support::service_decode_context(),
         br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"part.f3d","displayName":"part","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":{}}"#,
     )
     .unwrap();
