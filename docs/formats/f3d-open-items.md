@@ -858,7 +858,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What do the appearance entries of a body-reference record (type `D3937028-C20C-4E65-B010-94AD418A5C20`, type version `19`) select, and what is the layout of an entry?
 
-**Known.** `f3d.md` §3.1 "**Body-reference records.**" gives the record with entry count `k = 0`. A design and a parameter body-reference record of one body store `k = 2`. Each of their entries is 294 bytes: an LP-UTF16 GUID of 36 code units, four f32 colour components with alpha `1.0`, an appearance envelope in the form of the second presentation envelope with flag `1` and the appearance `PrismOpaque`, u32 `0`, and f32 `1.0`. The two entries store different GUIDs and colours. The fields after the entries are the fields of the `k = 0` form that follow the count.
+**Known.** `f3d.md` §3.1 "**Body-reference records.**" gives the record with entry count `k = 0`. A design and a parameter body-reference record of one body store `k = 2`. Each of their entries is 294 bytes and is the legacy per-face appearance assignment entry of `f3d.md` (the paragraph that begins "Legacy per-face appearance assignments"): an LP-UTF16 GUID of 36 code units, four f32 colour components with alpha `1.0`, bytes `01 01`, nine zero bytes, u8 selector-name form `1`, an LP-UTF16 visual token, the library `BA5EE55E-9982-449B-9D66-9F036540E140`, u32 `0`, the selector `PrismOpaque`, f32 `0`, and f32 `1.0`. The entries follow the u8 at offset 292 and the u32 `k` at 293. The two entries store different GUIDs and colours. The fields after the entries are the fields of the `k = 0` form that follow the count.
 
 **Need.** A writer of a body with more than one appearance must write the entries. Bodies whose faces carry appearances against their entry GUIDs and colours would settle what an entry selects.
 
@@ -906,6 +906,18 @@ In the design with three solid bodies, records 193 to 200 are the further design
 
 **Need.** A writer stores the common forms and the next value `n + 1`. The save conditions that produce each form would settle the selection.
 
+### DR-888. Nonzero one-byte ordinal prefix of an attributed local occurrence
+
+**Question.** What does a one-byte ordinal prefix with value `1` select in an attributed local component occurrence?
+
+**Known.** `f3d.md` §3.1 "A version-two attributed local occurrence also permits a one-byte zero ordinal prefix." defines the zero prefix. A class-`416` carrier in an inserted document stores prefix byte `1` and u32 ordinal `1`, followed by the carrier GUID and the occurrence key. The rest of its frame has the zero-prefix layout: a null identity reference, the repeated component reference, identity flag `1`, nine zero bytes, and the owner entity. A displayed-pose path names this carrier in its final pair under each insertion of the document. The decoder rejects the frame. The component definition then has a synthesized identity placement, and the displayed-pose rows of the carrier stay unbound with `scene.override-unbound`.
+
+**Need.** Saves that change only this prefix byte while the occurrence and its placement stay fixed, or a writer-side definition of the byte.
+
+**Conflict.** None.
+
+**Note.** Each carrier GUID, occurrence key, owner entity, and component reference of the frame resolves. The prefix value is the single field outside the specified grammar.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences
@@ -928,11 +940,11 @@ The first closing reference run identifies a direct contained child by its local
 
 **Known.** `f3d.md` §1.4 defines stored occurrence placement and component-path pose precedence. Assembly operand paths can select occurrences whose solved poses differ from their stored transforms. Operation-table type `549FBB80-B890-473E-A5C0-415D3D9BF4E6` has version-0 and version-1 forms. A typed one-element path identifies the affected occurrence. A parent descendant-path table can equal a child table's final Position matrix while the child's stored matrix equals its insertion entry. The direct table's final entry is a property of the occurrence inside its component definition, common to every instance. Component-path world poses constrain the containing instance. An instance-specific edit of the shared child violates this relation. The direct version-0 and version-1 grammar and precedence are in `f3d.md` §1.4.
 
-**Need.** Bind each operation-associated transform to its typed occurrence path, coordinate frame, and saved state. Establish its precedence relative to occurrence-placement and component-path transforms. Distinguish a contained placement change from a containing placement change. Identify the operation suppression state and saved timeline marker before selecting an entry. Independently authored saves must change one placement or one suppression or timeline state and retain the complete occurrence, operation, and constraint carriers.
+**Need.** Bind each operation-associated transform to its typed occurrence path, coordinate frame, and saved state. Identify the saved-state selector that establishes whether a displayed world pose or an operation-associated transform is the active joint solution. Establish its precedence relative to occurrence-placement and component-path transforms. Distinguish a contained placement change from a containing placement change. Identify the operation suppression state and saved timeline marker before selecting an entry. Independently authored saves must change one placement or one suppression or timeline state and retain the complete occurrence, operation, and constraint carriers.
 
 **Conflict.** A stored placement can disagree with the checked assembly while no projected joint selects the occurrence. This does not distinguish an unbound constraint, an unread placement carrier, and a different saved assembly state.
 
-**Note.** The root, local, contained, and owned component-path forms in `f3d.md` §1.4 keep their precedence. The remaining Need applies to other path forms, incompatible constraints, and saved-state selectors (DR-111). Direct one-element tables do not select suppression or an active timeline marker. A definition with incompatible component-path and table constraints keeps its stored pose for every instance; the operation table stays native. Other path forms and saved-state selectors remain unresolved.
+**Note.** `f3d.md` §1.1.4 "The prefix is followed by a counted pointer string" defines both uniformly tagged and untagged display paths. A complete display-path binding identifies the occurrence and its displayed world frame. The root, local, contained, and owned component-path forms in `f3d.md` §1.4 keep their precedence. The remaining Need applies to other path forms, incompatible constraints, and saved-state selectors (DR-111). Direct one-element tables do not select suppression or an active timeline marker. A definition with incompatible component-path and table constraints keeps its stored pose for every instance; the operation table stays native. Other path forms and saved-state selectors remain unresolved.
 
 ### DR-109. Legacy external placement control and extended envelopes
 
