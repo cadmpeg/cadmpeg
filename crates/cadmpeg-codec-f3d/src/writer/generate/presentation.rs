@@ -13,10 +13,10 @@ use crate::design::body::{
 use crate::design::presentation::{
     BROWSER_NODE_BASE_TYPE_GUID, BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION,
 };
-use crate::records::entity_header::{DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION, SegmentType};
+use crate::records::entity_header::{SegmentType, DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
 
 use super::{
-    attributes::{AttributeIndex, source_less_body_key},
+    attributes::{source_less_body_key, AttributeIndex},
     preconditions::DesignBindingsValidated,
 };
 
@@ -506,7 +506,7 @@ pub(super) fn deterministic_guid(domain: &str, identity: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{GeneratedDesignRegistry, deterministic_guid};
+    use super::{deterministic_guid, GeneratedDesignRegistry};
 
     #[test]
     fn generated_type_rejects_relaxed_noncanonical_guid() {
