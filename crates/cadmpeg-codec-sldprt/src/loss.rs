@@ -122,7 +122,7 @@ pub(crate) enum SldprtLossCode {
     SketchLineDegenerate,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,
-    /// A list line with profile role 1 is marked construction from selector bit 3 (DI-72).
+    /// A list line with profile role 1 is marked construction from selector bit 3 (DI-77).
     SketchListedLineConstructionAssumed,
     /// Native sketch relation has no projected neutral constraint.
     SketchRelationUnprojected,

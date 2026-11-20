@@ -1210,7 +1210,7 @@ impl<'a> TerminalRelationCarriers<'a> {
 
 /// Whether the sketch marker at `offset` with `geometry` is construction
 /// geometry, and whether that reading is the selector-bit-3 assumption for a
-/// list line with profile role `1` (DI-72). Construction is a selected
+/// list line with profile role `1` (DI-77). Construction is a selected
 /// construction line, a selected compact roster axis, or a list curve with
 /// selector bit 3, except a full circle with profile role `1`. Both marker
 /// projection paths use this one predicate.
@@ -2284,7 +2284,7 @@ pub(crate) fn project_marker_backed_sketches(
                         losses.push(
                             crate::loss::SldprtLossCode::SketchListedLineConstructionAssumed.note(
                                 format!(
-                                    "Sketch {sketch_id} (feature {}) marker {} is marked construction from selector bit 3 with profile role 1 (DI-72)",
+                                    "Sketch {sketch_id} (feature {}) marker {} is marked construction from selector bit 3 with profile role 1 (DI-77)",
                                     native_feature.name,
                                     marker.id()
                                 ),
