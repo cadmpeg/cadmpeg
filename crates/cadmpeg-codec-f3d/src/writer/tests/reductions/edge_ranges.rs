@@ -12,8 +12,8 @@ use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata, Pcurv
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
 use cadmpeg_ir::ids::{CoedgeId, CurveId, EdgeId, LoopId, PcurveId, PointId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::report::check::Check;
+use cadmpeg_ir::report::Severity;
 use cadmpeg_ir::scalar::PositiveReal;
 use cadmpeg_ir::topology::{
     Coedge, Edge, EdgeCarrier, EdgeEnds, FaceLoops, Loop, LoopBoundary, LoopRing, PcurveUse, Point,

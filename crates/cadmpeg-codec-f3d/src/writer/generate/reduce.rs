@@ -17,13 +17,13 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::CodecError;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{native_records_omitted, output_empty, record_invalid};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
+use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     CurveGeometry, FitTolerance, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -32,8 +32,8 @@ use cadmpeg_ir::ids::{EdgeId, PointId, ShellId, VertexId};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::PositiveReal;
-use cadmpeg_ir::schema::EntityKind;
 use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
+use cadmpeg_ir::schema::EntityKind;
 use cadmpeg_ir::topology::{
     BodyKind, Color, EdgeCarrier, EdgeEnds, FaceLoops, LoopBoundary, Point, Sense, Shell,
     ShellMember, Vertex,
@@ -44,7 +44,7 @@ use serde_json::Value;
 use crate::loss::F3dLossCode;
 
 use super::native_geometry::{
-    ProceduralOwners, native_procedural_curve, native_procedural_surface,
+    native_procedural_curve, native_procedural_surface, ProceduralOwners,
 };
 
 /// Native arenas the B-rep stream is written from. Every other arena belongs
