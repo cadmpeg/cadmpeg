@@ -129,7 +129,6 @@ fn read_json_value(
 }
 
 /// How a [`FiniteSerializer`] walk writes a float.
-#[derive(Clone, Copy)]
 enum Floats {
     /// Refuse a non-finite float and write negative zero as zero.
     Canonical,
@@ -138,7 +137,8 @@ enum Floats {
     Value,
 }
 
-/// Records the float that a [`FiniteSerializer`] walk refused.
+/// What one [`FiniteSerializer`] walk shares: its float mode, its admission,
+/// and the float or resource limit it refused.
 struct FiniteGuard<A: Admission> {
     refused: Cell<Option<f64>>,
     admission: A,
@@ -200,7 +200,7 @@ impl<A: Admission> FiniteGuard<A> {
     }
 }
 
-/// Serializes a value through `inner`, refusing every non-finite float.
+/// Serializes a value through `inner`, writing floats in the guard's mode.
 struct FiniteSerializer<'guard, S, A: Admission> {
     inner: S,
     guard: &'guard FiniteGuard<A>,
