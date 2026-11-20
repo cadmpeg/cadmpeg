@@ -508,6 +508,19 @@ fn the_wrapper_charges_one_loss_per_omitted_nonempty_arena() {
 }
 
 #[test]
+fn a_dropped_edit_is_an_error_named_by_its_record_kind() {
+    let loss = super::edit_dropped(EntityKind::SourceAttribute, "test:attribute#a");
+    assert_eq!(loss.code.namespace(), "export");
+    assert_eq!(loss.code.local_code(), "edit.dropped");
+    assert_eq!(loss.severity, Severity::Error);
+    assert_eq!(
+        loss.code.taxonomy(),
+        crate::report::loss::LossTaxonomy::AttributesNotTransferred
+    );
+    assert_eq!(loss.message, "test:attribute#a");
+}
+
+#[test]
 fn an_ignored_arena_charges_no_loss_when_it_holds_a_record() {
     let ir = crate::examples::unit_cube_with_history_body().expect("valid fixture");
     assert_eq!(ir.model.history_bodies.len(), 1);

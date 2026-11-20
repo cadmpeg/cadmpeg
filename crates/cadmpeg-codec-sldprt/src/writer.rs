@@ -12,7 +12,7 @@ mod envelope;
 mod ownership;
 pub(crate) mod target;
 
-pub(crate) use accounting::{Unwritten, UnwrittenAttributes};
+pub(crate) use accounting::{Held, Unwritten, UnwrittenAttributes};
 
 use crate::native::SldprtNative;
 use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
@@ -141,8 +141,8 @@ pub(crate) fn write_semantic_with_records(
             }
             _ => default_properties::stated_properties(&normalized),
         };
-        for id in edited {
-            unwritten.record(&id, Unwritten::SavedProperty);
+        for (id, held) in edited {
+            unwritten.record(&id, Unwritten::SavedProperty, held);
         }
     }
     let retained_partition =
@@ -444,8 +444,9 @@ pub(crate) fn write_semantic_with_records(
 /// from the neutral arenas declared `Written`; the other document arenas are
 /// not read.
 /// `appearances`, `appearance_bindings` and `attributes` are `Reported` because
-/// `WriterUnboundAppearancesOmitted`, `WriterAppearanceBindingsOmitted` and
-/// `WriterAttributesOmitted` account for their withheld records, respectively.
+/// `WriterUnboundAppearancesOmitted`, `WriterAppearanceBindingsOmitted`, and
+/// `WriterAttributesOmitted` with `export:edit.dropped` account for their
+/// withheld records, respectively.
 /// `curves` is `Reported` unless `retained_brep` is true because
 /// `WriterSphereSeamCurvesOmitted` accounts for withheld degenerate sphere-seam curves.
 /// `tessellations` stays `Written`: every mesh is written, and
@@ -1328,16 +1329,22 @@ fn patch_retained_swobjects_metadata(
         if attribute.name == "source_linear_unit_code" {
             continue;
         }
+        let provenance = annotations.provenance.get(attribute.id.as_str());
         if let Some(reason) = unwritable(attribute) {
-            unwritten.record(attribute.id.as_str(), reason);
+            let held = if provenance.is_some() {
+                Held::Source
+            } else {
+                Held::Nothing
+            };
+            unwritten.record(attribute.id.as_str(), reason, held);
             continue;
         }
-        let Some(provenance) = annotations.provenance.get(attribute.id.as_str()) else {
+        let Some(provenance) = provenance else {
             // No retained record holds it, and none can be inserted.
             let reason = MetadataRecord::project(attribute, length_scale, |_| Ok(()))
                 .err()
                 .unwrap_or(Unwritten::NoSerializer);
-            unwritten.record(attribute.id.as_str(), reason);
+            unwritten.record(attribute.id.as_str(), reason, Held::Nothing);
             continue;
         };
         attributes.push((provenance.stream().to_owned(), provenance.offset, attribute));
@@ -1358,7 +1365,7 @@ fn patch_retained_swobjects_metadata(
             CodecError::Malformed("SLDPRT metadata offset exceeds address space".into())
         })?;
         if let Err(reason) = patch_retained_record(payload, offset, attribute, length_scale) {
-            unwritten.record(attribute.id.as_str(), reason);
+            unwritten.record(attribute.id.as_str(), reason, Held::Source);
         }
     }
 
@@ -1375,7 +1382,7 @@ fn patch_retained_swobjects_metadata(
                 .iter()
                 .any(|(name, _)| name.as_str() == provenance.stream())
         {
-            unwritten.record(id, Unwritten::Removed);
+            unwritten.record(id, Unwritten::Removed, Held::Source);
         }
     }
     Ok(())
@@ -2172,7 +2179,7 @@ fn metadata_payloads(
             continue;
         }
         if let Some(reason) = unwritable(attribute) {
-            unwritten.record(id, reason);
+            unwritten.record(id, reason, Held::Nothing);
             continue;
         }
         match MetadataRecord::project(attribute, length_scale, |_| Ok(())) {
@@ -2194,14 +2201,14 @@ fn metadata_payloads(
             Ok(
                 MetadataRecord::TransformedReferenceEnclosure { .. }
                 | MetadataRecord::PartRecord { .. },
-            ) => unwritten.record(id, Unwritten::NoSerializer),
+            ) => unwritten.record(id, Unwritten::NoSerializer, Held::Nothing),
             Ok(MetadataRecord::SourceLinearUnitCode(code)) => unit_code = Some(code),
             Ok(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
                 objects.extend_from_slice(UNIT_NAME_TOKEN);
                 objects.extend_from_slice(&[0xff, 0xfe, 0xff, byte_len]);
                 objects.extend(units.into_iter().flat_map(u16::to_le_bytes));
             }
-            Err(reason) => unwritten.record(id, reason),
+            Err(reason) => unwritten.record(id, reason, Held::Nothing),
         }
     }
     let units = unit_code.map(|code| {

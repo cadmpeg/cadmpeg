@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
 
+use super::Held;
 use crate::container::{ContainerScan, Section};
 
 use crate::metadata::{
@@ -25,7 +26,7 @@ pub(super) fn edited_properties(
     ir: &CadIr,
     source: &CadIr,
     scan: &ContainerScan<'_>,
-) -> BTreeSet<String> {
+) -> BTreeMap<String, Held> {
     let owners = scan
         .sections()
         .filter(|section| crate::metadata::default_properties::is_owner(*section))
@@ -56,7 +57,14 @@ pub(super) fn edited_properties(
                 (Some([left]), Some([right])) if same_attribute(left, right)
             )
         })
-        .map(str::to_owned)
+        .map(|id| {
+            let held = if original.contains_key(id) {
+                Held::Source
+            } else {
+                Held::Nothing
+            };
+            (id.to_owned(), held)
+        })
         .collect()
 }
 
@@ -76,12 +84,12 @@ fn rows(
 
 /// Every saved-property attribute the document states: with no retained
 /// carrier, none of them is written.
-pub(super) fn stated_properties(ir: &CadIr) -> BTreeSet<String> {
+pub(super) fn stated_properties(ir: &CadIr) -> BTreeMap<String, Held> {
     ir.model
         .attributes
         .iter()
         .filter(|attribute| is_property(attribute))
-        .map(|attribute| attribute.id.as_str().to_owned())
+        .map(|attribute| (attribute.id.as_str().to_owned(), Held::Nothing))
         .collect()
 }
 

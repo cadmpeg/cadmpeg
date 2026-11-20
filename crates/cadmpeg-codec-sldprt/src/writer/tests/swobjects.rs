@@ -17,7 +17,7 @@ use crate::test_support::container::make_block;
 use crate::test_support::container::sldprt_with_body;
 use crate::test_support::native::sldprt_native;
 use crate::test_support::parasolid::triangle_body;
-use crate::writer::{Unwritten, UnwrittenAttributes};
+use crate::writer::{Held, Unwritten, UnwrittenAttributes};
 use crate::SldprtCodec;
 
 #[test]
@@ -1324,7 +1324,7 @@ fn generated_metadata_skips_each_record_it_cannot_hold() {
 
 /// A decoded part whose metadata attributes state a null value writes a file:
 /// each record keeps its retained bytes, and the export names the attributes
-/// in one `WriterAttributesOmitted` loss.
+/// in one `export:edit.dropped` loss.
 #[test]
 fn a_null_metadata_value_keeps_the_retained_record_and_charges_a_loss() {
     use crate::test_support::container::{native_envelope_fixture, sldprt_with_body_and_envelope};
@@ -1361,10 +1361,12 @@ fn a_null_metadata_value_keeps_the_retained_record_and_charges_a_loss() {
         .losses
         .iter()
         .find(|loss| {
-            loss.code == crate::loss::SldprtLossCode::WriterAttributesOmitted.kind()
+            loss.code.namespace() == "export"
+                && loss.code.local_code() == "edit.dropped"
                 && loss.message.contains("null value")
         })
         .unwrap();
+    assert_eq!(loss.severity, cadmpeg_ir::report::Severity::Error);
     assert!(
         loss.message
             .starts_with("2 sldprt metadata attribute record(s) state a null value"),
@@ -1536,14 +1538,14 @@ fn swobjects_payload(bytes: &[u8]) -> Vec<u8> {
 }
 
 /// The `SWObjects` bytes an inherited write of `ir` produces, and its
-/// omitted-attribute loss messages.
+/// unwritten-attribute losses.
 fn written_metadata(
     ir: &cadmpeg_ir::CadIr,
     fidelity: &cadmpeg_ir::SourceFidelity,
-) -> (Vec<u8>, Vec<String>) {
-    let (bytes, omitted) =
-        crate::test_support::write_with_omitted_attributes(ir, fidelity).unwrap();
-    (swobjects_payload(&bytes), omitted)
+) -> (Vec<u8>, crate::test_support::UnwrittenLosses) {
+    let (bytes, losses) =
+        crate::test_support::write_with_unwritten_attributes(ir, fidelity).unwrap();
+    (swobjects_payload(&bytes), losses)
 }
 
 fn metadata_attribute<'a>(
@@ -1557,18 +1559,8 @@ fn metadata_attribute<'a>(
         .unwrap()
 }
 
-/// One of `omitted` states `reason` and names `id`.
-fn assert_omitted(omitted: &[String], reason: &str, id: &str) {
-    assert!(
-        omitted
-            .iter()
-            .any(|message| message.contains(reason) && message.contains(id)),
-        "{reason} {id}: {omitted:?}"
-    );
-}
-
 /// A metadata value of a type its record cannot hold keeps the retained
-/// record, and the loss names the attribute.
+/// record, and `export:edit.dropped` names the attribute.
 #[test]
 fn a_wrong_typed_metadata_value_keeps_the_retained_record_and_charges_a_loss() {
     let (mut ir, fidelity, original) = retained_metadata_part();
@@ -1577,13 +1569,13 @@ fn a_wrong_typed_metadata_value_keeps_the_retained_record_and_charges_a_loss() {
         "wide".into(),
     ))];
     let id = bbox.id.as_str().to_owned();
-    let (written, omitted) = written_metadata(&ir, &fidelity);
+    let (written, losses) = written_metadata(&ir, &fidelity);
     assert_eq!(written, original);
-    assert_omitted(&omitted, "hold a value whose type, count or range", &id);
+    losses.assert_charged(Held::Source, "hold a value whose type, count or range", &id);
 }
 
 /// A document metadata attribute moved onto a part element keeps the
-/// retained record, and the loss names the attribute.
+/// retained record, and `export:edit.dropped` names the attribute.
 #[test]
 fn an_entity_metadata_attribute_keeps_the_retained_record_and_charges_a_loss() {
     let (mut ir, fidelity, original) = retained_metadata_part();
@@ -1591,13 +1583,14 @@ fn an_entity_metadata_attribute_keeps_the_retained_record_and_charges_a_loss() {
     let bbox = metadata_attribute(&mut ir, "bounding_envelope");
     bbox.target = cadmpeg_ir::attributes::AttributeTarget::Body(body).into();
     let id = bbox.id.as_str().to_owned();
-    let (written, omitted) = written_metadata(&ir, &fidelity);
+    let (written, losses) = written_metadata(&ir, &fidelity);
     assert_eq!(written, original);
-    assert_omitted(&omitted, "are attached to a part element", &id);
+    losses.assert_charged(Held::Source, "are attached to a part element", &id);
 }
 
-/// An attribute no SLDPRT record has a name for is not written, a record the
-/// document no longer states keeps its retained bytes, and a loss names each.
+/// An added attribute no SLDPRT record has a name for is not written and is
+/// omitted; a record the document no longer states keeps its retained bytes,
+/// and its removal is a dropped edit.
 #[test]
 fn an_unknown_or_removed_metadata_attribute_is_written_around_and_named() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
@@ -1617,14 +1610,18 @@ fn an_unknown_or_removed_metadata_attribute_is_written_around_and_named() {
         .position(|attribute| attribute.name == "bounding_envelope")
         .unwrap();
     let removed = ir.model.attributes.remove(bbox).id.as_str().to_owned();
-    let (written, omitted) = written_metadata(&ir, &fidelity);
+    let (written, losses) = written_metadata(&ir, &fidelity);
     assert_eq!(written, original);
-    assert_omitted(&omitted, "name no SLDPRT metadata record", added);
-    assert_omitted(&omitted, "are no longer stated by the document", &removed);
+    losses.assert_charged(Held::Nothing, "name no SLDPRT metadata record", added);
+    losses.assert_charged(
+        Held::Source,
+        "are no longer stated by the document",
+        &removed,
+    );
 }
 
 /// An edited configuration-manager tuple keeps the retained record, which no
-/// serializer can rewrite, and the loss names the attribute.
+/// serializer can rewrite, and `export:edit.dropped` names the attribute.
 #[test]
 fn an_edited_configuration_manager_keeps_its_retained_tuple_and_charges_a_loss() {
     let (mut ir, fidelity, original) = retained_metadata_part();
@@ -1635,7 +1632,7 @@ fn an_edited_configuration_manager_keeps_its_retained_tuple_and_charges_a_loss()
     };
     *value += 1;
     let id = manager.id.as_str().to_owned();
-    let (written, omitted) = written_metadata(&ir, &fidelity);
+    let (written, losses) = written_metadata(&ir, &fidelity);
     assert_eq!(written, original);
-    assert_omitted(&omitted, "cannot add, regenerate or edit in place", &id);
+    losses.assert_charged(Held::Source, "cannot add, regenerate or edit in place", &id);
 }

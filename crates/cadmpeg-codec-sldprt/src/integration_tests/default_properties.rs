@@ -5,6 +5,9 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_test_support::EditableDecodeResult;
+
+use crate::writer::Held;
+
 const MEMBER: &str = "docProps/ISolidWorksInformation.xml";
 const XML:&[u8]=br#"<p:Properties xmlns:p="http://schemas.openxmlformats.org/officeDocument/2006/SolidworksInformation-properties" xmlns:v="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes" SW_UnitsLinear="0"><propertySection fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}"><property pid="2" name="bounding_envelope"><v:lpstr/></property><property pid="3" name="SavedName"><v:r8>-0.0</v:r8></property></propertySection></p:Properties>"#;
 fn fixture() -> EditableDecodeResult {
@@ -127,16 +130,9 @@ fn carrier(bytes: &[u8]) -> Vec<u8> {
     members[0].payload().to_vec()
 }
 
-/// The `WriterAttributesOmitted` message that charges saved-property edits.
-fn saved_property_loss(omitted: &[String]) -> &str {
-    omitted
-        .iter()
-        .find(|message| message.contains("saved-property edits"))
-        .unwrap_or_else(|| panic!("no saved-property loss in {omitted:?}"))
-}
-
 /// Every saved-property edit writes the part with the carrier as the source
-/// stored it, and one loss names the edited id.
+/// stored it. `export:edit.dropped` names an edited or removed property, and
+/// `WriterAttributesOmitted` an added one.
 #[test]
 fn inherited_writer_keeps_the_carrier_and_names_every_saved_property_edit() {
     for mutation in 0..7 {
@@ -149,6 +145,7 @@ fn inherited_writer_keeps_the_carrier_and_names_every_saved_property_edit() {
             .position(crate::metadata::default_properties::is_attribute)
             .unwrap();
         let mut edited = ir.model.attributes[i].id.as_str().to_owned();
+        let mut held = Held::Source;
         match mutation {
             0 => {
                 ir.model.attributes.remove(i);
@@ -157,6 +154,7 @@ fn inherited_writer_keeps_the_carrier_and_names_every_saved_property_edit() {
                 let mut row = ir.model.attributes[i].clone();
                 row.id = AttributeId::mint("sldprt:metadata:default_property#8:4:Added").unwrap();
                 edited = row.id.as_str().to_owned();
+                held = Held::Nothing;
                 ir.model.attributes.push(row);
             }
             2 => ir.model.attributes[i].name = "Renamed".into(),
@@ -180,14 +178,13 @@ fn inherited_writer_keeps_the_carrier_and_names_every_saved_property_edit() {
             _ => unreachable!(),
         }
         drop(ir);
-        let (bytes, omitted) = crate::test_support::write_with_omitted_attributes(
+        let (bytes, losses) = crate::test_support::write_with_unwritten_attributes(
             decoded.ir(),
             decoded.source_fidelity(),
         )
         .unwrap_or_else(|error| panic!("mutation {mutation}: {error}"));
         assert_eq!(carrier(&bytes), XML, "mutation {mutation}");
-        let loss = saved_property_loss(&omitted);
-        assert!(loss.contains(&edited), "mutation {mutation}: {loss}");
+        losses.assert_charged(held, "saved-property edits", &edited);
     }
 }
 #[test]
@@ -217,7 +214,7 @@ fn saved_negative_zero_and_zero_are_one_property_value() {
     assert_eq!(members[0].payload(), XML);
 }
 /// A unit mirror the default carrier owns is a saved property: the carrier
-/// keeps the stored code, and the loss names the mirror.
+/// keeps the stored code, and `export:edit.dropped` names the mirror.
 #[test]
 fn inherited_writer_keeps_the_saved_carrier_and_names_a_changed_unit_mirror() {
     let mut decoded = fixture();
@@ -247,12 +244,13 @@ fn inherited_writer_keeps_the_saved_carrier_and_names_a_changed_unit_mirror() {
     mirror.values = vec![Some(AttributeValue::Integer(3))];
     let mirror = mirror.id.as_str().to_owned();
     drop(ir);
-    let (bytes, omitted) =
-        crate::test_support::write_with_omitted_attributes(decoded.ir(), decoded.source_fidelity())
-            .unwrap();
+    let (bytes, losses) = crate::test_support::write_with_unwritten_attributes(
+        decoded.ir(),
+        decoded.source_fidelity(),
+    )
+    .unwrap();
     assert_eq!(carrier(&bytes), XML);
-    let loss = saved_property_loss(&omitted);
-    assert!(loss.contains(&mirror), "{loss}");
+    losses.assert_charged(Held::Source, "saved-property edits", &mirror);
 }
 
 /// A document with no source states saved properties no carrier holds: the
@@ -273,14 +271,11 @@ fn source_less_writer_writes_the_part_and_names_its_saved_properties() {
         cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
     )
     .unwrap();
-    let omitted = plan
-        .report()
-        .losses
-        .iter()
-        .map(|loss| loss.message.clone())
-        .collect::<Vec<_>>();
-    let loss = saved_property_loss(&omitted);
-    assert!(loss.contains(id), "{loss}");
+    crate::test_support::UnwrittenLosses::of(&plan.report().losses).assert_charged(
+        Held::Nothing,
+        "saved-property edits",
+        id,
+    );
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     assert!(!bytes.is_empty());

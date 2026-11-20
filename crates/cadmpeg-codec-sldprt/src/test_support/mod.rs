@@ -21,23 +21,57 @@ pub(crate) fn plan_inherited_write(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
-/// Plans and writes an inherited write. Returns its bytes and the messages of
-/// its `WriterAttributesOmitted` losses.
-pub(crate) fn write_with_omitted_attributes(
+/// The messages of a write's unwritten-attribute losses, by code.
+#[derive(Debug, Default)]
+pub(crate) struct UnwrittenLosses {
+    /// `export:edit.dropped`: records kept as the source stored them.
+    pub(crate) dropped: Vec<String>,
+    /// `WriterAttributesOmitted`: attributes with no record.
+    pub(crate) omitted: Vec<String>,
+}
+
+impl UnwrittenLosses {
+    pub(crate) fn of(losses: &[cadmpeg_ir::report::loss::LossNote]) -> Self {
+        let mut found = Self::default();
+        for loss in losses {
+            if loss.code.namespace() == "export" && loss.code.local_code() == "edit.dropped" {
+                found.dropped.push(loss.message.clone());
+            } else if loss.code == crate::loss::SldprtLossCode::WriterAttributesOmitted.kind() {
+                found.omitted.push(loss.message.clone());
+            }
+        }
+        found
+    }
+
+    /// One message of the code `held` selects states `reason` and names `id`
+    /// as a whole token, and no message of the other code names it.
+    pub(crate) fn assert_charged(&self, held: crate::writer::Held, reason: &str, id: &str) {
+        let (charged, other) = match held {
+            crate::writer::Held::Source => (&self.dropped, &self.omitted),
+            crate::writer::Held::Nothing => (&self.omitted, &self.dropped),
+        };
+        let names = |message: &String| message.split([' ', ',']).any(|token| token == id);
+        assert!(
+            charged
+                .iter()
+                .any(|message| message.contains(reason) && names(message)),
+            "{held:?} {reason} {id}: {self:?}"
+        );
+        assert!(!other.iter().any(names), "{held:?} {id}: {self:?}");
+    }
+}
+
+/// Plans and writes an inherited write. Returns its bytes and its
+/// unwritten-attribute losses.
+pub(crate) fn write_with_unwritten_attributes(
     ir: &CadIr,
     fidelity: &SourceFidelity,
-) -> Result<(Vec<u8>, Vec<String>), CodecError> {
+) -> Result<(Vec<u8>, UnwrittenLosses), CodecError> {
     let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
-    let omitted = plan
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| loss.code == crate::loss::SldprtLossCode::WriterAttributesOmitted.kind())
-        .map(|loss| loss.message.clone())
-        .collect();
+    let losses = UnwrittenLosses::of(&plan.report().losses);
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes)?;
-    Ok((bytes, omitted))
+    Ok((bytes, losses))
 }
 
 /// Supply an authored native envelope for semantic fixture assertions.
