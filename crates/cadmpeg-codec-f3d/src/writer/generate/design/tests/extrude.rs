@@ -23,6 +23,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::sketches::SketchId;
 
 use super::super::extrude::{ring, LoopEntry};
 use super::super::sketch::{CurveGeometry, OriginPlane, PlannedCurve, PlannedSketch};
@@ -561,7 +562,11 @@ fn a_sketch_after_the_extrude_follows_it() {
 
 /// A planned sketch on `XY` of `lines`, each from its first to its second
 /// point, in cm.
-fn planned<'a>(id: &'a FeatureId, lines: &[([f64; 2], [f64; 2])]) -> PlannedSketch<'a> {
+fn planned<'a>(
+    id: &'a FeatureId,
+    sketch: &'a SketchId,
+    lines: &[([f64; 2], [f64; 2])],
+) -> PlannedSketch<'a> {
     let mut points = Vec::new();
     let mut curves = Vec::new();
     for (start, end) in lines {
@@ -576,11 +581,14 @@ fn planned<'a>(id: &'a FeatureId, lines: &[([f64; 2], [f64; 2])]) -> PlannedSket
     }
     PlannedSketch {
         feature: id,
+        sketch,
         plane: OriginPlane::Xy,
         mirrored: false,
         points,
         curves,
         relations: Vec::new(),
+        candidates: Vec::new(),
+        dimensions: Vec::new(),
     }
 }
 
@@ -591,8 +599,9 @@ fn entry(curve: usize, reversed: bool) -> LoopEntry {
 #[test]
 fn the_walk_starts_at_the_last_line_and_runs_counterclockwise() {
     let id = feature_id("walk");
+    let sketch = sketch_id("walk");
     let (a, b, c, d) = ([0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]);
-    let counterclockwise = planned(&id, &[(a, b), (b, c), (c, d), (d, a)]);
+    let counterclockwise = planned(&id, &sketch, &[(a, b), (b, c), (c, d), (d, a)]);
     assert_eq!(
         ring(&counterclockwise, TOLERANCE),
         Ok(vec![
@@ -603,7 +612,7 @@ fn the_walk_starts_at_the_last_line_and_runs_counterclockwise() {
         ])
     );
     // The last line drawn against the ring: token 3 is the line after it.
-    let last_reversed = planned(&id, &[(a, b), (b, c), (c, d), (a, d)]);
+    let last_reversed = planned(&id, &sketch, &[(a, b), (b, c), (c, d), (a, d)]);
     assert_eq!(
         ring(&last_reversed, TOLERANCE),
         Ok(vec![
@@ -614,7 +623,7 @@ fn the_walk_starts_at_the_last_line_and_runs_counterclockwise() {
         ])
     );
     // Drawn clockwise: the ring runs every line from its end.
-    let clockwise = planned(&id, &[(a, d), (d, c), (c, b), (b, a)]);
+    let clockwise = planned(&id, &sketch, &[(a, d), (d, c), (c, b), (b, a)]);
     assert_eq!(
         ring(&clockwise, TOLERANCE),
         Ok(vec![
@@ -624,10 +633,11 @@ fn the_walk_starts_at_the_last_line_and_runs_counterclockwise() {
             entry(3, true)
         ])
     );
-    let open = planned(&id, &[(a, b), (b, c), (c, d)]);
+    let open = planned(&id, &sketch, &[(a, b), (b, c), (c, d)]);
     assert!(ring(&open, TOLERANCE).is_err());
     let circle = PlannedSketch {
         feature: &id,
+        sketch: &sketch,
         plane: OriginPlane::Xy,
         mirrored: false,
         points: vec![[0.0, 0.0]],
@@ -639,6 +649,8 @@ fn the_walk_starts_at_the_last_line_and_runs_counterclockwise() {
             construction: false,
         }],
         relations: Vec::new(),
+        candidates: Vec::new(),
+        dimensions: Vec::new(),
     };
     assert_eq!(ring(&circle, TOLERANCE), Ok(vec![entry(0, false)]));
 }

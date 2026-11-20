@@ -43,10 +43,6 @@ const FAMILY_COUNTER: &str = "DcBaseFeatureMetaType";
 const SKETCH_COUNTER: &str = "DcSketchMetaType";
 /// The counter the timeline context keeps for the `Extrude` family.
 const EXTRUDE_COUNTER: &str = "DcExtrudeFeatureMetaType";
-/// The context value of a design with an `Extrude`: the number of `d<n>`
-/// parameters the design creates, the extrude's two (f3d-open-items.md
-/// DR-882).
-const EXTRUDE_CONTEXT_VALUE: u64 = 2;
 /// The flag of a dependency-table edge from a profile selection to its
 /// `Sketch` scope (f3d-open-items.md DR-891).
 const SKETCH_EDGE: u32 = 4;
@@ -328,6 +324,7 @@ impl BaseFeaturePlan<'_> {
             sketches: &[],
             persistent_id: self.persistent_id,
             extrude: None,
+            context_value: 0,
         };
         writer.timeline(&mut out)?;
         writer.context(&mut out)?;
@@ -420,6 +417,7 @@ impl BaseFeaturePlan<'_> {
             sketches: &ctx.roster.sketches.items,
             persistent_id: persistent_id(ctx.roster.sketches.items.len())?,
             extrude,
+            context_value: ctx.context_value(),
         };
         writer.timeline(out)?;
         writer.context(out)?;
@@ -428,7 +426,7 @@ impl BaseFeaturePlan<'_> {
         }
         writer.components(out)?;
         writer.origin_container(out);
-        writer.parameter_collection(out, &ctx.roster.parameters)?;
+        writer.parameter_collection(out, &ctx.collected_parameters())?;
         if ctx.roster.parameters.is_empty() {
             return Ok(());
         }
@@ -686,6 +684,9 @@ struct Writer<'a> {
     persistent_id: u64,
     /// The `Extrude` written in place of the `Base Feature`.
     extrude: Option<ExtrudeItem<'a>>,
+    /// The timeline context value: the largest source ordinal of an owned
+    /// parameter (f3d.md §3.1, "Design records of Sketch items").
+    context_value: u64,
 }
 
 /// The records of the `Extrude` item and its place in the timeline.
@@ -757,6 +758,7 @@ impl Writer<'_> {
             match item {
                 TimelineItem::Sketch(sketch) => {
                     members.extend([sketch.scope, sketch.path, sketch.placement]);
+                    members.extend(sketch.owners());
                 }
                 TimelineItem::Extrude(extrude) => {
                     let records = extrude.records;
@@ -784,7 +786,9 @@ impl Writer<'_> {
         for item in self.items() {
             match item {
                 TimelineItem::Sketch(sketch) => {
-                    members.extend([sketch.path, sketch.placement, sketch.scope]);
+                    members.extend([sketch.path, sketch.placement]);
+                    members.extend(sketch.owners());
+                    members.push(sketch.scope);
                 }
                 TimelineItem::Extrude(extrude) => {
                     let records = extrude.records;
@@ -835,13 +839,9 @@ impl Writer<'_> {
         for (name, value) in counters {
             out.lp_ascii(name)?.u64(value);
         }
-        out.u64(if self.extrude.is_some() {
-            EXTRUDE_CONTEXT_VALUE
-        } else {
-            0
-        })
-        .u32(1)
-        .reference(indices.component_link);
+        out.u64(self.context_value)
+            .u32(1)
+            .reference(indices.component_link);
         for record in [
             indices.context_12d00ac0,
             indices.context_members,
@@ -1111,13 +1111,17 @@ impl Writer<'_> {
         for item in self.items() {
             match item {
                 TimelineItem::Sketch(sketch) => {
-                    inputs.push((
-                        sketch.scope,
-                        vec![(component, COMPONENT_EDGE), (sketch.placement, EDGE)],
-                    ));
+                    let mut edges = vec![(component, COMPONENT_EDGE), (sketch.placement, EDGE)];
+                    edges.extend(sketch.owners().map(|owner| (owner, EDGE)));
+                    inputs.push((sketch.scope, edges));
                     inputs.push((sketch.placement, vec![(sketch.path, EDGE)]));
                     dependents.push((sketch.path, vec![(sketch.placement, EDGE)]));
                     dependents.push((sketch.placement, vec![(sketch.scope, EDGE)]));
+                    dependents.extend(
+                        sketch
+                            .owners()
+                            .map(|owner| (owner, vec![(sketch.scope, EDGE)])),
+                    );
                     scopes.push(sketch.scope);
                 }
                 TimelineItem::Extrude(extrude) => {

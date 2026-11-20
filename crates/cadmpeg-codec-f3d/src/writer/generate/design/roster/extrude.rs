@@ -8,13 +8,14 @@
 use cadmpeg_core::CodecError;
 
 use super::super::base_feature::{timestamp_table, DURATION, EPOCH};
-use super::super::extrude::{ExtrudePlan, OwnedParameter};
+use super::super::extrude::ExtrudePlan;
 use super::super::frames::DesignRecords;
 use super::super::history::{HEAD_STATE, ROOT_STATE};
 use super::super::sketch::{CurveGeometry, PlannedSketch};
 use super::super::types;
+use super::owned::{Owned, Trailer, DISCRIMINATOR};
 use super::sketches::{curve_identity, item_companion, SketchRecords, COMPONENT, OWNER_COLLECTION};
-use super::{count, Context, PARAMETER_COLLECTION};
+use super::{count, Context};
 use crate::records::references::DesignClassTag;
 use crate::writer::generate::presentation::TypeRow;
 
@@ -39,9 +40,6 @@ const CURVE_ENTRY: u32 = 3;
 /// The sense word of a curve-record entry whose first end is the start of
 /// the stored line.
 const FORWARD_SENSE: u32 = 1;
-/// The family discriminator of the parameters of a sketch-driven `Extrude`
-/// in Fusion's `[Sketch, Extrude]` designs (f3d-open-items.md DR-911).
-const DISCRIMINATOR: u64 = 6;
 /// The source kinds of the two owned parameters.
 const ALONG_DISTANCE: &str = "AlongDistance";
 const TAPER_ANGLE: &str = "TaperAngle";
@@ -179,8 +177,6 @@ struct Classes {
     identity: DesignClassTag,
     selection: DesignClassTag,
     regions: DesignClassTag,
-    owner: DesignClassTag,
-    parameter: DesignClassTag,
     side: DesignClassTag,
     curve: DesignClassTag,
     body: DesignClassTag,
@@ -202,8 +198,6 @@ impl Classes {
             identity: class(types::SELECTION_IDENTITY)?,
             selection: class(types::PROFILE_SELECTION)?,
             regions: class(types::PROFILE_REGIONS)?,
-            owner: class(types::PARAMETER_OWNER)?,
-            parameter: class(types::PARAMETER)?,
             side: class(types::SIDE_ENTRY)?,
             curve: class(types::CURVE_IDENTITIES)?,
             body: class(types::BODY_ENTRY)?,
@@ -269,8 +263,25 @@ pub(super) fn write(
     item.group(out)?;
     item.start(out)?;
     item.selection(out)?;
-    item.owner(out, records.along, 0, 1, ALONG_DISTANCE, &plan.along)?;
-    item.owner(out, records.taper, 1, 2, TAPER_ANGLE, &plan.taper)?;
+    for (local, ([owner, parameter, companion], kind, value)) in (0..).zip([
+        (records.along, ALONG_DISTANCE, &plan.along),
+        (records.taper, TAPER_ANGLE, &plan.taper),
+    ]) {
+        super::owned::write(
+            ctx,
+            out,
+            &Owned {
+                owner,
+                parameter,
+                companion,
+                scope: records.scope,
+                local,
+                kind,
+                trailer: Trailer::Flagged,
+                value,
+            },
+        )?;
+    }
     item.tracked(out)?;
     Ok(())
 }
@@ -541,60 +552,6 @@ impl Item<'_> {
         curve_identity(self.ctx.sketches, self.plan.sketch, curve)
     }
 
-    /// An owned parameter's owner, the parameter in the discriminated form
-    /// and the owner's companion.
-    fn owner(
-        &self,
-        out: &mut DesignRecords,
-        [owner, parameter, companion]: [u32; 3],
-        local: u32,
-        ordinal: u32,
-        kind: &str,
-        owned: &OwnedParameter,
-    ) -> Result<(), CodecError> {
-        let (records, classes) = (self.records, &self.classes);
-        out.record(&classes.owner, owner)
-            .zeros(8)
-            .byte(1)
-            .u32(1)
-            .reference(records.scope)
-            .u32(local)
-            .byte(0)
-            .f64(owned.value)
-            .reference(parameter)
-            .u32(ordinal)
-            .zeros(4)
-            .reference(records.scope)
-            .raw(&[1, 0, 0])
-            .reference(companion)
-            .byte(0)
-            .reference(records.scope);
-        self.paired(out, owner);
-        out.record(&classes.parameter, parameter)
-            .zeros(11)
-            .u64(DISCRIMINATOR)
-            .byte(0)
-            .u32(ordinal)
-            .reference(owner)
-            .lp_utf16(&owned.expression)?
-            .zeros(9)
-            .lp_utf16(kind)?
-            .u32(0)
-            .lp_utf16(owned.unit.name())?
-            .lp_utf16(&owned.name)?
-            .f64(owned.value)
-            .byte(0)
-            .reference(PARAMETER_COLLECTION);
-        timestamp_table(
-            out,
-            &classes.stamps,
-            companion,
-            false,
-            &[],
-            (owner, self.stamp),
-        )
-    }
-
     /// The tracked-results table, a side-face entry and curve record per
     /// ring entry, and the body entry.
     fn tracked(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
@@ -728,7 +685,7 @@ pub(super) fn losses(
     let single = ctx.sketches.len() == 1;
     if !single {
         entries.push(
-            "record 198 (timeline context: context value 2, the number of d<n> parameters, where f3d-open-items.md DR-882 states no value for this item set)".to_owned(),
+            format!("record 198 (timeline context: context value {}, the largest source ordinal of an owned parameter, where f3d-open-items.md DR-882 states no value for this item set)", ctx.context_value()),
         );
         entries.push(
             "records 199, 200 and 201 (owner collection, B65B5682 and dependency table: f3d-open-items.md DR-891's orders, stated for one Sketch item, applied item by item)".to_owned(),

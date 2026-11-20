@@ -39,11 +39,35 @@ use crate::writer::generate::reduce::named_loss;
 
 /// The parameter collection the native path's parameter tails name.
 const NATIVE_PARAMETER_COLLECTION: u32 = 19;
+/// The name stem of a new owned parameter (f3d.md §3.1, "Owned
+/// parameters": `d<n>`, with `n` its source ordinal).
+const OWNED_STEM: &str = "d";
 
 /// The parameters written as Fusion user parameters, and the losses taken.
 pub(in crate::writer::generate) struct ParameterPlan {
     written: Vec<PlannedParameter>,
+    /// The parameters taken out of the user parameters by the feature that
+    /// owns them.
+    claimed: Vec<PlannedParameter>,
+    /// The names of the new parameters written features own.
+    owned: Vec<String>,
     losses: Vec<LossNote>,
+}
+
+/// A parameter a written feature owns, as its record holds it.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct OwnedParameter {
+    pub(super) name: String,
+    pub(super) expression: String,
+    pub(super) unit: UnitSymbol,
+    /// The value in Fusion's database units: cm for a length, rad for an
+    /// angle.
+    pub(super) value: f64,
+    /// The source ordinal, which the owner also stores as its parameter
+    /// number.
+    pub(super) ordinal: u32,
+    /// Whether the expression names another parameter.
+    pub(super) names_parameter: bool,
 }
 
 /// One user parameter as the record holds it.
@@ -56,8 +80,10 @@ struct PlannedParameter {
     /// radians for an angle.
     evaluated: f64,
     comment: Option<String>,
-    /// The parameters its written expression names.
+    /// The parameters its definition names.
     references: Vec<ParameterId>,
+    /// Whether the written expression names a parameter.
+    names_parameter: bool,
 }
 
 /// Where the native path takes its parameter records from.
@@ -174,6 +200,7 @@ pub(in crate::writer::generate) fn plan(
             unwritten.push(parameter.id.to_string());
             continue;
         };
+        let printed_expression = printed.is_some();
         let text = match printed {
             Some(text) => text,
             None => {
@@ -213,7 +240,7 @@ pub(in crate::writer::generate) fn plan(
             .into_iter()
             .filter_map(expression::referenced)
             .cloned()
-            .collect();
+            .collect::<Vec<_>>();
         written_names.insert(&parameter.id, name);
         written_values.insert(&parameter.id, canonical);
         written.push(PlannedParameter {
@@ -226,6 +253,7 @@ pub(in crate::writer::generate) fn plan(
                 .comment
                 .clone()
                 .filter(|comment| !comment.is_empty()),
+            names_parameter: printed_expression && !references.is_empty(),
             references,
         });
     }
@@ -270,7 +298,12 @@ pub(in crate::writer::generate) fn plan(
             integers.join(", ")
         )));
     }
-    ParameterPlan { written, losses }
+    ParameterPlan {
+        written,
+        claimed: Vec::new(),
+        owned: Vec::new(),
+        losses,
+    }
 }
 
 /// The native records when the neutral parameters equal their projection;
@@ -286,6 +319,8 @@ pub(in crate::writer::generate) fn native_or_neutral(
     let mut plan = super::root_scope(target).map_or_else(
         || ParameterPlan {
             written: Vec::new(),
+            claimed: Vec::new(),
+            owned: Vec::new(),
             losses: Vec::new(),
         },
         |scope| plan(target, &scope.definition),
@@ -440,14 +475,20 @@ impl ParameterPlan {
         self.losses
     }
 
-    /// The names of the written parameters.
+    /// The names of the written parameters, user and owned.
     pub(super) fn names(&self) -> impl Iterator<Item = &str> {
-        self.written.iter().map(|parameter| parameter.name.as_str())
+        self.written
+            .iter()
+            .chain(&self.claimed)
+            .map(|parameter| parameter.name.as_str())
+            .chain(self.owned.iter().map(String::as_str))
     }
 
+    /// The written parameter `id`, user or claimed.
     fn planned(&self, id: &ParameterId) -> Option<&PlannedParameter> {
         self.written
             .iter()
+            .chain(&self.claimed)
             .find(|parameter| &parameter.source == id)
     }
 
@@ -456,40 +497,87 @@ impl ParameterPlan {
         self.planned(id).map(|parameter| parameter.name.as_str())
     }
 
-    /// The value of the written length parameter `id`, in mm.
-    pub(super) fn length(&self, id: &ParameterId) -> Option<f64> {
+    /// The value of the written parameter `id` of `quantity`, in Fusion's
+    /// database units.
+    pub(super) fn value(&self, id: &ParameterId, quantity: Quantity) -> Option<f64> {
         self.planned(id)
             .filter(|parameter| {
                 parameter
                     .unit
-                    .is_some_and(|unit| unit.canonical().1 == Quantity::LENGTH)
+                    .is_some_and(|unit| unit.canonical().1 == quantity)
             })
-            .map(|parameter| Form::Length.canonical(parameter.evaluated))
+            .map(|parameter| parameter.evaluated)
     }
 
-    /// The written length parameter `id` as a parameter its feature owns,
-    /// taken out of the user parameters; `None` where another written
-    /// parameter names it.
-    pub(super) fn claim(&mut self, id: &ParameterId) -> Option<super::extrude::OwnedParameter> {
-        self.length(id)?;
-        if self
-            .written
-            .iter()
-            .any(|parameter| parameter.references.contains(id))
-        {
-            return None;
-        }
+    /// The value of the written length parameter `id`, in mm.
+    pub(super) fn length(&self, id: &ParameterId) -> Option<f64> {
+        self.value(id, Quantity::LENGTH)
+            .map(|value| Form::Length.canonical(value))
+    }
+
+    /// The user parameter `id` of `quantity` as a parameter of the feature
+    /// that owns it, with source ordinal `ordinal`, taken out of the user
+    /// parameters; `None` where it is no user parameter of `quantity` or a
+    /// written parameter names it.
+    pub(super) fn claim(
+        &mut self,
+        id: &ParameterId,
+        quantity: Quantity,
+        ordinal: u32,
+    ) -> Option<OwnedParameter> {
         let position = self
             .written
             .iter()
             .position(|parameter| &parameter.source == id)?;
+        let unit = self.written[position]
+            .unit
+            .filter(|unit| unit.canonical().1 == quantity)?;
+        if self
+            .written
+            .iter()
+            .chain(&self.claimed)
+            .any(|parameter| parameter.references.contains(id))
+        {
+            return None;
+        }
         let parameter = self.written.remove(position);
-        Some(super::extrude::OwnedParameter {
-            name: parameter.name,
-            expression: parameter.expression,
-            unit: parameter.unit?,
+        let owned = OwnedParameter {
+            name: parameter.name.clone(),
+            expression: parameter.expression.clone(),
+            unit,
             value: parameter.evaluated,
-        })
+            ordinal,
+            names_parameter: parameter.names_parameter,
+        };
+        self.claimed.push(parameter);
+        Some(owned)
+    }
+
+    /// A new parameter a feature owns, named `d<ordinal>` made unique among
+    /// the written parameters.
+    pub(super) fn owned(
+        &mut self,
+        ordinal: u32,
+        expression: String,
+        unit: UnitSymbol,
+        value: f64,
+        names_parameter: bool,
+    ) -> OwnedParameter {
+        let base = format!("{OWNED_STEM}{ordinal}");
+        let taken = self.names().map(str::to_owned).collect::<BTreeSet<_>>();
+        let name = std::iter::once(base.clone())
+            .chain((2..=taken.len() + 2).map(|suffix| format!("{base}_{suffix}")))
+            .find(|name| !taken.contains(name))
+            .unwrap_or(base);
+        self.owned.push(name.clone());
+        OwnedParameter {
+            name,
+            expression,
+            unit,
+            value,
+            ordinal,
+            names_parameter,
+        }
     }
 }
 

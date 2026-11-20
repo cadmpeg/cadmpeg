@@ -4,6 +4,10 @@
 //! records in Fusion's creation order after the roster, the `SketchesRoot`
 //! node, and the sketch collection that lists the sketches.
 
+pub(super) mod dimensions;
+
+use std::collections::HashMap;
+
 use cadmpeg_core::CodecError;
 
 use super::super::base_feature::{timestamp_table, DURATION, EPOCH};
@@ -82,6 +86,23 @@ pub(in crate::writer::generate::design) struct SketchRecords {
     transform: u32,
     target: u32,
     second_identity: u32,
+    /// Each dimension's frame, parameter, owner and companion.
+    dimensions: Vec<[u32; 4]>,
+}
+
+impl SketchRecords {
+    /// The owners of the sketch's dimension parameters, in local-ordinal
+    /// order.
+    pub(in crate::writer::generate::design) fn owners(&self) -> impl Iterator<Item = u32> + '_ {
+        self.dimensions.iter().map(|[_, _, owner, _]| *owner)
+    }
+
+    /// The parameters of the sketch's dimensions.
+    pub(in crate::writer::generate::design) fn parameters(&self) -> impl Iterator<Item = u32> + '_ {
+        self.dimensions
+            .iter()
+            .map(|[_, parameter, _, _]| *parameter)
+    }
 }
 
 /// The records of the design's `Sketch` items.
@@ -151,7 +172,7 @@ impl SketchRoster {
                 })
             })
             .collect::<Result<Vec<_>, _>>()?;
-        self.items.push(SketchRecords {
+        let mut records = SketchRecords {
             container,
             frame,
             origin,
@@ -173,8 +194,23 @@ impl SketchRoster {
             transform: take(types::PLACEMENT_TRANSFORM)?,
             target: take(types::TRANSFORM_TARGET)?,
             second_identity: take(types::TRACKED_IDENTITY)?,
-        });
+            dimensions: Vec::new(),
+        };
+        for dimension in &planned.dimensions {
+            records.dimensions.push([
+                take(dimensions::frame_row(dimension.kind))?,
+                take(types::PARAMETER)?,
+                take(types::PARAMETER_OWNER)?,
+                take(types::RECORD_TIMESTAMPS)?,
+            ]);
+        }
+        self.items.push(records);
         Ok(next)
+    }
+
+    /// Whether a `Sketch` item writes a dimension.
+    pub(super) fn has_dimensions(&self) -> bool {
+        self.items.iter().any(|item| !item.dimensions.is_empty())
     }
 
     pub(in crate::writer::generate::design) fn is_empty(&self) -> bool {
@@ -373,10 +409,11 @@ impl Item<'_> {
         for (curve, record) in self.planned.curves.iter().zip(&self.records.curves) {
             self.curve(out, curve, *record, next())?;
         }
-        self.relations(out)?;
+        let ordinals = self.relations(out)?;
         self.scope(out)?;
         self.placement_path(out)?;
         self.placement(out)?;
+        self.dimensions(out, ordinals)?;
         Ok(identity)
     }
 
@@ -417,9 +454,16 @@ impl Item<'_> {
         for relation in &records.relations {
             out.reference(*relation);
         }
-        out.byte(1)
-            .u32(0)
-            .byte(0)
+        let frames = records
+            .dimensions
+            .iter()
+            .map(|[frame, ..]| *frame)
+            .collect::<Vec<_>>();
+        out.byte(1).u32(count(frames.len())?);
+        for frame in &frames {
+            out.reference(*frame);
+        }
+        out.byte(0)
             .u32(1)
             .u32(SKETCH_WORD)
             .byte(0)
@@ -432,6 +476,7 @@ impl Item<'_> {
         let mut members = vec![records.origin[0]];
         members.extend(records.points.iter().map(|[point, _]| *point));
         members.extend(&records.curves);
+        members.extend(frames);
         out.header(&classes.member, records.container)
             .zeros(8)
             .reference(records.frame)
@@ -522,66 +567,13 @@ impl Item<'_> {
         record: u32,
         identity: u64,
     ) -> Result<(), CodecError> {
-        let points = &self.planned.points;
-        let at = |index: usize| {
-            points
-                .get(index)
-                .copied()
-                .ok_or_else(|| CodecError::malformed(format_args!("sketch point {index}")))
-        };
-        let (row, genesis_value, payload) = match curve.geometry {
-            CurveGeometry::Line { start, end } => {
-                let ([x0, y0], [x1, y1]) = (at(start)?, at(end)?);
-                let (dx, dy) = (x1 - x0, y1 - y0);
-                let length = dx.portable_hypot(dy);
-                let (ux, uy) = if length > 0.0 {
-                    (dx / length, dy / length)
-                } else {
-                    (1.0, 0.0)
-                };
-                (
-                    types::SKETCH_LINE,
-                    GENESIS,
-                    [x0, y0, 0.0, dx, dy, 0.0, ux, uy, 0.0, 0.0, 0.0, 1.0],
-                )
-            }
-            CurveGeometry::Arc {
-                center,
-                radius,
-                angles,
-                ..
-            } => {
-                let [cx, cy] = at(center)?;
-                (
-                    types::SKETCH_CIRCULAR_CURVE,
-                    CIRCULAR_GENESIS,
-                    [
-                        cx, cy, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, radius, angles[0], angles[1],
-                    ],
-                )
-            }
-            CurveGeometry::Circle { center, radius } => {
-                let [cx, cy] = at(center)?;
-                (
-                    types::SKETCH_CIRCULAR_CURVE,
-                    CIRCULAR_GENESIS,
-                    [
-                        cx,
-                        cy,
-                        0.0,
-                        0.0,
-                        0.0,
-                        1.0,
-                        1.0,
-                        0.0,
-                        0.0,
-                        radius,
-                        0.0,
-                        std::f64::consts::TAU,
-                    ],
-                )
+        let (row, genesis_value) = match curve.geometry {
+            CurveGeometry::Line { .. } => (types::SKETCH_LINE, GENESIS),
+            CurveGeometry::Arc { .. } | CurveGeometry::Circle { .. } => {
+                (types::SKETCH_CIRCULAR_CURVE, CIRCULAR_GENESIS)
             }
         };
+        let payload = curve_payload(&curve.geometry, &self.planned.points)?;
         // A class is looked up where the design writes a record of its type:
         // the type table lists the types of the written records.
         out.record(&self.ctx.class(row.guid)?, record)
@@ -618,8 +610,9 @@ impl Item<'_> {
 
     /// The relations: members in ascending record index with their relation
     /// ordinals, the container, the mask, and the members in semantic order.
-    fn relations(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
-        let mut named = std::collections::HashMap::<u32, u32>::new();
+    /// Returns the number of relation ordinals each member has taken.
+    fn relations(&self, out: &mut DesignRecords) -> Result<HashMap<u32, u32>, CodecError> {
+        let mut named = HashMap::<u32, u32>::new();
         for (relation, record) in self.planned.relations.iter().zip(&self.records.relations) {
             let semantic = relation
                 .members
@@ -659,7 +652,7 @@ impl Item<'_> {
             }
             out.byte(0);
         }
-        Ok(())
+        Ok(named)
     }
 
     /// The `Sketch` scope with its 78-byte item tail, the scope's
@@ -668,12 +661,16 @@ impl Item<'_> {
     fn scope(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
         let (records, classes) = (self.records, self.classes);
         let stamp = self.ctx.values.stamps.scope;
+        let owners = records.owners().collect::<Vec<_>>();
         out.record(&classes.scope, records.scope)
             .zeros(9)
             .byte(0)
             .byte(0)
-            .u32(0)
-            .byte(1)
+            .u32(count(owners.len())?);
+        for owner in &owners {
+            out.reference(*owner);
+        }
+        out.byte(1)
             .u32(0)
             .reference(records.container)
             .reference(records.placement)
@@ -682,10 +679,13 @@ impl Item<'_> {
             .u32(0)
             .lp_utf16(NULL_GUID)?
             .zeros(3)
-            .u32(2)
+            .u32(count(2 + owners.len())?)
             .reference(records.path)
-            .reference(records.placement)
-            .u32(u32::MAX)
+            .reference(records.placement);
+        for owner in &owners {
+            out.reference(*owner);
+        }
+        out.u32(u32::MAX)
             .lp_utf16(FAMILY)?
             .u32(self.ordinal)
             .u32(0)
@@ -707,16 +707,18 @@ impl Item<'_> {
             .header(&classes.object, records.scope)
             .zeros(8)
             .reference(OWNER_COLLECTION);
+        let mut entries = vec![
+            (COMPONENT, self.ctx.values.stamps.component),
+            (records.scope, stamp),
+            (records.placement, stamp),
+        ];
+        entries.extend(owners.iter().map(|owner| (*owner, stamp)));
         timestamp_table(
             out,
             &classes.stamps,
             records.scope_stamps,
             true,
-            &[
-                (COMPONENT, self.ctx.values.stamps.component),
-                (records.scope, stamp),
-                (records.placement, stamp),
-            ],
+            &entries,
             (records.scope, stamp),
         )?;
         item_companion(out, &classes.item_companion, records.scope_companion);
@@ -863,6 +865,58 @@ impl Item<'_> {
         self.identity(out, records.second_identity);
         Ok(())
     }
+}
+
+/// The 96-byte analytic payload of a line or circular curve in cm on the
+/// sketch plane, with its points from `points`.
+fn curve_payload(geometry: &CurveGeometry, points: &[[f64; 2]]) -> Result<[f64; 12], CodecError> {
+    let at = |index: usize| {
+        points
+            .get(index)
+            .copied()
+            .ok_or_else(|| CodecError::malformed(format_args!("sketch point {index}")))
+    };
+    Ok(match *geometry {
+        CurveGeometry::Line { start, end } => {
+            let ([x0, y0], [x1, y1]) = (at(start)?, at(end)?);
+            let (dx, dy) = (x1 - x0, y1 - y0);
+            let length = dx.portable_hypot(dy);
+            let (ux, uy) = if length > 0.0 {
+                (dx / length, dy / length)
+            } else {
+                (1.0, 0.0)
+            };
+            [x0, y0, 0.0, dx, dy, 0.0, ux, uy, 0.0, 0.0, 0.0, 1.0]
+        }
+        CurveGeometry::Arc {
+            center,
+            radius,
+            angles,
+            ..
+        } => {
+            let [cx, cy] = at(center)?;
+            [
+                cx, cy, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, radius, angles[0], angles[1],
+            ]
+        }
+        CurveGeometry::Circle { center, radius } => {
+            let [cx, cy] = at(center)?;
+            [
+                cx,
+                cy,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                1.0,
+                0.0,
+                0.0,
+                radius,
+                0.0,
+                std::f64::consts::TAU,
+            ]
+        }
+    })
 }
 
 /// One point record and its companion.

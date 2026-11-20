@@ -16,7 +16,7 @@ use cadmpeg_ir::design::options::{BodyForm, Boolean, BooleanOp};
 use cadmpeg_ir::design::refs::{Member, Position};
 use cadmpeg_ir::design::scope::DesignScope;
 use cadmpeg_ir::design::selection::{PickTarget, Picks};
-use cadmpeg_ir::design::units::UnitSymbol;
+use cadmpeg_ir::design::units::{Quantity, UnitSymbol};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
@@ -25,7 +25,7 @@ use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::topology::Sense;
 
 use super::expression;
-use super::parameters::ParameterPlan;
+use super::parameters::{OwnedParameter, ParameterPlan};
 use super::sketch::{CurveGeometry, PlannedSketch, SketchPlan};
 
 /// The smallest linear tolerance the profile and the faces are checked
@@ -33,9 +33,6 @@ use super::sketch::{CurveGeometry, PlannedSketch, SketchPlan};
 const MIN_LINEAR_TOLERANCE: f64 = 1e-5;
 /// Millimetres per Fusion length unit (cm).
 const MM_PER_CM: f64 = 10.0;
-/// The name stem of the extrude's new parameters (f3d.md §3.1, "Owned
-/// parameters": `d<n>`); the extrude's parameters take `n` 1 and 2.
-const OWNED_STEM: &str = "d";
 
 /// One entry of the profile loop: a curve of the planned sketch, and whether
 /// the ring runs it from its end point to its start point.
@@ -43,17 +40,6 @@ const OWNED_STEM: &str = "d";
 pub(super) struct LoopEntry {
     pub(super) curve: usize,
     pub(super) reversed: bool,
-}
-
-/// A parameter the `Extrude` owns, as its record holds it.
-#[derive(Clone, Debug, PartialEq)]
-pub(super) struct OwnedParameter {
-    pub(super) name: String,
-    pub(super) expression: String,
-    pub(super) unit: UnitSymbol,
-    /// The value in Fusion's database units: cm for a length, rad for an
-    /// angle.
-    pub(super) value: f64,
 }
 
 /// The extrude the design writes as an `Extrude` item.
@@ -112,7 +98,8 @@ impl Decision<'_> {
 /// The decision for the scope's features in timeline order. `failure` is the
 /// error of an earlier attempt to write the `Extrude` form. A written
 /// extrude whose depth binds a parameter takes that parameter out of
-/// `parameters`.
+/// `parameters`; its two parameters take the source ordinals `ordinal` and
+/// `ordinal + 1`.
 pub(super) fn plan<'a>(
     target: &'a CadIr,
     scope: &'a DesignScope,
@@ -120,6 +107,7 @@ pub(super) fn plan<'a>(
     sketches: &SketchPlan<'a>,
     parameters: &mut ParameterPlan,
     failure: Option<&str>,
+    ordinal: u32,
 ) -> Decision<'a> {
     let stateful = features
         .iter()
@@ -147,7 +135,7 @@ pub(super) fn plan<'a>(
         position,
         extrude,
     };
-    match input.plan(parameters) {
+    match input.plan(parameters, ordinal) {
         Ok(plan) => Decision::Extrude(Box::new(plan)),
         Err(reason) => base(reason.to_owned()),
     }
@@ -182,7 +170,11 @@ enum Amount<'a> {
 impl<'a> Input<'a, '_> {
     /// Rows 1 to 10 of the rule, in order; the first that fails names the
     /// reason.
-    fn plan(&self, parameters: &mut ParameterPlan) -> Result<ExtrudePlan<'a>, &'static str> {
+    fn plan(
+        &self,
+        parameters: &mut ParameterPlan,
+        ordinal: u32,
+    ) -> Result<ExtrudePlan<'a>, &'static str> {
         let target = self.target;
         let [body] = target.geometry.bodies.as_slice() else {
             return Err("the design holds more than one body");
@@ -211,43 +203,34 @@ impl<'a> Input<'a, '_> {
         let faces = Faces::new(target, &body.id, linear, target.tolerances.angular.get())
             .matched(planned, &ring, distance)
             .ok_or("its faces do not match its profile")?;
+        let taper_ordinal = ordinal
+            .checked_add(1)
+            .ok_or("its parameters exceed the source ordinals")?;
+        let taper_literal = expression::quantity_literal(0.0, Some(UnitSymbol::Deg))
+            .ok_or("its taper has no Fusion literal")?;
         let along = match amount {
-            Amount::Literal(distance) => new_parameter(
-                parameters,
-                1,
+            Amount::Literal(distance) => parameters.owned(
+                ordinal,
                 expression::quantity_literal(distance, Some(UnitSymbol::Mm))
                     .ok_or("its depth has no Fusion literal")?,
                 UnitSymbol::Mm,
                 distance / MM_PER_CM,
-                &[],
+                false,
             ),
-            Amount::Parameter(parameter) => match parameters.claim(parameter) {
-                Some(claimed) => claimed,
-                None => {
-                    let named = parameters
-                        .name(parameter)
-                        .ok_or("its depth parameter is not written as a length")?
-                        .to_owned();
-                    new_parameter(
-                        parameters,
-                        1,
-                        named,
-                        UnitSymbol::Mm,
-                        distance / MM_PER_CM,
-                        &[],
-                    )
+            Amount::Parameter(parameter) => {
+                match parameters.claim(parameter, Quantity::LENGTH, ordinal) {
+                    Some(claimed) => claimed,
+                    None => {
+                        let named = parameters
+                            .name(parameter)
+                            .ok_or("its depth parameter is not written as a length")?
+                            .to_owned();
+                        parameters.owned(ordinal, named, UnitSymbol::Mm, distance / MM_PER_CM, true)
+                    }
                 }
-            },
+            }
         };
-        let taper = new_parameter(
-            parameters,
-            2,
-            expression::quantity_literal(0.0, Some(UnitSymbol::Deg))
-                .ok_or("its taper has no Fusion literal")?,
-            UnitSymbol::Deg,
-            0.0,
-            &[along.name.as_str()],
-        );
+        let taper = parameters.owned(taper_ordinal, taper_literal, UnitSymbol::Deg, 0.0, false);
         Ok(ExtrudePlan {
             feature: self.feature,
             sketch,
@@ -414,34 +397,6 @@ impl<'a> Input<'a, '_> {
         } else {
             Err("it does not make one new solid")
         }
-    }
-}
-
-/// A new parameter of the extrude, `d<ordinal>` made unique against the
-/// written parameters and `taken`.
-fn new_parameter(
-    parameters: &ParameterPlan,
-    ordinal: u32,
-    expression: String,
-    unit: UnitSymbol,
-    value: f64,
-    taken: &[&str],
-) -> OwnedParameter {
-    let base = format!("{OWNED_STEM}{ordinal}");
-    let used =
-        |name: &str| parameters.names().any(|written| written == name) || taken.contains(&name);
-    let name = std::iter::once(base.clone())
-        .chain(
-            (2..=parameters.names().count() + taken.len() + 2)
-                .map(|suffix| format!("{base}_{suffix}")),
-        )
-        .find(|name| !used(name))
-        .unwrap_or(base);
-    OwnedParameter {
-        name,
-        expression,
-        unit,
-        value,
     }
 }
 
