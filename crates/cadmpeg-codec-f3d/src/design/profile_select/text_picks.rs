@@ -7,7 +7,6 @@ use super::ScopedExtrudeProfileResolution;
 use crate::design::geometry::atomic_sketch_regions;
 use crate::ids::native_stream;
 use crate::loss::F3dLossCode;
-use crate::records::sketch_relations::SketchRelationOperand;
 use crate::records::topology::extrude_selection::{
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
 };
@@ -24,8 +23,9 @@ use cadmpeg_ir::sketches::{Sketch, SketchGeometryDefinition};
 ///
 /// When the member count equals the glyph count of the Sketch text, the
 /// profile names the text entities. Otherwise the group stays native.
-/// `None` when the group holds a curve pick, the Sketch holds a curve outside
-/// the line, arc, and circle families, or the carried regions do not resolve.
+/// `None` when a member resolves to a Sketch point or curve, the Sketch holds
+/// a curve outside the line, arc, and circle families, or the carried regions
+/// do not resolve.
 pub(super) fn text_glyph_selection(
     feature: &str,
     sketch: &Sketch,
@@ -74,12 +74,9 @@ pub(super) fn text_glyph_selection(
         })
         .collect::<Vec<_>>();
     if picks.len() != group.members().len()
-        || picks.iter().any(|member| {
-            matches!(
-                member.resolved_geometry,
-                Some(SketchRelationOperand::Curve { .. })
-            )
-        })
+        || picks
+            .iter()
+            .any(|member| member.resolved_geometry.is_some())
     {
         return Ok(None);
     }

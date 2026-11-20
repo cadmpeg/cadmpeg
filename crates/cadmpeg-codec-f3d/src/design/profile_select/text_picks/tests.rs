@@ -225,3 +225,14 @@ fn a_curve_pick_leaves_the_selection_to_the_curve_rules() {
     });
     assert!(select(&entities, &group(7), &members).is_none());
 }
+
+#[test]
+fn a_point_pick_leaves_the_selection_to_the_point_rules() {
+    let entities = plate_with_text("NO BREAD", false);
+    let mut members = members(3);
+    members[0].resolved_geometry = Some(SketchRelationOperand::Point {
+        record_index: 1,
+        persistent_id: Some(2),
+    });
+    assert!(select(&entities, &group(3), &members).is_none());
+}
