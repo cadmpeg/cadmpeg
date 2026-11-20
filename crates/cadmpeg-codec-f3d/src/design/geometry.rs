@@ -17,7 +17,7 @@ use cadmpeg_ir::geometry::pcurve::PcurveNurbs;
 use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::PositiveLength;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 
 const EPS_GEOMETRY_HORIZONTAL_RAY_ARC_WINDING_E12: f64 = 1.0e-12;
@@ -86,6 +86,15 @@ pub(crate) struct ProfileGeometryWork {
     spatial_transition_assumed_selections: Cell<usize>,
     hole_boundary_inferred_selections: Cell<usize>,
     region_hole_inferred_selections: Cell<usize>,
+    sampled_regions: RefCell<Vec<RegionSampleEntry>>,
+}
+
+/// The samples of one set of atomic regions, keyed by the bits of the
+/// tolerance and of each region polyline.
+struct RegionSampleEntry {
+    tolerance: u64,
+    polylines: Vec<Vec<Point2>>,
+    samples: Option<Vec<(Point2, Vec<usize>)>>,
 }
 
 impl ProfileGeometryWork {
@@ -124,7 +133,52 @@ impl ProfileGeometryWork {
             spatial_transition_assumed_selections: Cell::new(0),
             hole_boundary_inferred_selections: Cell::new(0),
             region_hole_inferred_selections: Cell::new(0),
+            sampled_regions: RefCell::new(Vec::new()),
         }
+    }
+
+    /// The samples `sample` takes of `regions` at `tolerance`. Each distinct
+    /// tolerance and set of region polylines is sampled once.
+    pub(super) fn region_samples(
+        &self,
+        regions: &[AtomicSketchRegion],
+        tolerance: f64,
+        sample: impl FnOnce() -> Option<Vec<(Point2, Vec<usize>)>>,
+    ) -> Option<Vec<(Point2, Vec<usize>)>> {
+        let same_points = |left: &[Point2], right: &[Point2]| {
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .zip(right)
+                    .all(|(a, b)| a.u.to_bits() == b.u.to_bits() && a.v.to_bits() == b.v.to_bits())
+        };
+        let hit = self
+            .sampled_regions
+            .borrow()
+            .iter()
+            .find(|entry| {
+                entry.tolerance == tolerance.to_bits()
+                    && entry.polylines.len() == regions.len()
+                    && entry
+                        .polylines
+                        .iter()
+                        .zip(regions)
+                        .all(|(polyline, region)| same_points(polyline, &region.polyline))
+            })
+            .map(|entry| entry.samples.clone());
+        if let Some(samples) = hit {
+            return samples;
+        }
+        let samples = sample();
+        self.sampled_regions.borrow_mut().push(RegionSampleEntry {
+            tolerance: tolerance.to_bits(),
+            polylines: regions
+                .iter()
+                .map(|region| region.polyline.clone())
+                .collect(),
+            samples: samples.clone(),
+        });
+        samples
     }
 
     pub(crate) fn record_hole_boundary_profile_inferred(&self) {

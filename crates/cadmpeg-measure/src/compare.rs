@@ -14,6 +14,7 @@
 
 mod candidates;
 mod classes;
+mod instances;
 mod placement;
 mod rows;
 
@@ -524,7 +525,28 @@ pub fn compare(
     for list in unmatched.iter_mut().chain(unmeasured.iter_mut()) {
         list.sort();
     }
-    let document = document_rows(a, b, &context, placement);
+    let instances = (placement.a == PlacementClass::Occurrences
+        || placement.b == PlacementClass::Occurrences)
+        .then(|| {
+            let world_a = instances::world_instances(a_ir)?;
+            let world_b = instances::world_instances(b_ir)?;
+            let paired: Vec<(&str, &str)> = pairs
+                .iter()
+                .map(|pair| (pair.a.as_str(), pair.b.as_str()))
+                .collect();
+            let tolerance = context.floor * context.scale
+                + a_ir.tolerances.linear.get()
+                + b_ir.tolerances.linear.get();
+            Some(instances::instance_rows(
+                &world_a,
+                &world_b,
+                &paired,
+                context.scale,
+                tolerance,
+            ))
+        })
+        .flatten();
+    let document = document_rows(a, b, &context, placement, instances);
     let rows = pairs
         .iter()
         .flat_map(|pair| pair.quantities.iter())

@@ -274,6 +274,17 @@ fn rolling_ball_jet_evaluation_interpolates_spine_and_sweeps_arc() {
     assert!(start.y.abs() <= TEST_TOLERANCE);
     assert!(start.z.abs() <= TEST_TOLERANCE);
     assert!(rolling_ball_jet_point(&definition, 5.0, 1.0).is_ok());
+    let on_span = crate::eval::rolling_ball_jet_point_on_span;
+    let end = on_span(&definition, 3.5, 2.0, 2.0).expect("declared span endpoint");
+    assert!(end.distance(Point3::new(-1.5, 0.0, 0.0)) <= TEST_TOLERANCE);
+    assert_eq!(
+        on_span(&definition, 3.5, 2.5, 2.0),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    );
+    assert_eq!(
+        rolling_ball_jet_point(&definition, 3.5, 2.0),
+        Err(crate::eval::EvaluationFailure::NoValue)
+    );
     assert_eq!(
         rolling_ball_jet_point(&definition, 1.0, 0.5),
         Err(crate::eval::EvaluationFailure::NoValue)
@@ -406,6 +417,9 @@ fn rolling_ball_jet_evaluation_uses_fixed_radius_frame() {
     assert!((point.x - expected.x).abs() <= TEST_TOLERANCE);
     assert!((point.y - expected.y).abs() <= TEST_TOLERANCE);
     assert!((point.z - expected.z).abs() <= TEST_TOLERANCE);
+    let local = crate::eval::variable_rolling_ball_jet_point_on_span(&definition, 3.5, 0.5, 2.0)
+        .expect("jet point with interpolated radius");
+    assert!(local.distance(Point3::new(0.0, root_two, 0.0)) <= TEST_TOLERANCE);
 }
 
 #[test]
