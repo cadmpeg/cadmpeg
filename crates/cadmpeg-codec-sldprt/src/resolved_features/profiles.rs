@@ -217,6 +217,11 @@ impl SortedOffsets {
         self.0.get(first..last).unwrap_or_default()
     }
 
+    /// Whether `offset` is one of the offsets.
+    fn contains(&self, offset: u64) -> bool {
+        self.0.binary_search(&offset).is_ok()
+    }
+
     /// Whether an offset lies strictly between `start` and `end`.
     fn any_strictly_between(&self, start: u64, end: u64) -> bool {
         let first = self.0.partition_point(|&offset| offset <= start);
@@ -2329,6 +2334,44 @@ pub(crate) fn project_marker_backed_sketches(
                         projected.push(entity);
                     }
                 }
+            }
+            for offset in record_lists.curves_in(start..end) {
+                if marker_offsets.contains(u64_from_index(offset)) {
+                    continue;
+                }
+                let Some(Ok(listed)) = listed_entity(
+                    &lane.native_payload,
+                    &record_lists,
+                    offset,
+                    &owns,
+                    &project_coordinates,
+                ) else {
+                    continue;
+                };
+                let Ok(entity_id) = SketchEntityId::mint(format!(
+                    "sldprt:model:sketch-entity#markers:{lane_key}:{}:record:{offset}",
+                    native_feature.ordinal
+                )) else {
+                    continue;
+                };
+                let endpoint_refs = listed
+                    .endpoints
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|at| object_marker_ids.get(&u64_from_index(at)))
+                    .map(|id| (*id).to_owned())
+                    .collect();
+                let entity = SketchEntity::new(entity_id, sketch_id.clone(), listed.geometry)
+                    .with_construction(listed.construction)
+                    .with_native_ref(Some(format!(
+                        "sldprt:feature-input:sketch-entity#{lane_key}:{offset}"
+                    )))
+                    .with_endpoint_refs(endpoint_refs);
+                listed_entities.insert(
+                    entity.id().clone(),
+                    (entity.geometry.clone(), entity.endpoint_refs.clone()),
+                );
+                projected.push(entity);
             }
             let listed_curves = listed_entities.values().any(|(geometry, _)| {
                 !matches!(

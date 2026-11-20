@@ -169,6 +169,17 @@ impl SketchRecordLists {
         Self { lists, records }
     }
 
+    /// The offsets of the curve records that start in `range`.
+    pub(super) fn curves_in(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> impl Iterator<Item = usize> + '_ {
+        self.records
+            .range(range)
+            .filter(|(_, (_, place))| *place == RecordPlace::Curve)
+            .map(|(&offset, _)| offset)
+    }
+
     /// The listed record that starts at `offset`.
     pub(super) fn record(&self, offset: usize) -> Option<ListedRecord<'_>> {
         let &(list, place) = self.records.get(&offset)?;

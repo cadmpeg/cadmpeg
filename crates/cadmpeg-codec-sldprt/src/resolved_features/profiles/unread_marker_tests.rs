@@ -516,7 +516,8 @@ fn framed_line_sketch(
 /// whose curve records join them edge by edge, with a construction diagonal
 /// (selector `12`). Two point markers carry the curve code `1` at +17, one
 /// curve marker the point code `0`: the record, not the marker code, decides.
-/// The four edges form one closed chain through the corner markers, and the
+/// No marker stands on the last edge's record; it is read all the same. The
+/// four edges form one closed chain through the corner markers, and the
 /// diagonal is construction.
 #[test]
 fn a_framed_box_projects_the_rectangle_of_its_records() {
@@ -541,6 +542,9 @@ fn a_framed_box_projects_the_rectangle_of_its_records() {
         ));
     }
     for (index, offset) in lines.iter().enumerate() {
+        if index == 3 {
+            continue;
+        }
         let kind = if index == 0 {
             SketchInputKind::Point
         } else {
@@ -564,8 +568,14 @@ fn a_framed_box_projects_the_rectangle_of_its_records() {
         ));
     }
     let mut incidence = BTreeMap::<String, usize>::new();
+    let unmarked = format!("sldprt:feature-input:sketch-entity#lane:{}", lines[3]);
     for index in 0..4 {
-        let edge = marker_entity(&entities, &format!("edge{index}"));
+        let marker = if index == 3 {
+            unmarked.clone()
+        } else {
+            format!("edge{index}")
+        };
+        let edge = marker_entity(&entities, &marker);
         let SketchGeometryDefinition::Line { start, end } = *edge.geometry.definition() else {
             panic!("edge {index} is a line: {:?}", edge.geometry);
         };
