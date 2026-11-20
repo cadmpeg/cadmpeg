@@ -349,7 +349,12 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
     ));
     notes.extend(record_residual_unavailable(
         "F3D",
-        "stores the unit box in the Scene records of these bodies, whose box the measurement did not give",
+        "stores the box of each body's vertex points as its axis-aligned bounding box in the Scene records, the HOME camera and the scene radius; a curved face can extend past its vertices",
+        ctx.bodies.iter().map(|body| body.id.to_string()),
+    ));
+    notes.extend(record_residual_unavailable(
+        "F3D",
+        "stores the unit box in the Scene records of these bodies, whose vertices span no extent",
         ctx.bodies
             .iter()
             .zip(&ctx.values.boxes)

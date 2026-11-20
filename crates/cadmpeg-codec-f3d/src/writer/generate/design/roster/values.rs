@@ -5,12 +5,11 @@
 //! Each is a function of the written document, so two writes of one
 //! document are equal.
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_core::CodecError;
+use std::collections::HashMap;
+
 use cadmpeg_ir::design::units::UnitSymbol;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::ProductDefinitionId;
-use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
 use sha2::{Digest, Sha256};
 
 use crate::writer::generate::presentation::deterministic_guid;
@@ -77,8 +76,8 @@ pub(in crate::writer::generate) struct Values {
     /// The unit-system record `AssetSettings` names.
     pub(super) unit_system: u32,
     pub(super) name: String,
-    /// The box of each result body, in body order; `None` where the body
-    /// has no measured box.
+    /// The vertex box of each result body, in body order; `None` where the
+    /// body's vertices span no extent.
     pub(super) boxes: Vec<Option<BodyBox>>,
 }
 
@@ -87,7 +86,7 @@ impl Values {
         target: &CadIr,
         definition: &ProductDefinitionId,
         model: &[u8],
-    ) -> Result<Self, CodecError> {
+    ) -> Self {
         let root = target
             .model
             .product_definitions
@@ -101,7 +100,7 @@ impl Values {
             .filter(|name| !name.trim().is_empty())
             .unwrap_or("Component1")
             .to_owned();
-        Ok(Self {
+        Self {
             stamps: Timestamps::FIXED,
             seed: Sha256::digest(model)
                 .iter()
@@ -110,8 +109,8 @@ impl Values {
                 .collect(),
             unit_system: unit_system(length),
             name,
-            boxes: body_boxes(target)?,
-        })
+            boxes: body_boxes(target),
+        }
     }
 
     /// The fresh GUID of `role` in this archive, in uppercase.
@@ -137,36 +136,66 @@ fn unit_system(length: Option<UnitSymbol>) -> u32 {
     }
 }
 
-/// The measured box of each body, in centimetres.
-fn body_boxes(target: &CadIr) -> Result<Vec<Option<BodyBox>>, CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
-    let input = MeasureInput {
-        ir: target,
-        fidelity: None,
-        geometry_transferred: true,
-    };
-    let report = Measurer::new(input, MeasureOptions::default())
-        .measure(&ctx, &Selection::default())
-        .map_err(|error| CodecError::malformed(format_args!("body boxes: {error}")))?;
-    Ok(target
-        .geometry
-        .bodies
+/// The box of each body's vertex points, in centimetres; `None` for a body
+/// whose vertices span no extent.
+fn body_boxes(target: &CadIr) -> Vec<Option<BodyBox>> {
+    let geometry = &target.geometry;
+    let children = geometry.child_lists();
+    let mut body_of_face = HashMap::new();
+    for (ordinal, body) in geometry.bodies.iter().enumerate() {
+        for region in children.body_regions(&body.id) {
+            for shell in &region.shells {
+                for face in children.shell_faces(shell) {
+                    body_of_face.insert(&face.id, ordinal);
+                }
+            }
+        }
+    }
+    let face_of_loop = geometry
+        .loops
         .iter()
-        .map(|body| {
-            let row = report
-                .bodies()
-                .iter()
-                .find(|row| row.body() == body.id.as_str())?;
-            let measured = row
-                .bbox()
-                .measured()
-                .or_else(|| row.vertex_box().as_ref()?.measured())?;
-            let (min, max) = (measured.value().min.get(), measured.value().max.get());
-            Some(BodyBox {
-                min: [min.x, min.y, min.z].map(|value| value / MM_PER_CM),
-                max: [max.x, max.y, max.z].map(|value| value / MM_PER_CM),
-            })
-        })
-        .collect())
+        .map(|face_loop| (&face_loop.id, &face_loop.face))
+        .collect::<HashMap<_, _>>();
+    let edges = geometry
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge))
+        .collect::<HashMap<_, _>>();
+    let vertices = geometry
+        .vertices
+        .iter()
+        .map(|vertex| (&vertex.id, &vertex.point))
+        .collect::<HashMap<_, _>>();
+    let points = geometry
+        .points
+        .iter()
+        .map(|point| (&point.id, point.position().get()))
+        .collect::<HashMap<_, _>>();
+    let mut boxes: Vec<Option<BodyBox>> = vec![None; geometry.bodies.len()];
+    for coedge in &geometry.coedges {
+        let Some(&body) = face_of_loop
+            .get(&coedge.owner_loop)
+            .and_then(|face| body_of_face.get(*face))
+        else {
+            continue;
+        };
+        let Some(ends) = edges.get(&coedge.edge).and_then(|edge| edge.ends.as_ref()) else {
+            continue;
+        };
+        for vertex in [&ends.start, &ends.end] {
+            let Some(point) = vertices.get(vertex).and_then(|point| points.get(*point)) else {
+                continue;
+            };
+            let corner = [point.x, point.y, point.z].map(|value| value / MM_PER_CM);
+            let single = BodyBox {
+                min: corner,
+                max: corner,
+            };
+            boxes[body] = Some(boxes[body].map_or(single, |found| found.union(&single)));
+        }
+    }
+    boxes
+        .into_iter()
+        .map(|found| found.filter(|found| (0..3).any(|axis| found.max[axis] > found.min[axis])))
+        .collect()
 }
