@@ -1460,7 +1460,7 @@ mod tests {
 
         assert_eq!(no_root_ir.geometry.bodies[0].kind, BodyKind::Solid);
         assert!(crate::assemble::neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut no_root_ir,
             &[]
         )
@@ -1510,7 +1510,7 @@ mod tests {
                 .any(|candidate| candidate.id == coedge.radial_next)
         }));
         assert!(crate::assemble::neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &[]
         )
@@ -1625,7 +1625,7 @@ mod tests {
             CurveGeometry::Solved(SolvedCurveGeometry::Unknown { .. })
         ));
         assert!(crate::assemble::neutral_model_is_admissible(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut ir,
             &[]
         )

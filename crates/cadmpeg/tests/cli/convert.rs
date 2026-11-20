@@ -17,7 +17,7 @@ use assert_cmd::Command;
 #[cfg(feature = "rhino")]
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::{predicate, PredicateBooleanExt};
+use predicates::prelude::predicate;
 use tempfile::tempdir;
 
 use crate::support::fixture;
@@ -647,6 +647,7 @@ fn rhino_output_version_is_selected_explicitly() {
 #[cfg(feature = "step")]
 #[test]
 fn convert_writes_and_reports_check_errors_unless_rejected() {
+    use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
     let mut invalid = unit_cube().expect("unit cube fixture is admitted");
     invalid.geometry.faces[0].surface =

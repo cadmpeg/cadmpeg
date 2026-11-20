@@ -118,7 +118,7 @@ fn pcurve_uv_offset_one_native_period_keeps_cylinder_points() {
         .geometry
         .solved()
         .expect("cylinder");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for (a, b) in zero_curve
         .pole_rows()
         .raw_points()
@@ -181,8 +181,12 @@ fn pcurve_uv_offset_edits_preserve_neutral_geometry_in_each_record_form() {
             &ir.geometry.pcurves[0].geometry,
         );
         ir.source = None;
-        ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
-            .expect("clear native records");
+        ir.set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
+        .expect("clear native records");
         let mut generated = Vec::new();
         F3dCodec
             .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -209,8 +213,12 @@ fn pcurve_uv_offset_new_record_defaults_to_zero() {
         .expect("source decode");
     let (mut ir, _, _) = decoded.into_parts();
     ir.source = None;
-    ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
-        .expect("clear native records");
+    ir.set_native_unknowns(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        "f3d",
+        &[],
+    )
+    .expect("clear native records");
     ir.geometry.pcurves[0].metadata = cadmpeg_ir::geometry::pcurve::PcurveMetadata::default();
     let mut generated = Vec::new();
     F3dCodec

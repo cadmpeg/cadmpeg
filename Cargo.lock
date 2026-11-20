@@ -496,7 +496,6 @@ dependencies = [
  "base64",
  "cadmpeg-core",
  "cadmpeg-derive",
- "cadmpeg-test-support",
  "libm",
  "proc-macro2",
  "proptest",

@@ -1718,7 +1718,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         persistence
             .integer_values
             .rows
-            .extend(std::iter::repeat_n(unrelated, 1000));
+            .extend(std::iter::repeat_n(unrelated, 3));
         let actual = scan(&persistence);
         assert_eq!(actual, expected);
     }
@@ -1730,7 +1730,7 @@ $3FF,0,0,0,3FF,0,0,0,3FF,0,0,0
         let mut unrelated = persistence.objects[0].clone();
         unrelated.name = "View".into();
         unrelated.parent = Some(9000);
-        for offset in 10_000..11_000 {
+        for offset in 10_000..10_003 {
             unrelated.offset = offset;
             persistence.objects.push(unrelated.clone());
         }

@@ -32,8 +32,12 @@ fn document(revision: bool) -> CadIr {
         .unwrap();
     let (mut ir, _, _) = decoded.into_parts();
     ir.source = None;
-    ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
-        .unwrap();
+    ir.set_native_unknowns(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        "f3d",
+        &[],
+    )
+    .unwrap();
     ir
 }
 
@@ -89,23 +93,22 @@ fn assert_round_trip(ir: &CadIr) {
     assert_eq!(layout(decoded.ir()), layout(ir));
 }
 
-fn assert_refused(ir: &CadIr) {
-    let sentinel = b"existing output".to_vec();
-    let mut output = sentinel.clone();
-    let result = F3dCodec
-        .plan(EncodeInput::new(ir, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut output));
-    assert!(
-        result.is_err(),
-        "unrepresentable law was written: {:?}",
-        layout(ir)
+/// An unrepresentable law is reduced to its carrier's solved cache.
+fn assert_reduced(ir: &CadIr) {
+    crate::test_support::assert_written_with_loss(
+        ir,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "",
     );
-    assert_eq!(output, sentinel, "refusal must precede output mutation");
 }
 
 #[test]
 fn sweep_string_laws_preserve_reserved_operator_text() {
     for revision in [false, true] {
+        let source = document(revision);
         for value in [
             "null_law",
             "TRANS",
@@ -114,7 +117,7 @@ fn sweep_string_laws_preserve_reserved_operator_text() {
             "COS",
             "arbitrary text",
         ] {
-            let mut ir = document(revision);
+            let mut ir = source.clone();
             edit_layout(&mut ir, |layout| {
                 let SweepSurfaceLayout::LawDriven {
                     first_law,
@@ -135,9 +138,10 @@ fn sweep_string_laws_preserve_reserved_operator_text() {
 #[test]
 fn formula_variables_refuse_text_including_nested_text() {
     for revision in [false, true] {
+        let source = document(revision);
         for value in ["arbitrary text", "COS", "TRANS", "null_law"] {
             for nested in [false, true] {
-                let mut ir = document(revision);
+                let mut ir = source.clone();
                 let expression = if nested {
                     LawExpression::Algebraic {
                         operator: "COS".into(),
@@ -155,7 +159,7 @@ fn formula_variables_refuse_text_including_nested_text() {
                         variables: vec![expression],
                     };
                 });
-                assert_refused(&ir);
+                assert_reduced(&ir);
             }
         }
     }
@@ -220,7 +224,7 @@ fn sweep_slots_refuse_recursive_string_operators() {
                         **second_law = expression.clone();
                     }
                 });
-                assert_refused(&ir);
+                assert_reduced(&ir);
             }
         }
     }
@@ -229,6 +233,7 @@ fn sweep_slots_refuse_recursive_string_operators() {
 #[test]
 fn sweep_primitive_laws_follow_layout_discriminators() {
     for revision in [false, true] {
+        let source = document(revision);
         for expression in [
             LawExpression::Integer { value: 2 },
             LawExpression::Double { value: 2.0 },
@@ -240,7 +245,7 @@ fn sweep_primitive_laws_follow_layout_discriminators() {
             },
         ] {
             for first in [false, true] {
-                let mut ir = document(revision);
+                let mut ir = source.clone();
                 edit_layout(&mut ir, |layout| {
                     let SweepSurfaceLayout::LawDriven {
                         first_law,
@@ -257,7 +262,7 @@ fn sweep_primitive_laws_follow_layout_discriminators() {
                     }
                 });
                 if first && (revision || matches!(expression, LawExpression::Integer { .. })) {
-                    assert_refused(&ir);
+                    assert_reduced(&ir);
                 } else {
                     assert_round_trip(&ir);
                 }

@@ -26,7 +26,7 @@ fn sole_surface_owner_respects_its_planar_trim() {
         )
         .unwrap(),
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert!(
         super::super::assign_unique_surface_owners(&ctx, &mut ir, &mut Vec::new())
             .unwrap()
@@ -65,7 +65,7 @@ fn owner_work_cap_leaves_tables_unassigned_and_names_the_bound() {
             .push(mesh("synthetic:test:tessellation#second"));
         ir
     };
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
 
     let mut unbounded = ir();
     let mut losses = Vec::new();
