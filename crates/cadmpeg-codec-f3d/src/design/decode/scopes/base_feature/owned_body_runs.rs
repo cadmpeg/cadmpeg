@@ -15,6 +15,7 @@ pub(super) struct OwnedBodyRuns {
     pub(super) parameter_bodies: Vec<DesignBaseFeatureEntry<u64>>,
     pub(super) bodies: Vec<DesignBaseFeatureEntry<u64>>,
     pub(super) end: usize,
+    pub(super) typed: bool,
 }
 
 pub(super) fn decode(
@@ -70,6 +71,7 @@ pub(super) fn decode(
         parameter_bodies,
         bodies,
         end: rows.position() + cursor,
+        typed,
     }))
 }
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The parameter scope every feature record carries: its feature kind, its payload, and the frames and bindings the payload states.
 
-use cadmpeg_core::decode::u64_from_index;
+use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
 use super::align::DesignAlignEnvelope;
 use super::assembly::DesignAssemblyAlignment;
@@ -26,7 +26,9 @@ use super::direct_face::{
     DesignOffsetFacesOperation, DesignShellOperation, DesignThickenOperation,
 };
 use super::emboss::DesignEmbossConstruction;
-use super::extrude::{DesignExtrudeOperation, DesignExtrudePrologue};
+use super::extrude::{
+    DesignExtrudeExtent, DesignExtrudeOperation, DesignExtrudePrologue, DesignExtrudeStart,
+};
 use super::fixed_parameters::{
     DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
 };
@@ -45,6 +47,7 @@ use super::sheet_metal::edge::{DesignEdgeFlangeScope, DesignReferenceEdgeFlange}
 use super::sheet_metal::{
     DesignBaseFlangeOperation, DesignEdgeFlangeOperation, DesignHemOperation,
 };
+use super::split_face::DesignSplitFaceOperation;
 use super::surface_ops::{
     DesignReplaceFaceOperation, DesignRuledSurfaceOperation, DesignSurfaceExtendOperation,
     DesignSurfaceOffsetOperation, DesignSurfacePatchBoundary, DesignSurfacePatchNormalState,
@@ -162,6 +165,11 @@ cadmpeg_core::named_optional_field!(
     "closing"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_split_face_operation,
+    DesignSplitFaceOperation,
+    "split_face_operation"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_component_insert_construction,
     DesignComponentInsertConstruction,
     "component_insert_construction"
@@ -265,6 +273,11 @@ cadmpeg_core::named_optional_field!(
     "hole_construction"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_joint_origin_carrier,
+    super::work_geometry::joint_origin::DesignJointOriginCarrierEvidence,
+    "joint_origin_carrier"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_joint_origin_reference,
     u32,
     "joint_origin_reference"
@@ -328,6 +341,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_path_pattern_settings,
     crate::records::feature::patterns::DesignPathPatternSettings,
     "path_pattern_settings"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_linked_rotations,
+    super::motion_link::DesignLinkedRotations,
+    "linked_rotations"
 );
 cadmpeg_core::named_optional_field!(
     deserialize_silhouette_split_operation,
@@ -815,6 +833,7 @@ design_feature_kinds! {
         Chamfer => "Chamfer": super::chamfer_set::DesignChamferScope,
         Combine => "Combine": DesignCombineScope,
         Split => "Split": DesignSplitScope,
+        SplitFace => "SplitFace": Option<DesignSplitFaceOperation>,
         BoundaryFill => "BoundaryFill": super::boundary_fill::DesignBoundaryFillScope,
         Draft => "Draft": Option<DesignDraftOperation>,
         ReplaceFace => "ReplaceFace": Option<DesignReplaceFaceOperation>,
@@ -840,6 +859,7 @@ design_feature_kinds! {
         SurfaceUntrim => "SurfaceUntrim": Option<DesignSurfaceUntrimOperation>,
         Hole => "Hole": crate::records::feature::hole::DesignHoleScope,
         Scale => "Scale": Option<DesignScaleOperation>,
+        MotionLink => "MotionLink": Option<super::motion_link::DesignLinkedRotations>,
         SilhouetteSplit => "SilhouetteSplit": Option<super::silhouette_split::DesignSilhouetteSplit>,
         Thread => "Thread": Option<DesignThreadConstruction>,
         Emboss => "Emboss": Option<DesignEmbossConstruction>,
@@ -879,7 +899,6 @@ design_feature_kinds! {
         BaseMeshFeature => "Base Mesh Feature",
         CustomFeature => "CustomFeature",
         Form => "Form",
-        SplitFace => "SplitFace",
         DeleteFace => "DeleteFace",
         SurfaceDeleteFace => "SurfaceDeleteFace",
         UnStitch => "UnStitch",
@@ -1189,6 +1208,12 @@ struct DesignParameterScopeSerde {
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_linked_rotations"
+    )]
+    linked_rotations: Option<super::motion_link::DesignLinkedRotations>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
         deserialize_with = "deserialize_reverse_normal_operation"
     )]
     reverse_normal_operation: Option<DesignReverseNormalOperation>,
@@ -1358,6 +1383,12 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_combine_named_tail"
     )]
     combine_named_tail: Option<DesignNamedScopeReferences>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_split_face_operation"
+    )]
+    split_face_operation: Option<DesignSplitFaceOperation>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -1611,6 +1642,9 @@ impl<'de> Deserialize<'de> for DesignWorkPlaneTransform {
 #[derive(Deserialize)]
 // Field names are the native record serialized keys.
 struct JointOriginFrameWire {
+    #[serde(default, deserialize_with = "deserialize_joint_origin_carrier")]
+    #[serde(rename = "joint_origin_carrier")]
+    carrier: Option<super::work_geometry::joint_origin::DesignJointOriginCarrierEvidence>,
     #[serde(default, deserialize_with = "deserialize_joint_origin_transform")]
     #[serde(rename = "joint_origin_transform")]
     transform: Option<SketchPlacementMatrix>,
@@ -1653,12 +1687,13 @@ where
         }
     };
     match (wire.transform, wire.transform_offset) {
-        (None, None) if reference.is_none() => Ok(None),
+        (None, None) if reference.is_none() && wire.carrier.is_none() => Ok(None),
         (Some(joint_origin_transform), Some(joint_origin_transform_offset)) => {
             Ok(Some(DesignJointOriginTransform {
                 joint_origin_transform,
                 joint_origin_transform_offset,
                 reference,
+                carrier: wire.carrier,
             }))
         }
         _ => Err(serde::de::Error::custom(
@@ -1973,6 +2008,12 @@ pub(crate) struct DesignJointOriginTransform {
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) reference: Option<DesignJointOriginReference>,
+    #[serde(
+        rename = "joint_origin_carrier",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub(crate) carrier:
+        Option<super::work_geometry::joint_origin::DesignJointOriginCarrierEvidence>,
 }
 
 /// Construction record named by a `JointOrigin` frame.
@@ -2064,6 +2105,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.scale_operation.is_some() {
             present.push("scale_operation");
         }
+        if wire.linked_rotations.is_some() {
+            present.push("linked_rotations");
+        }
         if wire.silhouette_split_operation.is_some() {
             present.push("silhouette_split_operation");
         }
@@ -2122,6 +2166,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         }
         if wire.combine_operation.is_some() || wire.combine_named_tail.is_some() {
             present.push("combine_operation");
+        }
+        if wire.split_face_operation.is_some() {
+            present.push("split_face_operation");
         }
         if wire.boundary_fill.is_some() || wire.boundary_fill_named_tail.is_some() {
             present.push("boundary_fill");
@@ -2208,6 +2255,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 operation: wire.combine_operation.take(),
                 named_tail: wire.combine_named_tail.take(),
             }),
+            DesignFeatureKind::SplitFace => {
+                DesignScopePayload::SplitFace(wire.split_face_operation.take())
+            }
             DesignFeatureKind::Draft => DesignScopePayload::Draft(wire.draft_operation.take()),
             DesignFeatureKind::ReplaceFace => {
                 DesignScopePayload::ReplaceFace(wire.replace_face_operation.take())
@@ -2367,6 +2417,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 extend_tool: wire.split_tool_extension.take(),
             }),
             DesignFeatureKind::Scale => DesignScopePayload::Scale(wire.scale_operation.take()),
+            DesignFeatureKind::MotionLink => {
+                DesignScopePayload::MotionLink(wire.linked_rotations.take())
+            }
             DesignFeatureKind::SilhouetteSplit => {
                 DesignScopePayload::SilhouetteSplit(wire.silhouette_split_operation.take())
             }
@@ -2442,7 +2495,6 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             DesignFeatureKind::CopyPasteBodies => {
                 DesignScopePayload::CopyPasteBodies(wire.copy_paste_bodies_operation.take())
             }
-            DesignFeatureKind::SplitFace => DesignScopePayload::SplitFace,
             DesignFeatureKind::PathPattern => {
                 DesignScopePayload::PathPattern(wire.path_pattern_settings.take())
             }
@@ -2516,6 +2568,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.move_operation.is_some()
             || wire.modify_operation.is_some()
             || wire.scale_operation.is_some()
+            || wire.linked_rotations.is_some()
             || wire.silhouette_split_operation.is_some()
             || wire.reverse_normal_operation.is_some()
             || wire.path_pattern_settings.is_some()
@@ -2541,6 +2594,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.chamfer_sets.is_some()
             || wire.combine_operation.is_some()
             || wire.combine_named_tail.is_some()
+            || wire.split_face_operation.is_some()
             || wire.boundary_fill.is_some()
             || wire.boundary_fill_named_tail.is_some()
             || wire.emboss_construction.is_some()
@@ -2728,6 +2782,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             move_operation: None,
             modify_operation: None,
             scale_operation: None,
+            linked_rotations: None,
             silhouette_split_operation: None,
             reverse_normal_operation: None,
             path_pattern_settings: None,
@@ -2756,6 +2811,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             path_feature: None,
             combine_operation: None,
             combine_named_tail: None,
+            split_face_operation: None,
             boundary_fill: None,
             boundary_fill_named_tail: None,
             thread_construction: None,
@@ -2851,6 +2907,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::Scale(value) => {
                 wire.scale_operation = value;
             }
+            DesignScopePayload::MotionLink(value) => wire.linked_rotations = value,
             DesignScopePayload::SilhouetteSplit(value) => {
                 wire.silhouette_split_operation = value;
             }
@@ -2895,6 +2952,9 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
                 wire.combine_operation = value.operation;
                 wire.combine_named_tail = value.named_tail;
             }
+            DesignScopePayload::SplitFace(value) => {
+                wire.split_face_operation = value;
+            }
             DesignScopePayload::BoundaryFill(value) => {
                 wire.boundary_fill = value.prefix;
                 wire.boundary_fill_named_tail = value.named_tail;
@@ -2937,7 +2997,6 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::BaseMeshFeature
             | DesignScopePayload::CustomFeature
             | DesignScopePayload::Form
-            | DesignScopePayload::SplitFace
             | DesignScopePayload::DeleteFace
             | DesignScopePayload::SurfaceDeleteFace
             | DesignScopePayload::UnStitch
@@ -2990,6 +3049,15 @@ impl DesignParameterScope {
             DesignParameterScopePayloadError(format!("invalid parameter scope {field}"))
         };
         let kind = draft.payload.kind_name();
+        if let DesignScopePayload::MotionLink(Some(link)) = &draft.payload {
+            if !link.is_valid()
+                || draft.record_index == 0
+                || draft.byte_offset
+                    < u64_from_index(crate::layout::motion_link_rotation_relation::LEN)
+            {
+                return Err(fail("linked_rotations"));
+            }
+        }
         if let DesignScopePayload::Split(DesignSplitScope {
             extend_tool: Some(extension),
         }) = &draft.payload
@@ -3238,6 +3306,13 @@ impl DesignParameterScope {
         if let DesignScopePayload::Pipe(Some(pipe)) = &draft.payload {
             if !pipe.scope_offsets_are_valid(draft.byte_offset, draft.reference_count_offset) {
                 return Err(fail("Pipe prefix offsets"));
+            }
+        }
+        if let DesignScopePayload::SplitFace(value) = &draft.payload {
+            if value.as_ref().is_some_and(|operation| {
+                !operation.scope_offsets_valid(draft.byte_offset, draft.reference_count_offset)
+            }) {
+                return Err(fail("split_face_operation"));
             }
         }
         let scope = Self {
@@ -3663,6 +3738,13 @@ impl DesignParameterScope {
         }
     }
 
+    pub(crate) fn split_face_operation(&self) -> Option<&DesignSplitFaceOperation> {
+        match &self.payload {
+            DesignScopePayload::SplitFace(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
     pub(crate) fn combine_named_tail(&self) -> Option<&DesignNamedScopeReferences> {
         match &self.payload {
             DesignScopePayload::Combine(value) => value.named_tail.as_ref(),
@@ -3897,6 +3979,42 @@ impl DesignParameterScope {
         self.extrude().and_then(|extrude| extrude.extrude_prologue)
     }
 
+    pub(crate) fn is_legacy_class_330_symmetric_distance(&self) -> bool {
+        use crate::layout::legacy_class_330_symmetric_extrude_frame as layout;
+
+        let Some(DesignExtrudePrologue::LegacyShifted {
+            operation_prefix_marker_offset: None,
+            operation: DesignExtrudeOperation::NewBody,
+            direction_face_extend_values: [3, 2],
+            side_extent_discriminators: [1, 0],
+            side_extent_discriminator_offsets,
+            extent: Some(DesignExtrudeExtent::SymmetricDistance),
+            direction_reversed: false,
+            solid_operation: true,
+            start: DesignExtrudeStart::ProfilePlane,
+            ..
+        }) = self.extrude_prologue()
+        else {
+            return false;
+        };
+        self.class_tag.as_str() == "330"
+            && self.paired_class_tag.as_str() == "262"
+            && self.frame_length == u64_from_index(layout::LEN)
+            && self.reference_count_offset.checked_sub(self.byte_offset)
+                == Some(u64_from_index(layout::REFERENCE_COUNT))
+            && self.reference_members.len() == index_from_u32(layout::REFERENCE_COUNT_VALUE)
+            && side_extent_discriminator_offsets.map(|offset| offset.checked_sub(self.byte_offset))
+                == [layout::FIRST_SIDE_EXTENT, layout::SECOND_SIDE_EXTENT]
+                    .map(|offset| Some(u64_from_index(offset)))
+    }
+
+    pub(crate) fn assumes_symmetric_distance_each_side(&self, indexed_along: bool) -> bool {
+        !indexed_along
+            && self
+                .fixed_extrude_parameters()
+                .is_some_and(|fixed| fixed.along_distance.is_some())
+    }
+
     #[cfg(test)]
     pub(crate) fn extrude_prologue_mut(&mut self) -> Option<&mut DesignExtrudePrologue> {
         self.extrude_mut()
@@ -4091,12 +4209,12 @@ impl DesignParameterScope {
             .map(|frame| frame.joint_origin_transform)
     }
 
+    #[cfg(test)]
     pub(crate) fn joint_origin_transform_offset(&self) -> Option<u64> {
         self.joint_origin_frame()
             .map(|frame| frame.joint_origin_transform_offset)
     }
 
-    #[cfg(test)]
     pub(crate) fn joint_origin_reference(&self) -> Option<u32> {
         self.joint_origin_frame().and_then(|frame| {
             frame
@@ -4143,6 +4261,7 @@ impl DesignParameterScope {
             joint_origin_transform: transform,
             joint_origin_transform_offset: 0,
             reference: None,
+            carrier: None,
         }));
     }
 

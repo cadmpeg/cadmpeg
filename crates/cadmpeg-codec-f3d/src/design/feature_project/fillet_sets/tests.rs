@@ -51,6 +51,119 @@ fn scope_with_sets(sets: Vec<DesignFilletSet>) -> DesignParameterScope {
     scope
 }
 
+fn short_set(group_record_index: u32, radius_owner_record_index: u32) -> DesignFilletSet {
+    DesignFilletSet {
+        record_index: group_record_index - 1,
+        byte_offset: u64::from(group_record_index) * 100,
+        frame_length: 80,
+        group_record_index,
+        tangency_weight_owner_record_index: None,
+        tangent_chain: None,
+        curvature_continuity: None,
+        law: DesignFilletSetLaw::Constant {
+            radius_owner_record_index,
+        },
+    }
+}
+
+#[test]
+fn short_fillet_sets_project_each_explicit_radius_with_unresolved_edges() {
+    let mut scope = scope_with_sets(vec![short_set(92, 108), short_set(95, 102)]);
+    crate::design::test_support::name_scope_references(&mut scope, [92, 95, 102, 108]);
+    let sets = scope.fillet_sets().unwrap();
+    assert!(sets.projects_short_sets([95, 92]));
+    assert!(!sets.projects_short_sets([95, 92, 99]));
+    let radii = [
+        parameter(102, "Radius", Some("cm"), 0.2),
+        parameter(108, "Radius", Some("cm"), 0.3),
+    ];
+    let parameters = radii.each_ref().map(|parameter| (0, parameter));
+    crate::test_support::with_decode_context(|ctx| {
+        let mut losses = Vec::new();
+        let Some(FeatureOperation::Fillet { groups }) = project(
+            &scope,
+            &parameters,
+            &ProjectInputs::default(),
+            ctx,
+            &mut losses,
+        )
+        .unwrap() else {
+            panic!("short constant Fillet");
+        };
+        let [first, second] = groups.as_slice() else {
+            panic!("two Fillet groups");
+        };
+        for (group, expected) in [(first, 3.0), (second, 2.0)] {
+            let RadiusSpec::Constant { radius } = group.radius else {
+                panic!("constant radius");
+            };
+            assert!((radius.get() - expected).abs() < TOLERANCE);
+            assert_eq!(group.edges, EdgeSelection::Unresolved);
+            assert!(group.tangency_weight.is_none());
+        }
+        assert_eq!(losses.len(), 2);
+        assert!(losses
+            .iter()
+            .all(|loss| loss.code == F3dLossCode::FeatureFilletSetGroupUnresolved.kind()));
+    });
+}
+
+#[test]
+fn short_fillet_set_weights_follow_scope_group_order() {
+    let mut scope = scope_with_sets(vec![short_set(95, 102), short_set(92, 108)]);
+    crate::design::test_support::name_scope_references(&mut scope, [92, 95, 102, 108]);
+    let radii = [
+        parameter(102, "Radius", Some("cm"), 0.2),
+        parameter(108, "Radius", Some("cm"), 0.3),
+    ];
+    let weights = [
+        parameter(120, "TangencyWeight", None, 0.7),
+        parameter(122, "TangencyWeight", None, 0.4),
+        parameter(124, "TangencyWeight", None, 0.9),
+    ];
+    for (weight_count, expected) in [(2, [Some(0.7), Some(0.4)]), (3, [None, None])] {
+        let mut parameters = vec![
+            (0, &radii[0]),
+            (1, &radii[1]),
+            (3, &weights[0]),
+            (2, &weights[1]),
+        ];
+        if weight_count == 3 {
+            parameters.push((4, &weights[2]));
+        }
+        crate::test_support::with_decode_context(|ctx| {
+            let mut losses = Vec::new();
+            let Some(FeatureOperation::Fillet { groups }) = project(
+                &scope,
+                &parameters,
+                &ProjectInputs::default(),
+                ctx,
+                &mut losses,
+            )
+            .unwrap() else {
+                panic!("short constant Fillet");
+            };
+            assert_eq!(groups.len(), expected.len());
+            for (group, expected) in groups.iter().zip(expected) {
+                match (group.tangency_weight, expected) {
+                    (Some(weight), Some(expected)) => {
+                        assert!((weight.get() - expected).abs() < TOLERANCE);
+                    }
+                    (None, None) => (),
+                    _ => panic!("unexpected tangency-weight assignment"),
+                }
+            }
+            assert_eq!(
+                losses
+                    .iter()
+                    .filter(|loss| loss.code == F3dLossCode::FeatureFilletSetInputUnresolved.kind())
+                    .count(),
+                1
+            );
+        });
+    }
+}
+
 #[test]
 fn asymmetric_fillet_reports_an_undecoded_edge_group() {
     let group_record_index = 92;
@@ -228,6 +341,7 @@ fn chordal_fillet_sets_pair_lengths_and_weights_by_explicit_owner() {
         parameter(102, "ChordLen", Some("cm"), 0.2),
         parameter(104, "TangencyWeight", None, 0.8),
         parameter(106, "TangencyWeight", None, 0.6),
+        parameter(108, "TangencyWeight", None, 0.9),
     ];
     let parameters = lengths_and_weights
         .each_ref()
@@ -252,9 +366,13 @@ fn chordal_fillet_sets_pair_lengths_and_weights_by_explicit_owner() {
             assert!((chord_length.get() - length).abs() < TOLERANCE);
             assert!((group.tangency_weight.unwrap().get() - weight).abs() < TOLERANCE);
         }
-        assert_eq!(losses.len(), 2);
-        assert!(losses
-            .iter()
-            .all(|loss| loss.code == F3dLossCode::FeatureFilletSetGroupUnresolved.kind()));
+        assert_eq!(
+            losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
+            [
+                F3dLossCode::FeatureFilletSetInputUnresolved.kind(),
+                F3dLossCode::FeatureFilletSetGroupUnresolved.kind(),
+                F3dLossCode::FeatureFilletSetGroupUnresolved.kind(),
+            ]
+        );
     });
 }

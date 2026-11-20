@@ -524,6 +524,7 @@ pub(crate) fn append_design_intent_losses(
                 UnresolvedFamily::FillHole => "fill hole",
                 UnresolvedFamily::MoveFace => "move face",
                 UnresolvedFamily::MoveObject => "move object",
+                UnresolvedFamily::Combine => "combine",
                 UnresolvedFamily::Cylinder => "cylinder",
                 UnresolvedFamily::Cone => "cone",
                 UnresolvedFamily::Sphere => "sphere",
@@ -538,7 +539,6 @@ pub(crate) fn append_design_intent_losses(
                 | UnresolvedFamily::Revolve
                 | UnresolvedFamily::Fillet
                 | UnresolvedFamily::BoundarySurface => continue,
-                UnresolvedFamily::Combine => "combine",
             },
             _ => continue,
         };

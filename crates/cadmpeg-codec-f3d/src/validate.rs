@@ -11,13 +11,21 @@
 
 mod body_ownership;
 mod chamfer_sets;
+mod dimensions;
 mod emboss;
 mod extrude_operands;
+mod images;
 mod path_pattern;
 mod sheet_metal_settings;
 mod sketch_scope;
 mod xref;
 
+use dimensions::{
+    validate_dimension_annotation_frames, validate_dimension_companion_recipes,
+    validate_dimension_locus_groups, validate_dimension_locus_pairs,
+    validate_dimension_null_locus_pairs, validate_dimension_presentation_frames,
+    validate_dimension_recipe_records,
+};
 use xref::validate_xref_placement_sources;
 
 use cadmpeg_core::convert::f64_from_index;
@@ -46,7 +54,8 @@ use crate::layout::class_296_261_two_sided_to_faces_extrude_prefix as class_296_
 use crate::layout::combine_operand_list_operation_prefix as combine_lists;
 use crate::layout::legacy_class_397_symmetric_extrude_frame as class_397;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
-use crate::layout::sketch_profile_region_selection_prefix as region_selection;
+use crate::records::feature::scope::{DesignJointOriginTransform, DesignParameterScope};
+use crate::records::feature::work_geometry::joint_origin::DirectJointOriginCarrier;
 use crate::{design, history, ids, native, records};
 use cadmpeg_core::decode::id_from_index;
 use cadmpeg_core::decode::u64_from_index;
@@ -447,84 +456,6 @@ fn valid_class_307_joint_origin_qualifier(
             })
             .count()
             == 1
-}
-
-fn valid_sketch_profile_region_selection(
-    profile: &records::topology::sketch_profile::DesignSketchProfileOperand,
-    selection: &records::topology::sketch_profile::DesignSketchProfileRegionSelection,
-) -> bool {
-    use records::topology::sketch_profile::DesignSketchProfileRegion;
-
-    /// The offset after `loops`, which start with their loop count at
-    /// `cursor` and each end with an exterior byte.
-    fn loops_end(cursor: u64, loops: &[&DesignSketchProfileRegion]) -> Option<u64> {
-        let mut cursor = cursor.checked_add(4)?;
-        if loops.is_empty() {
-            return None;
-        }
-        for region in loops {
-            if region.member_count_offset != cursor || region.members.is_empty() {
-                return None;
-            }
-            cursor = cursor.checked_add(4)?;
-            for member in &region.members {
-                if member.kind_offset != cursor
-                    || member.curve_primary_id_offset != cursor.checked_add(4)?
-                    || member.incidence_words_offset != cursor.checked_add(8)?
-                {
-                    return None;
-                }
-                cursor = cursor.checked_add(40)?;
-            }
-            cursor = cursor.checked_add(1)?;
-        }
-        Some(cursor)
-    }
-
-    let Some(expected_region_count_offset) = selection
-        .byte_offset
-        .checked_add(u64_from_index(region_selection::LOOP_COUNT))
-    else {
-        return false;
-    };
-    if profile.record_index.checked_add(3) != Some(selection.record_index)
-        || selection.byte_offset <= profile.paired_byte_offset()
-        || selection.region_count_offset != expected_region_count_offset
-        || selection.regions.is_empty()
-    {
-        return false;
-    }
-    let walk = || -> Option<u64> {
-        let mut cursor = selection.region_count_offset;
-        let mut start = 0;
-        let mut ordinal = 0;
-        let mut atomic_seen = 0;
-        while start < selection.regions.len() {
-            let own = selection
-                .regions
-                .iter()
-                .skip(start)
-                .take_while(|region| region.region_ordinal == ordinal)
-                .collect::<Vec<_>>();
-            start = start.checked_add(own.len())?;
-            cursor = loops_end(cursor, &own)?;
-            cursor = cursor.checked_add(4)?;
-            for atomic in selection
-                .atomic_regions
-                .iter()
-                .filter(|atomic| atomic.region_ordinal == ordinal)
-            {
-                if atomic.loop_count_offset != cursor {
-                    return None;
-                }
-                cursor = loops_end(cursor, &atomic.loops.iter().collect::<Vec<_>>())?;
-                atomic_seen += 1;
-            }
-            ordinal = ordinal.checked_add(1)?;
-        }
-        (atomic_seen == selection.atomic_regions.len()).then_some(cursor)
-    };
-    walk() == Some(selection.companion_byte_offset)
 }
 
 fn design_header_matches(
@@ -1124,8 +1055,8 @@ fn validate_loaded(
     validate_act(&ctx, &mut findings)?;
     validate_body_bindings(&ctx, &mut findings)?;
     validate_body_bounds(&ctx, &mut findings);
-    validate_canvas_images(&ctx, &mut findings);
-    validate_decal_images(&ctx, &mut findings);
+    images::validate_canvas_images(&ctx, &mut findings);
+    images::validate_decal_images(&ctx, &mut findings);
     validate_mesh_features(&ctx, &mut findings);
     validate_component_occurrences(&ctx, &mut findings);
     validate_xref_placement_sources(&ctx, &mut findings)?;
@@ -1826,175 +1757,6 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
     }
 }
 
-/// Validate Canvas scope and Design object joins.
-fn validate_canvas_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
-    let native = ctx.native;
-    let mut scope_bindings = HashSet::new();
-    let mut geometry_records = HashSet::new();
-    let geometry_entities = native
-        .design_types
-        .iter()
-        .filter(|design_type| {
-            matches!(
-                design_type.module.as_str(),
-                records::entity_header::DESIGN_MODULE_BODY
-                    | records::entity_header::DESIGN_MODULE_GEOMETRY
-            )
-        })
-        .flat_map(|design_type| {
-            let design_segment = ids::design_segment(design_type.id());
-            design_type
-                .entities
-                .values()
-                .map(move |suffix| (design_segment, *suffix))
-        })
-        .collect::<std::collections::HashSet<_>>();
-    let component_entities = native
-        .design_types
-        .iter()
-        .filter(|design_type| {
-            matches!(
-                design_type.module.as_str(),
-                records::entity_header::DESIGN_MODULE_FUSION
-                    | records::entity_header::DESIGN_MODULE_COMPONENT
-            )
-        })
-        .flat_map(|design_type| {
-            let design_segment = ids::design_segment(design_type.id());
-            design_type
-                .entities
-                .values()
-                .map(move |suffix| (design_segment, *suffix))
-        })
-        .collect::<std::collections::HashSet<_>>();
-    for image in &native.design_canvas_images {
-        let native_stream = design_stream(&image.id);
-        let design_segment = ids::design_segment(&image.id);
-        let scope = ctx
-            .scopes_by_index
-            .get(&(native_stream, image.scope_record_index));
-        let scope_valid = scope.is_some_and(|scope| {
-            scope.kind() == crate::records::feature::scope::DesignFeatureKind::Canvas
-        });
-        let scope_unique = if scope_valid {
-            scope_bindings.insert((native_stream, image.scope_record_index))
-        } else {
-            false
-        };
-        let geometry_unique = if scope_unique {
-            geometry_records.insert((native_stream, image.geometry().record_index()))
-        } else {
-            false
-        };
-        let valid = scope_valid
-            && scope_unique
-            && geometry_unique
-            && scope.is_some_and(|scope| scope.byte_offset() == image.scope_byte_offset())
-            && image.plane_entity_suffix.is_none_or(|suffix| {
-                geometry_entities.contains(&(design_segment, u64::from(suffix)))
-            })
-            && component_entities
-                .contains(&(design_segment, u64::from(image.component_entity_suffix)));
-        if !valid {
-            push_constant_finding(
-                findings,
-                Check::NativeLinks,
-                "Fusion Canvas image has an invalid frame or Design object join",
-                Some(image.id.clone()),
-            );
-        }
-    }
-}
-
-/// Validate Decal native and neutral object joins.
-fn validate_decal_images(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
-    const TARGET_ROLE: DesignOperandRole = DesignOperandRole::BODIES_A;
-    let mut scope_bindings = HashSet::new();
-    let mut asset_records = HashSet::new();
-    let fusion_entities = ctx
-        .native
-        .design_types
-        .iter()
-        .filter(|design_type| design_type.module == records::entity_header::DESIGN_MODULE_FUSION)
-        .flat_map(|design_type| {
-            let segment = ids::design_segment(design_type.id());
-            design_type
-                .entities
-                .values()
-                .map(move |suffix| (segment, *suffix))
-        })
-        .collect::<std::collections::HashSet<_>>();
-    for image in &ctx.native.design_decal_images {
-        let native_stream = design_stream(&image.id);
-        let design_segment = ids::design_segment(&image.id);
-        let scope = ctx
-            .scopes_by_index
-            .get(&(native_stream, image.scope_record_index()));
-        let group = ctx
-            .operand_groups_by_index
-            .get(&(native_stream, image.target_group_record_index));
-        let neutral_is_valid = !ctx.holds_design_intent() || scope.is_some_and(|scope| {
-            let expected_faces = crate::design::decode::decal::DecalTargets {
-                groups: &ctx.native.design_construction_operand_groups,
-                operands: &ctx.native.design_body_recipe_operands,
-            }
-            .faces(scope, image.target_group_record_index)
-            .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(scope.id.clone()));
-            ctx.ir
-                .model
-                .features
-                .iter()
-                .any(|feature| {
-                    feature.native_ref.as_deref() == Some(scope.id.as_str()) &&
-                    matches!(
-                        feature.evaluation.definition(),
-                        cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Decal {
-                            asset,
-                            faces,
-                            mapping: cadmpeg_ir::features::DecalMapping::FitToFaces,
-                            opacity: None,
-                        }) if faces == &expected_faces
-                            && ctx.ir.model.assets.iter().any(|candidate| {
-                                candidate.id == *asset
-                                    && candidate.name.as_ref().map(cadmpeg_core::text::NonBlankString::as_str) == Some(image.asset.name())
-                            })
-                    )
-                })
-        });
-        let scope_valid = scope.is_some_and(|scope| {
-            scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal
-        });
-        let scope_unique = if scope_valid {
-            scope_bindings.insert((native_stream, image.scope_record_index()))
-        } else {
-            false
-        };
-        let asset_unique = if scope_unique {
-            asset_records.insert((native_stream, image.asset.record_index()))
-        } else {
-            false
-        };
-        let valid = scope_valid
-            && scope_unique
-            && asset_unique
-            && scope.is_some_and(|scope| scope.byte_offset() == image.scope_byte_offset())
-            && fusion_entities.contains(&(design_segment, u64::from(image.asset.entity_suffix())))
-            && group.is_some_and(|group| {
-                group.scope_record_index == image.scope_record_index()
-                    && group.role() == TARGET_ROLE
-            })
-            && neutral_is_valid;
-        if !valid {
-            push_constant_finding(
-                findings,
-                Check::NativeLinks,
-                "Fusion Decal image has an invalid frame or Design object join",
-                Some(image.id.clone()),
-            );
-        }
-    }
-}
-
 /// Validate the ordered Design body-map binding entries and their pair runs.
 fn validate_body_bindings(
     ctx: &Ctx<'_, '_>,
@@ -2238,7 +2000,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         })
                     }
                     && profile.region_selection.as_ref().is_none_or(|selection| {
-                        valid_sketch_profile_region_selection(profile, selection)
+                        sketch_scope::profile_region_link(scope, profile, selection)
                     })
             };
         let valid_sketch_profile =
@@ -2275,6 +2037,23 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     .copied()
             }),
         );
+        let split_face_link = scope.split_face_operation().is_none_or(|operation| {
+            operation.scope_offsets_valid(scope.byte_offset(), scope.reference_count_offset())
+                && operation.carrier_frame.is_none_or(|frame| {
+                    operation.direction_reference.local_record_index().is_some_and(|record_index| {
+                        records_by_index.get(&(native_stream, record_index)).is_some_and(|header| header.byte_offset == frame.primary_offset)
+                            && stream_types.get(&u64::from(record_index)).is_some_and(|(guid, version)| {
+                                guid.eq_ignore_ascii_case(records::feature::work_geometry::POINT_DIRECTION_TYPE_GUID) && *version == frame.version
+                            })
+                            && native_stream.strip_suffix("BulkStream.dat").is_some_and(|prefix| {
+                                native.design_types.iter().filter(|row| {
+                                    ids::native_stream(row.id()).and_then(|stream| stream.strip_suffix("MetaStream.dat")) == Some(prefix)
+                                }).flat_map(|row| row.entities.values()).filter(|id| **id == u64::from(record_index)).count() == 1
+                            })
+                            && native.design_record_headers.iter().filter(|header| design_stream(&header.id) == native_stream && header.byte_offset > frame.primary_offset).map(|header| header.byte_offset).min().is_none_or(|next| frame.end_offset <= next)
+                    })
+                })
+        });
         let offset_faces_link = match scope.payload() {
             records::feature::scope::DesignScopePayload::OffsetFaces(Some(operation)) => {
                 design::decode::scopes::direct_face::offset_faces_distance_reference_matches(
@@ -2625,6 +2404,34 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         })
             }
         };
+        let direct_joint_origin_carrier_link =
+            |target: &DesignParameterScope, origin: &DesignJointOriginTransform| {
+                let Some(evidence) = &origin.carrier else {
+                    return false;
+                };
+                DirectJointOriginCarrier::for_scope(target)
+                    .into_iter()
+                    .flatten()
+                    .any(|carrier| {
+                        evidence.frame_length == u64_from_index(carrier.length)
+                            && carrier.matches_offsets(origin)
+                            && carrier.has_registered_types(target, stream_types)
+                            && carrier
+                                .construction_index(
+                                    &evidence.prefix,
+                                    &evidence.scope_backlink,
+                                    target.record_index,
+                                )
+                                .is_some_and(|index| {
+                                    origin.reference.as_ref().is_some_and(|reference| {
+                                        reference.joint_origin_reference == index
+                                    }) && records_by_index.contains_key(&(native_stream, index))
+                                })
+                            && records_by_index
+                                .get(&(native_stream, carrier.record_index))
+                                .is_some_and(|header| header.byte_offset == carrier.start)
+                    })
+            };
         let assembly_alignment_link = match scope.assembly_alignment() {
             None => true,
             Some(alignment)
@@ -2833,14 +2640,23 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     generation.operand_path_locator_offsets();
                                 let first_start = paths[0].link().locator_byte_offset;
                                 let second_start = paths[1].link().locator_byte_offset;
+                                let counted_wrapper = variable_reference || wide_as_built || compact_as_built
+                                    || operand_frame_variant.is_some_and(
+                                        design::assembly::AssemblyOperandFrameVariant::is_wide_family,
+                                    );
                                 let envelope_ends = paths.each_ref().map(|path| {
-                                    let continuation_count = if variable_reference || wide_as_built || compact_as_built
-                                        || operand_frame_variant.is_some_and(
-                                            design::assembly::AssemblyOperandFrameVariant::is_wide_family,
-                                        ) {
-                                        path.link()
-                                            .wrapper_record_index
-                                            .checked_sub(path.link().locator_record_index)?
+                                    let link = path.link();
+                                    let skipped_index = (rigid_as_built || compact_as_built)
+                                        && design::assembly::typed_as_built_path_wrapper_gap(
+                                            link.locator_record_index,
+                                            path.record_index,
+                                            link.wrapper_record_index,
+                                            stream_types,
+                                        )
+                                        && path.two_keys_in_one_typed_record();
+                                    let continuation_count = if counted_wrapper && !skipped_index {
+                                        link.wrapper_record_index
+                                            .checked_sub(link.locator_record_index)?
                                             .checked_sub(2)?
                                     } else {
                                         0
@@ -2938,12 +2754,14 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                                     && target.kind()
                                         == crate::records::feature::scope::DesignFeatureKind::JointOrigin
                                     && target.record_index == record_index
-                                    && scope
-                                        .byte_offset()
-                                        .checked_add(36)
-                                        .is_some_and(|offset| {
-                                            target.joint_origin_transform_offset() == Some(offset)
-                                        })
+                                    && target.joint_origin_frame().is_some_and(|origin| {
+                                        if origin.carrier.is_some() {
+                                            direct_joint_origin_carrier_link(target, origin)
+                                        } else {
+                                            scope.byte_offset().checked_add(36)
+                                                == Some(origin.joint_origin_transform_offset)
+                                        }
+                                    })
                             })
                     });
                 let alignment_scalars_link = if let Some(generation) = as_built_421_generation {
@@ -3532,6 +3350,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             }
         };
         let joint_origin_link = scope.joint_origin_frame().is_none_or(|origin| {
+            if origin.carrier.is_some() {
+                return direct_joint_origin_carrier_link(scope, origin);
+            }
             let transform = origin.joint_origin_transform;
             let transform_offset = origin.joint_origin_transform_offset;
             let inline = match (scope.frame_length(), &origin.reference) {
@@ -4534,6 +4355,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
             && emboss_profile_link
             && move_link
             && offset_faces_link
+            && split_face_link
             && base_flange_link
             && fold_links
             && edge_flange_link
@@ -4580,6 +4402,21 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                 "Fusion Design parameter scope has an invalid paired frame",
                 Some(scope.id.clone()),
             );
+        }
+        if split_face_link
+            && scope.split_face_operation().is_some_and(
+                crate::records::feature::split_face::DesignSplitFaceOperation::carrier_type_assumed,
+            )
+        {
+            findings.push(Finding {
+                related: Vec::new(),
+                check: Check::NativeLinks,
+                severity: Severity::Warning,
+                message:
+                    "Fusion SplitFace carrier registration conflicts with its inline type qualifier"
+                        .into(),
+                entity: Some(scope.id.clone()),
+            });
         }
     }
     Ok(())
@@ -5101,6 +4938,8 @@ fn validate_extrude_selection_groups(ctx: &Ctx<'_, '_>, findings: &mut Vec<Findi
 
 /// Validate construction operand groups and their role discriminators.
 fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) {
+    use crate::records::feature::scope::DesignFeatureKind;
+
     let native = ctx.native;
     let records_by_index = &ctx.records_by_index;
     let scopes_by_index = &ctx.scopes_by_index;
@@ -5114,27 +4953,33 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
             || frame.member_count_offset.checked_add(4),
             |member| member.offset.checked_add(10),
         );
-        let frame_valid = group
-            .byte_offset
-            .checked_add(
-                if scope.is_some_and(|scope| {
-                    scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
-                        || (scope.kind()
-                            == crate::records::feature::scope::DesignFeatureKind::SplitFace
-                            && group.role() == DesignOperandRole::ROLE_0X21)
-                        || (scope.kind()
-                            == crate::records::feature::scope::DesignFeatureKind::Split
-                            && matches!(
-                                group.role(),
-                                DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X21
-                            ))
-                }) {
-                    88
-                } else {
-                    21
-                },
+        let member_count_offset = frame.member_count_offset.checked_sub(group.byte_offset);
+        let kind = scope.map(|scope| scope.kind());
+        let prefixed_tool = matches!(
+            (kind.as_ref(), group.role()),
+            (
+                Some(DesignFeatureKind::SplitFace),
+                DesignOperandRole::ROLE_0X21
+            ) | (
+                Some(DesignFeatureKind::Split),
+                DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X21
             )
-            .is_some_and(|expected_offset| frame.member_count_offset == expected_offset)
+        );
+        let prefixed = kind == Some(DesignFeatureKind::SurfaceStitch) || prefixed_tool;
+        let compact_split_tool = kind == Some(DesignFeatureKind::Split)
+            && group.role() == DesignOperandRole::ROLE_0X21
+            && group.scope_reference_ordinal == 0
+            && !group.members().is_empty()
+            && frame.auxiliary_records.is_empty()
+            && frame.trailing_records().len() == 1
+            && !frame.variant
+            && !frame.closing_flag;
+        let compact_count = cadmpeg_core::decode::u64_from_index(
+            crate::layout::split_body_compact_group_prefix::MEMBER_COUNT,
+        );
+        let count_offset_valid = member_count_offset == Some(if prefixed { 88 } else { 21 })
+            || (compact_split_tool && member_count_offset == Some(compact_count));
+        let frame_valid = count_offset_valid
             && group.members().first().is_none_or(|member| {
                 frame
                     .member_count_offset
@@ -5528,7 +5373,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 {
                     matches!(
                         group.role(),
-                        DesignOperandRole::ROLE_0X10 | DesignOperandRole::ROLE_0X21
+                        DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X10 | DesignOperandRole::ROLE_0X21
                     ) && group.extrude_role().is_none()
                 }
                 None if matches!(
@@ -7708,6 +7553,39 @@ fn validate_face_operands<'a>(
             )
         })
         .collect::<std::collections::HashMap<_, _>>();
+    let mut header_offsets_by_stream = std::collections::HashMap::<&str, Vec<u64>>::new();
+    let mut header_offset_claims = std::collections::HashMap::<(&str, u32), (u64, u64)>::new();
+    let mut header_index_claims = std::collections::HashMap::<(&str, u64), (u32, u32)>::new();
+    if native
+        .design_face_operands
+        .iter()
+        .any(|operand| operand.registered_recipe_frame().is_some())
+    {
+        for header in &native.design_record_headers {
+            let stream = design_stream(&header.id);
+            header_offsets_by_stream
+                .entry(stream)
+                .or_default()
+                .push(header.byte_offset);
+            header_offset_claims
+                .entry((stream, header.record_index))
+                .and_modify(|range| {
+                    range.0 = range.0.min(header.byte_offset);
+                    range.1 = range.1.max(header.byte_offset);
+                })
+                .or_insert((header.byte_offset, header.byte_offset));
+            header_index_claims
+                .entry((stream, header.byte_offset))
+                .and_modify(|range| {
+                    range.0 = range.0.min(header.record_index);
+                    range.1 = range.1.max(header.record_index);
+                })
+                .or_insert((header.record_index, header.record_index));
+        }
+        for offsets in header_offsets_by_stream.values_mut() {
+            offsets.sort_unstable();
+        }
+    }
     let mut stream_types_by_stream = std::collections::HashMap::new();
     for operand in &native.design_face_operands {
         let native_stream = design_stream(&operand.id);
@@ -7785,13 +7663,76 @@ fn validate_face_operands<'a>(
             .collect::<Vec<_>>();
         expected_alternate_selector_faces.sort_by(|left, right| left.as_str().cmp(right.as_str()));
         expected_alternate_selector_faces.dedup();
-        let next_header_matches = face_operand_next_header_matches(
-            header_indices_by_offset
-                .get(&(native_stream, operand.next_byte_offset()))
-                .copied(),
-            operand.next_record_index,
-            records_by_index.contains_key(&(native_stream, operand.next_record_index)),
-        );
+        let next_header_matches = match operand.registered_recipe_frame() {
+            Some(frame) => {
+                scope.is_some_and(|scope| {
+                    scope.kind() == records::feature::scope::DesignFeatureKind::SplitFace
+                }) && frame.record_index == operand.recipe_record_index()
+                    && frame.primary_offset == operand.recipe_record_byte_offset()
+                    && frame.record_index == operand.next_record_index
+                    && frame.secondary_offset == operand.next_byte_offset()
+                    && frame.primary_offset < frame.secondary_offset
+                    && frame
+                        .secondary_offset
+                        .checked_add(u64_from_index(
+                            crate::layout::indexed_design_record_header::LEN,
+                        ))
+                        .is_some_and(|end| end <= frame.end_offset)
+                    && header_offset_claims
+                        .get(&(native_stream, frame.record_index))
+                        .is_none_or(|range| {
+                            range.0 >= frame.primary_offset && range.1 < frame.end_offset
+                        })
+                    && header_index_claims
+                        .get(&(native_stream, frame.primary_offset))
+                        .is_none_or(|range| *range == (frame.record_index, frame.record_index))
+                    && header_index_claims
+                        .get(&(native_stream, frame.secondary_offset))
+                        .is_none_or(|range| *range == (frame.record_index, frame.record_index))
+                    && match frame.next_primary_index {
+                        Some(index) => {
+                            index != u64::from(frame.record_index)
+                                && u32::try_from(index)
+                                    .ok()
+                                    .and_then(|index| {
+                                        header_offset_claims.get(&(native_stream, index))
+                                    })
+                                    .is_none_or(|range| range.0 == frame.end_offset)
+                                && header_index_claims
+                                    .get(&(native_stream, frame.end_offset))
+                                    .is_none_or(|range| {
+                                        u64::from(range.0) == index && u64::from(range.1) == index
+                                    })
+                        }
+                        None => header_offsets_by_stream
+                            .get(native_stream)
+                            .is_none_or(|offsets| {
+                                offsets
+                                    .last()
+                                    .is_none_or(|offset| *offset < frame.end_offset)
+                            }),
+                    }
+                    && header_offsets_by_stream
+                        .get(native_stream)
+                        .is_none_or(|offsets| {
+                            let first =
+                                offsets.partition_point(|offset| *offset <= frame.primary_offset);
+                            let end = offsets.partition_point(|offset| *offset < frame.end_offset);
+                            offsets.get(first..end).is_some_and(|inside| {
+                                inside
+                                    .iter()
+                                    .all(|offset| *offset == frame.secondary_offset)
+                            })
+                        })
+            }
+            None => face_operand_next_header_matches(
+                header_indices_by_offset
+                    .get(&(native_stream, operand.next_byte_offset()))
+                    .copied(),
+                operand.next_record_index,
+                records_by_index.contains_key(&(native_stream, operand.next_record_index)),
+            ),
+        };
         let expected_node_offsets = operand
             .recipe_program
             .windows(3)
@@ -8044,9 +7985,9 @@ fn validate_face_operands<'a>(
                                 == crate::records::feature::scope::DesignFeatureKind::SplitFace =>
                             {
                                 group.is_some_and(|group| {
-                                    group.role() == DesignOperandRole::ROLE_0X10
-                                }) && operand.recipe_kind
-                                    == records::recipes::ConstructionRecipeKind::BoundedFace
+                                    matches!(group.role(), DesignOperandRole::ROLE_0X9 | DesignOperandRole::ROLE_0X10)
+                                }) && matches!(operand.recipe_kind,
+                                    records::recipes::ConstructionRecipeKind::BoundedFace | records::recipes::ConstructionRecipeKind::Face)
                             }
                             None if group.is_some_and(|group| {
                                 design::decode::operands::is_surface_untrim_face_group(scope, group)
@@ -8094,6 +8035,10 @@ fn validate_face_operands<'a>(
                                 operand.recipe_kind,
                                 records::recipes::ConstructionRecipeKind::BoundedFace
                                     | records::recipes::ConstructionRecipeKind::Face
+                            ),
+                            None if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace => matches!(
+                                operand.recipe_kind,
+                                records::recipes::ConstructionRecipeKind::BoundedFace | records::recipes::ConstructionRecipeKind::Face
                             ),
                             Some(design::DesignFeatureFamily::Assemble)
                                 if scope.kind()
@@ -8628,593 +8573,6 @@ fn validate_parameter_companions(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>)
                 Check::NativeLinks,
                 "Fusion Design parameter companion has an invalid prefix or owner link",
                 Some(companion.id().to_owned()),
-            );
-        }
-    }
-}
-
-/// Validate dimension recipe records; returns the owned recipe ids.
-fn validate_dimension_recipe_records<'a>(
-    ctx: &Ctx<'a, '_>,
-    findings: &mut Vec<Finding>,
-) -> HashSet<(&'a str, &'a str)> {
-    let native = ctx.native;
-    let parameters_by_index = &ctx.parameters_by_index;
-    let owners_by_index = &ctx.owners_by_index;
-    let companions_by_index = &ctx.companions_by_index;
-    let mut dimension_recipe_ids = HashSet::new();
-    for record in &native.design_dimension_recipe_records {
-        let native_stream = design_stream(&record.id);
-        let companion = companions_by_index.get(&(native_stream, record.companion_record_index));
-        let dimension_companion = companion.is_some_and(|companion| {
-            owners_by_index
-                .get(&(native_stream, companion.owner_record_index()))
-                .and_then(|owner| {
-                    parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
-                })
-                .is_some_and(|parameter| {
-                    parameter.kind() == records::parameters::DesignParameterKind::Dimension
-                })
-        });
-        let recipe = native
-            .construction_recipes
-            .iter()
-            .find(|recipe| recipe.id == record.recipe_id);
-        let companion_order_matches = companion.is_some_and(|companion| {
-            usize::try_from(record.recipe_ordinal)
-                .ok()
-                .and_then(|ordinal| {
-                    companion
-                        .payload()
-                        .and_then(|payload| payload.owned_recipe_ids().get(ordinal))
-                })
-                == Some(&record.recipe_id)
-        });
-        let frame_end = record.byte_offset.checked_add(record.frame_length);
-        let prefix_end = record
-            .prefix_offset
-            .checked_add(u64_from_index(record.prefix_bytes.len()));
-        let program_end = u64_from_index(record.program.len())
-            .checked_mul(4)
-            .and_then(|length| record.program_offset.checked_add(length));
-        let mut decoded_references = design::decode::dimension_frames::decode_recipe_references(
-            &record.prefix_bytes,
-            record.prefix_offset,
-        );
-        for reference in &mut decoded_references {
-            design::decode::dimension_frames::bind_recipe_reference_candidates(
-                reference,
-                &native.persistent_subentity_tags,
-                Some(&record.id),
-            );
-        }
-        let references_match = decoded_references == record.references;
-        let edge_operands_match =
-            design::decode::dimension_frames::dimension_recipe_matching_edge_operand_ids(
-                record,
-                &native.design_edge_operands,
-            ) == record.matching_edge_operand_ids;
-        let recipe_frame_matches = recipe.is_some_and(|recipe| {
-            design_stream(&recipe.id) == native_stream
-                && record
-                    .byte_offset
-                    .checked_add(11)
-                    .is_some_and(|expected_offset| recipe.byte_offset >= expected_offset)
-                && frame_end.is_some_and(|end| recipe.byte_offset < end)
-                && prefix_end == recipe.byte_offset.checked_sub(4)
-                && recipe
-                    .byte_offset
-                    .checked_add(u64_from_index(design::construction_recipe_family_name_len(
-                        recipe.kind,
-                    )))
-                    .is_some_and(|expected_offset| record.program_offset == expected_offset)
-        });
-        let valid = record.frame_length >= 11
-            && !record.prefix_bytes.is_empty()
-            && references_match
-            && edge_operands_match
-            && record
-                .byte_offset
-                .checked_add(11)
-                .is_some_and(|expected_offset| record.prefix_offset == expected_offset)
-            && !record.program.is_empty()
-            && record
-                .byte_offset
-                .checked_add(11)
-                .is_some_and(|expected_offset| record.program_offset >= expected_offset)
-            && program_end == frame_end
-            && dimension_companion
-            && companion_order_matches
-            && recipe_frame_matches
-            && dimension_recipe_ids.insert((native_stream, record.recipe_id.as_str()));
-        if !valid {
-            push_constant_finding(
-                findings,
-                Check::NativeLinks,
-                "Fusion Design dimension recipe has an invalid indexed-record owner",
-                Some(record.id.clone()),
-            );
-        }
-    }
-    dimension_recipe_ids
-}
-
-/// Report dimension companions owning an unresolved construction recipe.
-fn validate_dimension_companion_recipes<'a>(
-    ctx: &Ctx<'a, '_>,
-    findings: &mut Vec<Finding>,
-    dimension_recipe_ids: &HashSet<(&'a str, &'a str)>,
-) {
-    let native = ctx.native;
-    let parameters_by_index = &ctx.parameters_by_index;
-    let owners_by_index = &ctx.owners_by_index;
-    for companion in &native.design_parameter_companions {
-        let native_stream = design_stream(companion.id());
-        let dimension_companion = owners_by_index
-            .get(&(native_stream, companion.owner_record_index()))
-            .and_then(|owner| {
-                parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
-            })
-            .is_some_and(|parameter| {
-                parameter.kind() == records::parameters::DesignParameterKind::Dimension
-            });
-        if dimension_companion
-            && companion.payload().is_some_and(|payload| {
-                payload.owned_recipe_ids().iter().any(|recipe_id| {
-                    !dimension_recipe_ids.contains(&(native_stream, recipe_id.as_str()))
-                })
-            })
-        {
-            push_constant_finding(
-                findings,
-                Check::NativeLinks,
-                "Fusion Design dimension companion has an unowned construction recipe",
-                Some(companion.id().to_owned()),
-            );
-        }
-    }
-}
-
-/// Validate dimension locus pairs; returns their companion set.
-fn validate_dimension_locus_pairs<'a>(
-    ctx: &Ctx<'a, '_>,
-    findings: &mut Vec<Finding>,
-) -> HashSet<(&'a str, u32)> {
-    let native = ctx.native;
-    let parameters_by_index = &ctx.parameters_by_index;
-    let owners_by_index = &ctx.owners_by_index;
-    let companions_by_index = &ctx.companions_by_index;
-    let sketch_geometry_indices = &ctx.sketch_geometry_indices;
-    let mut locus_pair_indices = HashSet::new();
-    let mut locus_pair_companions = HashSet::new();
-    for pair in &native.design_dimension_locus_pairs {
-        let native_stream = design_stream(&pair.id);
-        let unique_index = locus_pair_indices.insert((native_stream, pair.record_index));
-        let unique_companion =
-            locus_pair_companions.insert((native_stream, pair.companion_record_index));
-        let companion = companions_by_index.get(&(native_stream, pair.companion_record_index));
-        let companion_contains_frame = companion.is_some_and(|companion| {
-            companion
-                .payload_byte_offset()
-                .is_some_and(|expected_offset| pair.byte_offset() >= expected_offset)
-                && !native.design_parameter_owners.iter().any(|owner| {
-                    design_stream(owner.id()) == native_stream
-                        && owner.byte_offset() > companion.byte_offset()
-                        && owner.byte_offset() <= pair.byte_offset()
-                })
-        });
-        let dimension_companion = companion.is_some_and(|companion| {
-            owners_by_index
-                .get(&(native_stream, companion.owner_record_index()))
-                .and_then(|owner| {
-                    parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
-                })
-                .is_some_and(|parameter| {
-                    parameter.kind() == records::parameters::DesignParameterKind::Dimension
-                })
-        });
-        let governs_following_dimension =
-            design::decode::dimension_frames::following_dimension_companion_record_index(
-                &pair.id,
-                pair.paired_byte_offset(),
-                &native.design_parameter_owners,
-                &native.design_parameters,
-            ) == Some(pair.governing_companion_record_index);
-        let valid = companion_contains_frame
-            && dimension_companion
-            && governs_following_dimension
-            && sketch_geometry_indices.contains(&(native_stream, pair.loci()[0].geometry_index()))
-            && sketch_geometry_indices.contains(&(native_stream, pair.loci()[1].geometry_index()))
-            && unique_index
-            && unique_companion;
-        if !valid {
-            push_constant_finding(
-                findings,
-                Check::NativeLinks,
-                "Fusion Design dimension locus pair has an invalid frame or geometry link",
-                Some(pair.id.clone()),
-            );
-        }
-    }
-    locus_pair_companions
-}
-
-/// Validate dimension annotation frames and their operand runs.
-fn validate_dimension_annotation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) {
-    let native = ctx.native;
-    let parameters_by_index = &ctx.parameters_by_index;
-    let owners_by_index = &ctx.owners_by_index;
-    let companions_by_index = &ctx.companions_by_index;
-    let scopes_by_index = &ctx.scopes_by_index;
-    let entities_by_suffix = &ctx.entities_by_suffix;
-    let sketch_geometry_indices = &ctx.sketch_geometry_indices;
-    let mut annotation_frame_indices = HashSet::new();
-    for frame in &native.design_dimension_annotation_frames {
-        let native_stream = design_stream(&frame.id);
-        let unique_index = annotation_frame_indices.insert((native_stream, frame.record_index));
-        let governing_owner = owners_by_index
-            .get(&(native_stream, frame.governing_owner_record_index))
-            .copied();
-        let physical_interval_valid = match frame.companion_record_index {
-            Some(record_index) => companions_by_index
-                .get(&(native_stream, record_index))
-                .is_some_and(|companion| {
-                    companion
-                        .payload_byte_offset()
-                        .is_some_and(|expected_offset| frame.byte_offset() >= expected_offset)
-                        && companion.payload().is_some_and(|payload| {
-                            companion
-                                .payload_byte_offset()
-                                .and_then(|offset| offset.checked_add(payload.byte_length()))
-                                .is_some_and(|expected_offset| {
-                                    frame.paired_byte_offset() < expected_offset
-                                })
-                        })
-                }),
-            None => governing_owner.is_some_and(|owner| {
-                scopes_by_index
-                    .get(&(native_stream, owner.scope_record_index()))
-                    .is_some_and(|scope| frame.byte_offset() >= scope.byte_offset())
-                    && parameters_by_index
-                        .get(&(native_stream, owner.parameter_record_index()))
-                        .is_some_and(|parameter| {
-                            frame.paired_byte_offset() < parameter.byte_offset()
-                        })
-            }),
-        };
-        let governing_link_valid = governing_owner.is_some_and(|owner| {
-            owner.companion_record_index() == frame.governing_companion_record_index
-                && parameters_by_index
-                    .get(&(native_stream, owner.parameter_record_index()))
-                    .is_some_and(|parameter| {
-                        parameter.kind() == records::parameters::DesignParameterKind::Dimension
-                    })
-        });
-        let operands_valid = frame.operands().iter().all(|operand| {
-            operand
-                .geometry_record_index
-                .is_none_or(|index| sketch_geometry_indices.contains(&(native_stream, index.get())))
-        });
-        let owner_is_sketch = entities_by_suffix
-            .get(&(native_stream, u64::from(frame.owner_reference)))
-            .is_some_and(|entity| entity.in_sketch_module());
-        let valid = unique_index
-            && physical_interval_valid
-            && governing_link_valid
-            && operands_valid
-            && owner_is_sketch;
-        if !valid {
-            push_constant_finding(
-                findings,
-                Check::NativeLinks,
-                "Fusion Design dimension annotation frame has invalid links or offsets",
-                Some(frame.id.clone()),
-            );
-        }
-    }
-}
-
-/// Validate direct dimension presentation frames and their sketch-owner joins.
-fn validate_dimension_presentation_frames(ctx: &Ctx, findings: &mut Vec<Finding>) {
-    let native = ctx.native;
-    let parameters_by_index = &ctx.parameters_by_index;
-    let owners_by_index = &ctx.owners_by_index;
-    let companions_by_index = &ctx.companions_by_index;
-    let entities_by_suffix = &ctx.entities_by_suffix;
-    let sketch_geometry_indices = &ctx.sketch_geometry_indices;
-    let sketch_scope_by_entity = native
-        .design_sketch_placements
-        .iter()
-        .filter_map(|placement| {
-            Some((
-                (design_stream(&placement.id), placement.entity_id.suffix()),
-                placement.scope_record_index?,
-            ))
-        })
-        .collect::<std::collections::HashMap<_, _>>();
-    let mut presentation_frame_indices = HashSet::new();
-    for frame in &native.design_dimension_presentation_frames {
-        let native_stream = design_stream(&frame.id);
-        let unique_index = presentation_frame_indices.insert((native_stream, frame.record_index));
-        let owner = owners_by_index.get(&(native_stream, frame.governing_owner_record_index));
-        let parameter =
-            parameters_by_index.get(&(native_stream, frame.governing_parameter_record_index));
-        let companion =
-            companions_by_index.get(&(native_stream, frame.governing_companion_record_index));
-        let owner_link_valid = owner.is_some_and(|owner| {
-            owner.parameter_record_index() == frame.governing_parameter_record_index
-                && owner.companion_record_index() == frame.governing_companion_record_index
-                && parameter.is_some_and(|parameter| {
-                    parameter.kind() == records::parameters::DesignParameterKind::Dimension
-                })
-                && companion
-                    .is_some_and(|companion| companion.owner_record_index() == owner.record_index())
-        });
-        let nearest_owner = native
-            .design_parameter_owners
-            .iter()
-            .filter(|candidate| {
-                design_stream(candidate.id()) == native_stream
-                    && sketch_scope_by_entity
-                        .get(&(native_stream, u64::from(frame.owner_reference)))
-                        .is_some_and(|scope_record_index| {
-                            candidate.scope_record_index() == *scope_record_index
-                        })
-                    && candidate.byte_offset() > frame.paired_byte_offset
-                    && parameters_by_index
-                        .get(&(native_stream, candidate.parameter_record_index()))
-                        .is_some_and(|parameter| {
-                            parameter.kind() == records::parameters::DesignParameterKind::Dimension
-                        })
-            })
-            .min_by_key(|candidate| candidate.byte_offset());
-        let governing_owner_is_nearest = nearest_owner.is_some_and(|candidate| {
-            candidate.record_index() == frame.governing_owner_record_index
-        });
-        let operand_start = frame.byte_offset.checked_add(24);
-        let operands_valid = !frame.operands.is_empty()
-            && frame.operands.iter().enumerate().all(|(ordinal, operand)| {
-                let Some(start) = u64_from_index(ordinal)
-                    .checked_mul(15)
-                    .and_then(|delta| operand_start.and_then(|offset| offset.checked_add(delta)))
-                else {
-                    return false;
-                };
-                start.checked_add(1).is_some_and(|expected_offset| {
-                    operand.geometry_reference_offset == expected_offset
-                }) && start
-                    .checked_add(11)
-                    .is_some_and(|expected_offset| operand.role_offset == expected_offset)
-                    && sketch_geometry_indices
-                        .contains(&(native_stream, operand.geometry_record_index.get()))
-            });
-        let owner_is_sketch = entities_by_suffix
-            .get(&(native_stream, u64::from(frame.owner_reference)))
-            .is_some_and(|entity| entity.in_sketch_module());
-        let valid = unique_index
-            && frame.paired_byte_offset > frame.byte_offset
-            && frame
-                .paired_byte_offset
-                .checked_sub(frame.byte_offset)
-                .is_some_and(|expected_offset| frame.frame_length == expected_offset)
-            && (u64_from_index(frame.operands.len()))
-                .checked_mul(15)
-                .and_then(|delta| operand_start.and_then(|offset| offset.checked_add(delta)))
-                .is_some_and(|expected_offset| frame.presentation_byte_offset == expected_offset)
-            && frame
-                .presentation_byte_offset
-                .checked_add(u64_from_index(frame.presentation_bytes.len()))
-                .is_some_and(|expected_offset| expected_offset == frame.paired_byte_offset)
-            && frame
-                .paired_byte_offset
-                .checked_add(20)
-                .is_some_and(|expected_offset| frame.owner_reference_offset == expected_offset)
-            && owner_link_valid
-            && governing_owner_is_nearest
-            && operands_valid
-            && owner_is_sketch;
-        if !valid {
-            push_constant_finding(
-                findings,
-                Check::NativeLinks,
-                "Fusion Design dimension presentation frame has invalid links or offsets",
-                Some(frame.id.clone()),
-            );
-        }
-    }
-}
-
-/// Validate dimension locus groups; returns their companion set.
-fn validate_dimension_locus_groups<'a>(
-    ctx: &Ctx<'a, '_>,
-    findings: &mut Vec<Finding>,
-) -> HashSet<(&'a str, u32)> {
-    let native = ctx.native;
-    let parameters_by_index = &ctx.parameters_by_index;
-    let owners_by_index = &ctx.owners_by_index;
-    let companions_by_index = &ctx.companions_by_index;
-    let entities_by_suffix = &ctx.entities_by_suffix;
-    let sketch_geometry_indices = &ctx.sketch_geometry_indices;
-    let mut locus_group_indices = HashSet::new();
-    let mut locus_group_companions = HashSet::new();
-    for group in &native.design_dimension_locus_groups {
-        let native_stream = design_stream(&group.id);
-        let unique_index = locus_group_indices.insert((native_stream, group.record_index));
-        locus_group_companions.insert((native_stream, group.companion_record_index));
-        let companion = companions_by_index.get(&(native_stream, group.companion_record_index));
-        let companion_contains_frame = companion.is_some_and(|companion| {
-            companion
-                .payload_byte_offset()
-                .is_some_and(|expected_offset| group.byte_offset >= expected_offset)
-                && !native.design_parameter_owners.iter().any(|owner| {
-                    design_stream(owner.id()) == native_stream
-                        && owner.byte_offset() > companion.byte_offset()
-                        && owner.byte_offset() <= group.byte_offset
-                })
-        });
-        let dimension_companion = companion.is_some_and(|companion| {
-            owners_by_index
-                .get(&(native_stream, companion.owner_record_index()))
-                .and_then(|owner| {
-                    parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
-                })
-                .is_some_and(|parameter| {
-                    parameter.kind() == records::parameters::DesignParameterKind::Dimension
-                })
-        });
-        let count = group.loci.len();
-        let loci_start = group.byte_offset.checked_add(24);
-        let loci_offsets_valid = group.loci.iter().enumerate().all(|(ordinal, locus)| {
-            let Some(start) = u64_from_index(ordinal)
-                .checked_mul(15)
-                .and_then(|delta| loci_start.and_then(|offset| offset.checked_add(delta)))
-            else {
-                return false;
-            };
-            start
-                .checked_add(1)
-                .is_some_and(|expected_offset| locus.geometry_reference_offset == expected_offset)
-                && start
-                    .checked_add(11)
-                    .is_some_and(|expected_offset| locus.role_offset == expected_offset)
-                && sketch_geometry_indices.contains(&(native_stream, locus.geometry_record_index))
-        });
-        let owner_start = u64_from_index(count)
-            .checked_mul(15)
-            .and_then(|delta| loci_start.and_then(|offset| offset.checked_add(delta)));
-        let returns_start = owner_start.and_then(|offset| offset.checked_add(24));
-        let returns_valid = group.loci.iter().enumerate().all(|(ordinal, locus)| {
-            (u64_from_index(ordinal))
-                .checked_mul(11)
-                .and_then(|delta| returns_start.and_then(|offset| offset.checked_add(delta)))
-                .and_then(|offset| offset.checked_add(1))
-                .is_some_and(|expected_offset| locus.returned.offset == expected_offset)
-                && sketch_geometry_indices.contains(&(native_stream, locus.returned.value))
-        });
-        let mut locus_members = group
-            .loci
-            .iter()
-            .map(|locus| locus.geometry_record_index)
-            .collect::<Vec<_>>();
-        let mut return_members = group
-            .loci
-            .iter()
-            .map(|locus| locus.returned.value)
-            .collect::<Vec<_>>();
-        locus_members.sort_unstable_by(Ord::cmp);
-        return_members.sort_unstable_by(Ord::cmp);
-        let owner_is_sketch = entities_by_suffix
-            .get(&(native_stream, u64::from(group.owner_reference)))
-            .is_some_and(|entity| entity.in_sketch_module());
-        let frame_does_not_overlap = native.design_dimension_locus_groups.iter().all(|other| {
-            design_stream(&other.id) != native_stream
-                || other.companion_record_index != group.companion_record_index
-                || other.record_index == group.record_index
-                || group.next_byte_offset <= other.byte_offset
-                || other.next_byte_offset <= group.byte_offset
-        });
-        let valid = companion_contains_frame
-            && dimension_companion
-            && (1..=64).contains(&count)
-            && loci_offsets_valid
-            && owner_start
-                .and_then(|offset| offset.checked_add(2))
-                .is_some_and(|expected_offset| group.owner_reference_offset == expected_offset)
-            && owner_start
-                .and_then(|offset| offset.checked_add(12))
-                .is_some_and(|expected_offset| group.owner_role_offset == expected_offset)
-            && owner_start
-                .and_then(|offset| offset.checked_add(16))
-                .is_some_and(|expected_offset| group.state_offset == expected_offset)
-            && owner_is_sketch
-            && returns_valid
-            && locus_members == return_members
-            && (u64_from_index(count))
-                .checked_mul(11)
-                .and_then(|delta| returns_start.and_then(|offset| offset.checked_add(delta)))
-                .and_then(|offset| offset.checked_add(1))
-                .is_some_and(|expected_offset| group.next_byte_offset == expected_offset)
-            && group
-                .next_byte_offset
-                .checked_sub(group.byte_offset)
-                .is_some_and(|expected_offset| group.frame_length == expected_offset)
-            && unique_index
-            && frame_does_not_overlap;
-        if !valid {
-            push_constant_finding(
-                findings,
-                Check::NativeLinks,
-                "Fusion Design dimension locus group has an invalid counted frame or geometry link",
-                Some(group.id.clone()),
-            );
-        }
-    }
-    locus_group_companions
-}
-
-/// Validate null-locus dimension pairs against typed companions.
-fn validate_dimension_null_locus_pairs<'a>(
-    ctx: &Ctx<'a, '_>,
-    findings: &mut Vec<Finding>,
-    locus_pair_companions: &HashSet<(&'a str, u32)>,
-    locus_group_companions: &HashSet<(&'a str, u32)>,
-) {
-    let native = ctx.native;
-    let parameters_by_index = &ctx.parameters_by_index;
-    let owners_by_index = &ctx.owners_by_index;
-    let companions_by_index = &ctx.companions_by_index;
-    let sketch_geometry_indices = &ctx.sketch_geometry_indices;
-    let mut null_locus_pair_indices = HashSet::new();
-    let mut null_locus_pair_companions = HashSet::new();
-    for pair in &native.design_dimension_null_locus_pairs {
-        let native_stream = design_stream(&pair.id);
-        let unique_index = null_locus_pair_indices.insert((native_stream, pair.record_index));
-        let unique_companion =
-            null_locus_pair_companions.insert((native_stream, pair.companion_record_index));
-        let companion = companions_by_index.get(&(native_stream, pair.companion_record_index));
-        let companion_contains_frame = companion.is_some_and(|companion| {
-            companion
-                .payload_byte_offset()
-                .is_some_and(|expected_offset| pair.byte_offset() >= expected_offset)
-                && !native.design_parameter_owners.iter().any(|owner| {
-                    design_stream(owner.id()) == native_stream
-                        && owner.byte_offset() > companion.byte_offset()
-                        && owner.byte_offset() <= pair.byte_offset()
-                })
-        });
-        let dimension_companion = companion.is_some_and(|companion| {
-            owners_by_index
-                .get(&(native_stream, companion.owner_record_index()))
-                .and_then(|owner| {
-                    parameters_by_index.get(&(native_stream, owner.parameter_record_index()))
-                })
-                .is_some_and(|parameter| {
-                    parameter.kind() == records::parameters::DesignParameterKind::Dimension
-                })
-        });
-        let governs_following_dimension =
-            design::decode::dimension_frames::following_dimension_companion_record_index(
-                &pair.id,
-                pair.paired_byte_offset(),
-                &native.design_parameter_owners,
-                &native.design_parameters,
-            ) == Some(pair.governing_companion_record_index);
-        let companion_has_typed_frame = locus_pair_companions
-            .contains(&(native_stream, pair.companion_record_index))
-            || locus_group_companions.contains(&(native_stream, pair.companion_record_index));
-        let valid = companion_contains_frame
-            && dimension_companion
-            && governs_following_dimension
-            && !companion_has_typed_frame
-            && sketch_geometry_indices.contains(&(native_stream, pair.loci()[1].geometry_index()))
-            && unique_index
-            && unique_companion;
-        if !valid {
-            push_constant_finding(
-                findings,
-                Check::NativeLinks,
-                "Fusion Design null-locus dimension pair has an invalid frame or geometry link",
-                Some(pair.id.clone()),
             );
         }
     }

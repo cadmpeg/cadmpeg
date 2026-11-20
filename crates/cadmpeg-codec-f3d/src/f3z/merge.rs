@@ -597,7 +597,6 @@ fn omit_unbound_member_joints(
     unplaced_members: &std::collections::BTreeSet<cadmpeg_ir::ids::OccurrenceId>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
     use cadmpeg_ir::products::OperandContainer;
     if unplaced_members.is_empty() {
         return;
@@ -644,7 +643,17 @@ fn omit_unbound_member_joints(
         }
         !unresolved
     });
-    for feature in &mut model.features {
+    omit_unbound_motion_links(&mut model.assembly_joints, &mut omitted, losses);
+    restore_native_joint_features(&mut model.features, &omitted);
+}
+
+fn restore_native_joint_features(
+    features: &mut [cadmpeg_ir::features::Feature],
+    omitted: &std::collections::BTreeSet<cadmpeg_ir::products::JointId>,
+) {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    for feature in features {
         if matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { joint }) if omitted.contains(joint))
         {
             feature
@@ -996,7 +1005,36 @@ fn rebind_joints(
         }
     }
     model.joints.retain(|joint| !refused.contains(&joint.id));
+    omit_unbound_motion_links(model.joints, &mut refused, losses);
+    restore_native_joint_features(model.features, &refused);
     bind_retained_joint_features(model.features, model.joints, complete_scopes);
+}
+
+fn omit_unbound_motion_links(
+    joints: &mut Vec<cadmpeg_ir::products::AssemblyJoint>,
+    omitted: &mut std::collections::BTreeSet<cadmpeg_ir::products::JointId>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    use cadmpeg_ir::products::{JointOperands, PairedJointKind};
+
+    if omitted.is_empty() {
+        return;
+    }
+    joints.retain(|joint| {
+        if matches!(
+            joint.operands(),
+            JointOperands::Pair { kind: PairedJointKind::Gears { coupled_joints, .. }, .. }
+                if coupled_joints.iter().any(|target| omitted.contains(target))
+        ) {
+            omitted.insert(joint.id.clone());
+            losses.push(F3dLossCode::AssemblyJointUnprojected.note(format!(
+                "MotionLink joint {} stays native because a coupled joint was omitted",
+                joint.id
+            )));
+            return false;
+        }
+        true
+    });
 }
 
 fn bind_retained_joint_features(
@@ -1925,6 +1963,16 @@ fn define_member(
             .product_definitions
             .retain(|definition| !definition.id.as_str().ends_with(STORED_FRAME_GROUP_SUFFIX));
     }
+    let (top_level, tessellations) = ir
+        .model
+        .product_definitions
+        .iter()
+        .position(|row| row.id == crate::tree::file_root_id())
+        .map(|position| {
+            let root = ir.model.product_definitions.remove(position);
+            (root.occurrences, root.tessellations)
+        })
+        .unwrap_or_default();
     let owned = ir
         .model
         .product_definitions
@@ -1951,15 +1999,6 @@ fn define_member(
         .filter(|sketch| !owned_sketches.contains(&sketch.id))
         .map(|sketch| sketch.id.clone())
         .collect();
-    // The member file's own root definition is the member definition: it is
-    // stored in its own file of the archive, and holds the member's top level.
-    let top_level = ir
-        .model
-        .product_definitions
-        .iter()
-        .position(|row| row.id == crate::tree::file_root_id())
-        .map(|position| ir.model.product_definitions.remove(position).occurrences)
-        .unwrap_or_default();
     let storage = match ir.source.clone() {
         Some(source) => Storage::File {
             document: ExternalDocument::path(document.to_owned()),
@@ -1978,6 +2017,7 @@ fn define_member(
         definition.sketches.extend(sketches);
         definition.label = (!label.trim().is_empty()).then(|| label.to_owned());
         definition.occurrences.extend(top_level);
+        definition.tessellations.extend(tessellations);
         definition.storage = storage;
         return Ok(id);
     }
@@ -1987,6 +2027,7 @@ fn define_member(
     definition.bodies = bodies;
     definition.sketches = sketches;
     definition.occurrences = top_level;
+    definition.tessellations = tessellations;
     ir.model.product_definitions.push(definition);
     Ok(id)
 }
@@ -2527,7 +2568,7 @@ mod tests {
         let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
         ir.model.product_definitions.clear();
         ir.geometry.bodies[0].transform = Some(transform);
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
         assert_eq!(ir.geometry.bodies[0].transform, Some(transform));
         assert_eq!(
@@ -2567,7 +2608,7 @@ mod tests {
                 general_tolerance: None,
                 active: None,
             });
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let id = define_member(&ctx, &mut ir, "member", "member.f3d").unwrap();
         assert_eq!(ir.model.product_definitions.len(), 1);
         assert_eq!(ir.model.product_definitions[0].id, id);

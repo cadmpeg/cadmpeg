@@ -191,6 +191,10 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
         DesignFeatureKind::SilhouetteSplit,
     ),
     (
+        crate::records::feature::motion_link::SCOPE_TYPE,
+        DesignFeatureKind::MotionLink,
+    ),
+    (
         "65CA3206-E33A-471E-8E40-2C72B57C6181",
         DesignFeatureKind::Split,
     ),
@@ -283,7 +287,7 @@ pub(super) fn paste_scope_prefix(
     }
 }
 
-pub(in crate::design::decode::scopes) fn from_type_guid(guid: &str) -> Option<DesignFeatureKind> {
+pub(crate) fn from_type_guid(guid: &str) -> Option<DesignFeatureKind> {
     if guid.eq_ignore_ascii_case(super::super::position::TYPE_GUID) {
         return Some(DesignFeatureKind::native("Position"));
     }

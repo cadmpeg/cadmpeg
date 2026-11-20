@@ -53,7 +53,7 @@ fn native_class24_domain_relation_retains_exact_frame_and_wire() {
     native
         .clone()
         .store_owned(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             &mut owned_namespace,
         )
         .expect("store owned domain relation");
@@ -128,7 +128,10 @@ fn native_class25_maps_round_trip_and_decline_conflicting_sample_pairs() {
         let mut owned = cadmpeg_ir::NativeNamespace::default();
         native
             .clone()
-            .store_owned(&cadmpeg_test_support::service_decode_context(), &mut owned)
+            .store_owned(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                &mut owned,
+            )
             .expect("owned store");
         assert_eq!(owned, namespace);
         assert_eq!(CatiaNative::load(&namespace).expect("load maps"), native);

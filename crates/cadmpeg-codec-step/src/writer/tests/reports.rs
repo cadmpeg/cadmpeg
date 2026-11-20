@@ -423,10 +423,10 @@ fn ap242_writer_reports_unrepresented_tessellation_triangle_metadata() {
             Vec::new(),
         )
         .expect("valid tessellation")
-        .with_triangle_groups(vec![TessellationTriangleGroup {
-            source_id: Some("synthetic:test:group#0".into()),
-            triangles: vec![0],
-        }])
+        .with_triangle_groups(vec![TessellationTriangleGroup::new(
+            Some("synthetic:test:group#0".into()),
+            vec![0],
+        )])
         .expect("valid triangle group partition")
         .with_texture_assignments(vec![TessellationTextureAssignment {
             source_id: Some("synthetic:test:texture-resource#0".into()),

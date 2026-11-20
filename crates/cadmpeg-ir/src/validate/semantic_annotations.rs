@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn reference_anchors_require_a_typed_dimension_and_one_pair() {
-        use crate::semantic_annotations::{DimensionKind, SemanticAnnotationKind};
+        use crate::semantic_annotations::{AnnotationDimensionKind, SemanticAnnotationKind};
         let mut ir = fixture();
         ir.model.semantic_annotations.truncate(1);
         let ids = crate::index::identities::BorrowedIdentities::build(|add| {
@@ -150,7 +150,7 @@ mod tests {
         check_semantic_annotations(&ir, &ids, &mut findings);
         assert_eq!(findings.len(), 1);
         ir.model.semantic_annotations[0].dimension_kind =
-            Some(DimensionKind::HorizontalDistance {});
+            Some(AnnotationDimensionKind::HorizontalDistance);
         findings.clear();
         check_semantic_annotations(&ir, &ids, &mut findings);
         assert!(findings.is_empty());

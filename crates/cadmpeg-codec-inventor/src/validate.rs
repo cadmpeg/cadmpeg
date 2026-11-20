@@ -216,6 +216,7 @@ pub(crate) fn validate_native(
     validate_design(&data, ir, &mut findings);
     validate_sketches(&data, ir, &mut findings);
     validate_features(ctx, ir, &data, &mut findings)?;
+    findings.extend(crate::design_v11::validate_operations(ir)?);
     unique(
         &mut findings,
         data.unknowns.iter().map(|record| record.id.as_str()),
@@ -1934,6 +1935,11 @@ fn validate_features(
         .iter()
         .map(|entity| (entity.id().as_str(), entity))
         .collect::<HashMap<_, _>>();
+    let producer_records = crate::feature::body_selection::ProducerRecords::new(
+        &data.pm_dc_features,
+        &data.pm_dc_feature_labels,
+        &data.pm_dc_feature_properties,
+    );
     for feature in &ir.model.features {
         if crate::feature::pattern::is_linear_pattern(feature) {
             if feature
@@ -2584,11 +2590,7 @@ fn validate_features(
                         &ir.model.features,
                         &ir.model.feature_result_topologies,
                         feature,
-                        &crate::feature::body_selection::ProducerRecords {
-                            features: &data.pm_dc_features,
-                            labels: &data.pm_dc_feature_labels,
-                            properties: &data.pm_dc_feature_properties,
-                        },
+                        &producer_records,
                     ),
                 )
             })
@@ -2624,11 +2626,7 @@ fn validate_features(
                         &ir.model.features,
                         &ir.model.feature_result_topologies,
                         feature,
-                        &crate::feature::body_selection::ProducerRecords {
-                            features: &data.pm_dc_features,
-                            labels: &data.pm_dc_feature_labels,
-                            properties: &data.pm_dc_feature_properties,
-                        },
+                        &producer_records,
                     ),
                     crate::feature::body_selection::qualified_split_target(
                         raw_feature,

@@ -1272,7 +1272,7 @@ option u32
 
 Types `7267cc3bd31104a96000b3a99dccefb0`, `720c3e2bd311976060007aa99dccefb0`, `e0a8d8afd3117d5a0008928f8b1f0f69`, and `07a66130d4118895600053aa9dccefb0` contain the versioned content header and stamps, followed by `type_value:i16` and `value:u16`, then end. Their type values are 9, 304 or 501, 8, and 4 respectively. An enumeration value is a scalar, not a record reference.
 
-The sheet-metal style record has type identifier `13234560d3117a0d6000ecb21d6eefb0`. For PmDc segment major versions 29 and 31, its operand prefix contains:
+The sheet-metal style record has type identifier `13234560d3117a0d6000ecb21d6eefb0`. For PmDc segment major versions 29, 30, and 31, its operand prefix contains:
 
 ```text
 prefix bytes[30]

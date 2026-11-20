@@ -172,17 +172,58 @@ pub(super) fn vertex_miss(
     let Some(spine) = Spine::new(ctx, spine)? else {
         return Ok(None);
     };
-    let mut parameters = Vec::with_capacity(vertices.len());
-    for vertex in vertices {
-        let Some(parameter) = spine.project(ctx, to3(*vertex))? else {
+    let Some((_, extent)) = projections(ctx, &spine, vertices)? else {
+        return Ok(None);
+    };
+    largest_miss(ctx, cache, &spine, extent, vertices).map(Some)
+}
+
+/// Whether every point lies within `allowed` of `cache`, or `None` when one
+/// does not project onto `spine`.
+///
+/// # Errors
+///
+/// Propagates an evaluator's resource refusal.
+pub(super) fn covers(
+    ctx: &DecodeContext<'_>,
+    cache: &BlendCache,
+    spine: &CurveGeometry,
+    points: &[Point3],
+    allowed: f64,
+) -> Result<Option<bool>, CodecError> {
+    let Some(spine) = Spine::new(ctx, spine)? else {
+        return Ok(None);
+    };
+    let Some((parameters, extent)) = projections(ctx, &spine, points)? else {
+        return Ok(None);
+    };
+    for (point, parameter) in points.iter().zip(parameters) {
+        let along = spine.within(parameter, extent);
+        if point_miss(ctx, cache, *point, along, allowed)? > allowed {
+            return Ok(Some(false));
+        }
+    }
+    Ok(Some(true))
+}
+
+/// The spine parameter of each point, and the stretch of spine they span.
+type Projections = (Vec<f64>, [f64; 2]);
+
+/// The projections of `points` onto `spine`, or `None` when one does not
+/// project.
+fn projections(
+    ctx: &DecodeContext<'_>,
+    spine: &Spine<'_>,
+    points: &[Point3],
+) -> Result<Option<Projections>, CodecError> {
+    let mut parameters = Vec::with_capacity(points.len());
+    for point in points {
+        let Some(parameter) = spine.project(ctx, to3(*point))? else {
             return Ok(None);
         };
         parameters.push(parameter);
     }
-    let Some(extent) = spine.extent(&parameters) else {
-        return Ok(None);
-    };
-    largest_miss(ctx, cache, &spine, extent, vertices).map(Some)
+    Ok(spine.extent(&parameters).map(|extent| (parameters, extent)))
 }
 
 /// Whether every vertex lies on the cache within its fit tolerance and the
@@ -216,27 +257,43 @@ fn largest_miss(
             .map_or(lerp(extent, 0.5), |parameter| {
                 spine.within(parameter, extent)
             });
-        let seeds = VERTEX_SEEDS_V
-            .map(|across| Some(Point2::new(along, across)))
-            .into_iter()
-            .chain([None]);
-        let mut nearest = f64::INFINITY;
-        for seed in seeds {
-            let Some(parameters) =
-                evaluation::nurbs_surface_parameter_near_point(ctx, &cache.surface, *vertex, seed)?
-            else {
-                continue;
-            };
-            let parameters = parameters.get();
-            if let Some(foot) =
-                evaluation::nurbs_surface_point(ctx, &cache.surface, parameters.u, parameters.v)?
-            {
-                nearest = nearest.min(norm(sub(to3(foot.get()), point)));
-            }
-        }
-        largest = largest.max(nearest);
+        largest = largest.max(point_miss(ctx, cache, *vertex, along, 0.0)?);
     }
     Ok(largest)
+}
+
+/// The distance of `vertex` from `cache`, searched from the spine parameter
+/// `along`; the search ends once a foot lies within `enough`.
+fn point_miss(
+    ctx: &DecodeContext<'_>,
+    cache: &BlendCache,
+    vertex: Point3,
+    along: f64,
+    enough: f64,
+) -> Result<f64, CodecError> {
+    let point = to3(vertex);
+    let seeds = VERTEX_SEEDS_V
+        .map(|across| Some(Point2::new(along, across)))
+        .into_iter()
+        .chain([None]);
+    let mut nearest = f64::INFINITY;
+    for seed in seeds {
+        let Some(parameters) =
+            evaluation::nurbs_surface_parameter_near_point(ctx, &cache.surface, vertex, seed)?
+        else {
+            continue;
+        };
+        let parameters = parameters.get();
+        if let Some(foot) =
+            evaluation::nurbs_surface_point(ctx, &cache.surface, parameters.u, parameters.v)?
+        {
+            nearest = nearest.min(norm(sub(to3(foot.get()), point)));
+            if nearest <= enough {
+                break;
+            }
+        }
+    }
+    Ok(nearest)
 }
 
 /// Fit the cache over one stretch of spine.

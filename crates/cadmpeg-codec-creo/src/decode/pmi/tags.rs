@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Datum tags and their bounded leader references.
 
+use cadmpeg_ir::design::options::NativeOptions;
 use std::collections::BTreeMap;
 
 use cadmpeg_core::decode::DecodeContext;
@@ -160,6 +161,9 @@ pub(in crate::decode) fn transfer(
                             definition: PmiDefinition::Datum {
                                 identification: tag.identification.clone(),
                             },
+                            native_ref: None,
+                            native_options: NativeOptions::new(),
+                            source_settings: NativeOptions::new(),
                         });
                         id
                     };

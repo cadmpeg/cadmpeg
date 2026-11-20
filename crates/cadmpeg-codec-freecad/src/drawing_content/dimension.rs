@@ -7,7 +7,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::drawings::Drawing;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::semantic_annotations::DimensionKind;
+use cadmpeg_ir::semantic_annotations::AnnotationDimensionKind as DimensionKind;
 use cadmpeg_ir::units::FiniteVector;
 use std::collections::BTreeMap;
 
@@ -86,7 +86,7 @@ pub(super) fn transfer(
         };
         if let Some((value, anchors)) = measured {
             annotation.value = Some(value);
-            if anchors.is_empty() && *kind != (DimensionKind::Angle {}) {
+            if anchors.is_empty() && *kind != DimensionKind::Angle {
                 losses.push(FreecadLossCode::DimensionAnchorsNotTransferred.note(format!("{owner}: exact value retained without admitted page-space reference anchors")));
             }
             annotation.reference_anchors = anchors;
@@ -140,11 +140,7 @@ fn exact_reference(
     let Some(reference) = property(properties, owner, "References2D")? else {
         return Ok(None);
     };
-    let required_references = if *kind == (DimensionKind::Angle {}) {
-        2
-    } else {
-        1
-    };
+    let required_references = if *kind == DimensionKind::Angle { 2 } else { 1 };
     let Some(Some(link)) = reference.links().first() else {
         return Ok(None);
     };
@@ -181,10 +177,10 @@ fn exact_reference(
     if view.runtime_type != "TechDraw::DrawViewPart" {
         return Ok(None);
     }
-    let rotation = view.rotation_degrees.map(FiniteReal::get);
+    let rotation = view.rotation.map(cadmpeg_ir::scalar::Angle::get);
     if matches!(
         kind,
-        DimensionKind::HorizontalDistance {} | DimensionKind::VerticalDistance {}
+        DimensionKind::HorizontalDistance | DimensionKind::VerticalDistance
     ) && rotation != Some(0.0)
     {
         return Ok(None);
@@ -285,9 +281,9 @@ fn exact_reference(
     };
     let measured = match (kind, curves.as_slice()) {
         (
-            DimensionKind::Distance {}
-            | DimensionKind::HorizontalDistance {}
-            | DimensionKind::VerticalDistance {},
+            DimensionKind::Distance
+            | DimensionKind::HorizontalDistance
+            | DimensionKind::VerticalDistance,
             [(TextCurve::Line { origin, direction }, range)],
         ) => {
             let origin = origin.get();
@@ -303,15 +299,15 @@ fn exact_reference(
             });
             let delta = [points[1][0] - points[0][0], points[1][1] - points[0][1]];
             let value = match kind {
-                DimensionKind::Distance {} => delta[0].hypot(delta[1]),
-                DimensionKind::HorizontalDistance {} => delta[0].abs(),
-                DimensionKind::VerticalDistance {} => delta[1].abs(),
+                DimensionKind::Distance => delta[0].hypot(delta[1]),
+                DimensionKind::HorizontalDistance => delta[0].abs(),
+                DimensionKind::VerticalDistance => delta[1].abs(),
                 _ => return Ok(None),
             };
             FiniteReal::new(value).map(|value| (value, page(points)))
         }
         (
-            DimensionKind::Radius {} | DimensionKind::Diameter {},
+            DimensionKind::Radius | DimensionKind::Diameter,
             [(
                 TextCurve::Circle {
                     center,
@@ -337,13 +333,13 @@ fn exact_reference(
             }
             let center = [center.x, center.y];
             let delta = [radius.get() * direction.x, radius.get() * direction.y];
-            let first = if *kind == (DimensionKind::Diameter {}) {
+            let first = if *kind == DimensionKind::Diameter {
                 [center[0] - delta[0], center[1] - delta[1]]
             } else {
                 center
             };
             let second = [center[0] + delta[0], center[1] + delta[1]];
-            let value = if *kind == (DimensionKind::Diameter {}) {
+            let value = if *kind == DimensionKind::Diameter {
                 2.0 * radius.get()
             } else {
                 radius.get()
@@ -358,7 +354,7 @@ fn exact_reference(
             })
         }
         (
-            DimensionKind::Angle {},
+            DimensionKind::Angle,
             [(
                 TextCurve::Line {
                     direction: first, ..
@@ -381,7 +377,7 @@ fn exact_reference(
             if dot != 0.0 || !cross.is_finite() || cross <= 0.0 {
                 return Ok(None);
             }
-            FiniteReal::new(90.0).map(|value| (value, Vec::new()))
+            FiniteReal::new(std::f64::consts::FRAC_PI_2).map(|value| (value, Vec::new()))
         }
         _ => None,
     };

@@ -230,7 +230,25 @@
         "point_clouds": [],
         "presentation_documents": [],
         "presentation_layers": [],
-        "product_definitions": [],
+        "product_definitions": [
+          {
+            "bodies": [
+              "nx:s0:body#2"
+            ],
+            "bom_properties": {},
+            "id": "nx:document:product-definition#root",
+            "instance_bodies": [],
+            "kind": "part",
+            "occurrences": [],
+            "representations": [],
+            "sketches": [],
+            "storage": {
+              "document": {},
+              "kind": "file"
+            },
+            "tessellations": []
+          }
+        ],
         "rigid_bodies": [],
         "semantic_annotations": [],
         "sketch_constraints": [],
@@ -481,6 +499,11 @@
             "kind": "entity"
           },
           "nx:container:parasolid#1": {
+            "entity": "derived",
+            "fields": {},
+            "kind": "entity"
+          },
+          "nx:document:product-definition#root": {
             "entity": "derived",
             "fields": {},
             "kind": "entity"

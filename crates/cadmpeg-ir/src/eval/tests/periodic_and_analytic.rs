@@ -1,5 +1,5 @@
 use crate::math::portable::Portable;
-use cadmpeg_test_support::edit;
+use crate::test_support::edit;
 
 use crate::examples::unit_cube;
 use crate::geometry::sampled::PolylineSamples;
@@ -199,7 +199,7 @@ fn rational_pcurve_membership_finds_interior_points_without_sampling() {
     ];
     let weights = [1.0, weight, 1.0];
     let interior = crate::eval::nurbs_pcurve_uv(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         2,
         &knots,
         &controls,
@@ -978,4 +978,44 @@ fn a_subset_whose_support_parameter_overflows_reports_the_support_evaluation() {
         .map(crate::features::FinitePoint3::get),
         Ok(Point3::new(1.0e308, 0.5, 0.0))
     );
+}
+
+#[test]
+fn spindle_torus_parameters_return_points_on_both_sheets() {
+    use crate::eval::admission::EvaluationAdmission;
+    use crate::eval::analytic_surface_parameters_solved;
+    use crate::eval::decode::surface_point_solved;
+
+    // Major radius 0.4 below the tube radius 0.5: the inner sheet runs
+    // where `0.4 + 0.5 cos v < 0`, across the axis from its tube center.
+    let torus = SolvedSurfaceGeometry::Torus(
+        crate::geometry::analytic::TorusSurface::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            0.4,
+            0.5,
+        )
+        .unwrap(),
+    );
+    for (u, v) in [(0.7, 0.3), (2.0, 2.9), (4.0, 3.3), (5.5, -2.8)] {
+        let point = surface_point_solved(EvaluationAdmission::Standard, &torus, u, v)
+            .unwrap()
+            .get();
+        let parameters = analytic_surface_parameters_solved(&torus, point)
+            .unwrap()
+            .get();
+        let found = surface_point_solved(
+            EvaluationAdmission::Standard,
+            &torus,
+            parameters.u,
+            parameters.v,
+        )
+        .unwrap()
+        .get();
+        assert!(
+            found.distance(point) < 1.0e-12,
+            "({u}, {v}) -> {parameters:?}"
+        );
+    }
 }

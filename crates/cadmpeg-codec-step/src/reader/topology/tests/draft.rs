@@ -49,7 +49,7 @@ fn cross_root_surface_filter_tracks_successful_commits_only() {
     let committed_id = "step:data:surface#implicit-face-1";
     let rejected_id = "step:data:surface#implicit-face-2";
     let mut ir = CadIr::empty();
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut session = CommitSession::new(&mut ir, &ctx, None).unwrap();
 
     session
@@ -120,7 +120,7 @@ fn trimmed_pcurve_fit_uses_declared_endpoints() {
     );
 
     let fit = pcurve_declared_endpoint_fit(
-        &cadmpeg_test_support::service_decode_context(),
+        &cadmpeg_core::decode::test_support::service_decode_context(),
         &ModelIndex::build(&ir),
         &surface_id,
         &pcurve,
@@ -730,11 +730,13 @@ fn shared_surface_carrier_is_staged_once() {
     let region_id = RegionId::mint("step:data:region#shared-surface").expect("identity grammar");
     let built = super::super::staged_topology(super::super::StagedTopologyParts {
         typed: HashSet::new(),
+        points: Vec::new(),
         vertices: Vec::new(),
         edges: Vec::new(),
         coedges: Vec::new(),
         loops: Vec::new(),
         faces: Vec::new(),
+        curves: Vec::new(),
         surfaces: vec![surface.clone(), surface],
         shells: Vec::new(),
         region: Region {

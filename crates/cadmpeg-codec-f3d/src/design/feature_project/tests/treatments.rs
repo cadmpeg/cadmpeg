@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+mod short_fillet;
 mod silhouette_split;
 
 use cadmpeg_core::decode::u64_from_index;

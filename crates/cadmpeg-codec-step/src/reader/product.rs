@@ -28,7 +28,7 @@ mod bodies;
 
 /// Occurrences that product expansion may add to the model. Expansion stops
 /// at the limit and reports one loss.
-const MAX_OCCURRENCES: usize = 100_000;
+pub(super) const MAX_OCCURRENCES: usize = 100_000;
 const PRODUCT_DEFINITION_FORMATION_TYPES: &[&str] = &[
     "PRODUCT_DEFINITION_FORMATION",
     "PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE",
@@ -79,6 +79,7 @@ pub(super) fn decode(
     ir: &mut CadIr,
     ctx: &DecodeContext<'_>,
     admitted_ir_entities: &mut u64,
+    max_occurrences: usize,
 ) -> Result<StageOutcome<ProductData>, CodecError> {
     let mut typed = HashSet::new();
     let mut losses = Vec::new();
@@ -153,6 +154,16 @@ pub(super) fn decode(
         }
     }
     let mut shape_bindings = shape_bindings(exchange, &definitions, topology, ctx)?;
+    // An assembly's shape representation places its components and holds
+    // no body of its own.
+    let mut assemblies = HashSet::new();
+    for (_, record) in exchange.entities("NEXT_ASSEMBLY_USAGE_OCCURRENCE") {
+        if let Some(parent) = named_parameter(record, "NEXT_ASSEMBLY_USAGE_OCCURRENCE", 3)
+            .and_then(ValueExt::reference)
+        {
+            assemblies.insert(parent);
+        }
+    }
     let mut definition_counts = BTreeMap::<u64, usize>::new();
     for product in definitions.values() {
         *definition_counts.entry(*product).or_default() += 1;
@@ -274,7 +285,10 @@ pub(super) fn decode(
                     "{owner} omitted uncommitted shape body reference(s): {missing}"
                 )));
             }
-            if has_shape_binding && bodies.is_empty() {
+            if has_shape_binding
+                && bodies.is_empty()
+                && !definition.is_some_and(|definition| assemblies.contains(&definition))
+            {
                 losses.push(StepLossCode::DecodeWarning.note(format!(
                     "{owner} has a shape representation with no committed topology body"
                 )));
@@ -385,11 +399,10 @@ pub(super) fn decode(
         _ => {
             // Several top-level definitions: the file itself is the root, and
             // it places each of them.
-            let document =
-                ProductDefinitionId::from(ids::product(kind!("product"), key_word!("document")));
+            let document = document_definition_id();
             let mut root = ProductDefinition::root(document.clone(), ExternalDocument::default());
             for (definition, prototype) in &roots {
-                if ir.model.occurrences.len() >= MAX_OCCURRENCES {
+                if ir.model.occurrences.len() >= max_occurrences {
                     output_truncated_at = Some(format!("root PRODUCT_DEFINITION #{definition}"));
                     break;
                 }
@@ -413,18 +426,23 @@ pub(super) fn decode(
             owned.entry(document).or_default();
         }
     }
-    if let [(_, prototype)] = roots.as_slice() {
-        if let Some(definition) = ir
-            .model
-            .product_definitions
+    // The one top definition is the root, and so is a file's one product
+    // where no PRODUCT_DEFINITION can place it.
+    let top = match (
+        roots.as_slice(),
+        ir.model.product_definitions.as_mut_slice(),
+    ) {
+        ([(_, prototype)], definitions) => definitions
             .iter_mut()
-            .find(|definition| &definition.id == prototype)
-        {
-            definition.storage = Storage::File {
-                document: ExternalDocument::default(),
-                source: None,
-            };
-        }
+            .find(|definition| &definition.id == prototype),
+        ([], [definition]) if definitions.is_empty() => Some(definition),
+        _ => None,
+    };
+    if let Some(definition) = top {
+        definition.storage = Storage::File {
+            document: ExternalDocument::default(),
+            source: None,
+        };
     }
     let mut ambiguous_placements = BTreeMap::new();
     let mut competing_placements = BTreeMap::new();
@@ -521,7 +539,7 @@ pub(super) fn decode(
                 kind!("occurrence"),
                 IdentityKey::from(usage_id),
             ));
-            if ir.model.occurrences.len() >= MAX_OCCURRENCES {
+            if ir.model.occurrences.len() >= max_occurrences {
                 output_truncated_at = Some(format!("NAUO #{usage_id}"));
                 break 'roots;
             }
@@ -559,7 +577,7 @@ pub(super) fn decode(
     if let Some(start) = output_truncated_at {
         losses.push(
             StepLossCode::OccurrenceExpansionOutputTruncated.note(format!(
-            "product occurrence decoding stopped at its limit of {MAX_OCCURRENCES} occurrences; \
+            "product occurrence decoding stopped at its limit of {max_occurrences} occurrences; \
              {start} and the usages after it are not decoded"
         )),
         );
@@ -1351,3 +1369,9 @@ fn product_definition_parameters(record: &RawRecord) -> Option<&[Value]> {
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+/// The root definition where the file itself is the root: the document,
+/// which places the file's top definitions.
+pub(crate) fn document_definition_id() -> ProductDefinitionId {
+    ProductDefinitionId::from(ids::product(kind!("product"), key_word!("document")))
+}

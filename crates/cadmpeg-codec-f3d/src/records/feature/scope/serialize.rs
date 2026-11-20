@@ -181,6 +181,9 @@ impl Serialize for DesignParameterScope {
             DesignScopePayload::Thicken(Some(value)) => {
                 emit!("direct_face_operation", DirectFaceRef::Thicken(value));
             }
+            DesignScopePayload::MotionLink(Some(value)) => {
+                emit!("linked_rotations", value);
+            }
             DesignScopePayload::SilhouetteSplit(Some(value)) => {
                 emit!("silhouette_split_operation", value);
             }
@@ -264,6 +267,7 @@ impl Serialize for DesignParameterScope {
 
         emit_opt!("combine_operation", self.combine_operation());
         emit_opt!("combine_named_tail", self.combine_named_tail());
+        emit_opt!("split_face_operation", self.split_face_operation());
         if let Some(fill) = self.boundary_fill() {
             emit_opt!("boundary_fill", fill.prefix.as_ref());
             emit_opt!("boundary_fill_named_tail", fill.named_tail.as_ref());
@@ -326,6 +330,7 @@ impl Serialize for DesignParameterScope {
         }
         emit_opt!("work_axis_construction", self.work_axis_construction());
         if let Some(frame) = self.joint_origin_frame() {
+            emit_opt!("joint_origin_carrier", frame.carrier.as_ref());
             emit!("joint_origin_transform", &frame.joint_origin_transform);
             emit!(
                 "joint_origin_transform_offset",

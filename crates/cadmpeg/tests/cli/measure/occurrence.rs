@@ -330,3 +330,37 @@ fn occurrence_selectors_resolve_and_scope_the_rows() {
     assert_eq!(unavailable["reason"], "placement.prototype-unresolved");
     assert_eq!(unavailable["entity"], "step:product:occurrence#160");
 }
+
+/// `#160` through `#150` is the pin's one instance. A repeated
+/// `--occurrence` still names the last value as the measured occurrence:
+/// `#160 / #150 / #160` lists `#150` above `#160` and `#160` above `#150`,
+/// which does not place ROOT, so the chain is broken.
+#[test]
+fn a_repeated_occurrence_breaks_the_chain() {
+    let path = assembly();
+    let path = path.to_str().unwrap();
+    let through = measure_json(&[
+        path,
+        "--occurrence",
+        "occurrence#150",
+        "--occurrence",
+        "occurrence#160",
+    ]);
+    assert_point(&only_body(&through)["centroid"], [20.0, 50.0, 100.0], 110.0);
+    let repeated = measure_json(&[
+        path,
+        "--occurrence",
+        "occurrence#160",
+        "--occurrence",
+        "occurrence#150",
+        "--occurrence",
+        "occurrence#160",
+    ]);
+    assert!(repeated["measure"]["bodies"].as_array().unwrap().is_empty());
+    let block = &repeated["measure"]["occurrence"];
+    assert_eq!(block["occurrence"], "step:product:occurrence#160");
+    assert_eq!(
+        block["unavailable"]["reason"],
+        "placement.occurrence-chain-broken"
+    );
+}

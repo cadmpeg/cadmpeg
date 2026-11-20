@@ -350,6 +350,7 @@ pub(crate) fn bind_mirror_constructions(
                 bytes,
                 records,
                 crate::design::decode::operands::FaceOperandFrame {
+                    registered_frame: None,
                     scope: &scopes[index],
                     scope_reference_ordinal: plane_group.scope_reference_ordinal,
                     group_ownership: Some((plane_group.record_index, 0)),

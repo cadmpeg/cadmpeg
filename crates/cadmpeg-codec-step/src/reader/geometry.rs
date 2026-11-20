@@ -2,6 +2,7 @@
 //! STEP representation units, placements, and geometry carriers.
 
 use crate::ids::{key_word, kind};
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use super::{named_parameter, record_values, step_instance_id, RecordExt, ValueExt};
@@ -70,6 +71,19 @@ pub(super) struct GeometryData {
     pub(super) placements: BTreeMap<u64, (FinitePoint3, UnitVector3, UnitVector3)>,
     pub(super) transformation_operators: BTreeMap<u64, Transform>,
     pub(super) units: UnitScales,
+    pub(super) uncertainties: ContextUncertainties,
+}
+
+/// The linear uncertainties the representation contexts state, in
+/// millimetres.
+pub(super) struct ContextUncertainties {
+    /// The length candidates of each `GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT`,
+    /// sorted ascending, keyed by the context record.
+    pub(super) by_context: BTreeMap<u64, Vec<PositiveLength>>,
+    /// The distinct candidates of all contexts, sorted ascending, and the
+    /// count of unresolved measures, when more than one candidate is
+    /// distinct.
+    pub(super) disagreement: Option<(Vec<PositiveLength>, usize)>,
 }
 
 pub(super) fn placement_transform(
@@ -559,7 +573,9 @@ pub(super) fn decode(
     let mut vectors2 = BTreeMap::new();
     let mut placements = BTreeMap::new();
     let mut placements2 = BTreeMap::new();
-    match linear_uncertainty(exchange, ctx)? {
+    let (projection, by_context) = linear_uncertainty(exchange, ctx)?;
+    let mut disagreement = None;
+    match projection {
         LinearUncertainty::Value(uncertainty) => ir.tolerances.linear = uncertainty,
         LinearUncertainty::Empty { unresolved } => {
             if unresolved > 0 {
@@ -574,18 +590,14 @@ pub(super) fn decode(
             rest,
             unresolved,
         } => {
-            let default_linear = ir.tolerances.linear.get();
-            let listed = [first, second]
-                .iter()
-                .chain(&rest)
-                .map(|value| format!("{:?}", value.get()))
-                .collect::<Vec<_>>()
-                .join(", ");
-            let message = format!("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT records give {} different linear uncertainty values in millimetres ({listed}) and {unresolved} unresolved measure(s); the linear tolerance keeps the default {default_linear:?}",
-            2 + rest.len());
-            losses.push(StepLossCode::UncertaintyLengthAmbiguous.note(message));
+            let values = [first, second].into_iter().chain(rest).collect();
+            disagreement = Some((values, unresolved));
         }
     }
+    let uncertainties = ContextUncertainties {
+        by_context,
+        disagreement,
+    };
 
     for (id, record) in exchange.entities_any(&[
         "APLL_POINT",
@@ -1710,6 +1722,14 @@ pub(super) fn decode(
                 .and_then(
                     |(((center, axis, ref_direction), major_radius), minor_radius)| {
                         let frame = OrthonormalFrame3::from_units(axis, ref_direction)?;
+                        // A negative major radius names the torus of its
+                        // magnitude at `(u + π, π - v)`; topology reverses
+                        // the faces on it.
+                        let major_radius = if surface_type == "TOROIDAL_SURFACE" {
+                            major_radius.abs()
+                        } else {
+                            major_radius
+                        };
                         let major_radius = PositiveLength::new(major_radius * record_scale)?;
                         let minor_radius = NonZeroLength::new(minor_radius * record_scale)?;
                         Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
@@ -2254,12 +2274,13 @@ pub(super) fn decode(
         }
     }
     let mut surface_parameter_scales = BTreeMap::new();
+    let lookup = SurfaceScaleLookup::new(ir);
     for surface in &ir.geometry.surfaces {
         let Some(id) = step_instance_id(surface.id.as_str()) else {
             continue;
         };
-        if let Some(scales) = surface_parameter_scales_for_step(
-            ir,
+        if let Some(scales) = procedural_surface_parameter_scales(
+            &lookup,
             &surface.id,
             &surface.geometry,
             unit_scales.length([id]).get(),
@@ -2357,6 +2378,32 @@ pub(super) fn decode(
         });
     }
 
+    // The inner sheet of a self-intersecting torus, stated by a negative
+    // major radius smaller in magnitude than the minor radius.
+    for (id, record) in exchange.entities("TOROIDAL_SURFACE") {
+        if !reversed_torus_record(record)
+            || !named_parameter(record, "TOROIDAL_SURFACE", 2)
+                .and_then(Value::number)
+                .zip(named_parameter(record, "TOROIDAL_SURFACE", 3).and_then(Value::number))
+                .is_some_and(|(major, minor)| major.abs() < minor.abs())
+            || !carrier_index.surfaces.contains_key(&id)
+        {
+            continue;
+        }
+        let surface = SurfaceId::from(ids::data(kind!("surface"), id));
+        let _attached = procedural_admission.add_surface(
+            &mut ir.geometry,
+            &surface,
+            ProceduralSurface::new(
+                ProceduralSurfaceId::from(ids::construction(kind!("degenerate_torus"), id)),
+                ProceduralSurfaceDefinition::DegenerateTorus {
+                    select_outer: false,
+                },
+                None,
+            ),
+        )?;
+    }
+
     for (id, record) in exchange.entities("DEGENERATE_TOROIDAL_SURFACE") {
         let Some(select_outer) = named_parameter(record, "DEGENERATE_TOROIDAL_SURFACE", 4)
             .and_then(|value| logical_value(value).ok().flatten())
@@ -2414,6 +2461,7 @@ pub(super) fn decode(
                 placements,
                 transformation_operators,
                 units: unit_scales,
+                uncertainties,
             },
             claims: typed,
             losses,
@@ -3578,14 +3626,14 @@ fn same_scale(left: PositiveReal, right: PositiveReal) -> bool {
     (left - right).abs() <= tolerance
 }
 
-fn is_representation_record(record: &RawRecord) -> bool {
+pub(super) fn is_representation_record(record: &RawRecord) -> bool {
     record
         .partials
         .iter()
         .any(|partial| super::representation::is_representation_name(&partial.name))
 }
 
-fn representation_context(record: &RawRecord) -> Option<u64> {
+pub(super) fn representation_context(record: &RawRecord) -> Option<u64> {
     record
         .partials
         .iter()
@@ -4092,27 +4140,33 @@ enum LinearUncertainty {
     },
 }
 
+/// The document projection and the sorted candidates of each context.
 fn linear_uncertainty(
     exchange: &Exchange,
     ctx: &DecodeContext<'_>,
-) -> Result<LinearUncertainty, CodecError> {
+) -> Result<(LinearUncertainty, BTreeMap<u64, Vec<PositiveLength>>), CodecError> {
     let mut candidates: Vec<PositiveLength> = Vec::new();
+    let mut by_context = BTreeMap::new();
     let mut unresolved = 0;
-    for (_, context) in exchange.entities("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT") {
-        let (context_candidates, context_unresolved) =
+    for (id, context) in exchange.entities("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT") {
+        let (mut context_candidates, context_unresolved) =
             context_length_uncertainties(context, exchange, ctx)?;
         unresolved += context_unresolved;
-        for candidate in context_candidates {
+        for &candidate in &context_candidates {
             // Exact equality: the candidates come from one file, so equal
             // declarations corroborate each other and are not a conflict.
             if !candidates.contains(&candidate) {
                 candidates.push(candidate);
             }
         }
+        if !context_candidates.is_empty() {
+            context_candidates.sort_by(|left, right| left.get().total_cmp(&right.get()));
+            by_context.insert(id, context_candidates);
+        }
     }
     candidates.sort_by(|left, right| left.get().total_cmp(&right.get()));
 
-    Ok(match candidates.len() {
+    let projection = match candidates.len() {
         0 => LinearUncertainty::Empty { unresolved },
         1 => LinearUncertainty::Value(candidates[0]),
         _ => {
@@ -4126,7 +4180,8 @@ fn linear_uncertainty(
                 unresolved,
             }
         }
-    })
+    };
+    Ok((projection, by_context))
 }
 
 fn string_value(value: &Value, exchange: &Exchange) -> Option<String> {
@@ -5345,7 +5400,7 @@ fn surface_parameter_scales_for_step(
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<[f64; 2]>, CodecError> {
     procedural_surface_parameter_scales(
-        ir,
+        &SurfaceScaleLookup::new(ir),
         surface_id,
         geometry,
         length_scale,
@@ -5355,8 +5410,54 @@ fn surface_parameter_scales_for_step(
     )
 }
 
+struct SurfaceScaleLookup<'a> {
+    ir: &'a CadIr,
+    index: OnceCell<SurfaceScaleIndex<'a>>,
+}
+
+struct SurfaceScaleIndex<'a> {
+    first_surfaces: HashMap<&'a SurfaceId, &'a Surface>,
+    uniquely_owned_constructions: HashMap<&'a SurfaceId, Vec<&'a ProceduralSurface>>,
+}
+
+impl<'a> SurfaceScaleLookup<'a> {
+    fn new(ir: &'a CadIr) -> Self {
+        Self {
+            ir,
+            index: OnceCell::new(),
+        }
+    }
+
+    fn index(&self) -> &SurfaceScaleIndex<'a> {
+        let ir: &'a CadIr = self.ir;
+        self.index.get_or_init(|| {
+            let mut first_surfaces = HashMap::new();
+            let mut carriers = HashMap::<&ProceduralSurfaceId, (&SurfaceId, usize)>::new();
+            for surface in &ir.geometry.surfaces {
+                first_surfaces.entry(&surface.id).or_insert(surface);
+                if let Some(construction) = surface.geometry.procedural_construction() {
+                    carriers.entry(construction).or_insert((&surface.id, 0)).1 += 1;
+                }
+            }
+            let mut uniquely_owned_constructions = HashMap::<_, Vec<_>>::new();
+            for procedural in &ir.geometry.procedural_surfaces {
+                if let Some(&(owner, 1)) = carriers.get(&procedural.id) {
+                    uniquely_owned_constructions
+                        .entry(owner)
+                        .or_default()
+                        .push(procedural);
+                }
+            }
+            SurfaceScaleIndex {
+                first_surfaces,
+                uniquely_owned_constructions,
+            }
+        })
+    }
+}
+
 fn procedural_surface_parameter_scales(
-    ir: &CadIr,
+    lookup: &SurfaceScaleLookup<'_>,
     surface_id: &SurfaceId,
     geometry: &SurfaceGeometry,
     length_scale: f64,
@@ -5380,7 +5481,7 @@ fn procedural_surface_parameter_scales(
             return Ok(None);
         };
         match surface_geometry_parameter_scales(
-            ir,
+            lookup,
             surface_id,
             solved,
             length_scale,
@@ -5390,12 +5491,7 @@ fn procedural_surface_parameter_scales(
         )? {
             SurfaceScaleStep::Value(scales) => return Ok(scales),
             SurfaceScaleStep::Support(support) => {
-                let Some(carrier) = ir
-                    .geometry
-                    .surfaces
-                    .iter()
-                    .find(|surface| surface.id == *support)
-                else {
+                let Some(carrier) = lookup.index().first_surfaces.get(support).copied() else {
                     return Ok(None);
                 };
                 surface_id = support;
@@ -5411,7 +5507,7 @@ enum SurfaceScaleStep<'a> {
 }
 
 fn surface_geometry_parameter_scales<'a>(
-    ir: &'a CadIr,
+    lookup: &SurfaceScaleLookup<'a>,
     surface_id: &SurfaceId,
     geometry: &SolvedSurfaceGeometry,
     length_scale: f64,
@@ -5435,28 +5531,19 @@ fn surface_geometry_parameter_scales<'a>(
         SolvedSurfaceGeometry::Nurbs(_) => Some([1.0, 1.0]),
         SolvedSurfaceGeometry::Transformed(_) => None,
         SolvedSurfaceGeometry::Unknown { .. } => {
-            let constructions: Vec<_> = ir
-                .geometry
-                .surfaces
-                .iter()
-                .filter(|surface| surface.id == *surface_id)
-                .filter_map(|surface| surface.geometry.procedural_construction())
-                .collect();
-            let mut candidates = ir.geometry.procedural_surfaces.iter().filter(|procedural| {
-                constructions.contains(&&procedural.id)
-                    && ir.geometry.procedural_surface_owner(&procedural.id) == Some(surface_id)
-            });
-            let Some(procedural) = candidates.next() else {
+            let Some(&[procedural]) = lookup
+                .index()
+                .uniquely_owned_constructions
+                .get(surface_id)
+                .map(Vec::as_slice)
+            else {
                 return Ok(SurfaceScaleStep::Value(None));
             };
-            if candidates.next().is_some() {
-                return Ok(SurfaceScaleStep::Value(None));
-            }
             if let Some(support) = procedural_surface_support(procedural.definition()) {
                 return Ok(SurfaceScaleStep::Support(support));
             }
             return procedural_definition_parameter_scales(
-                ir,
+                lookup.ir,
                 procedural.definition(),
                 length_scale,
                 angle_scale,
@@ -6158,3 +6245,12 @@ fn optional_direction(
 
 #[cfg(test)]
 pub(crate) mod tests;
+
+/// Whether a `TOROIDAL_SURFACE` record states a negative major radius, which
+/// names the torus of its magnitude with the opposite normal.
+pub(super) fn reversed_torus_record(record: &RawRecord) -> bool {
+    record.partial("DEGENERATE_TOROIDAL_SURFACE").is_none()
+        && named_parameter(record, "TOROIDAL_SURFACE", 2)
+            .and_then(Value::number)
+            .is_some_and(|major| major < 0.0)
+}

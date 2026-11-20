@@ -338,6 +338,7 @@ fn bounded_face(scope: &DesignParameterScope) -> crate::records::topology::face:
                 group_ownership: Some((222, 0)),
                 next_byte_offset: None,
                 header: &header,
+                registered_frame: None,
             },
             &recipes,
         )

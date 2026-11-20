@@ -291,7 +291,7 @@ pub(super) fn decode(
                 position: None,
                 scale: None,
                 direction: None,
-                rotation_degrees: None,
+                rotation: None,
                 parameters: stored_parameters,
                 assets: Vec::new(),
                 ..Drawing::new(
@@ -300,7 +300,7 @@ pub(super) fn decode(
                     drawing_kind(name),
                     name.into(),
                     order,
-                    identity.into_string(),
+                    Some(identity.into_string()),
                 )
             },
         );

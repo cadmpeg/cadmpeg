@@ -259,18 +259,6 @@
             "namespace": "step"
           }
         },
-        "message": "PRODUCT_DEFINITION #6 has a shape representation with no committed topology body",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "kind": "namespaced",
-          "value": {
-            "code": "decode.warning",
-            "kind": "decode_diagnostic",
-            "namespace": "step"
-          }
-        },
         "message": "PRODUCT_DEFINITION #10 has a shape representation with no committed topology body",
         "severity": "warning"
       },

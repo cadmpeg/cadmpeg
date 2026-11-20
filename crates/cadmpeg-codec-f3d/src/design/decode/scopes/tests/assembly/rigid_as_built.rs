@@ -6,6 +6,15 @@ use super::compact_wide::{push_header, push_lp_utf16, push_marked, push_wide_ope
 
 #[test]
 fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
+    assert_compact_slider(5, false);
+}
+
+#[test]
+fn legacy_placement_as_built_projects_a_slider_with_an_ordinary_locator() {
+    assert_compact_slider(4, true);
+}
+
+fn assert_compact_slider(joint_version: u32, ordinary_locator: bool) {
     use crate::design::assembly::{project_assembly_joints_with_paths, AS_BUILT_SCOPE_TYPE_GUID};
     use crate::design::components::paths::LocalOccurrencePaths;
     use crate::design::components::ComponentInserts;
@@ -39,9 +48,13 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
     push_marked(&mut bytes, 9);
     push_lp_utf16(&mut bytes, "00000000-0000-0000-0000-000000000000");
     bytes.extend_from_slice(&[0; 3]);
-    let members = [70, 72, 73, 50, 53, 56, 59];
+    let members: &[u32] = if ordinary_locator {
+        &[70, 72, 73, 75, 76, 50, 53, 56, 59]
+    } else {
+        &[70, 72, 73, 50, 53, 56, 59]
+    };
     bytes.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
-    for member in members {
+    for &member in members {
         push_marked(&mut bytes, member);
     }
     bytes.extend_from_slice(&u32::MAX.to_le_bytes());
@@ -56,8 +69,18 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
         (67, "66666666-6666-6666-6666-666666666666"),
     ] {
         push_header(&mut bytes, b"283", index);
-        bytes.extend_from_slice(&[0; 11]);
-        bytes.push(1);
+        bytes.extend_from_slice(&[0; 10]);
+        if ordinary_locator && index == 64 {
+            push_marked(&mut bytes, 75);
+            bytes.push(0);
+            let mut rows = Transform::identity().rows();
+            rows[0][3] = 2.5;
+            for value in rows.iter().flatten() {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        } else {
+            bytes.extend_from_slice(&[0, 1]);
+        }
         bytes.push(0);
         push_marked(&mut bytes, 10);
         push_marked(&mut bytes, index + 2);
@@ -109,7 +132,7 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
         .collect();
     let locator_type = "2E3AC990-483D-4A55-8662-C064B976A957";
     let mut types = std::collections::HashMap::from([
-        (9, (JOINT_TYPE_GUID, 5)),
+        (9, (JOINT_TYPE_GUID, joint_version)),
         (10, (AS_BUILT_SCOPE_TYPE_GUID, 1)),
         (64, (locator_type, 3)),
         (65, (TYPED_OCCURRENCE_PATH_TYPE_GUID, 4)),
@@ -136,13 +159,13 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
             .operand_frames()
             .unwrap()
             .map(|frame| frame.reference_record_index),
-        [64, 67]
+        [if ordinary_locator { 75 } else { 64 }, 67]
     );
 
     types.remove(&9);
     assert!(read(&types).is_none());
 
-    let occurrences = [(100, paths[0]), (101, paths[1])].map(|(index, path)| {
+    let mut occurrences = [(100, paths[0]), (101, paths[1])].map(|(index, path)| {
         DesignComponentOccurrence::try_new(DesignComponentOccurrenceDraft {
             id: format!("f3d:Design/BulkStream.dat:design-component-occurrence#{index}"),
             class_tag: "271".to_owned().try_into().unwrap(),
@@ -160,6 +183,65 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
         panic!("As-built alignment slot");
     };
     *slot = Some(alignment);
+    if ordinary_locator {
+        use crate::design::components::{project_local_components, LocalComponentSources};
+        use crate::design::decode::components::{ComponentDefinition, StreamComponents};
+        use crate::records::xref::XrefCurrentPose;
+
+        let mut rows = Transform::identity().rows();
+        rows[0][3] = 4.0;
+        occurrences[0].current_pose = Some(XrefCurrentPose {
+            carrier_record_index: 400,
+            frame_bytes: Vec::new().into(),
+            transform: Some(rows.try_into().unwrap()),
+        });
+        let root = ComponentDefinition {
+            root_entity: 1,
+            context_uuid: "77777777-7777-7777-7777-777777777777"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            name: None,
+        };
+        let roots = std::iter::once((1, root))
+            .chain(occurrences.iter().map(|carrier| {
+                (
+                    carrier.component_record_index,
+                    ComponentDefinition {
+                        root_entity: carrier.component_record_index,
+                        context_uuid: carrier.component_guid.clone(),
+                        name: None,
+                    },
+                )
+            }))
+            .collect();
+        let components = [(
+            "f3d:Design/BulkStream.dat".into(),
+            StreamComponents {
+                roots,
+                root_component: Some(1),
+                ..Default::default()
+            },
+        )]
+        .into();
+        let model = project_local_components(&LocalComponentSources {
+            scopes: std::slice::from_ref(&scope),
+            occurrences: &occurrences,
+            paths: &[],
+            components: &components,
+            body_bindings: &[],
+            bodies: Some(&Default::default()),
+            hidden_bodies: None,
+            limits: Default::default(),
+        })
+        .unwrap();
+        let placed = model
+            .occurrences
+            .iter()
+            .find(|occurrence| occurrence.native_ref.as_ref() == Some(&occurrences[0].id))
+            .unwrap();
+        assert!((placed.transform.unwrap().rows()[0][3] - 40.0).abs() < f64::EPSILON);
+    }
     let motion = DesignJointMotion {
         id: "f3d:Design/BulkStream.dat:design-joint-motion#4000".into(),
         joint_record_index: 9,
@@ -231,6 +313,8 @@ fn compact_placement_as_built_projects_a_slider_with_resolved_paths() {
         matches!(&connector.operand.container, OperandContainer::Occurrence { occurrence, .. }
             if occurrence == &crate::ids::neutral_component_occurrence_id(&expected.occurrence_guid))
     }));
+    let expected_x = if ordinary_locator { 25.0 } else { 0.0 };
+    assert!((connectors[0].frame.rows()[0][3] - expected_x).abs() < f64::EPSILON);
     assert_eq!(
         crate::test_support::loss_codes(&projected.losses),
         [crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind()],
@@ -884,7 +968,7 @@ fn unadmitted_rigid_group_frames_emit_a_loss() {
         );
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             let decoded = decode_parameter_scopes(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 &ParameterScopeSources::default(),
             )

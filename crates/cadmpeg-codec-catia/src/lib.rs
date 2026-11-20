@@ -49,6 +49,7 @@ mod container;
 mod coverage;
 mod decode;
 mod design_feature;
+mod design_v11;
 mod dialect;
 mod entity_table;
 mod families;

@@ -3,14 +3,295 @@
     "design": {
       "arrangements": [],
       "configurations": [],
-      "containers": [],
+      "containers": [
+        {
+          "kind": "ordered",
+          "value": {
+            "folders": [],
+            "id": "creo:model:timeline#root",
+            "kind": "timeline",
+            "members": [
+              {
+                "kind": "feature",
+                "value": "creo:depdb:curve_expression_feature#7-102"
+              }
+            ],
+            "rollback": {
+              "kind": "end"
+            }
+          }
+        }
+      ],
       "evaluations": [],
-      "features": [],
+      "features": [
+        {
+          "definition": {
+            "operation": {
+              "kind": "native",
+              "value": {
+                "kind": "creo:CurveFromEquation",
+                "native_options": {},
+                "source_settings": {}
+              }
+            }
+          },
+          "id": "creo:depdb:curve_expression_feature#7-102",
+          "name": "Curve Equation 7",
+          "native_ref": "creo:depdb:curve_expression#active-7-102"
+        }
+      ],
       "names": [],
-      "parameters": [],
+      "parameters": [
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "neutral",
+              "value": {
+                "measures": [],
+                "refs": [],
+                "text": "2[in]"
+              }
+            }
+          },
+          "id": "creo:depdb:curve_expression_parameter#7-102-0",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "span",
+          "native_options": {},
+          "native_ref": "creo:depdb:curve_expression#active-7-102",
+          "owner": {
+            "kind": "feature",
+            "value": "creo:depdb:curve_expression_feature#7-102"
+          },
+          "scope": "creo:model:product_definition#root",
+          "source_settings": {},
+          "unit": [
+            {
+              "power": 1,
+              "symbol": "in"
+            }
+          ],
+          "value": {
+            "kind": "number",
+            "value": 50.8
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "source",
+              "value": {
+                "dialect": {
+                  "kind": "creo"
+                },
+                "tokens": [
+                  {
+                    "kind": "reference",
+                    "value": {
+                      "target": {
+                        "kind": "parameter",
+                        "value": "creo:depdb:curve_expression_parameter#7-102-0"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "text",
+                    "value": "+25.4[mm]"
+                  }
+                ]
+              }
+            }
+          },
+          "id": "creo:depdb:curve_expression_parameter#7-102-1",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": 1,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "copy",
+          "native_options": {},
+          "native_ref": "creo:depdb:curve_expression#active-7-102",
+          "owner": {
+            "kind": "feature",
+            "value": "creo:depdb:curve_expression_feature#7-102"
+          },
+          "scope": "creo:model:product_definition#root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 76.19999999999999
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "source",
+              "value": {
+                "dialect": {
+                  "kind": "creo"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "2"
+                  }
+                ]
+              }
+            }
+          },
+          "id": "creo:depdb:curve_expression_parameter#7-102-2",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 0,
+              "length": -1,
+              "mass": 1,
+              "time": -2
+            }
+          },
+          "name": "stress",
+          "native_options": {},
+          "native_ref": "creo:depdb:curve_expression#active-7-102",
+          "owner": {
+            "kind": "feature",
+            "value": "creo:depdb:curve_expression_feature#7-102"
+          },
+          "scope": "creo:model:product_definition#root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 2000.0
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "source",
+              "value": {
+                "dialect": {
+                  "kind": "creo"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "atan2("
+                  },
+                  {
+                    "kind": "reference",
+                    "value": {
+                      "target": {
+                        "kind": "parameter",
+                        "value": "creo:depdb:curve_expression_parameter#7-102-0"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "text",
+                    "value": ",25.4[mm])"
+                  }
+                ]
+              }
+            }
+          },
+          "id": "creo:depdb:curve_expression_parameter#7-102-3",
+          "kind": {
+            "kind": "quantity",
+            "value": {
+              "angle": 1,
+              "length": 0,
+              "mass": 0,
+              "time": 0
+            }
+          },
+          "name": "angle",
+          "native_options": {},
+          "native_ref": "creo:depdb:curve_expression#active-7-102",
+          "owner": {
+            "kind": "feature",
+            "value": "creo:depdb:curve_expression_feature#7-102"
+          },
+          "scope": "creo:model:product_definition#root",
+          "source_settings": {},
+          "value": {
+            "kind": "number",
+            "value": 1.1071487177940904
+          }
+        },
+        {
+          "definition": {
+            "kind": "expression",
+            "value": {
+              "kind": "source",
+              "value": {
+                "dialect": {
+                  "kind": "creo"
+                },
+                "tokens": [
+                  {
+                    "kind": "text",
+                    "value": "0"
+                  }
+                ]
+              }
+            }
+          },
+          "id": "creo:depdb:curve_expression_parameter#7-102-4",
+          "kind": {
+            "kind": "native",
+            "value": "creo:temperature"
+          },
+          "name": "freezing",
+          "native_options": {},
+          "native_ref": "creo:depdb:curve_expression#active-7-102",
+          "owner": {
+            "kind": "feature",
+            "value": "creo:depdb:curve_expression_feature#7-102"
+          },
+          "scope": "creo:model:product_definition#root",
+          "source_settings": {}
+        }
+      ],
       "programs": [],
       "publications": [],
-      "scopes": [],
+      "scopes": [
+        {
+          "active_arrangements": [],
+          "current": [
+            {
+              "at": {
+                "kind": "after",
+                "value": {
+                  "kind": "feature",
+                  "value": "creo:depdb:curve_expression_feature#7-102"
+                }
+              },
+              "bodies": [],
+              "poses": [],
+              "status": "current"
+            }
+          ],
+          "definition": "creo:model:product_definition#root",
+          "occurrences": {},
+          "roots": [
+            "creo:model:timeline#root"
+          ]
+        }
+      ],
       "sheet_metal_rules": [],
       "sketch_constraints": [],
       "sketch_entities": [],
@@ -200,7 +481,23 @@
       "point_clouds": [],
       "presentation_documents": [],
       "presentation_layers": [],
-      "product_definitions": [],
+      "product_definitions": [
+        {
+          "bodies": [],
+          "bom_properties": {},
+          "id": "creo:model:product_definition#root",
+          "instance_bodies": [],
+          "kind": "part",
+          "occurrences": [],
+          "representations": [],
+          "sketches": [],
+          "storage": {
+            "document": {},
+            "kind": "file"
+          },
+          "tessellations": []
+        }
+      ],
       "rigid_bodies": [],
       "semantic_annotations": [],
       "sketch_constraints": [],

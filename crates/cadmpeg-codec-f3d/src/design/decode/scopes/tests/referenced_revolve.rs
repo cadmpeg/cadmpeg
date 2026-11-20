@@ -34,6 +34,7 @@ struct Fixture {
     angle: f64,
     label: Option<&'static str>,
     second_reference: Option<u64>,
+    payload_length: Option<usize>,
 }
 
 impl Fixture {
@@ -54,6 +55,7 @@ impl Fixture {
             angle: 1.5,
             label: None,
             second_reference: None,
+            payload_length: None,
         }
     }
 
@@ -66,9 +68,6 @@ impl Fixture {
         }
     }
 
-    /// The scope frame and its angle owner's scalar frame. The kind is the
-    /// localized `Révolution`, and zero padding brings the token-independent
-    /// frame to 351 or 373 bytes for the marked form or 369 for the unmarked form.
     fn bytes(&self) -> Vec<u8> {
         fn marked(bytes: &mut Vec<u8>, marker: u8, record: u32) {
             bytes.push(marker);
@@ -93,15 +92,19 @@ impl Fixture {
         bytes.push(self.solid);
         bytes.extend_from_slice(&self.zero_flags);
         marked(&mut bytes, self.angle_marker, ANGLE);
-        let payload = if self.unmarked {
-            369
-        } else if self.second_reference.is_some() {
-            361
-        } else if self.references == 8 {
-            373
-        } else {
-            351
-        };
+        let payload =
+            self.payload_length
+                .unwrap_or(if self.unmarked && self.second_reference.is_some() {
+                    379
+                } else if self.unmarked {
+                    369
+                } else if self.second_reference.is_some() {
+                    361
+                } else if self.references == 8 {
+                    373
+                } else {
+                    351
+                });
         let table = [81_u32, 82, 91, 92, 93, 94, ANGLE, 96];
         let table = &table[table.len() - self.references..];
         let tail_extra = if self.second_reference.is_some() {
@@ -161,11 +164,20 @@ impl Fixture {
         Option<DesignRevolveConstruction>,
         Option<cadmpeg_ir::report::loss::LossNote>,
     ) {
-        let bytes = self.bytes();
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        self.decode_bytes(&self.bytes())
+    }
+
+    fn decode_bytes(
+        &self,
+        bytes: &[u8],
+    ) -> (
+        Option<DesignRevolveConstruction>,
+        Option<cadmpeg_ir::report::loss::LossNote>,
+    ) {
+        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
         let class_tag = DesignClassTag::try_from("331".to_owned()).unwrap();
         let mut scope = parse_parameter_scope_with_type_guid(
-            &bytes,
+            bytes,
             &records,
             SCOPE,
             &class_tag,
@@ -191,12 +203,14 @@ impl Fixture {
             "companion_record_index": ANGLE + 2,
         }))
         .unwrap();
-        let loss = referenced_revolve_reference_loss(&bytes, &scope);
-        let construction = match exact_path_feature_construction(&bytes, &records, &scope, &[owner])
+        let construction = match exact_path_feature_construction(bytes, &records, &scope, &[owner])
         {
             Some(DesignPathFeatureConstruction::Revolve(construction)) => Some(construction),
             _ => None,
         };
+        let loss = construction
+            .as_ref()
+            .and_then(|value| referenced_revolve_reference_loss(bytes, &scope, value));
         (construction, loss)
     }
 }
@@ -236,6 +250,8 @@ fn the_unmarked_form_has_eight_references_and_its_operation_at_offset_21() {
     for (operation, expected) in [
         (1, DesignExtrudeOperation::Join),
         (2, DesignExtrudeOperation::Cut),
+        (3, DesignExtrudeOperation::Intersect),
+        (4, DesignExtrudeOperation::NewBody),
     ] {
         let mut fixture = Fixture::unmarked();
         fixture.operation = operation;
@@ -384,4 +400,129 @@ fn a_361_byte_frame_carries_a_second_tail_reference() {
         ..fixture
     };
     assert_eq!(boolean.decode(), None);
+}
+
+#[test]
+fn an_unmarked_379_byte_frame_preserves_the_angle_and_second_tail_reference() {
+    for (operation, expected) in [
+        (1, DesignExtrudeOperation::Join),
+        (2, DesignExtrudeOperation::Cut),
+        (3, DesignExtrudeOperation::Intersect),
+        (4, DesignExtrudeOperation::NewBody),
+    ] {
+        let fixture = Fixture {
+            operation,
+            second_reference: Some(60),
+            ..Fixture::unmarked()
+        };
+        let (construction, loss) = fixture.decode_with_loss();
+        let construction = construction.expect("unmarked referenced-angle Revolve");
+        assert_eq!(construction.operation, expected);
+        assert_eq!(construction.angle_record_index, ANGLE);
+        assert_eq!(construction.solid, Some(true));
+        assert_eq!(
+            construction.travel,
+            crate::records::feature::path_features::DesignRevolveTravel::Angle(
+                cadmpeg_ir::scalar::PositiveAngle::new(1.5).unwrap()
+            )
+        );
+        assert!(!construction.reversed);
+        let loss = loss.expect("second tail reference loss");
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.kind()
+        );
+        assert!(loss.message.contains("target 60"));
+        assert!(loss.message.contains("379-byte"));
+        let negative = Fixture {
+            angle: -1.5,
+            ..fixture.clone()
+        };
+        assert!(negative.decode().unwrap().reversed);
+        for invalid in [
+            Fixture {
+                references: 6,
+                ..fixture.clone()
+            },
+            Fixture {
+                direction_kind: 1,
+                ..fixture.clone()
+            },
+            Fixture {
+                angle_marker: 0,
+                ..fixture.clone()
+            },
+            Fixture {
+                solid: 2,
+                ..fixture
+            },
+        ] {
+            assert!(invalid.decode().is_none());
+        }
+    }
+    assert_eq!(Fixture::unmarked().decode_with_loss().1, None);
+}
+
+#[test]
+fn a_379_byte_frame_requires_the_88_byte_second_reference_tail() {
+    let fixture = Fixture {
+        payload_length: Some(379),
+        ..Fixture::unmarked()
+    };
+    assert_eq!(fixture.decode_with_loss(), (None, None));
+    let mut short_tail = fixture.bytes();
+    let tail = short_tail.len() - 11 - 78;
+    short_tail[tail + 20] = 1;
+    short_tail[tail + 21..tail + 29].copy_from_slice(&60_u64.to_le_bytes());
+    assert_eq!(fixture.decode_bytes(&short_tail), (None, None));
+    let fixture = Fixture {
+        second_reference: Some(60),
+        ..fixture
+    };
+    assert!(fixture.decode().is_some());
+    let bytes = fixture.bytes();
+    let tail = bytes.len() - 11 - 88;
+    for (offset, value) in [(30, 0), (30, 2), (39, 1), (40, 1)] {
+        let mut invalid = bytes.clone();
+        invalid[tail + offset] = value;
+        assert_eq!(fixture.decode_bytes(&invalid), (None, None), "{offset}");
+    }
+}
+
+#[test]
+fn second_tail_references_refuse_ordered_scope_members() {
+    for base in [Fixture::marked(), Fixture::unmarked()] {
+        for target in [u64::from(ANGLE), 96] {
+            let fixture = Fixture {
+                second_reference: Some(target),
+                ..base.clone()
+            };
+            assert_eq!(fixture.decode_with_loss(), (None, None));
+        }
+        let fixture = Fixture {
+            second_reference: Some(u64::from(u32::MAX) + u64::from(ANGLE) + 1),
+            ..base
+        };
+        assert!(fixture.decode_with_loss().1.is_some());
+    }
+}
+
+#[test]
+fn marker_one_assumed_lengths_use_the_matched_layout_for_loss() {
+    for length in [361, 379] {
+        let fixture = Fixture {
+            payload_length: Some(length),
+            project_axis: 1,
+            solid: 0,
+            angle_marker: 0,
+            second_reference: Some(60),
+            ..Fixture::marked()
+        };
+        let (construction, loss) = fixture.decode_with_loss();
+        let construction = construction.expect("marker-one assumed-length Revolve");
+        assert_eq!(construction.operation_offset, 25);
+        assert_eq!(construction.solid, None);
+        assert_eq!(construction.operation, DesignExtrudeOperation::NewBody);
+        assert_eq!(loss, None);
+    }
 }

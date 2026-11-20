@@ -47,6 +47,7 @@ enum Form {
     Constant,
     Chordal,
     Compact,
+    ShortConstant,
 }
 
 struct Fixture {
@@ -75,17 +76,22 @@ impl Default for Fixture {
 
 fn set_frame(form: Form, group: u32) -> Vec<u8> {
     let (len, marker, flag, group_at, law_at, tangency_at) = match form {
-        Form::Constant => (97, 23, 26, 29, 63, 82),
-        Form::Chordal => (97, 22, 26, 39, 28, 82),
-        Form::Compact => (93, 22, 24, 27, 59, 78),
+        Form::Constant => (97, 23, Some(26), 29, 63, Some(82)),
+        Form::Chordal => (97, 22, Some(26), 39, 28, Some(82)),
+        Form::Compact => (93, 22, Some(24), 27, 59, Some(78)),
+        Form::ShortConstant => (80, 22, None, 26, 57, None),
     };
     let mut frame = header(b"350", SET);
     frame.resize(len, 0);
     frame[marker] = 1;
-    frame[flag] = 1;
+    if let Some(flag) = flag {
+        frame[flag] = 1;
+    }
     frame[group_at..group_at + 11].copy_from_slice(&reference(group));
     frame[law_at..law_at + 11].copy_from_slice(&reference(LAW_OWNER));
-    frame[tangency_at..tangency_at + 11].copy_from_slice(&reference(TANGENCY_OWNER));
+    if let Some(tangency_at) = tangency_at {
+        frame[tangency_at..tangency_at + 11].copy_from_slice(&reference(TANGENCY_OWNER));
+    }
     frame
 }
 
@@ -195,6 +201,49 @@ fn decode(
         &[law_parameter, tangency_parameter],
         &[law_owner, tangency_owner],
     )
+}
+
+#[test]
+fn short_constant_set_requires_its_following_group_and_radius_owner() {
+    let fixture = Fixture {
+        compact_run: true,
+        set_form: Form::ShortConstant,
+        ..Fixture::default()
+    };
+    let list = decode(&fixture, "Radius").expect("short constant set");
+    let [set] = list.sets.as_slice() else {
+        panic!("one short constant set");
+    };
+    assert_eq!(set.frame_length, 80);
+    assert_eq!(set.group_record_index, GROUP);
+    assert_eq!(
+        set.law,
+        DesignFilletSetLaw::Constant {
+            radius_owner_record_index: LAW_OWNER,
+        }
+    );
+    assert_eq!(set.tangency_weight_owner_record_index, None);
+    assert_eq!(set.tangent_chain, None);
+    assert_eq!(set.curvature_continuity, None);
+    let stored = serde_json::to_value(&list).unwrap();
+    let restored: crate::records::feature::fillet_set::DesignFilletSetList =
+        serde_json::from_value(stored).unwrap();
+    assert_eq!(restored, list);
+    assert!(decode(&fixture, "ChordLen").is_none());
+
+    let (mut bytes, scope) = stream(&fixture);
+    let end = usize::try_from(set.byte_offset + set.frame_length).unwrap();
+    let other_group = header(b"343", GROUP + 10);
+    bytes[end..end + other_group.len()].copy_from_slice(&other_group);
+    let (parameter, owner) = owned(LAW_OWNER, "Radius");
+    assert!(fillet_set_list(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+        &[parameter],
+        &[owner],
+    )
+    .is_none());
 }
 
 #[test]

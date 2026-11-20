@@ -227,6 +227,74 @@ fn extrude_projects_with_selected_face_group() {
 }
 
 #[test]
+fn legacy_to_face_projects_with_only_an_inactive_zero_distance() {
+    use crate::records::feature::scope::DesignScopePayloadMut;
+    use cadmpeg_ir::features::{ExtrudeExtent, LinearTermination};
+    let mut scope = scope_with_extent(DesignExtrudeExtent::OneSidedToFace);
+    let DesignScopePayloadMut::Extrude(Some(extrude)) = scope.payload_mut() else {
+        panic!("Extrude scope");
+    };
+    extrude.extrude_prologue = Some(DesignExtrudePrologue::LegacyShifted {
+        operation_prefix_marker_offset: None,
+        operation: DesignExtrudeOperation::NewBody,
+        operation_offset: 127,
+        direction_face_extend_values: [1, 2],
+        side_extent_discriminators: [2, 0],
+        side_extent_discriminator_offsets: [177, 190],
+        extent: Some(DesignExtrudeExtent::OneSidedToFace),
+        direction_face_extend_offsets: [131, 135],
+        direction_reversed: false,
+        direction_reversed_offset: 139,
+        solid_operation: true,
+        solid_operation_offset: 140,
+        start: DesignExtrudeStart::ProfilePlane,
+        start_offset: 141,
+    });
+    let profile = profile_group(100, 0);
+    let mut face = profile_group(101, 1);
+    face.operand_role = DesignConstructionOperandRole::ExtrudeFaces {
+        encoding: crate::records::topology::extrude_selection::DesignExtrudeFaceEncoding::LegacyTermination,
+        usage: crate::records::topology::extrude_selection::DesignExtrudeFaceRole::Termination,
+    };
+    let groups = [profile, face];
+    let parameter = |source_kind, value| {
+        parse_design_parameter_record(&parameter_record(
+            Some(44),
+            "value",
+            source_kind,
+            Some("mm"),
+            "d1",
+            value,
+        ))
+        .unwrap()
+    };
+    let offset = parameter("Side1Offset", 0.0);
+    let project = |distance| {
+        let along = parameter("AlongDistance", distance);
+        crate::test_support::with_decode_context(|ctx| {
+            project_extrude(
+                ctx,
+                &scope,
+                &[(0, &along), (1, &offset)],
+                &groups,
+                &[],
+                &[],
+                &[],
+            )
+        })
+        .unwrap()
+    };
+    assert!(matches!(
+        project(0.0),
+        Some(FeatureDefinition::Operation(FeatureOperation::Extrude {
+            extent: ExtrudeExtent::OneSided { side },
+            ..
+        })) if matches!(side.termination, LinearTermination::ToFace { offset: None, .. })
+    ));
+    assert!(project(0.2).is_none());
+}
+
+#[test]
 fn extrude_projects_with_target_shape_group() {
     assert_face_projects(DesignConstructionOperandRole::Other(
         crate::records::topology::extrude_selection::DesignOperandRole::ROLE_0X5,

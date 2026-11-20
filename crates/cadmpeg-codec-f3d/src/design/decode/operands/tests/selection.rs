@@ -120,6 +120,52 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
         u64_from_index(compact_paired_at)
     );
 
+    let legacy_header = DesignRecordHeader {
+        class_tag: "272".to_owned().try_into().unwrap(),
+        ..compact_header.clone()
+    };
+    let mut legacy_bytes = bytes[..tail_at].to_vec();
+    legacy_bytes[4..7].copy_from_slice(b"272");
+    legacy_bytes[22..26].copy_from_slice(&102u32.to_le_bytes());
+    compact_tail[27..31].copy_from_slice(&0x41u32.to_le_bytes());
+    compact_tail[58..62].copy_from_slice(&180u32.to_le_bytes());
+    legacy_bytes.extend_from_slice(&compact_tail);
+    indexed_header(&mut legacy_bytes, *b"262", 100);
+    indexed_header(&mut legacy_bytes, *b"328", 101);
+    indexed_header(&mut legacy_bytes, *b"432", 102);
+    legacy_bytes.extend_from_slice(&[0; 10]);
+    crate::test_support::push_marked_reference(&mut legacy_bytes, 100);
+    legacy_bytes.extend_from_slice(&1u32.to_le_bytes());
+    legacy_bytes.extend_from_slice(&1u32.to_le_bytes());
+    legacy_bytes.extend_from_slice(&1u32.to_le_bytes());
+    region_member(&mut legacy_bytes, 81, [0, 1, 1]);
+    legacy_bytes.push(1);
+    legacy_bytes.extend_from_slice(&0u32.to_le_bytes());
+    indexed_header(&mut legacy_bytes, *b"299", 102);
+    indexed_header(&mut legacy_bytes, *b"256", 180);
+    let marker_payload = legacy_bytes.len();
+    legacy_bytes.extend_from_slice(&[0; 18]);
+    indexed_header(&mut legacy_bytes, *b"256", 181);
+
+    let parse_legacy = |bytes: &[u8], owner| {
+        super::super::parse_sketch_profile_frame(
+            bytes,
+            "f3d:Design/BulkStream.dat",
+            1,
+            &legacy_header,
+            std::slice::from_ref(&entity),
+            Some((owner, &std::cell::OnceCell::new())),
+        )
+    };
+    let legacy = parse_legacy(&legacy_bytes, 777).expect("legacy Sketch-profile operand");
+    assert_eq!(legacy.entity_id, entity.entity_id);
+    let selection = legacy.region_selection.expect("nested selected region");
+    assert_eq!(selection.record_index, 102);
+    assert_eq!(selection.regions[0].members[0].curve_primary_id.get(), 81);
+    assert!(parse_legacy(&legacy_bytes, 778).is_none());
+    legacy_bytes[marker_payload] = 1;
+    assert!(parse_legacy(&legacy_bytes, 777).is_none());
+
     bytes.truncate(tail_at);
     let mut omitted_ordinal_tail = vec![0; 89];
     omitted_ordinal_tail[0] = 1;
@@ -1366,6 +1412,7 @@ fn sketch_region_companion_closes_before_a_later_face_recipe() {
                 scope_reference_ordinal: 0,
                 group_ownership: None,
                 next_byte_offset: None,
+                registered_frame: None,
                 header: &header,
             },
             &[recipe],

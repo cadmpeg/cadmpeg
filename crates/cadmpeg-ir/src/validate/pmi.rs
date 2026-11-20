@@ -32,8 +32,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
     let occurrences = typed_identities!(model, occurrences);
     for annotation in &ir.model.pmi {
         let zone_targets = match &annotation.definition {
-            PmiDefinition::GeometricTolerance { constraints, .. } => constraints
-                .zones
+            PmiDefinition::GeometricTolerance { zones, .. } => zones
                 .iter()
                 .flat_map(|zone| &zone.projections)
                 .flat_map(crate::pmi::zones::ToleranceProjection::targets)
@@ -83,10 +82,12 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                 datum_system,
                 magnitude,
                 modifiers,
-                constraints,
+                displacement,
+                maximum_upper,
+                zones,
                 ..
             } => {
-                let invalid_maximum = constraints.maximum.is_some_and(|maximum| {
+                let invalid_maximum = maximum_upper.is_some_and(|maximum| {
                     maximum.get() <= magnitude.get().value.get()
                         || !modifiers.iter().any(|modifier| {
                             matches!(
@@ -95,8 +96,9 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                             )
                         })
                 });
-                if (!constraints.is_empty()
-                    && magnitude.get().quantity != crate::pmi::PmiQuantity::Length)
+                let zone_stated =
+                    displacement.is_some() || maximum_upper.is_some() || !zones.is_empty();
+                if (zone_stated && magnitude.get().quantity != crate::pmi::PmiQuantity::Length)
                     || invalid_maximum
                 {
                     record_finding(
@@ -122,7 +124,31 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                     }
                 }
             }
-            PmiDefinition::Dimension(_) => {}
+            PmiDefinition::Dimension(dimension) => {
+                if dimension.nominal_disagrees_with_kind() {
+                    record_finding(
+                        findings,
+                        Check::Pmi,
+                        crate::report::Severity::Error,
+                        Some(annotation.id.as_str()),
+                        format_args!("dimension nominal quantity disagrees with its kind"),
+                    );
+                }
+                let repeated = dimension
+                    .modifiers
+                    .iter()
+                    .enumerate()
+                    .any(|(index, modifier)| dimension.modifiers[..index].contains(modifier));
+                if repeated {
+                    record_finding(
+                        findings,
+                        Check::Pmi,
+                        crate::report::Severity::Error,
+                        Some(annotation.id.as_str()),
+                        format_args!("dimension states a modifier more than once"),
+                    );
+                }
+            }
             PmiDefinition::Presentation { semantics, .. } => {
                 for id in semantics {
                     if !definitions.contains(id.as_str()) {
