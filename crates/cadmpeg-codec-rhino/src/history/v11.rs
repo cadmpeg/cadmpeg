@@ -36,8 +36,8 @@ pub(crate) type ObjectBodies = HashMap<Uuid, Vec<BodyId>>;
 /// record's descendants hold.
 ///
 /// A document with no history record has no design records. An object that
-/// no record lists among its descendants is in no current state (interim,
-/// errata A1).
+/// no record lists among its descendants is in no current state, and the
+/// scoped root lists no body (interim, errata A1).
 pub(crate) fn project(
     ctx: &DecodeContext<'_>,
     records: &[HistoryRecord],
@@ -52,6 +52,14 @@ pub(crate) fn project(
         Some(root) => root,
         None => root_definition(ctx, ir)?,
     };
+    if let Some(root) = ir
+        .model
+        .product_definitions
+        .iter_mut()
+        .find(|candidate| candidate.id == definition)
+    {
+        root.bodies.clear();
+    }
     let keys = record_keys(records);
     let ids = keys
         .iter()

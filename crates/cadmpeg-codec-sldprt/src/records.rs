@@ -1677,7 +1677,7 @@ impl SketchInputEntity {
         kind: SketchInputKind,
     ) -> Self {
         let position = usize::try_from(offset).unwrap();
-        let mut payload = cadmpeg_test_support::service_decode_context()
+        let mut payload = cadmpeg_core::decode::test_support::service_decode_context()
             .alloc_filled(
                 position.checked_add(39).unwrap(),
                 0,

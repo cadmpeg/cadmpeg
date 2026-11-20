@@ -995,68 +995,69 @@ fn sheet_metal_rules_are_an_arena_of_the_design_root() {
 
 #[cfg(feature = "schema")]
 mod schema {
-    use schemars::{schema_for, JsonSchema};
+    use schemars::{JsonSchema, SchemaGenerator};
 
     use super::super::*;
 
-    fn generates<T: JsonSchema>() {
-        let schema = serde_json::to_value(schema_for!(T)).unwrap();
-        assert!(schema.is_object(), "{}", T::schema_name());
+    fn generates<T: JsonSchema>(generator: &mut SchemaGenerator) {
+        let schema = T::json_schema(generator);
+        assert!(schema.as_object().is_some(), "{}", T::schema_name());
     }
 
     #[test]
     fn every_sheet_metal_type_has_a_schema() {
-        generates::<SheetMetal>();
-        generates::<SheetMetalRule>();
-        generates::<BendAllowance>();
-        generates::<KFactorTable>();
-        generates::<BendTable>();
-        generates::<BendTableBlock>();
-        generates::<BendTableAngle>();
-        generates::<BendTableValue>();
-        generates::<FlangeMeasure>();
-        generates::<BendTableLookup>();
-        generates::<AxisLookup>();
-        generates::<OutsideGrid>();
-        generates::<BendEquations>();
-        generates::<BendQuantity>();
-        generates::<AngleRange>();
-        generates::<TableLookup>();
-        generates::<KFactorRow>();
-        generates::<SheetMetalKind>();
-        generates::<ConnectBetween>();
-        generates::<Rip>();
-        generates::<RipPath>();
-        generates::<SketchedRipDepth>();
-        generates::<RipWidth>();
-        generates::<KerfSide>();
-        generates::<Convert>();
-        generates::<ConvertFrom>();
-        generates::<ConvertRip>();
-        generates::<ConvertSide>();
-        generates::<CornerBreak>();
-        generates::<ConvertBend>();
-        generates::<NormalSide>();
-        generates::<VertexBend>();
-        generates::<StampOutline>();
-        generates::<StampForm>();
-        generates::<BendSet>();
-        generates::<BendSpec>();
-        generates::<RadiusSide>();
-        generates::<Relief>();
-        generates::<ReliefShape>();
-        generates::<Flange>();
-        generates::<FlangeHeight>();
-        generates::<FlangeWidth>();
-        generates::<HeightDatum>();
-        generates::<BendPosition>();
-        generates::<BendExtension>();
-        generates::<BendZone>();
-        generates::<BendLineFace>();
-        generates::<LineSide>();
-        generates::<DoubleBend>();
-        generates::<Hem>();
-        generates::<HemSide>();
-        generates::<HemForm>();
+        let mut generator = SchemaGenerator::default();
+        generates::<SheetMetal>(&mut generator);
+        generates::<SheetMetalRule>(&mut generator);
+        generates::<BendAllowance>(&mut generator);
+        generates::<KFactorTable>(&mut generator);
+        generates::<BendTable>(&mut generator);
+        generates::<BendTableBlock>(&mut generator);
+        generates::<BendTableAngle>(&mut generator);
+        generates::<BendTableValue>(&mut generator);
+        generates::<FlangeMeasure>(&mut generator);
+        generates::<BendTableLookup>(&mut generator);
+        generates::<AxisLookup>(&mut generator);
+        generates::<OutsideGrid>(&mut generator);
+        generates::<BendEquations>(&mut generator);
+        generates::<BendQuantity>(&mut generator);
+        generates::<AngleRange>(&mut generator);
+        generates::<TableLookup>(&mut generator);
+        generates::<KFactorRow>(&mut generator);
+        generates::<SheetMetalKind>(&mut generator);
+        generates::<ConnectBetween>(&mut generator);
+        generates::<Rip>(&mut generator);
+        generates::<RipPath>(&mut generator);
+        generates::<SketchedRipDepth>(&mut generator);
+        generates::<RipWidth>(&mut generator);
+        generates::<KerfSide>(&mut generator);
+        generates::<Convert>(&mut generator);
+        generates::<ConvertFrom>(&mut generator);
+        generates::<ConvertRip>(&mut generator);
+        generates::<ConvertSide>(&mut generator);
+        generates::<CornerBreak>(&mut generator);
+        generates::<ConvertBend>(&mut generator);
+        generates::<NormalSide>(&mut generator);
+        generates::<VertexBend>(&mut generator);
+        generates::<StampOutline>(&mut generator);
+        generates::<StampForm>(&mut generator);
+        generates::<BendSet>(&mut generator);
+        generates::<BendSpec>(&mut generator);
+        generates::<RadiusSide>(&mut generator);
+        generates::<Relief>(&mut generator);
+        generates::<ReliefShape>(&mut generator);
+        generates::<Flange>(&mut generator);
+        generates::<FlangeHeight>(&mut generator);
+        generates::<FlangeWidth>(&mut generator);
+        generates::<HeightDatum>(&mut generator);
+        generates::<BendPosition>(&mut generator);
+        generates::<BendExtension>(&mut generator);
+        generates::<BendZone>(&mut generator);
+        generates::<BendLineFace>(&mut generator);
+        generates::<LineSide>(&mut generator);
+        generates::<DoubleBend>(&mut generator);
+        generates::<Hem>(&mut generator);
+        generates::<HemSide>(&mut generator);
+        generates::<HemForm>(&mut generator);
     }
 }

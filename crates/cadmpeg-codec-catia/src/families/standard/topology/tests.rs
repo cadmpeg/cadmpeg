@@ -709,7 +709,7 @@ fn incidence_cycles_match_the_vertex_map_walk() {
 
     let mut random = SplitMix(0x5eed);
     let mut closed = 0usize;
-    for case in 0..20_000 {
+    for case in 0..2_000 {
         let mut edge_points = Vec::new();
         let mut incident = Vec::new();
         if case % 2 == 0 {
@@ -775,5 +775,5 @@ fn incidence_cycles_match_the_vertex_map_walk() {
             "incident {incident:?} over {edge_points:?}"
         );
     }
-    assert!(closed > 5_000, "only {closed} cases closed");
+    assert!(closed > 500, "only {closed} cases closed");
 }

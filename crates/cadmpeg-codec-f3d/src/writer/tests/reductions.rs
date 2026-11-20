@@ -365,6 +365,80 @@ fn an_open_edge_with_no_stated_range_is_written_between_its_vertices() {
 }
 
 #[test]
+fn an_open_edge_whose_vertex_misses_its_line_is_written_with_record_invalid() {
+    let mut ir = source_less(&synthetic_wire_body_smbh());
+    ir.native = cadmpeg_ir::native::Native::default();
+    let edge = ir
+        .geometry
+        .edges
+        .iter_mut()
+        .find(|edge| {
+            edge.ends
+                .as_ref()
+                .is_some_and(|ends| ends.start != ends.end)
+        })
+        .expect("the fixture holds an open edge");
+    edge.carrier = EdgeCarrier::new(edge.curve().cloned(), None).expect("a curve without a range");
+    let id = edge.id.to_string();
+    let end = edge.ends.as_ref().expect("an open edge").end.clone();
+    let point = ir
+        .geometry
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id == end)
+        .expect("the end vertex")
+        .point
+        .clone();
+    let row = ir
+        .geometry
+        .points
+        .iter_mut()
+        .find(|row| row.id == point)
+        .expect("the end point");
+    let position = row.position().get();
+    // The fixture's line runs along x; the vertex moves 1 mm off it.
+    *row = cadmpeg_ir::topology::Point::new(
+        point,
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(
+            position.x,
+            position.y + 1.0,
+            position.z,
+        ))
+        .expect("finite"),
+        None,
+    );
+    assert_written_with_loss(&ir, None, "export/record.invalid", &id);
+}
+
+#[test]
+fn geometry_of_a_design_with_no_body_is_named_as_not_written() {
+    let mut ir = CadIr::empty();
+    let line = cadmpeg_ir::geometry::analytic::LineCurve::try_new(
+        Point3::new(0.0, 0.0, 0.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
+    .expect("line");
+    ir.geometry.curves.push(Curve {
+        parameter_range: None,
+        id: CurveId::mint("generated:test:loose-line#0").expect("identity grammar"),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(line)),
+        source_object: None,
+        native_ref: None,
+    });
+    let report = assert_written_with_loss(
+        &ir,
+        None,
+        &F3dLossCode::WriterGeometryOmitted.kind().to_string(),
+        "generated:test:loose-line#0",
+    );
+    assert!(
+        charges(&report, "export/output.empty"),
+        "{:#?}",
+        report.losses
+    );
+}
+
+#[test]
 fn a_body_without_a_retained_key_takes_a_key_no_other_body_holds() {
     let mut ir = source_less(&synthetic_two_body_smbh([7, 1]));
     let first = ir.geometry.bodies[0].id.to_string();

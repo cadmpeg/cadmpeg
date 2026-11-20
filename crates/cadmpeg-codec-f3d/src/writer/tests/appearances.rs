@@ -434,3 +434,115 @@ fn synthesized_appearance_properties_report_each_unwritten_key() {
                 == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind()));
     }
 }
+
+#[test]
+fn appearances_sharing_a_guid_with_different_assets_take_distinct_guids() {
+    use cadmpeg_ir::appearance::Appearance;
+    use cadmpeg_ir::ids::AppearanceId;
+    use cadmpeg_ir::topology::Color;
+
+    let shared = "11111111-2222-3333-4444-555555555555";
+    let appearance = |ordinal: u8, name: &str, red: f64| Appearance {
+        id: AppearanceId::mint(format!("generated:test:appearance#{ordinal}"))
+            .expect("identity grammar"),
+        name: Some(name.into()),
+        asset_guid: Some(shared.into()),
+        library_id: None,
+        visual_guid: Some(shared.into()),
+        physical_token: None,
+        schema: Some("GenericSchema".into()),
+        category: None,
+        base_color: Some(Color::new(red, 0.35, 0.75, 1.0).expect("valid color")),
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    };
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    source_less.model.appearances = vec![
+        appearance(0, "Generic", 0.15),
+        appearance(1, "Prism-152", 0.85),
+    ];
+    let mut encoded = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .expect("source-less Protein appearances encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("the written file decodes");
+    let appearances = &round_trip.ir().model.appearances;
+    let guid_of = |name: &str| {
+        appearances
+            .iter()
+            .find(|appearance| appearance.name.as_deref() == Some(name))
+            .and_then(|appearance| appearance.visual_guid.clone())
+            .unwrap_or_else(|| panic!("appearance {name} is written: {appearances:#?}"))
+    };
+    assert_eq!(guid_of("Generic"), shared);
+    assert_ne!(guid_of("Prism-152"), shared);
+
+    let replaced = format!(
+        "generated:test:appearance#1 from {shared} to {}",
+        guid_of("Prism-152")
+    )
+    .to_ascii_lowercase();
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code == crate::loss::F3dLossCode::WriterAppearanceGuidAllocated.kind()
+                && loss.message.to_ascii_lowercase().contains(&replaced)
+        }),
+        "{:#?}",
+        report.losses
+    );
+}
+
+#[test]
+fn an_appearance_with_no_guid_is_written_under_an_allocated_guid_with_a_loss() {
+    use cadmpeg_ir::appearance::Appearance;
+    use cadmpeg_ir::ids::AppearanceId;
+    use cadmpeg_ir::topology::Color;
+
+    let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    source_less.model.appearances = vec![Appearance {
+        id: AppearanceId::mint("generated:test:appearance#0").expect("identity grammar"),
+        name: Some("Generic".into()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: Some("GenericSchema".into()),
+        category: None,
+        base_color: Some(Color::new(0.15, 0.35, 0.75, 1.0).expect("valid color")),
+        properties: std::collections::BTreeMap::new(),
+        textures: Vec::new(),
+    }];
+    let mut encoded = Vec::new();
+    let report = F3dCodec
+        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .expect("a source-less Protein appearance encodes");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("the written file decodes");
+    let written = round_trip
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .find(|appearance| appearance.name.as_deref() == Some("Generic"))
+        .and_then(|appearance| {
+            appearance
+                .asset_guid
+                .clone()
+                .or_else(|| appearance.visual_guid.clone())
+        })
+        .expect("the appearance is written under a GUID");
+    let allocated = format!("generated:test:appearance#0 as {written}").to_ascii_lowercase();
+    assert!(
+        report.losses.iter().any(|loss| {
+            loss.code == crate::loss::F3dLossCode::WriterAppearanceGuidAllocated.kind()
+                && loss.message.to_ascii_lowercase().contains(&allocated)
+        }),
+        "{:#?}",
+        report.losses
+    );
+}

@@ -24,7 +24,7 @@ struct Projection {
 fn project(fixture: &MoveFaceFixture) -> Projection {
     crate::test_support::zip_test::with_scan(&fixture.archive(), |scan| {
         let types = decode_types(scan).unwrap();
-        let ctx = cadmpeg_test_support::service_decode_context();
+        let ctx = cadmpeg_core::decode::test_support::service_decode_context();
         let mut decoded = decode_parameter_scopes(
             &ctx,
             scan,

@@ -193,6 +193,14 @@ fn extends(child: &OccurrenceId, parent: &OccurrenceId) -> bool {
         .is_some_and(|rest| rest.starts_with(':'))
 }
 
+fn belongs_to_placement<T: PartialEq + Copy>(
+    assigned: Option<T>,
+    placement: T,
+    first: Option<T>,
+) -> bool {
+    assigned.or(first).is_none_or(|parent| parent == placement)
+}
+
 /// The archive member instance scope of an identity rescoped into it
 /// (`f3d:xref/<scope>/<identity>`), or `None` outside an archive member.
 fn instance_scope(id: &str) -> Option<&str> {
@@ -398,11 +406,8 @@ pub(crate) fn own_once(
             let Some(&child) = occurrence_at.get(child.as_str()) else {
                 continue;
             };
-            let belongs = !several
-                || match assigned.get(&child) {
-                    Some(&placement) => placement == occurrence,
-                    None => first.is_none_or(|first| first == occurrence),
-                };
+            let belongs =
+                !several || belongs_to_placement(assigned.get(&child).copied(), occurrence, first);
             if belongs && !visited[child] {
                 stack.push((child, Some(node), prototype));
             }
@@ -853,15 +858,17 @@ pub(crate) struct Expanded {
     pub(crate) occurrences: Vec<Occurrence>,
     /// The occurrence each expanded instance is an instance of.
     pub(crate) occurrence_of: BTreeMap<OccurrenceId, OccurrenceId>,
+    pub(crate) parents: BTreeMap<OccurrenceId, OccurrenceId>,
 }
 
 /// Expands the instance tree of `definitions` and `occurrences` as
 /// [`own_once`] found it, each instance at the values its top-level
-/// occurrence's overrides give it. An expansion past the default entity
-/// limit, which bounds the decoder's own, is refused.
+/// occurrence's overrides give it. The decode policy bounds the instance count.
 pub(crate) fn expand(
+    limits: &cadmpeg_core::decode::ResourceLimits,
     definitions: &[ProductDefinition],
     occurrences: &[Occurrence],
+    instance_scopes: &BTreeMap<OccurrenceId, String>,
 ) -> Result<Expanded, CodecError> {
     /// One instance to expand: its occurrence, the instance it sits in, and
     /// its path below its top-level occurrence.
@@ -880,10 +887,33 @@ pub(crate) fn expand(
         .enumerate()
         .map(|(index, definition)| (definition.id.as_str(), index))
         .collect::<HashMap<_, _>>();
+    let mut placements = vec![Vec::new(); definitions.len()];
+    for (index, occurrence) in occurrences.iter().enumerate() {
+        if let Some(&definition) = definition_at.get(occurrence.prototype.as_str()) {
+            placements[definition].push(index);
+        }
+    }
+    let mut assigned = BTreeMap::new();
+    for (definition, row) in definitions.iter().enumerate() {
+        if placements[definition].len() < 2 {
+            continue;
+        }
+        for child in &row.occurrences {
+            let Some(&child) = occurrence_at.get(child.as_str()) else {
+                continue;
+            };
+            if let Some(placement) =
+                assignment(child, &placements[definition], occurrences, instance_scopes)
+            {
+                assigned.insert(&child.id, &occurrences[placement].id);
+            }
+        }
+    }
     let mut expanded = Expanded {
         definitions: definitions.to_vec(),
         occurrences: Vec::new(),
         occurrence_of: BTreeMap::new(),
+        parents: BTreeMap::new(),
     };
     for definition in &mut expanded.definitions {
         if !definition.is_root() {
@@ -902,7 +932,6 @@ pub(crate) fn expand(
         })
         .collect::<Vec<_>>();
     stack.reverse();
-    let limits = cadmpeg_core::decode::ResourceLimits::default();
     let mut seen = BTreeSet::new();
     while let Some(pending) = stack.pop() {
         let Some(&occurrence) = occurrence_at.get(pending.occurrence.as_str()) else {
@@ -952,10 +981,16 @@ pub(crate) fn expand(
         expanded
             .occurrence_of
             .insert(instance.clone(), occurrence.id.clone());
+        if let Some(parent) = pending.parent {
+            expanded.parents.insert(instance.clone(), parent);
+        }
         expanded.occurrences.push(copy);
         let top = pending.top.unwrap_or(occurrence);
         if let Some(&prototype) = definition_at.get(occurrence.prototype.as_str()) {
             for child in definitions[prototype].occurrences.iter().rev() {
+                if !belongs_to_placement(assigned.get(child).copied(), &occurrence.id, None) {
+                    continue;
+                }
                 let mut path = pending.path.clone();
                 path.push(child.clone());
                 stack.push(Pending {
@@ -989,8 +1024,14 @@ pub(crate) fn stated(
 /// [`expand`] gives it.
 #[cfg(test)]
 pub(crate) fn world_poses(model: &Model) -> BTreeMap<OccurrenceId, Transform> {
-    let expanded = expand(&model.product_definitions, &model.occurrences).expect("expand");
-    let parents = parent_ids(&expanded.definitions, &expanded.occurrences);
+    let expanded = expand(
+        &cadmpeg_core::decode::ResourceLimits::default(),
+        &model.product_definitions,
+        &model.occurrences,
+        &std::collections::BTreeMap::new(),
+    )
+    .expect("expand");
+    let parents = &expanded.parents;
     let local = expanded
         .occurrences
         .iter()
