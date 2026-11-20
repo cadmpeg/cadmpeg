@@ -287,7 +287,7 @@ pub(super) fn paste_scope_prefix(
     }
 }
 
-pub(in crate::design::decode::scopes) fn from_type_guid(guid: &str) -> Option<DesignFeatureKind> {
+pub(crate) fn from_type_guid(guid: &str) -> Option<DesignFeatureKind> {
     if guid.eq_ignore_ascii_case(super::super::position::TYPE_GUID) {
         return Some(DesignFeatureKind::native("Position"));
     }

@@ -62,7 +62,7 @@ const DEPTH_CAPPED: WalkCaps = WalkCaps { depth: 1, work: 0 };
 fn swift_reachability_depth_cap_reports_the_unknown() {
     let features = chain();
     let index = feature_index(&features);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let target_at_cap = format!("F{MAX_DEPTH}");
     assert_eq!(
         crate::swift::feature_reaches(&ctx, "F0", &target_at_cap, &index).unwrap(),
@@ -80,7 +80,7 @@ fn swift_reachability_depth_cap_reports_the_unknown() {
 
 #[test]
 fn swift_rotational_depth_cap_reports_the_unknown() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let within = chain_with_cylinder_at(MAX_DEPTH - 1);
     let index = feature_index(&within);
     let Walk::Done(projections) =
@@ -102,7 +102,7 @@ fn swift_rotational_depth_cap_reports_the_unknown() {
 
 #[test]
 fn swift_diameter_depth_cap_reports_the_unknown() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let within = chain_with_cylinder_at(MAX_DEPTH - 1);
     let index = feature_index(&within);
     let Walk::Done(values) =
@@ -123,7 +123,7 @@ fn swift_diameter_depth_cap_reports_the_unknown() {
 
 #[test]
 fn swift_measurement_depth_cap_reports_the_unknown() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let measure = |feature: &Entity| {
         (!feature.related.is_empty()).then(|| cadmpeg_ir::scalar::PositiveReal::new(3.0).unwrap())
     };
@@ -170,7 +170,7 @@ fn swift_pattern_depth_cap_drops_the_targets() {
         });
     }
     let index = feature_index(&features);
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut annotation = entity("GdtPosition");
     annotation
         .features
@@ -196,7 +196,7 @@ fn swift_pattern_depth_cap_drops_the_targets() {
 
 #[test]
 fn swift_cycles_remain_absent_and_pattern_leaves_are_visited() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut cycle = entity("GdtCompoundHole");
     cycle
         .features

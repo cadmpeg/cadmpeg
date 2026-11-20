@@ -42,7 +42,7 @@ use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
-fn generated_source_less_rejects_duplicate_procedural_surface_owners() {
+fn generated_source_less_drops_duplicate_procedural_surface_owners() {
     for (smbh, label) in [
         (synthetic_cyl_spl_sur_smbh(), "cached"),
         (synthetic_helix_surface_smbh(true), "cacheless"),
@@ -56,26 +56,30 @@ fn generated_source_less_rejects_duplicate_procedural_surface_owners() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         let duplicate = source_less.geometry.procedural_surfaces[0].clone();
         source_less.geometry.procedural_surfaces.push(duplicate);
 
-        let error = F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-            .unwrap_err();
-        assert!(
-            error
+        let code = if label == "cached" {
+            &crate::loss::F3dLossCode::WriterProceduralReduced
+                .kind()
                 .to_string()
-                .contains("multiple procedural constructions"),
-            "unexpected {label} duplicate-owner error: {error}"
-        );
+        } else {
+            &crate::loss::F3dLossCode::WriterBodyOmitted
+                .kind()
+                .to_string()
+        };
+        crate::test_support::assert_written_with_loss(&source_less, None, code, "procedural");
     }
 }
 
 #[test]
-fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carriers() {
+fn generated_source_less_writes_analytic_carriers_without_their_construction() {
     use cadmpeg_ir::geometry::{
         CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
     };
@@ -90,7 +94,11 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let surface_id = source_less
         .geometry
@@ -114,13 +122,14 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
             .unwrap(),
         )),
     };
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("analytic carrier must not discard its procedural surface");
-    assert!(error
-        .to_string()
-        .contains("cannot retain its construction on analytic carrier"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "F3D retains no construction on an analytic carrier",
+    );
 
     let decoded = F3dCodec
         .decode(
@@ -131,7 +140,11 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let curve_id = source_less
         .geometry
@@ -154,13 +167,14 @@ fn generated_source_less_refuses_procedural_construction_loss_on_analytic_carrie
             .unwrap(),
         )),
     };
-    let error = F3dCodec
-        .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("analytic carrier must not discard its procedural curve");
-    assert!(error
-        .to_string()
-        .contains("cannot retain its construction on carrier"));
+    crate::test_support::assert_written_with_loss(
+        &source_less,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "F3D retains no construction on an analytic carrier",
+    );
 }
 
 #[test]
@@ -187,7 +201,11 @@ fn generated_minimal_deformable_surface_decodes_and_writes_source_less() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -250,7 +268,11 @@ fn generated_framed_deformable_surfaces_decode_and_write_source_less() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         let mut encoded = Vec::new();
         F3dCodec
@@ -310,7 +332,11 @@ fn generated_revision_deformable_mode3_decodes_and_writes_source_less() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -379,7 +405,11 @@ fn generated_surface_curve_deformable_decodes_and_writes_source_less() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     source_less
         .geometry
@@ -459,7 +489,11 @@ fn generated_full_deformable_decodes_and_writes_source_less() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         source_less
             .geometry
@@ -533,7 +567,11 @@ fn generated_t_spline_surface_resolves_shared_subtransform_source_less() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -604,7 +642,11 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     for (ordinal, curve_id) in [&profile, &spine].into_iter().enumerate() {
         source_less
@@ -674,7 +716,7 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
 }
 
 #[test]
-fn generated_source_less_sweep_refuses_missing_native_graph() {
+fn generated_source_less_sweep_without_its_native_graph_writes_its_cache() {
     use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 
     let mut decoded = F3dCodec
@@ -687,7 +729,11 @@ fn generated_source_less_sweep_refuses_missing_native_graph() {
         .0;
     decoded.source = None;
     decoded
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     decoded.geometry.procedural_surfaces[0].edit_definition(|definition| {
         let ProceduralSurfaceDefinition::Sweep(definition_payload) = definition else {
@@ -708,15 +754,14 @@ fn generated_source_less_sweep_refuses_missing_native_graph() {
         .unwrap();
     });
 
-    let error = F3dCodec
-        .plan(EncodeInput::new(&decoded, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("a sweep without its native graph must not be guessed");
-    assert!(matches!(
-        error,
-        cadmpeg_core::CodecError::NotImplemented(message)
-            if message.contains("lacks its native construction graph")
-    ));
+    crate::test_support::assert_written_with_loss(
+        &decoded,
+        None,
+        &crate::loss::F3dLossCode::WriterProceduralReduced
+            .kind()
+            .to_string(),
+        "lacks its native construction graph",
+    );
 }
 
 #[test]
@@ -775,7 +820,11 @@ fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     for (ordinal, (curve_id, _)) in bounded_curves.iter().enumerate() {
         source_less
@@ -875,7 +924,11 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     for (ordinal, (curve_id, _)) in bounded_curves.iter().enumerate() {
         source_less
@@ -976,7 +1029,11 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     for (ordinal, (curve_id, _)) in bounded_curves.iter().enumerate() {
         source_less
@@ -1068,7 +1125,11 @@ fn generated_text_law_driven_sweep_preserves_expression_tokens() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -1162,7 +1223,11 @@ fn generated_revision_text_law_sweep_decodes_and_round_trips() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -1249,7 +1314,11 @@ fn generated_cacheless_revision_text_law_sweep_preserves_parameterization() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let mut encoded = Vec::new();
     F3dCodec
@@ -1369,20 +1438,22 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         source_less.geometry.procedural_surfaces[0]
             .set_cache_fit_tolerance(None)
             .unwrap();
-        let error = F3dCodec
-            .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut Vec::new()))
-            .unwrap_err();
-        assert!(
-            error
-                .to_string()
-                .contains(&format!("{family} requires a native cache-fit tolerance")),
-            "unexpected {family} error: {error}"
+        crate::test_support::assert_written_with_loss(
+            &source_less,
+            None,
+            &crate::loss::F3dLossCode::WriterProceduralReduced
+                .kind()
+                .to_string(),
+            &format!("{family} requires a native cache-fit tolerance"),
         );
     }
 
@@ -1409,7 +1480,11 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
         let (mut source_less, _, _) = decoded.into_parts();
         source_less.source = None;
         source_less
-            .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+            .set_native_unknowns(
+                &cadmpeg_core::decode::test_support::service_decode_context(),
+                "f3d",
+                &[],
+            )
             .unwrap();
         source_less.geometry.procedural_surfaces[0]
             .set_cache_fit_tolerance(None)
@@ -1442,7 +1517,11 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
     let (mut source_less, _, _) = decoded.into_parts();
     source_less.source = None;
     source_less
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     source_less.geometry.procedural_surfaces[0]
         .set_cache_fit_tolerance(None)

@@ -2560,6 +2560,9 @@ const TEXT_REFERENCE_SLOTS: [TextReferenceSlot; 2] =
 /// Bytes between a sketch-text record's last class member and its
 /// owning-sketch reference, in either identity form.
 const SKETCH_TEXT_TRAILING_RUN: usize = 30;
+/// Zero bytes a `textex_tag` record can store between its trailing run and
+/// its owning-sketch reference.
+const TEXTEX_OWNER_PADDING: usize = 4;
 
 /// How far a placement-transform element may sit from the constant a planar
 /// rigid placement writes there. The transform is composed in floating point,
@@ -2916,8 +2919,16 @@ fn decode_sketch_text_tail(
             _ => return None,
         };
         cursor = cursor.checked_add(SKETCH_TEXT_TRAILING_RUN)?;
-        let owner = take_reference(payload, &mut cursor)?;
-        (cursor == payload.len()).then_some(())?;
+        let owner = [0, TEXTEX_OWNER_PADDING].into_iter().find_map(|padding| {
+            let mut at = cursor.checked_add(padding)?;
+            payload
+                .get(cursor..at)?
+                .iter()
+                .all(|byte| *byte == 0)
+                .then_some(())?;
+            let owner = take_reference(payload, &mut at)?;
+            (at == payload.len()).then_some(owner)
+        })?;
         Some(Ok(SketchTextTail {
             layout: SketchTextLayout::TextexTag {
                 width_factor,
@@ -4033,6 +4044,7 @@ fn decode_sketch_curve_identities_from_stream(
     let frames = design_primary_frames(bytes, meta)?;
     let groups = collect_sketch_geometry_groups(bytes, meta, stream, &frames)?;
     let mut unlisted = Vec::new();
+    let mut short_tails = 0usize;
     let mut out = Vec::new();
     for frame in frames {
         let payload = &bytes[frame.start..frame.end];
@@ -4071,10 +4083,14 @@ fn decode_sketch_curve_identities_from_stream(
                 )
             });
 
-        let tail_marker = geometry
+        let planar_tail = geometry
             .as_ref()
             .filter(|geometry| !matches!(geometry, SketchCurveGeometry::Nurbs { .. }))
-            .and_then(|_| planar_tail_marker(payload, geometry_offset));
+            .and_then(|_| planar_curve_tail(payload, geometry_offset));
+        if planar_tail.is_some_and(|tail| tail.short) {
+            short_tails += 1;
+        }
+        let tail_marker = planar_tail.map(|tail| tail.marker);
         let backlink = trailing_sketch_owner_reference(payload)
             .map(|target| SketchBacklink::resolve(&groups, record_index, target));
         if backlink.is_some_and(|backlink| backlink.unlisted) {
@@ -4103,6 +4119,14 @@ fn decode_sketch_curve_identities_from_stream(
         });
     }
     push_unlisted_group_member_loss(losses, stream, "curve", &unlisted);
+    if short_tails != 0 {
+        losses.push(F3dLossCode::SketchCurveTailMarkerAssumed.note(format!(
+            "{short_tails} planar sketch curve(s) in {stream} store two opaque bytes in the tail; the byte before the u32 lane is read as the tail marker."
+        )));
+        losses.push(F3dLossCode::SketchCurveTailConstructionAssumed.note(format!(
+            "{short_tails} planar sketch curve(s) in {stream} store two opaque bytes in the tail; a u32 lane of 1 is read as construction geometry."
+        )));
+    }
     Ok(out)
 }
 
@@ -4555,10 +4579,21 @@ const PLANAR_ANALYTIC_PAYLOAD_LEN: usize = 96;
 /// Bytes of the planar tail that the reference run, pad, and marker occupy.
 const PLANAR_TAIL_WINDOW_LEN: usize = 80;
 
-/// The fourth opaque byte of the planar analytic tail that follows the
-/// payload at `geometry_offset`: `N` (1 to 3) marked references, `P` zero pad
-/// bytes, then three opaque bytes and the marker. `None` for a tail of another shape.
-fn planar_tail_marker(payload: &[u8], geometry_offset: usize) -> Option<u8> {
+/// Fields of the planar analytic tail after its reference run and zero pad.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PlanarCurveTail {
+    pub(crate) marker: u8,
+    pub(crate) construction: bool,
+    /// The tail stores two opaque bytes before the marker.
+    pub(crate) short: bool,
+}
+
+/// Read the planar analytic tail that follows the payload at
+/// `geometry_offset`: `N` (1 to 3) marked references, `P` zero pad bytes,
+/// three or two opaque bytes, the marker, the u32 lane, and the construction
+/// flag. The two-byte form has a u32 lane of `0` or `1` and a flag byte of
+/// `1`. `None` for a tail of another shape.
+pub(crate) fn planar_curve_tail(payload: &[u8], geometry_offset: usize) -> Option<PlanarCurveTail> {
     let start = geometry_offset.checked_add(PLANAR_ANALYTIC_PAYLOAD_LEN)?;
     let end = start
         .checked_add(PLANAR_TAIL_WINDOW_LEN)?
@@ -4581,7 +4616,22 @@ fn planar_tail_marker(payload: &[u8], geometry_offset: usize) -> Option<u8> {
     {
         return None;
     }
-    tail.get(cursor + pad + 3).copied()
+    let fields = cursor + pad;
+    let short_lane = View::u32_le_at(tail, fields + 3)
+        .filter(|lane| *lane <= 1 && tail.get(fields + 7) == Some(&1));
+    if let Some(lane) = short_lane {
+        return Some(PlanarCurveTail {
+            marker: *tail.get(fields + 2)?,
+            construction: lane == 1,
+            short: true,
+        });
+    }
+    Some(PlanarCurveTail {
+        marker: *tail.get(fields + 3)?,
+        construction: View::u32_le_at(tail, fields + 4) == Some(1)
+            && tail.get(fields + 8) == Some(&1),
+        short: false,
+    })
 }
 
 struct DecodedSketchCurveGeometry {

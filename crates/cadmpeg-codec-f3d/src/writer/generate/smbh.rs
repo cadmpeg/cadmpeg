@@ -48,15 +48,24 @@ pub(super) fn encode_smbh(
     attributes: &AttributeIndex<'_>,
 ) -> Result<Vec<u8>, CodecError> {
     let topology = NativeGenerationIndex::new(native);
-    if target.geometry.faces.is_empty() {
-        if !target.geometry.shells.iter().any(|shell| {
+    let geometry = &target.geometry;
+    if geometry.bodies.is_empty()
+        && geometry.regions.is_empty()
+        && geometry.shells.is_empty()
+        && geometry.faces.is_empty()
+    {
+        let mut bytes = native_smbh_header(target)?;
+        native_ident(&mut bytes, "asmheader")?;
+        native_string(&mut bytes, "231.6.3.65535")?;
+        bytes.push(0x11);
+        native_history_tail(&mut bytes, &F3dNative::default())?;
+        return Ok(bytes);
+    }
+    if target.geometry.faces.is_empty()
+        && target.geometry.shells.iter().any(|shell| {
             shell.wire_edges().next().is_some() || shell.free_vertices().next().is_some()
-        }) {
-            return Err(CodecError::NotImplemented(
-                "source-less F3D generation requires owned face topology or a nonempty wire shell"
-                    .into(),
-            ));
-        }
+        })
+    {
         return encode_wire_body_smbh(target, native, attributes, &topology);
     }
     encode_face_topology_smbh(target, native, attributes, &topology)
@@ -106,34 +115,11 @@ impl<'a> NativeRecordPlan<'a> {
         let mut ref_pcurve_count = 0usize;
         let mut pcurves = Vec::new();
         for pcurve in &geometry.pcurves {
-            let form = match &pcurve.metadata {
-                PcurveMetadata::AsmInline { form } => NativePcurveForm::Inline(Cow::Borrowed(form)),
-                PcurveMetadata::General { form }
-                    if form.wrapper_reversed.is_some() || form.fit_tolerance().is_some() =>
-                {
-                    NativePcurveForm::Inline(Cow::Owned(
-                        cadmpeg_ir::geometry::pcurve::PcurveInlineForm::new(
-                            form.wrapper_reversed.unwrap_or(false),
-                            [false; 4],
-                            form.uv_offset
-                                .unwrap_or(cadmpeg_ir::units::FinitePoint2::ZERO.into()),
-                            form.fit_tolerance()
-                                .unwrap_or(cadmpeg_ir::geometry::FitTolerance::ZERO),
-                        ),
-                    ))
-                }
-                PcurveMetadata::General { form } => {
-                    let offset = form
-                        .uv_offset
-                        .map_or([0.0, 0.0], cadmpeg_ir::units::FiniteVector::get);
-                    let companion_ref = native_record_index(ref_pcurve_start, ref_pcurve_count)?;
-                    ref_pcurve_count += 1;
-                    NativePcurveForm::Reference {
-                        uv_offset: offset,
-                        companion_ref,
-                    }
-                }
-            };
+            let form = native_pcurve_form(pcurve, || {
+                let companion_ref = native_record_index(ref_pcurve_start, ref_pcurve_count)?;
+                ref_pcurve_count += 1;
+                Ok(companion_ref)
+            })?;
             pcurves.push(PlannedPcurve {
                 geometry: &pcurve.geometry,
                 support: pcurve_support_geometry(geometry, &pcurve.id)?,
@@ -184,6 +170,75 @@ impl<'a> NativeRecordPlan<'a> {
             pcurves,
         })
     }
+}
+
+/// The native form the writer gives `pcurve`. A general pcurve without an
+/// inline wrapper is a reference whose companion record `companion_ref`
+/// allocates.
+fn native_pcurve_form(
+    pcurve: &cadmpeg_ir::geometry::pcurve::Pcurve,
+    companion_ref: impl FnOnce() -> Result<i64, CodecError>,
+) -> Result<NativePcurveForm<'_>, CodecError> {
+    Ok(match &pcurve.metadata {
+        PcurveMetadata::AsmInline { form } => NativePcurveForm::Inline(Cow::Borrowed(form)),
+        PcurveMetadata::General { form }
+            if form.wrapper_reversed.is_some() || form.fit_tolerance().is_some() =>
+        {
+            NativePcurveForm::Inline(Cow::Owned(
+                cadmpeg_ir::geometry::pcurve::PcurveInlineForm::new(
+                    form.wrapper_reversed.unwrap_or(false),
+                    [false; 4],
+                    form.uv_offset
+                        .unwrap_or(cadmpeg_ir::units::FinitePoint2::ZERO.into()),
+                    form.fit_tolerance()
+                        .unwrap_or(cadmpeg_ir::geometry::FitTolerance::ZERO),
+                ),
+            ))
+        }
+        PcurveMetadata::General { form } => NativePcurveForm::Reference {
+            uv_offset: form
+                .uv_offset
+                .map_or([0.0, 0.0], cadmpeg_ir::units::FiniteVector::get),
+            companion_ref: companion_ref()?,
+        },
+    })
+}
+
+/// Each pcurve the writer cannot encode, with the reason: no support surface,
+/// no native form for its family, or a coedge that holds more than one.
+pub(super) fn unwritable_pcurves(
+    geometry: &cadmpeg_ir::document::Topology,
+) -> Vec<(cadmpeg_ir::ids::PcurveId, CodecError)> {
+    let mut unwritable = Vec::new();
+    for coedge in &geometry.coedges {
+        if coedge.pcurves.len() > 1 {
+            for use_ in &coedge.pcurves {
+                unwritable.push((
+                    use_.pcurve.clone(),
+                    CodecError::NotImplemented(format!(
+                        "coedge {} has an ordered pcurve collection",
+                        coedge.id
+                    )),
+                ));
+            }
+        }
+    }
+    let mut scratch = Vec::new();
+    for pcurve in &geometry.pcurves {
+        scratch.clear();
+        let written = native_pcurve_form(pcurve, || Ok(0)).and_then(|form| {
+            let support = pcurve_support_geometry(geometry, &pcurve.id)?;
+            native_pcurve(&mut scratch, &pcurve.geometry, &form, support)?;
+            if let NativePcurveForm::Reference { uv_offset, .. } = form {
+                native_ref_pcurve_companion(&mut scratch, &pcurve.geometry, uv_offset, support)?;
+            }
+            Ok(())
+        });
+        if let Err(error) = written {
+            unwritable.push((pcurve.id.clone(), error));
+        }
+    }
+    unwritable
 }
 
 fn source_less_wire_count(shell: &cadmpeg_ir::topology::Shell) -> usize {
@@ -387,10 +442,7 @@ fn encode_wire_body_smbh(
                 attribute_start,
             )?,
         );
-        native_i64(
-            &mut records,
-            source_less_body_key(attributes, body, ordinal)?,
-        );
+        native_i64(&mut records, source_less_body_key(attributes, body)?);
         native_ref(&mut records, -1);
         native_ref(
             &mut records,
@@ -768,10 +820,7 @@ fn encode_face_topology_smbh(
                 attribute_start,
             )?,
         );
-        native_i64(
-            &mut records,
-            source_less_body_key(attributes, body, body_ordinal)?,
-        );
+        native_i64(&mut records, source_less_body_key(attributes, body)?);
         native_ref(&mut records, -1);
         native_ref(
             &mut records,
@@ -1997,7 +2046,7 @@ mod tests {
     }
 
     #[test]
-    fn wire_vertex_admission_refuses_invalid_membership_before_output() {
+    fn invalid_wire_membership_is_dropped_and_the_rest_written() {
         let target = decoded_wire(&synthetic_free_vertex_body_smbh());
         let mut valid_output = Vec::new();
         write_new(&target, &mut valid_output).expect("unmodified free wire writes");
@@ -2034,11 +2083,20 @@ mod tests {
             (duplicated, "belongs to more than one wire"),
             (endpoint, "is both free and an edge endpoint"),
         ] {
-            let mut output = vec![0x93, 0x2a];
-            let error = write_new(&target, &mut output)
-                .expect_err("invalid wire ownership must refuse the write");
-            assert!(error.to_string().contains(reason), "{error}");
-            assert_eq!(output, [0x93, 0x2a], "failed write changed caller output");
+            let mut output = Vec::new();
+            let generated =
+                write_new(&target, &mut output).expect("invalid wire ownership still writes");
+            crate::F3dCodec
+                .decode(&mut Cursor::new(&output), &DecodeOptions::default())
+                .expect("the written file decodes");
+            assert!(
+                generated
+                    .losses
+                    .iter()
+                    .any(|loss| loss.message.contains(reason)),
+                "{reason}: {:?}",
+                generated.losses
+            );
         }
     }
 }
