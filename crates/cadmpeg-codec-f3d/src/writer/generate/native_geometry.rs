@@ -17,7 +17,7 @@ use cadmpeg_ir::topology::IncreasingParameterInterval;
 use std::borrow::Cow;
 
 use super::native_bytes::{
-    native_curve_base, native_enum, native_f64, native_i64, native_ident,
+    native_enum, native_f64, native_i64, native_ident, native_intcurve_base,
     native_length_prefixed_string, native_point, native_ref, native_string, native_subident,
     native_surface_base, native_u16_string, native_vector,
 };
@@ -5003,11 +5003,14 @@ fn native_spring_pcurve(
     }
 }
 
+/// Write the construction of `curve_id`, when it has one, with its solved
+/// cache. `reversed` states the curve as the reverse of both.
 pub(crate) fn native_procedural_curve(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     curve_id: &cadmpeg_ir::ids::CurveId,
     solved_cache: &NurbsCurve,
+    reversed: bool,
 ) -> Result<bool, CodecError> {
     let mut definitions = curve_constructions(target, curve_id);
     let Some(procedural) = definitions.next() else {
@@ -5036,7 +5039,7 @@ pub(crate) fn native_procedural_curve(
         procedural.definition(),
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact { .. }
     ) {
-        native_curve_base(bytes, "intcurve")?;
+        native_intcurve_base(bytes, reversed)?;
         bytes.push(0x0f);
         native_ident(bytes, "exact_int_cur")?;
         native_nurbs_curve(bytes, solved_cache)?;
@@ -5053,7 +5056,7 @@ pub(crate) fn native_procedural_curve(
         ..
     } = procedural.definition()
     {
-        native_curve_base(bytes, "intcurve")?;
+        native_intcurve_base(bytes, reversed)?;
         bytes.push(0x0f);
         native_ident(bytes, "law_int_cur")?;
         if let Some(version) = version {
@@ -5088,7 +5091,7 @@ pub(crate) fn native_procedural_curve(
         let source = definition_payload.source();
         let source_parameter_range = definition_payload.source_parameter_range();
         let data = &definition_payload.data().to_raw();
-        native_curve_base(bytes, "intcurve")?;
+        native_intcurve_base(bytes, reversed)?;
         bytes.push(0x0f);
         native_ident(bytes, "defm_int_cur")?;
         native_cache_first_curve_context(bytes, target, context, cache_first, Some(solved_cache))?;
@@ -5225,7 +5228,7 @@ pub(crate) fn native_procedural_curve(
             })?,
             context.parameter_range().endpoints(),
         )?;
-        native_curve_base(bytes, "intcurve")?;
+        native_intcurve_base(bytes, reversed)?;
         bytes.push(0x0f);
         native_ident(bytes, "proj_int_cur")?;
         native_intcurve_support_context(bytes, target, context)?;
@@ -5261,7 +5264,7 @@ pub(crate) fn native_procedural_curve(
         let parameters = compound.parameters();
         let components = compound.components();
 
-        native_curve_base(bytes, "intcurve")?;
+        native_intcurve_base(bytes, reversed)?;
         bytes.push(0x0f);
         native_ident(bytes, "comp_int_cur")?;
         native_i64(
@@ -5327,7 +5330,7 @@ pub(crate) fn native_procedural_curve(
         ..
     } = procedural.definition()
     {
-        native_curve_base(bytes, "intcurve")?;
+        native_intcurve_base(bytes, reversed)?;
         bytes.push(0x0f);
         native_ident(bytes, "int_int_cur")?;
         native_intcurve_support_context(bytes, target, context)?;
@@ -5363,7 +5366,7 @@ pub(crate) fn native_procedural_curve(
                 tail.as_ref().map(|value| (&value.form, value.flags, None)),
             ),
         };
-        native_curve_base(bytes, "intcurve")?;
+        native_intcurve_base(bytes, reversed)?;
         bytes.push(0x0f);
         native_ident(bytes, name)?;
         if let Some((tail, flag, second_flag)) = tail {
@@ -5415,7 +5418,7 @@ pub(crate) fn native_procedural_curve(
             .iter()
             .find(|surface| surface.id == *cast_surface)
             .ok_or_else(|| CodecError::Malformed("silhouette cast surface is missing".into()))?;
-        native_curve_base(bytes, "intcurve")?;
+        native_intcurve_base(bytes, reversed)?;
         bytes.push(0x0f);
         native_ident(bytes, name)?;
         native_intcurve_support_context(bytes, target, context)?;
@@ -5460,7 +5463,7 @@ pub(crate) fn native_procedural_curve(
             })?,
             base_range.endpoints(),
         )?;
-        native_curve_base(bytes, "intcurve")?;
+        native_intcurve_base(bytes, reversed)?;
         bytes.push(0x0f);
         native_ident(bytes, "off_surf_int_cur")?;
         if let Some(form) = &cache_first {
@@ -5507,7 +5510,7 @@ pub(crate) fn native_procedural_curve(
         let layout = &definition_payload.layout().to_raw();
         let direction = definition_payload.direction();
 
-        native_curve_base(bytes, "intcurve")?;
+        native_intcurve_base(bytes, reversed)?;
         bytes.push(0x0f);
         native_ident(bytes, "spring_int_cur")?;
         let (
@@ -5631,7 +5634,7 @@ pub(crate) fn native_procedural_curve(
                 "source-less F3D sss_int_cur requires a third support pcurve".into(),
             )
         })?;
-        native_curve_base(bytes, "intcurve")?;
+        native_intcurve_base(bytes, reversed)?;
         bytes.push(0x0f);
         native_ident(bytes, "sss_int_cur")?;
         native_intcurve_support_context(bytes, target, context)?;
@@ -5650,7 +5653,7 @@ pub(crate) fn native_procedural_curve(
         let context = definition_payload.context();
         let discontinuity_flag = definition_payload.discontinuity_flag();
         let offsets = definition_payload.offsets();
-        native_curve_base(bytes, "intcurve")?;
+        native_intcurve_base(bytes, reversed)?;
         bytes.push(0x0f);
         native_ident(bytes, "off_int_cur")?;
         native_intcurve_support_context(bytes, target, context)?;
@@ -5682,7 +5685,7 @@ pub(crate) fn native_procedural_curve(
             })?,
             parameter_range.endpoints(),
         )?;
-        native_curve_base(bytes, "intcurve")?;
+        native_intcurve_base(bytes, reversed)?;
         bytes.push(0x0f);
         native_ident(bytes, "offset_int_cur")?;
         bytes.push(0x0b);
@@ -5723,7 +5726,7 @@ pub(crate) fn native_procedural_curve(
             })?,
             parameter_range.endpoints(),
         )?;
-        native_curve_base(bytes, "intcurve")?;
+        native_intcurve_base(bytes, reversed)?;
         bytes.push(0x0f);
         native_ident(bytes, "subset_int_cur")?;
         native_nurbs_curve(bytes, &source)?;
@@ -5781,7 +5784,7 @@ pub(crate) fn native_procedural_curve(
                 )))
             }
         };
-    native_curve_base(bytes, "intcurve")?;
+    native_intcurve_base(bytes, reversed)?;
     bytes.push(0x0f);
     native_ident(bytes, "helix_int_cur")?;
     for value in *angle_range {
@@ -5850,7 +5853,7 @@ pub(super) fn native_cacheless_procedural_curve(
     let apex_factor = helix_payload.apex_factor();
     let axis = helix_payload.axis();
 
-    native_curve_base(bytes, "intcurve")?;
+    native_intcurve_base(bytes, false)?;
     bytes.push(0x0f);
     native_ident(bytes, "helix_int_cur")?;
     for value in *angle_range {
@@ -6955,7 +6958,7 @@ pub(super) fn native_ref_pcurve_companion(
     let lifted = native_geometry
         .lift(|point| Point3::new(point.u * 10.0, point.v * 10.0, 0.0))
         .map_err(|error| CodecError::NotImplemented(error.to_string()))?;
-    native_curve_base(bytes, "intcurve")?;
+    native_intcurve_base(bytes, false)?;
     native_nurbs_curve(bytes, &lifted)?;
     native_nurbs_pcurve_payload(bytes, &native_geometry)?;
     Ok(())

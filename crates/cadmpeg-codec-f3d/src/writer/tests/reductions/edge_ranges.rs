@@ -1,0 +1,390 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Edges the source states with no parameter range.
+#![allow(clippy::unwrap_used)]
+
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::eval::admission::EvaluationAdmission;
+use cadmpeg_ir::eval::decode::surface_point_solved;
+use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::geometry::analytic::{DegenerateCurve, LineCurve};
+use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+use cadmpeg_ir::ids::{CoedgeId, CurveId, EdgeId, LoopId, PcurveId, PointId, VertexId};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::report::check::Check;
+use cadmpeg_ir::report::Severity;
+use cadmpeg_ir::scalar::PositiveReal;
+use cadmpeg_ir::topology::{
+    Coedge, Edge, EdgeCarrier, EdgeEnds, FaceLoops, Loop, LoopBoundary, LoopRing, PcurveUse, Point,
+    Sense, Vertex,
+};
+
+use super::{charges, write};
+use crate::loss::F3dLossCode;
+use crate::test_support::assert_written_with_loss;
+
+const EPS_PARAMETER: f64 = 1.0e-9;
+
+/// The unit cube with edge 0, `(0,0,0)` to `(10,0,0)`, stated without a
+/// range, and its end vertex moved to `end`.
+fn cube_with_unranged_edge(end: Point3) -> CadIr {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture");
+    let edge = &mut ir.geometry.edges[0];
+    edge.carrier = EdgeCarrier::new(edge.curve().cloned(), None).expect("a curve without a range");
+    let point = &mut ir.geometry.points[1];
+    *point = Point::new(
+        point.id.clone(),
+        FinitePoint3::new(end).expect("finite"),
+        None,
+    );
+    ir
+}
+
+/// The geometric-consistency Errors of `ir` about its edge 0 or a coedge of it.
+fn edge_errors(ir: &CadIr) -> Vec<String> {
+    let edge = &ir.geometry.edges[0].id;
+    let mut named = ir
+        .geometry
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.edge == *edge)
+        .map(|coedge| coedge.id.to_string())
+        .collect::<Vec<_>>();
+    named.push(edge.to_string());
+    cadmpeg_ir::validate::validate_neutral(ir, Vec::new())
+        .expect("validate the neutral model")
+        .findings
+        .into_iter()
+        .filter(|finding| {
+            finding.check == Check::GeometricConsistency
+                && finding.severity == Severity::Error
+                && finding
+                    .entity
+                    .as_ref()
+                    .is_some_and(|entity| named.contains(entity))
+        })
+        .map(|finding| finding.message)
+        .collect()
+}
+
+fn geometry_omitted() -> String {
+    F3dLossCode::WriterGeometryOmitted.kind().to_string()
+}
+
+#[test]
+fn an_open_edge_within_the_kernel_resolution_takes_its_range() {
+    let ir = cube_with_unranged_edge(Point3::new(10.0, 3.0e-6, 0.0));
+    let (report, decoded) = write(&ir);
+    assert!(
+        !charges(&report, &geometry_omitted()),
+        "{:#?}",
+        report.losses
+    );
+    let [start, end] = decoded.geometry.edges[0]
+        .param_range()
+        .expect("the edge is written with a range")
+        .get();
+    assert!(start.abs() < EPS_PARAMETER && (end - 10.0).abs() < EPS_PARAMETER);
+    let tolerance = decoded.geometry.vertices[1]
+        .tolerance
+        .expect("the vertex off the line is written tolerant")
+        .get();
+    assert!(tolerance > 2.9e-6, "{tolerance}");
+    assert_eq!(edge_errors(&decoded), Vec::<String>::new());
+}
+
+#[test]
+fn an_open_edge_within_its_own_tolerance_takes_its_range() {
+    let mut ir = cube_with_unranged_edge(Point3::new(10.0, 0.01, 0.0));
+    let curve = ir.geometry.edges[0].curve().cloned().expect("edge curve");
+    ir.geometry
+        .curves
+        .iter_mut()
+        .find(|row| row.id == curve)
+        .expect("edge curve row")
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            1,
+            vec![0.0, 0.0, 2.0, 2.0],
+            vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0)],
+            None,
+            false,
+        )
+        .expect("a straight NURBS"),
+    ));
+    ir.geometry.edges[0].tolerance = Some(PositiveReal::new(0.025).expect("positive"));
+    let (report, decoded) = write(&ir);
+    assert!(
+        !charges(&report, &geometry_omitted()),
+        "{:#?}",
+        report.losses
+    );
+    let [start, end] = decoded.geometry.edges[0]
+        .param_range()
+        .expect("the edge is written with a range")
+        .get();
+    assert!(start.abs() < EPS_PARAMETER && (end - 2.0).abs() < EPS_PARAMETER);
+}
+
+/// The straight pcurve from `ends[0]` to `ends[1]` over `domain` on the plane
+/// of the face that owns `coedge`.
+fn plane_pcurve(
+    ir: &CadIr,
+    coedge: &Coedge,
+    ends: [Point3; 2],
+    domain: [f64; 2],
+) -> PcurveGeometry {
+    let face = &ir
+        .geometry
+        .loops
+        .iter()
+        .find(|row| row.id == coedge.owner_loop)
+        .expect("coedge loop")
+        .face;
+    let surface = &ir
+        .geometry
+        .faces
+        .iter()
+        .find(|row| row.id == *face)
+        .expect("loop face")
+        .surface;
+    let plane = ir
+        .geometry
+        .surfaces
+        .iter()
+        .find(|row| row.id == *surface)
+        .and_then(|row| row.geometry.solved())
+        .expect("face plane");
+    let at = |u, v| {
+        surface_point_solved(EvaluationAdmission::Standard, plane, u, v)
+            .expect("plane point")
+            .get()
+    };
+    let origin = at(0.0, 0.0);
+    let axes = [at(1.0, 0.0), at(0.0, 1.0)]
+        .map(|end| Vector3::new(end.x - origin.x, end.y - origin.y, end.z - origin.z));
+    let chart = |point: Point3| {
+        let offset = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
+        Point2::new(
+            offset.dot(axes[0]) / axes[0].dot(axes[0]),
+            offset.dot(axes[1]) / axes[1].dot(axes[1]),
+        )
+    };
+    PcurveGeometry::Nurbs {
+        nurbs: PcurveNurbs::from_lanes(
+            1,
+            vec![domain[0], domain[0], domain[1], domain[1]],
+            ends.map(chart).to_vec(),
+            None,
+            false,
+        )
+        .expect("straight pcurve"),
+    }
+}
+
+#[test]
+fn an_open_line_edge_against_its_line_is_written_with_its_ends_exchanged() {
+    let mut ir = cube_with_unranged_edge(Point3::new(10.0, 0.0, 0.0));
+    let against =
+        LineCurve::try_new(Point3::new(0.0, 0.0, 0.0), Vector3::new(-1.0, 0.0, 0.0)).unwrap();
+    let curve = ir.geometry.edges[0].curve().cloned().expect("edge curve");
+    ir.geometry
+        .curves
+        .iter_mut()
+        .find(|row| row.id == curve)
+        .expect("edge curve row")
+        .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(against));
+    let edge = ir.geometry.edges[0].id.clone();
+    for ordinal in 0..ir.geometry.coedges.len() {
+        if ir.geometry.coedges[ordinal].edge != edge {
+            continue;
+        }
+        let geometry = plane_pcurve(
+            &ir,
+            &ir.geometry.coedges[ordinal],
+            [Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 0.0, 0.0)],
+            [-10.0, 0.0],
+        );
+        let id = PcurveId::mint(format!("generated:test:against-pcurve#{ordinal}")).unwrap();
+        ir.geometry.pcurves.push(Pcurve {
+            id: id.clone(),
+            geometry,
+            metadata: PcurveMetadata::default(),
+            native_ref: None,
+        });
+        ir.geometry.coedges[ordinal].pcurves = vec![PcurveUse {
+            pcurve: id,
+            isoparametric: None,
+            parameter_range: None,
+        }];
+    }
+    let (report, decoded) = write(&ir);
+    assert!(
+        !charges(&report, &geometry_omitted()),
+        "{:#?}",
+        report.losses
+    );
+    assert!(
+        !charges(
+            &report,
+            &F3dLossCode::WriterPcurveOmitted.kind().to_string()
+        ),
+        "{:#?}",
+        report.losses
+    );
+    let written = &decoded.geometry.edges[0];
+    let [start, end] = written.param_range().expect("the edge is written").get();
+    assert!((start + 10.0).abs() < EPS_PARAMETER && end.abs() < EPS_PARAMETER);
+    let first = written.ends.as_ref().expect("edge ends").start.clone();
+    let point = &decoded
+        .geometry
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id == first)
+        .expect("start vertex")
+        .point;
+    let position = decoded
+        .geometry
+        .points
+        .iter()
+        .find(|row| row.id == *point)
+        .expect("start point")
+        .position()
+        .get();
+    assert!(position.distance(Point3::new(10.0, 0.0, 0.0)) < EPS_PARAMETER);
+    assert_eq!(edge_errors(&decoded), Vec::<String>::new());
+}
+
+#[test]
+fn an_open_edge_off_its_curve_is_ranged_between_the_feet_with_a_loss() {
+    let ir = cube_with_unranged_edge(Point3::new(10.0, 5.0, 0.0));
+    let edge = ir.geometry.edges[0].id.to_string();
+    let report = assert_written_with_loss(&ir, None, &geometry_omitted(), &edge);
+    assert!(
+        report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(&edge) && loss.message.contains("5.000000 mm")),
+        "{:#?}",
+        report.losses
+    );
+    let (_, decoded) = write(&ir);
+    let [start, end] = decoded.geometry.edges[0]
+        .param_range()
+        .expect("the edge is written with a range")
+        .get();
+    assert!(start.abs() < EPS_PARAMETER && (end - 10.0).abs() < EPS_PARAMETER);
+}
+
+/// A box with a one-edge loop on its top face at `(5, 5, 10)`, whose closed
+/// edge has a point carrier at `point` and no range.
+fn box_with_point_edge(point: Point3) -> CadIr {
+    let corners = [
+        [0.0, 0.0, 0.0],
+        [10.0, 0.0, 0.0],
+        [10.0, 10.0, 0.0],
+        [0.0, 10.0, 0.0],
+        [0.0, 0.0, 10.0],
+        [10.0, 0.0, 10.0],
+        [10.0, 10.0, 10.0],
+        [0.0, 10.0, 10.0],
+    ];
+    let faces = cadmpeg_test_support::polyhedron::box_faces([0, 1, 2, 3, 4, 5, 6, 7]);
+    let faces = faces.iter().map(<[usize; 4]>::as_slice).collect::<Vec<_>>();
+    let mut ir = cadmpeg_test_support::polyhedron::polyhedron(&corners, &faces).unwrap();
+    let vertex_point = PointId::mint("test:model:point#apex").unwrap();
+    let vertex = VertexId::mint("test:model:vertex#apex").unwrap();
+    let curve = CurveId::mint("test:model:curve#apex").unwrap();
+    let edge = EdgeId::mint("test:model:edge#apex").unwrap();
+    let coedge = CoedgeId::mint("test:model:coedge#apex").unwrap();
+    let apex_loop = LoopId::mint("test:model:loop#apex").unwrap();
+    let top = &mut ir.geometry.faces[1];
+    let outer = top.loops.iter().next().unwrap().clone();
+    top.loops = FaceLoops::unspecified(vec![outer, apex_loop.clone()]);
+    let top = top.id.clone();
+    ir.geometry.points.push(Point::new(
+        vertex_point.clone(),
+        FinitePoint3::new(Point3::new(5.0, 5.0, 10.0)).unwrap(),
+        None,
+    ));
+    ir.geometry.vertices.push(Vertex {
+        id: vertex.clone(),
+        point: vertex_point,
+        tolerance: None,
+        native_ref: None,
+    });
+    ir.geometry.curves.push(Curve {
+        parameter_range: None,
+        id: curve.clone(),
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Degenerate(DegenerateCurve::new(
+            FinitePoint3::new(point).unwrap(),
+        ))),
+        source_object: None,
+        native_ref: None,
+    });
+    ir.geometry.edges.push(Edge {
+        id: edge.clone(),
+        carrier: EdgeCarrier::new(Some(curve), None).unwrap(),
+        ends: Some(EdgeEnds::new(vertex.clone(), vertex)),
+        tolerance: None,
+        native_ref: None,
+    });
+    ir.geometry.coedges.push(Coedge {
+        id: coedge.clone(),
+        owner_loop: apex_loop.clone(),
+        edge,
+        radial_next: coedge.clone(),
+        sense: Sense::Forward,
+        pcurves: Vec::new(),
+        use_curve: None,
+        native_ref: None,
+    });
+    ir.geometry.loops.push(Loop {
+        id: apex_loop,
+        face: top,
+        boundary: LoopBoundary::Ring(LoopRing::new(vec![coedge], Vec::new()).unwrap()),
+        native_ref: None,
+    });
+    ir.finalize();
+    ir
+}
+
+#[test]
+fn a_closed_edge_on_a_point_is_written_with_a_null_curve() {
+    let ir = box_with_point_edge(Point3::new(5.0, 5.0, 10.0));
+    let (report, decoded) = write(&ir);
+    assert!(
+        !charges(&report, &F3dLossCode::WriterBodyOmitted.kind().to_string()),
+        "{:#?}",
+        report.losses
+    );
+    assert_eq!(decoded.geometry.edges.len(), ir.geometry.edges.len());
+    let collapsed = decoded
+        .geometry
+        .edges
+        .iter()
+        .find(|edge| {
+            edge.ends
+                .as_ref()
+                .is_some_and(|ends| ends.start == ends.end)
+        })
+        .expect("the collapsed edge is written");
+    assert!(
+        collapsed
+            .curve()
+            .is_some_and(|curve| curve.as_str().contains("point-edge-curve")),
+        "{collapsed:?}"
+    );
+}
+
+#[test]
+fn a_closed_edge_beside_its_point_keeps_its_carrier() {
+    let ir = box_with_point_edge(Point3::new(5.0, 5.0, 11.0));
+    assert_written_with_loss(
+        &ir,
+        None,
+        &F3dLossCode::WriterBodyOmitted.kind().to_string(),
+        "requires a parameter range",
+    );
+}

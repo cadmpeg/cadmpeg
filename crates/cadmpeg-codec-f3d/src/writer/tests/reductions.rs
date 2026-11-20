@@ -388,3 +388,5 @@ fn a_body_without_a_retained_key_takes_a_key_no_other_body_holds() {
         "the retained key is kept: {keys:?}"
     );
 }
+
+mod edge_ranges;

@@ -1131,7 +1131,7 @@ pub(crate) enum F3dLossCode {
     WriterSourceAssociationOmitted,
     /// A body was not written, with the topology and geometry only it uses.
     WriterBodyOmitted,
-    /// Geometry no written body uses was not written.
+    /// Geometry was not written as the source states it.
     WriterGeometryOmitted,
     /// An appearance was not written.
     WriterAppearanceOmitted,
