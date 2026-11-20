@@ -29,7 +29,7 @@ fn poles(rational: bool) -> PcurveNurbsPoles<FinitePoint2> {
 
 #[test]
 fn evaluator_lanes_copy_both_lanes() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for rational in [false, true] {
         let source = poles(rational);
         let lanes = PcurveEvaluatorLanes::new(&source);
@@ -44,7 +44,7 @@ fn evaluator_lanes_copy_both_lanes() {
 
 #[test]
 fn evaluator_lanes_keep_empty_weight_presence() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for rational in [false, true] {
         let source = if rational {
             PcurveNurbsPoles::Rational { points: Vec::new() }

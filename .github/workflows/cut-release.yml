@@ -110,8 +110,8 @@ jobs:
               failed="$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${sha}" \
                 --jq '[.workflow_runs[] | select(.path == ".github/workflows/ci.yml" and .status == "completed" and .conclusion != "success")] | length')"
               if [[ "${pending}" -eq 0 && "${failed}" -gt 0 ]]; then
-                # A push to main cancels the in-progress main run, and the
-                # next main run tests every commit since the last passing run.
+                # A push to main replaces the queued main run, and the next
+                # main run tests every commit since the last passing run.
                 git fetch origin main
                 if [[ "$(git rev-parse origin/main)" != "${sha}" ]]; then
                   echo "CI did not pass on ${sha}, and origin/main moved past it"
@@ -190,7 +190,7 @@ jobs:
             read -r id status conclusion <<<"${run}"
             case "${status}/${conclusion}" in
               completed/success) break ;;
-              # A newer push to main cancelled the run before it finished.
+              # A newer push to main replaced the run while it was queued.
               completed/cancelled) gh api -X POST "repos/${{ github.repository }}/actions/runs/${id}/rerun" ;;
               completed/*)
                 echo "::error::CI failed on ${SHA}; nothing was tagged. Fix main, then release the next version." >&2

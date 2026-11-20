@@ -257,6 +257,64 @@ const TOP: &[i64] = &[2];
 const ALL: &[i64] = &[1, 2, 3, 4, 5, 6];
 
 #[test]
+fn shell_recipe_reads_tags_before_later_face_deletion() {
+    use crate::history_records::AsmHistoricalPersistentSubentityTag;
+    use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
+    use crate::test_support::history::{bounded_face_operand, recipe_operand_reference};
+
+    let mut input = topology(false);
+    input
+        .persistent_subentity_tags
+        .push(AsmHistoricalPersistentSubentityTag {
+            entity_kind: AsmHistoricalEntityKind::Face,
+            entity_ref: 2,
+            selector: 1,
+            token: "7".into(),
+            token_integer: 0,
+            design_references: vec![113],
+            ordinal: 0,
+        });
+    let history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(3, AsmHistoricalTopology::default(), Some(2), &[]),
+            state(2, topology(true), Some(1), TOP),
+            state(1, input, None, &[]),
+        ],
+    );
+    let mut operand = bounded_face_operand(vec![recipe_operand_reference(0, "7", 113, &[])]);
+    operand.recipe_kind = crate::records::recipes::ConstructionRecipeKind::Face;
+    operand.group.as_mut().unwrap().group_record_index = 43;
+    assert!(operand.candidate_faces.is_empty());
+    let mut operands = vec![operand];
+    crate::test_support::with_decode_context(|ctx| {
+        crate::history::bind_face_operand_history_candidates(
+            ctx,
+            &mut operands,
+            &[scope(42)],
+            &[group(42, &[110])],
+            &[],
+            crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+            &std::collections::HashMap::new(),
+        )
+    })
+    .unwrap();
+    assert_eq!(operands[0].resolved_face_slots, [2]);
+    assert_eq!(
+        operands[0].preceding_candidate_faces,
+        [crate::ids::brep_face_id(2)]
+    );
+    assert!(history
+        .topology(&history.states()[0])
+        .unwrap()
+        .faces
+        .is_empty());
+}
+
+#[test]
 fn shell_group_binds_to_the_face_its_transition_opens() {
     for updated in [TOP, ALL] {
         assert_eq!(
@@ -319,4 +377,309 @@ fn shell_group_of_another_stream_does_not_bind() {
         bind_group(OTHER, &scope(42), &[group_in(OTHER, 42, &[7])], None, TOP),
         FaceSelection::Native(OTHER.into())
     );
+}
+
+fn bounded_shell_input() -> (
+    AsmHistoricalTopology,
+    Vec<crate::records::dimensions::DesignRecipeReference>,
+) {
+    use crate::history_records::{
+        AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalPersistentSubentityTag,
+        AsmHistoricalRelation,
+    };
+    use crate::records::topology::body_recipe::AsmHistoricalEntityKind;
+    use crate::test_support::history::recipe_operand_reference;
+
+    let mut input = AsmHistoricalTopology {
+        faces: vec![100, 101, 102, 103],
+        edges: (10..16).collect(),
+        vertices: (1..5).collect(),
+        edge_vertices: [
+            (10, 1, 2),
+            (11, 2, 3),
+            (12, 3, 1),
+            (13, 1, 4),
+            (14, 4, 2),
+            (15, 3, 4),
+        ]
+        .into_iter()
+        .map(|(edge, start_vertex, end_vertex)| AsmHistoricalEdge {
+            edge,
+            start_vertex,
+            end_vertex,
+        })
+        .collect(),
+        ..Default::default()
+    };
+    let mut references = Vec::new();
+    for (ordinal, edges) in [[10, 11, 12], [10, 13, 14], [11, 14, 15], [12, 15, 13]]
+        .into_iter()
+        .enumerate()
+    {
+        let ordinal = i64::try_from(ordinal).unwrap();
+        let face = 100 + ordinal;
+        let loop_ = face + 100;
+        let coedges: Vec<_> = (face * 10..face * 10 + 3).collect();
+        input.loops.push(loop_);
+        input.coedges.extend(&coedges);
+        input.face_loops.push(AsmHistoricalRelation {
+            owner_ref: face,
+            member_refs: vec![loop_],
+        });
+        input.loop_coedges.push(AsmHistoricalRelation {
+            owner_ref: loop_,
+            member_refs: coedges.clone(),
+        });
+        for (position, edge) in edges.into_iter().enumerate() {
+            input.coedge_topology.push(AsmHistoricalCoedge {
+                coedge: coedges[position],
+                owner_loop: loop_,
+                edge,
+                next: coedges[(position + 1) % 3],
+                previous: coedges[(position + 2) % 3],
+                radial_next: 0,
+            });
+        }
+        let token = (ordinal + 1).to_string();
+        references.push(recipe_operand_reference(
+            u64::try_from(ordinal).unwrap(),
+            &token,
+            10 + ordinal,
+            &[],
+        ));
+        input
+            .persistent_subentity_tags
+            .push(AsmHistoricalPersistentSubentityTag {
+                entity_kind: AsmHistoricalEntityKind::Face,
+                entity_ref: face,
+                selector: 1,
+                token,
+                token_integer: 0,
+                design_references: vec![10 + ordinal],
+                ordinal: 0,
+            });
+    }
+    (input, references)
+}
+
+fn bounded_shell_member(
+    references: Vec<crate::records::dimensions::DesignRecipeReference>,
+    unread_node: bool,
+) -> crate::records::topology::face::DesignFaceOperand {
+    use crate::records::topology::face::DesignFaceRecipeNode;
+    use crate::test_support::history::bounded_face_operand;
+
+    let mut operand = bounded_face_operand(references);
+    operand.group.as_mut().unwrap().group_record_index = 43;
+    operand.candidate_faces = vec![crate::ids::brep_face_id(101)];
+    operand.recipe_program = vec![0, -1, 3];
+    for (other, fans) in [
+        (1, [[0, 1, 3], [0, 1, 2]]),
+        (2, [[0, 1, 2], [0, 2, 3]]),
+        (3, [[0, 2, 3], [0, 1, 3]]),
+    ] {
+        let mut fields = vec![0, -1, other, -1, 2, -1];
+        for fan in fans {
+            fields.extend([3, fan[0], -1, fan[1], -1, fan[2], -1, 0, 0, -1]);
+        }
+        let structure = crate::test_support::with_decode_context(|ctx| {
+            crate::design::decode::operands::face_recipe_structure(ctx, &fields)
+                .unwrap()
+                .unwrap()
+        });
+        let mut program = vec![-1, -1, 2];
+        program.extend(fields);
+        operand.recipe_program.extend(&program);
+        operand.recipe_nodes.push(DesignFaceRecipeNode {
+            byte_offset: 0,
+            end_byte_offset: 12,
+            program,
+            recipe_structure: Some(structure),
+        });
+    }
+    if unread_node {
+        operand.recipe_nodes.last_mut().unwrap().recipe_structure = None;
+    }
+    operand
+}
+
+fn add_shell_inner_loop(input: &mut AsmHistoricalTopology) {
+    use crate::history_records::{AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalRelation};
+
+    input.faces.push(104);
+    let mut tag = input
+        .persistent_subentity_tags
+        .iter()
+        .find(|tag| tag.entity_ref == 100)
+        .unwrap()
+        .clone();
+    tag.entity_ref = 104;
+    input.persistent_subentity_tags.push(tag);
+    input.edges.push(20);
+    input.vertices.push(5);
+    input.edge_vertices.push(AsmHistoricalEdge {
+        edge: 20,
+        start_vertex: 5,
+        end_vertex: 5,
+    });
+    input
+        .face_loops
+        .iter_mut()
+        .find(|row| row.owner_ref == 100)
+        .unwrap()
+        .member_refs
+        .push(300);
+    input.face_loops.push(AsmHistoricalRelation {
+        owner_ref: 104,
+        member_refs: vec![301],
+    });
+    for (loop_, coedge, radial_next) in [(300, 2000, 2001), (301, 2001, 2000)] {
+        input.loops.push(loop_);
+        input.coedges.push(coedge);
+        input.loop_coedges.push(AsmHistoricalRelation {
+            owner_ref: loop_,
+            member_refs: vec![coedge],
+        });
+        input.coedge_topology.push(AsmHistoricalCoedge {
+            coedge,
+            owner_loop: loop_,
+            edge: 20,
+            next: coedge,
+            previous: coedge,
+            radial_next,
+        });
+    }
+}
+
+fn bind_bounded_shell_operand(
+    unread_node: bool,
+    inner_loop: bool,
+) -> crate::records::topology::face::DesignFaceOperand {
+    bind_bounded_shell_operand_with_aliases(unread_node, inner_loop, &[])
+}
+
+fn alias_shell_neighbors(input: &mut AsmHistoricalTopology, aliases: &[(i64, i64)]) {
+    for &(left, right) in aliases {
+        let tags = input
+            .persistent_subentity_tags
+            .iter()
+            .filter(|tag| tag.entity_ref == left || tag.entity_ref == right)
+            .cloned()
+            .collect::<Vec<_>>();
+        for mut tag in tags {
+            tag.entity_ref = if tag.entity_ref == left { right } else { left };
+            tag.ordinal = input
+                .persistent_subentity_tags
+                .iter()
+                .filter(|existing| existing.entity_ref == tag.entity_ref)
+                .map(|existing| existing.ordinal)
+                .max()
+                .unwrap()
+                .checked_add(1)
+                .unwrap();
+            input.persistent_subentity_tags.push(tag);
+        }
+    }
+    input
+        .persistent_subentity_tags
+        .sort_by_key(|tag| (tag.entity_ref, tag.ordinal));
+}
+
+fn bind_bounded_shell_operand_with_aliases(
+    unread_node: bool,
+    inner_loop: bool,
+    aliases: &[(i64, i64)],
+) -> crate::records::topology::face::DesignFaceOperand {
+    let (mut input, references) = bounded_shell_input();
+    alias_shell_neighbors(&mut input, aliases);
+    if inner_loop {
+        add_shell_inner_loop(&mut input);
+    }
+    let operand = bounded_shell_member(references, unread_node);
+    let removed_loops = input
+        .face_loops
+        .iter()
+        .find(|row| row.owner_ref == 100)
+        .unwrap()
+        .member_refs
+        .clone();
+    let removed_coedges = input
+        .coedge_topology
+        .iter()
+        .filter(|row| removed_loops.contains(&row.owner_loop))
+        .map(|row| row.coedge)
+        .collect::<Vec<_>>();
+    let mut output = input.clone();
+    output.faces.retain(|face| *face != 100);
+    output.loops.retain(|loop_| !removed_loops.contains(loop_));
+    output
+        .coedges
+        .retain(|coedge| !removed_coedges.contains(coedge));
+    output.face_loops.retain(|row| row.owner_ref != 100);
+    output
+        .loop_coedges
+        .retain(|row| !removed_loops.contains(&row.owner_ref));
+    output
+        .coedge_topology
+        .retain(|row| !removed_loops.contains(&row.owner_loop));
+    output
+        .persistent_subentity_tags
+        .retain(|tag| tag.entity_ref != 100);
+    let history = crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(3, AsmHistoricalTopology::default(), Some(2), &[]),
+            state(2, output, Some(1), &[]),
+            state(1, input, None, &[]),
+        ],
+    );
+    let mut operands = vec![operand];
+    crate::test_support::with_decode_context(|ctx| {
+        crate::history::bind_face_operand_history_candidates(
+            ctx,
+            &mut operands,
+            &[scope(42)],
+            &[group(42, &[110])],
+            &[],
+            crate::history::BindingHistories::Shared(std::slice::from_ref(&history)),
+            &std::collections::HashMap::new(),
+        )
+    })
+    .unwrap();
+    operands.pop().unwrap()
+}
+
+#[test]
+fn shell_boundary_program_resolves_the_preceding_face() {
+    let operand = bind_bounded_shell_operand(false, false);
+    assert_eq!(
+        operand.preceding_candidate_faces,
+        [crate::ids::brep_face_id(101)]
+    );
+    assert_eq!(operand.resolved_face_slots, [100]);
+}
+
+#[test]
+fn unread_shell_boundary_keeps_member_unresolved() {
+    let operand = bind_bounded_shell_operand(true, false);
+    assert_eq!(
+        operand.preceding_candidate_faces,
+        [crate::ids::brep_face_id(101)]
+    );
+    assert!(operand.resolved_face_slots.is_empty());
+}
+
+#[test]
+fn shell_boundary_loop_selects_the_face_with_an_inner_loop() {
+    let operand = bind_bounded_shell_operand(false, true);
+    assert_eq!(operand.resolved_face_slots, [100]);
+}
+
+#[test]
+fn shell_boundary_program_assigns_edges_across_aliased_neighbors() {
+    let operand = bind_bounded_shell_operand_with_aliases(false, false, &[(101, 102)]);
+    assert_eq!(operand.resolved_face_slots, [100]);
 }

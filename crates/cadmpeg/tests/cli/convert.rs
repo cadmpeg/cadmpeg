@@ -574,7 +574,6 @@ fn source_less_ir_exports_to_decodable_rhino() {
             input.to_str().unwrap(),
             "-o",
             output.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -630,7 +629,6 @@ fn rhino_output_version_is_selected_explicitly() {
                 output.to_str().unwrap(),
                 "--to",
                 spelling,
-                "--allow-errors",
             ])
             .assert()
             .success();
@@ -648,19 +646,23 @@ fn rhino_output_version_is_selected_explicitly() {
 
 #[cfg(feature = "step")]
 #[test]
-fn check_blocks_conversion_unless_overridden() {
+fn convert_writes_and_reports_check_errors_unless_rejected() {
+    use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
     let mut invalid = unit_cube().expect("unit cube fixture is admitted");
     invalid.geometry.faces[0].surface =
         cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#missing")
             .expect("valid identity for an absent surface");
+    let face = invalid.geometry.faces[0].id.to_string();
     let input = fixture(dir.path(), "invalid.json", &invalid);
-    let output = dir.path().join("blocked.step");
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args(["check", input.to_str().unwrap()])
         .assert()
         .code(1);
+
+    let written = dir.path().join("written.step");
+    let written_report = dir.path().join("written-report.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([
@@ -669,26 +671,53 @@ fn check_blocks_conversion_unless_overridden() {
             "-f",
             "step",
             "-o",
-            output.to_str().unwrap(),
+            written.to_str().unwrap(),
+            "--report",
+            written_report.to_str().unwrap(),
+        ])
+        .assert()
+        .code(0)
+        .stderr(
+            predicate::str::contains("check: FAILED")
+                .and(predicate::str::contains("output writes")),
+        );
+    assert!(written.exists());
+    let value: serde_json::Value =
+        serde_json::from_slice(&fs::read(&written_report).unwrap()).unwrap();
+    assert!(value["refusal"].is_null(), "{value:#}");
+    assert!(
+        value["check_report"]["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| finding["severity"] == "error" && finding["entity"] == face.as_str()),
+        "{value:#}"
+    );
+
+    let refused = dir.path().join("refused.step");
+    let refused_report = dir.path().join("refused-report.json");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-f",
+            "step",
+            "-o",
+            refused.to_str().unwrap(),
+            "--report",
+            refused_report.to_str().unwrap(),
+            "--reject-errors",
         ])
         .assert()
         .code(1)
-        .stderr(predicate::str::contains("refusing to export"));
-    assert!(!output.exists());
-    Command::cargo_bin("cadmpeg")
-        .unwrap()
-        .args([
-            "convert",
-            input.to_str().unwrap(),
-            "-f",
-            "step",
-            "-o",
-            output.to_str().unwrap(),
-            "--allow-errors",
-        ])
-        .assert()
-        .success();
-    assert!(output.exists());
+        .stderr(predicate::str::contains(
+            "refusing to export under --reject-errors",
+        ));
+    assert!(!refused.exists());
+    let value: serde_json::Value =
+        serde_json::from_slice(&fs::read(&refused_report).unwrap()).unwrap();
+    assert_eq!(value["refusal"]["code"], "check_failed");
 }
 
 #[cfg(feature = "step")]
@@ -1099,7 +1128,6 @@ fn convert_refuses_binary_output_to_stdout() {
             "rhino",
             "-o",
             out.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -1113,7 +1141,6 @@ fn convert_refuses_binary_output_to_stdout() {
             point.to_str().unwrap(),
             "--format",
             "rhino",
-            "--allow-errors",
             "--binary-stdout",
         ])
         .output()
@@ -1192,7 +1219,6 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
             original.to_str().unwrap(),
             "--to",
             "5.1",
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -1206,7 +1232,6 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
             original.to_str().unwrap(),
             "-o",
             inherited.to_str().unwrap(),
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -1222,7 +1247,6 @@ fn a_same_format_convert_replays_a_non_default_iges_version() {
             upgraded.to_str().unwrap(),
             "--to",
             "5.3",
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -1261,7 +1285,6 @@ fn a_to_that_names_only_the_format_still_inherits() {
             original.to_str().unwrap(),
             "--to",
             "iges:5.1-fixed-ascii",
-            "--allow-errors",
         ])
         .assert()
         .success();
@@ -1278,7 +1301,6 @@ fn a_to_that_names_only_the_format_still_inherits() {
                 inherited.to_str().unwrap(),
                 "--to",
                 spelling,
-                "--allow-errors",
             ])
             .assert()
             .success();

@@ -55,7 +55,7 @@ fn decode_keeps_section_and_model_entity_admission_additive() {
     options.policy.limits.max_entities = 2;
     let error = CreoCodec
         .decode(&mut Cursor::new(fixture), &options)
-        .expect_err("one section plus two model entities require an entity limit of three");
+        .expect_err("one section plus three model entities require an entity limit of four");
     assert!(
         matches!(
             error,

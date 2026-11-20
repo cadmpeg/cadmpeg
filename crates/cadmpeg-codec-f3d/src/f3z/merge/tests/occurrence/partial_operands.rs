@@ -54,7 +54,7 @@ fn partial_connector_objects_follow_their_archive_source_scope() {
             vec!["construction-record#10".to_owned()],
         );
     }
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for occurrence in ["first", "second"] {
         let expected =
             format!("f3d:xref/{occurrence}/Design/BulkStream.dat:design-parameter-scope#30");
@@ -157,7 +157,7 @@ fn form_occurrences_rewrite_every_typed_identity_with_absent_native_targets() {
             .try_into()
             .unwrap(),
     );
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for occurrence in ["left", "right"] {
         let rewritten = OccurrenceScope {
             ctx: &ctx,
