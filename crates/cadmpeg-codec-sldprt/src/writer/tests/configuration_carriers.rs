@@ -1568,7 +1568,7 @@ fn semantic_writer_preserves_unbound_material_definition() {
 }
 
 #[test]
-fn semantic_writer_rejects_overlong_material_names() {
+fn semantic_writer_keeps_retained_materials_when_a_name_outgrows_its_field() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body_and_material(
@@ -1586,14 +1586,18 @@ fn semantic_writer_rejects_overlong_material_names() {
         cadmpeg_ir::topology::Color::new(32.0 / 255.0, 64.0 / 255.0, 128.0 / 255.0, 1.0)
             .expect("valid color"),
     );
-    let error = crate::test_support::plan_inherited_write(
+    let (_, losses) = crate::test_support::write_with_unwritten_attributes(
         decoded.ir(),
         decoded.source_fidelity(),
-        &mut Vec::new(),
     )
-    .unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-    assert!(error.to_string().contains("material name is too long"));
+    .unwrap();
+    assert!(
+        losses
+            .dropped
+            .iter()
+            .any(|message| message.contains("keeps the retained SWObjects materials")),
+        "{losses:?}"
+    );
 }
 
 #[test]

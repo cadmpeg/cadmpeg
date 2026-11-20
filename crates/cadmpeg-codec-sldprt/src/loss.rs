@@ -290,6 +290,9 @@ pub(crate) enum SldprtLossCode {
     WriterAttributesOmitted,
     /// Export omits records named by the counted loss message.
     WriterUnboundAppearancesOmitted,
+    /// Export writes no `SWObjects` material for the appearances or bodies
+    /// named by the counted loss message.
+    WriterMaterialsOmitted,
     /// Export omits records named by the counted loss message.
     WriterTessellationMetadataOmitted,
     /// Semantic regeneration omits native cache or directory-padding bytes.
@@ -446,6 +449,7 @@ impl SldprtLossCode {
         Self::WriterAppearanceBindingsOmitted,
         Self::WriterAttributesOmitted,
         Self::WriterUnboundAppearancesOmitted,
+        Self::WriterMaterialsOmitted,
         Self::WriterTessellationMetadataOmitted,
         Self::WriterNativeEnvelopeAuxiliaryOmitted,
         Self::SourceDialectDisplaced,
@@ -583,6 +587,7 @@ impl SldprtLossCode {
             Self::WriterAppearanceBindingsOmitted => "writer.appearance-bindings-omitted",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
             Self::WriterUnboundAppearancesOmitted => "writer.unbound-appearances-omitted",
+            Self::WriterMaterialsOmitted => "writer.materials-omitted",
             Self::WriterTessellationMetadataOmitted => "writer.tessellation-metadata-omitted",
             Self::WriterNativeEnvelopeAuxiliaryOmitted => {
                 "writer.native-envelope-auxiliary-omitted"
@@ -628,6 +633,7 @@ impl SldprtLossCode {
             Self::WriterTessellationMetadataOmitted => Severity::Warning,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => Severity::Warning,
             Self::WriterUnboundAppearancesOmitted => Severity::Warning,
+            Self::WriterMaterialsOmitted => Severity::Warning,
             Self::WriterAttributesOmitted => Severity::Warning,
             Self::WriterAppearanceBindingsOmitted => Severity::Warning,
             Self::WriterSphereSeamCurvesOmitted => Severity::Warning,
@@ -764,6 +770,7 @@ impl SldprtLossCode {
             Self::WriterTessellationMetadataOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterNativeEnvelopeAuxiliaryOmitted => LossTaxonomy::MetadataNotTransferred,
             Self::WriterUnboundAppearancesOmitted => LossTaxonomy::AppearanceReduced,
+            Self::WriterMaterialsOmitted => LossTaxonomy::MaterialNotTransferred,
             Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
             Self::WriterAppearanceBindingsOmitted => LossTaxonomy::AppearanceReduced,
             Self::WriterSphereSeamCurvesOmitted => LossTaxonomy::GeometryNotTransferred,
@@ -1182,6 +1189,7 @@ mod tests {
                 "writer.appearance-bindings-omitted",
                 "writer.attributes-omitted",
                 "writer.unbound-appearances-omitted",
+                "writer.materials-omitted",
                 "writer.tessellation-metadata-omitted",
                 "writer.native-envelope-auxiliary-omitted",
                 "target.source-dialect-displaced",

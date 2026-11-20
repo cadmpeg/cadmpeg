@@ -9,6 +9,7 @@ mod accounting;
 mod default_properties;
 mod edge_direction;
 mod envelope;
+mod materials;
 mod metadata_owners;
 mod ownership;
 pub(crate) mod target;
@@ -16,11 +17,12 @@ pub(crate) mod target;
 pub(crate) use accounting::{Held, Unwritten, UnwrittenAttributes};
 
 use crate::native::SldprtNative;
-use cadmpeg_core::convert::{f32_from_f64, truncate_f64_to_u8};
+use cadmpeg_core::convert::f32_from_f64;
 use cadmpeg_core::decode::{index_from_u32, DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::attributes::AttributeValue;
+use cadmpeg_ir::codec::write::capacity::{TextCapacity, TextUnit};
 use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FinitePoint3;
@@ -132,6 +134,9 @@ pub(crate) fn write_semantic_with_records(
     }
     let mut source_baseline = None;
     let mut unwritten = UnwrittenAttributes::default();
+    let mut losses = Vec::new();
+    // `export:value.unwritable` entries: texts cut to their field's width.
+    let mut cut = Vec::new();
     if default_properties::requires_guard(&normalized, source_scan.as_ref()) {
         let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
         // No serializer writes a saved property: an edited one is charged and
@@ -158,8 +163,10 @@ pub(crate) fn write_semantic_with_records(
         &feature_name_changes,
     );
     let ir = &normalized;
-    let feature_input_renames = crate::history::write::prepare_features_for_write(ir, &mut native)?;
-    crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native)?;
+    let mut feature_input_renames =
+        crate::history::write::prepare_features_for_write(ir, &mut native)?;
+    fit_feature_input_renames(&mut feature_input_renames, &mut cut);
+    crate::resolved_features::write_prepare::prepare_sketches_for_write(ir, &mut native, &mut cut)?;
     crate::history::write::parameters::prepare_parameters_for_write(
         ir,
         &mut native,
@@ -238,7 +245,7 @@ pub(crate) fn write_semantic_with_records(
         .map(|(section, _)| section.clone())
         .collect::<HashSet<_>>();
     let mut sections = partition_sections;
-    let materials = materials_payload(ir)?;
+    let materials = materials::materials_payload(ir);
     let owners = metadata_owners::metadata_owners(
         ir,
         retained_records,
@@ -264,9 +271,11 @@ pub(crate) fn write_semantic_with_records(
                     .get(SWOBJECTS_MATERIAL_LOCAL_DIGEST_ATTRIBUTE)
             });
             if material_baseline != Some(&swobjects_material_local_sha256(&digest_ctx, ir)?) {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT writer cannot edit retained SWObjects semantics without replacing opaque record bytes"
-                        .into(),
+                let baseline =
+                    retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
+                losses.push(materials::retained_materials_kept(
+                    ir,
+                    baseline.map(|baseline| &baseline.ir),
                 ));
             }
             members.written = patch_retained_swobjects_metadata(
@@ -282,7 +291,8 @@ pub(crate) fn write_semantic_with_records(
     } else {
         false
     };
-    let (objects, units) = metadata_payloads(ir, length_scale, replay_swobjects, &mut unwritten);
+    let (objects, units) =
+        metadata_payloads(ir, length_scale, replay_swobjects, &mut unwritten, &mut cut);
     if replay_swobjects {
         generated_partition_sections
             .extend(retained_swobjects.iter().map(|(name, _)| name.clone()));
@@ -290,9 +300,11 @@ pub(crate) fn write_semantic_with_records(
             members.push(&mut sections, &mut unwritten, name, payload);
         }
     } else {
-        if !materials.is_empty() {
-            sections.push(("SWObjects".into(), materials));
+        if !materials.bytes.is_empty() {
+            sections.push(("SWObjects".into(), materials.bytes));
         }
+        cut.extend(materials.cut);
+        losses.extend(materials.omitted);
         if !objects.is_empty() {
             sections.push(("SWObjects/DocumentMetadata".into(), objects));
         }
@@ -413,7 +425,12 @@ pub(crate) fn write_semantic_with_records(
     let type_ids = section_type_ids(source_scan.as_ref(), &sections)?;
     let envelope = envelope::build(&sections, &type_ids, source_scan.as_ref())?;
     writer.write_all(&envelope.bytes)?;
-    let mut losses = envelope.losses().collect::<Vec<_>>();
+    losses.extend(envelope.losses());
+    losses.extend(cadmpeg_ir::codec::write::value_unwritable(
+        "SLDPRT",
+        "cuts these texts at a character boundary to their field's width",
+        cut,
+    ));
     losses.extend(cadmpeg_ir::codec::write::native_records_omitted(
         "SLDPRT",
         "because the write generates fewer members of their stream than the source stores",
@@ -1440,7 +1457,14 @@ fn patch_retained_record(
             overwrite_bytes(payload, resident.body_offset, &first_word.to_le_bytes())
                 .map_err(mismatch)
         }
-        MetadataRecord::SourceLinearUnitName { units, byte_len } => {
+        MetadataRecord::SourceLinearUnitName {
+            units,
+            byte_len,
+            cut,
+        } => {
+            if cut.is_some() {
+                return Err(Unwritten::Unrepresentable);
+            }
             let marker = offset + UNIT_NAME_TOKEN.len();
             let old_len = resident_unit_name_len(payload, marker).map_err(mismatch)?;
             if usize::from(byte_len) != old_len {
@@ -1574,6 +1598,50 @@ fn patch_active_configuration_xml(
     output.push('"');
     output.push_str(&text[range.end..]);
     Ok(Some(output.into_bytes()))
+}
+
+/// A feature-input object name: a `CString` whose u8 count counts UTF-16
+/// code units.
+const FEATURE_INPUT_OBJECT_NAME: TextCapacity =
+    TextCapacity::new("feature-input object name", TextUnit::Utf16CodeUnit, 255);
+
+/// The resident unit name of `moLengthUserUnits_c`: a u8 byte count of
+/// UTF-16 code units.
+const UNIT_NAME: TextCapacity = TextCapacity::new("unit name", TextUnit::Utf16CodeUnit, 127);
+
+/// Every text field this writer fits to its width (§3.4). The widths test
+/// checks each against its stored count.
+#[cfg(test)]
+pub(crate) const CAPACITY_FIELDS: &[TextCapacity] = &[
+    materials::MATERIAL_NAME,
+    FEATURE_INPUT_OBJECT_NAME,
+    UNIT_NAME,
+    crate::resolved_features::write_prepare::GENERATED_NAME,
+];
+
+/// Cut each rename to [`FEATURE_INPUT_OBJECT_NAME`]. A rename whose cut is
+/// blank is not written.
+fn fit_feature_input_renames(
+    renames: &mut Vec<crate::history::write::features::FeatureInputRename>,
+    cut: &mut Vec<String>,
+) {
+    renames.retain_mut(|rename| {
+        let fitted = FEATURE_INPUT_OBJECT_NAME.fit(rename.value.as_str());
+        let Some(entry) = fitted.unwritable_entry(&format!(
+            "{} object name {}",
+            rename.lane, rename.name_index
+        )) else {
+            return true;
+        };
+        cut.push(entry);
+        match cadmpeg_core::text::NonBlankString::new(fitted.text) {
+            Some(value) => {
+                rename.value = value;
+                true
+            }
+            None => false,
+        }
+    });
 }
 
 /// The bytes written for one feature-input lane.
@@ -1918,7 +1986,12 @@ enum MetadataRecord {
     /// Source linear unit code.
     SourceLinearUnitCode(i64),
     /// A non-empty UTF-16 unit name and its byte length.
-    SourceLinearUnitName { units: Vec<u16>, byte_len: u8 },
+    SourceLinearUnitName {
+        units: Vec<u16>,
+        byte_len: u8,
+        /// The `export:value.unwritable` entry when the name was cut.
+        cut: Option<String>,
+    },
 }
 
 impl MetadataRecord {
@@ -2020,13 +2093,19 @@ impl MetadataRecord {
                     return Err(invalid);
                 };
                 retained(UNIT_NAME_TOKEN)?;
-                let units = name.encode_utf16().collect::<Vec<_>>();
-                // The resident u16 vector occupies two bytes per unit.
-                let byte_len = u8::try_from(units.len() * 2).map_err(|_| invalid)?;
-                if units.is_empty() {
+                let fitted = UNIT_NAME.fit(name);
+                if fitted.units == 0 {
                     return Err(invalid);
                 }
-                Self::SourceLinearUnitName { units, byte_len }
+                let units = fitted.text.encode_utf16().collect::<Vec<_>>();
+                // The resident u16 vector occupies two bytes per unit.
+                let byte_len = u8::try_from(units.len() * 2)
+                    .expect("UNIT_NAME.width fits the u8 byte count (writer::tests::capacity)");
+                Self::SourceLinearUnitName {
+                    units,
+                    byte_len,
+                    cut: fitted.unwritable_entry(attribute.id.as_str()),
+                }
             }
             _ => return Err(Unwritten::UnknownName),
         })
@@ -2091,6 +2170,7 @@ fn metadata_payloads(
     length_scale: f64,
     retained_swobjects: bool,
     unwritten: &mut UnwrittenAttributes,
+    cut: &mut Vec<String>,
 ) -> (Vec<u8>, Option<Vec<u8>>) {
     let mut objects = Vec::new();
     let mut unit_code = None;
@@ -2126,7 +2206,12 @@ fn metadata_payloads(
                 | MetadataRecord::PartRecord { .. },
             ) => unwritten.record(id, Unwritten::NoSerializer, Held::Nothing),
             Ok(MetadataRecord::SourceLinearUnitCode(code)) => unit_code = Some(code),
-            Ok(MetadataRecord::SourceLinearUnitName { units, byte_len }) => {
+            Ok(MetadataRecord::SourceLinearUnitName {
+                units,
+                byte_len,
+                cut: name_cut,
+            }) => {
+                cut.extend(name_cut);
                 objects.extend_from_slice(UNIT_NAME_TOKEN);
                 objects.extend_from_slice(&[0xff, 0xfe, 0xff, byte_len]);
                 objects.extend(units.into_iter().flat_map(u16::to_le_bytes));
@@ -2147,7 +2232,7 @@ pub(crate) fn swobjects_local_sha256(
 ) -> Result<String, CodecError> {
     let mut attributes = metadata_attributes(ir);
     attributes.retain(|attribute| attribute.name != "source_linear_unit_code");
-    let views = (attributes, swobjects_materials(ir)?);
+    let views = (attributes, materials::swobjects_materials(ir).digest_view());
     Ok(cadmpeg_ir::hash::canonical_json_sha256(ctx, &views)?)
 }
 
@@ -2155,7 +2240,7 @@ pub(crate) fn swobjects_material_local_sha256(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
 ) -> Result<String, CodecError> {
-    let materials = swobjects_materials(ir)?;
+    let materials = materials::swobjects_materials(ir).digest_view();
     Ok(cadmpeg_ir::hash::canonical_json_sha256(ctx, &materials)?)
 }
 
@@ -2813,118 +2898,6 @@ fn descriptor(
     out.extend_from_slice(&count.to_le_bytes());
     out.extend_from_slice(data);
     Ok(())
-}
-
-fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, CodecError> {
-    let appearances = ir
-        .model
-        .appearances
-        .iter()
-        .map(|appearance| (&appearance.id, appearance))
-        .collect::<HashMap<_, _>>();
-    let mut selected: Option<(&str, Color)> = None;
-    for binding in &ir.model.appearance_bindings {
-        let AppearanceTarget::Body(_) = &binding.target.entity else {
-            continue;
-        };
-        let appearance = appearances.get(&binding.appearance).ok_or_else(|| {
-            CodecError::Malformed("body binding references missing appearance".into())
-        })?;
-        let color = appearance.base_color.ok_or_else(|| {
-            CodecError::NotImplemented("SLDPRT body appearance has no base color".into())
-        })?;
-        let material = (appearance.name.as_deref().unwrap_or("Material"), color);
-        if selected
-            .as_ref()
-            .is_some_and(|current| current != &material)
-        {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT writer cannot encode distinct body materials in SWObjects".into(),
-            ));
-        }
-        selected = Some(material);
-    }
-    if selected.is_none() {
-        for body in &ir.geometry.bodies {
-            let Some(color) = body.color else {
-                continue;
-            };
-            let material = (body.name.as_deref().unwrap_or("Material"), color);
-            if selected
-                .as_ref()
-                .is_some_and(|current| current != &material)
-            {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT writer cannot encode distinct body materials in SWObjects".into(),
-                ));
-            }
-            selected = Some(material);
-        }
-    }
-    Ok(selected)
-}
-
-fn materials_payload(ir: &CadIr) -> Result<Vec<u8>, CodecError> {
-    let mut payload = Vec::new();
-    for (name, color) in swobjects_materials(ir)? {
-        payload.extend(material_payload(name, color)?);
-    }
-    Ok(payload)
-}
-
-fn swobjects_materials(ir: &CadIr) -> Result<Vec<(&str, Color)>, CodecError> {
-    let mut materials = Vec::new();
-    if let Some(material) = body_material(ir)? {
-        materials.push(material);
-    }
-    for appearance in &ir.model.appearances {
-        if appearance.schema.as_deref() != Some("moVisualProperties_c") {
-            continue;
-        }
-        let Some(color) = appearance.base_color else {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT material appearance has no base color".into(),
-            ));
-        };
-        let material = (appearance.name.as_deref().unwrap_or("Material"), color);
-        if !materials.contains(&material) {
-            materials.push(material);
-        }
-    }
-    Ok(materials)
-}
-
-fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, CodecError> {
-    let name = name.encode_utf16().collect::<Vec<_>>();
-    let length = u8::try_from(name.len())
-        .map_err(|_| CodecError::NotImplemented("SLDPRT material name is too long".into()))?;
-    if name.is_empty() {
-        return Err(CodecError::Malformed(
-            "SLDPRT material name is empty".into(),
-        ));
-    }
-    let mut out = b"moVisualProperties_c".to_vec();
-    // Every `Color` construction path admits components in [0, 1], so the
-    // rounded product is in [0, 255].
-    let component = |value: f64| {
-        truncate_f64_to_u8((value * 255.0).round()).ok_or_else(|| {
-            CodecError::Malformed("SLDPRT material color component is out of range".into())
-        })
-    };
-    out.extend_from_slice(&[
-        component(color.r())?,
-        component(color.g())?,
-        component(color.b())?,
-        0,
-    ]);
-    out.extend_from_slice(&0u32.to_le_bytes());
-    out.extend_from_slice(&0x00c0_c0c0u32.to_le_bytes());
-    out.extend_from_slice(&[0xff, 0xfe, 0xff, 0x00]);
-    out.extend_from_slice(&[0xff, 0xfe, 0xff, length]);
-    for unit in name {
-        out.extend_from_slice(&unit.to_le_bytes());
-    }
-    Ok(out)
 }
 
 pub(crate) fn brep_body(

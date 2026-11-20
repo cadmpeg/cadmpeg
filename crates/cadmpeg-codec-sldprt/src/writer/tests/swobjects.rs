@@ -64,27 +64,37 @@ fn semantic_writer_replays_unchanged_swobjects_payload() {
 }
 
 #[test]
-fn semantic_writer_rejects_edits_to_retained_swobjects_semantics() {
+fn semantic_writer_keeps_retained_materials_and_drops_their_edit() {
     let source = sldprt_with_body_and_material(&triangle_body(), "Steel", [32, 64, 128]);
     let decoded = SldprtCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
         .unwrap();
     let mut decoded = EditableDecodeResult::from(decoded);
     decoded.ir_mut().model.appearances[0].base_color =
         Some(cadmpeg_ir::topology::Color::new(1.0, 0.0, 0.0, 1.0).expect("valid color"));
+    let appearance = decoded.ir().model.appearances[0].id.as_str().to_owned();
 
-    let error = crate::test_support::plan_inherited_write(
+    let (written, losses) = crate::test_support::write_with_unwritten_attributes(
         decoded.ir(),
         decoded.source_fidelity(),
-        &mut Vec::new(),
     )
-    .unwrap_err();
+    .unwrap();
     assert!(
-        error
-            .to_string()
-            .contains("cannot edit retained SWObjects semantics"),
-        "{error}"
+        losses.dropped.iter().any(|message| {
+            message.contains("keeps the retained SWObjects materials")
+                && message.contains(&appearance)
+        }),
+        "{losses:?}"
     );
+    let members = |bytes: &[u8]| {
+        crate::test_support::container::scan(bytes)
+            .blocks
+            .into_iter()
+            .find(|block| block.section.name() == Some("SWObjects"))
+            .unwrap()
+            .payload
+    };
+    assert_eq!(members(&written), members(&source));
 }
 
 #[test]
@@ -1218,13 +1228,14 @@ fn generated_part_metadata_needs_a_retained_root_serializer() {
         native_ref: None,
     });
     let mut unwritten = UnwrittenAttributes::default();
-    let (objects, units) = crate::writer::metadata_payloads(&ir, 1.0, false, &mut unwritten);
+    let (objects, units) =
+        crate::writer::metadata_payloads(&ir, 1.0, false, &mut unwritten, &mut Vec::new());
     assert!(objects.is_empty());
     assert_eq!(units, None);
     assert_eq!(unwritten.reason(id), Some(Unwritten::NoSerializer));
     let mut retained = UnwrittenAttributes::default();
     assert!(
-        crate::writer::metadata_payloads(&ir, 1.0, true, &mut retained)
+        crate::writer::metadata_payloads(&ir, 1.0, true, &mut retained, &mut Vec::new())
             .0
             .is_empty()
     );
@@ -1252,7 +1263,8 @@ fn generated_metadata_skips_a_record_with_a_null_value() {
         vec![Some(AttributeValue::String("mm".into()))],
     ));
     let mut unwritten = UnwrittenAttributes::default();
-    let (objects, units) = crate::writer::metadata_payloads(&ir, 1.0, false, &mut unwritten);
+    let (objects, units) =
+        crate::writer::metadata_payloads(&ir, 1.0, false, &mut unwritten, &mut Vec::new());
     assert_eq!(objects, b"moLengthUserUnits_c\xff\xfe\xff\x04m\x00m\x00");
     assert_eq!(units, None);
     assert_eq!(
@@ -1311,7 +1323,8 @@ fn generated_metadata_skips_each_record_it_cannot_hold() {
         ),
     ]);
     let mut unwritten = UnwrittenAttributes::default();
-    let (objects, units) = crate::writer::metadata_payloads(&ir, 1.0, false, &mut unwritten);
+    let (objects, units) =
+        crate::writer::metadata_payloads(&ir, 1.0, false, &mut unwritten, &mut Vec::new());
     assert_eq!(objects, b"moLengthUserUnits_c\xff\xfe\xff\x04m\x00m\x00");
     assert_eq!(units, None);
     for (id, reason) in [
