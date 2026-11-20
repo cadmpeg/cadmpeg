@@ -756,11 +756,19 @@ fn install_thin_scope(
     report: &mut Report,
     original: cadmpeg_ir::document::Design,
 ) -> Result<(), Error> {
-    thin::sketches::project(ctx, ir)?;
     let notes = report.notes.len();
-    if let Err(reason) = thin::install_scope(ir, report) {
+    let result = thin::sketches::project(ctx, ir)
+        .and_then(|()| thin::install_scope(ir, report).map_err(Error::Decode));
+    if let Err(reason) = result {
         ir.design = original;
         report.notes.truncate(notes);
+        if matches!(
+            &reason,
+            Error::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+                if limit.scope == cadmpeg_core::decode::LimitScope::Session
+        ) {
+            return Err(reason);
+        }
         for note in &mut report.notes {
             if OnshapeLossCode::ThinModelNotSupported.matches(note) {
                 *note = OnshapeLossCode::ThinNotSupported.note(format!(

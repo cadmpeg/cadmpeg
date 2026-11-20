@@ -8,3 +8,4 @@ mod projection;
 mod rereview;
 mod review;
 mod second_review;
+mod thin_scope;

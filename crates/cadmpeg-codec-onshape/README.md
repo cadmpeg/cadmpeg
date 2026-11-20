@@ -29,9 +29,10 @@ sketches, constraints and parameters retain their decoded constructions.
 The scoped design timeline includes every admitted model feature. Native design members
 carry `onshape/history.design-operation-native`; the model rows retain their
 decoded constructions. Final STEP bodies bind after the complete timeline.
-Failed thin scope installation restores the design state and reports
-`onshape/extrude.thin-not-supported`. Feature annotations use the first admitted
-source record for each model feature.
+Failed thin sketch projection or scope installation restores the design state
+and reports `onshape/extrude.thin-not-supported`. The bundle retains its native
+model operations. Session resource limits propagate to the caller. Feature
+annotations use the first admitted source record for each model feature.
 Explicit historical provenance passes the stored rollback producer proof,
 including tangent-added edges.
 
