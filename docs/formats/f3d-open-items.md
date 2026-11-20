@@ -599,6 +599,14 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Need.** The scope-order pairing must be confirmed or replaced for face groups before a Fillet with several selection sets and face selections transfers its radii as authored.
 
+### DR-891. Fixed Chamfer face groups
+
+**Question.** Does the fixed specification of a Chamfer scope apply to each role-`0x0000001000000000` face group beside the scope's one role-`0x0000000800000000` edge group, and in a two-distance scope, which distance applies to each side of a chamfer face that the transition inserts along a face-group edge?
+
+**Known.** Groups and the fixed scalars store no assignment cross-reference. The decoder applies the fixed specification of the edge-role group to each face-role group of the scope, and charges `feature.chamfer-fixed-face-group-assumed` for this assumption. In a user design, a fixed two-distance Chamfer with distances 0.5 mm and 0.5 mm, one edge-role group, and one face-role group puts every chamfer face along a face-group edge 0.500 mm from that edge, which is the stored setback. Equal distances give the same face for both orientations.
+
+**Need.** A fixed two-distance Chamfer with unequal distances, one edge-role group, and one face-role group shows which distance applies to each side of a face-group chamfer face.
+
 ### DR-101. Fixed typed occurrence path discriminator
 
 **Question.** What binding does the path discriminator of a fixed typed local component occurrence select?
@@ -3818,3 +3826,13 @@ The compact Sketch-point termination of Extrude 4 in `M3 Parametric SHCS.f3d` is
 **Need.** A save with a zero-distance direction one beside a pattern payload, with its direction records and instance positions.
 
 **Note.** The decoder reads the record that the payload names as the direction-one record, takes direction two from the payload V displacement, and charges `feature.rectangular-pattern-direction-one-record-assumed`. A payload without a V displacement leaves the one record to direction two.
+
+### DR-892. Packed-direction split component flag `Z`
+
+**Question.** What does the `Z: true` key in the descriptor of a packed-direction split component encode?
+
+**Known.** The flagged components inflate to their declared byte counts, the two components have equal lengths divisible by four, and every value read as f32 is finite and lies in [-1, 1]. Unflagged packed-direction components store the same layout.
+
+**Need.** Paired containers of one mesh saved with and without the flag, or decoded corner normals of a flagged stream compared with the triangle normals.
+
+**Note.** The decoder reads the flagged payload with the `{T: 3}` layout, retains the flag on the native split-stream record, and reports `mesh.component-flag-assumed`.
