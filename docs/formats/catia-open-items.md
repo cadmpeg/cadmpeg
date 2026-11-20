@@ -513,8 +513,12 @@ different, independently constrained orientation route.
 
 ### RW-01. Extended rational weight-row controls
 
-- **Question:** Which non-palindromic A5 weight-row controls select reflected columns and leading repeats?
-- **Known:** Controls `0003` and `0007` in command `01` expand a complete symmetric row. Additional command-`01` controls and command `05` admit finite row programs under a reflected-column mask and leading-repeat reading. The decoder reports `geometry.surface-weights-inferred` when it emits that reading.
-- **Need:** Independently authored rational surfaces that distinguish each mask bit, leading-repeat count, and consumed scalar count.
-- **Conflict:** The extended controls previously failed the row-prefix gate. The public NIST and issue-sample replay emits no rational NURBS surfaces and does not validate these extended readings.
-- **Note:** The legacy symmetric and flat-grid forms retain their established readings.
+**Question.** Which non-palindromic A5 weight-row controls select reflected columns and leading repeats?
+
+**Known.** Controls `0003` and `0007` in command `01` expand a complete symmetric row. Additional command-`01` controls and command `05` admit finite row programs under a reflected-column mask and leading-repeat reading. The decoder reports `geometry.surface-weights-inferred` when it emits that reading.
+
+**Need.** Independently authored rational surfaces that distinguish each mask bit, leading-repeat count, and consumed scalar count.
+
+**Conflict.** The extended controls previously failed the row-prefix gate. The public NIST and issue-sample replay emits no rational NURBS surfaces and does not validate these extended readings.
+
+**Note.** The legacy symmetric and flat-grid forms retain their established readings.
