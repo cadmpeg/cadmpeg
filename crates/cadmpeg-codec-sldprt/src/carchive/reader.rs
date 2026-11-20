@@ -330,6 +330,19 @@ pub(crate) struct Reader<'b> {
     pub(crate) ends: HashMap<usize, usize>,
     /// The sketch profile bodies read.
     pub(crate) profile_bodies: Vec<ProfileBody>,
+    /// The name each named object's header gave, by the object's tag position.
+    pub(crate) names: HashMap<usize, String>,
+    /// The `moPMarkRecord_c` objects read, in stream order.
+    pub(crate) marks: Vec<MarkOwner>,
+}
+
+/// A `moPMarkRecord_c` object the walk read and the named object that holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct MarkOwner {
+    /// Where the record's body starts, after its class tag.
+    pub(crate) at: usize,
+    /// The name of the innermost open named object around the record.
+    pub(crate) owner: Option<String>,
 }
 
 /// Reader state saved before a speculative read.
@@ -347,6 +360,8 @@ pub(crate) struct Snapshot {
     open: Vec<(Arc<str>, usize)>,
     ends: HashMap<usize, usize>,
     profile_bodies: Vec<ProfileBody>,
+    names: HashMap<usize, String>,
+    marks: Vec<MarkOwner>,
 }
 
 impl<'b> Reader<'b> {
@@ -376,6 +391,8 @@ impl<'b> Reader<'b> {
             open: Vec::new(),
             ends: HashMap::new(),
             profile_bodies: Vec::new(),
+            names: HashMap::new(),
+            marks: Vec::new(),
         }
     }
 
@@ -395,6 +412,8 @@ impl<'b> Reader<'b> {
             open: self.open.clone(),
             ends: self.ends.clone(),
             profile_bodies: self.profile_bodies.clone(),
+            names: self.names.clone(),
+            marks: self.marks.clone(),
         }
     }
 
@@ -413,6 +432,8 @@ impl<'b> Reader<'b> {
         self.open = snapshot.open;
         self.ends = snapshot.ends;
         self.profile_bodies = snapshot.profile_bodies;
+        self.names = snapshot.names;
+        self.marks = snapshot.marks;
     }
 
     fn take<const N: usize>(&mut self) -> Res<[u8; N]> {
@@ -664,6 +685,16 @@ impl<'b> Reader<'b> {
         {
             self.profile_bodies.push(ProfileBody { stream, owner });
         }
+    }
+
+    /// The name of the innermost open named object other than the object
+    /// being read.
+    pub(crate) fn holder_name(&self) -> Option<String> {
+        self.open
+            .iter()
+            .rev()
+            .skip(1)
+            .find_map(|(_, at)| self.names.get(at).cloned())
     }
 
     /// The class of the most recently opened object.
