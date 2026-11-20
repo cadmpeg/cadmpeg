@@ -10,7 +10,8 @@
 //!
 //! Measurement is an oracle on decoded output. A decoder or encoder never
 //! selects a layout, carrier, sense, unit or interpretation by measuring
-//! geometry, so no codec crate depends on this crate outside its tests.
+//! geometry. The Fusion encoder writes the measured body box of each body
+//! into the design it encodes.
 //!
 //! ```
 //! use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};

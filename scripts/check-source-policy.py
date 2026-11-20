@@ -1611,7 +1611,7 @@ def scan_authoring_paths() -> list[Finding]:
 
 
 MEASUREMENT_CRATE = "cadmpeg-measure"
-MEASUREMENT_CONSUMERS = {"cadmpeg", "cadmpeg-registry"}
+MEASUREMENT_CONSUMERS = {"cadmpeg", "cadmpeg-registry", "cadmpeg-codec-f3d"}
 PRODUCTION_DEPENDENCY_HEADER = re.compile(
     r"^\s*\[\s*(?:target\.[^\]]+?\.)?(?:build-)?dependencies\s*(?:\.|\])"
 )
@@ -1660,8 +1660,9 @@ def scan_measurement_dependency() -> list[Finding]:
             "measurement_dependency",
             manifest.relative_to(ROOT).as_posix(),
             line,
-            f"The cadmpeg CLI and cadmpeg-registry can list {MEASUREMENT_CRATE} outside [dev-dependencies]; "
-            "a decoder or encoder never consumes measurement.",
+            f"The cadmpeg CLI, cadmpeg-registry and cadmpeg-codec-f3d can list {MEASUREMENT_CRATE} "
+            "outside [dev-dependencies]; a codec selects its layout, carrier and interpretation "
+            "from format semantics.",
         ))
     return findings
 

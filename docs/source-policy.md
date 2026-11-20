@@ -74,10 +74,11 @@ CPU affinity mask, capped by `PYTHON_CPU_COUNT` when it is set. Set
   repeats through a chain of flattened types. The flattened type's name is
   resolved the same way. A type the flattened type reaches through anything
   other than a further `#[serde(flatten)]` is not resolved.
-- The `cadmpeg` CLI and `cadmpeg-registry` crates can list `cadmpeg-measure` in `[dependencies]`,
+- The `cadmpeg` CLI, `cadmpeg-registry` and `cadmpeg-codec-f3d` crates can list `cadmpeg-measure` in `[dependencies]`,
   `[build-dependencies]` or a `[target.*]` dependency table
   (`measurement_dependency`). Other crates list it only in
-  `[dev-dependencies]`. The registry composes document checks. A decoder or encoder selects its layout, carrier,
+  `[dev-dependencies]`. The registry composes document checks. The Fusion encoder writes measured body boxes
+  into the designs it encodes. A decoder or encoder selects its layout, carrier,
   sense, units, and interpretation from format semantics. Codec round-trip
   tests use measurement as an oracle.
 - Every test a `scripts/test_*.py` file declares is collected. A test case class

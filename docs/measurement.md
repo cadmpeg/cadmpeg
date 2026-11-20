@@ -8,8 +8,10 @@ rustdoc.
 
 Measurement is an oracle on decoded output. A decoder or encoder never
 selects a layout, carrier, sense, unit or interpretation by measuring
-geometry. Only the `cadmpeg` command line package depends on
-`cadmpeg-measure` outside `[dev-dependencies]`.
+geometry. Outside `[dev-dependencies]`, the `cadmpeg` command line package,
+`cadmpeg-registry` and `cadmpeg-codec-f3d` depend on `cadmpeg-measure`. The
+Fusion encoder writes the measured body box of each body into the design it
+encodes.
 
 ## Value object
 
@@ -882,9 +884,10 @@ revision.
 
 Measurement is an oracle on decoded output. A decoder or encoder never
 selects a layout, carrier, sense, unit, or interpretation by measuring
-geometry. Only the `cadmpeg` CLI crate depends on `cadmpeg-measure` outside
-`[dev-dependencies]`; the source-policy rule `measurement_dependency`
-enforces this.
+geometry. Outside `[dev-dependencies]`, the `cadmpeg` CLI crate,
+`cadmpeg-registry` and `cadmpeg-codec-f3d` depend on `cadmpeg-measure`; the
+source-policy rule `measurement_dependency` enforces this. The Fusion encoder
+writes the measured body box of each body into the design it encodes.
 
 A writer test compares the measures of a document and of its written and
 decoded copy with `cadmpeg_measure::test_support::round_trip`. The writer

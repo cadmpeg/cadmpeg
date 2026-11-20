@@ -76,6 +76,10 @@ class MeasurementDependencyTests(TempSourceCase):
         self.manifest("cadmpeg", "[dependencies]\ncadmpeg-measure.workspace = true\n")
         self.assertEqual(self.findings("measurement_dependency"), [])
 
+    def test_fusion_codec_production_dependency_passes(self) -> None:
+        self.manifest("cadmpeg-codec-f3d", "[dependencies]\ncadmpeg-measure.workspace = true\n")
+        self.assertEqual(self.findings("measurement_dependency"), [])
+
     def test_test_support_production_dependency_fails(self) -> None:
         self.manifest("cadmpeg-test-support",
                       '[dependencies]\ncadmpeg-measure = { path = "../cadmpeg-measure" }\n')

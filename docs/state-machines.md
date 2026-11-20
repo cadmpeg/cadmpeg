@@ -142,7 +142,7 @@ Strict decode evaluates `LossNote::strict_consequence` once in `DecodeResult::ne
 
 `RadialStatus` (`Closed(n)` \| `DoesNotClose` \| `CrossesEdge`) is the topology-graph classifier in `validate/topology/graphs.rs`. `Sense` is a static bit.
 
-Measurement `RowStatus` is derived (`Measured` \| `Partial` \| `Unavailable`). Face orientation `Verdict`: `Settled` \| `Confirmed` \| `Conflict` \| `Unconfirmed` → witness → `Confirmed` \| `Contradicted`. Codecs do not depend on `cadmpeg-measure` in production; the crate is an oracle.
+Measurement `RowStatus` is derived (`Measured` \| `Partial` \| `Unavailable`). Face orientation `Verdict`: `Settled` \| `Confirmed` \| `Conflict` \| `Unconfirmed` → witness → `Confirmed` \| `Contradicted`. The crate is an oracle. Of the codecs, only the Fusion codec depends on `cadmpeg-measure` in production, to write measured body boxes.
 
 ## Container parsers
 
