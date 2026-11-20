@@ -810,7 +810,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** What do the `Dc<Family>MetaType` counters and the u64 context value of the timeline context record count?
 
-**Known.** `f3d.md` §3.1 "**Timeline context.**" gives the record layout. A design with one `Sketch` and one `Extrude` stores the counters `1` and `1` and the context value `2`. In a stream with serializer magic `1234`, each counter is at least the largest family ordinal of the timeline items of its family, and it can exceed it. Counters can name families that have no item in the timeline. The context value can equal the number of timeline items, be `0`, or exceed both the number of items and the sum of the counters. A design whose timeline holds one `Base Feature` item stores the counter `DcBaseFeatureMetaType = 1` and the context value `0`.
+**Known.** `f3d.md` §3.1 "**Timeline context.**" gives the record layout. A design with one `Sketch` and one `Extrude` stores the counters `1` and `1` and the context value `2`. In a stream with serializer magic `1234`, each counter is at least the largest family ordinal of the timeline items of its family, and it can exceed it. Counters can name families that have no item in the timeline. The context value can equal the number of timeline items, be `0`, or exceed both the number of items and the sum of the counters. A design whose timeline holds one `Base Feature` item stores the counter `DcBaseFeatureMetaType = 1` and the context value `0`. `f3d.md` §3.1 "**Design records of Sketch items.**" gives the counter of `Sketch` items and the context value of a design whose parameters keep their `d<n>` names. A design whose parameters were renamed can store a context value below the largest `n` of its remaining `d<n>` names.
 
 **Need.** A writer must write correct values for designs with other item sets. The counters against the ordinals of deleted items, and the context value against the rolled-back position and the deleted items, would settle it.
 
@@ -845,6 +845,14 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 **Known.** `f3d.md` §3.1 "**Names in the B-rep of a Base Feature.**" gives the face tokens in each body and the start of the first body. In the one single-item design with several result bodies, the first face token of a later body is the first face token of the body before it, plus that body's face count and edge count, plus `1`. Where a design's bodies carry a `Base Feature` identity but its timeline holds other items, the gap between one body's run and the next is mostly `0`, sometimes `1`, and sometimes neither, so no rule is established. Body ordinals and first face tokens increase in the order of the bodies in the B-rep stream. Some designs also tag edges and vertices of a result body.
 
 **Need.** A writer of several result bodies must number the faces of each body. The edge and vertex tags of the earlier bodies against the start of the next run would settle it.
+
+### DR-888. Sketch item bytes outside the stated rules
+
+**Question.** What do the varying flags and words of the records of a `Sketch` item encode, and what does a persistent-id table store for `Sketch` items followed by a `Base Feature`?
+
+**Known.** `f3d.md` §3.1 "**Sketch container.**" and the paragraphs around it give the records of a `Sketch` item with their fixed bytes. These fields vary across sketches whose other fields agree: the scope's property-block presence byte `P` and flag `F`; the container's u32 after its dimension-frame run (`0` or `1`) and its sketch word (`6` or `7` in the `EntityGenesis` form); the u8 at `104 + 2w + b` of the container; the point flag bytes 1, 4, and 6 and the point state byte; the curve flag `A`; the `EntityGenesis` value of a relation (absent, `2`, or `4`); and the dimension owner's u64 parameter number at 59, which equals the `n` of the parameter name `d<n>` in most owners. Curve flag `A` mostly equals flag byte 4 of the curve's end points. A dimension's four records are either frame, parameter, owner, companion or frame, owner, parameter, companion, and one sketch uses one of the two arrangements. A design whose timeline holds only `Sketch` items lists its `Sketch` identities in the pairs and none in the forward run; a design with one `Base Feature` lists it in both.
+
+**Need.** A writer must choose each of these bytes, and must write the persistent-id table of `Sketch` items before a `Base Feature`. The flags against the sketch's solved state and the constraints that hold each entity, the owner's parameter number against the creation order of the design's parameters, and a design whose timeline holds `Sketch` items and a `Base Feature` would settle them.
 
 ## 2. External references
 
