@@ -1,0 +1,45 @@
+name: Measure compile
+on:
+  push:
+    branches: [measure/compile-profile]
+permissions:
+  contents: read
+jobs:
+  measure:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 170
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: ./.github/actions/pinned-rust
+      - uses: ./.github/actions/cargo-job-count
+      - name: Sample memory
+        shell: bash
+        run: |
+          mkdir -p measure
+          ( while true; do
+              date -u +%T
+              if [ "$(uname)" = Darwin ]; then sysctl vm.swapusage; memory_pressure | tail -1; else free -m | sed -n 2,3p; fi
+              sleep 30
+            done ) > measure/memory.log 2>&1 &
+      - name: Build every test target
+        shell: bash
+        env:
+          RUSTC_WRAPPER: ${{ github.workspace }}/.github/measure/rustc_wrapper.py
+          RUSTC_LOG: ${{ github.workspace }}/measure/rustc.tsv
+        run: |
+          chmod +x .github/measure/rustc_wrapper.py
+          sysctl -n hw.memsize 2>/dev/null || free -b | sed -n 2p
+          time cargo test -q --workspace --bins --tests --no-run --timings
+      - name: Keep results
+        if: always()
+        shell: bash
+        run: cp -r target/cargo-timings measure/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: measure-${{ matrix.os }}
+          path: measure
