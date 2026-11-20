@@ -8,12 +8,18 @@
 //! [`super::reduce::Stage::NeutralDesign`] failure, whose only fallback is to
 //! write no design: it never drops a body.
 
+mod base_feature;
 mod expression;
+pub(super) mod frames;
+pub(super) mod history;
 pub(super) mod parameters;
 #[cfg(test)]
 mod tests;
+mod types;
 
 use std::collections::{BTreeMap, BTreeSet};
+
+use cadmpeg_core::CodecError;
 
 use cadmpeg_ir::codec::write::evaluation_missing;
 use cadmpeg_ir::design::container::Container;
@@ -25,6 +31,10 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::report::loss::LossNote;
 
+use super::presentation::GeneratedDesignRegistry;
+use crate::native::F3dNative;
+use base_feature::BaseFeaturePlan;
+use frames::DesignRecords;
 use parameters::ParameterPlan;
 
 #[cfg(test)]
@@ -43,14 +53,15 @@ pub(super) fn requested_test_failure() -> Option<cadmpeg_core::CodecError> {
 }
 
 /// What the writer writes of the root definition's design scope.
-pub(super) struct NeutralDesign {
-    pub(super) parameters: ParameterPlan,
+pub(super) struct NeutralDesign<'a> {
+    parameters: ParameterPlan,
+    base_feature: BaseFeaturePlan<'a>,
     losses: Vec<LossNote>,
 }
 
 /// The plan for the root definition's design scope; `None` when the
 /// document holds none.
-pub(super) fn plan(target: &CadIr) -> Option<NeutralDesign> {
+pub(super) fn plan(target: &CadIr) -> Option<NeutralDesign<'_>> {
     let scope = root_scope(target)?;
     let parameters = parameters::plan(target, &scope.definition);
     let written = parameters.written().collect::<BTreeSet<_>>();
@@ -77,15 +88,45 @@ pub(super) fn plan(target: &CadIr) -> Option<NeutralDesign> {
             });
     let losses = evaluation_missing(
         "F3D",
-        "stores no timeline item for these features of the design",
+        "stores the current bodies as one Base Feature and no timeline item for these features of the design",
         unwritten,
     )
     .into_iter()
     .collect();
-    Some(NeutralDesign { parameters, losses })
+    Some(NeutralDesign {
+        parameters,
+        base_feature: base_feature::plan(target),
+        losses,
+    })
 }
 
-impl NeutralDesign {
+impl NeutralDesign<'_> {
+    /// Whether the design stores a body: its B-rep stream then carries the
+    /// Base Feature's names and history.
+    pub(super) fn has_bodies(&self) -> bool {
+        self.base_feature.has_item()
+    }
+
+    /// Name the result bodies and their faces in `native`, whose records the
+    /// B-rep stream is written from.
+    pub(super) fn stamp(&mut self, native: &mut F3dNative) -> Result<(), CodecError> {
+        let losses = self.base_feature.stamp(native)?;
+        self.losses.extend(losses);
+        Ok(())
+    }
+
+    /// The parameter records and the design's records, with their types
+    /// registered in `registry`.
+    pub(super) fn records(
+        &mut self,
+        registry: &mut GeneratedDesignRegistry,
+    ) -> Result<(Vec<u8>, DesignRecords), CodecError> {
+        let (parameter_bytes, records, losses) =
+            self.base_feature.encode(&self.parameters, registry)?;
+        self.losses.extend(losses);
+        Ok((parameter_bytes, records))
+    }
+
     pub(super) fn into_losses(self) -> Vec<LossNote> {
         let mut losses = self.losses;
         losses.extend(self.parameters.into_losses());

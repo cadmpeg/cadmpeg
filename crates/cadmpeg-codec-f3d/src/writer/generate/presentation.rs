@@ -13,20 +13,58 @@ use crate::design::body::{
 use crate::design::presentation::{
     BROWSER_NODE_BASE_TYPE_GUID, BROWSER_NODE_TYPE_GUID, BROWSER_NODE_TYPE_VERSION,
 };
-use crate::records::{
-    entity_header::{SegmentType, DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION},
-    mesh::DesignGuidText,
-};
+use crate::records::entity_header::{SegmentType, DESIGN_MODULE_BODY, DESIGN_MODULE_FUSION};
 
 use super::{
     attributes::{source_less_body_key, AttributeIndex},
     preconditions::DesignBindingsValidated,
 };
 
+/// A type GUID as a type-table row stores it: hexadecimal digits and
+/// hyphens, 36 to 38 characters (f3d.md §3.1 type tables store the base GUID
+/// `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081` in 37).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(in crate::writer::generate) struct GeneratedGuidText(String);
+
+impl GeneratedGuidText {
+    pub(super) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<String> for GeneratedGuidText {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        if (36..=38).contains(&value.len())
+            && value.starts_with(|character: char| character.is_ascii_hexdigit())
+            && value
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit() || byte == b'-')
+        {
+            Ok(Self(value))
+        } else {
+            Err(format!(
+                "Design type GUID {value:?} is not hexadecimal digits and hyphens"
+            ))
+        }
+    }
+}
+
+/// One row of the type table: a type GUID, its base type, its version and
+/// its add-in. A root type has no base and an empty add-in.
+#[derive(Debug, Clone, Copy)]
+pub(in crate::writer::generate) struct TypeRow {
+    pub(super) guid: &'static str,
+    pub(super) base: Option<&'static str>,
+    pub(super) version: u32,
+    pub(super) module: &'static str,
+}
+
 /// One type-table row after generated record types have been registered.
 pub(in crate::writer::generate) struct GeneratedDesignType {
-    pub(super) type_guid: DesignGuidText,
-    pub(super) base_type_guid: Option<DesignGuidText>,
+    pub(super) type_guid: GeneratedGuidText,
+    pub(super) base_type_guid: Option<GeneratedGuidText>,
     pub(super) version: u32,
     pub(super) module: String,
     pub(super) entity_ids: Vec<u64>,
@@ -45,7 +83,7 @@ impl TryFrom<&SegmentType> for GeneratedDesignType {
             base_type_guid: value
                 .base_type_guid
                 .value()
-                .map(|guid| DesignGuidText::try_from(guid.as_str().to_owned()))
+                .map(|guid| GeneratedGuidText::try_from(guid.as_str().to_owned()))
                 .transpose()
                 .map_err(CodecError::NotImplemented)?,
             version: value.version,
@@ -57,6 +95,7 @@ impl TryFrom<&SegmentType> for GeneratedDesignType {
 
 /// One generated browser node joined to a body-map entity suffix.
 pub(super) struct GeneratedBrowserNode {
+    pub(super) body: cadmpeg_ir::ids::BodyId,
     pub(super) entity_suffix: u64,
     pub(super) node_guid: String,
     pub(super) record_index: u32,
@@ -88,6 +127,18 @@ pub(in crate::writer::generate) struct GeneratedBodyMap {
 pub(in crate::writer::generate) struct GeneratedBrowserNodes {
     pub(super) nodes: Vec<GeneratedBrowserNode>,
     pub(super) class_tag: crate::records::references::DesignClassTag,
+    /// The members a Base Feature's result bodies have after the reference
+    /// to their design body-reference record.
+    pub(super) tail: Option<BrowserNodeTail>,
+}
+
+/// The rest of the 151-byte browser-node member of a Base Feature result body
+/// (f3d.md §3.1, "Records of a Base Feature design"): the scope, the paired
+/// header and the timeline context.
+pub(in crate::writer::generate) struct BrowserNodeTail {
+    pub(super) scope: u32,
+    pub(super) paired_class: crate::records::references::DesignClassTag,
+    pub(super) context: u32,
 }
 
 /// Which bodies the body map and the browser nodes list.
@@ -150,7 +201,7 @@ impl GeneratedDesignRegistry {
                     "multiple source-less F3D bodies use Design entity {entity_suffix}"
                 )));
             }
-            pending.push((entity_suffix, body.id.as_str(), visible));
+            pending.push((entity_suffix, &body.id, visible));
         }
 
         let mut used_record_indices = native
@@ -202,8 +253,9 @@ impl GeneratedDesignRegistry {
             let record_index =
                 allocate_record_index(&mut used_record_indices, &mut next_record_index)?;
             browser_nodes.push(GeneratedBrowserNode {
+                body: body_id.clone(),
                 entity_suffix,
-                node_guid: deterministic_guid("browser-node", body_id),
+                node_guid: deterministic_guid("browser-node", body_id.as_str()),
                 record_index,
                 visible,
             });
@@ -218,10 +270,12 @@ impl GeneratedDesignRegistry {
             .map(|(entries, record_index)| {
                 let type_index = register_generated_type(
                     &mut types,
-                    BODY_MAP_CARRIER_TYPE_GUID,
-                    BODY_MAP_CARRIER_BASE_TYPE_GUID,
-                    BODY_MAP_CARRIER_TYPE_VERSION,
-                    DESIGN_MODULE_BODY,
+                    TypeRow {
+                        guid: BODY_MAP_CARRIER_TYPE_GUID,
+                        base: Some(BODY_MAP_CARRIER_BASE_TYPE_GUID),
+                        version: BODY_MAP_CARRIER_TYPE_VERSION,
+                        module: DESIGN_MODULE_BODY,
+                    },
                     vec![u64::from(record_index)],
                 )?;
                 Ok::<_, CodecError>(GeneratedBodyMap {
@@ -235,10 +289,12 @@ impl GeneratedDesignRegistry {
             .then(|| {
                 let type_index = register_generated_type(
                     &mut types,
-                    BROWSER_NODE_TYPE_GUID,
-                    BROWSER_NODE_BASE_TYPE_GUID,
-                    BROWSER_NODE_TYPE_VERSION,
-                    DESIGN_MODULE_FUSION,
+                    TypeRow {
+                        guid: BROWSER_NODE_TYPE_GUID,
+                        base: Some(BROWSER_NODE_BASE_TYPE_GUID),
+                        version: BROWSER_NODE_TYPE_VERSION,
+                        module: DESIGN_MODULE_FUSION,
+                    },
                     browser_nodes
                         .iter()
                         .map(|node| u64::from(node.record_index))
@@ -247,6 +303,7 @@ impl GeneratedDesignRegistry {
                 Ok::<_, CodecError>(GeneratedBrowserNodes {
                     nodes: browser_nodes,
                     class_tag: dynamic_class_tag(type_index)?,
+                    tail: None,
                 })
             })
             .transpose()?;
@@ -279,25 +336,36 @@ impl GeneratedDesignRegistry {
         allocate_record_index(&mut self.used_record_indices, &mut self.next_record_index)
     }
 
-    /// Register `entity_ids` under the type `type_guid` and return the type's
+    /// The first of `count` consecutive record indices no record uses.
+    pub(super) fn allocate_run(&mut self, count: u32) -> Result<u32, CodecError> {
+        let full = || CodecError::NotImplemented("F3D Design record index space is full".into());
+        let mut start = self.next_record_index.max(1);
+        loop {
+            let end = start.checked_add(count).ok_or_else(full)?;
+            match (start..end).find(|index| self.used_record_indices.contains(index)) {
+                Some(used) => start = used.checked_add(1).ok_or_else(full)?,
+                None => {
+                    self.used_record_indices.extend(start..end);
+                    self.next_record_index = end;
+                    return Ok(start);
+                }
+            }
+        }
+    }
+
+    /// Register `entity_ids` under the type `row` and return the type's
     /// class tag, `256` plus its row.
     pub(super) fn register(
         &mut self,
-        type_guid: &str,
-        base_type_guid: &str,
-        version: u32,
-        module: &str,
+        row: TypeRow,
         entity_ids: &[u32],
     ) -> Result<crate::records::references::DesignClassTag, CodecError> {
-        let row = register_generated_type(
+        let ordinal = register_generated_type(
             &mut self.types,
-            type_guid,
-            base_type_guid,
-            version,
-            module,
+            row,
             entity_ids.iter().copied().map(u64::from).collect(),
         )?;
-        dynamic_class_tag(row)
+        dynamic_class_tag(ordinal)
     }
 }
 
@@ -317,12 +385,15 @@ fn allocate_record_index(used: &mut BTreeSet<u32>, next: &mut u32) -> Result<u32
 
 fn register_generated_type(
     types: &mut Vec<GeneratedDesignType>,
-    type_guid: &str,
-    base_type_guid: &str,
-    version: u32,
-    module: &str,
+    row: TypeRow,
     mut entity_ids: Vec<u64>,
 ) -> Result<usize, CodecError> {
+    let TypeRow {
+        guid: type_guid,
+        base: base_type_guid,
+        version,
+        module,
+    } = row;
     let matches = types
         .iter()
         .enumerate()
@@ -341,12 +412,10 @@ fn register_generated_type(
                     .to_owned()
                     .try_into()
                     .map_err(CodecError::Malformed)?,
-                base_type_guid: Some(
-                    base_type_guid
-                        .to_owned()
-                        .try_into()
-                        .map_err(CodecError::Malformed)?,
-                ),
+                base_type_guid: base_type_guid
+                    .map(|base| GeneratedGuidText::try_from(base.to_owned()))
+                    .transpose()
+                    .map_err(CodecError::Malformed)?,
                 version,
                 module: module.to_owned(),
                 entity_ids: Vec::new(),
@@ -363,10 +432,11 @@ fn register_generated_type(
     let design_type = &mut types[ordinal];
     if design_type.version != version
         || design_type.module != module
-        || design_type
-            .base_type_guid
-            .as_ref()
-            .is_none_or(|base| !base.as_str().eq_ignore_ascii_case(base_type_guid))
+        || match (&design_type.base_type_guid, base_type_guid) {
+            (Some(registered), Some(base)) => !registered.as_str().eq_ignore_ascii_case(base),
+            (None, None) => false,
+            (Some(_), None) | (None, Some(_)) => true,
+        }
     {
         return Err(CodecError::malformed(format_args!(
             "F3D Design type {type_guid} conflicts with its built-in registration"
@@ -395,7 +465,7 @@ pub(super) fn dynamic_class_tag(
 }
 
 /// Build an RFC 9562 version-8 UUID from a domain-separated stable identity.
-fn deterministic_guid(domain: &str, identity: &str) -> String {
+pub(super) fn deterministic_guid(domain: &str, identity: &str) -> String {
     let mut digest = Sha256::new();
     digest.update(b"cadmpeg:f3d:generated-design:v1\0");
     digest.update(domain.as_bytes());

@@ -109,7 +109,7 @@ fn attempt<W: Write + Seek>(
     if let Some(error) = write_neutral.then(design::requested_test_failure).flatten() {
         return Err(Failure::neutral_design(error));
     }
-    let neutral = if write_neutral {
+    let mut neutral = if write_neutral {
         design::plan(target)
     } else {
         None
@@ -123,7 +123,15 @@ fn attempt<W: Write + Seek>(
     };
     let loaded_native = f3d_native(target).map_err(Failure::design)?;
     let has_native = loaded_native.is_some();
-    let native = loaded_native.unwrap_or_default();
+    let mut native = loaded_native.unwrap_or_default();
+    let stamped = neutral
+        .as_ref()
+        .is_some_and(design::NeutralDesign::has_bodies);
+    if let Some(neutral) = neutral.as_mut() {
+        neutral
+            .stamp(&mut native)
+            .map_err(Failure::neutral_design)?;
+    }
     if write_design {
         validate_assembly_projection(target, Some(&native)).map_err(Failure::design)?;
     }
@@ -131,7 +139,23 @@ fn attempt<W: Write + Seek>(
     if has_native {
         validate_source_less_design_links(target, &native, &attributes).map_err(Failure::design)?;
     }
-    let smbh = encode_brep(target, &native, &attributes).map_err(Failure::brep)?;
+    let smbh = match encode_brep(target, &native, &attributes) {
+        Ok(smbh) => smbh,
+        // The design scope's names fail the B-rep stream when it writes
+        // without them.
+        Err(error)
+            if stamped
+                && writes_alone(target, &crate::native::F3dNative::default(), Stage::Brep) =>
+        {
+            return Err(Failure::neutral_design(error));
+        }
+        Err(error) => return Err(Failure::brep(error)),
+    };
+    let smbh = if stamped {
+        design::history::with_insertion_history(&smbh).map_err(Failure::neutral_design)?
+    } else {
+        smbh
+    };
     let design_bindings = validate_source_less_design_bindings(&native).map_err(Failure::design)?;
     let mut native_parameters = None;
     if write_design {
@@ -154,11 +178,15 @@ fn attempt<W: Write + Seek>(
     let mut design_registry =
         GeneratedDesignRegistry::new(target, design_bindings, &attributes, selection)
             .map_err(design_failure)?;
-    let parameter_bytes = match (&neutral, &native_parameters) {
-        (Some(neutral), _) => neutral
-            .parameters
-            .encode(&mut design_registry)
-            .map_err(Failure::neutral_design)?,
+    let mut neutral_records = None;
+    let parameter_bytes = match (neutral.as_mut(), &native_parameters) {
+        (Some(neutral), _) => {
+            let (parameter_bytes, records) = neutral
+                .records(&mut design_registry)
+                .map_err(Failure::neutral_design)?;
+            neutral_records = Some(records);
+            parameter_bytes
+        }
         (None, Some(source)) => design::parameters::encode(source, &native, &mut design_registry)
             .map_err(Failure::design)?,
         (None, None) => Vec::new(),
@@ -190,7 +218,7 @@ fn attempt<W: Write + Seek>(
         &native,
         &design_registry,
         parameter_bytes,
-        neutral.is_some(),
+        neutral_records.as_ref(),
     )
     .map_err(design_failure)?;
     let primary_records = design_bulk.as_ref().map_or(&[][..], |bulk_stream| {

@@ -32,13 +32,6 @@ use crate::writer::generate::presentation::GeneratedDesignRegistry;
 use crate::writer::generate::records::encode_document_parameters;
 use crate::writer::generate::reduce::named_loss;
 
-/// The parameter record type (f3d.md §3.1, "Records of a sketch-and-extrude
-/// design", type table).
-const PARAMETER_TYPE_GUID: &str = "7A6A3D31-BE74-4E19-9115-20642944C2E4";
-const PARAMETER_BASE_TYPE_GUID: &str = "63D6AD42-466A-40B7-9CCD-EB21BC500EF6";
-const PARAMETER_TYPE_VERSION: u32 = 8;
-const PARAMETER_MODULE: &str = "CommonData";
-
 /// The parameter collection the native path's parameter tails name.
 const NATIVE_PARAMETER_COLLECTION: u32 = 19;
 
@@ -319,37 +312,44 @@ pub(in crate::writer::generate) fn encode(
         ParameterSource::Native => {
             encode_document_parameters(&native.design_parameters, NATIVE_PARAMETER_COLLECTION)
         }
-        ParameterSource::Neutral(plan) => plan.encode(registry),
+        ParameterSource::Neutral(plan) => {
+            let indices = plan.allocate(registry)?;
+            plan.encode(registry, &indices, None)
+        }
     }
 }
 
 impl ParameterPlan {
-    /// The user parameter records, registered in `registry`, encoded with
-    /// tails that name a collection index no other record uses.
+    /// The record indices of the written parameters, allocated in
+    /// `registry`, in written order.
+    pub(in crate::writer::generate) fn allocate(
+        &self,
+        registry: &mut GeneratedDesignRegistry,
+    ) -> Result<Vec<u32>, CodecError> {
+        self.written.iter().map(|_| registry.allocate()).collect()
+    }
+
+    /// The user parameter records at `indices`, registered in `registry`,
+    /// encoded with tails that name `collection`, or a collection index no
+    /// other record uses.
     pub(in crate::writer::generate) fn encode(
         &self,
         registry: &mut GeneratedDesignRegistry,
+        indices: &[u32],
+        collection: Option<u32>,
     ) -> Result<Vec<u8>, CodecError> {
         if self.written.is_empty() {
             return Ok(Vec::new());
         }
-        let indices = self
-            .written
-            .iter()
-            .map(|_| registry.allocate())
-            .collect::<Result<Vec<_>, _>>()?;
-        let class_tag = registry.register(
-            PARAMETER_TYPE_GUID,
-            PARAMETER_BASE_TYPE_GUID,
-            PARAMETER_TYPE_VERSION,
-            PARAMETER_MODULE,
-            &indices,
-        )?;
-        let collection = registry.allocate()?;
+        let class_tag = registry.register(super::types::PARAMETER, indices)?;
+        let collection = match collection {
+            Some(collection) => collection,
+            None => registry.allocate()?,
+        };
         let records = self
             .written
             .iter()
-            .zip(indices)
+            .zip(indices.iter().copied())
             .enumerate()
             .map(|(ordinal, (parameter, record_index))| {
                 parameter.record(class_tag.clone(), record_index, ordinal)

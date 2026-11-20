@@ -120,7 +120,7 @@ pub(super) fn encode_design_bulkstream(
     native: &F3dNative,
     registry: &GeneratedDesignRegistry,
     parameter_bytes: Vec<u8>,
-    neutral: bool,
+    neutral: Option<&super::design::frames::DesignRecords>,
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
     if !native.design_parameter_companions.is_empty()
         || !native.design_dimension_annotation_frames.is_empty()
@@ -147,7 +147,7 @@ pub(super) fn encode_design_bulkstream(
         .bodies
         .iter()
         .any(|body| body.visible.is_some());
-    if !neutral
+    if neutral.is_none()
         && native.design_parameters.is_empty()
         && native.construction_recipes.is_empty()
         && native.persistent_references.is_empty()
@@ -187,6 +187,13 @@ pub(super) fn encode_design_bulkstream(
         native_lp_utf16(&mut out, "BREP.generated.smbh")?;
     }
     encode_browser_nodes(&mut out, &mut primary_records, registry)?;
+    if let Some(records) = neutral {
+        let base = out.len();
+        for &(record_index, offset) in &records.primaries {
+            primary_records.push(primary_record(record_index, base + offset)?);
+        }
+        out.extend_from_slice(&records.bytes);
+    }
     for recipe in &native.construction_recipes {
         let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
@@ -1011,6 +1018,17 @@ fn encode_browser_nodes(
         out.push(u8::from(!node.visible));
         out.extend_from_slice(&[0x01, 0x01]);
         out.extend_from_slice(&node.entity_suffix.to_le_bytes());
+        if let Some(tail) = &browser_nodes.tail {
+            out.extend_from_slice(&[0, 0, 1]);
+            out.extend_from_slice(&u64::from(tail.scope).to_le_bytes());
+            out.extend_from_slice(&[0, 0]);
+            native_lp_ascii(out, tail.paired_class.as_str())?;
+            out.extend_from_slice(&node.record_index.to_le_bytes());
+            out.extend_from_slice(&[0; 8]);
+            out.push(1);
+            out.extend_from_slice(&u64::from(tail.context).to_le_bytes());
+            out.extend_from_slice(&[0, 0]);
+        }
     }
     Ok(())
 }
