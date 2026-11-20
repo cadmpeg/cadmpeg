@@ -21,11 +21,11 @@ use crate::design::configuration::{Arrangement, ArrangementRef, OccurrenceOverri
 use crate::design::refs::{ConfigurationRef, StateRef};
 use crate::design::scope::DesignScope;
 use crate::design::selection::{OccurrencePath, StepRef};
-use crate::document::Topology;
+use crate::document::{Design, Topology};
 use crate::features::ConfigurationId;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::presentation::PresentationItem;
-use crate::products::{NestedOverride, Occurrence};
+use crate::products::{NestedOverride, Occurrence, ProductDefinition};
 use crate::references::InstanceTarget;
 use crate::topology::Color;
 use crate::transform::Transform;
@@ -63,6 +63,24 @@ struct Level<'a> {
     record: &'a Occurrence,
     scope: Option<&'a DesignScope>,
     configuration: Option<ConfigurationId>,
+}
+
+/// The records an occurrence path resolves through: the design, and the
+/// occurrences and product definitions of the document (§4, §5.1, §5.11).
+pub(crate) struct PathResolver<'a> {
+    pub(crate) design: &'a Design,
+    pub(crate) occurrences: &'a [Occurrence],
+    pub(crate) definitions: &'a [ProductDefinition],
+}
+
+impl<'a> PathResolver<'a> {
+    fn of(ir: &'a CadIr) -> Self {
+        Self {
+            design: &ir.design,
+            occurrences: &ir.model.occurrences,
+            definitions: &ir.model.product_definitions,
+        }
+    }
 }
 
 /// The occurrence ids of a path, outermost first; `None` where a step is
@@ -115,7 +133,7 @@ impl CadIr {
         &self,
         path: &OccurrencePath,
     ) -> Result<Option<Transform>, EditError> {
-        let Some(resolved) = self.resolve_path(path)? else {
+        let Some(resolved) = PathResolver::of(self).resolve_path(path)? else {
             return Ok(None);
         };
         let mut world = Transform::identity();
@@ -150,7 +168,7 @@ impl CadIr {
         target: &InstanceTarget<AppearanceTarget>,
     ) -> Result<bool, EditError> {
         if let Some(path) = &target.path {
-            if let Some(resolved) = self.resolve_path(path)? {
+            if let Some(resolved) = PathResolver::of(self).resolve_path(path)? {
                 if resolved
                     .iter()
                     .any(|occurrence| occurrence.visible == Some(false))
@@ -293,7 +311,9 @@ impl CadIr {
         };
         Ok(Cow::Owned(self.resolved(&evaluation.id)?.records))
     }
+}
 
+impl PathResolver<'_> {
     /// The scope that states an occurrence's design: the scope of the
     /// definition that owns it, else the scope of the step above it, which
     /// spans that definition (§5.1).
@@ -302,8 +322,8 @@ impl CadIr {
         occurrence: &OccurrenceId,
         above: Option<&'a DesignScope>,
     ) -> Option<&'a DesignScope> {
-        crate::products::owner(&self.model.product_definitions, occurrence)
-            .and_then(|definition| self.design_scope(&definition.id))
+        crate::products::owner(self.definitions, occurrence)
+            .and_then(|definition| self.design.design_scope(&definition.id))
             .or(above)
     }
 
@@ -334,6 +354,7 @@ impl CadIr {
                     .find_map(|arrangement| from(&arrangement.overrides));
                 let configured = match &level.configuration {
                     Some(configuration) => self
+                        .design
                         .configuration_chain(configuration)?
                         .into_iter()
                         .find_map(|state| from(&state.overrides)),
@@ -359,7 +380,8 @@ impl CadIr {
         let Some(scope) = level.scope else {
             return Ok(Vec::new());
         };
-        self.arrangements_in_force(&scope.definition, level.configuration.as_ref())
+        self.design
+            .arrangements_in_force(&scope.definition, level.configuration.as_ref())
     }
 
     /// Resolves every occurrence of a path, outermost first; `None` where a
@@ -404,7 +426,11 @@ impl CadIr {
         let Some(last) = levels.last() else {
             return Ok(None);
         };
-        let Some(scope) = self.design_scope(&last.record.prototype).or(last.scope) else {
+        let Some(scope) = self
+            .design
+            .design_scope(&last.record.prototype)
+            .or(last.scope)
+        else {
             return Ok(None);
         };
         let stated = path.0.last().and_then(|step| step.configuration.as_ref());
@@ -431,6 +457,7 @@ impl CadIr {
         }
         Ok(match &level.configuration {
             Some(configuration) => self
+                .design
                 .configuration_chain(configuration)?
                 .into_iter()
                 .any(|state| replaces(&state.overrides)),
@@ -447,7 +474,6 @@ impl CadIr {
         let mut levels: Vec<Level<'a>> = Vec::with_capacity(ids.len());
         for (at, occurrence) in ids.into_iter().enumerate() {
             let Some(record) = self
-                .model
                 .occurrences
                 .iter()
                 .find(|record| &record.id == occurrence)
@@ -508,7 +534,7 @@ impl CadIr {
         let level = &levels[at];
         let mut configured = Resolved::default();
         if let Some(configuration) = &level.configuration {
-            for state in self.configuration_chain(configuration)? {
+            for state in self.design.configuration_chain(configuration)? {
                 if let Some(entry) = state.overrides.occurrences.get(level.occurrence) {
                     configured.take(entry);
                 }
@@ -551,7 +577,7 @@ impl CadIr {
             let below = &ids[above + 1..=at];
             let outer = &levels[above];
             if let Some(configuration) = &outer.configuration {
-                for state in self.configuration_chain(configuration)? {
+                for state in self.design.configuration_chain(configuration)? {
                     let entries = state
                         .overrides
                         .occurrences
@@ -632,7 +658,7 @@ impl CadIr {
         }
         let from = (0..=at)
             .rev()
-            .find(|&start| owned_by(self, ids[start], &scope.definition))?;
+            .find(|&start| self.owned_by(ids[start], &scope.definition))?;
         let key = &ids[from..=at];
         scope
             .current
@@ -641,12 +667,12 @@ impl CadIr {
             .find(|(path, _)| occurrence_ids(path).is_some_and(|found| found == key))
             .map(|(_, pose)| *pose)
     }
-}
 
-/// Whether `definition` lists `occurrence` among the occurrences it owns.
-fn owned_by(ir: &CadIr, occurrence: &OccurrenceId, definition: &ProductDefinitionId) -> bool {
-    crate::products::owner(&ir.model.product_definitions, occurrence)
-        .is_some_and(|owner| &owner.id == definition)
+    /// Whether `definition` lists `occurrence` among the occurrences it owns.
+    fn owned_by(&self, occurrence: &OccurrenceId, definition: &ProductDefinitionId) -> bool {
+        crate::products::owner(self.definitions, occurrence)
+            .is_some_and(|owner| &owner.id == definition)
+    }
 }
 
 /// The body that holds an entity: the body itself, or the body a face, an

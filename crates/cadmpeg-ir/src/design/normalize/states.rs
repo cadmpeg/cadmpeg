@@ -12,10 +12,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::declared_measures::DeclaredTarget;
 use crate::design::container::{Container, Rollback};
+use crate::design::edit::effective::PathResolver;
 use crate::design::evaluation::StateBase;
 use crate::design::ids::ContainerId;
 use crate::design::refs::{Evaluated, Member, Position, StateRef};
-use crate::document::{CadIr, Design, Model, Process};
+use crate::document::{Design, Model, Process};
 use crate::features::ConfigurationId;
 use crate::physics::solver::SolverValue;
 use crate::pmi::PmiDefinition;
@@ -151,31 +152,52 @@ impl States {
 
     /// Spells every `StateRef` of the model records through its member, and
     /// clears each instance target's `state` that names what `None` names.
-    /// `products` holds the document's design and product structure, which
-    /// resolve a target's path.
-    pub(super) fn normalize_model(&self, products: &CadIr, model: &mut Model) {
-        for binding in &mut model.appearance_bindings {
-            self.target(products, &mut binding.target);
+    /// A target's path resolves through `design` and the model's occurrences
+    /// and product definitions.
+    pub(super) fn normalize_model(&self, design: &Design, model: &mut Model) {
+        let Model {
+            occurrences,
+            product_definitions,
+            appearance_bindings,
+            attributes,
+            pmi,
+            presentation_layers,
+            mass_properties,
+            rigid_bodies,
+            colliders,
+            articulations,
+            solver_settings,
+            tessellations,
+            declared_measures,
+            ..
+        } = model;
+        let resolver = PathResolver {
+            design,
+            occurrences,
+            definitions: product_definitions,
+        };
+        for binding in appearance_bindings {
+            self.target(&resolver, &mut binding.target);
         }
-        for attribute in &mut model.attributes {
-            self.target(products, &mut attribute.target);
+        for attribute in attributes {
+            self.target(&resolver, &mut attribute.target);
         }
-        for annotation in &mut model.pmi {
+        for annotation in pmi {
             for target in &mut annotation.targets {
-                self.target(products, target);
+                self.target(&resolver, target);
             }
             match &mut annotation.definition {
                 PmiDefinition::DatumTarget { basis, .. } => {
                     for target in basis {
-                        self.target(products, target);
+                        self.target(&resolver, target);
                     }
                 }
                 PmiDefinition::GeometricTolerance { zones, .. } => {
                     for projection in zones.iter_mut().flat_map(|zone| &mut zone.projections) {
                         for target in &mut projection.boundaries {
-                            self.target(products, target);
+                            self.target(&resolver, target);
                         }
-                        self.target(products, &mut projection.end);
+                        self.target(&resolver, &mut projection.end);
                     }
                 }
                 PmiDefinition::Datum { .. }
@@ -184,39 +206,39 @@ impl States {
                 | PmiDefinition::Presentation { .. } => {}
             }
         }
-        for layer in &mut model.presentation_layers {
+        for layer in presentation_layers {
             for item in &mut layer.items {
-                self.target(products, item);
+                self.target(&resolver, item);
             }
         }
-        for properties in &mut model.mass_properties {
-            self.target(products, &mut properties.target);
+        for properties in mass_properties {
+            self.target(&resolver, &mut properties.target);
         }
-        for body in &mut model.rigid_bodies {
-            self.target(products, &mut body.target);
+        for body in rigid_bodies {
+            self.target(&resolver, &mut body.target);
         }
-        for collider in &mut model.colliders {
-            self.target(products, &mut collider.target);
+        for collider in colliders {
+            self.target(&resolver, &mut collider.target);
         }
-        for articulation in &mut model.articulations {
-            self.target(products, &mut articulation.root);
+        for articulation in articulations {
+            self.target(&resolver, &mut articulation.root);
         }
-        for settings in &mut model.solver_settings {
-            self.target(products, &mut settings.target);
+        for settings in solver_settings {
+            self.target(&resolver, &mut settings.target);
             for value in settings.values.values_mut() {
                 if let SolverValue::Targets { targets } = value {
                     for target in targets {
-                        self.target(products, target);
+                        self.target(&resolver, target);
                     }
                 }
             }
         }
-        for tessellation in &mut model.tessellations {
+        for tessellation in tessellations {
             if let Some(state) = &mut tessellation.state {
                 self.state_ref(state);
             }
         }
-        for measure in &mut model.declared_measures {
+        for measure in declared_measures {
             if let DeclaredTarget::State(state) = &mut measure.target {
                 self.state_ref(state);
             }
@@ -231,7 +253,7 @@ impl States {
     /// of what that instance holds, and that instance selects the active
     /// configuration (§8, part 9). A `configuration` of `None` is the
     /// configuration in use.
-    fn target<E>(&self, products: &CadIr, target: &mut InstanceTarget<E>) {
+    fn target<E>(&self, resolver: &PathResolver<'_>, target: &mut InstanceTarget<E>) {
         let Some(state) = &mut target.state else {
             return;
         };
@@ -255,7 +277,7 @@ impl States {
         }
         let reads = match &target.path {
             None => state.configuration.is_none() || state.configuration == *active,
-            Some(path) => match products.instance_configuration(path) {
+            Some(path) => match resolver.instance_configuration(path) {
                 Ok(Some((scope, selected))) => {
                     scope.as_str() == holder
                         && (state.configuration.is_none()
