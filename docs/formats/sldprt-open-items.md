@@ -1151,7 +1151,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** What does the little-endian u32 at +17 of a curve record in an `sgSketch` curve list hold?
 
-**Known.** The record is a line or an arc by its curve type at +80 (`sldprt.md` §2.3). The +17 value does not follow the curve type: lines and arcs both carry `1`, `2` and `4`. It is not a relation of the curve: a line with value `4` (the horizontal relation code) or `5` (the vertical relation code) can run in any direction in its sketch. The decoder reads no relation from the value and keeps no constraint for it.
+**Known.** For current-layout list curves with selector `4` or `12`, `framed_curve` decides type `0` as a line and type `1` as an arc or circle when u16 `0` follows the type and four i32 `-2` words follow the centre index (`sldprt.md` §2 and §2.3). Lines and arcs in these cases both carry +17 values `1`, `2` and `4`. A line with value `4` (the horizontal relation code) or `5` (the vertical relation code) can run in any direction in its sketch. The decoder selects the geometry kind from the curve type for these cases. Other list curves keep their current layout-selected reading of +17, including relation kinds, and remain open under DI-72. These include current-layout selector-4 style splines of type `0x40` and selector-68 list curves.
 
 **Need.** The value compared with the relation and dimension groups of the same `sgSketch` object and with the record's handles.
 
