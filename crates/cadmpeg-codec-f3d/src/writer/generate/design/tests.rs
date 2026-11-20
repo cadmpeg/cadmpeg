@@ -738,30 +738,6 @@ fn a_container_or_attribute_parameter_is_written_without_its_owner() {
 }
 
 #[test]
-fn an_integer_parameter_is_written_as_a_real_with_a_note() {
-    let mut ir = scoped_cube();
-    let mut count = parameter("count", "Count", neutral(number(4.0, None)), None);
-    count.kind = ValueKind::Integer;
-    count.value = Some(ParameterValue::Integer(4));
-    ir.design.parameters.push(count);
-    let (report, decoded_ir) = write(&ir);
-    assert!(decoded_ir
-        .model
-        .parameters
-        .iter()
-        .any(|parameter| parameter.name == "Count"));
-    let notes = report
-        .losses
-        .iter()
-        .filter(|loss| loss.code == F3dLossCode::WriterIntegerAsReal.kind())
-        .collect::<Vec<_>>();
-    assert_eq!(notes.len(), 1, "{:#?}", report.losses);
-    assert_eq!(notes[0].severity, Severity::Info);
-    assert!(notes[0].message.contains(parameter_id("count").as_str()));
-    assert!(!notes[0].message.contains(parameter_id("width").as_str()));
-}
-
-#[test]
 fn the_timeline_is_written_without_its_folders_and_rollback() {
     let mut ir = scoped_cube();
     let timeline = ContainerId::mint("test:design:container#timeline").expect("identity grammar");
@@ -883,4 +859,28 @@ fn a_placed_design_scope_is_charged_with_its_containers_features_and_parameters(
         "{:#?}",
         report.losses
     );
+}
+
+#[test]
+fn an_integer_parameter_is_written_as_a_real_with_a_note() {
+    let mut ir = scoped_cube();
+    let mut count = parameter("count", "Count", neutral(number(4.0, None)), None);
+    count.kind = ValueKind::Integer;
+    count.value = Some(ParameterValue::Integer(4));
+    ir.design.parameters.push(count);
+    let (report, decoded_ir) = write(&ir);
+    assert!(decoded_ir
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "Count"));
+    let notes = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == F3dLossCode::WriterIntegerAsReal.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(notes.len(), 1, "{:#?}", report.losses);
+    assert_eq!(notes[0].severity, Severity::Info);
+    assert!(notes[0].message.contains(parameter_id("count").as_str()));
+    assert!(!notes[0].message.contains(parameter_id("width").as_str()));
 }
