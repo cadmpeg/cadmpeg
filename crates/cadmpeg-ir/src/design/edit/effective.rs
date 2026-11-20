@@ -27,7 +27,7 @@ use crate::document::{Design, Topology};
 use crate::features::ConfigurationId;
 use crate::ids::{BodyId, OccurrenceId, ProductDefinitionId};
 use crate::presentation::PresentationItem;
-use crate::products::{NestedOverride, Occurrence, ProductDefinition};
+use crate::products::{NestedOverride, Occurrence, ProductDefinition, Storage};
 use crate::references::InstanceTarget;
 use crate::topology::Color;
 use crate::transform::Transform;
@@ -59,14 +59,30 @@ impl Resolved {
 }
 
 /// One step of a path being resolved: its occurrence, the scope that states
-/// its design, the configuration of that scope that applies to it, and the
-/// prototype in force in that configuration.
+/// its design, the configuration of that scope that applies to it, with
+/// whether the records select it (see `Below`), and the prototype in force in
+/// that configuration.
 struct Level<'a> {
     occurrence: &'a OccurrenceId,
     record: &'a Occurrence,
     scope: Option<&'a DesignScope>,
     configuration: Option<ConfigurationId>,
+    held: bool,
     prototype: &'a ProductDefinitionId,
+}
+
+/// The configuration of a scope that applies below an occurrence (§5.1).
+struct Below {
+    configuration: Option<ConfigurationId>,
+    /// Whether the scope holds the configuration the records select: false
+    /// where the occurrence selects a configuration by name, or by a `Local`
+    /// id that is not one of the scope's configurations, or states a
+    /// selection for a prototype with no scope of its own, or where the
+    /// scope's active configuration is not one of its configurations. The
+    /// display resolvers read `configuration` either way, which resolves such
+    /// a selection as no selection (§4); the geometry such an instance
+    /// selects is not the current geometry of a configuration of the scope.
+    held: bool,
 }
 
 /// The records an occurrence path resolves through: the design, and the
@@ -335,14 +351,13 @@ impl PathResolver<'_> {
     /// resolved in the configuration of its scope that applies to it: the
     /// path step's own, else its `OccurrenceDesign.configuration` resolved
     /// through that configuration and then through the arrangements in
-    /// force there (§5.1, §5.11). `None` where it selects none, or a
-    /// configuration by name, which the document does not hold.
+    /// force there (§5.1, §5.11). `None` where it selects none.
     fn selected_configuration(
         &self,
         level: &Level<'_>,
         stated: Option<&ConfigurationRef>,
-    ) -> Result<Option<ConfigurationId>, EditError> {
-        let selected = match (stated, level.scope) {
+    ) -> Result<Option<ConfigurationRef>, EditError> {
+        Ok(match (stated, level.scope) {
             (Some(stated), _) => Some(stated.clone()),
             (None, None) => None,
             (None, Some(scope)) => {
@@ -371,10 +386,16 @@ impl PathResolver<'_> {
                         .and_then(|design| design.configuration.clone())
                 })
             }
-        };
-        Ok(match selected {
-            Some(ConfigurationRef::Local(configuration)) => Some(configuration),
-            Some(ConfigurationRef::Named(_)) | None => None,
+        })
+    }
+
+    /// Whether `configuration` is one of `scope`'s configurations; `None`,
+    /// no configuration, is.
+    fn holds(&self, scope: &DesignScope, configuration: Option<&ConfigurationId>) -> bool {
+        configuration.is_none_or(|configuration| {
+            self.design.configurations.iter().any(|candidate| {
+                &candidate.id == configuration && candidate.scope == scope.definition
+            })
         })
     }
 
@@ -408,8 +429,11 @@ impl PathResolver<'_> {
     /// last occurrence selects for it, else the scope of that occurrence,
     /// which spans the prototype, in that occurrence's configuration (§5.1,
     /// part 9). `None` where the path is empty, a step is `Native` or names
-    /// an occurrence the document does not hold, or no scope states that
-    /// design.
+    /// an occurrence the document does not hold, no scope states that
+    /// design, or an occurrence of the path applies a configuration its
+    /// scope does not hold (see `Below`): the instance then selects
+    /// geometry that is not the current geometry of any configuration the
+    /// document holds.
     ///
     /// # Errors
     ///
@@ -421,15 +445,52 @@ impl PathResolver<'_> {
         let Some(levels) = self.levels(path)? else {
             return Ok(None);
         };
+        if levels.iter().any(|level| !level.held) {
+            return Ok(None);
+        }
         let Some(last) = levels.last() else {
             return Ok(None);
         };
-        let Some(scope) = self.design.design_scope(last.prototype).or(last.scope) else {
+        let Some(scope) = self
+            .design
+            .design_scope(last.prototype)
+            .or_else(|| self.spanning_scope(&levels))
+        else {
             return Ok(None);
         };
         let stated = path.0.last().and_then(|step| step.configuration.as_ref());
-        let configuration = self.configuration_below(Some(last), Some(scope), stated)?;
-        Ok(Some((scope.definition.clone(), configuration)))
+        let below = self.configuration_below(Some(last), Some(scope), stated)?;
+        Ok(below
+            .held
+            .then(|| (scope.definition.clone(), below.configuration)))
+    }
+
+    /// The scope that spans the prototype of the last of `levels`, which has
+    /// no scope of its own: walking up the path, each definition passed is
+    /// `Embedded`, has no scope, and is the prototype of the occurrence that
+    /// places what it owns, up to an owner that has a scope (§5.1). `None`
+    /// where the walk meets a definition stored as `File` or `External`, or
+    /// one the document does not hold, before it meets a scope.
+    fn spanning_scope<'a>(&'a self, levels: &[Level<'a>]) -> Option<&'a DesignScope> {
+        let mut prototype = levels.last()?.prototype;
+        for level in levels.iter().rev() {
+            if level.prototype != prototype {
+                return None;
+            }
+            let definition = self
+                .definitions
+                .iter()
+                .find(|definition| &definition.id == prototype)?;
+            if definition.storage != Storage::Embedded {
+                return None;
+            }
+            let owner = crate::products::owner(self.definitions, level.occurrence)?;
+            if let Some(scope) = self.design.design_scope(&owner.id) {
+                return Some(scope);
+            }
+            prototype = &owner.id;
+        }
+        None
     }
 
     /// The levels of a path, outermost first; `None` where a step is
@@ -452,13 +513,15 @@ impl PathResolver<'_> {
             let stated = at
                 .checked_sub(1)
                 .and_then(|above| path.0[above].configuration.as_ref());
-            let configuration = self.configuration_below(parent, scope, stated)?;
-            let prototype = self.prototype_in_force(occurrence, record, configuration.as_ref())?;
+            let below = self.configuration_below(parent, scope, stated)?;
+            let prototype =
+                self.prototype_in_force(occurrence, record, below.configuration.as_ref())?;
             levels.push(Level {
                 occurrence,
                 record,
                 scope,
-                configuration,
+                configuration: below.configuration,
+                held: below.held,
                 prototype,
             });
         }
@@ -496,28 +559,47 @@ impl PathResolver<'_> {
     /// occurrence whose prototype holds what `scope` states, where `parent`'s
     /// path step states `stated`: with no parent, the scope's active
     /// configuration; where `scope` is the prototype's own, the configuration
-    /// of it that `parent` selects, else its active one; where `scope` spans
-    /// the prototype, `parent`'s own configuration.
+    /// of it that `parent` selects where the scope holds it, else its active
+    /// one; where `scope` spans the prototype, `parent`'s own configuration,
+    /// and a selection `parent` states for its prototype is not held. The
+    /// spanned case reads a failed selection as not held, so that display,
+    /// which does not read the selection there, fails no more often.
     fn configuration_below(
         &self,
         parent: Option<&Level<'_>>,
         scope: Option<&DesignScope>,
         stated: Option<&ConfigurationRef>,
-    ) -> Result<Option<ConfigurationId>, EditError> {
+    ) -> Result<Below, EditError> {
         let Some(parent) = parent else {
-            return Ok(scope.and_then(|scope| scope.active_configuration.clone()));
+            let configuration = scope.and_then(|scope| scope.active_configuration.clone());
+            let held = scope.is_none_or(|scope| self.holds(scope, configuration.as_ref()));
+            return Ok(Below {
+                configuration,
+                held,
+            });
         };
         let Some(scope) = scope.filter(|scope| &scope.definition == parent.prototype) else {
-            return Ok(parent.configuration.clone());
+            return Ok(Below {
+                configuration: parent.configuration.clone(),
+                held: matches!(self.selected_configuration(parent, stated), Ok(None)),
+            });
         };
-        let selected = self.selected_configuration(parent, stated)?;
-        Ok(selected
-            .filter(|selected| {
-                self.design.configurations.iter().any(|candidate| {
-                    &candidate.id == selected && candidate.scope == scope.definition
+        let configuration = match self.selected_configuration(parent, stated)? {
+            Some(ConfigurationRef::Local(selected)) if self.holds(scope, Some(&selected)) => {
+                Some(selected)
+            }
+            Some(_) => {
+                return Ok(Below {
+                    configuration: scope.active_configuration.clone(),
+                    held: false,
                 })
-            })
-            .or_else(|| scope.active_configuration.clone()))
+            }
+            None => scope.active_configuration.clone(),
+        };
+        Ok(Below {
+            held: self.holds(scope, configuration.as_ref()),
+            configuration,
+        })
     }
 
     /// Resolves the occurrence at `at` of a path whose levels are `levels`.

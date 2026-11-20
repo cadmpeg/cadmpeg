@@ -251,8 +251,9 @@ impl States {
     /// `None` reads the configuration the path's instance selects, so the
     /// state is cleared only where the scope that holds it states the design
     /// of what that instance holds, and that instance selects the active
-    /// configuration (§8, part 9). A `configuration` of `None` is the
-    /// configuration in use.
+    /// configuration (§8, part 9); where the path's instance selects no
+    /// configuration the document holds, the state stays. A `configuration`
+    /// of `None` is the configuration in use.
     fn target<E>(&self, resolver: &PathResolver<'_>, target: &mut InstanceTarget<E>) {
         let Some(state) = &mut target.state else {
             return;
@@ -280,8 +281,8 @@ impl States {
             Some(path) => match resolver.instance_configuration(path) {
                 Ok(Some((scope, selected))) => {
                     scope.as_str() == holder
-                        && (state.configuration.is_none()
-                            || (state.configuration == selected && selected == *active))
+                        && selected == *active
+                        && (state.configuration.is_none() || state.configuration == selected)
                 }
                 Ok(None) | Err(_) => false,
             },

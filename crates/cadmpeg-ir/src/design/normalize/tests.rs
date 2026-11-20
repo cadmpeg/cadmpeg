@@ -20,7 +20,7 @@ use crate::process::feature::{MachiningFeature, MachiningFeatureClass};
 use crate::process::operation::{GeometryRole, GeometrySource, ProcessGeometry};
 use crate::process::state::{ProcessBase, ProcessContent, ProcessState, ProcessStateOf};
 use crate::process::{ProcessConstruction, WorkpieceSelection};
-use crate::products::{Occurrence, ProductDefinition, Storage};
+use crate::products::{ExternalDocument, Occurrence, ProductDefinition, Storage};
 use crate::report::loss::LossNote;
 use crate::report::Severity;
 use crate::source_fidelity::SourceFidelity;
@@ -1022,23 +1022,83 @@ fn steps(keys: &[(&str, Option<&str>)]) -> OccurrencePath {
 
 /// The root scope's entry for occurrence `cube`, selecting `configuration`.
 fn cube_uses(ir: &mut CadIr, configuration: &str) {
-    let root: ProductDefinitionId = id("definition", "root");
+    entry(ir, "root", "cube", local(configuration));
+}
+
+/// The scope of `definition`.
+fn scope_of<'a>(ir: &'a mut CadIr, definition: &str) -> &'a mut DesignScope {
+    let definition: ProductDefinitionId = id("definition", definition);
     ir.design
         .scopes
         .iter_mut()
-        .find(|scope| scope.definition == root)
+        .find(|scope| scope.definition == definition)
         .unwrap()
-        .occurrences
-        .insert(
-            id("occurrence", "cube"),
-            OccurrenceDesign {
-                configuration: Some(ConfigurationRef::Local(id("configuration", configuration))),
-                arrangements: Vec::new(),
-                grounded: None,
-                flexible: None,
-                parameters: BTreeMap::new(),
-            },
-        );
+}
+
+/// The entry of `definition`'s scope for `occurrence`, selecting
+/// `configuration`.
+fn entry(ir: &mut CadIr, definition: &str, occurrence: &str, configuration: ConfigurationRef) {
+    scope_of(ir, definition).occurrences.insert(
+        id("occurrence", occurrence),
+        OccurrenceDesign {
+            configuration: Some(configuration),
+            arrangements: Vec::new(),
+            grounded: None,
+            flexible: None,
+            parameters: BTreeMap::new(),
+        },
+    );
+}
+
+fn local(key: &str) -> ConfigurationRef {
+    ConfigurationRef::Local(id("configuration", key))
+}
+
+fn by_name(name: &str) -> ConfigurationRef {
+    ConfigurationRef::Named(NonBlankString::new(name).unwrap())
+}
+
+/// The step through occurrence `key`, selecting `configuration`.
+fn step(key: &str, configuration: Option<ConfigurationRef>) -> PathStep {
+    PathStep {
+        occurrence: StepRef::Occurrence(id("occurrence", key)),
+        configuration,
+    }
+}
+
+/// Makes `key` the root scope's active configuration: a configuration of
+/// `root` whose parent is `parent` and whose override for occurrence `cube`
+/// is `cube`.
+fn root_configured(ir: &mut CadIr, key: &str, parent: Option<&str>, cube: OccurrenceOverride) {
+    let mut overrides = Overrides::default();
+    overrides.occurrences.insert(id("occurrence", "cube"), cube);
+    ir.design.configurations.push(DesignConfiguration {
+        id: id("configuration", key),
+        scope: id("definition", "root"),
+        name: key.to_owned(),
+        parent: parent.map(|parent| id("configuration", parent)),
+        comment: None,
+        overrides,
+        active_arrangements: BTreeSet::new(),
+        materials: Vec::new(),
+        native_ref: None,
+    });
+    scope_of(ir, "root").active_configuration = Some(id("configuration", key));
+}
+
+/// The state `in_base` names, spelled through its member.
+fn base_state() -> StateRef {
+    state(Some("base"), after_feature("fillet"))
+}
+
+/// The states of the first annotation's targets once `ir` is normalized.
+fn normalized_states(mut ir: CadIr) -> Vec<Option<StateRef>> {
+    normalize(&mut ir).unwrap();
+    ir.model.pmi[0]
+        .targets
+        .iter()
+        .map(|target| target.state.clone())
+        .collect()
 }
 
 /// A target on the cube's body at `path`, in the current state of `base`.
@@ -1107,10 +1167,9 @@ fn a_target_through_an_occurrence_of_another_scope_keeps_its_state() {
 #[test]
 fn a_target_through_an_occurrence_whose_prototype_is_replaced_reads_the_replacement() {
     let mut ir = placed();
-    let root: ProductDefinitionId = id("definition", "root");
     let mut swap = DesignConfiguration {
         id: id("configuration", "swap"),
-        scope: root.clone(),
+        scope: id("definition", "root"),
         name: "swap".to_owned(),
         parent: None,
         comment: None,
@@ -1127,15 +1186,202 @@ fn a_target_through_an_occurrence_whose_prototype_is_replaced_reads_the_replacem
         },
     );
     ir.design.configurations.push(swap);
-    ir.design
-        .scopes
-        .iter_mut()
-        .find(|scope| scope.definition == root)
-        .unwrap()
-        .active_configuration = Some(id("configuration", "swap"));
+    scope_of(&mut ir, "root").active_configuration = Some(id("configuration", "swap"));
     ir.model.pmi[0].targets = vec![in_base(steps(&[("other", None)]))];
-    normalize(&mut ir).unwrap();
-    assert_eq!(ir.model.pmi[0].targets[0].state, None);
+    assert_eq!(normalized_states(ir), vec![None]);
+    // The replacement's scope does not hold the state: kept.
+    let mut swapped_out = placed();
+    root_configured(
+        &mut swapped_out,
+        "swap",
+        None,
+        OccurrenceOverride {
+            prototype: Some(id("definition", "other")),
+            ..OccurrenceOverride::default()
+        },
+    );
+    swapped_out.model.pmi[0].targets = vec![in_base(steps(&[("cube", None)]))];
+    assert_eq!(normalized_states(swapped_out), vec![Some(base_state())]);
+}
+
+#[test]
+fn a_step_that_selects_a_configuration_by_name_keeps_the_state() {
+    let mut ir = placed();
+    ir.model.pmi[0].targets = vec![
+        in_base(OccurrencePath(vec![step("cube", Some(by_name("Big")))])),
+        in_base(OccurrencePath(vec![step("cube", Some(by_name("large")))])),
+    ];
+    assert_eq!(normalized_states(ir), vec![Some(base_state()); 2]);
+}
+
+#[test]
+fn a_scope_entry_or_override_that_selects_a_configuration_by_name_keeps_the_state() {
+    let only_cube = |mut ir: CadIr| {
+        ir.model.pmi[0].targets = vec![in_base(steps(&[("cube", None)]))];
+        normalized_states(ir)
+    };
+    let mut in_entry = placed();
+    entry(&mut in_entry, "root", "cube", by_name("Big"));
+    let mut in_override = placed();
+    root_configured(
+        &mut in_override,
+        "variant",
+        None,
+        OccurrenceOverride {
+            configuration: Some(by_name("Big")),
+            ..OccurrenceOverride::default()
+        },
+    );
+    let mut to_large = placed();
+    root_configured(
+        &mut to_large,
+        "variant",
+        None,
+        OccurrenceOverride {
+            configuration: Some(local("large")),
+            ..OccurrenceOverride::default()
+        },
+    );
+    assert_eq!(
+        [in_entry, in_override, to_large].map(only_cube),
+        [
+            vec![Some(base_state())],
+            vec![Some(base_state())],
+            vec![Some(base_state())]
+        ]
+    );
+}
+
+#[test]
+fn an_ancestor_that_selects_a_configuration_by_name_keeps_the_state_below_it() {
+    let mut ir = placed();
+    ir.model.pmi[0].targets = vec![
+        in_base(OccurrencePath(vec![
+            step("cube", Some(by_name("Big"))),
+            step("inner", None),
+        ])),
+        in_base(OccurrencePath(vec![
+            step("cube", None),
+            step("inner", Some(by_name("Big"))),
+        ])),
+    ];
+    let mut in_entry = placed();
+    entry(&mut in_entry, "part", "inner", by_name("Big"));
+    in_entry.model.pmi[0].targets = vec![in_base(steps(&[("cube", None), ("inner", None)]))];
+    let mut states = normalized_states(ir);
+    states.extend(normalized_states(in_entry));
+    assert_eq!(states, vec![Some(base_state()); 3]);
+}
+
+#[test]
+fn a_selection_of_a_configuration_the_scope_does_not_hold_keeps_the_state() {
+    let mut ir = placed();
+    ir.model.pmi[0].targets = vec![
+        in_base(steps(&[("cube", Some("gone"))])),
+        in_base(steps(&[("cube", Some("gone")), ("inner", None)])),
+    ];
+    let mut in_entry = placed();
+    cube_uses(&mut in_entry, "gone");
+    in_entry.model.pmi[0].targets = vec![in_base(steps(&[("cube", None)]))];
+    let mut states = normalized_states(ir);
+    states.extend(normalized_states(in_entry));
+    assert_eq!(states, vec![Some(base_state()); 3]);
+}
+
+#[test]
+fn a_path_whose_instance_the_resolver_cannot_establish_keeps_the_state() {
+    let with_path = |mut ir: CadIr, path: OccurrencePath| {
+        ir.model.pmi[0].targets = vec![in_base(path)];
+        normalized_states(ir)
+    };
+    let cube = || steps(&[("cube", None)]);
+    let mut native = cube();
+    native.0.push(PathStep {
+        occurrence: StepRef::Native(NativeName {
+            codec: CodecId::from(NonBlankString::new("test").unwrap()),
+            value: NativeNameValue::Text(NonBlankString::new("n").unwrap()),
+        }),
+        configuration: None,
+    });
+    let mut cycle = placed();
+    root_configured(
+        &mut cycle,
+        "loop",
+        Some("loop"),
+        OccurrenceOverride::default(),
+    );
+    let mut root_dangling = placed();
+    scope_of(&mut root_dangling, "root").active_configuration = Some(id("configuration", "gone"));
+    let mut part_dangling = placed();
+    scope_of(&mut part_dangling, "part").active_configuration = Some(id("configuration", "gone"));
+    part_dangling.model.pmi[0].targets = vec![InstanceTarget {
+        path: Some(cube()),
+        ..target(Some(state(Some("gone"), after_body())))
+    }];
+    let mut unowned = placed();
+    unowned.model.occurrences.push(Occurrence::new(
+        id("occurrence", "loose"),
+        id("definition", "inner"),
+        None,
+    ));
+    let outcomes = [
+        ("native", with_path(placed(), native)),
+        ("empty", with_path(placed(), OccurrencePath(Vec::new()))),
+        ("cycle", with_path(cycle, cube())),
+        ("root dangling", with_path(root_dangling, cube())),
+        ("unowned", with_path(unowned, steps(&[("loose", None)]))),
+    ];
+    assert_eq!(
+        outcomes,
+        outcomes
+            .clone()
+            .map(|(case, _)| (case, vec![Some(base_state())]))
+    );
+    assert_eq!(
+        normalized_states(part_dangling),
+        [Some(state(Some("gone"), after_feature("fillet")))]
+    );
+}
+
+#[test]
+fn a_state_with_no_configuration_stays_where_the_path_selects_another() {
+    let mut ir = placed();
+    let none_at = |path: OccurrencePath| InstanceTarget {
+        path: Some(path),
+        ..target(Some(state(None, after_body())))
+    };
+    ir.model.pmi[0].targets = vec![
+        none_at(steps(&[("cube", Some("large"))])),
+        none_at(steps(&[("cube", None)])),
+    ];
+    assert_eq!(
+        normalized_states(ir),
+        [Some(state(None, after_feature("fillet"))), None]
+    );
+}
+
+#[test]
+fn a_definition_stored_in_a_file_of_its_own_is_not_spanned() {
+    let mut states = Vec::new();
+    for storage in [
+        Storage::External(ExternalDocument::default()),
+        Storage::File {
+            document: ExternalDocument::default(),
+            source: None,
+        },
+    ] {
+        let mut ir = placed();
+        let inner: ProductDefinitionId = id("definition", "inner");
+        ir.model
+            .product_definitions
+            .iter_mut()
+            .find(|definition| definition.id == inner)
+            .unwrap()
+            .storage = storage;
+        ir.model.pmi[0].targets = vec![in_base(steps(&[("cube", Some("base")), ("inner", None)]))];
+        states.extend(normalized_states(ir));
+    }
+    assert_eq!(states, vec![Some(base_state()); 2]);
 }
 
 /// A point at `ParameterRatio` 1 of nothing, inside `depth - 1` points
