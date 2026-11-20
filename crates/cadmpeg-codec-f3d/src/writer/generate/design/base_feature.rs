@@ -17,7 +17,6 @@ use cadmpeg_ir::topology::{Shell, ShellMember};
 use super::frames::DesignRecords;
 use super::history::{HEAD_STATE, ROOT_STATE};
 use super::parameters::ParameterPlan;
-use super::roster::sketches::SketchRecords;
 use super::roster::values::Timestamps;
 use super::roster::{self, Context, RosterBody};
 use super::types;
@@ -26,20 +25,19 @@ use crate::records::references::DesignClassTag;
 use crate::records::sketch_links::{
     DesignPersistentIdText, PersistentDesignLink, PersistentSubentityTag,
 };
-use crate::writer::generate::presentation::{deterministic_guid, GeneratedDesignRegistry, TypeRow};
+use crate::writer::generate::presentation::{
+    BrowserNodeTail, GeneratedDesignRegistry, TypeRow, deterministic_guid,
+};
 
-/// The first value of the persistent-identity counter: a `Sketch` scope
-/// owns one identity and the `Base Feature` scope the next, in timeline
-/// order (f3d.md §3.1, "Design records of Sketch items").
-const FIRST_IDENTITY: u64 = 300;
+/// The persistent identity of the one `Base Feature`: the first value of the
+/// identity counter.
+const PERSISTENT_ID: u64 = 300;
 /// The feature-family name of the scope.
 const FAMILY: &str = "Base Feature";
 /// The GUID the scope frame stores before its scope-reference count.
 const NULL_GUID: &str = "00000000-0000-0000-0000-000000000000";
 /// The counter the timeline context keeps for the `Base Feature` family.
 const FAMILY_COUNTER: &str = "DcBaseFeatureMetaType";
-/// The counter the timeline context keeps for the `Sketch` family.
-const SKETCH_COUNTER: &str = "DcSketchMetaType";
 /// The flag of a dependency-table edge to the component record.
 const COMPONENT_EDGE: u32 = 0x1000;
 /// The flag of every other dependency-table edge.
@@ -47,10 +45,10 @@ const EDGE: u32 = 1;
 /// The evaluation epoch of the item tail: `250`, below the `252` Fusion
 /// writes, until the decoder reads an epoch-252 tail beside record indices
 /// 209 to 212 (interim, F3D-EPOCH).
-pub(super) const EPOCH: u32 = 250;
+const EPOCH: u32 = 250;
 /// The evaluation duration of the item tail, the median of Fusion's Base
 /// Feature items (DR-913).
-pub(super) const DURATION: f64 = 0.000_631;
+const DURATION: f64 = 0.000_631;
 
 /// The note naming the item tail's evaluation values: the epoch written in
 /// place of the `252` f3d.md §3.1 states for the stream's generation words,
@@ -61,7 +59,9 @@ pub(super) fn item_tail_loss(scope: u32) -> Option<LossNote> {
         &format!(
             "writes evaluation epoch {EPOCH} in both epoch fields of the Base Feature item tail, where f3d.md §3.1 states 252 for the generation words 1234, 8, 36 the Design stream stores, because the decoder reads an empty-label tail of epoch 252 beside these record indices as named (F3D-EPOCH); and writes evaluation duration {DURATION}, which f3d-open-items.md DR-913 leaves open"
         ),
-        [format!("record {scope} (Base Feature scope: its item tail)")],
+        [format!(
+            "record {scope} (Base Feature scope: its item tail)"
+        )],
     )
 }
 
@@ -69,8 +69,6 @@ pub(super) fn item_tail_loss(scope: u32) -> Option<LossNote> {
 /// in the order of its lump, shell and face chains.
 pub(super) struct BaseFeaturePlan<'a> {
     bodies: Vec<PlannedBody<'a>>,
-    /// The scope's persistent identity: the one after the `Sketch` items'.
-    persistent_id: u64,
 }
 
 struct PlannedBody<'a> {
@@ -79,26 +77,8 @@ struct PlannedBody<'a> {
     edges: usize,
 }
 
-/// The persistent identity of the `Base Feature` after `sketches` `Sketch`
-/// items.
-fn persistent_id(sketches: usize) -> Result<u64, CodecError> {
-    u64::try_from(sketches)
-        .ok()
-        .and_then(|sketches| FIRST_IDENTITY.checked_add(sketches))
-        .ok_or_else(|| CodecError::NotImplemented("persistent identity overflow".into()))
-}
-
-/// The next value of the persistent-identity counter after `sketches`
-/// `Sketch` items and the `Base Feature`.
-pub(super) fn next_identity(sketches: usize) -> Result<u64, CodecError> {
-    persistent_id(sketches)?
-        .checked_add(1)
-        .ok_or_else(|| CodecError::NotImplemented("persistent identity overflow".into()))
-}
-
-/// The bodies of `target`'s B-rep stream as one `Base Feature` after
-/// `sketches` `Sketch` items stores them.
-pub(super) fn plan(target: &CadIr, sketches: usize) -> Result<BaseFeaturePlan<'_>, CodecError> {
+/// The bodies of `target`'s B-rep stream as one `Base Feature` stores them.
+pub(super) fn plan(target: &CadIr) -> BaseFeaturePlan<'_> {
     let geometry = &target.geometry;
     let children = geometry.child_lists();
     let shells = geometry
@@ -140,7 +120,7 @@ pub(super) fn plan(target: &CadIr, sketches: usize) -> Result<BaseFeaturePlan<'_
             bodies[body].2.insert(&coedge.edge);
         }
     }
-    Ok(BaseFeaturePlan {
+    BaseFeaturePlan {
         bodies: bodies
             .into_iter()
             .map(|(body, faces, edges)| PlannedBody {
@@ -149,8 +129,7 @@ pub(super) fn plan(target: &CadIr, sketches: usize) -> Result<BaseFeaturePlan<'_
                 edges: edges.len(),
             })
             .collect(),
-        persistent_id: persistent_id(sketches)?,
-    })
+    }
 }
 
 /// The record indices of one result body.
@@ -238,13 +217,12 @@ impl BaseFeaturePlan<'_> {
 
     /// Name each result body and each face it stores in the B-rep stream
     /// (f3d.md §3.1, "Names in the B-rep of a Base Feature"): the body group
-    /// `(3, "I", j, 0, 0)` and the face group `(digits(t), t, [-I])` of the
-    /// scope's persistent identity `I`.
+    /// `(3, "300", j, 0, 0)` and the face group `(digits(t), t, [-300])`.
     /// Returns the losses of the face numbering of later bodies.
     pub(super) fn stamp(&self, native: &mut F3dNative) -> Result<Vec<LossNote>, CodecError> {
-        let design_id = DesignPersistentIdText::try_from(self.persistent_id.to_string())
+        let design_id = DesignPersistentIdText::try_from(PERSISTENT_ID.to_string())
             .map_err(CodecError::Malformed)?;
-        let reference = i64::try_from(self.persistent_id)
+        let reference = i64::try_from(PERSISTENT_ID)
             .map_err(|_| CodecError::Malformed("Base Feature identity".into()))?;
         let mut first = 0u64;
         for (ordinal, body) in self.bodies.iter().enumerate() {
@@ -291,11 +269,9 @@ impl BaseFeaturePlan<'_> {
         .collect())
     }
 
-    /// The records of a design with no result body, which has no timeline
-    /// item, the parameter records whose tails name its parameter
-    /// collection, and the losses of the byte positions whose values the
-    /// specification does not state. A design with a result body takes the
-    /// roster path ([`Self::roster_records`]).
+    /// The design's records, the parameter records whose tails name its
+    /// parameter collection, and the losses of the byte positions whose
+    /// values the specification does not state.
     pub(super) fn encode(
         &self,
         parameters: &ParameterPlan,
@@ -303,8 +279,15 @@ impl BaseFeaturePlan<'_> {
     ) -> Result<(Vec<u8>, DesignRecords, Vec<LossNote>), CodecError> {
         let bodies = self.body_records(registry)?;
         let parameter_indices = parameters.allocate(registry)?;
-        let indices = Indices::allocate(registry)?;
+        let indices = Indices::allocate(registry, self.has_item())?;
         let classes = Classes::register(registry, &indices, &bodies)?;
+        if let (Some(item), Some(nodes)) = (&indices.item, registry.browser_nodes.as_mut()) {
+            nodes.tail = Some(BrowserNodeTail {
+                scope: item.scope,
+                paired_class: classes.object.clone(),
+                context: indices.context,
+            });
+        }
         let parameter_bytes =
             parameters.encode(registry, &parameter_indices, Some(indices.collection))?;
         let mut out = DesignRecords::default();
@@ -314,11 +297,12 @@ impl BaseFeaturePlan<'_> {
             bodies: &bodies,
             stamps: Timestamps::FIXED,
             act_component: None,
-            sketches: &[],
-            persistent_id: self.persistent_id,
         };
-        writer.timeline(&mut out)?;
+        writer.timeline(&mut out);
         writer.context(&mut out)?;
+        if let Some(item) = &indices.item {
+            writer.item(&mut out, item)?;
+        }
         writer.components(&mut out)?;
         writer.origin(&mut out);
         writer.parameter_collection(&mut out, &parameter_indices)?;
@@ -380,10 +364,8 @@ impl BaseFeaturePlan<'_> {
             bodies: &bodies,
             stamps: ctx.values.stamps,
             act_component: Some(roster::ACT_COMPONENT),
-            sketches: &ctx.roster.sketches.items,
-            persistent_id: persistent_id(ctx.roster.sketches.items.len())?,
         };
-        writer.timeline(out)?;
+        writer.timeline(out);
         writer.context(out)?;
         if let Some(item) = &indices.item {
             writer.item(out, item)?;
@@ -486,14 +468,25 @@ impl Indices {
         }
     }
 
-    /// The indices of a design with no timeline item.
-    fn allocate(registry: &mut GeneratedDesignRegistry) -> Result<Self, CodecError> {
+    fn allocate(registry: &mut GeneratedDesignRegistry, item: bool) -> Result<Self, CodecError> {
         let timeline = registry.allocate()?;
         let context = registry.allocate()?;
+        let item = item
+            .then(|| {
+                Ok::<_, CodecError>(ItemIndices {
+                    scope: registry.allocate()?,
+                    result_owner: registry.allocate()?,
+                    result_companion: registry.allocate()?,
+                    tracked_results: registry.allocate()?,
+                    item_companion: registry.allocate()?,
+                    scope_timestamps: registry.allocate()?,
+                })
+            })
+            .transpose()?;
         Ok(Self {
             timeline,
             context,
-            item: None,
+            item,
             owner_collection: registry.allocate()?,
             component: registry.allocate()?,
             component_timestamps: registry.allocate()?,
@@ -511,6 +504,16 @@ impl Indices {
             collection_companion: registry.allocate()?,
             aggregate: registry.allocate()?,
         })
+    }
+
+    /// The members of the owner collection and of the `B65B5682` record: the
+    /// component record, then the scope and the result owner.
+    fn members(&self) -> Vec<u32> {
+        let mut members = vec![self.component];
+        if let Some(item) = &self.item {
+            members.extend([item.scope, item.result_owner]);
+        }
+        members
     }
 }
 
@@ -627,58 +630,24 @@ struct Writer<'a> {
     /// The ACT component record the `549FBB80` record names, where the
     /// archive holds an ACT segment.
     act_component: Option<u32>,
-    /// The records of the `Sketch` items before the `Base Feature`.
-    sketches: &'a [SketchRecords],
-    /// The `Base Feature` scope's persistent identity.
-    persistent_id: u64,
 }
 
 impl Writer<'_> {
     /// The feature timeline: ten zero bytes, the timeline context, and the
     /// item references.
-    fn timeline(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
+    fn timeline(&self, out: &mut DesignRecords) {
         let indices = self.indices;
-        let scopes = self
-            .sketches
-            .iter()
-            .map(|sketch| sketch.scope)
-            .chain(indices.item.as_ref().map(|item| item.scope))
-            .collect::<Vec<_>>();
         out.record(&self.classes.timeline, indices.timeline)
             .zeros(10)
-            .reference(indices.context)
-            .u32(count(scopes.len())?);
-        for scope in scopes {
-            out.reference(scope);
+            .reference(indices.context);
+        match &indices.item {
+            Some(item) => {
+                out.u32(1).reference(item.scope);
+            }
+            None => {
+                out.u32(0);
+            }
         }
-        Ok(())
-    }
-
-    /// The members of the owner collection: the component record, each
-    /// `Sketch` item's scope, placement path and placement, then the
-    /// `Base Feature` scope and its result owner.
-    fn owner_members(&self) -> Vec<u32> {
-        let mut members = vec![self.indices.component];
-        for sketch in self.sketches {
-            members.extend([sketch.scope, sketch.path, sketch.placement]);
-        }
-        if let Some(item) = &self.indices.item {
-            members.extend([item.scope, item.result_owner]);
-        }
-        members
-    }
-
-    /// The members of the `B65B5682` record: the owner collection's, with
-    /// each `Sketch` item's placement path and placement before its scope.
-    fn context_members(&self) -> Vec<u32> {
-        let mut members = vec![self.indices.component];
-        for sketch in self.sketches {
-            members.extend([sketch.path, sketch.placement, sketch.scope]);
-        }
-        if let Some(item) = &self.indices.item {
-            members.extend([item.scope, item.result_owner]);
-        }
-        members
     }
 
     /// The timeline context: the browser nodes of the result bodies, the
@@ -692,21 +661,10 @@ impl Writer<'_> {
         for body in self.bodies {
             out.reference(body.node);
         }
-        let mut counters = Vec::new();
         if indices.item.is_some() {
-            counters.push((FAMILY_COUNTER, 1));
-        }
-        if !self.sketches.is_empty() {
-            counters.push((
-                SKETCH_COUNTER,
-                u64::try_from(self.sketches.len()).map_err(|_| {
-                    CodecError::NotImplemented("Sketch item count exceeds u64".into())
-                })?,
-            ));
-        }
-        out.u32(count(counters.len())?);
-        for (name, value) in counters {
-            out.lp_ascii(name)?.u64(value);
+            out.u32(1).lp_ascii(FAMILY_COUNTER)?.u64(1);
+        } else {
+            out.u32(0);
         }
         out.u64(0).u32(1).reference(indices.component_link);
         for record in [
@@ -840,7 +798,7 @@ impl Writer<'_> {
     /// timeline context names.
     fn components(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
         let (indices, classes) = (self.indices, self.classes);
-        let members = self.owner_members();
+        let members = indices.members();
         out.record(&classes.owner_collection, indices.owner_collection)
             .zeros(10)
             .header(&classes.collection_base, indices.owner_collection)
@@ -888,98 +846,52 @@ impl Writer<'_> {
         out.record(&classes.context_016d8c93, indices.context_016d8c93)
             .zeros(14)
             .reference(indices.context);
-        let context_members = self.context_members();
         out.record(&classes.context_members, indices.context_members)
             .zeros(10)
             .reference(indices.context)
             .byte(1)
-            .u32(count(context_members.len())?);
-        for member in &context_members {
+            .u32(count(members.len())?);
+        for member in &members {
             out.reference(*member);
         }
 
         // The dependency table: the input map, the context, and the
         // dependent map of the same edges by the record read.
-        let (inputs, dependents) = self.dependencies();
         out.record(&classes.dependencies, indices.dependencies)
-            .zeros(10)
-            .byte(u8::from(!inputs.is_empty()))
-            .u32(count(inputs.len())?);
-        dependency_entries(out, &inputs)?;
-        out.reference(indices.context).u32(count(dependents.len())?);
-        dependency_entries(out, &dependents)?;
-
-        // The persistent-id table in the forward form: each scope with its
-        // identity, in ascending record index, then the pairs in ascending
-        // identity.
-        let identities = self.identities();
-        let mut forward = identities.clone();
-        forward.sort_unstable_by_key(|&(_, scope)| scope);
-        out.record(&classes.persistent_ids, indices.persistent_ids)
-            .zeros(10)
-            .u32(count(forward.len())?);
-        for (identity, scope) in &forward {
-            out.u64(u64::from(*scope)).u32(1).u64(*identity);
+            .zeros(10);
+        match &indices.item {
+            Some(item) => {
+                out.byte(1).u32(2);
+                dependency(out, item.scope, indices.component, COMPONENT_EDGE);
+                dependency(out, item.result_owner, item.scope, EDGE);
+                out.reference(indices.context).u32(2);
+                dependency(out, indices.component, item.scope, COMPONENT_EDGE);
+                dependency(out, item.scope, item.result_owner, EDGE);
+            }
+            None => {
+                out.byte(0).u32(0).reference(indices.context).u32(0);
+            }
         }
-        out.u32(count(identities.len())?);
-        for (identity, scope) in &identities {
-            out.u64(*identity).u64(u64::from(*scope));
+
+        // The persistent-id table in the forward form: `Base Feature -> 300`.
+        out.record(&classes.persistent_ids, indices.persistent_ids)
+            .zeros(10);
+        match &indices.item {
+            Some(item) => {
+                out.u32(1)
+                    .u64(u64::from(item.scope))
+                    .u32(1)
+                    .u64(PERSISTENT_ID)
+                    .u32(1)
+                    .u64(PERSISTENT_ID)
+                    .u64(u64::from(item.scope));
+            }
+            None => {
+                out.u32(0).u32(0);
+            }
         }
         out.u32(0).reference(indices.context);
         Ok(())
-    }
-
-    /// `(identity, scope)` of every timeline item in timeline order: the
-    /// `Sketch` items from `300`, then the `Base Feature`.
-    fn identities(&self) -> Vec<(u64, u32)> {
-        let mut identities = Vec::new();
-        for (identity, sketch) in (FIRST_IDENTITY..).zip(self.sketches) {
-            identities.push((identity, sketch.scope));
-        }
-        if let Some(item) = &self.indices.item {
-            identities.push((self.persistent_id, item.scope));
-        }
-        identities
-    }
-
-    /// The input and dependent maps of the dependency table, each in
-    /// ascending record index: a scope depends on the component record and
-    /// a `Sketch` scope on its placement, which depends on its placement
-    /// path; the result owner depends on the `Base Feature` scope.
-    fn dependencies(&self) -> (Vec<Dependency>, Vec<Dependency>) {
-        let component = self.indices.component;
-        let mut inputs = Vec::new();
-        let mut dependents = Vec::new();
-        let mut scopes = Vec::new();
-        for sketch in self.sketches {
-            inputs.push((
-                sketch.scope,
-                vec![(component, COMPONENT_EDGE), (sketch.placement, EDGE)],
-            ));
-            inputs.push((sketch.placement, vec![(sketch.path, EDGE)]));
-            dependents.push((sketch.path, vec![(sketch.placement, EDGE)]));
-            dependents.push((sketch.placement, vec![(sketch.scope, EDGE)]));
-            scopes.push(sketch.scope);
-        }
-        if let Some(item) = &self.indices.item {
-            inputs.push((item.scope, vec![(component, COMPONENT_EDGE)]));
-            inputs.push((item.result_owner, vec![(item.scope, EDGE)]));
-            dependents.push((item.scope, vec![(item.result_owner, EDGE)]));
-            scopes.push(item.scope);
-        }
-        if !scopes.is_empty() {
-            scopes.sort_unstable();
-            dependents.push((
-                component,
-                scopes
-                    .into_iter()
-                    .map(|scope| (scope, COMPONENT_EDGE))
-                    .collect(),
-            ));
-        }
-        inputs.sort_by_key(|&(record, _)| record);
-        dependents.sort_by_key(|&(record, _)| record);
-        (inputs, dependents)
     }
 
     /// The origin container and the header of each record it names.
@@ -1071,7 +983,7 @@ impl Writer<'_> {
 /// A record-timestamp table: fourteen zero bytes, `01 01` for the scope's
 /// table and `00 00` for the others, the `(record, timestamp)` entries, the
 /// owner entry and eight zero bytes.
-pub(super) fn timestamp_table(
+fn timestamp_table(
     out: &mut DesignRecords,
     class: &DesignClassTag,
     record: u32,
@@ -1092,18 +1004,9 @@ pub(super) fn timestamp_table(
     Ok(())
 }
 
-/// A dependency-table entry: a record and its `(record, flag)` edges.
-type Dependency = (u32, Vec<(u32, u32)>);
-
-/// Dependency-table entries, each the record, its edge count and its edges.
-fn dependency_entries(out: &mut DesignRecords, entries: &[Dependency]) -> Result<(), CodecError> {
-    for (record, edges) in entries {
-        out.reference(*record).u32(count(edges.len())?);
-        for (edge, flag) in edges {
-            out.reference(*edge).u32(*flag);
-        }
-    }
-    Ok(())
+/// One dependency-table entry with one edge.
+fn dependency(out: &mut DesignRecords, record: u32, edge: u32, flag: u32) {
+    out.reference(record).u32(1).reference(edge).u32(flag);
 }
 
 fn count(length: usize) -> Result<u32, CodecError> {
@@ -1138,21 +1041,48 @@ fn residual_losses(indices: &Indices, bodies: &[BodyRecords]) -> Vec<LossNote> {
             indices.origin_planes + plane
         )
     }));
-    records.extend(
-        [indices.owner_collection, indices.context_members].map(|record| {
-            format!("record {record} (member list of a design with no Base Feature)")
-        }),
-    );
+    if indices.item.is_none() {
+        records.extend(
+            [indices.owner_collection, indices.context_members].map(|record| {
+                format!("record {record} (member list of a design with no Base Feature)")
+            }),
+        );
+    }
     records.extend(bodies.iter().flat_map(|body| {
         [body.design_reference, body.parameter_reference].map(|record| {
             format!("record {record} (body-reference record D3937028: its GUID and presentation members)")
         })
     }));
+    let mut stamp_records = vec![format!(
+        "record {} (component record-timestamp table)",
+        indices.component_stamps
+    )];
+    if let Some(item) = &indices.item {
+        stamp_records.push(format!(
+            "record {} (Base Feature scope record-timestamp table)",
+            item.scope_stamps
+        ));
+        stamp_records.push(format!(
+            "record {} (Base Feature result record-timestamp table)",
+            item.result_stamps
+        ));
+    }
     record_residual_unavailable(
         "F3D",
         "writes these Design records with zero bytes where the specification states no value",
         records,
     )
     .into_iter()
+    .chain(record_residual_unavailable(
+        "F3D",
+        "writes fixed-clock (2026-01-01 UTC) authoring timestamps in the record-timestamp tables: the document records no authoring clock",
+        stamp_records,
+    ))
+    .chain(
+        indices
+            .item
+            .as_ref()
+            .and_then(|item| item_tail_loss(item.scope)),
+    )
     .collect()
 }
