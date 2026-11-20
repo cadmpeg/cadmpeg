@@ -193,13 +193,6 @@ fn unresolved_edges_never_fall_back_to_final_topology_or_another_rollback() {
                 *value = json!([1]);
             }
         });
-        if failure == "microversion" {
-            assert!(read(&bytes)
-                .unwrap_err()
-                .to_string()
-                .contains("pinned microversion"));
-            continue;
-        }
         let (model, report) = read(&bytes).unwrap();
         assert_eq!(kinds(&model), ["sketch", "extrude", "native"]);
         assert!(model.ir.model.feature_input_topologies.is_empty());
@@ -215,9 +208,9 @@ fn unresolved_edges_never_fall_back_to_final_topology_or_another_rollback() {
 }
 
 #[test]
-fn wrong_magic_schema_and_microversion_are_refused() {
+fn wrong_magic_schema_and_manifest_identity_are_refused() {
     assert!(read(b"not a zip").is_err());
-    for failure in ["schema", "microversion", "assembly", "multiple", "path"] {
+    for failure in ["schema", "assembly", "multiple", "path"] {
         let bytes = changed(&fixture("revolve"), |path, value| {
             if path == "manifest.json" {
                 match failure {
@@ -231,16 +224,13 @@ fn wrong_magic_schema_and_microversion_are_refused() {
                     _ => {}
                 }
             }
-            if path.ends_with("features.json") && failure == "microversion" {
-                value["sourceMicroversion"] = json!("other");
-            }
         });
         assert!(read(&bytes).is_err(), "{failure}");
     }
 }
 
 #[test]
-fn consistency_flag_refuses_mixed_snapshots_and_preserves_legacy_v1() {
+fn consistency_flag_reports_mixed_snapshots_and_preserves_legacy_v1() {
     // The checked-in v1 fixtures predate the optional consistency/provenance fields.
     let legacy = fixture("revolve");
     let (original, _) = read(&legacy).unwrap();
@@ -257,17 +247,24 @@ fn consistency_flag_refuses_mixed_snapshots_and_preserves_legacy_v1() {
         if path == "manifest.json" {
             value["consistent"] = json!(false);
         }
-        // This must be refused before trying to decode construction history.
         if path.ends_with("features.json") {
             value["features"] = Value::Null;
         }
     });
-    let reason = read(&inconsistent).unwrap_err().to_string();
-    assert!(reason.contains("marked inconsistent"), "{reason}");
-    assert!(
-        reason.contains("fetch it again, or use a version link"),
-        "{reason}"
+    let (model, report) = read(&inconsistent).unwrap();
+    assert!(model.ir.model.features.is_empty());
+    assert_eq!(
+        model.ir.geometry.bodies.len(),
+        original.ir.geometry.bodies.len()
     );
+    assert!(report
+        .losses()
+        .iter()
+        .any(|loss| loss.code.as_deref() == Some("onshape/history.not-supported")));
+    assert!(report
+        .losses()
+        .iter()
+        .any(|loss| loss.code.as_deref() == Some("onshape/record.malformed")));
     for flag in [Value::Null, json!("false"), json!(0)] {
         let malformed = changed(&legacy, |path, value| {
             if path == "manifest.json" {

@@ -15,6 +15,7 @@ pub(super) enum OnshapeLossCode {
     SketchGeometryNotSupported,
     RecordMalformed,
     MemberTooLarge,
+    MemberUnreadable,
     TopologyTooLarge,
     StepUnreadable,
 }
@@ -31,10 +32,14 @@ impl OnshapeLossCode {
             Self::EmptyMember => "container.empty-member",
             Self::SketchGeometryNotSupported => "sketch.geometry-not-supported",
             Self::RecordMalformed => "record.malformed",
+            Self::MemberUnreadable => "member.unreadable",
             Self::MemberTooLarge => "member.too-large",
             Self::TopologyTooLarge => "topology.too-large",
             Self::StepUnreadable => "step.unreadable",
         }
+    }
+    pub(super) fn matches(self, note: &LossNote) -> bool {
+        note.code.namespace() == "onshape" && note.code.local_code() == self.code()
     }
     pub(super) fn note(self, message: impl Into<String>) -> LossNote {
         LossNote::new(
@@ -43,7 +48,7 @@ impl OnshapeLossCode {
                 self.code(),
                 match self {
                     Self::StepUnreadable => LossTaxonomy::GeometryNotTransferred,
-                    Self::EmptyMember | Self::MemberTooLarge => {
+                    Self::EmptyMember | Self::MemberTooLarge | Self::MemberUnreadable => {
                         LossTaxonomy::MetadataNotTransferred
                     }
                     _ => LossTaxonomy::FeatureHistoryRetained,

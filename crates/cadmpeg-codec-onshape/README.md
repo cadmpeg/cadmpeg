@@ -23,13 +23,22 @@ fixed default. Tests require an offline process.
 
 Admitted thin walls use typed design operations and Native model companions.
 `onshape/extrude.thin-model-not-supported` names the model construction gap.
-The scoped design timeline includes every source feature. Native design members
+The scoped design timeline includes every admitted model feature. Native design members
 carry `onshape/history.design-operation-native`; the model rows retain their
 decoded constructions. Final STEP bodies bind after the complete timeline.
+Failed thin scope installation restores the design state and reports
+`onshape/extrude.thin-not-supported`. Feature annotations use the first admitted
+source record for each model feature.
 Explicit historical provenance passes the stored rollback producer proof,
 including tangent-added edges.
 
-Member size and expansion limits omit the affected member with
+Unreadable members, invalid names, encryption, unsupported compression and repeated
+names carry `onshape/member.unreadable`. The first member with each name is
+admitted. JSON responses with stale or malformed microversion declarations
+are omitted with the same loss. Malformed feature arrays carry
+`onshape/history.not-supported` and retain readable final geometry.
+
+Member size, remaining bundle capacity and expansion limits omit the affected member with
 `onshape/member.too-large`. Topology row limits omit the affected rollback
 table with `onshape/topology.too-large`; dependent features use Native
 construction and their mapping loss. Unreadable STEP exports retain readable

@@ -305,9 +305,6 @@ pub(super) fn read(
     report: &mut Report,
 ) -> Result<Model, Error> {
     let mut bundle = Bundle::open(ctx, root)?;
-    if !ctx.container_only() {
-        bundle.admit_topology(ctx)?;
-    }
     report.notes.append(&mut bundle.losses);
     let manifest = bundle.json("manifest.json")?;
     if manifest.get("schema").and_then(Value::as_str) != Some(SCHEMA) {
@@ -316,20 +313,31 @@ pub(super) fn read(
         ));
     }
     match manifest.get("consistent") {
-        Some(Value::Bool(false)) => return Err(Error::Decode(
-            "Onshape bundle is marked inconsistent: its files do not reflect one microversion; fetch it again, or use a version link".into(),
-        )),
-        Some(Value::Bool(true)) | None => {},
-        Some(_) => return Err(Error::Decode(
-            "Onshape bundle consistency flag must be true or false; fetch a new bundle".into(),
-        )),
+        Some(Value::Bool(false)) => report.push_coded(
+            "manifest.json",
+            OnshapeLossCode::RecordMalformed,
+            "bundle consistency is false; each response uses its pinned microversion for admission",
+        ),
+        Some(Value::Bool(true)) | None => {}
+        Some(_) => {
+            return Err(Error::Decode(
+                "Onshape bundle consistency flag must be true or false".into(),
+            ))
+        }
     }
     if ctx.container_only() {
         return Ok(Model::from_decoded(empty(ctx, root), None));
     }
     let document = manifest.get("document").unwrap_or(&Value::Null);
     let mid = text(document, "microversion").map_err(Error::Decode)?;
-    bundle.validate_microversions(mid)?;
+    let mid = mid.to_owned();
+    for key in ["sourceMicroversion", "microversionId"] {
+        microversion(manifest, key, &mid).map_err(Error::Decode)?;
+    }
+    bundle.admit_microversions(&mid);
+    bundle.admit_topology(ctx)?;
+    report.notes.append(&mut bundle.losses);
+    let manifest = bundle.json("manifest.json")?;
     let elements = rows(manifest, "elements").map_err(Error::Decode)?;
     if elements.len() != 1
         || elements
@@ -355,10 +363,17 @@ pub(super) fn read(
     let prefix = format!("partstudios/{eid}");
     let history_path = format!("{prefix}/features.json");
     let features = match bundle.json(&history_path) {
-        Ok(response) => {
-            microversion(response, "sourceMicroversion", mid).map_err(Error::Decode)?;
-            rows(response, "features").map_err(Error::Decode)?
-        }
+        Ok(response) => match rows(response, "features") {
+            Ok(features) => features,
+            Err(reason) => {
+                report.push_coded(
+                    &history_path,
+                    OnshapeLossCode::HistoryNotSupported,
+                    format!("{reason}; feature history is missing"),
+                );
+                &[]
+            }
+        },
         Err(error) => {
             report.push_coded(
                 &history_path,
@@ -368,7 +383,7 @@ pub(super) fn read(
             &[]
         }
     };
-    let inputs = topology::Inputs::new(&bundle, &prefix, mid, features, report);
+    let inputs = topology::Inputs::new(&bundle, &prefix, &mid, features, report);
     let step_path = format!("{prefix}/export.step");
     let step = if bundle.contains(&step_path) {
         let source = bundle.view(&step_path)?;
@@ -409,7 +424,7 @@ pub(super) fn read(
         }) && !report
             .notes
             .iter()
-            .any(|note| note.code.to_string() == "onshape/step.unreadable")
+            .any(|note| OnshapeLossCode::StepUnreadable.matches(note))
         {
             report.push_coded(
                 &step_path,
@@ -465,7 +480,8 @@ pub(super) fn read(
     } else {
         std::collections::BTreeMap::new()
     };
-    let original_design_features = model.ir.design.features.len();
+    let original_design = model.ir.design.clone();
+    let original_design_features = original_design.features.len();
     if features
         .iter()
         .any(|feature| features::value(feature, "bodyType") == Some("THIN"))
@@ -481,6 +497,8 @@ pub(super) fn read(
     let mut seen = std::collections::BTreeSet::new();
     let mut unresolved_variables = std::collections::BTreeSet::new();
     for (ordinal, feature) in features.iter().enumerate() {
+        let design_length = model.ir.design.features.len();
+        let note_start = report.notes.len();
         let native = match text(feature, "featureId") {
             Ok(native) if seen.insert(native) => native,
             Ok(native) => {
@@ -710,6 +728,10 @@ pub(super) fn read(
             row["suppressed"] = json!(suppressed);
         }
         if let Err(reason) = push(&mut model.ir.model.features, row) {
+            model.ir.design.features.truncate(design_length);
+            let mut tail = report.notes.split_off(note_start);
+            tail.retain(|note| !OnshapeLossCode::ThinModelNotSupported.matches(note));
+            report.notes.extend(tail);
             report.push_coded(
                 name,
                 OnshapeLossCode::RecordMalformed,
@@ -718,14 +740,7 @@ pub(super) fn read(
         }
     }
     if model.ir.design.features.len() > original_design_features {
-        if let Err(reason) = thin::install_scope(&mut model.ir, report) {
-            report.push_coded(
-                "thin timeline",
-                OnshapeLossCode::RecordMalformed,
-                format!("{reason}; the design timeline scope is not installed"),
-            );
-            model.ir.design.features.truncate(original_design_features);
-        }
+        install_thin_scope(&mut model.ir, report, original_design);
     }
     annotate(&mut model, features)?;
     report
@@ -733,6 +748,25 @@ pub(super) fn read(
         .extend(bundle.retain_assets(ctx, &mut model.ir)?);
     model.ir.finalize();
     Ok(model)
+}
+
+fn install_thin_scope(
+    ir: &mut cadmpeg_ir::CadIr,
+    report: &mut Report,
+    original: cadmpeg_ir::document::Design,
+) {
+    let notes = report.notes.len();
+    if let Err(reason) = thin::install_scope(ir, report) {
+        ir.design = original;
+        report.notes.truncate(notes);
+        for note in &mut report.notes {
+            if OnshapeLossCode::ThinModelNotSupported.matches(note) {
+                *note = OnshapeLossCode::ThinNotSupported.note(format!(
+                    "{reason}; thin construction retains its native model operation"
+                ));
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -818,10 +852,22 @@ fn annotate(model: &mut Model, features: &[Value]) -> Result<(), Error> {
             .field_exactness(&feature.id, "outputs", Exactness::Derived)
             .map_err(cadmpeg_core::CodecError::from)?;
     }
+    let mut seen = std::collections::BTreeSet::new();
     for source in features {
         let Ok(native) = text(source, "featureId") else {
             continue;
         };
+        let feature_id = id("feature", native);
+        if !seen.insert(native)
+            || !model
+                .ir
+                .model
+                .features
+                .iter()
+                .any(|feature| feature.id.as_str() == feature_id)
+        {
+            continue;
+        }
         let sketch_id = id("sketch", native);
         if model
             .ir

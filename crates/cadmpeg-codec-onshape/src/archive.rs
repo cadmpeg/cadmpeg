@@ -29,7 +29,7 @@ impl<'a> Bundle<'a> {
         directory(root).ok_or_else(|| {
             failure("the ZIP directory exceeds the bundle limits or cannot be read")
         })?;
-        let snapshot = ArchiveSnapshot::new(ctx, root)?;
+        let snapshot = ArchiveSnapshot::with_repeated_names(ctx, root)?;
         if snapshot.recovery_reason().is_some() || snapshot.entries().len() > MEMBERS {
             return Err(failure("the ZIP directory is invalid"));
         }
@@ -57,9 +57,11 @@ impl<'a> Bundle<'a> {
         let mut json = BTreeMap::from([("manifest.json".to_owned(), manifest)]);
         let mut remaining = EXPANDED_BYTES;
         let mut losses = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
         for entry in snapshot.entries() {
             let name = &entry.name;
-            if name.contains('\\')
+            if !seen.insert(name)
+                || name.contains('\\')
                 || name
                     .split('/')
                     .any(|p| p.is_empty() || p == "." || p == ".." || p.contains(':'))
@@ -69,9 +71,13 @@ impl<'a> Bundle<'a> {
                     ZipCompression::Stored | ZipCompression::Deflate
                 )
             {
-                return Err(failure(
-                    "a member name or compression method is unsupported",
-                ));
+                if name == "manifest.json" {
+                    return Err(failure(
+                        "manifest name, repetition or compression is invalid",
+                    ));
+                }
+                losses.push(OnshapeLossCode::MemberUnreadable.note(format!("{name}: invalid name, repeated name, encryption or unsupported method; omitted the member")));
+                continue;
             }
             let member_limit = if has_extension(name, "json") {
                 JSON_BYTES
@@ -83,15 +89,14 @@ impl<'a> Bundle<'a> {
             } else {
                 member_limit
             };
+            let member_limit = member_limit.min(remaining);
             if entry.uncompressed_size > member_limit {
                 losses.push(OnshapeLossCode::MemberTooLarge.note(format!(
                     "{name}: expanded member exceeds {member_limit} bytes; omitted the member"
                 )));
                 continue;
             }
-            remaining = remaining
-                .checked_sub(entry.uncompressed_size)
-                .ok_or_else(|| failure("the expanded data exceeds the bundle limit"))?;
+            remaining -= entry.uncompressed_size;
             let data = if name == "manifest.json" {
                 manifest_view
             } else {
@@ -107,14 +112,24 @@ impl<'a> Bundle<'a> {
                         continue;
                     }
                     Err(error @ CodecError::ResourceLimit(_)) => return Err(error.into()),
-                    Err(error) if name.ends_with("/export.step") => {
+                    Err(error)
+                        if prefix.as_deref().is_some_and(|prefix| {
+                            name.strip_prefix(prefix) == Some("export.step")
+                        }) =>
+                    {
                         losses.push(
                             OnshapeLossCode::StepUnreadable
                                 .note(format!("{name}: {error}; final geometry is missing")),
                         );
                         continue;
                     }
-                    Err(error) => return Err(error.into()),
+                    Err(error) => {
+                        losses.push(
+                            OnshapeLossCode::MemberUnreadable
+                                .note(format!("{name}: {error}; omitted the member")),
+                        );
+                        continue;
+                    }
                 }
             };
             let length = cadmpeg_core::decode::u64_from_index(data.window().len());
@@ -128,16 +143,34 @@ impl<'a> Bundle<'a> {
                 .as_deref()
                 .is_some_and(|prefix| schema_response(name, prefix))
             {
-                let text = std::str::from_utf8(data.window())
-                    .map_err(|e| failure(format!("{name}: {e}")))?;
-                json.insert(
-                    name.clone(),
-                    ctx.parse_json_value(text, "Onshape JSON member")?,
-                );
+                let parsed = match std::str::from_utf8(data.window()) {
+                    Ok(text) => {
+                        match ctx.run_part(|| ctx.parse_json_value(text, "Onshape JSON member"))? {
+                            Ok(value) => Ok(value),
+                            Err(CodecError::ResourceLimit(limit))
+                                if limit.scope == cadmpeg_core::decode::LimitScope::Session =>
+                            {
+                                return Err(CodecError::ResourceLimit(limit).into())
+                            }
+                            Err(error) => Err(error.to_string()),
+                        }
+                    }
+                    Err(error) => Err(error.to_string()),
+                };
+                match parsed {
+                    Ok(value) => {
+                        json.insert(name.clone(), value);
+                    }
+                    Err(error) => {
+                        losses.push(
+                            OnshapeLossCode::MemberUnreadable
+                                .note(format!("{name}: {error}; omitted the member")),
+                        );
+                        continue;
+                    }
+                }
             }
-            if members.insert(name.clone(), data).is_some() {
-                return Err(failure("a member repeats or exceeds its expanded limit"));
-            }
+            members.insert(name.clone(), data);
         }
         Ok(Self {
             snapshot,
@@ -160,13 +193,27 @@ impl<'a> Bundle<'a> {
             .get(path)
             .ok_or_else(|| failure(format!("{path} is missing")))
     }
-    pub(super) fn validate_microversions(&self, expected: &str) -> Result<(), Error> {
-        for value in self.json.values() {
+    pub(super) fn admit_microversions(&mut self, expected: &str) {
+        let mut omitted = Vec::new();
+        for (path, value) in &self.json {
+            if path == "manifest.json" {
+                continue;
+            }
             for key in ["sourceMicroversion", "microversionId"] {
-                super::reader::microversion(value, key, expected).map_err(Error::Decode)?;
+                if let Err(reason) = super::reader::microversion(value, key, expected) {
+                    self.losses.push(
+                        OnshapeLossCode::MemberUnreadable
+                            .note(format!("{path}: {reason}; omitted the member")),
+                    );
+                    omitted.push(path.clone());
+                    break;
+                }
             }
         }
-        Ok(())
+        for path in omitted {
+            self.json.remove(&path);
+            self.members.remove(&path);
+        }
     }
     pub(super) fn admit_topology(&mut self, ctx: &DecodeContext<'_>) -> Result<(), Error> {
         let mut count = 0usize;
@@ -286,7 +333,7 @@ pub(super) fn directory(root: View<'_>) -> Option<()> {
 pub(super) fn manifest(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<Value, Error> {
     directory(root)
         .ok_or_else(|| failure("the ZIP directory exceeds the bundle limits or cannot be read"))?;
-    let snapshot = ArchiveSnapshot::new(ctx, root)?;
+    let snapshot = ArchiveSnapshot::with_repeated_names(ctx, root)?;
     let entry = snapshot
         .entry("manifest.json")
         .ok_or_else(|| failure("manifest.json is missing"))?;

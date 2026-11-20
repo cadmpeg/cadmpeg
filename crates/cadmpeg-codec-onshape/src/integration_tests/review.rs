@@ -20,7 +20,7 @@ fn kind(wire: &Value, ordinal: usize) -> &Value {
 }
 
 #[test]
-fn stored_json_obeys_context_depth_storage_and_entity_admission() {
+fn stored_json_part_refusals_are_losses_and_session_entities_remain_errors() {
     let original = fixture("plate-fillet");
     for resource in ["depth", "storage", "entities"] {
         let bytes = edit(&original, |path, value| {
@@ -50,22 +50,45 @@ fn stored_json_obeys_context_depth_storage_and_entity_admission() {
                 source_fidelity: cadmpeg_ir::SourceFidelity::for_root(root),
             })
         });
-        let error = backend.decode_impl(&ctx, root).unwrap_err();
-        if resource == "storage" {
-            assert!(matches!(error, CodecError::NotImplemented(_)), "{error}");
-            assert!(error.to_string().contains("JSON"));
+        let result = backend.decode_impl(&ctx, root);
+        if resource == "entities" {
+            let error = result.unwrap_err();
+            let CodecError::ResourceLimit(limit) = error else {
+                panic!("expected a session entity limit");
+            };
+            assert_eq!(limit.scope, cadmpeg_core::decode::LimitScope::Session);
+            assert_eq!(
+                limit.dimension,
+                cadmpeg_core::decode::ResourceDimension::Entities
+            );
+            assert_eq!(limit.operation, "Onshape history admission");
         } else {
-            assert!(matches!(error, CodecError::ResourceLimit(_)), "{error}");
-            if resource == "entities" {
-                let CodecError::ResourceLimit(limit) = &error else {
-                    unreachable!()
-                };
-                assert_eq!(
-                    limit.dimension,
-                    cadmpeg_core::decode::ResourceDimension::Entities
-                );
-                assert_eq!(limit.operation, "Onshape history admission");
+            let decoded = result.unwrap();
+            let notes: Vec<_> = decoded
+                .body
+                .losses
+                .iter()
+                .filter(|note| crate::loss::OnshapeLossCode::MemberUnreadable.matches(note))
+                .collect();
+            assert_eq!(notes.len(), 1);
+            if resource == "storage" {
+                assert!(notes[0].message.contains("JSON"));
             }
+            assert!(decoded
+                .body
+                .losses
+                .iter()
+                .any(|note| crate::loss::OnshapeLossCode::HistoryNotSupported.matches(note)));
+            assert!(decoded.ir.model.features.is_empty());
+            assert!(decoded.ir.model.assets.iter().any(|asset| asset
+                .name
+                .as_ref()
+                .is_some_and(|name| name.as_str() == "partstudios/studio/export.step")));
+            assert!(decoded.ir.model.assets.iter().all(|asset| asset
+                .name
+                .as_ref()
+                .is_none_or(|name| name.as_str() != "partstudios/studio/features.json")));
+            assert!(ctx.resource_refusal().is_none());
         }
     }
 }
@@ -426,7 +449,7 @@ fn negative_variable_angles_keep_their_signed_parameter_value() {
 }
 
 #[test]
-fn unused_and_optional_responses_share_snapshot_consistency_at_geometry_depth() {
+fn stale_unused_and_optional_responses_are_omitted_at_geometry_and_design_depth() {
     for path in [
         "partstudios/studio/bodydetails/77.json",
         "partstudios/studio/configuration.json",
@@ -448,7 +471,7 @@ fn unused_and_optional_responses_share_snapshot_consistency_at_geometry_depth() 
                     );
                 }
             });
-            let error = codec()
+            let result = codec()
                 .decode(
                     &mut Cursor::new(bytes),
                     &DecodeOptions {
@@ -456,8 +479,20 @@ fn unused_and_optional_responses_share_snapshot_consistency_at_geometry_depth() 
                         ..Default::default()
                     },
                 )
-                .unwrap_err();
-            assert!(error.to_string().contains("pinned microversion"));
+                .unwrap();
+            assert!(result
+                .report()
+                .losses
+                .iter()
+                .any(|note| crate::loss::OnshapeLossCode::MemberUnreadable.matches(note)));
+            assert!(result
+                .ir()
+                .model
+                .assets
+                .iter()
+                .all(|asset| asset.name.as_ref().is_none_or(|name| name.as_str() != path)));
+            assert_eq!(result.ir().geometry.bodies.len(), 1);
+            validate(result);
         }
     }
 }

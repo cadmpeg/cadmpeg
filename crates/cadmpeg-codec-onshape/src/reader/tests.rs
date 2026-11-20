@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{archive, part_bodies, part_studio_bodies, topology, Model};
+use super::{archive, id, part_bodies, part_studio_bodies, topology, Model};
 use crate::test_support::{fixture, Report};
 use serde_json::{json, Value};
 use std::io::{Cursor, Read, Write};
@@ -156,4 +156,63 @@ fn part_studio_parts_are_one_design_but_moved_parts_stay_placed() {
     part_studio_bodies(&mut moved);
     assert_eq!(moved.ir.model.occurrences.len(), 2);
     assert!(!moved.ir.model.occurrences.is_empty());
+}
+
+#[test]
+fn failed_thin_scope_restores_design_and_downgrades_wall_losses() {
+    let mut report = Report::default();
+    let mut model = crate::test_support::read_bytes(
+        std::path::Path::new("synthetic.onshape-bundle"),
+        &fixture("plate-fillet"),
+        &mut report,
+    )
+    .unwrap();
+    let mut report = super::Report::default();
+    let original = model.ir.design.clone();
+    let feature = &model.ir.model.features[1];
+    super::push(&mut model.ir.design.features, json!({"id":feature.id,"definition":{"operation":{"kind":"native","value":{"kind":"synthetic:thin","native_options":{},"source_settings":{}}}}})).unwrap();
+    report.notes.push(
+        crate::loss::OnshapeLossCode::ThinModelNotSupported
+            .note("design construction carries the proved wall operands"),
+    );
+    let notes = report.notes.len();
+    model.ir.model.product_definitions.clear();
+    super::install_thin_scope(&mut model.ir, &mut report, original.clone());
+    assert_eq!(model.ir.design, original);
+    assert_eq!(report.notes.len(), notes);
+    assert!(report
+        .notes
+        .iter()
+        .any(|note| crate::loss::OnshapeLossCode::ThinNotSupported.matches(note)));
+    assert!(!report
+        .notes
+        .iter()
+        .any(
+            |note| crate::loss::OnshapeLossCode::ThinModelNotSupported.matches(note)
+                || crate::loss::OnshapeLossCode::DesignOperationNative.matches(note)
+        ));
+}
+
+#[test]
+fn omitted_feature_has_no_placement_or_suppression_annotation() {
+    let mut model = crate::test_support::read_bytes(
+        std::path::Path::new("synthetic.onshape-bundle"),
+        &fixture("default-plane-regions"),
+        &mut Report::default(),
+    )
+    .unwrap();
+    model.ir.model.features.clear();
+    model.source_fidelity.annotations = cadmpeg_ir::annotations::Annotations::default();
+    let source = json!({"featureId":"drawn-profile","featureType":"newSketch"});
+    super::annotate(&mut model, &[source]).unwrap();
+    for key in [
+        id("sketch", "drawn-profile"),
+        id("feature", "drawn-profile"),
+    ] {
+        assert!(!model
+            .source_fidelity
+            .annotations
+            .exactness()
+            .contains_key(&key));
+    }
 }

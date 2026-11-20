@@ -30,6 +30,12 @@ fn indexed_names_preserve_cp437_and_utf8_identity() {
             ArchiveSnapshot::contains_matching_name(&ctx, root, |name| name == expected)
                 .expect("name probe")
         );
+        let repeated =
+            ArchiveSnapshot::with_repeated_names(&ctx, root).expect("permissive snapshot");
+        assert_eq!(
+            repeated.open(&ctx, expected).expect("member").window(),
+            b"payload"
+        );
         let archive = ArchiveSnapshot::new(&ctx, root).expect("snapshot");
         assert_eq!(archive.entries().len(), 1);
         assert_eq!(
@@ -656,3 +662,25 @@ fn nested_archive_members_keep_distinct_address_spaces() {
 }
 
 mod compression;
+
+#[test]
+fn repeated_names_are_opt_in_and_lookup_keeps_the_first_declaration() {
+    let bytes = zip_fixture::archive(&[
+        RawEntry::stored("optional.txt", b"first"),
+        RawEntry::stored("optional.txt", b"second"),
+    ]);
+    let arena = DecodeArena::new();
+    let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &DecodePolicy::service())
+        .expect("root context");
+    assert!(ArchiveSnapshot::new(&ctx, root).is_err());
+    let snapshot =
+        ArchiveSnapshot::with_repeated_names(&ctx, root).expect("repeated-name snapshot");
+    assert_eq!(snapshot.entries().len(), 2);
+    assert_eq!(
+        snapshot
+            .open(&ctx, "optional.txt")
+            .expect("first member")
+            .window(),
+        b"first"
+    );
+}
