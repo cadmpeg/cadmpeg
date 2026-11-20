@@ -5,41 +5,47 @@
 //! is written.
 //!
 //! [`Reduction::prepare`] removes the families the generator never writes
-//! before the first attempt. An attempt that still fails names the stage that
-//! failed, and [`Reduction::degrade`] takes the next fallback for that stage:
+//! before the first attempt. A face on a carrier F3D has no form for is
+//! omitted there, and its body is written open without it; a body with no
+//! writable face is left to the body fallback. An attempt that still fails
+//! names the stage that failed, and [`Reduction::degrade`] takes the next
+//! fallback for that stage:
 //! the native Design records, then every native record (W1), then the bodies
 //! that cannot be written alone, then every body. An empty design is the last
 //! form; only a failure to write that is returned. A failure of the design
 //! scope's records takes one fallback: the design scope is not written.
 
 use std::borrow::Cow;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_core::CodecError;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{
     evaluation_missing, native_records_omitted, output_empty, record_invalid,
 };
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::eval::admission::EvaluationAdmission;
 use cadmpeg_ir::eval::decode::curve_point_solved;
-use cadmpeg_ir::eval::EvaluationFailure;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{EdgeId, PointId, VertexId};
+use cadmpeg_ir::ids::{EdgeId, PointId, ShellId, VertexId};
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
 use cadmpeg_ir::schema::EntityKind;
+use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
 use cadmpeg_ir::topology::{
-    Color, EdgeCarrier, EdgeEnds, FaceLoops, LoopBoundary, Point, ShellMember, Vertex,
+    BodyKind, Color, EdgeCarrier, EdgeEnds, FaceLoops, LoopBoundary, Point, Shell, ShellMember,
+    Vertex,
 };
 use serde_json::Value;
 
 use crate::loss::F3dLossCode;
 
-use super::native_geometry::{native_procedural_curve, native_procedural_surface};
+use super::native_geometry::{
+    ProceduralOwners, native_procedural_curve, native_procedural_surface,
+};
 
 /// Native arenas the B-rep stream is written from. Every other arena belongs
 /// to the Design, ACT and configuration streams.
@@ -129,6 +135,9 @@ pub(super) struct Reduction<'a> {
     losses: Vec<LossNote>,
     design_dropped: bool,
     neutral_dropped: bool,
+    /// The faces omitted from each opened body, charged at [`Self::finish`]
+    /// for the bodies still written.
+    opened: BTreeMap<String, Vec<String>>,
 }
 
 impl<'a> Reduction<'a> {
@@ -138,6 +147,7 @@ impl<'a> Reduction<'a> {
             losses: Vec::new(),
             design_dropped: false,
             neutral_dropped: false,
+            opened: BTreeMap::new(),
         }
     }
 
@@ -162,6 +172,28 @@ impl<'a> Reduction<'a> {
 
     /// The losses, with `export:output.empty` when no geometry is written.
     pub(super) fn finish(mut self) -> Vec<LossNote> {
+        for (body, faces) in std::mem::take(&mut self.opened) {
+            let Some(row) = self
+                .ir
+                .geometry
+                .bodies
+                .iter()
+                .find(|row| row.id.as_str() == body)
+            else {
+                continue;
+            };
+            let kind = match row.kind {
+                BodyKind::Solid => "solid",
+                BodyKind::Sheet => "sheet",
+                BodyKind::Wire => "wire",
+                BodyKind::General => "general",
+            };
+            self.losses.push(F3dLossCode::WriterFaceOmitted.note(format!(
+                "body {body} is written as a {kind} body without {} face(s) whose carriers F3D has no form for: {}",
+                faces.len(),
+                faces.join(", ")
+            )));
+        }
         let geometry = &self.ir.geometry;
         if geometry.faces.is_empty()
             && !geometry.shells.iter().any(|shell| {
@@ -205,6 +237,7 @@ impl<'a> Reduction<'a> {
         self.state_open_edge_ranges()?;
         self.write_attributes_in_their_native_form();
         self.reduce_procedural_carriers();
+        self.open_shells_over_unwritable_carriers()?;
         self.drop_unwritable_pcurves();
         self.allocate_appearance_guids();
         self.drop_unwritable_appearances();
@@ -768,6 +801,163 @@ impl<'a> Reduction<'a> {
         }
     }
 
+    /// A face on a carrier F3D has no form for is omitted with its loops and
+    /// coedges, and the radial rings close over them. The records only those
+    /// faces used go, each touched shell is split into its connected parts,
+    /// and the body takes the kind its incidence derives.
+    fn open_shells_over_unwritable_carriers(&mut self) -> Result<(), CodecError> {
+        let unwritable = unwritable_faces(&self.ir);
+        if unwritable.is_empty() {
+            return Ok(());
+        }
+        let faces = unwritable
+            .values()
+            .flatten()
+            .map(|(face, _)| face.clone())
+            .collect::<HashSet<_>>();
+        let geometry = &self.ir.geometry;
+        let loops = geometry
+            .loops
+            .iter()
+            .filter(|row| faces.contains(row.face.as_str()))
+            .map(|row| row.id.to_string())
+            .chain(
+                geometry
+                    .faces
+                    .iter()
+                    .filter(|face| faces.contains(face.id.as_str()))
+                    .flat_map(|face| face.loops.iter())
+                    .map(ToString::to_string),
+            )
+            .collect::<HashSet<_>>();
+        let coedges = geometry
+            .coedges
+            .iter()
+            .filter(|coedge| loops.contains(coedge.owner_loop.as_str()))
+            .map(|coedge| coedge.id.to_string())
+            .collect::<HashSet<_>>();
+        let radial = geometry
+            .coedges
+            .iter()
+            .map(|coedge| (coedge.id.as_str(), &coedge.radial_next))
+            .collect::<HashMap<_, _>>();
+        let closed = geometry
+            .coedges
+            .iter()
+            .enumerate()
+            .filter(|(_, coedge)| {
+                !coedges.contains(coedge.id.as_str())
+                    && coedges.contains(coedge.radial_next.as_str())
+            })
+            .map(|(index, coedge)| {
+                let mut next = &coedge.radial_next;
+                for _ in 0..=coedges.len() {
+                    if !coedges.contains(next.as_str()) {
+                        break;
+                    }
+                    match radial.get(next.as_str()) {
+                        Some(&following) => next = following,
+                        None => break,
+                    }
+                }
+                let next = if coedges.contains(next.as_str()) {
+                    coedge.id.clone()
+                } else {
+                    next.clone()
+                };
+                (index, next)
+            })
+            .collect::<Vec<_>>();
+        let touched = geometry
+            .faces
+            .iter()
+            .filter(|face| faces.contains(face.id.as_str()))
+            .map(|face| face.shell.to_string())
+            .collect::<BTreeSet<_>>();
+
+        let geometry = &mut self.ir.to_mut().geometry;
+        for (index, next) in closed {
+            geometry.coedges[index].radial_next = next;
+        }
+        geometry
+            .faces
+            .retain(|face| !faces.contains(face.id.as_str()));
+        geometry
+            .loops
+            .retain(|row| !loops.contains(row.id.as_str()));
+        geometry
+            .coedges
+            .retain(|coedge| !coedges.contains(coedge.id.as_str()));
+        let occupied = geometry
+            .faces
+            .iter()
+            .map(|face| face.shell.to_string())
+            .collect::<HashSet<_>>();
+        let empty_shells = geometry
+            .shells
+            .iter()
+            .filter(|shell| {
+                touched.contains(shell.id.as_str())
+                    && !occupied.contains(shell.id.as_str())
+                    && shell.members.is_empty()
+            })
+            .map(|shell| shell.id.to_string())
+            .collect::<HashSet<_>>();
+        geometry
+            .shells
+            .retain(|shell| !empty_shells.contains(shell.id.as_str()));
+        let mut empty_regions = HashSet::new();
+        for region in &mut geometry.regions {
+            let before = region.shells.len();
+            region
+                .shells
+                .retain(|shell| !empty_shells.contains(shell.as_str()));
+            if region.shells.is_empty() && before != 0 {
+                empty_regions.insert(region.id.to_string());
+            }
+        }
+        geometry
+            .regions
+            .retain(|region| !empty_regions.contains(region.id.as_str()));
+        let omitted = faces
+            .into_iter()
+            .chain(loops)
+            .chain(coedges)
+            .chain(empty_shells)
+            .chain(empty_regions)
+            .collect::<BTreeSet<_>>();
+
+        let bodies = self
+            .ir
+            .geometry
+            .bodies
+            .iter()
+            .map(|body| body.id.to_string())
+            .collect::<Vec<_>>();
+        let kept = bodies.iter().map(String::as_str).collect::<BTreeSet<_>>();
+        let unreachable = retain_bodies(self.ir.to_mut(), &kept)?;
+        split_disconnected_shells(&mut self.ir.to_mut().geometry, &touched)?;
+        let kinds = super::preconditions::derived_body_kinds(&self.ir.geometry);
+        for (body, kind) in self.ir.to_mut().geometry.bodies.iter_mut().zip(kinds) {
+            if unwritable.contains_key(body.id.as_str()) {
+                body.kind = kind;
+            }
+        }
+        self.charge_removed(
+            &unreachable,
+            &omitted,
+            "their faces are on carriers F3D has no form for",
+        );
+        for (body, faces) in unwritable {
+            self.opened.entry(body).or_default().extend(
+                faces
+                    .into_iter()
+                    .map(|(face, carrier)| format!("face {face} ({carrier})")),
+            );
+        }
+        Ok(())
+    }
+
     /// A pcurve with no native form is omitted with its coedge uses; Fusion
     /// recomputes a missing pcurve from the face and edge.
     fn drop_unwritable_pcurves(&mut self) {
@@ -1108,23 +1298,36 @@ impl<'a> Reduction<'a> {
         kept: &BTreeSet<&str>,
         reason: &str,
     ) -> Result<BTreeSet<String>, CodecError> {
-        let ir = self.ir.to_mut();
-        let removed = retain_bodies(ir, kept)?;
-        if removed.is_empty() {
-            return Ok(removed);
+        let removed = retain_bodies(self.ir.to_mut(), kept)?;
+        self.charge_removed(&removed, &BTreeSet::new(), reason);
+        Ok(removed)
+    }
+
+    /// Report the `unreachable` records no written body uses, and drop the
+    /// native records that name them or the `omitted` records (W1).
+    fn charge_removed(
+        &mut self,
+        unreachable: &BTreeSet<String>,
+        omitted: &BTreeSet<String>,
+        reason: &str,
+    ) {
+        if !unreachable.is_empty() {
+            self.losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
+                "{} topology and geometry record(s) of omitted bodies, or used by no written body, were not written ({reason}): {}",
+                unreachable.len(),
+                unreachable.iter().map(String::as_str).collect::<Vec<_>>().join(", ")
+            )));
         }
-        self.losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
-            "{} topology and geometry record(s) of omitted bodies, or used by no written body, were not written ({reason}): {}",
-            removed.len(),
-            removed.iter().map(String::as_str).collect::<Vec<_>>().join(", ")
-        )));
-        let dropped = self.remove_native_records_naming(&removed);
+        let named = unreachable.union(omitted).cloned().collect::<BTreeSet<_>>();
+        if named.is_empty() {
+            return;
+        }
+        let dropped = self.remove_native_records_naming(&named);
         self.losses.extend(native_records_omitted(
             "F3D",
             "that name topology or geometry the write omits",
             dropped,
         ));
-        Ok(removed)
     }
 
     /// Remove the named native arenas; returns the removed record ids.
@@ -1284,6 +1487,239 @@ fn omit_vertex_free_edge(geometry: &mut cadmpeg_ir::document::Topology, edge: &E
     true
 }
 
+/// The faces of each body on a carrier F3D has no form for, with that carrier,
+/// for the bodies that also hold a writable face.
+fn unwritable_faces(ir: &CadIr) -> BTreeMap<String, Vec<(String, String)>> {
+    let geometry = &ir.geometry;
+    let owners = ProceduralOwners::new(ir);
+    let surfaces = geometry
+        .surfaces
+        .iter()
+        .filter(|surface| {
+            matches!(
+                super::smbh::surface_has_no_form(ir, &owners, surface),
+                Ok(true)
+            )
+        })
+        .map(|surface| surface.id.as_str())
+        .collect::<HashSet<_>>();
+    let curves = geometry
+        .curves
+        .iter()
+        .filter(|curve| matches!(super::smbh::curve_has_no_form(&owners, curve), Ok(true)))
+        .map(|curve| curve.id.as_str())
+        .collect::<HashSet<_>>();
+    if surfaces.is_empty() && curves.is_empty() {
+        return BTreeMap::new();
+    }
+    let edge_curves = geometry
+        .edges
+        .iter()
+        .filter_map(|edge| {
+            let curve = edge.curve()?.as_str();
+            curves.contains(curve).then_some((edge.id.as_str(), curve))
+        })
+        .collect::<HashMap<_, _>>();
+    let coedge_edges = geometry
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.as_str(), coedge.edge.as_str()))
+        .collect::<HashMap<_, _>>();
+    let loops = geometry
+        .loops
+        .iter()
+        .map(|row| (row.id.as_str(), row))
+        .collect::<HashMap<_, _>>();
+    let region_bodies = geometry
+        .regions
+        .iter()
+        .map(|region| (region.id.as_str(), region.body.as_str()))
+        .collect::<HashMap<_, _>>();
+    let shell_bodies = geometry
+        .shells
+        .iter()
+        .filter_map(|shell| {
+            Some((
+                shell.id.as_str(),
+                *region_bodies.get(shell.region.as_str())?,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut written = HashSet::new();
+    let mut unwritable = BTreeMap::<String, Vec<(String, String)>>::new();
+    for face in &geometry.faces {
+        let Some(&body) = shell_bodies.get(face.shell.as_str()) else {
+            continue;
+        };
+        let carrier = if surfaces.contains(face.surface.as_str()) {
+            Some(format!("surface {}", face.surface))
+        } else {
+            face.loops
+                .iter()
+                .filter_map(|id| loops.get(id.as_str()))
+                .flat_map(|row| row.coedges())
+                .filter_map(|coedge| coedge_edges.get(coedge.as_str()))
+                .find_map(|edge| {
+                    edge_curves
+                        .get(edge)
+                        .map(|curve| format!("edge {edge} on curve {curve}"))
+                })
+        };
+        match carrier {
+            Some(carrier) => unwritable
+                .entry(body.to_owned())
+                .or_default()
+                .push((face.id.to_string(), carrier)),
+            None => {
+                written.insert(body);
+            }
+        }
+    }
+    unwritable.retain(|body, _| written.contains(body.as_str()));
+    unwritable
+}
+
+/// Split each of `shells` into the face sets that share no edge or vertex.
+/// The set holding the shell's first face keeps the shell; each other set
+/// takes a new shell in the same region, listed after it.
+fn split_disconnected_shells(
+    geometry: &mut cadmpeg_ir::document::Topology,
+    shells: &BTreeSet<String>,
+) -> Result<(), CodecError> {
+    #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+    enum Incidence<'a> {
+        Edge(&'a str),
+        Vertex(&'a str),
+    }
+    let edges = geometry
+        .edges
+        .iter()
+        .map(|edge| (edge.id.as_str(), edge))
+        .collect::<HashMap<_, _>>();
+    let coedge_edges = geometry
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.as_str(), coedge.edge.as_str()))
+        .collect::<HashMap<_, _>>();
+    let loops = geometry
+        .loops
+        .iter()
+        .map(|row| (row.id.as_str(), row))
+        .collect::<HashMap<_, _>>();
+    let mut used = geometry
+        .shells
+        .iter()
+        .map(|shell| shell.id.to_string())
+        .collect::<HashSet<_>>();
+    let mut moves = Vec::new();
+    let mut created = Vec::new();
+    for shell in geometry
+        .shells
+        .iter()
+        .filter(|shell| shells.contains(shell.id.as_str()))
+    {
+        let members = geometry
+            .faces
+            .iter()
+            .enumerate()
+            .filter(|(_, face)| face.shell == shell.id)
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        if members.len() < 2 {
+            continue;
+        }
+        let mut parents = (0..members.len()).collect::<Vec<_>>();
+        let mut first = HashMap::new();
+        for (local, &index) in members.iter().enumerate() {
+            for row in geometry.faces[index]
+                .loops
+                .iter()
+                .filter_map(|id| loops.get(id.as_str()))
+            {
+                let mut incidences = row
+                    .vertices()
+                    .map(|vertex| Incidence::Vertex(vertex.as_str()))
+                    .collect::<Vec<_>>();
+                for coedge in row.coedges() {
+                    let Some(&edge) = coedge_edges.get(coedge.as_str()) else {
+                        continue;
+                    };
+                    incidences.push(Incidence::Edge(edge));
+                    if let Some(edge) = edges.get(edge) {
+                        incidences.extend(
+                            edge.vertices()
+                                .map(|vertex| Incidence::Vertex(vertex.as_str())),
+                        );
+                    }
+                }
+                for incidence in incidences {
+                    let owner = *first.entry(incidence).or_insert(local);
+                    let (a, b) = (
+                        component_root(&mut parents, owner),
+                        component_root(&mut parents, local),
+                    );
+                    parents[a.max(b)] = a.min(b);
+                }
+            }
+        }
+        let mut components = HashMap::new();
+        let mut ordinal = 0usize;
+        let mut after = shell.id.clone();
+        for (local, &index) in members.iter().enumerate() {
+            let root = component_root(&mut parents, local);
+            if root == 0 {
+                continue;
+            }
+            let id = if let Some(id) = components.get(&root) {
+                ShellId::clone(id)
+            } else {
+                let candidate = loop {
+                    ordinal += 1;
+                    let candidate = format!("{}/component-{ordinal}", shell.id);
+                    if used.insert(candidate.clone()) {
+                        break candidate;
+                    }
+                };
+                let id = ShellId::mint(candidate).map_err(|error| {
+                    CodecError::malformed(format_args!(
+                        "shell {} component identity: {error}",
+                        shell.id
+                    ))
+                })?;
+                created.push((id.clone(), shell.region.clone(), after));
+                after = id.clone();
+                components.insert(root, id.clone());
+                id
+            };
+            moves.push((index, id));
+        }
+    }
+    for (index, shell) in moves {
+        geometry.faces[index].shell = shell;
+    }
+    for (id, region, after) in created {
+        if let Some(row) = geometry.regions.iter_mut().find(|row| row.id == region) {
+            let at = row
+                .shells
+                .iter()
+                .position(|shell| *shell == after)
+                .map_or(row.shells.len(), |position| position + 1);
+            row.shells.insert(at, id.clone());
+        }
+        geometry.shells.push(Shell::new(id, region));
+    }
+    Ok(())
+}
+
+/// The root of `node`, halving the path on the way.
+fn component_root(parents: &mut [usize], mut node: usize) -> usize {
+    while parents[node] != node {
+        parents[node] = parents[parents[node]];
+        node = parents[node];
+    }
+    node
+}
+
 /// A hyphenated GUID allocated from `id`: the first 16 bytes of its SHA-256.
 fn allocated_guid(id: &str) -> String {
     use sha2::Digest as _;
@@ -1348,6 +1784,7 @@ struct ProceduralReduction {
 /// carrier holds a solved form to write instead, or no carrier uses it.
 fn procedural_reductions(ir: &CadIr) -> Vec<ProceduralReduction> {
     let geometry = &ir.geometry;
+    let owners = ProceduralOwners::new(ir);
     let mut reductions = Vec::new();
     let mut scratch = Vec::new();
     let mut surface_carriers = HashMap::<&str, Vec<&cadmpeg_ir::geometry::Surface>>::new();
@@ -1387,7 +1824,7 @@ fn procedural_reductions(ir: &CadIr) -> Vec<ProceduralReduction> {
         scratch.clear();
         let reason = match surface.geometry.solved_cache() {
             Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
-                native_procedural_surface(&mut scratch, ir, surface, nurbs)
+                native_procedural_surface(&mut scratch, ir, &owners, surface, nurbs)
                     .err()
                     .map(|error| error.to_string())
             }
@@ -1445,7 +1882,7 @@ fn procedural_reductions(ir: &CadIr) -> Vec<ProceduralReduction> {
         scratch.clear();
         let reason = match curve.geometry.solved_cache() {
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                native_procedural_curve(&mut scratch, ir, &curve.id, nurbs)
+                native_procedural_curve(&mut scratch, ir, &owners, &curve.id, nurbs)
                     .err()
                     .map(|error| error.to_string())
             }
