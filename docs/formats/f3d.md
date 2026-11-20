@@ -690,7 +690,7 @@ A typed-reference sketch member-run record, written by the container generation 
 
 An explicit head's closing reference selects its encoded width independently of the reference that names the head. A Sketch scope's local references to its sketch container and its scope placement frame each use either the plain or typed reference form.
 
-A sketch entity container follows its self-validating entity header and UTF-16LE entity ID with an eight-byte base-record slot, `0x01`, `u32 reference_count`, then `reference_count` entries of `0x01 + u32 record_index + six zero bytes`. The base-record slot is either `u32 record_reference` followed by `u32 zero`, or the sentinel `0xFFFFFFFFFFFFFFFF` when the sketch has no base record; the list grammar is identical in both forms. The referenced records contain the sketch's geometry and relations.
+A sketch entity container follows its self-validating entity header and UTF-16LE entity ID with an eight-byte base-record slot, `0x01`, `u32 reference_count`, then `reference_count` entries of `0x01 + u32 record_index + six zero bytes`. The base-record slot is either `u32 record_reference` followed by `u32 zero`, or the sentinel `0xFFFFFFFFFFFFFFFF` when the sketch has no base record; the list grammar is identical in both forms. In a stream with serializer magic `1234`, the run lists the sketch's relations, a second counted run of its dimension frames follows, and the same-index Geometry member lists its points, curves, text records, and dimension frames ("Records of a Sketch item").
 
 The current sketch entity container has type GUID `44A64366-4BD3-4B24-881A-F94C206E8F2D`, base-type GUID `37AD519C-AFB3-4CE2-9E6D-E3269FC6CDB9`, type version `18`, and add-in name `MSketch`. Its entity header is followed by a same-index Geometry member. The member has type GUID `37AD519C-AFB3-4CE2-9E6D-E3269FC6CDB9`, base-type GUID `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081`, type version `4`, and add-in name `Geometry`. The member starts with `u32 3`, its three-digit dynamic class tag, and the owning u64 sketch entity suffix. Four zero bytes and one same-segment marked owner reference follow. The u32 at member offset 30 is the positive ordinal of the sketch Geometry member in its referenced Geometry collection. Two sketches of one collection can store the same ordinal. Entity suffix order and collection reference order can differ from ordinal order. The marked collection reference selects their namespace. A value can be absent from the sequence, including `1`. Byte 34 is a one-byte flag with value `0` or `1`. Each combination of this flag and the visibility flag at member offset 35 is valid. The one-byte sketch visibility flag is at member offset 35, and byte 36 is `01` or `00`. Visibility value `0` hides the Sketch and value `1` shows it. Byte 36 opens a same-segment marked reference. When it is `01`, its u64 target at member offset 37 names the direct container of the sketch: an ordinal collection or a sketch folder. The target is nonzero, and the reference has no inline type GUID. When byte 36 is `00`, the reference is null: the Geometry member belongs to no ordinal collection, and no collection lists the sketch. An LP-UTF16 sketch display name follows the direct container reference; a non-blank name without control characters assigns the sketch display name and the owning Sketch timeline feature name. The collection has type GUID `5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF`, base-type GUID `A7AEA631-985B-4DD1-8CE2-DE2C-14B54081`, version `3` or `4`, and module `Geometry`. Its indexed header is followed by nine zero bytes, a property block carrying `crv_tag_id_idx` as `IntrinsicMetaTypeuint64`, and a counted run of same-segment marked references to its sketch members. Each run reference has a nonzero target and no inline type GUID. Each run target resolves to a sketch container whose Geometry member names this collection, or to a sketch folder whose parent reference names this collection. A sketch container or sketch folder occurs in at most one run. A run can omit a sketch container whose Geometry member names its collection or folder; that sketch belongs to the named container. A sketch folder has type GUID `45B3FDEA-5EBA-4B33-ADF8-47041CAC3602`, base-type GUID `A193F53F-86D7-4F45-A01C-51F5ECEEFC0E`, type version `1`, and module `Geometry`. Its indexed header is followed by nine zero bytes, `01`, five zero bytes, a flag byte that is `0` or `1`, and five zero bytes. An LP-UTF16 folder name starts at record offset 32. The name is followed by a positive u32 folder number, a u32 member count, and that many same-segment marked references to sketch containers. Each folder run reference has a nonzero target and no inline type GUID, and its target sketch names the folder in its Geometry member. A marked reference to the parent ordinal collection follows the run. A run of zero bytes and a closing marked reference end the frame. The ordinal namespace of a sketch in a folder is the parent collection of the folder. That namespace spans the sketches that name the collection and the sketches of its folders. Version `3` has six bytes after this property block and before the member list. Version `4` starts the counted run immediately after the property block. Bytes after the counted run form the frame tail. The collection reference and counted run define the ordinal namespace independently of component entity-id clusters.
 
@@ -2922,7 +2922,7 @@ An absent auxiliary identity uses the same primary-candidate fallback as an auxi
 
 #### Records of a sketch-and-extrude design
 
-This subsection gives the records that a Design stream holds when its timeline lists exactly a `Sketch` item and then an `Extrude` item and its MetaStream header stores serializer magic `1234`. A stream with serializer magic `1234` writes every reference in the eleven-byte plain form. Record indices in this subsection are local to one Design `BulkStream`.
+This subsection gives the records that a Design stream holds when its timeline lists exactly a `Sketch` item and then an `Extrude` item and its MetaStream header stores serializer magic `1234`. In a stream with serializer magic `1234`, the null reference is the one-byte marker `0`, a reference to a record of the same segment is in the eleven-byte plain form, and a reference to a record of another segment is fifteen bytes (see "**References.**"). Record indices in this subsection are local to one Design `BulkStream`.
 
 **Type table.** The type table of such a design registers every type of the first table below with a nonempty entity-ID run. The type GUID is the stable identity; the class tag is `256` plus the table position.
 
@@ -3200,7 +3200,7 @@ The pairs of the forward form list every identity of the forward run, with the s
 
 The three plane records have consecutive record indices and store their LP-UTF16 names `XY`, `XZ`, and `YZ`.
 
-**Sketch placement.** The `Sketch` scope's prefix references its sketch entity container and its placement record (type `7B6C3C2D-4096-4E6D-B225-699E8C2D9355`). The scope's ordered reference table holds the placement, the placement path that the placement references, and the owners of the sketch's dimension parameters. A placement path of type `5A1BF548-241F-46FD-9FB5-E4B05126EB9D` names a tracked entity identity (type `90055C05-546C-4EE7-B3C9-3DD922AD0C9C`) with its first reference. The path also references the placement transform (type `CC54ECAD-6DE8-4DE1-803D-BBE0E751975B`), whose reference names a record of type `CB4F4CC2-9D6F-48BA-9B1F-20C1992C9C9C`, which references a second tracked entity identity. A tracked entity identity is 29 bytes:
+**Sketch placement.** The `Sketch` scope's prefix references its sketch entity container and its placement record (type `7B6C3C2D-4096-4E6D-B225-699E8C2D9355`). The scope's ordered reference table holds the placement path that the placement references, then the placement, then the owners of the sketch's dimension parameters. A placement path of type `5A1BF548-241F-46FD-9FB5-E4B05126EB9D` names a tracked entity identity (type `90055C05-546C-4EE7-B3C9-3DD922AD0C9C`) with its first reference. The path also references the placement transform (type `CC54ECAD-6DE8-4DE1-803D-BBE0E751975B`), whose reference names a record of type `CB4F4CC2-9D6F-48BA-9B1F-20C1992C9C9C`, which references a second tracked entity identity. A tracked entity identity is 29 bytes:
 
 | Offset | Type | Field |
 |---|---|---|
@@ -3370,7 +3370,7 @@ The component aggregate of type `E03784ED-5E19-4E14-B9F2-3B07017018CD`, type ver
 
 #### Records of a Sketch item
 
-This subsection gives the records of one `Sketch` timeline item in a Design stream whose MetaStream header stores serializer magic `1234`. Every reference is in the eleven-byte plain form. The feature item tail, the paired scope record, the tracked-results table, the item-tail companion, and the origin of "Records of a sketch-and-extrude design" apply. The type table registers the types of that subsection that these records name and the types below.
+This subsection gives the records of one `Sketch` timeline item in a Design stream whose MetaStream header stores serializer magic `1234`. A reference uses the encoding of "**References.**": the null reference is the one-byte marker `0`, a reference to a record of the same segment is eleven bytes, and a reference to a record of another segment is fifteen bytes. In the tables below, a field that names the null reference is one byte and every other reference field is eleven bytes, and `11R` and the other run lengths count eleven bytes per reference. A fifteen-byte reference in a field or run moves every later offset of its record by four bytes. The feature item tail, the paired scope record, the tracked-results table, the item-tail companion, and the origin of "Records of a sketch-and-extrude design" apply. The type table registers the types of that subsection that these records name and the types below.
 
 | Type GUID | Base-type GUID | Version | Add-in | Role |
 |---|---|---|---|---|
@@ -3418,7 +3418,7 @@ A projection group is a reference to a record of type `F1451EC8-11A4-4952-84ED-5
 
 The item tail of the `i`-th `Sketch` item of the timeline, when the item is not suppressed, stores family ordinal `i`, label count `0`, state bytes `00 00 00`, preceding history-state identity `0xffffffff`, `s0 = 0`, and `s1 = 0`. Its tracked-results table is the 53-byte form with `n = 0` and next key `1`. Its item-tail companion stores item word `0`. The scope's record-timestamp table uses the prefix `01 01`. For `J = 0`, its entries name, in order, the record of type `5D15E992-1E93-4D79-A553-10D2624148AE`, the scope, the placement, and the dimension owners in prefix order; its owner entry names the scope.
 
-**Sketch container.** The sketch container of type `44A64366-4BD3-4B24-881A-F94C206E8F2D`, version `18`, has a primary record and a same-index Geometry member. The primary record lists the sketch's relations and dimension frames; the Geometry member lists its points and curves. With `R` relations, `M` dimension frames, and `b = 11(R + M)`, the primary record of the `EntityGenesis` form is:
+**Sketch container.** The sketch container of type `44A64366-4BD3-4B24-881A-F94C206E8F2D`, version `18`, has a primary record and a same-index Geometry member. The primary record lists the sketch's relations in its first run and its dimension frames in its second run. The Geometry member lists the sketch's points, curves, text records, and dimension frames; the relations are in the primary record only. With `R` relations, `M` dimension frames, and `b = 11(R + M)`, the primary record of the `EntityGenesis` form is:
 
 | Offset | Type | Field |
 |---|---|---|
@@ -3440,14 +3440,15 @@ The item tail of the `i`-th `Sketch` item of the timeline, when the item is not 
 | 100 + 2w + b | u32 | sketch word, `6` or `7` in the `EntityGenesis` form |
 | 104 + 2w + b | u8 | `0` or `1` |
 | 105 + 2w + b | u8 | `1` |
-| 106 + 2w + b | u32 | count `X` of a reference run |
-| 110 + 2w + b | reference | a body-presentation owner (type `D3937028-C20C-4E65-B010-94AD418A5C20`) or the null reference `0` |
-| 111 + 2w + b | u8 | `1` |
-| 112 + 2w + b | reference | the `Sketch` scope |
-| 123 + 2w + b | 4 × u8 | `00 00 01 01` |
-| 127 + 2w + b | header | paired indexed header, the start of the Geometry member |
+| 106 + 2w + b | u32 | count `X` |
+| 110 + 2w + b | `X` references | records of type `AFC07C10-99AC-5304-AE1B-DBEE335B0E43` |
+| e | reference | a body-presentation owner (type `D3937028-C20C-4E65-B010-94AD418A5C20`), or the null reference |
+| e + s | u8 | `1` |
+| e + s + 1 | reference | the `Sketch` scope |
+| e + s + 12 | 4 × u8 | `00 00 01 01` |
+| e + s + 16 | header | paired indexed header, the start of the Geometry member |
 
-The offsets hold for `X = 0`. A nonzero `X` adds `X` references of type `AFC07C10-99AC-5304-AE1B-DBEE335B0E43` after the count.
+Here `e = 110 + 2w + b + 11X`, and `s` is the width of the reference at `e`: `11` for a body-presentation owner and `1` for the null reference. With `X = 0` and the null reference, the `u8 1` is at `111 + 2w + b` and the paired header at `127 + 2w + b`; with `X = 0` and an owner, they are at `121 + 2w + b` and `137 + 2w + b`.
 
 A container without an `EntityGenesis` property stores presence byte `0` at offset 20 and no property count or property. Its sketch word is `0`, `2`, `4`, or `6`.
 
@@ -3465,12 +3466,12 @@ The Geometry member stores, at offsets from its paired header:
 | 47 | LP-UTF16 | display name, empty for the default name |
 | — | u8 | `0` |
 | — | u32 | member count `N` |
-| — | `N` references | the points and curves of the sketch, in ascending record-index order |
+| — | `N` references | the points, curves, text records, and dimension frames of the sketch, in ascending record-index order |
 | — | reference | the sketch collection |
 
-The first member is the sketch origin point. The sketch frame record is 34 bytes when the placement stores the identity: the indexed header, ten zero bytes, `u8 1` at 21, `u8 0` at 22, and the component aggregate at 23. It is 162 bytes when the placement stores a matrix: `u8 0` at 21, a row-major 4×4 f64 matrix at 22, which is the placement's matrix for a sketch on an origin plane, `u8 0` at 150, and the component aggregate at 151. The sketch collection lists the sketch container, and its `crv_tag_id_idx` property is the next free persistent point or curve identity of the sketches it lists. It is greater than every identity of those sketches and is one more than the largest when no point or curve was deleted. The `SketchesRoot` node of type `3A7E4411-2E8A-4FA8-96A3-9902E1ACAF2F` also references the container.
+The first member is the sketch origin point. The members are records of these types: the sketch point `C2CEDAE7-1716-47C1-B7B1-07B70081D0FB` and the derived sketch point `00D157C2-2332-4BD5-BB53-048C4081D1C3`; the line `DCA267ED-D615-4934-B64F-AD805E8003E2`, its derived bounded-line classes `EA3B930A-3383-4AD3-BE25-4B2814EA3985`, `AE42BAB6-643F-4169-A33C-529C8E0A4D84`, and `F279874A-17AB-43DA-BF8E-80259802D06E`, the circular curves `F0130424-8B7E-4092-93C9-1CA807482534` and `FF23079A-D99C-47AB-940E-2F4E18F022AB`, the NURBS curve `D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B`, and the text-frame boundary curve `16DEFC4D-1816-4FB0-8E39-9BDA23954248`; the sketch text classes `E0618268-3A06-450E-9E94-7CF4C2E66802` and `F0B1AFA3-3BAF-42D0-B2F3-94B95662F2A9`; and the four dimension-frame types of "Sketch dimensions". The dimension frames of the member are the primary record's second run. The sketch frame record is 34 bytes when the placement stores the identity: the indexed header, ten zero bytes, `u8 1` at 21, `u8 0` at 22, and the component aggregate at 23. It is 162 bytes when the placement stores a matrix: `u8 0` at 21, a row-major 4×4 f64 matrix at 22, which is the placement's matrix for a sketch on an origin plane, `u8 0` at 150, and the component aggregate at 151. The sketch collection lists the sketch container, and its `crv_tag_id_idx` property is the next free persistent point or curve identity of the sketches it lists. It is greater than every identity of those sketches and is one more than the largest when no point or curve was deleted. The `SketchesRoot` node of type `3A7E4411-2E8A-4FA8-96A3-9902E1ACAF2F` also references the container.
 
-**Sketch placement on an origin plane.** The placement of type `7B6C3C2D-4096-4E6D-B225-699E8C2D9355`, version `14`, uses the version-14 member grammar of "Sketch placement" in §3.1 with these values: `LinearOffsetOnPeriodicFace = 0`, `alignUpDirection = (0, 0, 0)`, `arcLengthForPeriodicFace = 0`, `axisFlipped = 0`, `bUseUDirection = 1`, six null references, the three axis-state bytes `0`, `oldRotation = 0`, `pickpoint = (0, 0)`, no edge reference, null `rOrigin`, no plane reference, null `rXAxis` and `rZAxis`, `refType = 2`, `resizeType = 0`, and an empty `values` list. A sketch on `XY` stores identity marker `1` and no matrix; its paired header is at 213. A sketch on `XZ` or `YZ` stores identity marker `0` and the matrix; its paired header is at 341. The matrices are:
+**Sketch placement on an origin plane.** The placement of type `7B6C3C2D-4096-4E6D-B225-699E8C2D9355`, version `14`, uses the version-14 member grammar of "Sketch placement" in §3.1 with these values: `LinearOffsetOnPeriodicFace = 0`, `alignUpDirection = (0, 0, 0)`, `arcLengthForPeriodicFace = 0`, `axisFlipped = 0`, `bUseUDirection = 1`, six null references at offsets 56 through 61, the three axis-state bytes `0`, `oldRotation = 0`, `pickpoint = (0, 0)`, no edge reference, null `rOrigin`, no plane reference, null `rXAxis` and `rZAxis`, `refType = 2`, `resizeType = 0`, and an empty `values` list. Each null reference is the one-byte marker `0`. A sketch on `XY` stores identity marker `1` and no matrix; its paired header is at 213. A sketch on `XZ` or `YZ` stores identity marker `0` and the matrix; its paired header is at 341. The matrices are:
 
 | Plane | `matrix3d` rows |
 |---|---|
@@ -3532,8 +3533,6 @@ The placement tracking flag is 24 bytes: the indexed header, ten zero bytes, and
 
 The placement transform of type `CC54ECAD-6DE8-4DE1-803D-BBE0E751975B` is 106 bytes: the indexed header, ten zero bytes, `u8 0` at 21, three f64 triples at 22, 46, and 70, `u8 1` at 94, and a reference at 95 to a 33-byte record of type `CB4F4CC2-9D6F-48BA-9B1F-20C1992C9C9C` (the indexed header, ten zero bytes, a reference at 21 to the second tracked entity identity, and a zero byte). The three triples are the plane origin and its first and second axes in centimetres. With `-0` for the negative zero, they are `(0, 0, 0)`, `(1, 0, -0)`, `(-0, 1, 0)` for `XY`; `(0, 0, 0)`, `(0, 0, 1)`, `(1, 0, 0)` for `XZ`; and `(0, 0, 0)`, `(-0, 1, 0)`, `(0, -0, 1)` for `YZ`. Both tracked entity identities name the origin plane record.
 
-**Persistent point and curve identities.** The `pt_tag` of a point and the `crv_primary_id` of a curve come from one counter per sketch collection. The counter starts at `100`, and the identities of the sketches of one collection are distinct. The origin point of the first sketch of a collection has identity `100`.
-
 **Sketch point.** A point of type `C2CEDAE7-1716-47C1-B7B1-07B70081D0FB`, version `11`, in the `EntityGenesis` form is 221 bytes:
 
 | Offset | Type | Field |
@@ -3555,9 +3554,9 @@ The placement transform of type `CC54ECAD-6DE8-4DE1-803D-BBE0E751975B` is 106 by
 | 199 | reference | the point companion |
 | 210 | reference | the sketch container |
 
-The origin point stores `(0, 0, 0)`, the flags `00 00 00 01 01 01 00 00`, and state `0`. The point companion is the indexed header, ten zero bytes, a u32 count `k`, `k` references to the curves that name the point, a zero byte, and a reference to the point: `37 + 11k` bytes.
+The origin point stores `(0, 0, 0)`. The point companion is the indexed header, ten zero bytes, a u32 count `k`, `k` references to the curves that name the point, a zero byte, and a reference to the point: `37 + 11k` bytes.
 
-**Sketch curves.** A line of type `DCA267ED-D615-4934-B64F-AD805E8003E2`, version `2`, in the `EntityGenesis` form is 356 bytes. A circular curve of type `F0130424-8B7E-4092-93C9-1CA807482534`, version `0`, uses the same prefix. Both store the property block of three properties `EntityGenesis = 2`, `crv_primary_id`, and `crv_secondary_id` from offset 20 to offset 185, the 96-byte analytic payload at 185, the point references at 281, a 42-byte or 44-byte curve tail, and a reference to the sketch container that ends the record.
+**Sketch curves.** A line of type `DCA267ED-D615-4934-B64F-AD805E8003E2`, version `2`, in the `EntityGenesis` form is 356 bytes. A circular curve of type `F0130424-8B7E-4092-93C9-1CA807482534`, version `0`, uses the same prefix. Both store the property block of three properties `EntityGenesis = 2`, `crv_primary_id`, and `crv_secondary_id` from offset 20 to offset 185, the 96-byte analytic payload at 185, the point references at 281, a 42-byte or 44-byte curve tail, and a reference to the sketch container that ends the record. Their `crv_secondary_id` is `0`.
 
 | Curve | Point references at 281 |
 |---|---|
@@ -3597,9 +3596,7 @@ A line stores the auxiliary normal `(0, 0, 1)` or `(0, 0, -1)`, and a circular c
 | — | u32, then that many references | the members in semantic order |
 | — | u8 | `0` |
 
-The relation ordinal of a member is the number of relations and dimension frames with a smaller record index that name that member. Deleted relations and dimensions keep their counts, so an ordinal can exceed that number.
-
-**Sketch dimensions.** A sketch dimension is four records with consecutive record indices: a dimension frame, then either the parameter and its owner or the owner and its parameter, then the owner's 58-byte parameter companion. The dimension frame class names the dimension kind:
+**Sketch dimensions.** A sketch dimension is four records in ascending record-index order: a dimension frame, then either the parameter and its owner or the owner and its parameter, then the owner's 58-byte parameter companion. Other records can have record indices between the frame and the companion, and the dimensions of one sketch can use both arrangements. The dimension frame class names the dimension kind, and the parameter's source kind is that kind with a numeric suffix `k`:
 
 | Frame type | Parameter source kind |
 |---|---|
@@ -3608,7 +3605,7 @@ The relation ordinal of a member is the number of relations and dimension frames
 | `664AD49F-207F-4CD5-8555-DD269E9F09EA` | `Diameter Dimension-k` |
 | `8EDAC24D-35D4-4591-B8E7-B3EA081C9DF0` | `Radial Dimension-k` |
 
-The suffix `k` of the `j`-th dimension of one kind in a sketch, in prefix order, is `j + 1`: the first linear dimension of a sketch is `Linear Dimension-2`. A dimension frame stores its measured members from offset 39, each as a reference with its relation ordinal. Its final references name the parameter owner, the measured members in semantic order, and the sketch container. The parameter is named `d<n>`. The owner is the 104-byte scalar owner form of type `D91D429C-1BB5-4640-B49F-69AF14F463E9`:
+A dimension frame stores its measured members from offset 39, each as a reference with its relation ordinal. Its final references name the parameter owner, the measured members in semantic order, and the sketch container. The parameter is named `d<n>`. The owner is the 104-byte scalar owner form of type `D91D429C-1BB5-4640-B49F-69AF14F463E9`:
 
 | Offset | Type | Field |
 |---|---|---|
@@ -3629,7 +3626,7 @@ The suffix `k` of the `j`-th dimension of one kind in a sketch, in prefix order,
 | 93 | reference | the `Sketch` scope |
 | 104 | header | paired indexed header, eight zero bytes, and the owner collection |
 
-**Design records of Sketch items.** The timeline context stores one counter `DcSketchMetaType` equal to the number of `Sketch` items. Its context value is the largest `n` of the design's parameters named `d<n>`, and `0` without such a parameter. Persistent identities come from the counter that starts at `300`, in timeline order: a `Sketch` scope owns one identity, an `Extrude` scope two, and a `Base Feature` scope one. The pairs of the persistent-id table list every identity in ascending order. A design whose timeline holds `Sketch` and `Extrude` items lists every scope in the forward run, in ascending or descending record-index order. A design whose timeline holds only `Sketch` items stores an empty forward run, and its pairs list the `Sketch` identities.
+**Design records of Sketch items.** In a design whose timeline holds only `Sketch` items, or only `Sketch` and `Extrude` items, the timeline context stores one counter `DcSketchMetaType` equal to the number of `Sketch` items. When every parameter of such a design has a name of the form `d<n>`, the context value is the largest `n`, and `0` when the design has no parameter. Persistent identities come from the counter that starts at `300`, in timeline order: a `Sketch` scope owns one identity, an `Extrude` scope two, and a `Base Feature` scope one. The pairs of the persistent-id table list every identity in ascending order. A design whose timeline holds `Sketch` and `Extrude` items lists every scope in the forward run, in ascending or descending record-index order. A design whose timeline holds only `Sketch` items stores an empty forward run, and its pairs list the `Sketch` identities.
 
 The owner collection lists, after the record of type `5D15E992-1E93-4D79-A553-10D2624148AE`, for each `Sketch` item in timeline order: the scope, the placement path, the placement, and the dimension owners in prefix order. The record of type `B65B5682-9355-44C7-8AFC-823058C4A36B` lists the same records with the placement path and the placement before the dimension owners and the scope. The dependency table of type `B13113CC-031E-4F93-8240-C4C10728869F` stores, for each `Sketch` item, the input entries scope → (`5D15E992` record, `0x1000`), (placement, `1`), (each dimension owner, `1`) and placement → (placement path, `1`), and the dependent entries placement path → (placement, `1`), placement → (scope, `1`), and each dimension owner → (scope, `1`). The dependent entry of the `5D15E992` record lists every scope with flag `0x1000`.
 
