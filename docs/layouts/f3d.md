@@ -15148,6 +15148,35 @@ Offsets are relative to the placement's indexed header, through the one `values`
 | 244 | 4 | `value_count` | `u32` | little | spec | a `values` list that names the `AlongDistance` owner · value `1` |
 | 248 | 11 | `along_distance_owner` | `bytes[11]` | little | spec | a `values` list that names the `AlongDistance` owner |
 
+## `workplane_item_placement_tracking_flag`
+
+Spec §Records of a construction-plane item · layout: byte offsets · size: 24 B
+
+Offsets are relative to the tracking flag's indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The placement tracking flag that the base level references stores the indexed header, ten zero bytes, and the flag bytes `01 01 00` |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | The placement tracking flag that the base level references stores the indexed header, ten zero bytes, and the flag bytes `01 01 00` · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 3 | `flags` | `bytes[3]` | little | spec | The placement tracking flag that the base level references stores the indexed header, ten zero bytes, and the flag bytes `01 01 00` · value `[1, 1, 0]` |
+
+## `workplane_item_placement_path_words`
+
+Spec §Records of a construction-plane item · layout: byte offsets · size: 41 B
+
+Offsets are relative to the u32 `2` that follows the component GUID, at offset 188 of `sketch_item_placement_path`. The other fields of the path are those of `sketch_item_placement_path`. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `word_2` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `2` |
+| 4 | 4 | `word_after_2` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `0` |
+| 8 | 4 | `transform_count` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `1` |
+| 12 | 11 | `transform` | `bytes[11]` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes |
+| 23 | 4 | `zero_word` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `0` |
+| 27 | 4 | `word_21` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `33` |
+| 31 | 4 | `word_after_21` | `u32` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `0` |
+| 35 | 6 | `zero_run_6` | `bytes[6]` | little | spec | After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes · value `[0, 0, 0, 0, 0, 0]` |
+
 ## `construction_collection_counters`
 
 Spec §Records of a construction-plane item · layout: byte offsets · size: 34 B

@@ -52232,6 +52232,108 @@ source = "spec"
 anchor = "a `values` list that names the `AlongDistance` owner"
 
 [[record]]
+name = "workplane_item_placement_tracking_flag"
+kind = "byte"
+section = "Records of a construction-plane item"
+anchor = "**WorkPlane placement.**"
+size = 24
+note = "Offsets are relative to the tracking flag's indexed header."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The placement tracking flag that the base level references stores the indexed header, ten zero bytes, and the flag bytes `01 01 00`"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "The placement tracking flag that the base level references stores the indexed header, ten zero bytes, and the flag bytes `01 01 00`"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "flags"
+offset = 21
+type = "bytes[3]"
+source = "spec"
+anchor = "The placement tracking flag that the base level references stores the indexed header, ten zero bytes, and the flag bytes `01 01 00`"
+value = [1, 1, 0]
+
+[[record]]
+name = "workplane_item_placement_path_words"
+kind = "byte"
+section = "Records of a construction-plane item"
+anchor = "**WorkPlane placement path.**"
+size = 41
+note = "Offsets are relative to the u32 `2` that follows the component GUID, at offset 188 of `sketch_item_placement_path`. The other fields of the path are those of `sketch_item_placement_path`. The offsets hold when every reference is the eleven-byte same-segment form or the one-byte null reference; a fifteen-byte cross-segment reference moves every later offset by four bytes."
+
+[[record.field]]
+name = "word_2"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes"
+value = 2
+
+[[record.field]]
+name = "word_after_2"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes"
+value = 0
+
+[[record.field]]
+name = "transform_count"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes"
+value = 1
+
+[[record.field]]
+name = "transform"
+offset = 12
+type = "bytes[11]"
+source = "spec"
+anchor = "After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes"
+
+[[record.field]]
+name = "zero_word"
+offset = 23
+type = "u32"
+source = "spec"
+anchor = "After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes"
+value = 0
+
+[[record.field]]
+name = "word_21"
+offset = 27
+type = "u32"
+source = "spec"
+anchor = "After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes"
+value = 33
+
+[[record.field]]
+name = "word_after_21"
+offset = 31
+type = "u32"
+source = "spec"
+anchor = "After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes"
+value = 0
+
+[[record.field]]
+name = "zero_run_6"
+offset = 35
+type = "bytes[6]"
+source = "spec"
+anchor = "After the component GUID, the path stores u32 `2`, u32 `0`, u32 `1`, the placement transform reference, u32 `0`, u32 `0x21`, u32 `0`, and six zero bytes"
+value = [0, 0, 0, 0, 0, 0]
+
+[[record]]
 name = "construction_collection_counters"
 kind = "byte"
 section = "Records of a construction-plane item"
