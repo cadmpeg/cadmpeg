@@ -762,6 +762,24 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         }
     }
     let axis_bindings = AxisBindings::new(native, owners, scopes);
+    let mut scope_owners = HashMap::<_, Vec<_>>::new();
+    for owner in owners {
+        if let Some(stream) = native_stream(owner.id()) {
+            scope_owners
+                .entry((stream, owner.scope_record_index()))
+                .or_default()
+                .push(owner);
+        }
+    }
+    let mut parameters_by_index = HashMap::<_, Vec<_>>::new();
+    for parameter in native {
+        if let Some(stream) = native_stream(&parameter.id) {
+            parameters_by_index
+                .entry((stream, parameter.record_index))
+                .or_default()
+                .push(parameter);
+        }
+    }
     let extended_assembly_frames = scopes
         .iter()
         .filter(|scope| scope.kind() == crate::records::feature::scope::DesignFeatureKind::Assemble)
@@ -790,15 +808,20 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         .map(|scope| -> Result<Feature, CodecError> {
             let native_scope = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
             let mut parameters = Vec::new();
-            for owner in owners.iter().filter(|owner| {
-                native_stream(owner.id()) == Some(native_scope)
-                    && owner.scope_record_index() == scope.record_index
-            }) {
-                if let Some(parameter) = native.iter().find(|parameter| {
-                    native_stream(&parameter.id) == Some(native_scope)
-                        && parameter.record_index == owner.parameter_record_index()
-                        && !matches!(axis_bindings.owner(native_scope,owner.record_index(),parameter.record_index), AxisBinding::Unresolved)
-                }) {
+            for &owner in scope_owners
+                .get(&(native_scope, scope.record_index))
+                .into_iter()
+                .flatten()
+            {
+                if let Some(parameter) = parameters_by_index
+                    .get(&(native_scope, owner.parameter_record_index()))
+                    .into_iter()
+                    .flatten()
+                    .copied()
+                    .find(|parameter| {
+                        !matches!(axis_bindings.owner(native_scope,owner.record_index(),parameter.record_index), AxisBinding::Unresolved)
+                    })
+                {
                     parameters.push((owner.local_ordinal(), parameter));
                 }
             }
