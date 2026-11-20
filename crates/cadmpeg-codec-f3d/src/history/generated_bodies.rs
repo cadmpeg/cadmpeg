@@ -81,6 +81,36 @@ pub(crate) fn bind_generated_body_selections(
 
     let mut results: Vec<Producer> = Vec::new();
     for feature in features.iter_mut() {
+        if let Some((target, tools, combine_producers)) =
+            generated_combine_operands(feature, &live, &producer)
+        {
+            let mut edited = false;
+            feature.evaluation.edit(|definition, _| {
+                if let FeatureDefinition::Operation(FeatureOperation::Combine {
+                    operands, ..
+                }) = definition
+                {
+                    edited = operands
+                        .try_edit(|stored_target, stored_tools| {
+                            *stored_target = target;
+                            *stored_tools = tools;
+                        })
+                        .is_ok();
+                }
+            });
+            if edited {
+                for (producer, state_id, inserted) in combine_producers {
+                    feature.dependencies.insert(producer.clone());
+                    if !results
+                        .iter()
+                        .any(|(known, state, _)| *known == producer && *state == state_id)
+                    {
+                        results.push((producer, state_id, inserted));
+                    }
+                }
+            }
+            continue;
+        }
         let scope = feature
             .native_ref
             .as_deref()
@@ -240,6 +270,68 @@ pub(crate) fn bind_generated_body_selections(
 /// A generating feature, the identity of the history state whose transition
 /// inserts the body, and every body slot that transition inserts.
 type Producer = (cadmpeg_ir::features::FeatureId, i64, Vec<i64>);
+
+/// The `Combine` target and tool selections of `feature` named as bodies of
+/// the features that generate them, with those producers. Every target and
+/// tool slot is absent from the model bodies, the target is one historical
+/// body, and the tools are one historical body.
+fn generated_combine_operands(
+    feature: &cadmpeg_ir::features::Feature,
+    live: &HashSet<i64>,
+    producer: &impl Fn(i64) -> Option<Producer>,
+) -> Option<(
+    cadmpeg_ir::features::BodySelection,
+    cadmpeg_ir::features::BodySelection,
+    Vec<Producer>,
+)> {
+    use cadmpeg_ir::features::{
+        BodySelection, FeatureDefinition, FeatureOperation, GeneratedBodyRef,
+    };
+    let FeatureDefinition::Operation(FeatureOperation::Combine { operands, .. }) =
+        feature.evaluation.definition()
+    else {
+        return None;
+    };
+    let single = |selection: &BodySelection| -> Option<(i64, String)> {
+        match selection {
+            BodySelection::Historical { bodies, native, .. } => {
+                let [body] = bodies.as_slice() else {
+                    return None;
+                };
+                Some((
+                    historical_body_slot(body.as_str())?,
+                    native.as_str().to_owned(),
+                ))
+            }
+            BodySelection::HistoricalSet { members, .. } => {
+                let mut rows = members.iter();
+                let (body, native) = rows.next()?.clone().into_parts();
+                if rows.next().is_some() {
+                    return None;
+                }
+                Some((historical_body_slot(body.as_str())?, native))
+            }
+            _ => None,
+        }
+    };
+    let (target_slot, target_native) = single(operands.target())?;
+    let (tool_slot, tool_native) = single(operands.tools())?;
+    if target_slot == tool_slot || live.contains(&target_slot) || live.contains(&tool_slot) {
+        return None;
+    }
+    let target_producer = producer(target_slot)?;
+    let tool_producer = producer(tool_slot)?;
+    let generated = |producer: &Producer, slot: i64, native: String| {
+        BodySelection::generated(
+            vec![GeneratedBodyRef::new(producer.0.clone(), slot.to_string()).ok()?],
+            native,
+        )
+        .ok()
+    };
+    let target = generated(&target_producer, target_slot, target_native)?;
+    let tools = generated(&tool_producer, tool_slot, tool_native)?;
+    Some((target, tools, vec![target_producer, tool_producer]))
+}
 
 struct ReverseContext<'a> {
     inputs: &'a FeatureBodySelectionInputs<'a>,
