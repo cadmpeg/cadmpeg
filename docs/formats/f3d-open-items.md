@@ -807,18 +807,6 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Note.** The decoder places a Canvas with a zero byte in a non-legacy layout by its boundary segments and payload frame, keeps the byte in the native `second_boundary_flag` field, and reports `appearance.reference-image-flag-assumed`.
 
-### DR-879. Empty-label named tails and 78-byte fixed tails
-
-**Question.** How does a reader tell an empty-label named parameter-scope tail from a 78-byte fixed tail?
-
-**Known.** `f3d.md` "A named `Combine` tail also has a marked-reference form" gives the named tail. The fixed tail table gives the 78-byte fixed tail, with the preceding history-state identity at tail offset 31. With an empty label, the two readings cover the same bytes. The named field identity and first lane value are the bytes of the first record reference of the fixed form, and the named opaque u32 is the preceding history-state identity of the fixed form. Three `Combine` saves (`combine_tools_n1.f3d`, `combine_tools_n2.f3d`, `combine_tools_n3.f3d`) store the same tail layout. In the first two, the first tail reference names record `0x199` or `0x1fe`. The named first lane value is then `1`, and the scope reads as named with no preceding history state. In the third, the reference names record `0x263`, the lane value is `2`, and the scope reads as fixed.
-
-**Need.** A save whose `Combine` tail of this layout has a label, to tell whether the named form also stores a preceding history-state identity at the opaque u32.
-
-**Conflict.** None.
-
-**Note.** When a `Combine` scope stores no preceding history state, the decoder binds its operands in the predecessor that the history header names. An operand that this binding leaves native binds through its direct body recipe.
-
 ### DR-881. Tracked-entry record variants
 
 **Question.** What selects the 37-byte or the 33-byte form of a side-face entry and the token-string form of a body entry (type `335CC7BD-BBE5-40AA-9E8C-5EC99D427A3A`), what does the reference that other body entries (type `ABA79BE7-D8D2-4C17-B59B-C2035E111F77`) store in place of the null reference name, and what do the two operands after the sense word of a curve-record entry (type `2DEE34BE-FA70-4D54-979C-164D86FDA786`) encode?
