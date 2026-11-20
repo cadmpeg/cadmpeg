@@ -35,7 +35,7 @@ use super::{
     native_geometry::{
         native_cacheless_procedural_curve, native_cacheless_procedural_surface, native_nurbs_curve,
         native_nurbs_surface, native_pcurve, native_procedural_curve, native_procedural_surface,
-        native_ref_pcurve_companion, native_smbh_header, NativePcurveForm,
+        native_ref_pcurve_companion, native_smbh_header, NativePcurveForm, ProceduralOwners,
     },
     pcurve_supports::PcurveSupports,
     preconditions::{validate_source_less_body_kinds, validate_source_less_wire_ownership},
@@ -63,14 +63,15 @@ pub(super) fn encode_smbh(
         native_history_tail(&mut bytes, &F3dNative::default())?;
         return Ok(bytes);
     }
+    let owners = ProceduralOwners::new(target);
     if target.geometry.faces.is_empty()
         && target.geometry.shells.iter().any(|shell| {
             shell.wire_edges().next().is_some() || shell.free_vertices().next().is_some()
         })
     {
-        return encode_wire_body_smbh(target, native, attributes, &topology);
+        return encode_wire_body_smbh(target, native, attributes, &topology, &owners);
     }
-    encode_face_topology_smbh(target, native, attributes, &topology)
+    encode_face_topology_smbh(target, native, attributes, &topology, &owners)
 }
 
 /// The position of each id in `ids`. A repeated id keeps its first position.
@@ -381,6 +382,7 @@ fn encode_wire_body_smbh(
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
+    owners: &ProceduralOwners<'_>,
 ) -> Result<Vec<u8>, CodecError> {
     let geometry = &target.geometry;
     if geometry.bodies.is_empty()
@@ -557,7 +559,7 @@ fn encode_wire_body_smbh(
         }
         edge_base += shell.wire_edges().count();
     }
-    encode_source_less_curves(&mut records, target)?;
+    encode_source_less_curves(&mut records, target, owners)?;
     let mut wire_edge_owners = geometry
         .edges
         .iter()
@@ -611,6 +613,7 @@ fn encode_wire_body_smbh(
 /// is the encoder's to report, not a missing form.
 pub(super) fn surface_has_no_form(
     target: &CadIr,
+    owners: &ProceduralOwners<'_>,
     surface: &cadmpeg_ir::geometry::Surface,
 ) -> Result<bool, CodecError> {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
@@ -628,7 +631,7 @@ pub(super) fn surface_has_no_form(
             Ok(true)
         }
         None | Some(SolvedSurfaceGeometry::Unknown { .. }) => {
-            native_cacheless_procedural_surface(&mut Vec::new(), target, surface)
+            native_cacheless_procedural_surface(&mut Vec::new(), target, owners, surface)
                 .map(|written| !written)
         }
     }
@@ -638,7 +641,7 @@ pub(super) fn surface_has_no_form(
 /// [`encode_source_less_curves`] refuses, with the error rule of
 /// [`surface_has_no_form`].
 pub(super) fn curve_has_no_form(
-    target: &CadIr,
+    owners: &ProceduralOwners<'_>,
     curve: &cadmpeg_ir::geometry::Curve,
 ) -> Result<bool, CodecError> {
     match curve.geometry.solved() {
@@ -657,12 +660,16 @@ pub(super) fn curve_has_no_form(
             | SolvedCurveGeometry::Transformed(_)
             | SolvedCurveGeometry::Unknown { .. },
         ) => Ok(true),
-        None => native_cacheless_procedural_curve(&mut Vec::new(), target, &curve.id)
+        None => native_cacheless_procedural_curve(&mut Vec::new(), owners, &curve.id)
             .map(|written| !written),
     }
 }
 
-fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecError> {
+fn encode_source_less_curves(
+    records: &mut Vec<u8>,
+    target: &CadIr,
+    owners: &ProceduralOwners<'_>,
+) -> Result<(), CodecError> {
     let geometry = &target.geometry;
     for carrier in &geometry.curves {
         match carrier.geometry.solved() {
@@ -732,13 +739,13 @@ fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<()
                 native_f64(records, minor_radius / major_radius);
             }
             Some(SolvedCurveGeometry::Nurbs(ref curve)) => {
-                if !native_procedural_curve(records, target, &carrier.id, curve)? {
+                if !native_procedural_curve(records, target, owners, &carrier.id, curve)? {
                     native_curve_base(records, "intcurve")?;
                     native_nurbs_curve(records, curve)?;
                 }
             }
             None => {
-                if !native_cacheless_procedural_curve(records, target, &carrier.id)? {
+                if !native_cacheless_procedural_curve(records, owners, &carrier.id)? {
                     return Err(CodecError::malformed(format_args!(
                         "procedural curve carrier {} has no construction",
                         carrier.id
@@ -774,6 +781,7 @@ fn encode_face_topology_smbh(
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
+    owners: &ProceduralOwners<'_>,
 ) -> Result<Vec<u8>, CodecError> {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
@@ -1256,7 +1264,7 @@ fn encode_face_topology_smbh(
                 records.extend_from_slice(&[0x0b; 5]);
             }
             Some(SolvedSurfaceGeometry::Nurbs(ref nurbs)) => {
-                if !native_procedural_surface(&mut records, target, surface, nurbs)? {
+                if !native_procedural_surface(&mut records, target, owners, surface, nurbs)? {
                     native_surface_base(&mut records, "spline")?;
                     native_nurbs_surface(&mut records, nurbs)?;
                 }
@@ -1298,7 +1306,7 @@ fn encode_face_topology_smbh(
                 )));
             }
             None | Some(SolvedSurfaceGeometry::Unknown { .. }) => {
-                if !native_cacheless_procedural_surface(&mut records, target, surface)? {
+                if !native_cacheless_procedural_surface(&mut records, target, owners, surface)? {
                     return Err(CodecError::NotImplemented(format!(
                         "source-less F3D face generation does not support surface carrier {}",
                         surface.id
@@ -1309,7 +1317,7 @@ fn encode_face_topology_smbh(
         records.push(0x11);
     }
 
-    encode_source_less_curves(&mut records, target)?;
+    encode_source_less_curves(&mut records, target, owners)?;
 
     for pcurve in &pcurves {
         native_pcurve(&mut records, pcurve.geometry, &pcurve.form, pcurve.support)?;
