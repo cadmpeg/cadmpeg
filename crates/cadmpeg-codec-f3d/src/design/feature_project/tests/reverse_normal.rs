@@ -208,3 +208,36 @@ fn linked_scopes_take_the_timeline_positions_after_their_timeline_item() {
     ordinals.sort_unstable();
     assert_eq!(ordinals, [(100, 0), (200, 3), (250, 1), (300, 2)]);
 }
+
+#[test]
+fn a_link_that_two_timeline_items_carry_leaves_its_followers_unplaced() {
+    const LINK: &str = "180f14e0-154e-434b-acff-8bfbd101803c";
+    const OTHER_LINK: &str = "2a6b1c7d-0e3f-4a5b-9c8d-7e6f5a4b3c2d";
+    let scopes = [
+        linked(100, Some(LINK)),
+        linked(200, Some(LINK)),
+        linked(250, Some(LINK)),
+        linked(300, Some(LINK)),
+        linked(400, Some(OTHER_LINK)),
+    ];
+    let authored = authored_scope_ordinals(&scopes, &[timeline(&[100, 200])]).unwrap();
+    let mut ordinals = authored
+        .iter()
+        .map(|((_, record_index), ordinal)| (*record_index, *ordinal))
+        .collect::<Vec<_>>();
+    ordinals.sort_unstable();
+    assert_eq!(ordinals, [(100, 0), (200, 1)]);
+    let unplaced =
+        crate::design::feature_project::reverse_normal::unplaced_linked_scopes(&scopes, &authored);
+    assert_eq!(
+        unplaced
+            .iter()
+            .map(|scope| (scope.scope_id.as_str(), scope.link.as_str(), scope.shared))
+            .collect::<Vec<_>>(),
+        [
+            (scopes[2].id.as_str(), LINK, true),
+            (scopes[3].id.as_str(), LINK, true),
+            (scopes[4].id.as_str(), OTHER_LINK, false),
+        ]
+    );
+}

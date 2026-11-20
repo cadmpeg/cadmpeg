@@ -768,6 +768,12 @@ pub(crate) enum F3dLossCode {
     /// history, the model bodies of its slots in that history's BREP source,
     /// or the generating features of absent slots are unresolved.
     FeatureReverseNormalBodyProducerUnresolved,
+    /// A linked Reverse Normal scope takes no timeline position: no timeline
+    /// item carries its link GUID.
+    FeatureReverseNormalLinkUnplaced,
+    /// A linked Reverse Normal scope takes no timeline position: several
+    /// timeline items carry its link GUID.
+    FeatureReverseNormalLinkShared,
     FeatureSilhouetteSplitPrefixUnparsed,
     FeatureSilhouetteSplitModeUnresolved,
     FeatureSilhouetteSplitDirectionUnresolved,
@@ -1646,6 +1652,8 @@ impl F3dLossCode {
         Self::FeatureBodySelectionNative,
         Self::FeatureReverseNormalBodyUnverified,
         Self::FeatureReverseNormalBodyProducerUnresolved,
+        Self::FeatureReverseNormalLinkUnplaced,
+        Self::FeatureReverseNormalLinkShared,
         Self::FeatureSilhouetteSplitPrefixUnparsed,
         Self::FeatureSilhouetteSplitModeUnresolved,
         Self::FeatureSilhouetteSplitDirectionUnresolved,
@@ -2613,6 +2621,8 @@ impl F3dLossCode {
             Self::FeatureReverseNormalBodyProducerUnresolved => {
                 "feature.reverse-normal-body-producer-unresolved"
             }
+            Self::FeatureReverseNormalLinkUnplaced => "feature.reverse-normal-link-unplaced",
+            Self::FeatureReverseNormalLinkShared => "feature.reverse-normal-link-shared",
             Self::FeatureSilhouetteSplitPrefixUnparsed => {
                 "feature.silhouette-split-prefix-unparsed"
             }
@@ -3466,6 +3476,8 @@ impl F3dLossCode {
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureReverseNormalBodyProducerUnresolved
+            | Self::FeatureReverseNormalLinkUnplaced
+            | Self::FeatureReverseNormalLinkShared
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -4137,6 +4149,8 @@ impl F3dLossCode {
             | Self::FeatureBodySelectionNative
             | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureReverseNormalBodyProducerUnresolved
+            | Self::FeatureReverseNormalLinkUnplaced
+            | Self::FeatureReverseNormalLinkShared
             | Self::FeatureSilhouetteSplitPrefixUnparsed
             | Self::FeatureSilhouetteSplitModeUnresolved
             | Self::FeatureSilhouetteSplitDirectionUnresolved
@@ -4932,6 +4946,8 @@ mod tests {
                 "feature.body-selection-native",
                 "feature.reverse-normal-body-unverified",
                 "feature.reverse-normal-body-producer-unresolved",
+                "feature.reverse-normal-link-unplaced",
+                "feature.reverse-normal-link-shared",
                 "feature.silhouette-split-prefix-unparsed",
                 "feature.silhouette-split-mode-unresolved",
                 "feature.silhouette-split-direction-unresolved",

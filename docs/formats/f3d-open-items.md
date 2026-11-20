@@ -751,6 +751,30 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Note.** The decoder assigns a point or curve whose backlink names a group to the sketch that the group names, stores the group record index in `geometry_group`, and emits `sketch.geometry-group-member-unlisted` when the member run omits the record. The native `sketch_geometry_groups` record keeps the member run in `members` and the owning sketch reference in `sketch_reference`. A member reference that names a record without a decoded backlink to the group assigns no owner, and the decoder emits `sketch.geometry-group-member-unbacklinked`.
 
+### DR-302. Word before the body-group reference of a Reverse Normal scope
+
+**Question.** What does the u32 before the marked body-group reference of a `Reverse Normal` scope encode when it is not `1`?
+
+**Known.** `f3d.md` §3.1 "A `Reverse Normal` scope reverses" gives u32 `1` at offset 21 of the compact prefix and offset 25 of the shifted prefix, for any number of body-group members and for the linked scopes of a Reverse Normal of several components. One marked reference to the body group follows it. The decoder keeps a scope with another value as a native feature.
+
+**Need.** A `Reverse Normal` scope with a value other than `1`, and the selected bodies as the application shows them.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-303. Link GUID shared by several Reverse Normal timeline items
+
+**Question.** Can one non-null link GUID occur in the linked scopes of more than one `Reverse Normal` timeline item, and how does a reader then assign the linked scopes that are not timeline items?
+
+**Known.** `f3d.md` §3.1 "A `Reverse Normal` scope reverses" gives one shared non-null link GUID for the linked scopes of one item, with the scopes that the timeline does not name taking the positions directly after the named scope.
+
+**Need.** A save with two Reverse Normal items of several components each, and the link GUIDs of their linked scopes.
+
+**Conflict.** None.
+
+**Note.** When several timeline items carry one link GUID, the decoder leaves the linked scopes that are not timeline items without a timeline position and reports `feature.reverse-normal-link-shared` for each. A linked scope whose link GUID no timeline item carries takes no position and is reported as `feature.reverse-normal-link-unplaced`.
+
 ### DR-308. Canvas flag byte before the second boundary
 
 **Question.** What does the flag byte before the second boundary segment of a Canvas geometry record select, and does a zero value change the image placement or display?

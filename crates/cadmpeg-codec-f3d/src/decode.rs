@@ -401,6 +401,8 @@ struct DesignProjectionGaps {
     partially_resolved_edge_members: usize,
     unresolved_edge_selections: usize,
     unrepaired_lost_edge_references: usize,
+    unplaced_linked_scopes:
+        Vec<crate::design::feature_project::reverse_normal::UnplacedLinkedScope>,
 }
 
 /// Returns whether a face selection supplies the operation's neutral faces.
@@ -1469,7 +1471,17 @@ fn design_projection_gaps(
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         Err(_) => None,
     };
+    let unplaced_linked_scopes = authored_scopes
+        .as_ref()
+        .map(|ordinals| {
+            crate::design::feature_project::reverse_normal::unplaced_linked_scopes(
+                &native.design_parameter_scopes,
+                ordinals,
+            )
+        })
+        .unwrap_or_default();
     let mut gaps = DesignProjectionGaps {
+        unplaced_linked_scopes,
         assumed_reference_image_flags: native
             .design_canvas_images
             .iter()
@@ -2713,6 +2725,27 @@ fn report_design_projection_gaps(
             "{uninterpreted_scopes} native feature scope(s) retain their source envelope without interpreted specialized operation data."
         ),
     )?;
+    for unplaced in &gaps.unplaced_linked_scopes {
+        let (code, reason) = if unplaced.shared {
+            (
+                F3dLossCode::FeatureReverseNormalLinkShared,
+                "several timeline items carry that link",
+            )
+        } else {
+            (
+                F3dLossCode::FeatureReverseNormalLinkUnplaced,
+                "no timeline item carries that link",
+            )
+        };
+        push(
+            code,
+            1,
+            format_args!(
+                "Reverse Normal scope {} with link {} takes no timeline position: {reason}.",
+                unplaced.scope_id, unplaced.link
+            ),
+        )?;
+    }
     push(
         F3dLossCode::FeatureScopeUnprojected,
         gaps.unprojected_feature_scopes,

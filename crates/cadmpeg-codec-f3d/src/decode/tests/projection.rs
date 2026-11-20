@@ -1904,3 +1904,57 @@ fn native_mesh_face_group_sources_remain_incomplete() {
         ));
     }
 }
+
+#[test]
+fn a_linked_reverse_normal_scope_without_a_timeline_position_charges_a_loss() {
+    use crate::test_support::reverse_normal::{linked, timeline};
+    const LINK: &str = "180f14e0-154e-434b-acff-8bfbd101803c";
+    const OTHER_LINK: &str = "2a6b1c7d-0e3f-4a5b-9c8d-7e6f5a4b3c2d";
+    let ir = cadmpeg_ir::document::CadIr::empty();
+    let mut native = F3dNative::default();
+    native.design_parameter_scopes = vec![
+        linked(100, Some(LINK)),
+        linked(200, Some(LINK)),
+        linked(250, Some(LINK)),
+        linked(400, Some(OTHER_LINK)),
+    ];
+    native.design_feature_timelines = vec![timeline(&[100, 200])];
+    let mut report = cadmpeg_ir::codec::DecodeBody {
+        transfer: cadmpeg_ir::report::decode::DecodeTransfer::full(true),
+        coverage: cadmpeg_ir::report::decode::Coverage::default(),
+        losses: Vec::new(),
+        notes: Vec::new(),
+        transfer_ledger: Default::default(),
+    };
+
+    report_design_projection_gaps(
+        &mut report,
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &ir,
+        &native,
+    )
+    .unwrap();
+
+    let messages = |code: F3dLossCode| {
+        report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == code.kind())
+            .map(|loss| loss.message.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        messages(F3dLossCode::FeatureReverseNormalLinkShared),
+        [format!(
+            "Reverse Normal scope {} with link {LINK} takes no timeline position: several timeline items carry that link.",
+            native.design_parameter_scopes[2].id
+        )]
+    );
+    assert_eq!(
+        messages(F3dLossCode::FeatureReverseNormalLinkUnplaced),
+        [format!(
+            "Reverse Normal scope {} with link {OTHER_LINK} takes no timeline position: no timeline item carries that link.",
+            native.design_parameter_scopes[3].id
+        )]
+    );
+}
