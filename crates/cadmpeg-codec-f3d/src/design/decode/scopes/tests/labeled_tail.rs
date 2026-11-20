@@ -186,11 +186,9 @@ fn labeled_scope_admits_its_shifted_preceding_state_offset_or_none() {
     let scope = parse_plain(&bytes).expect("labeled scope");
     let offset = scope.previous_history_state_id_offset().unwrap();
     let mut unshifted = scope.clone();
-    assert!(
-        unshifted
-            .try_edit(|draft| draft.previous_history_state_id_offset = Some(offset - 1))
-            .is_err()
-    );
+    assert!(unshifted
+        .try_edit(|draft| draft.previous_history_state_id_offset = Some(offset - 1))
+        .is_err());
     let mut absent = scope;
     absent
         .try_edit(|draft| {
