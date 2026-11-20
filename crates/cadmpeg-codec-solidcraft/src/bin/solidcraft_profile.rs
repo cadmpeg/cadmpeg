@@ -9,7 +9,7 @@
 //! are listed on their own so a passing writer is visible beside a failing
 //! ladder. Gates L6 to L8 carry the named gaps that keep them open.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
@@ -39,9 +39,9 @@ const L8_GAPS: &[&str] = &[
 ];
 
 #[derive(Serialize)]
-#[allow(clippy::struct_field_names)]
 struct Profile {
-    profile_version: u32,
+    #[serde(rename = "profile_version")]
+    version: u32,
     format: &'static str,
     fixtures: Vec<Fixture>,
     write_assertions: WriteAssertions,
@@ -66,17 +66,29 @@ struct Fixture {
     source_less_generation: Option<bool>,
 }
 
-/// One flag per write assertion; the profile lists them side by side.
+/// One flag per write assertion, by name; the profile lists them side by side.
 #[derive(Serialize)]
-#[allow(clippy::struct_excessive_bools)]
-struct WriteAssertions {
-    replay_identical: bool,
-    parameter_edit_round_trip: bool,
-    unsupported_target_rejected: bool,
-    unsupported_edit_rejected: bool,
-    source_less_generated: bool,
-    independent_native_acceptance: bool,
-}
+#[serde(transparent)]
+struct WriteAssertions(BTreeMap<&'static str, bool>);
+
+/// The write assertions, with what each one states.
+const WRITE_ASSERTIONS: &[(&str, &str)] = &[
+    ("replay_identical", "unedited designs replay byte for byte"),
+    ("parameter_edit_round_trip", "a parameter edit reads back"),
+    (
+        "unsupported_target_rejected",
+        "an unlisted dialect is refused",
+    ),
+    (
+        "unsupported_edit_rejected",
+        "an unsupported edit is refused",
+    ),
+    ("source_less_generated", "a source-less design is generated"),
+    (
+        "independent_native_acceptance",
+        "solidcraft-cli accepts a generated design",
+    ),
+];
 
 #[derive(Serialize)]
 struct Gate {
@@ -298,37 +310,11 @@ fn gates(fixtures: &[Fixture], write: &WriteAssertions) -> Vec<Gate> {
         }
     };
     let gaps = |list: &[&str]| list.iter().map(|gap| (*gap).to_owned()).collect::<Vec<_>>();
-    let mut write_blockers = Vec::new();
-    for (passed, name) in [
-        (
-            write.replay_identical,
-            "unedited designs replay byte for byte",
-        ),
-        (
-            write.parameter_edit_round_trip,
-            "a parameter edit reads back",
-        ),
-        (
-            write.unsupported_target_rejected,
-            "an unlisted dialect is refused",
-        ),
-        (
-            write.unsupported_edit_rejected,
-            "an unsupported edit is refused",
-        ),
-        (
-            write.source_less_generated,
-            "a source-less design is generated",
-        ),
-        (
-            write.independent_native_acceptance,
-            "solidcraft-cli accepts a generated design",
-        ),
-    ] {
-        if !passed {
-            write_blockers.push(name.to_owned());
-        }
-    }
+    let write_blockers: Vec<String> = WRITE_ASSERTIONS
+        .iter()
+        .filter(|(key, _)| !write.0.get(key).copied().unwrap_or(false))
+        .map(|(_, name)| (*name).to_owned())
+        .collect();
     let mut gates = vec![
         gate(
             "L0",
@@ -445,14 +431,29 @@ fn main() -> Result<(), Failure> {
         .iter()
         .filter_map(|fixture| fixture.parameter_edit_round_trip)
         .collect();
-    let write = WriteAssertions {
-        replay_identical: !fixtures.is_empty() && fixtures.iter().all(|f| f.replay_identical),
-        parameter_edit_round_trip: !edits.is_empty() && edits.iter().all(|passed| *passed),
-        unsupported_target_rejected: !fixtures.is_empty() && unsupported_target,
-        unsupported_edit_rejected: !fixtures.is_empty() && unsupported_edit,
-        source_less_generated: generated.is_some(),
-        independent_native_acceptance: generated.as_deref().is_some_and(native_accepts),
-    };
+    let write = WriteAssertions(BTreeMap::from([
+        (
+            "replay_identical",
+            !fixtures.is_empty() && fixtures.iter().all(|f| f.replay_identical),
+        ),
+        (
+            "parameter_edit_round_trip",
+            !edits.is_empty() && edits.iter().all(|passed| *passed),
+        ),
+        (
+            "unsupported_target_rejected",
+            !fixtures.is_empty() && unsupported_target,
+        ),
+        (
+            "unsupported_edit_rejected",
+            !fixtures.is_empty() && unsupported_edit,
+        ),
+        ("source_less_generated", generated.is_some()),
+        (
+            "independent_native_acceptance",
+            generated.as_deref().is_some_and(native_accepts),
+        ),
+    ]));
     let gates = gates(&fixtures, &write);
     let highest = gates
         .iter()
@@ -460,7 +461,7 @@ fn main() -> Result<(), Failure> {
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        profile_version: 1,
+        version: 1,
         format: "solidcraft",
         fixtures,
         write_assertions: write,

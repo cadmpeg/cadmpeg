@@ -11,7 +11,7 @@
 //! placed in the design. Segments, triangles, file properties, filters, and
 //! display settings stay in the retained `point_clouds` section.
 
-use cadmpeg_core::decode::{u64_from_index, DecodeContext};
+use cadmpeg_core::decode::{u64_from_index, DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{IdentityKey, PointCloudId};
@@ -24,8 +24,6 @@ use crate::package::Package;
 
 /// The blob magic of a point cloud.
 const MAGIC: &[u8; 8] = b"SCPNTS01";
-/// Bytes of the blob header: the magic, the count, and the colour flag.
-const HEADER: usize = 24;
 /// Most points one cloud may hold, as the application limits it.
 const MAX_POINTS: usize = 20_000_000;
 
@@ -35,32 +33,30 @@ struct Raw {
     colors: Vec<[u8; 3]>,
 }
 
-fn word(bytes: &[u8], at: usize) -> Option<u64> {
-    Some(u64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?))
-}
-
 /// The points of a `SCPNTS01` blob.
 fn blob(bytes: &[u8]) -> Option<Raw> {
-    if bytes.get(..8)? != MAGIC {
+    let mut view = View::over_retained(bytes);
+    if view.take(MAGIC.len())? != MAGIC {
         return None;
     }
-    let count = usize::try_from(word(bytes, 8)?)
+    let count = usize::try_from(view.u64_le()?)
         .ok()
         .filter(|count| *count <= MAX_POINTS)?;
-    let colored = match word(bytes, 16)? {
+    let colored = match view.u64_le()? {
         0 => false,
         1 => true,
         _ => return None,
     };
-    let middle = HEADER.checked_add(count.checked_mul(12)?)?;
-    let end = middle.checked_add(if colored { count.checked_mul(3)? } else { 0 })?;
-    if bytes.len() != end {
+    let coordinates = count.checked_mul(12)?;
+    let rest = coordinates.checked_add(if colored { count.checked_mul(3)? } else { 0 })?;
+    if view.remaining() != rest {
         return None;
     }
+    let positions = positions(view.take(coordinates)?)?;
     Some(Raw {
-        positions: positions(bytes.get(HEADER..middle)?)?,
+        positions,
         colors: if colored {
-            colors(bytes.get(middle..)?)
+            colors(view.unread())
         } else {
             Vec::new()
         },
@@ -71,10 +67,10 @@ fn positions(bytes: &[u8]) -> Option<Vec<[f32; 3]>> {
     if !bytes.len().is_multiple_of(12) {
         return None;
     }
+    let mut view = View::over_retained(bytes);
     let mut out = Vec::with_capacity(bytes.len() / 12);
-    for chunk in bytes.chunks_exact(12) {
-        let value = |at: usize| Some(f32::from_le_bytes(chunk.get(at..at + 4)?.try_into().ok()?));
-        let point = [value(0)?, value(4)?, value(8)?];
+    while view.remaining() > 0 {
+        let point = [view.f32_le()?, view.f32_le()?, view.f32_le()?];
         if !point.iter().all(|coordinate| coordinate.is_finite()) {
             return None;
         }

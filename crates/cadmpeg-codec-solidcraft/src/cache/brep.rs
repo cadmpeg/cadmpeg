@@ -91,6 +91,9 @@ pub(super) struct OrientedFace {
     pub(super) forward: bool,
 }
 
+cadmpeg_core::named_optional_field!(deserialize_face_nurbs, Surface, "nurbs");
+cadmpeg_core::named_optional_field!(deserialize_edge_nurbs, Curve, "nurbs");
+
 /// A face: its surface and its loops in that surface's parameters.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -98,7 +101,7 @@ pub(super) struct Face {
     /// What the face is.
     pub(super) surface: Surface,
     /// The NURBS form the face is parameterised on, when it has one.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_face_nurbs")]
     pub(super) nurbs: Option<Surface>,
     /// The parameter box `[[u0, u1], [v0, v1]]`.
     pub(super) domain: [[f64; 2]; 2],
@@ -141,7 +144,7 @@ pub(super) struct Edge {
     /// What the edge is.
     pub(super) curve: Curve,
     /// The NURBS form the edge is parameterised on, when it has one.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_edge_nurbs")]
     pub(super) nurbs: Option<Curve>,
     /// The covered parameter interval, min < max.
     pub(super) interval: [f64; 2],

@@ -73,7 +73,8 @@ pub(crate) fn notes(
             format!("note:{key}"),
             SemanticAnnotationKind::Text,
             RUNTIME_TYPE.to_owned(),
-            u32::try_from(index).unwrap_or(u32::MAX),
+            u32::try_from(index)
+                .map_err(|_| CodecError::malformed(format_args!("too many notes")))?,
             section.clone(),
         );
         annotation.text = text.lines().map(str::to_owned).collect();
