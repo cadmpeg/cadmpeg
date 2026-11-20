@@ -26,7 +26,7 @@ fn project(native: &F3dNative) -> Vec<cadmpeg_ir::features::Feature> {
 
 #[test]
 fn pipe_dispatch_preserves_native_facts_without_inventing_a_section() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for raw in [[1, 1], [0, 1], [127, 254]] {
         for hollow in [false, true] {
             for operation in [1, 2, 3, 4] {
@@ -74,7 +74,7 @@ fn pipe_dispatch_preserves_native_facts_without_inventing_a_section() {
 
 #[test]
 fn pipe_native_dimensions_have_no_shape_specific_wall_predicate() {
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     for thickness in [-1.0, 0.0, 0.35, 2.0] {
         for hollow in [false, true] {
             let native = Fixture::new(Config {

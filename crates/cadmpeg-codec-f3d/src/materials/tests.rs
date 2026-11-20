@@ -1222,7 +1222,11 @@ fn source_less_tolerant_vertex_retains_custom_attribute_ownership() {
     let mut source = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source.source = None;
     source
-        .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .set_native_unknowns(
+            &cadmpeg_core::decode::test_support::service_decode_context(),
+            "f3d",
+            &[],
+        )
         .unwrap();
     let vertex = source.geometry.vertices[0].id.clone();
     source.geometry.vertices[0].tolerance =

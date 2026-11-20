@@ -133,14 +133,8 @@ fn a_triangle_group_binding_names_a_group_of_its_tessellation() {
     )
     .unwrap()
     .with_triangle_groups(vec![
-        TessellationTriangleGroup {
-            source_id: Some("/Mesh/Front".into()),
-            triangles: vec![0],
-        },
-        TessellationTriangleGroup {
-            source_id: None,
-            triangles: vec![1],
-        },
+        TessellationTriangleGroup::new(Some("/Mesh/Front".into()), vec![0]),
+        TessellationTriangleGroup::new(None, vec![1]),
     ])
     .unwrap();
     let tessellation = mesh.id.to_string();

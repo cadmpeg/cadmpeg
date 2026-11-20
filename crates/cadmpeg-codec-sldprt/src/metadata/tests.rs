@@ -360,7 +360,7 @@ fn unit_name_replacement_decodes_replacement_character() {
     let source = replacement_unit_source();
     let scan = crate::test_support::container::scan(&source);
     let section = scan.sections().next().expect("unit-name section");
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     let mut attributes = Vec::new();
     super::scan_length_user_units(
         &ctx,

@@ -15,6 +15,7 @@ mod recipe_structures;
 mod recipes;
 mod registered_split_face_bounds;
 mod selection;
+mod split_groups;
 mod typed_profile;
 mod work_point;
 

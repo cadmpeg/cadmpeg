@@ -64,6 +64,8 @@ pub(crate) enum SldprtLossCode {
     /// The configuration pass reached its work cap; later configurations
     /// keep empty projected states.
     ConfigProjectionWorkCapped,
+    /// A configuration's stored state has no design evaluation.
+    ConfigStateUnstated,
     /// Parameter lacks an evaluated scalar or a regenerable finite value.
     ParameterUnevaluated,
     /// Parameter records have empty, duplicate, or colliding names/ordinals.
@@ -100,6 +102,11 @@ pub(crate) enum SldprtLossCode {
     PmiSwiftFaceDocumentTailAssumed,
     /// Feature history record has duplicate identity or unresolved references.
     HistoryIncompleteReferences,
+    /// The stored marks do not fix the rollback position of the feature tree.
+    HistoryRollbackUnread,
+    /// The `moPMarkRecord_c` class index of a configuration is the class
+    /// token whose records name the most main-line marks.
+    HistoryRollbackMarkClassInferred,
     /// Feature record has missing, repeated, or non-preceding tree edges.
     FeatureIncoherentEdges,
     /// Feature record has inconsistent source-content references.
@@ -157,6 +164,8 @@ pub(crate) enum SldprtLossCode {
     GeometryOffsetValidityUnresolved,
     /// Stored spun-profile bounds are ignored and the whole profile is revolved.
     GeometrySpunProfileIntervalIgnored,
+    /// A rolling-ball blend face has no solved cache; it keeps its construction.
+    GeometryBlendCacheUnsolved,
     /// Edge references an untyped support curve carried opaque.
     GeometryEdgeSupportCurveUntyped,
     /// Tolerant edge has no curve because its fin geometry is not read.
@@ -338,6 +347,7 @@ impl SldprtLossCode {
         Self::ConfigIncoherentBodyRefs,
         Self::ConfigIncompleteSnapshot,
         Self::ConfigProjectionWorkCapped,
+        Self::ConfigStateUnstated,
         Self::ParameterUnevaluated,
         Self::ParameterAmbiguousIdentity,
         Self::PmiDimensionUnbound,
@@ -355,6 +365,8 @@ impl SldprtLossCode {
         Self::PmiSwiftFaceDocumentLayoutAssumed,
         Self::PmiSwiftFaceDocumentTailAssumed,
         Self::HistoryIncompleteReferences,
+        Self::HistoryRollbackUnread,
+        Self::HistoryRollbackMarkClassInferred,
         Self::FeatureIncoherentEdges,
         Self::FeatureIncoherentContent,
         Self::FeatureUnresolvedOutputScope,
@@ -382,6 +394,7 @@ impl SldprtLossCode {
         Self::GeometrySurfaceCarrierAmbiguous,
         Self::GeometryOffsetValidityUnresolved,
         Self::GeometrySpunProfileIntervalIgnored,
+        Self::GeometryBlendCacheUnsolved,
         Self::GeometryEdgeSupportCurveUntyped,
         Self::GeometryTolerantEdgeCurveUnread,
         Self::GeometryPointRecordAmbiguous,
@@ -461,6 +474,7 @@ impl SldprtLossCode {
             Self::ConfigIncoherentBodyRefs => "config.incoherent-body-refs",
             Self::ConfigIncompleteSnapshot => "config.incomplete-snapshot",
             Self::ConfigProjectionWorkCapped => "config.projection-work-capped",
+            Self::ConfigStateUnstated => "config.state-unstated",
             Self::ParameterUnevaluated => "parameter.unevaluated",
             Self::ParameterAmbiguousIdentity => "parameter.ambiguous-identity",
             Self::PmiDimensionUnbound => "pmi.dimension-unbound",
@@ -484,6 +498,8 @@ impl SldprtLossCode {
             Self::PmiSwiftFaceDocumentLayoutAssumed => "pmi.swift-face-document-layout-assumed",
             Self::PmiSwiftFaceDocumentTailAssumed => "pmi.swift-face-document-tail-assumed",
             Self::HistoryIncompleteReferences => "history.incomplete-references",
+            Self::HistoryRollbackUnread => "history.rollback-unread",
+            Self::HistoryRollbackMarkClassInferred => "history.rollback-mark-class-inferred",
             Self::FeatureIncoherentEdges => "feature.incoherent-edges",
             Self::FeatureIncoherentContent => "feature.incoherent-content",
             Self::FeatureUnresolvedOutputScope => "feature.unresolved-output-scope",
@@ -511,6 +527,7 @@ impl SldprtLossCode {
             Self::GeometrySurfaceCarrierAmbiguous => "geometry.surface-carrier-ambiguous",
             Self::GeometryOffsetValidityUnresolved => "geometry.offset-validity-unresolved",
             Self::GeometrySpunProfileIntervalIgnored => "geometry.spun-profile-interval-ignored",
+            Self::GeometryBlendCacheUnsolved => "geometry.blend-cache-unsolved",
             Self::GeometryEdgeSupportCurveUntyped => "geometry.edge-support-curve-untyped",
             Self::GeometryTolerantEdgeCurveUnread => "geometry.tolerant-edge-curve-unread",
             Self::GeometryPointRecordAmbiguous => "geometry.point-record-ambiguous",
@@ -631,6 +648,7 @@ impl SldprtLossCode {
             | Self::ConfigIncoherentBodyRefs
             | Self::ConfigIncompleteSnapshot
             | Self::ConfigProjectionWorkCapped
+            | Self::ConfigStateUnstated
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
@@ -648,6 +666,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftFaceDocumentLayoutAssumed
             | Self::PmiSwiftFaceDocumentTailAssumed
             | Self::HistoryIncompleteReferences
+            | Self::HistoryRollbackUnread
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
             | Self::FeatureUnresolvedOutputScope
@@ -674,6 +693,7 @@ impl SldprtLossCode {
             | Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometrySurfaceCarrierAmbiguous
             | Self::GeometrySpunProfileIntervalIgnored
+            | Self::GeometryBlendCacheUnsolved
             | Self::GeometryOffsetValidityUnresolved
             | Self::GeometryEdgeSupportCurveUntyped
             | Self::GeometryTolerantEdgeCurveUnread
@@ -734,7 +754,8 @@ impl SldprtLossCode {
             Self::AssemblyComponentsExternal
             | Self::AssemblySuppressedComponentsOmitted
             | Self::AssemblyConfigurationsNotTransferred
-            | Self::AssemblyBomExclusionNotTransferred => Severity::Info,
+            | Self::AssemblyBomExclusionNotTransferred
+            | Self::HistoryRollbackMarkClassInferred => Severity::Info,
         }
     }
 
@@ -793,6 +814,7 @@ impl SldprtLossCode {
             | Self::TopologyVertexRecordUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
             Self::GeometryCarrierApproximated => LossTaxonomy::ProceduralReduced,
+            Self::GeometryBlendCacheUnsolved => LossTaxonomy::DecodeDiagnostic,
             Self::TopologyGraphNotTransferred => LossTaxonomy::TopologyNotTransferred,
             Self::GeometryFaceSupportSurfaceUntyped
             | Self::GeometrySurfaceCarrierAmbiguous
@@ -832,7 +854,8 @@ impl SldprtLossCode {
             | Self::PmiSwiftInternalFlatnessSymbolAssumed
             | Self::PmiSwiftPresentationUnframed
             | Self::PmiSwiftFaceDocumentLayoutAssumed
-            | Self::PmiSwiftFaceDocumentTailAssumed => LossTaxonomy::DecodeDiagnostic,
+            | Self::PmiSwiftFaceDocumentTailAssumed
+            | Self::HistoryRollbackMarkClassInferred => LossTaxonomy::DecodeDiagnostic,
             Self::ConfigActiveIdentityUnresolved
             | Self::ConfigActivePartitionMismatch
             | Self::ConfigInferredWithoutNative
@@ -842,6 +865,7 @@ impl SldprtLossCode {
             | Self::ConfigIncoherentBodyRefs
             | Self::ConfigIncompleteSnapshot
             | Self::ConfigProjectionWorkCapped
+            | Self::ConfigStateUnstated
             | Self::ParameterUnevaluated
             | Self::ParameterAmbiguousIdentity
             | Self::PmiDimensionUnbound
@@ -850,6 +874,7 @@ impl SldprtLossCode {
             | Self::PmiSwiftAnnotationUnsupported
             | Self::PmiSwiftFeatureWalkCapped
             | Self::HistoryIncompleteReferences
+            | Self::HistoryRollbackUnread
             | Self::FeatureIncoherentEdges
             | Self::FeatureIncoherentContent
             | Self::FeatureUnresolvedOutputScope
@@ -1058,6 +1083,7 @@ mod tests {
                 "config.incoherent-body-refs",
                 "config.incomplete-snapshot",
                 "config.projection-work-capped",
+                "config.state-unstated",
                 "parameter.unevaluated",
                 "parameter.ambiguous-identity",
                 "pmi.dimension-unbound",
@@ -1075,6 +1101,8 @@ mod tests {
                 "pmi.swift-face-document-layout-assumed",
                 "pmi.swift-face-document-tail-assumed",
                 "history.incomplete-references",
+                "history.rollback-unread",
+                "history.rollback-mark-class-inferred",
                 "feature.incoherent-edges",
                 "feature.incoherent-content",
                 "feature.unresolved-output-scope",
@@ -1102,6 +1130,7 @@ mod tests {
                 "geometry.surface-carrier-ambiguous",
                 "geometry.offset-validity-unresolved",
                 "geometry.spun-profile-interval-ignored",
+                "geometry.blend-cache-unsolved",
                 "geometry.edge-support-curve-untyped",
                 "geometry.tolerant-edge-curve-unread",
                 "geometry.point-record-ambiguous",

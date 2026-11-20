@@ -4,9 +4,9 @@ use crate::decode::analytic::equations::{CylinderEquation, PlaneEquation};
 use crate::decode::analytic::planes::{
     fc05_cylinder_branch_witnesses, fc05_cylinder_model_witness,
     fc05_cylinder_resolved_plane_witness, plane_candidate_pcurve_lies_on_carrier, plane_candidates,
-    round_edge_envelopes_for_plane, select_stored_frame_branches,
-    select_stored_frame_carrier_pcurve_branches, stored_parameter_normal_candidates,
-    unique_round_edge_origin_candidate, PlaneCandidate, PlaneChart,
+    select_stored_frame_branches, select_stored_frame_carrier_pcurve_branches,
+    stored_parameter_normal_candidates, unique_round_edge_origin_candidate, PlaneCandidate,
+    PlaneChart, RoundEdges,
 };
 use crate::surface::{LocalSystemClassification, OutlinePlane, PlaneLocalSystem};
 
@@ -579,7 +579,7 @@ fn round_edge_plane_envelope_preserves_type24_geometry() {
         crate::decode::uniqueness::UniqueById::new(&scan.surfaces.parameters, |record| {
             record.surface_id
         });
-    let envelopes = round_edge_envelopes_for_plane(&scan, 1, &schema_classes, &parameters);
+    let envelopes = RoundEdges::new(&scan, &schema_classes).envelopes_for_plane(1, &parameters);
     assert_eq!(envelopes.len(), 1);
     assert_eq!(envelopes[0].vertices, [[0.0, 1.0, 2.0], [-1.0, 2.0, 0.0]]);
 }

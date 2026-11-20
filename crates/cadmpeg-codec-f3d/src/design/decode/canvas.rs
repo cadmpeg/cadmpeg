@@ -598,7 +598,7 @@ mod tests {
         let archive = zip.finish().unwrap().into_inner();
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             let assets = super::project_canvas_images(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 scan,
                 std::slice::from_ref(&scope),
                 std::slice::from_ref(&image),

@@ -170,17 +170,22 @@ macro_rules! declare_arena_dispositions {
                 let restated = ir.arenas().holds(ArenaClass::Design, ArenaHome::Model);
                 let mut losses = Vec::new();
                 $(
+                    // The document root is the written document itself.
+                    let records = if arena_kind(&ir.$home.$field) == EntityKind::ProductDefinition {
+                        crate::products::stated_definitions(&ir.model.product_definitions).count()
+                    } else {
+                        ir.$home.$field.len()
+                    };
                     if disposition!(self, $field, $home) == ArenaDisposition::Omitted
-                        && !ir.$home.$field.is_empty()
+                        && records != 0
                         && !(restated && crate::document::arena_home!($home) == ArenaHome::Design)
                     {
                         losses.push(
                             ExportLossCode::ArenaOmitted(arena_kind(&ir.$home.$field))
                             .note(format!(
                                 "the {format} write does not represent model arena `{}`: \
-                                 {} record(s) omitted",
+                                 {records} record(s) omitted",
                                 crate::document::arena_label!($field, $home),
-                                ir.$home.$field.len(),
                             )),
                         );
                     }

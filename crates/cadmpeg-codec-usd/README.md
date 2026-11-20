@@ -35,8 +35,9 @@ Every construct with no neutral form is named by a `usd/*` loss.
 
 ## Encode
 
-The writer emits a USDA layer in millimetres with one root prim per root
-occurrence. Each occurrence becomes an `Xform` prim with a `matrix4d` placement, and a
+The writer emits a USDA layer in metres, or in the units and with the up axis
+that the scene options of the write (`EncodeInput::scene`) select, with one
+root prim per root occurrence. Each occurrence becomes an `Xform` prim with a `matrix4d` placement, and a
 definition placed more than once is written once under the abstract
 `Prototypes` prim. Tessellations become `Mesh` prims, faces on NURBS surfaces
 of untessellated bodies become `NurbsPatch` prims, wire edges and free curves

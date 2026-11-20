@@ -39,7 +39,7 @@ fn metadata_digest_preserves_source_order_and_excludes_unit_code() {
         ),
     ];
     let expected = cadmpeg_ir::hash::sha256_hex(&serde_json::to_vec_pretty(&expected).unwrap());
-    let ctx = cadmpeg_test_support::service_decode_context();
+    let ctx = cadmpeg_core::decode::test_support::service_decode_context();
     assert_eq!(
         crate::writer::swobjects_metadata_identity_local_sha256(&ctx, &ir).unwrap(),
         expected

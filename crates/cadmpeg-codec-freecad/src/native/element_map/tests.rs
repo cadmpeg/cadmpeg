@@ -56,7 +56,7 @@ fn child_map_reference_is_rejected_by_complete_cadir_admission() {
     );
     namespace
         .set_arena(
-            &cadmpeg_test_support::service_decode_context(),
+            &cadmpeg_core::decode::test_support::service_decode_context(),
             "element_maps",
             &maps,
         )
@@ -120,7 +120,7 @@ fn element_map_nodes_admit_only_contiguous_one_based_wire_indices() {
         ir.native
             .namespace_mut("fcstd")
             .set_arena(
-                &cadmpeg_test_support::service_decode_context(),
+                &cadmpeg_core::decode::test_support::service_decode_context(),
                 "element_maps",
                 &[record],
             )
