@@ -4,7 +4,10 @@
 //! item"): which sketches are written, each entity and relation in the
 //! fixed frame Fusion stores for its origin plane, and the losses of what is
 //! not written. A tangency at the ends of its curves is written with its
-//! endpoint branch and the coincidence of those ends.
+//! endpoint branch and the coincidence of those ends, and a dimension as a
+//! Fusion sketch dimension that owns its parameter.
+
+pub(super) mod dimensions;
 
 use std::collections::{BTreeMap, HashMap};
 
@@ -23,9 +26,12 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::math::portable::Portable;
 use cadmpeg_ir::report::loss::LossNote;
-use cadmpeg_ir::sketches::SketchEntityId;
+use cadmpeg_ir::sketches::{SketchEntityId, SketchId};
 
 use crate::loss::F3dLossCode;
+use dimensions::{Candidate, PlannedDimension, Tolerances};
+
+use super::parameters::ParameterPlan;
 
 /// The largest departure of a sketch normal from its origin plane's axis.
 const NORMAL_TOLERANCE: f64 = 1e-9;
@@ -195,6 +201,7 @@ pub(super) struct PlannedRelation {
 #[derive(Debug)]
 pub(super) struct PlannedSketch<'a> {
     pub(super) feature: &'a FeatureId,
+    pub(super) sketch: &'a SketchId,
     pub(super) plane: OriginPlane,
     /// Whether the source normal is opposite the plane's, so that the
     /// sketch is written as its reflection.
@@ -203,6 +210,11 @@ pub(super) struct PlannedSketch<'a> {
     pub(super) points: Vec<[f64; 2]>,
     pub(super) curves: Vec<PlannedCurve>,
     pub(super) relations: Vec<PlannedRelation>,
+    /// The dimensions measured on the written geometry, before their
+    /// parameters are planned.
+    pub(super) candidates: Vec<Candidate<'a>>,
+    /// The written dimensions, in constraint order.
+    pub(super) dimensions: Vec<PlannedDimension>,
 }
 
 /// The sketches the design writes, in timeline order, and what it does not
@@ -228,6 +240,57 @@ impl SketchPlan<'_> {
             );
         }
         self.losses.clear();
+    }
+
+    /// Write none of the sketches' dimensions, for `reason`: a failure of
+    /// the design with them. Their parameters stay user parameters.
+    pub(super) fn drop_dimensions(&mut self, reason: &str) {
+        for item in &mut self.items {
+            let dropped = item
+                .candidates
+                .drain(..)
+                .map(|candidate| candidate.constraint.to_string())
+                .collect::<Vec<_>>();
+            if !dropped.is_empty() {
+                self.losses
+                    .push(F3dLossCode::WriterSketchContentOmitted.note(format!(
+                        "F3D writes sketch {} without {}: the writer failed with the sketch's dimensions ({reason})",
+                        item.sketch,
+                        dropped.join(" ")
+                    )));
+            }
+        }
+    }
+
+    /// Plan the parameter of each measured dimension in timeline order, with
+    /// source ordinals from `1`; a dimension the writer cannot write is
+    /// charged. Returns the next source ordinal.
+    pub(super) fn claim_dimensions(
+        &mut self,
+        parameters: &mut ParameterPlan,
+        tolerances: Tolerances,
+    ) -> u32 {
+        let mut ordinal = 1u32;
+        for item in &mut self.items {
+            let mut notes = Notes::default();
+            for candidate in std::mem::take(&mut item.candidates) {
+                let constraint = candidate.constraint.to_string();
+                let planned = ordinal
+                    .checked_add(1)
+                    .ok_or("its source ordinal exceeds u32")
+                    .and_then(|next| {
+                        let planned = candidate.plan(parameters, ordinal, tolerances)?;
+                        ordinal = next;
+                        Ok(planned)
+                    });
+                match planned {
+                    Ok(planned) => item.dimensions.push(planned),
+                    Err(reason) => notes.omit(constraint, reason),
+                }
+            }
+            self.losses.extend(notes.into_losses(item.sketch.as_str()));
+        }
+        ordinal
     }
 
     /// Whether `feature` is written as a `Sketch` item.
@@ -445,7 +508,7 @@ impl<'a> PlannedSketch<'a> {
     fn new(
         target: &'a CadIr,
         feature: &'a FeatureId,
-        sketch: &Sketch,
+        sketch: &'a Sketch,
         frame: Frame,
         notes: &mut Notes,
     ) -> Self {
@@ -457,11 +520,14 @@ impl<'a> PlannedSketch<'a> {
             .collect::<Vec<_>>();
         let mut planned = Self {
             feature,
+            sketch: &sketch.id,
             plane: frame.plane,
             mirrored: frame.sense < 0.0,
             points: Vec::new(),
             curves: Vec::new(),
             relations: Vec::new(),
+            candidates: Vec::new(),
+            dimensions: Vec::new(),
         };
         if let Some(name) = sketch
             .name
@@ -511,8 +577,18 @@ impl<'a> PlannedSketch<'a> {
             .iter()
             .filter(|constraint| constraint.sketch == sketch.id)
         {
-            let mut relations = match relations(constraint, &written, &planned.curves, frame) {
-                Ok(relations) => relations,
+            let geometry = dimensions::Geometry {
+                points: &planned.points,
+                curves: &planned.curves,
+                frame,
+                angular: target.tolerances.angular.get(),
+            };
+            let mut relations = match relations(constraint, &written, &geometry) {
+                Ok(Written::Relations(relations)) => relations,
+                Ok(Written::Dimension(candidate)) => {
+                    planned.candidates.push(candidate);
+                    continue;
+                }
                 Err(reason) => {
                     notes.omit(constraint.id.to_string(), reason);
                     continue;
@@ -734,14 +810,20 @@ impl<'a> PlannedSketch<'a> {
     }
 }
 
-/// The written relations of `constraint` in Fusion's sketch frame, or the
-/// reason it is not written.
-fn relations(
-    constraint: &SketchConstraint<Planar>,
+/// What a constraint of a written sketch is written as.
+enum Written<'a> {
+    Relations(Vec<PlannedRelation>),
+    Dimension(Candidate<'a>),
+}
+
+/// The written relations of `constraint` in Fusion's sketch frame, or its
+/// dimension measured on `geometry`; or the reason it is not written.
+fn relations<'a>(
+    constraint: &'a SketchConstraint<Planar>,
     written: &HashMap<&SketchEntityId, Entity>,
-    curves: &[PlannedCurve],
-    frame: Frame,
-) -> Result<Vec<PlannedRelation>, &'static str> {
+    geometry: &dimensions::Geometry<'_>,
+) -> Result<Written<'a>, &'static str> {
+    let (curves, frame) = (geometry.curves, geometry.frame);
     if matches!(constraint.active, Some(Dimension::Literal(false))) {
         return Err("Fusion stores no inactive sketch relation");
     }
@@ -767,7 +849,7 @@ fn relations(
         }
         Ok(vec![PlannedRelation { kind, members }])
     };
-    match &constraint.relation {
+    let relations = match &constraint.relation {
         SketchRelation::Coincident { a, b } => two(RelationKind::Coincident, a, b),
         SketchRelation::Concentric { a, b } => two(RelationKind::Concentric, a, b),
         SketchRelation::Collinear { a, b } => two(RelationKind::Collinear, a, b),
@@ -813,7 +895,7 @@ fn relations(
         | SketchRelation::Angle { .. }
         | SketchRelation::Radial { .. }
         | SketchRelation::Length { .. } => {
-            Err("the writer does not write sketch dimensions; their parameters are user parameters")
+            return dimensions::candidate(constraint, &member, geometry).map(Written::Dimension)
         }
         SketchRelation::Fixed { .. } => Err("Fusion stores no fix relation"),
         SketchRelation::EqualDistance { .. }
@@ -826,7 +908,8 @@ fn relations(
         | SketchRelation::FixedLength { .. }
         | SketchRelation::FixedAngle { .. }
         | SketchRelation::Native { .. } => Err("the writer writes no relation of this kind"),
-    }
+    };
+    relations.map(Written::Relations)
 }
 
 /// The contact a tangency or curvature relation states.

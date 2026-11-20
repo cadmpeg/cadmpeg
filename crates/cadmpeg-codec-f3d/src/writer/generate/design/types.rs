@@ -480,6 +480,66 @@ pub(super) const BODY_ENTRY: TypeRow = row(
     "Fusion",
 );
 
+/// The base type of a parameter owner.
+const OWNER_BASE: TypeRow = row(
+    OWNER_BASE_GUID,
+    "D0D7E795-ECF7-48A8-A7A3-F983C5A29F8B",
+    4,
+    "Fusion",
+);
+
+const DIMENSION_FRAME_BASE_GUID: &str = "0C3F3829-F0DB-4379-9479-CFEF71087971";
+
+/// The type of a dimension frame's paired header (f3d.md §3.1, "Sketch
+/// dimensions").
+pub(super) const DIMENSION_FRAME_PAIRED: TypeRow = row(
+    "855F0A64-6286-4FFC-B918-BC394F600107",
+    PROPERTY_OWNER_GUID,
+    1,
+    "Dimension",
+);
+/// The linear dimension frame.
+pub(super) const LINEAR_FRAME: TypeRow = row(
+    "8C780195-72C0-4a56-A911-E43AB14357F2",
+    DIMENSION_FRAME_BASE_GUID,
+    3,
+    "Fusion",
+);
+/// The angular dimension frame.
+pub(super) const ANGULAR_FRAME: TypeRow = row(
+    "6EEAFDE5-59C4-424D-8EBE-77CDBC562017",
+    DIMENSION_FRAME_BASE_GUID,
+    1,
+    "Fusion",
+);
+/// The diameter dimension frame.
+pub(super) const DIAMETER_FRAME: TypeRow = row(
+    "664AD49F-207F-4CD5-8555-DD269E9F09EA",
+    DIMENSION_FRAME_BASE_GUID,
+    0,
+    "Fusion",
+);
+/// The radial dimension frame.
+pub(super) const RADIAL_FRAME: TypeRow = row(
+    "8EDAC24D-35D4-4591-B8E7-B3EA081C9DF0",
+    DIMENSION_FRAME_BASE_GUID,
+    0,
+    "Fusion",
+);
+
+/// The base types of the sketch dimension records that the other ancestor
+/// lists leave out, each listed with an empty entity-ID run.
+pub(super) const DIMENSION_ANCESTORS: [TypeRow; 3] = [
+    row(
+        DIMENSION_FRAME_BASE_GUID,
+        "855F0A64-6286-4FFC-B918-BC394F600107",
+        6,
+        "MSketch",
+    ),
+    DIMENSION_FRAME_PAIRED,
+    OWNER_BASE,
+];
+
 /// The base types of the `Extrude` records that the other ancestor lists
 /// leave out, each listed with an empty entity-ID run.
 pub(super) const EXTRUDE_ANCESTORS: [TypeRow; 3] = [
@@ -495,10 +555,5 @@ pub(super) const EXTRUDE_ANCESTORS: [TypeRow; 3] = [
         0,
         "Fusion",
     ),
-    row(
-        OWNER_BASE_GUID,
-        "D0D7E795-ECF7-48A8-A7A3-F983C5A29F8B",
-        4,
-        "Fusion",
-    ),
+    OWNER_BASE,
 ];

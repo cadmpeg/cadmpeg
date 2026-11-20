@@ -5,9 +5,10 @@
 //!
 //! It runs where no native Design record is written and the document holds a
 //! design scope for its root definition. A failure here is a
-//! [`super::reduce::Stage::NeutralDesign`] failure. Its fallbacks write the
-//! extrude in the Base Feature, then the design without its `Sketch` items,
-//! then no design: they never drop a body.
+//! [`super::reduce::Stage::NeutralDesign`] failure. Its fallbacks, in
+//! [`Part`] order, write the sketches without their dimensions, the extrude
+//! in the Base Feature, the design without its `Sketch` items, then no
+//! design: they never drop a body.
 
 mod base_feature;
 mod expression;
@@ -43,6 +44,12 @@ use frames::DesignRecords;
 use parameters::ParameterPlan;
 use sketch::SketchPlan;
 
+/// The smallest linear tolerance a dimension is checked with, in mm: the
+/// decoder's linear resolution.
+const MIN_LINEAR_TOLERANCE: f64 = 1e-5;
+/// Millimetres per Fusion length unit (cm).
+const MM_PER_CM: f64 = 10.0;
+
 #[cfg(test)]
 thread_local! {
     /// Makes the next attempt that writes the design scope on this thread
@@ -69,6 +76,25 @@ fn requested_sketch_failure() -> Option<cadmpeg_core::CodecError> {
 
 #[cfg(test)]
 thread_local! {
+    /// Makes the next attempt that writes a sketch dimension on this thread
+    /// fail in the dimension records.
+    static FAIL_NEXT_DIMENSIONS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// The failure [`FAIL_NEXT_DIMENSIONS`] requests, once.
+#[cfg(test)]
+fn requested_dimension_failure() -> Option<cadmpeg_core::CodecError> {
+    FAIL_NEXT_DIMENSIONS
+        .with(|fail| fail.replace(false))
+        .then(|| {
+            cadmpeg_core::CodecError::NotImplemented(
+                "a test failure of the dimension records".into(),
+            )
+        })
+}
+
+#[cfg(test)]
+thread_local! {
     /// Makes the next attempt that writes an `Extrude` item on this thread
     /// fail in the `Extrude` records.
     static FAIL_NEXT_EXTRUDE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -90,6 +116,62 @@ pub(super) fn requested_test_failure() -> Option<cadmpeg_core::CodecError> {
     })
 }
 
+/// A part of the design scope's form the writer drops after a failure with
+/// it, in the order it drops them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Part {
+    /// The sketch dimensions: their parameters stay user parameters.
+    Dimensions,
+    /// The `Extrude` item: the Base Feature holds the extrude.
+    Extrude,
+    /// The `Sketch` items.
+    Sketches,
+}
+
+impl Part {
+    const ORDER: [Self; 3] = [Self::Dimensions, Self::Extrude, Self::Sketches];
+}
+
+/// The parts the writer has dropped, each with the failure that dropped it.
+#[derive(Clone, Debug, Default)]
+pub(super) struct Fallback {
+    dropped: Vec<(Part, String)>,
+}
+
+impl Fallback {
+    /// Why `part` is dropped.
+    fn reason(&self, part: Part) -> Option<&str> {
+        self.dropped
+            .iter()
+            .find(|(dropped, _)| *dropped == part)
+            .map(|(_, reason)| reason.as_str())
+    }
+
+    /// Drop the first part after the parts already dropped that the design
+    /// of `target` writes, for `reason`. Returns whether a part was dropped.
+    pub(super) fn drop_next(&mut self, target: &CadIr, reason: &str) -> bool {
+        let after = self.dropped.last().map(|(part, _)| *part);
+        for part in Part::ORDER
+            .into_iter()
+            .filter(|part| after.is_none_or(|after| *part > after))
+        {
+            let writes = plan(target, self)
+                .ok()
+                .flatten()
+                .is_some_and(|design| match part {
+                    Part::Dimensions => design.writes_dimensions(),
+                    Part::Extrude => matches!(design.extrude, Decision::Extrude(_)),
+                    Part::Sketches => design.writes_sketches(),
+                });
+            if writes {
+                self.dropped.push((part, reason.to_owned()));
+                return true;
+            }
+        }
+        false
+    }
+}
+
 /// What the writer writes of the root definition's design scope.
 pub(super) struct NeutralDesign<'a> {
     parameters: ParameterPlan,
@@ -102,14 +184,11 @@ pub(super) struct NeutralDesign<'a> {
 }
 
 /// The plan for the root definition's design scope; `None` when the
-/// document holds none. With `sketch_failure`, the reason a design with
-/// its sketches failed, the plan writes no `Sketch` item. `extrude_failure`
-/// is the error of an earlier attempt that wrote the scope's extrude as an
-/// `Extrude` item; the plan then writes it in the Base Feature.
+/// document holds none. Each part `fallback` drops is written in its
+/// fallback form and charged with the failure that dropped it.
 pub(super) fn plan<'a>(
     target: &'a CadIr,
-    sketch_failure: Option<&str>,
-    extrude_failure: Option<&str>,
+    fallback: &Fallback,
 ) -> Result<Option<NeutralDesign<'a>>, CodecError> {
     let Some(scope) = root_scope(target) else {
         return Ok(None);
@@ -117,8 +196,19 @@ pub(super) fn plan<'a>(
     let mut parameters = parameters::plan(target, &scope.definition);
     let features = scope_features(target, scope);
     let mut sketches = sketch_plan(target, &features);
-    if let Some(reason) = sketch_failure {
+    let mut ordinal = 1;
+    if let Some(reason) = fallback.reason(Part::Sketches) {
         sketches.drop_items(reason);
+    } else if let Some(reason) = fallback.reason(Part::Dimensions) {
+        sketches.drop_dimensions(reason);
+    } else {
+        ordinal = sketches.claim_dimensions(
+            &mut parameters,
+            sketch::dimensions::Tolerances {
+                linear: target.tolerances.linear.get().max(MIN_LINEAR_TOLERANCE) / MM_PER_CM,
+                angular: target.tolerances.angular.get(),
+            },
+        );
     }
     let extrude = if target.geometry.bodies.is_empty() {
         Decision::None
@@ -129,7 +219,8 @@ pub(super) fn plan<'a>(
             &features,
             &sketches,
             &mut parameters,
-            extrude_failure,
+            fallback.reason(Part::Extrude),
+            ordinal,
         )
     };
     let written = parameters.written().collect::<BTreeSet<_>>();
@@ -260,30 +351,20 @@ impl NeutralDesign<'_> {
         !self.sketches.items.is_empty()
     }
 
+    /// Whether the design writes a sketch dimension.
+    fn writes_dimensions(&self) -> bool {
+        self.sketches
+            .items
+            .iter()
+            .any(|item| !item.dimensions.is_empty())
+    }
+
     pub(super) fn into_losses(self) -> Vec<LossNote> {
         let mut losses = self.losses;
         losses.extend(self.parameters.into_losses());
         losses.extend(self.sketches.into_losses());
         losses
     }
-}
-
-/// Whether the root definition's design scope writes its extrude as an
-/// `Extrude` item.
-pub(super) fn writes_extrude(target: &CadIr) -> bool {
-    plan(target, None, None)
-        .ok()
-        .flatten()
-        .is_some_and(|design| matches!(design.extrude, Decision::Extrude(_)))
-}
-
-/// Whether the root definition's design scope writes a `Sketch` item.
-pub(super) fn writes_sketches(target: &CadIr) -> bool {
-    root_scope(target).is_some_and(|scope| {
-        !sketch_plan(target, &scope_features(target, scope))
-            .items
-            .is_empty()
-    })
 }
 
 /// The plan of the sketches among `features`. The `Sketch` items precede

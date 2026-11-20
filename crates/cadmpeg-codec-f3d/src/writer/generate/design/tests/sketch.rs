@@ -46,7 +46,7 @@ pub(super) fn entity_id(sketch: &str, name: &str) -> SketchEntityId {
     SketchEntityId::mint(format!("test:design:entity#{sketch}-{name}")).expect("identity grammar")
 }
 
-fn constraint_id(sketch: &str, name: &str) -> SketchConstraintId {
+pub(super) fn constraint_id(sketch: &str, name: &str) -> SketchConstraintId {
     SketchConstraintId::mint(format!("test:design:constraint#{sketch}-{name}"))
         .expect("identity grammar")
 }
@@ -200,7 +200,7 @@ impl Source {
         self
     }
 
-    fn constraint(&mut self, name: &str, relation: SketchRelation<Planar>) -> &mut Self {
+    pub(super) fn constraint(&mut self, name: &str, relation: SketchRelation<Planar>) -> &mut Self {
         self.constraints.push(SketchConstraint {
             id: constraint_id(self.name, name),
             sketch: sketch_id(self.name),
