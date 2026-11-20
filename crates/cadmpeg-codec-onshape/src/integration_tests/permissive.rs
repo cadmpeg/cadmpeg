@@ -183,6 +183,11 @@ fn unreadable_step_keeps_readable_history_and_reports_missing_geometry() {
         assert_eq!(named_losses(&result, "onshape/step.unreadable"), 1);
         assert_eq!(feature_count(&wire(&result)), 3);
         assert!(result.ir().geometry.bodies.is_empty());
+        let [root] = result.ir().model.product_definitions.as_slice() else {
+            panic!("history-only decode must state one root definition");
+        };
+        assert!(root.is_root());
+        assert!(root.bodies.is_empty());
         crate::test_support::review::validate(result);
     }
 }

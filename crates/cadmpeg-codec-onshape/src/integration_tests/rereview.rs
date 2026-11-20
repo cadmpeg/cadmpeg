@@ -68,8 +68,7 @@ fn history_admission_reserves_each_midpoint_output_arena() {
 #[test]
 fn midpoint_expansion_refuses_the_history_budget_before_emission() {
     let bytes = midpoint_sketch();
-    // Seventeen emitted history rows plus the admitted sketchPlane slot.
-    for ceiling in [15, 16, 17, 18, 20, 21] {
+    for ceiling in [15, 16, 17, 18, 20, 21, 22] {
         let mut policy = DecodePolicy::default();
         policy.limits.max_entities = ceiling;
         let arena = DecodeArena::new();
@@ -87,10 +86,20 @@ fn midpoint_expansion_refuses_the_history_budget_before_emission() {
             };
             assert_eq!(limit.dimension, ResourceDimension::Entities);
             assert_eq!(limit.operation, "Onshape asset");
+        } else if ceiling < 22 {
+            let CodecError::ResourceLimit(limit) = result.unwrap_err() else {
+                panic!("the root definition must share the caller entity budget")
+            };
+            assert_eq!(limit.dimension, ResourceDimension::Entities);
+            assert_eq!(limit.operation, "root product definition");
         } else {
             let decoded = result.unwrap();
             assert_eq!(decoded.ir.model.sketch_entities.len(), 6);
             assert_eq!(decoded.ir.model.sketch_constraints.len(), 9);
+            let [root] = decoded.ir.model.product_definitions.as_slice() else {
+                panic!("the decoded history must have one root definition");
+            };
+            assert!(root.is_root());
         }
     }
 }

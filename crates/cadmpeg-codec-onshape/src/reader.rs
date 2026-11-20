@@ -740,7 +740,7 @@ pub(super) fn read(
         }
     }
     if model.ir.design.features.len() > original_design_features {
-        install_thin_scope(&mut model.ir, report, original_design);
+        install_thin_scope(ctx, &mut model.ir, report, original_design)?;
     }
     annotate(&mut model, features)?;
     report
@@ -751,10 +751,12 @@ pub(super) fn read(
 }
 
 fn install_thin_scope(
+    ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     report: &mut Report,
     original: cadmpeg_ir::document::Design,
-) {
+) -> Result<(), Error> {
+    thin::sketches::project(ctx, ir)?;
     let notes = report.notes.len();
     if let Err(reason) = thin::install_scope(ir, report) {
         ir.design = original;
@@ -767,6 +769,7 @@ fn install_thin_scope(
             }
         }
     }
+    Ok(())
 }
 
 #[derive(Debug)]

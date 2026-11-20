@@ -87,6 +87,14 @@ impl CodecBackend for OnshapeCodec {
         model.ir.source = Some(cadmpeg_ir::document::SourceMeta::classified(
             layers, attributes,
         ));
+        model.ir.state_root_definition(
+            ctx,
+            cadmpeg_ir::ids::ProductDefinitionId::compose(
+                &cadmpeg_ir::identity_namespace!("onshape", "model", "product"),
+                cadmpeg_ir::identity_key!("root"),
+            ),
+            cadmpeg_ir::products::ExternalDocument::default(),
+        )?;
         model.body.losses.extend(report.notes);
         model.source_fidelity.decode_digest =
             cadmpeg_ir::SourceFidelity::for_root(root).decode_digest;

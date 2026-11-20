@@ -6,6 +6,8 @@ use serde_json::{json, Value};
 
 use super::{features, id, number, push, rows, text, topology, Mapping};
 
+pub(super) mod sketches;
+
 pub(super) fn profile(profile: Value, model: &Model) -> Mapping<Value> {
     if text(&profile, "kind")? != "sketch" {
         return Ok(profile);
@@ -240,9 +242,18 @@ pub(super) fn install_scope(ir: &mut CadIr, report: &mut super::Report) -> Mappi
         {
             continue;
         }
-        report.push_coded(source.id.as_str(), crate::loss::OnshapeLossCode::DesignOperationNative,
-            "design timeline retains the native source operation; model history carries its decoded construction");
         let mut row = json!({"id":source.id,"definition":{"operation":{"kind":"native","value":{"kind":"onshape:timeline-member","native_options":{},"source_settings":{}}}}});
+        if let Some(sketch) = ir
+            .design
+            .sketches
+            .iter()
+            .find(|sketch| sketch.owner == source.id)
+        {
+            row["definition"]["operation"] = json!({"kind":"sketch","value":sketch.id});
+        } else {
+            report.push_coded(source.id.as_str(), crate::loss::OnshapeLossCode::DesignOperationNative,
+                "design timeline retains the native source operation; model history carries its decoded construction");
+        }
         if let Some(name) = &source.name {
             row["name"] = json!(name);
         }

@@ -1675,6 +1675,39 @@ pub(super) fn stored_thin(open: bool, flip: bool, reversed: bool) -> Vec<u8> {
 }
 
 #[test]
+fn stored_thin_keeps_an_unselected_native_sketch_entity() {
+    let bytes =
+        crate::test_support::review::edit(&stored_thin(true, false, false), |path, response| {
+            if path.ends_with("features.json") {
+                response["features"][0]["entities"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(
+                        json!({"btType":"BTMSketchCurve-4","entityId":"native-curve",
+                        "geometry":{"btType":"synthetic-curve"}}),
+                    );
+            }
+        });
+    let result = crate::test_support::review::decode(&bytes);
+    let wire = crate::test_support::review::wire(&result);
+    assert_eq!(result.ir().design.features.len(), 2);
+    let entity = wire["design"]["sketch_entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entity| entity["id"] == id("entity", "Base sketch/native-curve"))
+        .unwrap();
+    assert_eq!(entity["definition"]["kind"], "defined");
+    assert_eq!(entity["definition"]["value"]["form"]["kind"], "native");
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.to_string() == "onshape/sketch.geometry-not-supported"));
+    crate::test_support::review::validate(result);
+}
+
+#[test]
 fn stored_thin_domain_has_a_product_scope_and_one_container_membership() {
     for open in [false, true] {
         for symmetric in [false, true] {
@@ -1700,6 +1733,28 @@ fn stored_thin_domain_has_a_product_scope_and_one_container_membership() {
             assert_eq!(result.ir().design.features.len(), 2);
             assert_eq!(result.ir().design.containers.len(), 1);
             assert_eq!(result.ir().design.scopes.len(), 1);
+            let [sketch] = result.ir().design.sketches.as_slice() else {
+                panic!("thin profile must have one design sketch");
+            };
+            assert_eq!(sketch.id.as_str(), id("sketch", "Base sketch"));
+            assert_eq!(sketch.owner.as_str(), id("feature", "Base sketch"));
+            assert_eq!(
+                result.ir().design.sketch_entities.len(),
+                result.ir().model.sketch_entities.len()
+            );
+            for entity in &result.ir().design.sketch_entities {
+                assert_eq!(entity.sketch, sketch.id);
+                assert!(result
+                    .ir()
+                    .model
+                    .sketch_entities
+                    .iter()
+                    .any(|source| source.id() == &entity.id));
+            }
+            assert_eq!(
+                wire["design"]["features"][0]["definition"]["operation"],
+                json!({"kind":"sketch","value":id("sketch", "Base sketch")})
+            );
             assert_eq!(
                 wire["design"]["containers"][0]["value"]["members"],
                 json!([{"kind":"feature","value":id("feature", "Base sketch")},{"kind":"feature","value":id("feature", "Plate")}])

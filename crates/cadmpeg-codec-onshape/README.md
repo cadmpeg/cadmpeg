@@ -22,6 +22,9 @@ CADIR solid with the cadmpeg STEP encoder. ZIP timestamps use the writer's
 fixed default. Tests require an offline process.
 
 Admitted thin walls use typed design operations and Native model companions.
+The design timeline carries the decoded sketches, their placed frames and
+solved curves. Thin profile picks name those design sketch entities. Model
+sketches, constraints and parameters retain their decoded constructions.
 `onshape/extrude.thin-model-not-supported` names the model construction gap.
 The scoped design timeline includes every admitted model feature. Native design members
 carry `onshape/history.design-operation-native`; the model rows retain their
@@ -45,3 +48,5 @@ construction and their mapping loss. Unreadable STEP exports retain readable
 history with `onshape/step.unreadable` and missing final geometry. Session
 expansion, retained-byte and entity budgets remain decode errors. A bundle
 with empty history and unreadable final geometry remains a decode error.
+Each model decode states one root product definition, including a decode
+that retains history after a STEP member failure.

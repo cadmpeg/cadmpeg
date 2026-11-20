@@ -177,7 +177,13 @@ fn failed_thin_scope_restores_design_and_downgrades_wall_losses() {
     );
     let notes = report.notes.len();
     model.ir.model.product_definitions.clear();
-    super::install_thin_scope(&mut model.ir, &mut report, original.clone());
+    super::install_thin_scope(
+        &cadmpeg_core::decode::test_support::service_decode_context(),
+        &mut model.ir,
+        &mut report,
+        original.clone(),
+    )
+    .unwrap();
     assert_eq!(model.ir.design, original);
     assert_eq!(report.notes.len(), notes);
     assert!(report
