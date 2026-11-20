@@ -5,25 +5,28 @@ on:
 permissions:
   contents: read
 jobs:
-  lines:
+  ir:
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - { name: "opt1-cgu256 (today)", flags: "" }
+          - { name: "opt1-cgu16", flags: "-C codegen-units=16" }
+          - { name: "opt1-cgu1", flags: "-C codegen-units=1" }
+          - { name: "opt0", flags: "-C opt-level=0" }
+          - { name: "opt1-no-schema", flags: "", features: "examples" }
+    name: ${{ matrix.variant.name }}
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: ./.github/actions/pinned-rust
-      - name: Install rustfilt
-        uses: taiki-e/install-action@v2.90.3
-        with:
-          tool: rustfilt
       - name: Build dependencies of cadmpeg-ir
         run: CARGO_BUILD_JOBS=4 cargo build -q -p cadmpeg-core -p cadmpeg-derive --features cadmpeg-core/schema,cadmpeg-core/test-support
-      - name: Compile cadmpeg-ir at opt-level 0 to LLVM IR
+      - name: Compile cadmpeg-ir
         env:
-          CARGO_BUILD_JOBS: "1"
+          RUSTC_BOOTSTRAP: "1"
+          CARGO_BUILD_JOBS: "2"
         run: |
-          (while sleep 10; do free -m | awk 'NR==2 {print "mem used " $3 " MiB"}'; done) &
-          /usr/bin/time -v cargo rustc -p cadmpeg-ir --lib --features schema,examples -- -C opt-level=0 -C debuginfo=0 --emit=llvm-ir 2>&1 | grep -E 'Maximum resident|Elapsed|^error' || true
-      - name: Largest functions in cadmpeg-ir LLVM IR
-        run: |
-          ll=$(ls -S target/debug/deps/cadmpeg_ir-*.ll | head -1); ls -la $ll
-          python3 .github/measure/llvm_categories.py "$ll"
+          (while sleep 15; do free -m | awk 'NR==2 {print "mem used " $3 " MiB"}'; done) &
+          /usr/bin/time -v cargo rustc -p cadmpeg-ir --lib --features "${{ matrix.variant.features || 'schema,examples' }}" -- -Z time-passes ${{ matrix.variant.flags }} 2>&1 | grep --line-buffered -E 'Maximum resident|Elapsed|LLVM_thinlto|LLVM_passes|codegen_crate|MIR_borrow|type_check_crate|monomorphization_collector_graph_walk|time: +[0-9.]+;.*\ttotal$|^error'
