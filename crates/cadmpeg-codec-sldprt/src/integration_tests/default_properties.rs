@@ -116,8 +116,29 @@ fn semantic_metadata_edit_retains_saved_default_bytes_and_aliases() {
         &before
     );
 }
+/// The one saved-property carrier in `bytes`.
+fn carrier(bytes: &[u8]) -> Vec<u8> {
+    let scan = crate::test_support::container::scan(bytes);
+    let members = scan
+        .sections()
+        .filter(|s| s.name() == Some(MEMBER))
+        .collect::<Vec<_>>();
+    assert_eq!(members.len(), 1);
+    members[0].payload().to_vec()
+}
+
+/// The `WriterAttributesOmitted` message that charges saved-property edits.
+fn saved_property_loss(omitted: &[String]) -> &str {
+    omitted
+        .iter()
+        .find(|message| message.contains("saved-property edits"))
+        .unwrap_or_else(|| panic!("no saved-property loss in {omitted:?}"))
+}
+
+/// Every saved-property edit writes the part with the carrier as the source
+/// stored it, and one loss names the edited id.
 #[test]
-fn inherited_writer_refuses_every_saved_property_edit() {
+fn inherited_writer_keeps_the_carrier_and_names_every_saved_property_edit() {
     for mutation in 0..7 {
         let mut decoded = fixture();
         let mut ir = decoded.ir_mut();
@@ -127,6 +148,7 @@ fn inherited_writer_refuses_every_saved_property_edit() {
             .iter()
             .position(crate::metadata::default_properties::is_attribute)
             .unwrap();
+        let mut edited = ir.model.attributes[i].id.as_str().to_owned();
         match mutation {
             0 => {
                 ir.model.attributes.remove(i);
@@ -134,6 +156,7 @@ fn inherited_writer_refuses_every_saved_property_edit() {
             1 => {
                 let mut row = ir.model.attributes[i].clone();
                 row.id = AttributeId::mint("sldprt:metadata:default_property#8:4:Added").unwrap();
+                edited = row.id.as_str().to_owned();
                 ir.model.attributes.push(row);
             }
             2 => ir.model.attributes[i].name = "Renamed".into(),
@@ -151,17 +174,20 @@ fn inherited_writer_refuses_every_saved_property_edit() {
                     .filter(is_property)
                     .find(|row| row.name == "SavedName")
                     .unwrap();
+                edited = row.id.as_str().to_owned();
                 row.values = vec![Some(AttributeValue::float(1.0).unwrap())];
             }
             _ => unreachable!(),
         }
         drop(ir);
-        let written = write(&decoded);
-        assert!(
-            matches!(&written, Err(CodecError::NotImplemented(message)) if message == "SLDPRT saved-property edits require a retained property serializer"),
-            "mutation {mutation}: {:?}",
-            written.map(|bytes| bytes.len())
-        );
+        let (bytes, omitted) = crate::test_support::write_with_omitted_attributes(
+            decoded.ir(),
+            decoded.source_fidelity(),
+        )
+        .unwrap_or_else(|error| panic!("mutation {mutation}: {error}"));
+        assert_eq!(carrier(&bytes), XML, "mutation {mutation}");
+        let loss = saved_property_loss(&omitted);
+        assert!(loss.contains(&edited), "mutation {mutation}: {loss}");
     }
 }
 #[test]
@@ -190,8 +216,10 @@ fn saved_negative_zero_and_zero_are_one_property_value() {
     assert_eq!(members.len(), 1);
     assert_eq!(members[0].payload(), XML);
 }
+/// A unit mirror the default carrier owns is a saved property: the carrier
+/// keeps the stored code, and the loss names the mirror.
 #[test]
-fn inherited_writer_refuses_changed_unit_mirrors_in_the_saved_carrier() {
+fn inherited_writer_keeps_the_saved_carrier_and_names_a_changed_unit_mirror() {
     let mut decoded = fixture();
     let mut ir = decoded.ir_mut();
     let owner = ir
@@ -217,24 +245,40 @@ fn inherited_writer_refuses_changed_unit_mirrors_in_the_saved_carrier() {
         .find(|row| row.id.as_str().starts_with(&prefix))
         .unwrap();
     mirror.values = vec![Some(AttributeValue::Integer(3))];
+    let mirror = mirror.id.as_str().to_owned();
     drop(ir);
-    assert!(
-        matches!(write(&decoded), Err(CodecError::NotImplemented(message)) if message == "SLDPRT saved-property edits require a retained property serializer")
-    );
+    let (bytes, omitted) =
+        crate::test_support::write_with_omitted_attributes(decoded.ir(), decoded.source_fidelity())
+            .unwrap();
+    assert_eq!(carrier(&bytes), XML);
+    let loss = saved_property_loss(&omitted);
+    assert!(loss.contains(&mirror), "{loss}");
 }
+
+/// A document with no source states saved properties no carrier holds: the
+/// part is written without them, and each is named.
 #[test]
-fn source_less_writer_refuses_saved_properties() {
+fn source_less_writer_writes_the_part_and_names_its_saved_properties() {
     let mut ir = crate::test_support::ir::source_less_cube();
+    let id = "sldprt:metadata:default_property#8:2:Saved";
     ir.model.attributes.push(SourceAttribute {
-        id: AttributeId::mint("sldprt:metadata:default_property#8:2:Saved").unwrap(),
+        id: AttributeId::mint(id).unwrap(),
         target: AttributeTarget::Document.into(),
         name: "Saved".into(),
         values: vec![Some(AttributeValue::Integer(7))],
         native_ref: None,
     });
     let mut bytes = Vec::new();
-    assert!(
-        matches!(crate::writer::write_semantic_with_records(&ir, &cadmpeg_ir::annotations::Annotations::default(), &[], &mut bytes), Err(CodecError::NotImplemented(message)) if message == "SLDPRT saved properties require their retained source carrier")
+    let output = crate::writer::write_semantic_with_records(
+        &ir,
+        &cadmpeg_ir::annotations::Annotations::default(),
+        &[],
+        &mut bytes,
+    )
+    .unwrap();
+    assert!(!bytes.is_empty());
+    assert_eq!(
+        output.unwritten.reason(id),
+        Some(crate::writer::Unwritten::SavedProperty)
     );
-    assert!(bytes.is_empty());
 }

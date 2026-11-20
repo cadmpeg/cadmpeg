@@ -21,6 +21,25 @@ pub(crate) fn plan_inherited_write(
     Ok(plan.write_to(writer)?.write_path().clone())
 }
 
+/// Plans and writes an inherited write. Returns its bytes and the messages of
+/// its `WriterAttributesOmitted` losses.
+pub(crate) fn write_with_omitted_attributes(
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+) -> Result<(Vec<u8>, Vec<String>), CodecError> {
+    let plan = SldprtCodec.plan(EncodeInput::new(ir, Some(fidelity)), TargetRequest::Inherit)?;
+    let omitted = plan
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code == crate::loss::SldprtLossCode::WriterAttributesOmitted.kind())
+        .map(|loss| loss.message.clone())
+        .collect();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes)?;
+    Ok((bytes, omitted))
+}
+
 /// Supply an authored native envelope for semantic fixture assertions.
 pub(crate) fn plan_fixture_with_native_envelope(
     input: EncodeInput<'_>,

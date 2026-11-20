@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use std::collections::HashSet;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeValue, SourceAttribute};
@@ -18,11 +18,14 @@ pub(super) fn requires_guard(ir: &CadIr, scan: Option<&ContainerScan<'_>>) -> bo
         || scan.is_some_and(|scan| scan.sections().any(is_owner))
 }
 
-pub(super) fn validate(
+/// Each saved-property attribute the document adds, removes or changes
+/// against its `source` decode, unit mirrors in a default carrier included,
+/// by id from either side. An id stated twice on a side counts as changed.
+pub(super) fn edited_properties(
     ir: &CadIr,
     source: &CadIr,
     scan: &ContainerScan<'_>,
-) -> Result<(), CodecError> {
+) -> BTreeSet<String> {
     let owners = scan
         .sections()
         .filter(|section| crate::metadata::default_properties::is_owner(*section))
@@ -39,29 +42,47 @@ pub(super) fn validate(
             .and_then(|(ordinal, _)| ordinal.parse::<usize>().ok())
             .is_some_and(|ordinal| owners.contains(&ordinal))
     };
-    let mut original = source
-        .model
+    let (original, current) = (rows(source, owned), rows(ir, owned));
+    original
+        .keys()
+        .chain(current.keys())
+        .copied()
+        .filter(|id| {
+            !matches!(
+                (
+                    original.get(id).map(Vec::as_slice),
+                    current.get(id).map(Vec::as_slice),
+                ),
+                (Some([left]), Some([right])) if same_attribute(left, right)
+            )
+        })
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The attributes of `document` that `owned` selects, by id.
+fn rows(
+    document: &CadIr,
+    owned: impl Fn(&&SourceAttribute) -> bool,
+) -> BTreeMap<&str, Vec<&SourceAttribute>> {
+    let mut rows = BTreeMap::<_, Vec<_>>::new();
+    for attribute in document.model.attributes.iter().filter(owned) {
+        rows.entry(attribute.id.as_str())
+            .or_default()
+            .push(attribute);
+    }
+    rows
+}
+
+/// Every saved-property attribute the document states: with no retained
+/// carrier, none of them is written.
+pub(super) fn stated_properties(ir: &CadIr) -> BTreeSet<String> {
+    ir.model
         .attributes
         .iter()
-        .filter(owned)
-        .collect::<Vec<_>>();
-    let mut current = ir.model.attributes.iter().filter(owned).collect::<Vec<_>>();
-    original.sort_by(|left, right| left.id.cmp(&right.id));
-    current.sort_by(|left, right| left.id.cmp(&right.id));
-    let unique = |rows: &[&SourceAttribute]| rows.windows(2).all(|pair| pair[0].id != pair[1].id);
-    if !unique(&original)
-        || !unique(&current)
-        || original.len() != current.len()
-        || !original
-            .iter()
-            .zip(&current)
-            .all(|(left, right)| same_attribute(left, right))
-    {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT saved-property edits require a retained property serializer".into(),
-        ));
-    }
-    Ok(())
+        .filter(|attribute| is_property(attribute))
+        .map(|attribute| attribute.id.as_str().to_owned())
+        .collect()
 }
 
 pub(super) fn validate_retention(
