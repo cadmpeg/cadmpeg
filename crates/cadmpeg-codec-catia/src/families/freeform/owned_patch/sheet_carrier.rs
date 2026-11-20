@@ -396,7 +396,7 @@ impl SpatialPlane {
             None
         };
         let origin_x = view.f64_le()?;
-        let compressed_origin = matches!((layout, mask), (0xb4, 0xd6 | 0xde));
+        let compressed_origin = matches!((layout, mask), (0xb4, 0xd6));
         let origin_y = if compressed_origin {
             0.0
         } else {
@@ -432,10 +432,11 @@ impl SpatialPlane {
         let (u, v) = match (layout, mask, frame) {
             (0x84, 0x00 | 0x10 | 0x20 | 0x40, None)
             | (0x94, 0x10 | 0x60 | 0x68, None)
-            | (0xa4, 0x00 | 0x50 | 0x58, None)
-            | (0xb4 | 0xe4, 0x50 | 0x58, None)
+            | (0xa4, 0x50 | 0x58, None)
+            | (0xb4, 0x58, None)
+            | (0xe4, 0x50, None)
             | (0xc4, 0x30 | 0x38 | 0x3c, None)
-            | (0xd4, 0x20 | 0x68 | 0xe8, None) => (
+            | (0xd4, 0x20, None) => (
                 direction(mask)?,
                 direction((layout & 0x70) | ((mask & 0x80) >> 4))?,
             ),
@@ -457,7 +458,7 @@ impl SpatialPlane {
                     UnitVector3::Z_AXIS,
                 )
             }
-            (0xb4, 0xd6 | 0xde, None) => (direction(mask)?, UnitVector3::Z_AXIS),
+            (0xb4, 0xd6, None) => (direction(mask)?, UnitVector3::Z_AXIS),
             (0x08, 0, Some(0x18)) => (direction(0)?, direction(0)?),
             (0x08, 0, Some(0x19)) => (direction(0)?, direction(0x10)?),
             (0x08, 0x68 | 0xe8, Some(0x1d)) => {
@@ -663,40 +664,20 @@ mod tests {
         assert!(SpatialCylinder::read(&bytes).is_none());
     }
     #[test]
-    fn bounded_plane_decodes_compact_offset_result_frames() {
-        for (prefix, frame, point) in [
-            ([0xb4, 0xde], &[3.0_f64][..], Point3::new(3.0, 2.0, 3.0)),
-            (
-                [0xb4, 0x50],
-                &[3.0, 4.0, 5.0, -1.0, 1.0][..],
-                Point3::new(3.0, 2.0, 8.0),
-            ),
-            (
-                [0xd4, 0x68],
-                &[3.0, 4.0, 5.0, -1.0][..],
-                Point3::new(5.0, 1.0, 5.0),
-            ),
-            (
-                [0xa4, 0x00],
-                &[3.0, 4.0, 5.0, 0.0, 1.0, 0.0, 0.6, 0.8][..],
-                Point3::new(4.8, 6.0, 7.4),
-            ),
+    fn bounded_plane_refuses_unestablished_selectors() {
+        for (prefix, frame) in [
+            ([0xb4, 0xde], &[3.0_f64][..]),
+            ([0xb4, 0x50], &[3.0, 4.0, 5.0, -1.0, 1.0][..]),
+            ([0xe4, 0x58], &[3.0, 4.0, 5.0, 1.0][..]),
+            ([0xd4, 0x68], &[3.0, 4.0, 5.0, -1.0][..]),
+            ([0xd4, 0xe8], &[3.0, 4.0, 5.0][..]),
+            ([0xa4, 0x00], &[3.0, 4.0, 5.0, 0.0, 1.0, 0.0, 0.6, 0.8][..]),
         ] {
             let mut bytes = prefix.to_vec();
             for value in frame.iter().copied().chain([-4.0, 4.0, -6.0, 6.0]) {
                 bytes.extend(value.to_le_bytes());
             }
-            let plane = SpatialPlane::read(&bytes).expect("bounded offset result");
-            assert_eq!(plane.bounds, Some([[-4.0, 4.0], [-6.0, 6.0]]));
-            assert!(
-                Carrier::Plane(plane)
-                    .evaluate([2.0, 3.0])
-                    .expect("plane point")
-                    .distance(point)
-                    < 1e-12
-            );
-            bytes.pop();
-            assert!(SpatialPlane::read(&bytes).is_none());
+            assert!(SpatialPlane::read(&bytes).is_none(), "prefix {prefix:02x?}");
         }
     }
 

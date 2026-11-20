@@ -268,8 +268,8 @@ fn spline_trims_share_the_lifted_edges_clamped_chart() {
 fn bounded_plane_chart_reports_omitted_bounds_on_emission_and_shell_edge_recovery() {
     let definition = cylinder_section();
     let mut face = sheet(&definition, 0.1);
-    let mut bytes = vec![0xd4, 0x68];
-    for value in [0.0_f64, 0.0, 0.0, -1.0, -4.0, 4.0, -6.0, 6.0] {
+    let mut bytes = vec![0xd4, 0xa0];
+    for value in [0.0_f64, 0.0, 0.0, 1.0, 0.0, -1.0, -4.0, 4.0, -6.0, 6.0] {
         bytes.extend(value.to_le_bytes());
     }
     face.carrier = Carrier::Plane(
