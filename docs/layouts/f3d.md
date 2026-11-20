@@ -83,7 +83,7 @@ Parsed by:
 | 16 | 3 | `padding` | `bytes[3]` | little | spec | followed by a counted associated-reference list, three zero bytes |
 | 19 | 11 | `first_reference` | `bytes[11]` | little | spec | the required references at offsets 19, 51 and 65 |
 | 30 | 1 | `middle_reference` | `u8` | little | spec | the middle reference at offset 30 |
-| 31 | 4 | `opaque_word` | `u32` | little | spec | the opaque word at offset 31 |
+| 31 | 4 | `previous_history_state_id` | `u32` | little | spec | the preceding history-state identity at offset 31 |
 | 35 | 4 | `lane_word` | `u32` | little | spec | the repeated word at offsets 35 and 47 |
 | 39 | 8 | `lane_scalar` | `f64` | little | spec | the scalar at offset 39 |
 | 47 | 4 | `repeated_word` | `u32` | little | spec | the repeated word at offsets 35 and 47 |

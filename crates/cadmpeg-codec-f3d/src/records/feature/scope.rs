@@ -58,7 +58,7 @@ use super::thread::DesignThreadConstruction;
 use super::work_axes::DesignWorkAxisConstruction;
 use super::work_geometry::{DesignWorkPlaneConstruction, DesignWorkPointConstruction};
 use crate::layout::named_parameter_scope_tail as named_scope_tail;
-use crate::records::identity::{deserialize_absent_u64_offset, DesignEntityId, ReferenceRun};
+use crate::records::identity::{DesignEntityId, ReferenceRun, deserialize_absent_u64_offset};
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
@@ -585,7 +585,8 @@ impl DesignNamedScopeReferences {
                 (
                     &self.middle,
                     u64_from_index(
-                        named_scope_tail::CLOSING_REFERENCE - named_scope_tail::OPAQUE_WORD,
+                        named_scope_tail::CLOSING_REFERENCE
+                            - named_scope_tail::PREVIOUS_HISTORY_STATE_ID,
                     ),
                 ),
                 (&self.closing, 1),

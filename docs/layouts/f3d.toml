@@ -120,11 +120,11 @@ source = "spec"
 anchor = "the middle reference at offset 30"
 
 [[record.field]]
-name = "opaque_word"
+name = "previous_history_state_id"
 offset = 31
 type = "u32"
 source = "spec"
-anchor = "the opaque word at offset 31"
+anchor = "the preceding history-state identity at offset 31"
 
 [[record.field]]
 name = "lane_word"

@@ -811,7 +811,7 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Question.** Does a named parameter-scope tail with a label of positive length `L` store a preceding history-state identity, and at which tail offset?
 
-**Known.** `f3d.md` §3.1 states that a tail whose label is empty is the 78-byte fixed tail, with the preceding history-state identity at tail offset 31 and the evaluation epoch at tail offsets 35 and 47. The feature item tail paragraph moves each later offset by `2L` after a custom label of `L` code units, which places a preceding history-state identity at tail offset `31 + 2L`. The decoder reads none for a labeled tail.
+**Known.** `f3d.md` §3.1 states that a tail whose label is empty is the 78-byte fixed tail, with the preceding history-state identity at tail offset 31 and the evaluation epoch at tail offsets 35 and 47. The feature item tail paragraph moves each later offset by `2L` after a custom label of `L` code units, which places a preceding history-state identity at tail offset `31 + 2L`. For a labeled tail, the decoder reads a preceding history-state identity for reciprocal `Hole` named tails from their reciprocal member layout, and leaves other labeled tails without one.
 
 **Need.** Labeled tails whose preceding identity can be checked against the current identity of another scope, to settle whether offset `31 + 2L` holds it.
 
