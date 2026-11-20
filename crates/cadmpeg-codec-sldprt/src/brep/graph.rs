@@ -4852,22 +4852,24 @@ fn decode_graph_inner(
                     match (&cache, carriers.curve(blend.spine)) {
                         (Some((fitted, cache)), Some(spine)) => {
                             let spine = &spine.carrier().geometry;
-                            let allowed =
-                                blend_vertex_allowance(t, f, &edge_tolerances) + fitted;
-                            if let Some(miss) =
-                                blend_surface::vertex_miss(ctx, cache, spine, &boundary)?
-                                    .filter(|miss| *miss > allowed)
+                            let allowed = (blend.signed_radius.abs()
+                                * BLEND_VERTEX_MISS_RADIUS_FRACTION)
+                                .min(blend_vertex_allowance(t, f, &edge_tolerances) + fitted);
+                            if blend_surface::covers(ctx, cache, spine, &boundary, allowed)?
+                                == Some(false)
                             {
-                                let at_vertex =
-                                    blend_surface::vertex_miss(ctx, cache, spine, &vertices)?
-                                        .filter(|vertex_miss| *vertex_miss >= miss);
-                                let (miss, at) = match at_vertex {
-                                    Some(vertex_miss) => (vertex_miss, "a face vertex"),
-                                    None => (miss, "a point sampled on the face's edges"),
+                                let vertex = blend_surface::vertex_miss(ctx, cache, spine, &vertices)?
+                                    .unwrap_or(0.0);
+                                let edge = blend_surface::vertex_miss(ctx, cache, spine, &boundary)?
+                                    .unwrap_or(0.0);
+                                let (miss, at) = if vertex >= edge {
+                                    (vertex, "a face vertex")
+                                } else {
+                                    (edge, "a point sampled on the face's edges")
                                 };
                                 out.losses.push(
                                     crate::loss::SldprtLossCode::GeometryCarrierApproximated.note(format!(
-                                        "{}: the cache of the rolling-ball blend of radius {} mm misses {at} by {miss} mm, more than the {allowed} mm its edges' tolerance and its fit tolerance allow; the face keeps the cache.",
+                                        "{}: the cache of the rolling-ball blend of radius {} mm misses {at} by {miss} mm, more than the {allowed} mm allowed (its edges' tolerance plus its fit tolerance, at most a quarter of the radius); the face keeps the cache.",
                                         id_face(f.bridge_attr).as_str(),
                                         blend.signed_radius.abs(),
                                     )),
