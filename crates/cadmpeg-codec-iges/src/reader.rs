@@ -21,19 +21,32 @@ use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+#[cfg(test)]
 fn source_meta(
     global: &global::GlobalRecord,
     representation: Representation,
     primary: cadmpeg_core::dialect::DialectMatch,
 ) -> SourceMeta {
+    source_meta_with_losses(global, representation, primary).0
+}
+
+fn source_meta_with_losses(
+    global: &global::GlobalRecord,
+    representation: Representation,
+    primary: cadmpeg_core::dialect::DialectMatch,
+) -> (SourceMeta, Vec<LossNote>) {
+    let mut losses = Vec::new();
     let mut attributes = BTreeMap::from([(
         cadmpeg_core::nonblank_const!("representation"),
         representation.as_str().to_owned(),
     )]);
     let global::GlobalRecord::Resolved(global) = global else {
-        return SourceMeta::classified(
-            cadmpeg_core::dialect::DialectLayers::of(primary),
-            attributes,
+        return (
+            SourceMeta::classified(
+                cadmpeg_core::dialect::DialectLayers::of(primary),
+                attributes,
+            ),
+            losses,
         );
     };
     attributes.insert(
@@ -77,7 +90,17 @@ fn source_meta(
             global.organization(),
         ),
     ] {
-        let Some(value) = value.and_then(cadmpeg_core::text::attribute_text) else {
+        let Some(raw) = value else {
+            continue;
+        };
+        let (value, removed) = cadmpeg_core::text::attribute_text_checked(raw);
+        if removed {
+            losses.push(IgesLossCode::GlobalMetadataFieldUnusable.note(format!(
+                "IGES Global attribute {} contained control characters that were omitted.",
+                key.as_str()
+            )));
+        }
+        let Some(value) = value else {
             continue;
         };
         attributes.insert(key, value);
@@ -102,9 +125,12 @@ fn source_meta(
         cadmpeg_core::nonblank_const!("iges_version_flag"),
         global.declared_version_flag().to_string(),
     );
-    SourceMeta::classified(
-        cadmpeg_core::dialect::DialectLayers::of(primary),
-        attributes,
+    (
+        SourceMeta::classified(
+            cadmpeg_core::dialect::DialectLayers::of(primary),
+            attributes,
+        ),
+        losses,
     )
 }
 
@@ -494,7 +520,8 @@ fn decode_with_occurrence_limits(
     let mut source_fidelity = source_fidelity(source_bytes, ctx)?;
 
     let primary = crate::dialect::classify(representation, &parse.global);
-    let mut ir = CadIr::decoded(source_meta(&parse.global, representation, primary));
+    let (meta, attribute_losses) = source_meta_with_losses(&parse.global, representation, primary);
+    let mut ir = CadIr::decoded(meta);
     let mut invalid_resolution = false;
     if let Some(context) = &length_context {
         match cadmpeg_ir::scalar::PositiveLength::new(context.minimum_resolution_mm()) {
@@ -574,6 +601,7 @@ fn decode_with_occurrence_limits(
         )?;
     }
     let mut losses = parse.admission_losses();
+    losses.extend(attribute_losses);
     if invalid_resolution
         && !losses.iter().any(|loss| {
             loss.code.local_code() == IgesLossCode::GlobalSemanticContextSubstituted.code()

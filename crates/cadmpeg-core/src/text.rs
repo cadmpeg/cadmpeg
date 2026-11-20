@@ -301,11 +301,26 @@ macro_rules! nonblank_const {
 /// characters. It is `None` when no non-whitespace character remains.
 #[must_use]
 pub fn attribute_text(text: &str) -> Option<String> {
-    let value: String = text
-        .chars()
-        .filter(|character| !character.is_control())
-        .collect();
-    NonBlankString::new(value).map(NonBlankString::into_string)
+    attribute_text_checked(text).0
+}
+
+/// Source text as a source-attribute value, reporting whether any control
+/// character was removed.
+#[must_use]
+pub fn attribute_text_checked(text: &str) -> (Option<String>, bool) {
+    let mut removed = false;
+    let mut value = String::with_capacity(text.len());
+    for character in text.chars() {
+        if character.is_control() {
+            removed = true;
+        } else {
+            value.push(character);
+        }
+    }
+    (
+        NonBlankString::new(value).map(NonBlankString::into_string),
+        removed,
+    )
 }
 
 impl PartialEq<str> for NonBlankString {

@@ -70,18 +70,30 @@ const FIELDS: [Field; 10] = [
 /// Insert the first `FILE_DESCRIPTION`, `FILE_NAME`, and `FILE_SCHEMA` strings.
 ///
 /// A string parameter goes under the field key. A list member goes under the
-/// field key, a dot, and its zero-based list position.
+/// field key, a dot, and its zero-based list position. Control characters
+/// removed from a decoded string are reported with
+/// [`StepLossCode::HeaderMetadataNoncanonical`].
 pub(super) fn add_source_attributes(
     exchange: &Exchange,
     attributes: &mut BTreeMap<NonBlankString, String>,
-) {
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let mut losses = Vec::new();
     for field in &FIELDS {
         let Some(record) = first_record(exchange.header(), field.record) else {
             continue;
         };
         match record.parameters.get(field.position) {
             Some(Value::String(bytes)) => {
-                if let Some(value) = text(exchange, bytes) {
+                let (value, removed) = text(exchange, bytes);
+                if removed {
+                    losses.push(
+                        crate::loss::StepLossCode::HeaderMetadataNoncanonical.note(format!(
+                            "STEP header attribute {} contained control characters that were omitted.",
+                            field.key
+                        )),
+                    );
+                }
+                if let Some(value) = value {
                     insert(attributes, field.key.to_owned(), value);
                 }
             }
@@ -90,23 +102,35 @@ pub(super) fn add_source_attributes(
                     let Value::String(bytes) = member else {
                         continue;
                     };
-                    if let Some(value) = text(exchange, bytes) {
-                        insert(attributes, format!("{}.{position}", field.key), value);
+                    let key = format!("{}.{position}", field.key);
+                    let (value, removed) = text(exchange, bytes);
+                    if removed {
+                        losses.push(
+                            crate::loss::StepLossCode::HeaderMetadataNoncanonical.note(format!(
+                                "STEP header attribute {key} contained control characters that were omitted."
+                            )),
+                        );
+                    }
+                    if let Some(value) = value {
+                        insert(attributes, key, value);
                     }
                 }
             }
             _ => {}
         }
     }
+    losses
 }
 
 fn first_record<'a>(header: &'a [HeaderRecord], name: &str) -> Option<&'a HeaderRecord> {
     header.iter().find(|record| record.name == name)
 }
 
-fn text(exchange: &Exchange, bytes: &[u8]) -> Option<String> {
-    let decoded = exchange.decode_string(bytes).ok()?;
-    cadmpeg_core::text::attribute_text(&decoded)
+fn text(exchange: &Exchange, bytes: &[u8]) -> (Option<String>, bool) {
+    let Ok(decoded) = exchange.decode_string(bytes) else {
+        return (None, false);
+    };
+    cadmpeg_core::text::attribute_text_checked(&decoded)
 }
 
 fn insert(attributes: &mut BTreeMap<NonBlankString, String>, key: String, value: String) {
