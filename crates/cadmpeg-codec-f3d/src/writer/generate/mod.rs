@@ -380,12 +380,16 @@ fn write_archive<W: Write + Seek>(
 ) -> Result<(), CodecError> {
     let mut archive = zip::ZipWriter::new(staged);
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    // A name ending in `/` is a directory entry.
     let mut entry = |name: String, bytes: &[u8]| -> Result<(), CodecError> {
-        archive
-            .start_file(name.as_str(), options)
-            .map_err(|error| {
-                CodecError::malformed(format_args!("cannot create F3D entry {name}: {error}"))
-            })?;
+        let created = if name.ends_with('/') {
+            archive.add_directory(name.as_str(), options)
+        } else {
+            archive.start_file(name.as_str(), options)
+        };
+        created.map_err(|error| {
+            CodecError::malformed(format_args!("cannot create F3D entry {name}: {error}"))
+        })?;
         archive.write_all(bytes)?;
         Ok(())
     };

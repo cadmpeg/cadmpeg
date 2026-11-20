@@ -3448,7 +3448,7 @@ The timestamps satisfy `t_c ≤ t_s ≤ t_r`. Eight zero bytes follow each owner
 | — | reference | the other body-reference record of the body |
 | — | LP-UTF16 | `0_` followed by the decimal record index of this record |
 
-The design body-reference record stores the body's node GUID, and the parameter body-reference record stores the body's parameter GUID, each as an LP-UTF16 GUID of 36 code units. In the 891-byte form of either record, that GUID is the second LP-UTF16 GUID and starts at offset 349.
+The design body-reference record stores the body's node GUID, and the parameter body-reference record stores the body's parameter GUID, each as an LP-UTF16 GUID of 36 code units. In the 891-byte form of either record, that GUID is the second LP-UTF16 GUID and starts at offset 349. The node GUID, the parameter GUID, and the mass-block GUID are lowercase in every record that stores them; the physical-material and appearance instance GUIDs and the two library GUIDs are uppercase.
 
 The form with no appearance entry continues after the LP-UTF16 name `0_<index>` with a cached mass-property block and two presentation envelopes. Lengths are in centimetres, and areas, volumes, and moments are in the matching powers of the centimetre. `base_feature_body_reference` in [the layout tables](../layouts/f3d.md#base_feature_body_reference) gives the offsets of the record with a three-digit index and the appearance `PrismOpaque`.
 
@@ -3734,6 +3734,8 @@ Each record below holds one cross-segment reference. The cross-segment reference
 
 A cross-segment reference is 15 bytes: `01`, the u64 target record index, `00`, `01`, and the u32 target segment ID.
 
+The MetaStream header of each of the three segments stores the segment type as both type names, add-in `Fusion`, and the segment type code `1` (Design), `5` (ACT), or `6` (Browser) followed by u32 `0`. The streams of a segment are in the archive folder `<segment type>1`: `FusionDesignSegmentType1`, `FusionACTSegmentType1`, and `FusionBrowserSegmentType1`. The ACT named-entity ID list holds records 0, 1, 5, and 6, and the ACT segment stores no paired header. In a design with one result body, the ACT next-entity-ID counter is `12`. Every GUID of the ACT segment is lowercase.
+
 **Record indices of the roster.** The roster leaves the record indices 8, 9, 35, 179 to 183, and 216 to 218 unused. The MetaStream next-entity-ID counter is greater than every record index. The named-entity ID list holds the records that store an LP-ASCII name after four zero bytes: records 0, 1, 4, 43, 44, 45, 46, 161, 177, 184, 185, 186, and 191. The secondary index has one entry for each record that stores a paired header, with the BulkStream offset of that header.
 
 **Fixed records of the roster.** Apart from their indexed headers, the records below up to record 184 other than record 19 have the same bytes in every `Base Feature` design. Record 19 has the bytes below, an empty alternate `Body` owner list, in every `Base Feature` design with no sheet result body; the paragraph on record 19 after "**`Body` owners.**" gives its form with a sheet result body. Records 191, 194, and 196 have the same bytes in every `Base Feature` design with one solid result body. Their forms in a design with a sheet result body or several result bodies are open item DR-915. [The layout tables](../layouts/f3d.md) give their offsets and constant values under the named layout records. "Zero bytes" are runs of `00`. A reference to record 0 is the eleven bytes `01`, eight zero bytes, `00 00`.
@@ -3899,7 +3901,7 @@ The browser root (record 0, type `33F72249-4935-47EB-8282-B2C3D93546CE`, 1042 by
 - the entry map: count `24` and 24 pairs of a cross-segment reference to a Design record and the Browser entry that shows it, one pair for each of the records 1 to 9, 15 to 28, and 30;
 - after a reference to the component node, the named-entry map: u32 `2`, and two keys, each a key reference, u32 `m`, and `m` pairs of an LP-ASCII kind name and the entry with that kind name. The key Design record 13 has the five entries 10 to 14. A null reference keys the one entry 29.
 
-The pairs of each map and the two keys are in any order. A paired header, 4 zero bytes, LP-ASCII `PersistBrowserRootId`, and `00` close the record.
+The pair of record 1 names the root instance. The pairs of each map and the two keys are in any order. A paired header with the class tag of `CB844AB6-240D-4fc9-9C9F-3679DC896D6F`, 4 zero bytes, LP-ASCII `PersistBrowserRootId`, and `00` close the record. The Browser named-entity ID list holds record 0, and the secondary index holds this paired header.
 
 **Archive members of a Base Feature design.** The archive holds these members besides the three segments and the manifests:
 
