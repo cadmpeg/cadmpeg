@@ -1170,7 +1170,7 @@ pub(super) fn derived_body_kinds(
                     .iter()
                     .filter(|coedge| coedge_ids.contains(&coedge.id))
                     .map(|coedge| (&coedge.edge, coedge.sense)),
-                &collapsed,
+                collapsed,
             )
         }
     };
