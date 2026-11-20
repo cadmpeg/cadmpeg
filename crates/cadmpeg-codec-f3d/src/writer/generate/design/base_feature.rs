@@ -17,6 +17,7 @@ use cadmpeg_ir::topology::{Shell, ShellMember};
 use super::frames::DesignRecords;
 use super::history::{HEAD_STATE, ROOT_STATE};
 use super::parameters::ParameterPlan;
+use super::roster::extrude::ExtrudeRecords;
 use super::roster::sketches::SketchRecords;
 use super::roster::values::Timestamps;
 use super::roster::{self, Context, RosterBody};
@@ -31,7 +32,7 @@ use crate::writer::generate::presentation::{deterministic_guid, GeneratedDesignR
 /// The first value of the persistent-identity counter: a `Sketch` scope
 /// owns one identity and the `Base Feature` scope the next, in timeline
 /// order (f3d.md §3.1, "Design records of Sketch items").
-const FIRST_IDENTITY: u64 = 300;
+pub(super) const FIRST_IDENTITY: u64 = 300;
 /// The feature-family name of the scope.
 const FAMILY: &str = "Base Feature";
 /// The GUID the scope frame stores before its scope-reference count.
@@ -40,6 +41,15 @@ const NULL_GUID: &str = "00000000-0000-0000-0000-000000000000";
 const FAMILY_COUNTER: &str = "DcBaseFeatureMetaType";
 /// The counter the timeline context keeps for the `Sketch` family.
 const SKETCH_COUNTER: &str = "DcSketchMetaType";
+/// The counter the timeline context keeps for the `Extrude` family.
+const EXTRUDE_COUNTER: &str = "DcExtrudeFeatureMetaType";
+/// The context value of a design with an `Extrude`: the number of `d<n>`
+/// parameters the design creates, the extrude's two (f3d-open-items.md
+/// DR-882).
+const EXTRUDE_CONTEXT_VALUE: u64 = 2;
+/// The flag of a dependency-table edge from a profile selection to its
+/// `Sketch` scope (f3d-open-items.md DR-891).
+const SKETCH_EDGE: u32 = 4;
 /// The flag of a dependency-table edge to the component record.
 const COMPONENT_EDGE: u32 = 0x1000;
 /// The flag of every other dependency-table edge.
@@ -89,10 +99,11 @@ fn persistent_id(sketches: usize) -> Result<u64, CodecError> {
 }
 
 /// The next value of the persistent-identity counter after `sketches`
-/// `Sketch` items and the `Base Feature`.
-pub(super) fn next_identity(sketches: usize) -> Result<u64, CodecError> {
+/// `Sketch` items and the `Base Feature`, or the `Extrude` with its two
+/// identities.
+pub(super) fn next_identity(sketches: usize, extrude: bool) -> Result<u64, CodecError> {
     persistent_id(sketches)?
-        .checked_add(1)
+        .checked_add(if extrude { 2 } else { 1 })
         .ok_or_else(|| CodecError::NotImplemented("persistent identity overflow".into()))
 }
 
@@ -202,9 +213,9 @@ struct ItemIndices {
 struct Classes {
     timeline: DesignClassTag,
     context: DesignClassTag,
-    scope: DesignClassTag,
-    result_owner: DesignClassTag,
-    tracking: DesignClassTag,
+    /// The classes of the `Base Feature` item's own types, which a design
+    /// with an `Extrude` in its place does not register.
+    item: Option<ItemClasses>,
     tracked_results: DesignClassTag,
     item_companion: DesignClassTag,
     timestamps: DesignClassTag,
@@ -316,6 +327,7 @@ impl BaseFeaturePlan<'_> {
             act_component: None,
             sketches: &[],
             persistent_id: self.persistent_id,
+            extrude: None,
         };
         writer.timeline(&mut out)?;
         writer.context(&mut out)?;
@@ -358,7 +370,32 @@ impl BaseFeaturePlan<'_> {
         parameters: &ParameterPlan,
         out: &mut DesignRecords,
     ) -> Result<(), CodecError> {
-        let indices = Indices::roster();
+        let mut indices = Indices::roster();
+        let extrude = ctx
+            .roster
+            .extrude
+            .as_ref()
+            .zip(ctx.extrude)
+            .map(|(records, plan)| {
+                let profile = ctx
+                    .roster
+                    .sketches
+                    .items
+                    .get(plan.sketch)
+                    .map(|sketch| sketch.scope)
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!("Extrude sketch {}", plan.sketch))
+                    })?;
+                Ok::<_, CodecError>(ExtrudeItem {
+                    records,
+                    after: plan.after,
+                    profile,
+                })
+            })
+            .transpose()?;
+        if extrude.is_some() {
+            indices.item = None;
+        }
         let classes = Classes::of(ctx)?;
         let bodies = ctx
             .roster
@@ -382,6 +419,7 @@ impl BaseFeaturePlan<'_> {
             act_component: Some(roster::ACT_COMPONENT),
             sketches: &ctx.roster.sketches.items,
             persistent_id: persistent_id(ctx.roster.sketches.items.len())?,
+            extrude,
         };
         writer.timeline(out)?;
         writer.context(out)?;
@@ -521,9 +559,15 @@ impl Classes {
         Ok(Self {
             timeline: class(types::TIMELINE)?,
             context: class(types::TIMELINE_CONTEXT)?,
-            scope: class(types::BASE_FEATURE)?,
-            result_owner: class(types::RESULT_OWNER)?,
-            tracking: class(types::BODY_TRACKING)?,
+            item: if ctx.roster.extrude.is_some() {
+                None
+            } else {
+                Some(ItemClasses {
+                    scope: class(types::BASE_FEATURE)?,
+                    result_owner: class(types::RESULT_OWNER)?,
+                    tracking: class(types::BODY_TRACKING)?,
+                })
+            },
             tracked_results: class(types::TRACKED_RESULTS)?,
             item_companion: class(types::ITEM_TAIL_COMPANION)?,
             timestamps: class(types::RECORD_TIMESTAMPS)?,
@@ -581,9 +625,11 @@ impl Classes {
             collection_base: register(types::COLLECTION, &[])?,
             timeline: register(types::TIMELINE, &[indices.timeline])?,
             context: register(types::TIMELINE_CONTEXT, &[indices.context])?,
-            scope: register(types::BASE_FEATURE, &item_ids(|item| item.scope))?,
-            result_owner: register(types::RESULT_OWNER, &item_ids(|item| item.result_owner))?,
-            tracking: register(types::BODY_TRACKING, &tracking)?,
+            item: Some(ItemClasses {
+                scope: register(types::BASE_FEATURE, &item_ids(|item| item.scope))?,
+                result_owner: register(types::RESULT_OWNER, &item_ids(|item| item.result_owner))?,
+                tracking: register(types::BODY_TRACKING, &tracking)?,
+            }),
             tracked_results: register(
                 types::TRACKED_RESULTS,
                 &item_ids(|item| item.tracked_results),
@@ -618,6 +664,13 @@ impl Classes {
     }
 }
 
+/// The class tags of the types only the `Base Feature` item writes.
+struct ItemClasses {
+    scope: DesignClassTag,
+    result_owner: DesignClassTag,
+    tracking: DesignClassTag,
+}
+
 /// Writes the records of one design.
 struct Writer<'a> {
     indices: &'a Indices,
@@ -631,6 +684,44 @@ struct Writer<'a> {
     sketches: &'a [SketchRecords],
     /// The `Base Feature` scope's persistent identity.
     persistent_id: u64,
+    /// The `Extrude` written in place of the `Base Feature`.
+    extrude: Option<ExtrudeItem<'a>>,
+}
+
+/// The records of the `Extrude` item and its place in the timeline.
+struct ExtrudeItem<'a> {
+    records: &'a ExtrudeRecords,
+    /// The number of `Sketch` items before it.
+    after: usize,
+    /// The `Sketch` scope of its profile.
+    profile: u32,
+}
+
+/// One item of the timeline.
+enum TimelineItem<'a> {
+    Sketch(&'a SketchRecords),
+    Extrude(&'a ExtrudeItem<'a>),
+}
+
+impl Writer<'_> {
+    /// The `Sketch` and `Extrude` items in timeline order.
+    fn items(&self) -> Vec<TimelineItem<'_>> {
+        let mut items = Vec::with_capacity(self.sketches.len() + 1);
+        for (position, sketch) in self.sketches.iter().enumerate() {
+            if let Some(extrude) = self.extrude.as_ref().filter(|item| item.after == position) {
+                items.push(TimelineItem::Extrude(extrude));
+            }
+            items.push(TimelineItem::Sketch(sketch));
+        }
+        if let Some(extrude) = self
+            .extrude
+            .as_ref()
+            .filter(|item| item.after == self.sketches.len())
+        {
+            items.push(TimelineItem::Extrude(extrude));
+        }
+        items
+    }
 }
 
 impl Writer<'_> {
@@ -639,9 +730,12 @@ impl Writer<'_> {
     fn timeline(&self, out: &mut DesignRecords) -> Result<(), CodecError> {
         let indices = self.indices;
         let scopes = self
-            .sketches
+            .items()
             .iter()
-            .map(|sketch| sketch.scope)
+            .map(|item| match item {
+                TimelineItem::Sketch(sketch) => sketch.scope,
+                TimelineItem::Extrude(extrude) => extrude.records.scope,
+            })
             .chain(indices.item.as_ref().map(|item| item.scope))
             .collect::<Vec<_>>();
         out.record(&self.classes.timeline, indices.timeline)
@@ -659,8 +753,23 @@ impl Writer<'_> {
     /// `Base Feature` scope and its result owner.
     fn owner_members(&self) -> Vec<u32> {
         let mut members = vec![self.indices.component];
-        for sketch in self.sketches {
-            members.extend([sketch.scope, sketch.path, sketch.placement]);
+        for item in self.items() {
+            match item {
+                TimelineItem::Sketch(sketch) => {
+                    members.extend([sketch.scope, sketch.path, sketch.placement]);
+                }
+                TimelineItem::Extrude(extrude) => {
+                    let records = extrude.records;
+                    members.extend([
+                        records.group,
+                        records.selection,
+                        records.along[0],
+                        records.taper[0],
+                        records.start,
+                        records.scope,
+                    ]);
+                }
+            }
         }
         if let Some(item) = &self.indices.item {
             members.extend([item.scope, item.result_owner]);
@@ -672,8 +781,23 @@ impl Writer<'_> {
     /// each `Sketch` item's placement path and placement before its scope.
     fn context_members(&self) -> Vec<u32> {
         let mut members = vec![self.indices.component];
-        for sketch in self.sketches {
-            members.extend([sketch.path, sketch.placement, sketch.scope]);
+        for item in self.items() {
+            match item {
+                TimelineItem::Sketch(sketch) => {
+                    members.extend([sketch.path, sketch.placement, sketch.scope]);
+                }
+                TimelineItem::Extrude(extrude) => {
+                    let records = extrude.records;
+                    members.extend([
+                        records.selection,
+                        records.group,
+                        records.along[0],
+                        records.taper[0],
+                        records.start,
+                        records.scope,
+                    ]);
+                }
+            }
         }
         if let Some(item) = &self.indices.item {
             members.extend([item.scope, item.result_owner]);
@@ -696,6 +820,9 @@ impl Writer<'_> {
         if indices.item.is_some() {
             counters.push((FAMILY_COUNTER, 1));
         }
+        if self.extrude.is_some() {
+            counters.push((EXTRUDE_COUNTER, 1));
+        }
         if !self.sketches.is_empty() {
             counters.push((
                 SKETCH_COUNTER,
@@ -708,7 +835,13 @@ impl Writer<'_> {
         for (name, value) in counters {
             out.lp_ascii(name)?.u64(value);
         }
-        out.u64(0).u32(1).reference(indices.component_link);
+        out.u64(if self.extrude.is_some() {
+            EXTRUDE_CONTEXT_VALUE
+        } else {
+            0
+        })
+        .u32(1)
+        .reference(indices.component_link);
         for record in [
             indices.context_12d00ac0,
             indices.context_members,
@@ -731,11 +864,18 @@ impl Writer<'_> {
     fn item(&self, out: &mut DesignRecords, item: &ItemIndices) -> Result<(), CodecError> {
         let (indices, classes) = (self.indices, self.classes);
         let bodies = count(self.bodies.len())?;
-        out.record(&classes.scope, item.scope).zeros(8).byte(1).u32(
-            bodies
-                .checked_mul(2)
-                .ok_or_else(|| CodecError::NotImplemented("Base Feature body count".into()))?,
-        );
+        let item_classes = classes
+            .item
+            .as_ref()
+            .ok_or_else(|| CodecError::Malformed("the Base Feature item has no classes".into()))?;
+        out.record(&item_classes.scope, item.scope)
+            .zeros(8)
+            .byte(1)
+            .u32(
+                bodies
+                    .checked_mul(2)
+                    .ok_or_else(|| CodecError::NotImplemented("Base Feature body count".into()))?,
+            );
         for body in self.bodies {
             out.member(body.design_reference, 0);
         }
@@ -780,7 +920,7 @@ impl Writer<'_> {
             .zeros(8)
             .reference(indices.owner_collection);
 
-        out.record(&classes.result_owner, item.result_owner)
+        out.record(&item_classes.result_owner, item.result_owner)
             .zeros(22)
             .reference(item.scope)
             .zeros(20)
@@ -811,7 +951,7 @@ impl Writer<'_> {
             .header(&classes.object, item.tracked_results)
             .zeros(9);
         for body in self.bodies {
-            out.record(&classes.tracking, body.tracking).zeros(14);
+            out.record(&item_classes.tracking, body.tracking).zeros(14);
             out.lp_utf16(&body.parameter_guid)?
                 .lp_utf16(&body.node_guid)?
                 .header(&classes.tracking_entry, body.tracking)
@@ -910,56 +1050,98 @@ impl Writer<'_> {
         dependency_entries(out, &dependents)?;
 
         // The persistent-id table in the forward form: each scope with its
-        // identity, in ascending record index, then the pairs in ascending
+        // identities, in ascending record index, then the pairs in ascending
         // identity.
         let identities = self.identities();
         let mut forward = identities.clone();
-        forward.sort_unstable_by_key(|&(_, scope)| scope);
+        forward.sort_unstable_by_key(|(scope, _)| *scope);
         out.record(&classes.persistent_ids, indices.persistent_ids)
             .zeros(10)
             .u32(count(forward.len())?);
-        for (identity, scope) in &forward {
-            out.u64(u64::from(*scope)).u32(1).u64(*identity);
+        for (scope, owned) in &forward {
+            out.u64(u64::from(*scope)).u32(count(owned.len())?);
+            for identity in owned {
+                out.u64(*identity);
+            }
         }
-        out.u32(count(identities.len())?);
-        for (identity, scope) in &identities {
+        let pairs = identities
+            .iter()
+            .flat_map(|(scope, owned)| owned.iter().map(move |identity| (*identity, *scope)))
+            .collect::<Vec<_>>();
+        out.u32(count(pairs.len())?);
+        for (identity, scope) in &pairs {
             out.u64(*identity).u64(u64::from(*scope));
         }
         out.u32(0).reference(indices.context);
         Ok(())
     }
 
-    /// `(identity, scope)` of every timeline item in timeline order: the
-    /// `Sketch` items from `300`, then the `Base Feature`.
-    fn identities(&self) -> Vec<(u64, u32)> {
+    /// `(scope, identities)` of every timeline item in timeline order, from
+    /// `300`: one for a `Sketch` item, two for the `Extrude`, then one for
+    /// the `Base Feature`.
+    fn identities(&self) -> Vec<(u32, Vec<u64>)> {
         let mut identities = Vec::new();
-        for (identity, sketch) in (FIRST_IDENTITY..).zip(self.sketches) {
-            identities.push((identity, sketch.scope));
+        let mut next = FIRST_IDENTITY;
+        for item in self.items() {
+            let (scope, owned) = match item {
+                TimelineItem::Sketch(sketch) => (sketch.scope, 1),
+                TimelineItem::Extrude(extrude) => (extrude.records.scope, 2),
+            };
+            identities.push((scope, (next..next + owned).collect()));
+            next += owned;
         }
         if let Some(item) = &self.indices.item {
-            identities.push((self.persistent_id, item.scope));
+            identities.push((item.scope, vec![self.persistent_id]));
         }
         identities
     }
 
-    /// The input and dependent maps of the dependency table, each in
-    /// ascending record index: a scope depends on the component record and
-    /// a `Sketch` scope on its placement, which depends on its placement
-    /// path; the result owner depends on the `Base Feature` scope.
+    /// The input and dependent maps of the dependency table. A scope depends
+    /// on the component record and a `Sketch` scope on its placement, which
+    /// depends on its placement path; the result owner depends on the
+    /// `Base Feature` scope. A Base Feature design lists both maps in
+    /// ascending record index. A design with an `Extrude` lists the inputs in
+    /// timeline order with the `Extrude`'s in f3d-open-items.md DR-891's
+    /// order, and the dependents in ascending record index.
     fn dependencies(&self) -> (Vec<Dependency>, Vec<Dependency>) {
         let component = self.indices.component;
         let mut inputs = Vec::new();
         let mut dependents = Vec::new();
         let mut scopes = Vec::new();
-        for sketch in self.sketches {
-            inputs.push((
-                sketch.scope,
-                vec![(component, COMPONENT_EDGE), (sketch.placement, EDGE)],
-            ));
-            inputs.push((sketch.placement, vec![(sketch.path, EDGE)]));
-            dependents.push((sketch.path, vec![(sketch.placement, EDGE)]));
-            dependents.push((sketch.placement, vec![(sketch.scope, EDGE)]));
-            scopes.push(sketch.scope);
+        for item in self.items() {
+            match item {
+                TimelineItem::Sketch(sketch) => {
+                    inputs.push((
+                        sketch.scope,
+                        vec![(component, COMPONENT_EDGE), (sketch.placement, EDGE)],
+                    ));
+                    inputs.push((sketch.placement, vec![(sketch.path, EDGE)]));
+                    dependents.push((sketch.path, vec![(sketch.placement, EDGE)]));
+                    dependents.push((sketch.placement, vec![(sketch.scope, EDGE)]));
+                    scopes.push(sketch.scope);
+                }
+                TimelineItem::Extrude(extrude) => {
+                    let records = extrude.records;
+                    let [along, taper] = [records.along[0], records.taper[0]];
+                    inputs.push((
+                        records.scope,
+                        vec![(component, COMPONENT_EDGE), (records.start, EDGE)],
+                    ));
+                    inputs.push((records.group, vec![(records.selection, EDGE)]));
+                    inputs.push((records.selection, vec![(extrude.profile, SKETCH_EDGE)]));
+                    inputs.push((
+                        records.start,
+                        vec![(records.group, EDGE), (along, EDGE), (taper, EDGE)],
+                    ));
+                    dependents.push((extrude.profile, vec![(records.selection, SKETCH_EDGE)]));
+                    dependents.push((records.group, vec![(records.start, EDGE)]));
+                    dependents.push((records.start, vec![(records.scope, EDGE)]));
+                    dependents.push((records.selection, vec![(records.group, EDGE)]));
+                    dependents.push((along, vec![(records.start, EDGE)]));
+                    dependents.push((taper, vec![(records.start, EDGE)]));
+                    scopes.push(records.scope);
+                }
+            }
         }
         if let Some(item) = &self.indices.item {
             inputs.push((item.scope, vec![(component, COMPONENT_EDGE)]));
@@ -977,7 +1159,9 @@ impl Writer<'_> {
                     .collect(),
             ));
         }
-        inputs.sort_by_key(|&(record, _)| record);
+        if self.extrude.is_none() {
+            inputs.sort_by_key(|&(record, _)| record);
+        }
         dependents.sort_by_key(|&(record, _)| record);
         (inputs, dependents)
     }

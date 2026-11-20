@@ -8,6 +8,7 @@ mod act;
 mod bodies;
 mod browser;
 mod component;
+pub(super) mod extrude;
 mod fixed;
 mod rows;
 pub(super) mod segment;
@@ -24,6 +25,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use super::frames::DesignRecords;
 use crate::records::references::DesignClassTag;
 use crate::writer::generate::presentation::TypeRow;
+use extrude::ExtrudeRecords;
 use segment::TypeTable;
 use sketches::SketchRoster;
 use values::Values;
@@ -83,6 +85,11 @@ const PARAMETER_COMPANION: u32 = 219;
 const EXTENSION: u32 = 225;
 /// The records of each body after the first.
 const BODY_RECORDS: u32 = 10;
+/// The roster records of the `Base Feature` item a design that writes an
+/// `Extrude` in its place leaves out: the scope, its record-timestamp
+/// tables, item-tail companion, tracked results and result owner, and the
+/// body tracking entry.
+const BASE_FEATURE_ITEM: [u32; 7] = [209, 210, 211, 212, 213, 214, 223];
 
 /// The records of one result body.
 #[derive(Clone, Copy)]
@@ -104,20 +111,28 @@ pub(super) struct Roster {
     pub(super) parameters: Vec<u32>,
     /// The records of the `Sketch` items, after the user parameters.
     pub(super) sketches: SketchRoster,
+    /// The records of the `Extrude` item, between the `Sketch` items before
+    /// and after it.
+    pub(super) extrude: Option<ExtrudeRecords>,
     rows: Vec<(u32, TypeRow)>,
 }
 
 impl Roster {
     /// The one-body roster, with the ten records of each further body, one
     /// record of each user parameter, and then the records of each `Sketch`
-    /// item, at the indices from 225.
+    /// item and of `extrude`, in timeline order, at the indices from 225.
+    /// The `Extrude` replaces the `Base Feature` item.
     pub(super) fn new(
         bodies: usize,
         parameters: usize,
         sketches: &[super::sketch::PlannedSketch<'_>],
+        extrude: Option<&super::extrude::ExtrudePlan<'_>>,
     ) -> Result<Self, CodecError> {
         let overflow = || CodecError::NotImplemented("Base Feature record index overflow".into());
         let mut entries = rows::ONE_BODY.to_vec();
+        if extrude.is_some() {
+            entries.retain(|(index, _)| !BASE_FEATURE_ITEM.contains(index));
+        }
         let row_of = |index: u32| {
             rows::ONE_BODY
                 .iter()
@@ -168,11 +183,25 @@ impl Roster {
             parameter_indices.push(next);
             next = next.checked_add(1).ok_or_else(overflow)?;
         }
-        let (sketches, _) = SketchRoster::allocate(sketches, next, &mut entries)?;
+        let mut roster = SketchRoster::default();
+        let mut extrude_records = None;
+        for (position, planned) in sketches.iter().enumerate() {
+            if let Some(plan) = extrude.filter(|plan| plan.after == position) {
+                let (records, after) = ExtrudeRecords::allocate(plan, next, &mut entries)?;
+                extrude_records = Some(records);
+                next = after;
+            }
+            next = roster.allocate(planned, next, &mut entries)?;
+        }
+        if let Some(plan) = extrude.filter(|plan| plan.after == sketches.len()) {
+            let (records, _) = ExtrudeRecords::allocate(plan, next, &mut entries)?;
+            extrude_records = Some(records);
+        }
         Ok(Self {
             bodies: indices,
             parameters: parameter_indices,
-            sketches,
+            sketches: roster,
+            extrude: extrude_records,
             rows: entries,
         })
     }
@@ -209,6 +238,8 @@ pub(super) struct Context<'a> {
     pub(super) bodies: Vec<RosterBody<'a>>,
     /// The `Sketch` items, in the order of [`Roster::sketches`].
     pub(super) sketches: &'a [super::sketch::PlannedSketch<'a>],
+    /// The `Extrude` written in place of the `Base Feature`.
+    pub(super) extrude: Option<&'a super::extrude::ExtrudePlan<'a>>,
 }
 
 impl Context<'_> {
@@ -242,6 +273,15 @@ impl Context<'_> {
         Ok(())
     }
 
+    /// The timeline item whose scope the browser node of a result body
+    /// names: the `Extrude` scope, else the `Base Feature` scope.
+    pub(super) fn item_scope(&self) -> u32 {
+        self.roster
+            .extrude
+            .as_ref()
+            .map_or(SCOPE, |records| records.scope)
+    }
+
     /// The number of result bodies as a u32.
     pub(super) fn body_count(&self) -> Result<u32, CodecError> {
         count(self.bodies.len())
@@ -258,6 +298,9 @@ pub(super) fn type_table(roster: &Roster, sheet: bool) -> Result<TypeTable, Code
     }
     if !roster.sketches.is_empty() {
         known.extend(super::types::SKETCH_ANCESTORS);
+    }
+    if roster.extrude.is_some() {
+        known.extend(super::types::EXTRUDE_ANCESTORS);
     }
     TypeTable::new(roster.rows(), &known)
 }
@@ -290,6 +333,9 @@ pub(super) fn archive(
     component::write(ctx, &mut records)?;
     bodies::write(ctx, &mut records)?;
     sketches::write(ctx, ctx.sketches, &mut records)?;
+    if let Some(plan) = ctx.extrude {
+        extrude::write(ctx, plan, &mut records)?;
+    }
     let records = records.sorted()?;
     let design = segment::Segment {
         kind: segment::SegmentKind::Design,
@@ -335,7 +381,10 @@ pub(super) const IMAGES: &str = "Images.BlobParts/";
 /// open.
 fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
     let mut notes = Vec::new();
-    notes.extend(super::base_feature::item_tail_loss(SCOPE));
+    match &ctx.roster.extrude {
+        None => notes.extend(super::base_feature::item_tail_loss(SCOPE)),
+        Some(records) => notes.extend(extrude::losses(ctx, records)),
+    }
     notes.extend(record_residual_unavailable(
         "F3D",
         "fits the HOME camera, the AssetSettings view blocks and the scene radius to the body boxes by a rule f3d-open-items.md DR-896 leaves open",
@@ -374,12 +423,15 @@ fn losses(ctx: &Context<'_>) -> Vec<LossNote> {
     if !ctx.roster.sketches.is_empty() {
         notes.extend(record_residual_unavailable(
             "F3D",
-            "writes the Sketch items before the Base Feature with these records and bytes by the majority of Fusion's Sketch designs; f3d-open-items.md DR-901 leaves their rule open",
+            &format!(
+                "writes the Sketch items before the {} with these records and bytes by the majority of Fusion's Sketch designs; f3d-open-items.md DR-901 leaves their rule open",
+                if ctx.roster.extrude.is_some() { "Extrude" } else { "Base Feature" }
+            ),
             [
                 "record 199 (owner collection: the order of the Sketch and Base Feature members)".to_owned(),
                 "record 200 (B65B5682: the order of its members)".to_owned(),
                 "record 201 (dependency table: the order of its entries)".to_owned(),
-                "record 203 (persistent-id table of Sketch items before a Base Feature)".to_owned(),
+                "record 203 (persistent-id table of Sketch items before the timeline's geometry item)".to_owned(),
                 "Sketch scopes (P = 0, F = 1)".to_owned(),
                 "sketch containers (word 1, sketch word 7, no base record)".to_owned(),
                 "sketch points (flags and state by role)".to_owned(),

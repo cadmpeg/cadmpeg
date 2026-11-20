@@ -56,6 +56,8 @@ struct PlannedParameter {
     /// radians for an angle.
     evaluated: f64,
     comment: Option<String>,
+    /// The parameters its written expression names.
+    references: Vec<ParameterId>,
 }
 
 /// Where the native path takes its parameter records from.
@@ -108,6 +110,14 @@ impl Form {
         match self {
             Self::Length => canonical / 10.0,
             Self::Angle | Self::Real => canonical,
+        }
+    }
+
+    /// A value in Fusion's database units in canonical units.
+    fn canonical(self, database: f64) -> f64 {
+        match self {
+            Self::Length => database * 10.0,
+            Self::Angle | Self::Real => database,
         }
     }
 }
@@ -199,6 +209,11 @@ pub(in crate::writer::generate) fn plan(
         if matches!(parameter.kind, ValueKind::Integer) {
             integers.push(parameter.id.to_string());
         }
+        let references = references(&parameter.definition)
+            .into_iter()
+            .filter_map(expression::referenced)
+            .cloned()
+            .collect();
         written_names.insert(&parameter.id, name);
         written_values.insert(&parameter.id, canonical);
         written.push(PlannedParameter {
@@ -211,6 +226,7 @@ pub(in crate::writer::generate) fn plan(
                 .comment
                 .clone()
                 .filter(|comment| !comment.is_empty()),
+            references,
         });
     }
     let mut losses = Vec::new();
@@ -422,6 +438,58 @@ impl ParameterPlan {
 
     pub(in crate::writer::generate) fn into_losses(self) -> Vec<LossNote> {
         self.losses
+    }
+
+    /// The names of the written parameters.
+    pub(super) fn names(&self) -> impl Iterator<Item = &str> {
+        self.written.iter().map(|parameter| parameter.name.as_str())
+    }
+
+    fn planned(&self, id: &ParameterId) -> Option<&PlannedParameter> {
+        self.written
+            .iter()
+            .find(|parameter| &parameter.source == id)
+    }
+
+    /// The written name of parameter `id`.
+    pub(super) fn name(&self, id: &ParameterId) -> Option<&str> {
+        self.planned(id).map(|parameter| parameter.name.as_str())
+    }
+
+    /// The value of the written length parameter `id`, in mm.
+    pub(super) fn length(&self, id: &ParameterId) -> Option<f64> {
+        self.planned(id)
+            .filter(|parameter| {
+                parameter
+                    .unit
+                    .is_some_and(|unit| unit.canonical().1 == Quantity::LENGTH)
+            })
+            .map(|parameter| Form::Length.canonical(parameter.evaluated))
+    }
+
+    /// The written length parameter `id` as a parameter its feature owns,
+    /// taken out of the user parameters; `None` where another written
+    /// parameter names it.
+    pub(super) fn claim(&mut self, id: &ParameterId) -> Option<super::extrude::OwnedParameter> {
+        self.length(id)?;
+        if self
+            .written
+            .iter()
+            .any(|parameter| parameter.references.contains(id))
+        {
+            return None;
+        }
+        let position = self
+            .written
+            .iter()
+            .position(|parameter| &parameter.source == id)?;
+        let parameter = self.written.remove(position);
+        Some(super::extrude::OwnedParameter {
+            name: parameter.name,
+            expression: parameter.expression,
+            unit: parameter.unit?,
+            value: parameter.evaluated,
+        })
     }
 }
 

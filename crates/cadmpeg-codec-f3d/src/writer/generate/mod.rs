@@ -110,7 +110,7 @@ fn attempt<W: Write + Seek>(
         return Err(Failure::neutral_design(error));
     }
     let mut neutral = if write_neutral {
-        design::plan(target).map_err(Failure::neutral_design)?
+        design::plan(target, None).map_err(Failure::neutral_design)?
     } else {
         None
     };

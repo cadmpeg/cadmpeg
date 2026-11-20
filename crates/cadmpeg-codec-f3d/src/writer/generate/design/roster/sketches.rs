@@ -20,9 +20,9 @@ const FIRST_IDENTITY: u64 = 100;
 /// collection names.
 const CURVE_COLLECTION: u32 = 22;
 /// The component record (type `5D15E992-1E93-4D79-A553-10D2624148AE`).
-const COMPONENT: u32 = 205;
+pub(super) const COMPONENT: u32 = 205;
 /// The owner collection.
-const OWNER_COLLECTION: u32 = 199;
+pub(super) const OWNER_COLLECTION: u32 = 199;
 /// The first origin plane record, `XY`; `XZ` and `YZ` follow.
 const ORIGIN_PLANES: u32 = 29;
 /// The family name of a `Sketch` scope.
@@ -91,14 +91,15 @@ pub(in crate::writer::generate::design) struct SketchRoster {
 }
 
 impl SketchRoster {
-    /// The records of `sketches` from record `next` in creation order, with
-    /// their type rows pushed to `rows`. Returns the roster and the next free
-    /// index.
+    /// The records of `planned` from record `next` in creation order, with
+    /// their type rows pushed to `rows`, after the items allocated before.
+    /// Returns the next free index.
     pub(super) fn allocate(
-        sketches: &[PlannedSketch<'_>],
+        &mut self,
+        planned: &PlannedSketch<'_>,
         mut next: u32,
         rows: &mut Vec<(u32, TypeRow)>,
-    ) -> Result<(Self, u32), CodecError> {
+    ) -> Result<u32, CodecError> {
         let mut take = |row: TypeRow| {
             let index = next;
             next = next
@@ -107,74 +108,71 @@ impl SketchRoster {
             rows.push((index, row));
             Ok::<_, CodecError>(index)
         };
-        let mut roster = Self::default();
-        for planned in sketches {
-            let container = take(types::SKETCH_CONTAINER)?;
-            if roster.root.is_none() {
-                roster.root = Some(take(types::SKETCHES_ROOT)?);
-            }
-            let frame = take(types::SKETCH_FRAME)?;
-            let origin = [
-                take(types::SKETCH_POINT)?,
-                take(types::SKETCH_POINT_COMPANION)?,
-            ];
-            let points = planned
-                .points
-                .iter()
-                .map(|_| {
-                    Ok([
-                        take(types::SKETCH_POINT)?,
-                        take(types::SKETCH_POINT_COMPANION)?,
-                    ])
-                })
-                .collect::<Result<Vec<_>, CodecError>>()?;
-            let curves = planned
-                .curves
-                .iter()
-                .map(|curve| {
-                    take(match curve.geometry {
-                        CurveGeometry::Line { .. } => types::SKETCH_LINE,
-                        CurveGeometry::Arc { .. } | CurveGeometry::Circle { .. } => {
-                            types::SKETCH_CIRCULAR_CURVE
-                        }
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let relations = planned
-                .relations
-                .iter()
-                .map(|relation| {
-                    take(match relation.kind {
-                        RelationKind::Tangent => types::SKETCH_TANGENCY,
-                        _ => types::SKETCH_RELATION,
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            roster.items.push(SketchRecords {
-                container,
-                frame,
-                origin,
-                points,
-                curves,
-                relations,
-                scope: take(types::SKETCH_SCOPE)?,
-                scope_stamps: take(types::RECORD_TIMESTAMPS)?,
-                scope_companion: take(types::ITEM_TAIL_COMPANION)?,
-                tracked: take(types::TRACKED_RESULTS)?,
-                path: take(types::PLACEMENT_PATH)?,
-                path_stamps: take(types::RECORD_TIMESTAMPS)?,
-                path_companion: take(types::ITEM_TAIL_COMPANION)?,
-                first_identity: take(types::TRACKED_IDENTITY)?,
-                placement: take(types::SKETCH_PLACEMENT)?,
-                placement_stamps: take(types::RECORD_TIMESTAMPS)?,
-                placement_companion: take(types::ITEM_TAIL_COMPANION)?,
-                tracking_flag: take(types::PLACEMENT_TRACKING_FLAG)?,
-                transform: take(types::PLACEMENT_TRANSFORM)?,
-                target: take(types::TRANSFORM_TARGET)?,
-                second_identity: take(types::TRACKED_IDENTITY)?,
-            });
+        let container = take(types::SKETCH_CONTAINER)?;
+        if self.root.is_none() {
+            self.root = Some(take(types::SKETCHES_ROOT)?);
         }
-        Ok((roster, next))
+        let frame = take(types::SKETCH_FRAME)?;
+        let origin = [
+            take(types::SKETCH_POINT)?,
+            take(types::SKETCH_POINT_COMPANION)?,
+        ];
+        let points = planned
+            .points
+            .iter()
+            .map(|_| {
+                Ok([
+                    take(types::SKETCH_POINT)?,
+                    take(types::SKETCH_POINT_COMPANION)?,
+                ])
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
+        let curves = planned
+            .curves
+            .iter()
+            .map(|curve| {
+                take(match curve.geometry {
+                    CurveGeometry::Line { .. } => types::SKETCH_LINE,
+                    CurveGeometry::Arc { .. } | CurveGeometry::Circle { .. } => {
+                        types::SKETCH_CIRCULAR_CURVE
+                    }
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let relations = planned
+            .relations
+            .iter()
+            .map(|relation| {
+                take(match relation.kind {
+                    RelationKind::Tangent => types::SKETCH_TANGENCY,
+                    _ => types::SKETCH_RELATION,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        self.items.push(SketchRecords {
+            container,
+            frame,
+            origin,
+            points,
+            curves,
+            relations,
+            scope: take(types::SKETCH_SCOPE)?,
+            scope_stamps: take(types::RECORD_TIMESTAMPS)?,
+            scope_companion: take(types::ITEM_TAIL_COMPANION)?,
+            tracked: take(types::TRACKED_RESULTS)?,
+            path: take(types::PLACEMENT_PATH)?,
+            path_stamps: take(types::RECORD_TIMESTAMPS)?,
+            path_companion: take(types::ITEM_TAIL_COMPANION)?,
+            first_identity: take(types::TRACKED_IDENTITY)?,
+            placement: take(types::SKETCH_PLACEMENT)?,
+            placement_stamps: take(types::RECORD_TIMESTAMPS)?,
+            placement_companion: take(types::ITEM_TAIL_COMPANION)?,
+            tracking_flag: take(types::PLACEMENT_TRACKING_FLAG)?,
+            transform: take(types::PLACEMENT_TRANSFORM)?,
+            target: take(types::TRANSFORM_TARGET)?,
+            second_identity: take(types::TRACKED_IDENTITY)?,
+        });
+        Ok(next)
     }
 
     pub(in crate::writer::generate::design) fn is_empty(&self) -> bool {
@@ -243,6 +241,27 @@ pub(super) fn write(
     }
     out.reference(AGGREGATE);
     Ok(())
+}
+
+/// The persistent identity (`crv_primary_id`) of curve `curve` of sketch
+/// `sketch` of `sketches`, which [`write`] gives in item order from
+/// [`FIRST_IDENTITY`]: each item's origin point, points and curves.
+pub(in crate::writer::generate::design) fn curve_identity(
+    sketches: &[PlannedSketch<'_>],
+    sketch: usize,
+    curve: usize,
+) -> Result<u64, CodecError> {
+    let planned = sketches
+        .get(sketch)
+        .ok_or_else(|| CodecError::malformed(format_args!("sketch item {sketch}")))?;
+    let before = sketches[..sketch]
+        .iter()
+        .map(|item| 1 + item.points.len() + item.curves.len())
+        .sum::<usize>();
+    u64::try_from(before + 1 + planned.points.len() + curve)
+        .ok()
+        .and_then(|offset| FIRST_IDENTITY.checked_add(offset))
+        .ok_or_else(|| CodecError::NotImplemented("sketch identity overflow".into()))
 }
 
 /// The class tags of the records of a `Sketch` item.
@@ -848,7 +867,7 @@ struct PointRecord {
 }
 
 /// The 33-byte item-tail companion with item word `0`.
-fn item_companion(
+pub(super) fn item_companion(
     out: &mut DesignRecords,
     class: &crate::records::references::DesignClassTag,
     record: u32,
