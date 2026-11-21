@@ -277,7 +277,7 @@ fn untrimmed_surface_curve() -> CadIr {
             "test:model:point#point-start"
                 .try_into()
                 .expect("valid identity"),
-            crate::features::FinitePoint3::new(Point3::new(0.0, 1.0, 0.0))
+            crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 1.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -285,7 +285,7 @@ fn untrimmed_surface_curve() -> CadIr {
             "test:model:point#point-end"
                 .try_into()
                 .expect("valid identity"),
-            crate::features::FinitePoint3::new(Point3::new(-1.0, 0.0, 0.0))
+            crate::features::geometry::FinitePoint3::new(Point3::new(-1.0, 0.0, 0.0))
                 .expect("a finite position is a point"),
             None,
         ),
@@ -517,7 +517,7 @@ fn surface_offset_support_constrains_the_embedded_base_curve() {
     let direction = line_curve.direction();
     let mut origin = line_curve.origin().get();
     origin.y = 2.0;
-    let origin = crate::features::FinitePoint3::new(origin).unwrap();
+    let origin = crate::features::geometry::FinitePoint3::new(origin).unwrap();
     *line_curve = crate::geometry::analytic::LineCurve::new(origin, direction);
     check_procedural_support_consistency(
         &cadmpeg_core::decode::test_support::service_decode_context(),
@@ -600,11 +600,11 @@ fn trimmed_surface_pcurve_uses_the_local_parameterization_for_validation() {
         )
         .unwrap();
     ir.geometry.points[0].set_position(
-        crate::features::FinitePoint3::new(Point3::new(1.0, 2.0, 0.0))
+        crate::features::geometry::FinitePoint3::new(Point3::new(1.0, 2.0, 0.0))
             .expect("a finite position is a point"),
     );
     ir.geometry.points[1].set_position(
-        crate::features::FinitePoint3::new(Point3::new(2.0, 1.0, 0.0))
+        crate::features::geometry::FinitePoint3::new(Point3::new(2.0, 1.0, 0.0))
             .expect("a finite position is a point"),
     );
     ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Circle(
@@ -685,11 +685,11 @@ fn untrimmed_nurbs_pcurve_uses_its_own_endpoint_parameters() {
 fn stale_trimmed_pcurve_range_can_use_a_vertex_derived_interval() {
     let mut ir = untrimmed_surface_curve();
     ir.geometry.points[0].set_position(
-        crate::features::FinitePoint3::new(Point3::new(0.25, 0.0, 0.0))
+        crate::features::geometry::FinitePoint3::new(Point3::new(0.25, 0.0, 0.0))
             .expect("a finite position is a point"),
     );
     ir.geometry.points[1].set_position(
-        crate::features::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
+        crate::features::geometry::FinitePoint3::new(Point3::new(0.0, 0.0, 0.0))
             .expect("a finite position is a point"),
     );
     ir.geometry.pcurves[0].geometry = PcurveGeometry::Trimmed(
@@ -1048,7 +1048,7 @@ fn edge_endpoint_mismatch_is_flagged() {
     let mut source_tolerant = unit_cube().expect("valid unit cube fixture");
     let moved = source_tolerant.geometry.points[0].position().get();
     source_tolerant.geometry.points[0].set_position(
-        crate::features::FinitePoint3::new(crate::math::Point3::new(
+        crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 0.015,
@@ -1072,7 +1072,7 @@ fn edge_endpoint_mismatch_is_flagged() {
     // the stored parameter values.
     let moved = ir.geometry.points[0].position().get();
     ir.geometry.points[0].set_position(
-        crate::features::FinitePoint3::new(crate::math::Point3::new(
+        crate::features::geometry::FinitePoint3::new(crate::math::Point3::new(
             moved.x,
             moved.y,
             moved.z + 1.0,
@@ -1266,7 +1266,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         .expect("coedge owner face");
     let construction = procedural_surface! {
     id: ProceduralSurfaceId::mint("synthetic:cube:procedural-surface#0").expect("valid identity"),
-    definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(procedural.geometry.curves[0].id.clone(), (crate::features::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
+    definition: ProceduralSurfaceDefinition::Revolution(crate::geometry::surface_payloads::RevolutionSurfaceConstruction::try_new(procedural.geometry.curves[0].id.clone(), (crate::features::geometry::FinitePoint3::ZERO, crate::units::UnitVector3::Z_AXIS), [0.0, std::f64::consts::TAU], None, Some([0.0, 1.0]), false, crate::geometry::CacheContract::from_form(None)).unwrap()),
         cache_fit_tolerance: Some(0.01),
         record_bounds: None,
     };
@@ -1741,7 +1741,9 @@ fn a_verified_pcurve_interval_over_dense_knots_has_no_findings() {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let mut ir = untrimmed_surface_curve();
     for (point, x) in ir.geometry.points.iter_mut().zip([0.0, 1.0]) {
-        point.set_position(crate::features::FinitePoint3::new(Point3::new(x, 0.0, 0.0)).unwrap());
+        point.set_position(
+            crate::features::geometry::FinitePoint3::new(Point3::new(x, 0.0, 0.0)).unwrap(),
+        );
     }
     ir.geometry.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
         crate::geometry::analytic::LineCurve::try_new(

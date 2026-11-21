@@ -2,7 +2,7 @@
 //! Scaled geometric least-squares solves.
 
 use super::Vector3;
-use crate::features::FiniteVector3;
+use crate::features::geometry::FiniteVector3;
 use crate::scalar::FiniteReal;
 
 /// Scalar least-squares step along a finite nonzero tangent. Exact products

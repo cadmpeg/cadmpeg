@@ -8,7 +8,7 @@ use crate::eval::model_surface_point;
 use crate::eval::model_surface_point_by_id;
 use crate::eval::pcurve_tangent;
 use crate::eval::EvaluationFailure;
-use crate::features::FinitePoint3;
+use crate::features::geometry::FinitePoint3;
 use crate::geometry::analytic::LineCurve;
 use crate::geometry::pcurve::{CirclePcurve, LinePcurve, OffsetPcurve, PcurveGeometry};
 use crate::geometry::surface_payloads::{

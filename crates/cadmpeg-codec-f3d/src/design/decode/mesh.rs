@@ -52,7 +52,7 @@ use crate::records::mesh::{
 };
 use cadmpeg_core::decode::{bounded_len, u64_from_index, View};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::units::UnitVector3;
 use std::collections::{HashMap, HashSet};
 
@@ -2673,7 +2673,7 @@ mod tests {
     use crate::paramesh::MeshContainer;
     use crate::test_support::{lp_ascii, lp_utf16};
     use cadmpeg_core::CodecError;
-    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::features::geometry::FinitePoint3;
     use cadmpeg_ir::units::UnitVector3;
 
     fn parse_mesh_design_records<F>(

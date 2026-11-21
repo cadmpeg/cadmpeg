@@ -6,10 +6,9 @@ use cadmpeg_core::convert::{f64_from_i64, truncate_f64_to_i32, truncate_f64_to_i
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::{
-    features::{DesignParameter, ParameterId, ParameterValue},
-    scalar::{Angle, Length},
-};
+use cadmpeg_ir::features::parameters::{DesignParameter, ParameterValue};
+use cadmpeg_ir::features::ParameterId;
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::{AnnotationBuilder, Annotations};
 
 use crate::legacy_entity::LegacyEvaluatedValueNames;
@@ -317,7 +316,7 @@ pub(crate) fn transfer_parameters(
                             });
                             ctx.charge_entities(1, "admit CATIA formula candidate")?;
                             let mut output_dependencies =
-                                cadmpeg_ir::features::DistinctMembers::default();
+                                cadmpeg_ir::features::selections::DistinctMembers::default();
                             output_dependencies.extend(dependencies);
                             let output_name = output_value.name.value.clone();
                             ctx.retain_bytes(
@@ -731,7 +730,7 @@ fn definition_chain_parameter_candidate(
             expression,
             display: None,
             value,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties,
             pmi: None,
             native_ref: Some(entity.id.clone()),
@@ -871,7 +870,7 @@ fn collect_legacy_parameters(
                     expression,
                     display: None,
                     value,
-                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                     properties: parameter_properties(parameter_type.as_str(), None)?,
                     pmi: None,
                     native_ref: Some(native_ref),
@@ -933,7 +932,7 @@ fn collect_legacy_parameters(
                     expression: parameter_expression(&value),
                     display: None,
                     value: Some(value),
-                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                     properties: parameter_properties("String", None)?,
                     pmi: None,
                     native_ref: Some(native_ref),
@@ -995,7 +994,7 @@ fn collect_legacy_parameters(
                     expression: parameter_expression(&value),
                     display: None,
                     value: Some(value),
-                    dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                    dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                     properties: parameter_properties("Integer", None)?,
                     pmi: None,
                     native_ref: Some(native_ref),
@@ -1054,7 +1053,7 @@ fn collect_legacy_parameters(
                 }
             }
             let expression = evaluation.expression.to_owned();
-            let mut dependencies = cadmpeg_ir::features::DistinctMembers::default();
+            let mut dependencies = cadmpeg_ir::features::selections::DistinctMembers::default();
             dependencies.extend(evaluation.dependencies);
             candidate.parameter.expression = expression;
             candidate.parameter.dependencies = dependencies;
@@ -1402,7 +1401,7 @@ fn typed_entity_parameter_candidate(
             expression,
             display: None,
             value,
-            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
             properties: parameter_properties(
                 parameter_type.as_str(),
                 Some(parameter.binding.value.as_str()),
@@ -1641,7 +1640,7 @@ fn relation_program_output_candidate<'a>(
     )?;
     let output_expression = expression.expression.value.clone();
     let output_native_ref = output_entity.id.clone();
-    let mut output_dependencies = cadmpeg_ir::features::DistinctMembers::default();
+    let mut output_dependencies = cadmpeg_ir::features::selections::DistinctMembers::default();
     output_dependencies.extend(dependencies.iter().cloned());
     let (published_value, output_literal) = published_output_value(value, evaluated_expression);
     let candidate = FormulaParameterCandidate {
@@ -1814,12 +1813,12 @@ fn copy_design_parameter(
     let pmi = match &source.pmi {
         Some(pmi) => {
             let subtype = match &pmi.subtype {
-                cadmpeg_ir::features::PmiDimensionSubtype::Native(kind) => {
-                    cadmpeg_ir::features::PmiDimensionSubtype::Native(kind.to_owned())
+                cadmpeg_ir::features::parameters::PmiDimensionSubtype::Native(kind) => {
+                    cadmpeg_ir::features::parameters::PmiDimensionSubtype::Native(kind.to_owned())
                 }
                 other => other.clone(),
             };
-            Some(cadmpeg_ir::features::ParameterPmi {
+            Some(cadmpeg_ir::features::parameters::ParameterPmi {
                 subtype,
                 precision: pmi.precision,
                 display_text: pmi
@@ -3961,9 +3960,9 @@ mod parser_tests {
         EvaluatedFormulaValue, FormulaDimension, FormulaParameterCandidate, FormulaParameterRole,
         FormulaParameterType, TypedParameterEvaluation,
     };
-    use cadmpeg_ir::features::DesignParameter;
+    use cadmpeg_ir::features::parameters::DesignParameter;
+    use cadmpeg_ir::features::parameters::ParameterValue;
     use cadmpeg_ir::features::ParameterId;
-    use cadmpeg_ir::features::ParameterValue;
     use std::collections::BTreeMap;
 
     fn unset_candidate(parameter_type: FormulaParameterType) -> FormulaParameterCandidate {
@@ -3979,7 +3978,7 @@ mod parser_tests {
                 expression: String::new(),
                 display: None,
                 value: None,
-                dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+                dependencies: cadmpeg_ir::features::selections::DistinctMembers::default(),
                 properties: BTreeMap::new(),
                 pmi: None,
                 native_ref: Some("native-parameter".to_string()),

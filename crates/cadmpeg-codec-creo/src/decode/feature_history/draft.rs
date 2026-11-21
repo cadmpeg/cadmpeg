@@ -59,20 +59,21 @@ use crate::feature::schema::SchemaClass;
 use crate::vecmath::normalize;
 use crate::vecmath::{cross, dot};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::features::edge_treatments::{ChamferSpec, RadiusSpec};
+use cadmpeg_ir::features::extents::{ExtrudeExtent, LinearTermination};
+use cadmpeg_ir::features::holes::{HoleBottom, HoleForm, HoleKind, HolePlacement};
+use cadmpeg_ir::features::operation_settings::BooleanOp;
+use cadmpeg_ir::features::revolve::{PartialRevolveConstruction, RevolveConstruction};
+use cadmpeg_ir::features::selections::{EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::{
+    FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
+    UnresolvedFamily,
+};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::{
-    features::{
-        edge_treatments::{ChamferSpec, RadiusSpec},
-        holes::{HoleBottom, HoleForm, HoleKind, HolePlacement},
-        BooleanOp, EdgeSelection, ExtrudeExtent, FaceSelection,
-        FeatureDefinition as IrFeatureDefinition, FeatureOperation as IrFeatureOperation,
-        LinearTermination, PartialRevolveConstruction, RevolveConstruction, UnresolvedFamily,
-    },
-    scalar::Length,
-};
+use cadmpeg_ir::scalar::Length;
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The tolerance a feature definition's `local_sys` parameter frame is written to.
@@ -422,8 +423,12 @@ pub(in super::super) fn schema_feature_definition(
                                     |(position, direction)| {
                                         (
                                             None,
-                                            cadmpeg_ir::features::FinitePoint3::new(position),
-                                            cadmpeg_ir::features::FeatureDirection3::new(direction),
+                                            cadmpeg_ir::features::geometry::FinitePoint3::new(
+                                                position,
+                                            ),
+                                            cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                                                direction,
+                                            ),
                                             None,
                                             None,
                                             None,
@@ -435,9 +440,9 @@ pub(in super::super) fn schema_feature_definition(
                                 (
                                     Some(face_selection(entry_surface_id)),
                                     None,
-                                    cadmpeg_ir::features::FeatureDirection3::new(Vector3::from(
-                                        direction,
-                                    )),
+                                    cadmpeg_ir::features::geometry::FeatureDirection3::new(
+                                        Vector3::from(direction),
+                                    ),
                                     None,
                                     Some(extent),
                                     None,
@@ -453,8 +458,8 @@ pub(in super::super) fn schema_feature_definition(
                      }| {
                         (
                             entry_surface_id.map(face_selection),
-                            cadmpeg_ir::features::FinitePoint3::new(position),
-                            cadmpeg_ir::features::FeatureDirection3::new(direction),
+                            cadmpeg_ir::features::geometry::FinitePoint3::new(position),
+                            cadmpeg_ir::features::geometry::FeatureDirection3::new(direction),
                             None,
                             Some(extent),
                             None,
@@ -466,7 +471,7 @@ pub(in super::super) fn schema_feature_definition(
                 (
                     hole.entry_surface_id.map(face_selection),
                     Some(hole.geometry.origin()),
-                    Some(cadmpeg_ir::features::FeatureDirection3::from(
+                    Some(cadmpeg_ir::features::geometry::FeatureDirection3::from(
                         *hole.geometry.frame().axis(),
                     )),
                     Length::new(2.0 * hole.geometry.radius().get()),
@@ -593,7 +598,7 @@ pub(in super::super) fn schema_feature_definition(
                 |radius| RadiusSpec::Constant { radius },
             );
         return Ok(IrFeatureDefinition::Operation(IrFeatureOperation::Fillet {
-            groups: cadmpeg_ir::features::NonEmptyMembers::one(
+            groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                 cadmpeg_ir::features::edge_treatments::FilletGroup {
                     edges: feature_edge_selection(scan, ir, feature_id)?
                         .unwrap_or(EdgeSelection::Unresolved),
@@ -606,7 +611,7 @@ pub(in super::super) fn schema_feature_definition(
     if schema_class == Some(SchemaClass::Chamfer) {
         return Ok(IrFeatureDefinition::Operation(
             IrFeatureOperation::Chamfer {
-                groups: cadmpeg_ir::features::NonEmptyMembers::one(
+                groups: cadmpeg_ir::features::selections::NonEmptyMembers::one(
                     cadmpeg_ir::features::edge_treatments::ChamferGroup {
                         edges: feature_edge_selection(scan, ir, feature_id)?
                             .unwrap_or(EdgeSelection::Unresolved),
@@ -624,7 +629,7 @@ pub(in super::super) fn schema_feature_definition(
     }
     if schema_class == Some(SchemaClass::Draft) {
         let neutral_plane = draft_neutral_plane_selection(scan, feature_id);
-        let anchor = cadmpeg_ir::features::DraftAnchor::NeutralPlane {
+        let anchor = cadmpeg_ir::features::direct_edit::DraftAnchor::NeutralPlane {
             plane: neutral_plane,
             pull: None,
         };
@@ -685,7 +690,7 @@ pub(in super::super) fn schema_feature_definition(
         )?;
         let output_kind = sweep_output_kind(scan, ir, "revolution", feature_id);
         let profile = profile.and_then(|profile| match profile {
-            cadmpeg_ir::features::ProfileRef::Planar(profile) => Some(profile),
+            cadmpeg_ir::features::profiles::ProfileRef::Planar(profile) => Some(profile),
             _ => None,
         });
         let solid = sweep_solid(output_kind);
@@ -783,18 +788,18 @@ pub(in super::super) fn schema_feature_definition(
             IrFeatureOperation::Extrude {
                 profile,
                 direction: direction.map_or(
-                    cadmpeg_ir::features::ExtrudeDirection::ProfileNormal {},
+                    cadmpeg_ir::features::extents::ExtrudeDirection::ProfileNormal {},
                     |vector| {
-                        cadmpeg_ir::features::FeatureDirection3::new(vector).map_or(
-                            cadmpeg_ir::features::ExtrudeDirection::Unresolved {},
-                            |vector| cadmpeg_ir::features::ExtrudeDirection::Explicit {
+                        cadmpeg_ir::features::geometry::FeatureDirection3::new(vector).map_or(
+                            cadmpeg_ir::features::extents::ExtrudeDirection::Unresolved {},
+                            |vector| cadmpeg_ir::features::extents::ExtrudeDirection::Explicit {
                                 vector,
                                 source: None,
                             },
                         )
                     },
                 ),
-                start: cadmpeg_ir::features::ExtrudeStart::default(),
+                start: cadmpeg_ir::features::extents::ExtrudeStart::default(),
                 extent,
                 op,
                 solid: sweep_solid(output_kind),
@@ -864,11 +869,13 @@ pub(in super::super) fn schema_feature_definition(
                 {
                     if dot(normal, u_axis).abs() <= EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL {
                         let origin = [values[9], values[10], values[11]];
-                        if let Some(frame) = cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
-                            Point3::from(origin),
-                            Vector3::from(normal),
-                            Vector3::from(u_axis),
-                        ) {
+                        if let Some(frame) =
+                            cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
+                                Point3::from(origin),
+                                Vector3::from(normal),
+                                Vector3::from(u_axis),
+                            )
+                        {
                             return Ok(IrFeatureDefinition::Operation(
                                 IrFeatureOperation::DatumPlane { frame },
                             ));
@@ -907,12 +914,14 @@ pub(in super::super) fn schema_feature_definition(
                         && dot(x_axis, z_axis).abs() <= EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL
                         && dot(y_axis, z_axis).abs() <= EPS_FEATURE_LOCAL_SYSTEM_ORTHOGONAL;
                     if orthogonal && right_handed {
-                        if let Some(frame) = cadmpeg_ir::features::FeatureCoordinateFrame::new(
-                            Point3::from(origin),
-                            Vector3::from(x_axis),
-                            Vector3::from(y_axis),
-                            Vector3::from(z_axis),
-                        ) {
+                        if let Some(frame) =
+                            cadmpeg_ir::features::geometry::FeatureCoordinateFrame::new(
+                                Point3::from(origin),
+                                Vector3::from(x_axis),
+                                Vector3::from(y_axis),
+                                Vector3::from(z_axis),
+                            )
+                        {
                             return Ok(IrFeatureDefinition::Operation(
                                 IrFeatureOperation::DatumCoordinateSystem { frame },
                             ));
@@ -982,7 +991,7 @@ pub(in super::super) fn datum_plane_feature_definition(
     datum: &crate::datum::DatumPlane,
 ) -> IrFeatureDefinition {
     let normal = datum.normal();
-    cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+    cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
         Point3::new(
             normal[0] * datum.offset(),
             normal[1] * datum.offset(),
@@ -1033,7 +1042,7 @@ fn reconciled_datum_plane_definition(
             }
         })
         .unwrap_or_else(|| cadmpeg_ir::geometry::derive_reference_direction(normal));
-    Ok(cadmpeg_ir::features::FeatureDatumPlaneFrame::new(
+    Ok(cadmpeg_ir::features::geometry::FeatureDatumPlaneFrame::new(
         Point3::from(plane.origin),
         normal,
         u_axis,

@@ -5,11 +5,11 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::{unique_index, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::features::{
-    AxisAngle, BodySelection, FaceMotion, FaceSelection, Feature, FeatureDefinition,
-    FeatureDirection3, FeatureOperation, FeatureResultMembers, FeatureResultTopology, FinitePoint3,
-    FiniteVector3,
-};
+use cadmpeg_ir::features::direct_edit::{AxisAngle, FaceMotion};
+use cadmpeg_ir::features::evaluation::{FeatureResultMembers, FeatureResultTopology};
+use cadmpeg_ir::features::geometry::{FeatureDirection3, FinitePoint3, FiniteVector3};
+use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
+use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::ids::FeatureResultTopologyId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::Angle;
@@ -372,7 +372,7 @@ pub(super) fn project(
             }
             .into(),
         );
-        feature.evaluation = cadmpeg_ir::features::FeatureEvaluation::from_definition(
+        feature.evaluation = cadmpeg_ir::features::evaluation::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(motion.operation),
         );
         Ok((feature, result))

@@ -104,13 +104,13 @@ fn axial_line_fixture(
         points: vec![
             Point::new(
                 start_point,
-                cadmpeg_ir::features::FinitePoint3::new(trim_start)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(trim_start)
                     .expect("a finite position is a point"),
                 None,
             ),
             Point::new(
                 end_point,
-                cadmpeg_ir::features::FinitePoint3::new(trim_end)
+                cadmpeg_ir::features::geometry::FinitePoint3::new(trim_end)
                     .expect("a finite position is a point"),
                 None,
             ),

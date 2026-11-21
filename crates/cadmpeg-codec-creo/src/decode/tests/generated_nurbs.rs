@@ -31,16 +31,15 @@ use crate::feature::definitions::ScalarLane;
 use crate::feature::rows::agreed_feature_affected_ids;
 use cadmpeg_ir::document::CadIr;
 
+use cadmpeg_ir::features::extents::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+use cadmpeg_ir::features::ParameterId;
 use cadmpeg_ir::geometry::{nurbs::NurbsSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{
     SketchConstraintDefinitionInput, SketchEntityId, SketchGeometry, SketchGeometryDefinition,
     SketchLocus,
-};
-use cadmpeg_ir::{
-    features::{ExtrudeExtent, ExtrudeSide, LinearTermination, ParameterId},
-    scalar::{Angle, Length},
 };
 use std::collections::{BTreeMap, BTreeSet};
 

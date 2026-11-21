@@ -9,7 +9,9 @@ use cadmpeg_asm::brep::AsmBrep;
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
-use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
+use cadmpeg_ir::features::profiles::{
+    PlanarProfileRef, SketchProfileBoundaryUse, SketchProfileRegion,
+};
 use cadmpeg_ir::geometry::nurbs::NurbsCurve;
 use cadmpeg_ir::geometry::{DirectedParameterRange, SolvedCurveGeometry};
 use cadmpeg_ir::ids::IdentityKey;

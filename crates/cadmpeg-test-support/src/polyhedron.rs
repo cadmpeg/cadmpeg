@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::examples::ExampleError;
-use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::features::geometry::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{LineCurve, PlaneSurface};
 use cadmpeg_ir::geometry::{
     derive_reference_direction, Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,

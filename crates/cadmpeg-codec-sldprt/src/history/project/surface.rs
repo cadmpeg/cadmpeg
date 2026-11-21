@@ -2,10 +2,10 @@
 //! Surface-feature projection.
 
 use crate::records::Feature;
-use cadmpeg_ir::features::{
-    EdgeSelection, FaceSelection, FeatureDefinition, FeatureOperation, PathRef, RuledSurfaceMode,
-    SurfaceExtension, TrimRegion,
-};
+use cadmpeg_ir::features::profiles::PathRef;
+use cadmpeg_ir::features::selections::{EdgeSelection, FaceSelection};
+use cadmpeg_ir::features::surface_inputs::{RuledSurfaceMode, SurfaceExtension, TrimRegion};
+use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use std::collections::HashMap;
 
 use crate::history::literals::{
@@ -57,7 +57,7 @@ pub(super) fn project_filled_surface(feature: &Feature) -> FeatureDefinition {
         .get("Continuity")
         .and_then(|value| crate::feature_schema::parse_surface_continuity(value));
     FeatureDefinition::Operation(FeatureOperation::FilledSurface {
-        boundary: cadmpeg_ir::features::SurfaceBoundary::Edges(
+        boundary: cadmpeg_ir::features::surface_inputs::SurfaceBoundary::Edges(
             feature
                 .properties
                 .get("Boundary")
@@ -70,8 +70,8 @@ pub(super) fn project_filled_surface(feature: &Feature) -> FeatureDefinition {
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         continuity: continuity.map_or_else(
-            cadmpeg_ir::features::FilledSurfaceContinuityState::unresolved,
-            cadmpeg_ir::features::FilledSurfaceContinuityState::uniform,
+            cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuityState::unresolved,
+            cadmpeg_ir::features::surface_inputs::FilledSurfaceContinuityState::uniform,
         ),
         merge_result: feature
             .properties

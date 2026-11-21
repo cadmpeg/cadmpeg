@@ -10,7 +10,8 @@ use crate::container::ContainerScan;
 use crate::feature::rows::agreed_feature_affected_ids;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::features::{EdgeSelection, FeatureId as IrFeatureId, GeneratedEdgeRef};
+use cadmpeg_ir::features::selections::{EdgeSelection, GeneratedEdgeRef};
+use cadmpeg_ir::features::FeatureId as IrFeatureId;
 use cadmpeg_ir::ids::EdgeId;
 use std::collections::{BTreeMap, BTreeSet};
 

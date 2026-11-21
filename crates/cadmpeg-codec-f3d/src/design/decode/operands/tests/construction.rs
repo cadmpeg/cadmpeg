@@ -23,7 +23,7 @@ use crate::records::topology::extrude_selection::DesignOperandRole;
 use crate::records::topology::face::DesignFaceOperand;
 use crate::test_support::indexed_header;
 use crate::test_support::push_marked_reference;
-use cadmpeg_ir::features::FaceSelection;
+use cadmpeg_ir::features::selections::FaceSelection;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::ids::FaceId;
@@ -742,8 +742,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(matches!(
         features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
-            targets: cadmpeg_ir::features::FaceSelection::Native(targets),
-            tool: cadmpeg_ir::features::SplitFaceTool::Native(tool),
+            targets: cadmpeg_ir::features::selections::FaceSelection::Native(targets),
+            tool: cadmpeg_ir::features::direct_edit::SplitFaceTool::Native(tool),
             ..
         }) if targets.ends_with("#400") && tool.ends_with("#100")
     ));
@@ -903,7 +903,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(matches!(
         plane_split.evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::SplitFace {
-            tool: cadmpeg_ir::features::SplitFaceTool::Planes { planes },
+            tool: cadmpeg_ir::features::direct_edit::SplitFaceTool::Planes { planes },
             ..
         }) if planes[..] == expected_planes
     ));
@@ -1025,8 +1025,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(matches!(
         project_split(&split_body_scope, &[], &split_groups, &[], std::slice::from_ref(&split_tool), &[], &mut Vec::new(),).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            targets: cadmpeg_ir::features::BodySelection::Native(ref targets),
-            tool: cadmpeg_ir::features::SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(ref tool)),
+            targets: cadmpeg_ir::features::selections::BodySelection::Native(ref targets),
+            tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(cadmpeg_ir::features::selections::FaceSelection::Native(ref tool)),
             ..
         })) if targets.ends_with("#400") && tool.ends_with("#200")
     ));
@@ -1060,7 +1060,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(matches!(
         project_split(&historical_split_scope, &[], &split_groups, &[], std::slice::from_ref(&historical_split_tool), &[], &mut Vec::new(),).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            tool: cadmpeg_ir::features::SplitBodyTool::Faces(FaceSelection::Historical { faces, native, .. }),
+            tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(FaceSelection::Historical { faces, native, .. }),
             ..
         })) if faces.len() == 1 && native.as_str() == historical_split_tool.id
     ));
@@ -1137,7 +1137,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert!(matches!(
         project_split(&construction_tool_scope, &[], &[split_target_group.clone(), construction_tool], &[], &[], &[], &mut Vec::new(),).unwrap(),
         Some(FeatureDefinition::Operation(FeatureOperation::SplitBody {
-            tool: cadmpeg_ir::features::SplitBodyTool::Faces(cadmpeg_ir::features::FaceSelection::Native(ref tool)),
+            tool: cadmpeg_ir::features::direct_edit::SplitBodyTool::Faces(cadmpeg_ir::features::selections::FaceSelection::Native(ref tool)),
             ..
         })) if tool.ends_with("#100")
     ));
@@ -1294,7 +1294,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
-            faces: cadmpeg_ir::features::FaceSelection::Native(delete_group.id.clone()),
+            faces: cadmpeg_ir::features::selections::FaceSelection::Native(delete_group.id.clone()),
             heal: true,
         })
     );
@@ -1421,7 +1421,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::DeleteFace {
-            faces: cadmpeg_ir::features::FaceSelection::Native(delete_group.id.clone()),
+            faces: cadmpeg_ir::features::selections::FaceSelection::Native(delete_group.id.clone()),
             heal: false,
         })
     );
@@ -1695,8 +1695,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         ),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::DeleteBody {
-                bodies: cadmpeg_ir::features::BodySelection::Native(remove_group.id.clone()),
-                mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+                bodies: cadmpeg_ir::features::selections::BodySelection::Native(
+                    remove_group.id.clone()
+                ),
+                mode: cadmpeg_ir::features::operation_settings::BodyRetentionMode::DeleteSelected,
             }
         ))
     );
@@ -1744,7 +1746,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         ),
         Some(cadmpeg_ir::features::FeatureDefinition::Operation(
             cadmpeg_ir::features::FeatureOperation::KnitSurface {
-                faces: cadmpeg_ir::features::FaceSelection::Native(stitch_scope.id),
+                faces: cadmpeg_ir::features::selections::FaceSelection::Native(stitch_scope.id),
                 merge_entities: Some(true),
                 create_solid: Some(true),
                 gap_tolerance: Some(cadmpeg_ir::scalar::NonNegativeLength::new(0.1).unwrap()),

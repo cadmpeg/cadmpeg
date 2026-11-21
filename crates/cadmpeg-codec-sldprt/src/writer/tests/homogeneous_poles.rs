@@ -5,9 +5,10 @@
 /// refused, where its homogeneous coordinate was written as an infinity.
 #[test]
 fn a_pole_whose_weighted_coordinate_overflows_is_refused() {
-    let point =
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(1.0e300, 0.0, 0.0))
-            .unwrap();
+    let point = cadmpeg_ir::features::geometry::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
+        1.0e300, 0.0, 0.0,
+    ))
+    .unwrap();
     let poles = cadmpeg_ir::geometry::nurbs::NurbsPoles3::Rational {
         points: vec![cadmpeg_ir::geometry::nurbs::WeightedPole3 {
             point,

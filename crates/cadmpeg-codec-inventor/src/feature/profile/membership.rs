@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Selected profile membership for persistent curve names.
 
-use cadmpeg_ir::features::{PlanarProfileRef, SketchProfileRegion};
+use cadmpeg_ir::features::profiles::{PlanarProfileRef, SketchProfileRegion};
 use cadmpeg_ir::sketches::Sketch;
 
 use super::ProfileIndex;

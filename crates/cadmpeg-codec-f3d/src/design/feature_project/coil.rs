@@ -19,10 +19,12 @@ pub(super) fn project(
     construction_groups: &[DesignConstructionOperandGroup],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{
-        BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilSection,
-        CoilSectionPlacement, FeatureDefinition, FeatureOperation, SolidFeatureResult,
+    use cadmpeg_ir::features::operation_settings::SolidFeatureResult;
+    use cadmpeg_ir::features::selections::BodySelection;
+    use cadmpeg_ir::features::sweeps::{
+        CoilConstruction, CoilExtent, CoilPlacement, CoilSection, CoilSectionPlacement,
     };
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 
     let parsed = (|| {
         let unique = |kind: &str| {
@@ -162,10 +164,14 @@ pub(super) fn project(
         (operation, group) if group.is_some() || scope.coil_has_short_compact_prologue() => {
             SolidFeatureResult::Boolean {
                 operation: match operation {
-                    DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanKind::Join,
-                    DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanKind::Cut,
+                    DesignExtrudeOperation::Join => {
+                        cadmpeg_ir::features::operation_settings::BooleanKind::Join
+                    }
+                    DesignExtrudeOperation::Cut => {
+                        cadmpeg_ir::features::operation_settings::BooleanKind::Cut
+                    }
                     DesignExtrudeOperation::Intersect => {
-                        cadmpeg_ir::features::BooleanKind::Intersect
+                        cadmpeg_ir::features::operation_settings::BooleanKind::Intersect
                     }
                     DesignExtrudeOperation::NewBody => return Ok(None),
                 },
@@ -187,7 +193,7 @@ pub(super) fn project(
                 .map(|transform| &transform.transform)
         })
         .and_then(|transform| {
-            cadmpeg_ir::features::FeatureUnitPlaneFrame::new(
+            cadmpeg_ir::features::geometry::FeatureUnitPlaneFrame::new(
                 Point3::new(
                     transform[0][3] * 10.0,
                     transform[1][3] * 10.0,
@@ -200,7 +206,9 @@ pub(super) fn project(
     let placement = match placement {
         Some(frame) => CoilPlacement::Explicit { frame },
         None => CoilPlacement::Native {
-            native_ref: match cadmpeg_ir::features::SelectionReference::try_from(scope.id.clone()) {
+            native_ref: match cadmpeg_ir::features::selections::SelectionReference::try_from(
+                scope.id.clone(),
+            ) {
                 Ok(reference) => reference,
                 Err(_) => return Ok(None),
             },
