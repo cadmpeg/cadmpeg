@@ -9,7 +9,7 @@ use crate::design::decode::sketch::{
 };
 use crate::records::entity_header::DESIGN_MODULE_SKETCH;
 
-const ENTITY_SUFFIX: u64 = 201;
+pub(super) const ENTITY_SUFFIX: u64 = 201;
 
 fn decode_sketch_visibilities_in_stream(
     bytes: &[u8],
@@ -45,7 +45,7 @@ fn decode_with_losses(
     (visibilities, losses)
 }
 
-fn member(stream_ordinal: u32, visible: u8) -> Vec<u8> {
+pub(super) fn member(stream_ordinal: u32, visible: u8) -> Vec<u8> {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"256");

@@ -21,7 +21,7 @@ use crate::CadIr;
 
 /// The id of every record of a design's arenas.
 pub(super) fn design_ids(design: &Design) -> Result<BTreeSet<String>, EditError> {
-    let json = serde_json::to_value(design).map_err(malformed)?;
+    let json = crate::hash::finite_json::to_json_value(design).map_err(malformed)?;
     let mut found = BTreeSet::new();
     for records in json
         .as_object()
