@@ -406,6 +406,36 @@ fn parameters_with_readings(
     Vec<cadmpeg_ir::design::parameter::DesignParameter>,
     Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
+    parameters_with_scalars(keywords, readings, classes, &[], &[], length_unit)
+}
+
+/// The scalars a history feature holds under a dimension's name: feature
+/// name, dimension name, and the scalar.
+type NamedScalars<'a> = [(&'a str, &'a str, super::parameters::NamedScalar)];
+
+/// As [`parameters_with_readings`], with the parameters the records of the
+/// scalars `stated` state, and the scalars `named` the features hold under
+/// their dimensions' names.
+fn parameters_with_scalars(
+    keywords: &[u8],
+    readings: &[(
+        &str,
+        &str,
+        cadmpeg_ir::features::parameters::ParameterValue,
+        Option<&str>,
+    )],
+    classes: &[(&str, crate::records::ArchiveParameterClass)],
+    stated: &[(
+        &str,
+        crate::resolved_features::parameter_classes::StatedParameter,
+    )],
+    named: &NamedScalars<'_>,
+    length_unit: Option<cadmpeg_ir::design::units::UnitSymbol>,
+) -> (
+    CadIr,
+    Vec<cadmpeg_ir::design::parameter::DesignParameter>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
     let ir = part_with_history(keywords, &[]);
     let native = crate::native::SldprtNative::load(ir.native.namespace("sldprt").unwrap()).unwrap();
     let mut v10 = ir.model.parameters.clone();
@@ -433,7 +463,23 @@ fn parameters_with_readings(
             .iter()
             .map(|(scalar, class)| (*scalar, Some(*class)))
             .collect(),
+        stated: stated.iter().copied().collect(),
+        named: std::collections::HashMap::new(),
     };
+    let mut decoded = decoded;
+    for (feature, name, scalar) in named {
+        let history = native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .find(|candidate| candidate.name == *feature)
+            .unwrap();
+        decoded
+            .named
+            .entry((history.id.as_str(), *name))
+            .or_default()
+            .push(*scalar);
+    }
     let timeline = super::tree::timeline(&native.feature_histories).unwrap();
     let (parameters, notes) = super::parameters::Entries::new(&native.feature_histories, &timeline)
         .unwrap()
@@ -556,9 +602,9 @@ fn a_dimension_caches_the_stored_value_not_its_display() {
     assert_eq!(
         unvalued.message,
         format!(
-            "Parameters whose dimension text is a bare number hold no value: 1 whose dimension \
-             no record types or binds to a stored value of its kind ({}); 1 lengths in a part \
-             whose length unit is not read ({})",
+            "Parameters whose dimension text is a bare number hold no value: 1 whose feature \
+             holds no scalar under the dimension's name ({}); 1 lengths in a part whose length \
+             unit is not read ({})",
             unread.id.as_str(),
             named("Display", "D1").id.as_str()
         )
@@ -627,7 +673,7 @@ fn an_unread_kind_keeps_the_number_its_bound_scalar_stores() {
         .expect("the dimension with no value is named");
     assert!(
         unvalued.message.ends_with(&format!(
-            ": 1 whose dimension no record types or binds to a stored value of its kind ({})",
+            ": 1 whose feature holds no scalar under the dimension's name ({})",
             named("D5").id.as_str()
         )),
         "{}",
@@ -722,6 +768,156 @@ fn a_length_display_is_a_literal_in_the_part_length_unit() {
                 .ends_with(&format!(": {}", named("Display").id.as_str())),
         "{}",
         rounded.message
+    );
+}
+
+#[test]
+fn a_bare_display_takes_the_class_and_value_its_scalar_record_states() {
+    use super::parameters::NamedScalar;
+    use crate::resolved_features::parameter_classes::StatedParameter;
+    use cadmpeg_ir::design::parameter::ParameterValue;
+    use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
+    use cadmpeg_ir::features::parameters::ParameterValue as V10;
+    use cadmpeg_ir::scalar::Angle;
+
+    let keywords = br#"<Keywords Name="Bracket">
+            <Feature Name="Sketch1" Type="ProfileFeature" id="7">
+                <Dimension Name="D1">17</Dimension>
+                <Dimension Name="D2">25</Dimension>
+                <Dimension Name="D3">6</Dimension>
+                <Dimension Name="D4">30</Dimension>
+                <Dimension Name="D5">12</Dimension>
+                <Dimension Name="D6">30</Dimension>
+                <Dimension Name="D7">8</Dimension>
+                <Dimension Name="D8">240</Dimension>
+            </Feature>
+        </Keywords>"#;
+    let driving = |stated| NamedScalar {
+        stated: Some(stated),
+        driving: true,
+    };
+    let shown = |stated| NamedScalar {
+        stated: Some(stated),
+        driving: false,
+    };
+    let named = [
+        ("Sketch1", "D1", shown(StatedParameter::Length(0.009_156))),
+        ("Sketch1", "D1", driving(StatedParameter::Length(0.017))),
+        ("Sketch1", "D2", driving(StatedParameter::Length(0.026))),
+        ("Sketch1", "D3", shown(StatedParameter::Count(6))),
+        (
+            "Sketch1",
+            "D4",
+            NamedScalar {
+                stated: None,
+                driving: true,
+            },
+        ),
+        (
+            "Sketch1",
+            "D6",
+            driving(StatedParameter::Angle(30f64.to_radians())),
+        ),
+        ("Sketch1", "D7", shown(StatedParameter::Length(0.008))),
+    ];
+    let mistyped = [(
+        "Sketch1",
+        "D8",
+        V10::Angle(Angle::from_assigned_real(0.24.try_into().unwrap())),
+        Some("scalar-d8"),
+    )];
+    let stated = [("scalar-d8", StatedParameter::Length(0.24))];
+    let read = |unit| parameters_with_scalars(keywords, &mistyped, &[], &stated, &named, unit);
+    let named_in = |parameters: &[cadmpeg_ir::design::parameter::DesignParameter], name: &str| {
+        parameters
+            .iter()
+            .find(|parameter| {
+                parameter
+                    .name
+                    .as_ref()
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
+                    == Some(name)
+            })
+            .unwrap_or_else(|| panic!("{name}: {parameters:#?}"))
+            .clone()
+    };
+    let number = |parameter: &cadmpeg_ir::design::parameter::DesignParameter| match parameter.value
+    {
+        Some(ParameterValue::Number(value)) => Some(value.get()),
+        _ => None,
+    };
+    let unread = |parameter: &cadmpeg_ir::design::parameter::DesignParameter| {
+        matches!(&parameter.kind, ValueKind::Native(kind) if kind.as_str() == "sldprt:dimension")
+            && parameter.value.is_none()
+    };
+
+    let (_, parameters, notes) = read(Some(UnitSymbol::Mm));
+    let d1 = named_in(&parameters, "D1");
+    assert_eq!(d1.kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert!((number(&d1).unwrap() - 17.0).abs() <= 1e-9);
+    assert_eq!(expression_json(&d1)["value"]["text"], "17[mm]");
+    let d3 = named_in(&parameters, "D3");
+    assert_eq!(d3.kind, ValueKind::Integer);
+    assert_eq!(d3.value, Some(ParameterValue::Integer(6)));
+    let d6 = named_in(&parameters, "D6");
+    assert_eq!(d6.kind, ValueKind::Quantity(Quantity::ANGLE));
+    assert!((number(&d6).unwrap() - 30f64.to_radians()).abs() <= 1e-12);
+    let d7 = named_in(&parameters, "D7");
+    assert_eq!(d7.kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert!((number(&d7).unwrap() - 8.0).abs() <= 1e-9);
+    let d8 = named_in(&parameters, "D8");
+    assert_eq!(d8.kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert!((number(&d8).unwrap() - 240.0).abs() <= 1e-9);
+    for name in ["D2", "D4", "D5"] {
+        assert!(unread(&named_in(&parameters, name)), "{name}");
+    }
+    let note = note_of(
+        &notes,
+        crate::loss::SldprtLossCode::DesignParameterValueUnread,
+    )
+    .expect("the unread dimensions are named");
+    for (name, why) in [
+        (
+            "D2",
+            "whose stored values differ from the display or from each other",
+        ),
+        (
+            "D4",
+            "whose scalars' records state no parameter class the decoder reads",
+        ),
+        (
+            "D5",
+            "whose feature holds no scalar under the dimension's name",
+        ),
+    ] {
+        let id = named_in(&parameters, name).id;
+        assert!(
+            note.message.contains(&format!("1 {why} ({})", id.as_str())),
+            "{name}: {}",
+            note.message
+        );
+    }
+
+    let (_, parameters, notes) = read(None);
+    let d1 = named_in(&parameters, "D1");
+    assert_eq!(d1.kind, ValueKind::Quantity(Quantity::LENGTH));
+    assert!((number(&d1).unwrap() - 17.0).abs() <= 1e-9);
+    assert_eq!(expression_json(&d1)["kind"], "source");
+    let d2 = named_in(&parameters, "D2");
+    assert!((number(&d2).unwrap() - 26.0).abs() <= 1e-9);
+    assert!(unread(&named_in(&parameters, "D7")));
+    let note = note_of(
+        &notes,
+        crate::loss::SldprtLossCode::DesignParameterValueUnread,
+    )
+    .unwrap();
+    assert!(
+        note.message.contains(&format!(
+            "1 lengths in a part whose length unit is not read ({})",
+            named_in(&parameters, "D7").id.as_str()
+        )),
+        "{}",
+        note.message
     );
 }
 

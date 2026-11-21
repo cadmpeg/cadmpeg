@@ -48,6 +48,20 @@ pub(crate) mod feature_input_operand_cell12 {
     pub(crate) const ZERO_TRAILER: usize = 8;
 }
 
+/// Byte offsets for the `feature_input_scalar_parameter_class` record.
+///
+/// Spec §2. Record length 2 B.
+///
+/// ```text
+/// The parameter-class slot of a named scalar in the token form; the scalar's name record begins at +2.
+/// ```
+pub(crate) mod feature_input_scalar_parameter_class {
+    /// Record length in bytes. Spec §2.
+    pub(crate) const LEN: usize = 2;
+    /// Offset of `parameter_class_token` (`u16`, little-endian). Spec §2.
+    pub(crate) const PARAMETER_CLASS_TOKEN: usize = 0;
+}
+
 /// Byte offsets for the `outer_header` record.
 ///
 /// Spec §1.1. Record length 8 B.
