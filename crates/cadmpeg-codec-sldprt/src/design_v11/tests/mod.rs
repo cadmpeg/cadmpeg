@@ -403,7 +403,7 @@ fn parameters_with_readings(
 ) -> (
     CadIr,
     Vec<cadmpeg_ir::design::parameter::DesignParameter>,
-    Option<cadmpeg_ir::report::loss::LossNote>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
 ) {
     let ir = part_with_history(keywords, &[]);
     let native = crate::native::SldprtNative::load(ir.native.namespace("sldprt").unwrap()).unwrap();
@@ -539,7 +539,7 @@ fn a_dimension_caches_the_stored_value_not_its_display() {
     let unread = named("Pattern", "D2");
     assert!(matches!(&unread.kind, ValueKind::Native(kind) if kind.as_str() == "sldprt:dimension"));
     assert_eq!(unread.value, None);
-    assert!(rounded.is_none(), "{rounded:?}");
+    assert!(rounded.is_empty(), "{rounded:?}");
 }
 
 #[test]
@@ -616,7 +616,9 @@ fn a_length_display_is_a_literal_in_the_part_length_unit() {
     }
     assert_eq!(named("Round").display, Some(DimensionDisplay::Radius));
     assert_eq!(expression_json(named("Pattern"))["kind"], "source");
-    let rounded = rounded.expect("the displayed literal is charged");
+    let [rounded] = rounded.as_slice() else {
+        panic!("the displayed literal is charged: {rounded:?}");
+    };
     assert_eq!(
         rounded.code,
         crate::loss::SldprtLossCode::DesignParameterDisplayRounded.kind()
@@ -685,14 +687,14 @@ fn a_bare_reference_of_the_same_kind_is_a_neutral_link() {
 }
 
 #[test]
-fn a_global_variable_used_as_a_length_or_an_angle_is_read_unit_blind() {
+fn a_reference_to_a_parameter_of_another_kind_is_charged_text() {
     use cadmpeg_ir::design::expr::{Expression, ExpressionDialect, ExpressionToken};
     use cadmpeg_ir::design::parameter::ParameterDefinition;
     use cadmpeg_ir::design::units::{Quantity, UnitSymbol, ValueKind};
     use cadmpeg_ir::features::ParameterValue as V10;
     use cadmpeg_ir::scalar::{Angle, Length};
 
-    let (_, parameters, _) = parameters_with_readings(
+    let (_, parameters, losses) = parameters_with_readings(
         br#"<Keywords Name="Bracket">
             <Feature Name="Equations" Type="EquationDriven" id="16">
                 <Dimension Name="wall">5</Dimension>
@@ -701,12 +703,14 @@ fn a_global_variable_used_as_a_length_or_an_angle_is_read_unit_blind() {
                 <Dimension Name="D1">"wall"</Dimension>
                 <Dimension Name="D2">"wall"</Dimension>
                 <Dimension Name="D3">"D1@Boss"</Dimension>
+                <Dimension Name="D4"> "D1@Boss" </Dimension>
             </Extrusion>
         </Keywords>"#,
         &[
             ("Boss", "D1", V10::Length(Length::new(5.0).unwrap()), None),
             ("Boss", "D2", V10::Angle(Angle::new(0.1).unwrap()), None),
             ("Boss", "D3", V10::Angle(Angle::new(0.1).unwrap()), None),
+            ("Boss", "D4", V10::Angle(Angle::new(0.1).unwrap()), None),
         ],
         &[],
         Some(UnitSymbol::Mm),
@@ -723,24 +727,34 @@ fn a_global_variable_used_as_a_length_or_an_angle_is_read_unit_blind() {
             })
             .unwrap_or_else(|| panic!("{name}: {parameters:#?}"))
     };
-    let wall = named("wall").id.clone();
-    assert_eq!(named("D1").kind, ValueKind::Quantity(Quantity::LENGTH));
-    assert_eq!(
-        named("D1").definition,
-        neutral_definition("$0 * 1[mm]", &[&wall])
-    );
-    assert_eq!(named("D2").kind, ValueKind::Quantity(Quantity::ANGLE));
-    assert_eq!(
-        named("D2").definition,
-        neutral_definition("$0 * 1[deg]", &[&wall])
-    );
-    assert_eq!(named("D3").kind, ValueKind::Quantity(Quantity::ANGLE));
-    assert_eq!(
-        named("D3").definition,
+    let text = |text: &str| {
         ParameterDefinition::Expression(Expression::Source {
             dialect: ExpressionDialect::SolidWorks,
-            tokens: vec![ExpressionToken::Text("\"D1@Boss\"".to_owned())],
+            tokens: vec![ExpressionToken::Text(text.to_owned())],
         })
+    };
+    for (name, kind, whole) in [
+        ("D1", Quantity::LENGTH, "\"wall\""),
+        ("D2", Quantity::ANGLE, "\"wall\""),
+        ("D3", Quantity::ANGLE, "\"D1@Boss\""),
+        ("D4", Quantity::ANGLE, "\"D1@Boss\""),
+    ] {
+        assert_eq!(named(name).kind, ValueKind::Quantity(kind), "{name}");
+        assert_eq!(named(name).definition, text(whole), "{name}");
+    }
+    let [loss] = losses.as_slice() else {
+        panic!("one note: {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::SldprtLossCode::DesignParameterReferenceAsText.kind()
+    );
+    let ids = ["D1", "D2", "D3", "D4"].map(|name| named(name).id.as_str().to_owned());
+    assert!(
+        loss.message.starts_with("4 parameters")
+            && loss.message.ends_with(&format!(": {}", ids.join(", "))),
+        "{}",
+        loss.message
     );
 }
 

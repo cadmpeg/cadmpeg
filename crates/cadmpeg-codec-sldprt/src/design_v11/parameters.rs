@@ -6,14 +6,12 @@
 //! A dimension whose text is one literal holds a `Neutral` expression that
 //! keeps the literal's authored unit. A parameter whose text is one
 //! reference to a parameter of its kind holds that reference as a `Neutral`
-//! link, and a length or angle dimension whose text is one global variable
-//! holds the variable times one unit of that quantity (§5.13). A text that
-//! is one reference with no such reading is a `Source` expression of one
-//! `Text` token, the whole text (part 10). Any other text is a `Source`
-//! expression in the `SolidWorks` dialect, its references to parameters as
-//! reference tokens. A value is the cache the file stores:
-//! the literal, the dimension's stored `Value`, or the value the decoder
-//! read from a record that stores it in a stated unit.
+//! link (§5.13). [`link_bare_references`] states the interim form of a text
+//! that is one reference with no such reading. Any other text is a
+//! `Source` expression in the `SolidWorks` dialect, its references to
+//! parameters as reference tokens. A value is the cache the file stores: the
+//! literal, the dimension's stored `Value`, or the value the decoder read
+//! from a record that stores it in a stated unit.
 //!
 //! Keywords displays a dimension's number in the document's length unit or
 //! in degrees, with no unit (`docs/formats/sldprt.md`). Where the root
@@ -36,7 +34,7 @@ use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::design::dimension::{ParameterRef, RefTarget};
 use cadmpeg_ir::design::expr::{
-    BinaryOp, Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
+    Expression, ExpressionDialect, ExpressionToken, Neutral, Node, UnaryOp,
 };
 use cadmpeg_ir::design::options::NativeOptions;
 use cadmpeg_ir::design::parameter::{
@@ -288,20 +286,21 @@ impl<'a> Entries<'a> {
         self.ids.contains(id)
     }
 
-    /// The parameters, their expressions read, and the note naming those
-    /// whose literal is a rounded display.
+    /// The parameters, their expressions read, and the notes naming those
+    /// whose literal is a rounded display and those whose reference is
+    /// kept as text.
     pub(super) fn parameters(
         &self,
         scope: &ProductDefinitionId,
         readings: &Readings<'_>,
-    ) -> (Vec<DesignParameter>, Option<LossNote>) {
+    ) -> (Vec<DesignParameter>, Vec<LossNote>) {
         let aliases = Aliases::new(&self.list);
         let mut read_entries = self
             .list
             .iter()
             .map(|entry| read(entry, &aliases, readings))
             .collect::<Vec<_>>();
-        link_bare_references(&self.list, &mut read_entries, readings.length_unit);
+        let as_text = link_bare_references(&self.list, &mut read_entries, &readings.driven);
         let mut rounded = NamedCount::default();
         let parameters = self
             .list
@@ -314,14 +313,22 @@ impl<'a> Entries<'a> {
                 parameter(entry, reading, scope, readings)
             })
             .collect();
-        let loss = (!rounded.is_empty()).then(|| {
+        let rounded = (!rounded.is_empty()).then(|| {
             SldprtLossCode::DesignParameterDisplayRounded.note(format!(
                 "{} parameters hold their dimension's displayed number, rounded to the display \
                  precision, as their literal and value: {rounded}",
                 rounded.count()
             ))
         });
-        (parameters, loss)
+        let as_text = (!as_text.is_empty()).then(|| {
+            SldprtLossCode::DesignParameterReferenceAsText.note(format!(
+                "{} parameters whose text is one reference with no neutral reading of their kind \
+                 hold the text as one `Text` token and state no dependency on the parameter it \
+                 names: {as_text}",
+                as_text.count()
+            ))
+        });
+        (parameters, rounded.into_iter().chain(as_text).collect())
     }
 }
 
@@ -495,95 +502,62 @@ fn read(entry: &Entry<'_>, aliases: &Aliases, readings: &Readings<'_>) -> Readin
     }
 }
 
-/// Rewrites each `Source` expression whose text is one reference, spaces
-/// aside, as the `Neutral` tree that reads it, where [`link`] gives one.
-/// Where it gives none, a text that is the reference alone becomes one
-/// `Text` token: a `Source` expression holds a `Text` token (part 10).
+/// Rewrites each `Source` expression whose text is one reference as that
+/// reference where the target has the parameter's kind and that kind is
+/// neutral (§5.13), and returns the parameters whose reference is kept as
+/// text. A parameter that `driven` holds states no expression.
+///
+/// Interim, gap 20261121-IR-BARE-PARAM-REF-1: where the kinds differ or are
+/// `Native`, §5.13 gives a `Source` expression of the reference token, which
+/// part 10 refuses, so the expression is one `Text` token, the whole text.
 fn link_bare_references(
     entries: &[Entry<'_>],
     readings: &mut [Reading],
-    length_unit: Option<UnitSymbol>,
-) {
-    let targets = entries
+    driven: &HashSet<ParameterId>,
+) -> NamedCount {
+    let kinds = entries
         .iter()
         .zip(readings.iter())
-        .map(|(entry, reading)| {
-            (
-                entry.id.clone(),
-                (reading.kind.clone(), entry.owner.is_none()),
-            )
-        })
+        .map(|(entry, reading)| (entry.id.clone(), reading.kind.clone()))
         .collect::<HashMap<_, _>>();
+    let mut as_text = NamedCount::default();
     for (entry, reading) in entries.iter().zip(readings.iter_mut()) {
-        let whole = matches!(
-            &reading.expression,
-            Expression::Source { tokens, .. } if tokens.len() == 1
-        );
-        let Some(reference) = bare_reference(&reading.expression) else {
+        if driven.contains(&entry.id) {
+            continue;
+        }
+        let Some(reference) = bare_reference(&reading.expression).cloned() else {
             continue;
         };
-        let node = match &reference.target {
-            RefTarget::Parameter(target) => targets.get(target).and_then(|(kind, global)| {
-                link(reference, &reading.kind, kind, *global, length_unit)
-            }),
-            RefTarget::External { .. } => None,
+        let linked = match &reference.target {
+            RefTarget::Parameter(target) => kinds
+                .get(target)
+                .is_some_and(|kind| *kind == reading.kind && !matches!(kind, ValueKind::Native(_))),
+            // §5.13: a whole-text external reference is the parameter's own
+            // expression, of the parameter's kind.
+            RefTarget::External { .. } => true,
         };
-        reading.expression = match node {
-            Some(node) => Expression::Neutral(Neutral(node)),
-            None if whole => Expression::Source {
+        reading.expression = if linked {
+            Expression::Neutral(Neutral(Node::Reference(reference)))
+        } else {
+            as_text.push(entry.id.as_str());
+            Expression::Source {
                 dialect: ExpressionDialect::SolidWorks,
                 tokens: vec![ExpressionToken::Text(entry.text.to_owned())],
-            },
-            None => continue,
+            }
         };
     }
+    as_text
 }
 
-/// The one reference of a `Source` expression whose other tokens are spaces.
+/// The reference of a `Source` expression that is one reference token.
 fn bare_reference(expression: &Expression) -> Option<&ParameterRef> {
     let Expression::Source { tokens, .. } = expression else {
         return None;
     };
-    let mut found = None;
-    for token in tokens {
-        match token {
-            ExpressionToken::Text(text) if text.trim().is_empty() => {}
-            ExpressionToken::Reference(reference) if found.is_none() => found = Some(reference),
-            ExpressionToken::Text(_) | ExpressionToken::Reference(_) => return None,
-        }
-    }
-    found
-}
-
-/// The tree of a parameter of `kind` whose text is `reference` to a
-/// parameter of kind `target`, `global` where the target is a global
-/// variable: the reference where the kinds are one neutral kind, and a
-/// global variable's number read unit-blind as a length in the definition's
-/// `length_unit` or as an angle in degrees (§5.13).
-fn link(
-    reference: &ParameterRef,
-    kind: &ValueKind,
-    target: &ValueKind,
-    global: bool,
-    length_unit: Option<UnitSymbol>,
-) -> Option<Node<ParameterRef>> {
-    let node = Node::Reference(reference.clone());
-    if kind == target && !matches!(kind, ValueKind::Native(_)) {
-        return Some(node);
-    }
-    if !global || *target != ValueKind::Quantity(Quantity::REAL) {
+    let [ExpressionToken::Reference(reference)] = tokens.as_slice() else {
         return None;
-    }
-    let symbol = match kind {
-        ValueKind::Quantity(Quantity::LENGTH) => length_unit?,
-        ValueKind::Quantity(Quantity::ANGLE) => UnitSymbol::Deg,
-        _ => return None,
     };
-    Some(Node::Binary {
-        op: BinaryOp::Multiply,
-        left: Box::new(node),
-        right: Box::new(number_node(1.0, Some(symbol))?),
-    })
+    Some(reference)
 }
 
 /// The literal of a dimension whose text is the bare display `number`, and

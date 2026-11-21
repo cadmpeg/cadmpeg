@@ -339,6 +339,10 @@ pub(crate) enum SldprtLossCode {
     /// Parameters whose literal and value are their dimension's displayed
     /// number, which Keywords rounds to the display precision.
     DesignParameterDisplayRounded,
+    /// Parameters whose text is one reference with no neutral reading of
+    /// their kind hold the text and state no dependency on the parameter it
+    /// names.
+    DesignParameterReferenceAsText,
     /// Extrudes whose blind depth is bound to their record's only dimension,
     /// whose name is neither `Depth` nor `D1`.
     DesignExtrudeDepthAssumed,
@@ -484,6 +488,7 @@ impl SldprtLossCode {
         Self::DesignFeatureUnresolved,
         Self::DesignFolderDropped,
         Self::DesignParameterDisplayRounded,
+        Self::DesignParameterReferenceAsText,
         Self::DesignExtrudeDepthAssumed,
     ];
 
@@ -649,6 +654,7 @@ impl SldprtLossCode {
             Self::DesignFeatureUnresolved => "design.feature-unresolved",
             Self::DesignFolderDropped => "design.folder-dropped",
             Self::DesignParameterDisplayRounded => "design.parameter-display-rounded",
+            Self::DesignParameterReferenceAsText => "design.parameter-reference-as-text",
             Self::DesignExtrudeDepthAssumed => "design.extrude-depth-assumed",
         }
     }
@@ -785,6 +791,7 @@ impl SldprtLossCode {
             | Self::AssemblyEmbeddedDocumentsNotTransferred
             | Self::DesignFolderDropped
             | Self::DesignParameterDisplayRounded
+            | Self::DesignParameterReferenceAsText
             | Self::DesignExtrudeDepthAssumed => Severity::Warning,
             Self::AssemblyStructureNotTransferred => Severity::Blocking,
             Self::AssemblyPlacementUnresolved => Severity::Error,
@@ -840,6 +847,7 @@ impl SldprtLossCode {
             }
             Self::DesignFeatureUnresolved => LossTaxonomy::RecordNotTyped,
             Self::DesignFolderDropped => LossTaxonomy::MetadataNotTransferred,
+            Self::DesignParameterReferenceAsText => LossTaxonomy::ParametricRecordOmitted,
             Self::DesignParameterDisplayRounded | Self::DesignExtrudeDepthAssumed => {
                 LossTaxonomy::DecodeDiagnostic
             }
@@ -1245,6 +1253,7 @@ mod tests {
                 "design.feature-unresolved",
                 "design.folder-dropped",
                 "design.parameter-display-rounded",
+                "design.parameter-reference-as-text",
                 "design.extrude-depth-assumed",
             ]
         );

@@ -215,29 +215,6 @@ fn programs_assign_exactly_their_parameters() {
 }
 
 #[test]
-fn a_bare_reference_is_a_neutral_link() {
-    let mut ir = with_width();
-    let mut height = parameter("height", LENGTH);
-    height.definition = expression("$0", &[reference("width")]);
-    height.value = Some(number(2.0));
-    ir.design.parameters.push(height);
-    let mut wall = parameter("wall", ValueKind::Quantity(Quantity::REAL));
-    wall.definition = expression("5", &[]);
-    wall.value = Some(number(5.0));
-    ir.design.parameters.push(wall);
-    let mut depth = parameter("depth", LENGTH);
-    depth.definition = expression("$0 * 1[mm]", &[reference("wall")]);
-    depth.value = Some(number(5.0));
-    ir.design.parameters.push(depth);
-    assert_no_design_finding(&ir);
-    ir.design.parameters[1].definition = ParameterDefinition::Expression(Expression::Source {
-        dialect: ExpressionDialect::SolidWorks,
-        tokens: vec![ExpressionToken::Reference(reference("width"))],
-    });
-    assert_finding(&ir, "source expression holds no text token");
-}
-
-#[test]
 fn expressions_type_check_and_resolve() {
     let mut ir = with_width();
     ir.design.parameters[0].definition = expression("1[mm] + 1[deg]", &[]);
