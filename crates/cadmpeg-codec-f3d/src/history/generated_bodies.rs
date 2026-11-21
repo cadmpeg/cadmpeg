@@ -11,13 +11,14 @@ use std::collections::{HashMap, HashSet};
 /// Re-express body selections of ASM body slots as bodies of the features
 /// that generate them.
 ///
-/// A body pattern seed resolved in its input state, a body deletion whose
-/// operands resolved through their recipe identity, and a Reverse Normal
-/// resolved in its input state name ASM body slots. When every selected slot
+/// A body pattern seed and a body move resolved in their input states, a body
+/// deletion whose operands resolved through their recipe identity, and a
+/// Reverse Normal resolved in its input state name ASM body slots. When every selected slot
 /// is absent from the model bodies, the one feature whose history transition
 /// inserts that slot generates the body, and the selection names it there.
-/// A Reverse Normal reads its slots in its bound history: see
-/// [`reverse_normal_binding`]. The generating feature becomes a dependency of
+/// A body move reads its slots in its bound history. A Reverse Normal reads
+/// its slots in its bound history: see [`reverse_normal_binding`]. The
+/// generating feature becomes a dependency of
 /// the selecting feature. Returns the result states of the producers of
 /// generated bodies, each listing every body slot that the producer's
 /// transition inserts.
@@ -47,20 +48,25 @@ pub(crate) fn bind_generated_body_selections(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let producer = |slot: i64| -> Option<Producer> {
+    let producer = |slot: i64, history: Option<&AsmHistory>| -> Option<Producer> {
+        let in_history =
+            |candidate: &AsmHistory| history.is_none_or(|history| std::ptr::eq(candidate, history));
         let mut inserting = inputs
             .histories
             .iter()
+            .filter(|candidate| in_history(candidate))
             .flat_map(AsmHistory::states)
             .filter(|state| inserts_body(state, slot));
         let state = inserting.next()?;
         if inserting.next().is_some() {
             return None;
         }
-        let mut scopes = inputs
-            .scopes
-            .iter()
-            .filter(|scope| scope.history_state_id() == Some(state.state_id));
+        let mut scopes = inputs.scopes.iter().filter(|scope| {
+            scope.history_state_id() == Some(state.state_id)
+                && (history.is_none()
+                    || scope_history(scope, scope_histories, inputs.histories)
+                        .is_some_and(in_history))
+        });
         let scope = scopes.next()?;
         if scopes.next().is_some() {
             return None;
@@ -105,6 +111,14 @@ pub(crate) fn bind_generated_body_selections(
                     .collect::<Option<Vec<_>>>()
                     .map(|slots| (slots, native.as_str().to_owned()))
             }
+            FeatureDefinition::Operation(FeatureOperation::MoveBody {
+                bodies: BodySelection::Historical { bodies, native, .. },
+                ..
+            }) => bodies
+                .iter()
+                .map(|body| historical_body_slot(body.as_str()))
+                .collect::<Option<Vec<_>>>()
+                .map(|slots| (slots, native.as_str().to_owned())),
             FeatureDefinition::Operation(FeatureOperation::DeleteBody {
                 bodies: BodySelection::Native(group_id),
                 ..
@@ -170,9 +184,22 @@ pub(crate) fn bind_generated_body_selections(
             if slots.iter().any(|slot| live.contains(slot)) {
                 continue;
             }
+            let history = if matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::MoveBody { .. })
+            ) {
+                let Some(history) =
+                    scope.and_then(|scope| scope_history(scope, scope_histories, inputs.histories))
+                else {
+                    continue;
+                };
+                Some(history)
+            } else {
+                None
+            };
             let Some(producers) = slots
                 .iter()
-                .map(|slot| producer(*slot))
+                .map(|slot| producer(*slot, history))
                 .collect::<Option<Vec<_>>>()
             else {
                 continue;
@@ -204,6 +231,7 @@ pub(crate) fn bind_generated_body_selections(
             }
             FeatureDefinition::Operation(
                 FeatureOperation::DeleteBody { bodies, .. }
+                | FeatureOperation::MoveBody { bodies, .. }
                 | FeatureOperation::ReverseShape { source: bodies },
             ) => {
                 *bodies = generated;
