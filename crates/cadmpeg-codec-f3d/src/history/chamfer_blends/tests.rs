@@ -79,6 +79,7 @@ fn line_at(topology: &mut AsmHistoricalTopology, edge: i64, at: Point3, directio
         edge,
         interior: at,
         tangent: Some(direction),
+        carrier: None,
     });
 }
 

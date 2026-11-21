@@ -1247,6 +1247,8 @@ pub enum FuzzyTolerance { KernelDefault, Automatic, Explicit(Dimension<PositiveL
 - A feature changes the bodies its selections reach, in any definition. An assembly feature states what it changes by `assembly.participants`, whose picks carry occurrence contexts (§6.7); its results are instance bodies of the assembly's definition (§8.1) or features of the participants' definitions, as the effect of each participant states.
 - A feature holds no copy of its source record's child sequence (a SolidWorks feature record's text between its child records, the positions of its dimension records, and its nested feature records). Each fact of it has a home (D4): a dimension's parameter is owned by the feature (`DesignParameter.owner`, §5.12); a nested feature is a member of its container (§5.2), a sketch its owner's (§6.1), a pattern or template member its generator's (part 6); and the sequence itself, its text and the order of its children, is layout and stays in the feature's native record (Rule N case (b)), which a writer to the same codec re-emits under W2.
 
+`FeatureInputTopology.edge_geometry` states samples of edges in the feature's input state. A `HistoricalEdgeGeometry.carrier` holds the edge's curve and its finite ordered parameter interval in the frame of `interior`. The curve is a line, circle, ellipse, parabola, hyperbola, or NURBS. The interval's lower endpoint is first; it does not state edge traversal direction. An absent carrier leaves the samples available.
+
 A feature defined by stored geometry has the operation `FeatureOperation::Stored { bodies, tessellations, origin }` (part 6), whose origin types are:
 
 ```rust

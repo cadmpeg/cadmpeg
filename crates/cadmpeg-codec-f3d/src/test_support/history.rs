@@ -7,6 +7,21 @@ use crate::history_records::{
 };
 use std::collections::BTreeMap;
 
+/// A sample of `edge` at `interior` with no sample box and no carrier.
+pub(crate) fn edge_sample(
+    edge: i64,
+    interior: cadmpeg_ir::math::Point3,
+    tangent: Option<cadmpeg_ir::math::Vector3>,
+) -> crate::history_records::AsmHistoricalEdgeSample {
+    crate::history_records::AsmHistoricalEdgeSample {
+        edge,
+        interior,
+        tangent,
+        bounds: None,
+        carrier: None,
+    }
+}
+
 pub(crate) type State = (
     AsmDeltaState,
     Option<AsmHistoricalTopology>,
