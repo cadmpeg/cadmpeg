@@ -49,6 +49,7 @@ use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 const ARC_SEGMENTS: u32 = 64;
 /// Grid lines per axis searched for a point well inside a region.
 const SAMPLE_GRID: u32 = 24;
+const SAMPLE_SEARCH_CLEARANCE_FACTOR: f64 = 10.0;
 /// Relative difference allowed between the cap area and the selected area.
 /// Both sides are polylines of the same circles and arcs.
 pub(super) const AREA_AGREEMENT: f64 = 1e-3;
@@ -1528,19 +1529,32 @@ fn sample_points(
             )
             .collect();
         let mut best: Option<(Point2, f64)> = None;
-        let consider = |best: &mut Option<(Point2, f64)>, point: Point2| {
+        let mut nearest = 0;
+        let mut consider = |best: &mut Option<(Point2, f64)>, point: Point2| {
             if !point_in_polygon(point, rings[0])
                 || rings[1..].iter().any(|ring| point_in_polygon(point, ring))
             {
                 return;
             }
-            let room = rings
-                .iter()
-                .map(|ring| clearance(point, ring))
-                .fold(f64::INFINITY, f64::min);
-            if best.is_none_or(|(_, most)| room > most) {
-                *best = Some((point, room));
+            let floor = best.map(|(_, most)| most);
+            let mut room = f64::INFINITY;
+            for (order, ring) in rings.iter().enumerate() {
+                let start = if order == 0 { nearest } else { 0 };
+                for step in 0..ring.len() {
+                    let segment = (start + step) % ring.len();
+                    room = room.min(point_segment_distance(
+                        point,
+                        (ring[segment], ring[(segment + 1) % ring.len()]),
+                    ));
+                    if floor.is_some_and(|most| room <= most) {
+                        if order == 0 {
+                            nearest = segment;
+                        }
+                        return;
+                    }
+                }
             }
+            *best = Some((point, room));
         };
         for i in 1..SAMPLE_GRID {
             for j in 1..SAMPLE_GRID {
@@ -1553,13 +1567,13 @@ fn sample_points(
                 );
             }
         }
-        if best.is_none_or(|(_, room)| room <= 10.0 * tolerance) {
+        if best.is_none_or(|(_, room)| room <= SAMPLE_SEARCH_CLEARANCE_FACTOR * tolerance) {
             for point in scanline_midpoints(&rings) {
                 consider(&mut best, point);
             }
         }
         let (point, room) = best?;
-        if room <= 10.0 * tolerance || area <= tolerance * tolerance {
+        if room <= tolerance || area <= tolerance * tolerance {
             return None;
         }
         out.push((point, nested));

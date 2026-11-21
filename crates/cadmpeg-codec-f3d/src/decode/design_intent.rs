@@ -812,9 +812,9 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
         &mut scope_histories,
     );
-    let fillet_bindings = crate::history::fillet_blends::bind_fillet_blend_edges(
+    let fillet_bindings = crate::history::fillet_blends::bind_treatment_edges(
         &mut model.features,
-        crate::history::fillet_blends::FilletBlendInputs {
+        crate::history::fillet_blends::TreatmentBlendInputs {
             scopes: &design.design_parameter_scopes,
             groups: &design.design_construction_operand_groups,
             histories: &mut design.asm_histories,
@@ -822,8 +822,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
     );
     losses.extend(fillet_bindings.notes);
-    // A fillet that took the one history in which its edges resolve reads
-    // its input topology and outputs from that history.
+    // A fillet or chamfer that took the one history in which its edges
+    // resolve reads its input topology and outputs from that history.
     scope_histories.extend(fillet_bindings.inferred_scope_histories);
     crate::design::edge_resolve::fragment_fallback::apply_features(
         &mut model.features,
@@ -876,7 +876,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             }
         }
     }
-    let (history_bodies, remaining_work) = crate::history::history_bodies::fill(
+    let loft_result_kinds = crate::history::history_bodies::loft_result_kinds(
         ctx,
         scan,
         crate::history::history_bodies::Inputs {
@@ -885,13 +885,18 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             histories: &design.asm_histories,
             bindings: &scope_histories,
             primary_brep: geometry.primary_brep,
+            groups: &design.design_construction_operand_groups,
+            operands: &design.design_body_recipe_operands,
+            recipes: &prereqs.construction_recipes,
         },
-        derived_snapshots,
         &mut losses,
-    )?;
-    model.history_bodies = history_bodies;
-    design.history_body_consumers.remaining_work = remaining_work;
+    );
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
+    losses.extend(crate::history::loft_solid::bind(
+        &mut model.features,
+        &loft_result_kinds,
+        geometry.bodies,
+    ));
     losses.extend(crate::design::feature_project::sweep_fallback::project(
         &mut model.features,
         &crate::design::feature_project::sweep_fallback::Inputs {
@@ -953,6 +958,25 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             geometry.primary_brep,
             &mut losses,
         ));
+    // After the body selections: a Split names its input-state bodies there.
+    let (history_bodies, remaining_work) = crate::history::history_bodies::fill(
+        ctx,
+        scan,
+        crate::history::history_bodies::Inputs {
+            features: &model.features,
+            scopes: &design.design_parameter_scopes,
+            histories: &design.asm_histories,
+            bindings: &scope_histories,
+            primary_brep: geometry.primary_brep,
+            groups: &design.design_construction_operand_groups,
+            operands: &design.design_body_recipe_operands,
+            recipes: &prereqs.construction_recipes,
+        },
+        derived_snapshots,
+        &mut losses,
+    )?;
+    model.history_bodies = history_bodies;
+    design.history_body_consumers.remaining_work = remaining_work;
     losses.extend(crate::history::bind_feature_face_selections(
         &mut model.features,
         &mut model.feature_input_topologies,
@@ -994,7 +1018,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_construction_operand_groups,
         &design.design_entity_selection_operands,
     );
-    crate::design::feature_project::bind_revolve_face_axes(
+    crate::design::feature_project::revolve::bind_revolve_face_axes(
         &mut model.features,
         &design.design_parameter_scopes,
         &design.design_construction_operand_groups,
@@ -1034,13 +1058,13 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     model.spatial_sketches = spatial.sketches;
     model.spatial_sketch_entities = spatial.entities;
     losses.extend(spatial.losses);
-    crate::design::feature_project::bind_work_point_sketch_point_constructions(
+    crate::design::feature_project::work_points::bind_work_point_sketch_point_constructions(
         &mut model.features,
         &design.design_parameter_scopes,
         &model.sketch_entities,
         &model.spatial_sketch_entities,
     );
-    crate::design::feature_project::bind_hole_sketch_point_profiles(
+    crate::design::feature_project::hole::bind_hole_sketch_point_profiles(
         &mut model.features,
         &design.design_parameter_scopes,
         &model.sketch_entities,
@@ -1053,7 +1077,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &model.sketch_entities,
         ),
     );
-    crate::design::feature_project::bind_loft_sketch_point_sections(
+    crate::design::feature_project::sweep_loft::bind_loft_sketch_point_sections(
         &mut model.features,
         &crate::design::feature_project::LoftPointSources {
             groups: &design.design_construction_operand_groups,
@@ -1147,7 +1171,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &mut model.features,
         )?,
     );
-    crate::design::feature_project::orient_revolve_axes(
+    crate::design::feature_project::revolve::orient_revolve_axes(
         &mut model.features,
         &design.design_parameter_scopes,
         &model.sketches,
@@ -1157,7 +1181,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             geometry.tolerances.angular.get(),
         ),
     );
-    crate::design::feature_project::bind_sketch_feature_geometry(
+    crate::design::feature_project::sketch_geometry::bind_sketch_feature_geometry(
         &mut model.features,
         &design.design_parameter_scopes,
         &design.design_sketch_placements,

@@ -436,13 +436,15 @@ Unit-definition records can include inactive units. `history_scale` is a version
 | `80..bf XX` | Two-byte big-endian integer: `((head - 0x80) << 8) \| XX`. |
 | `c0..ff`    | Control or special-token range on typed paths.             |
 
-Reference identifiers use a narrower grammar in `srf_array` row identifiers, `crv_array` suffixes, DEPDB suffixes, and terminator validation:
+Reference identifiers use a narrower grammar in `crv_array` suffixes, DEPDB suffixes, and terminator validation:
 
 | Bytes       | Meaning                                                  |
 | ----------- | -------------------------------------------------------- |
 | `00..7f`    | Identifier in `[0, 127]`.                                |
 | `80..bf XX` | Canonical two-byte identifier with value at least `128`. |
 | `c0..ff`    | Invalid reference-identifier start byte.                 |
+
+`srf_array` row fields use the compact integers of the first table, and a `c0..df` head starts the packed tier of §3.
 
 In `segtab`, `order_table`, and `ent_tab`, bytes `c0..ff` are single-byte null sentinels. `f6` does not begin a two-byte compact integer in those lanes.
 
@@ -614,6 +616,11 @@ An identified DEPDB layout does not grant a physical section this namespace.
 | Positional row header | `<geom_id_ci> <geom_type> <feat_id_ci> <orient> <boundary_type> <next_geom_ptr_ci>` |
 | Orientation bytes     | `01`, `f6`                                                                          |
 | Boundary bytes        | `00`, `01`, `06`, `08`, `f6`                                                         |
+
+The `geom_id`, `feat_id`, and `next_geom_ptr` fields of positional and
+named-record rows also use the packed tier
+`c0..df XX YY = ((head-c0)<<16) | (XX<<8) | YY`, which stores values of at
+least `0x4000`.
 
 A counted surface-array frame ends at the next `srf_array`, `crv_array`,
 `lo_array`, or `qlt_array` label. Header-shaped bytes outside that frame do not

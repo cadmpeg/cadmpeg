@@ -1444,6 +1444,68 @@ fn a_selected_region_keeps_a_selected_nested_region_as_a_hole() {
 }
 
 #[test]
+fn a_narrow_region_with_a_clear_interior_point_keeps_its_certified_outline() {
+    let width = 12.0 * TOLERANCE;
+    let corners = [(0.0, 0.0), (1.0, 0.0), (1.0, width), (0.0, width)];
+    let entities = polygon("narrow-cap", &corners);
+    let mut atomic = region(&entities, &[[0.0, 1.0]; 4]);
+    atomic.polyline = corners.iter().map(|&(u, v)| Point2::new(u, v)).collect();
+    let regions = [atomic];
+    let samples = sample_regions(&regions, TOLERANCE, &ProfileGeometryWork::new())
+        .expect("an interior point clear of the boundary");
+    let point = samples[0].point;
+    assert!(point.u > TOLERANCE && point.u < 1.0 - TOLERANCE);
+    assert!(point.v > TOLERANCE && point.v < width - TOLERANCE);
+    let mut topology = loop_topology(&corners, &[(0, 1), (1, 2), (2, 3), (3, 0)]);
+    straight_carriers(&mut topology);
+    let cap = face_cap(&xy_frame(), &topology, CAP, TOLERANCE).unwrap();
+    let agreement = crate::test_support::with_decode_context(|ctx| {
+        outlines_agree(&cap, &samples, &[0], &entities, TOLERANCE, ctx)
+    })
+    .unwrap();
+    assert!(matches!(agreement, Agreement::Exact));
+}
+
+#[test]
+fn a_region_without_a_point_clear_of_the_tolerance_stays_unsampled() {
+    let width = 1.5 * TOLERANCE;
+    let atomic = AtomicSketchRegion {
+        boundary: Vec::new(),
+        polyline: vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(1.0, 0.0),
+            Point2::new(1.0, width),
+            Point2::new(0.0, width),
+        ],
+        encloses_island: false,
+        island_absence_assumed: false,
+    };
+    assert!(sample_regions(&[atomic], TOLERANCE, &ProfileGeometryWork::new()).is_none());
+}
+
+#[test]
+fn each_sketch_region_is_sampled_at_its_grid_point_farthest_from_its_boundary() {
+    let work = ProfileGeometryWork::new();
+    for side in [10.0, 20.0, 10.0] {
+        let regions = [AtomicSketchRegion {
+            boundary: Vec::new(),
+            polyline: vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(side, 0.0),
+                Point2::new(side, side),
+                Point2::new(0.0, side),
+            ],
+            encloses_island: false,
+            island_absence_assumed: false,
+        }];
+        let sampled = sample_regions(&regions, TOLERANCE, &work).unwrap();
+        assert_eq!(sampled.len(), 1);
+        assert_eq!(sampled[0].point, Point2::new(side / 2.0, side / 2.0));
+        assert!(sampled[0].nested.is_empty());
+    }
+}
+
+#[test]
 fn selected_nested_interiors_without_a_hole_stay_native() {
     let corners = [(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0)];
     let inner_corners = [(1.0, 1.0), (3.0, 1.0), (3.0, 3.0), (1.0, 3.0)];
@@ -1473,26 +1535,4 @@ fn selected_nested_interiors_without_a_hole_stay_native() {
     );
     sampled[0].nested.clear();
     assert!(trimmed_selection(&sampled, &[0, 1], TOLERANCE).is_none());
-}
-
-#[test]
-fn each_sketch_region_is_sampled_at_its_grid_point_farthest_from_its_boundary() {
-    let work = ProfileGeometryWork::new();
-    for side in [10.0, 20.0, 10.0] {
-        let regions = [AtomicSketchRegion {
-            boundary: Vec::new(),
-            polyline: vec![
-                Point2::new(0.0, 0.0),
-                Point2::new(side, 0.0),
-                Point2::new(side, side),
-                Point2::new(0.0, side),
-            ],
-            encloses_island: false,
-            island_absence_assumed: false,
-        }];
-        let sampled = sample_regions(&regions, TOLERANCE, &work).unwrap();
-        assert_eq!(sampled.len(), 1);
-        assert_eq!(sampled[0].point, Point2::new(side / 2.0, side / 2.0));
-        assert!(sampled[0].nested.is_empty());
-    }
 }
