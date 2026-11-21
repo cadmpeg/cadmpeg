@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::operands::construction_operand_group_is_retained;
 use crate::design::decode::operands::ConstructionOperandGroupParse;
 use crate::design::decode::operands::RecordFrame;
+use crate::design::feature_project::direct_face::project_split;
 use crate::design::feature_project::project_parameter_design_with_edge_identities;
-use crate::design::feature_project::project_split;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::dimensions::DesignRecipeReference;
 use crate::records::entity_header::DesignFeatureTimeline;
@@ -1688,7 +1689,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignOperandRole::BODIES_A,
         );
     assert_eq!(
-        crate::design::feature_project::project_remove_body(
+        crate::design::feature_project::body_ops::project_remove_body(
             &remove_scope,
             std::slice::from_ref(&remove_group),
         ),
@@ -1737,7 +1738,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             DesignOperandRole::ROLE_0X5,
         );
     assert_eq!(
-        crate::design::feature_project::project_surface_stitch(
+        crate::design::feature_project::surface_edit::project_surface_stitch(
             &stitch_scope,
             std::slice::from_ref(&stitch_group),
         ),
@@ -1952,31 +1953,37 @@ fn remove_body_group_with_a_three_byte_discriminant_names_its_bodies() {
         [2184]
     );
     assert_eq!(group.paired_byte_offset, u64_from_index(bytes.len() - 11));
-    assert!(crate::design::feature_project::project_remove_body(
-        &scope,
-        std::slice::from_ref(&group)
-    )
-    .is_some());
+    assert!(
+        crate::design::feature_project::body_ops::project_remove_body(
+            &scope,
+            std::slice::from_ref(&group)
+        )
+        .is_some()
+    );
 }
 
 #[test]
 fn remove_body_group_refuses_empty_groups_wrong_roles_and_truncation() {
     let empty = remove_body_group_bytes(2181, 2180, 0, 0x0000_0004_0000_0000);
     if let Some((scope, group)) = remove_body_group_fixture(&empty, 2181, 2180) {
-        assert!(crate::design::feature_project::project_remove_body(
-            &scope,
-            std::slice::from_ref(&group)
-        )
-        .is_none());
+        assert!(
+            crate::design::feature_project::body_ops::project_remove_body(
+                &scope,
+                std::slice::from_ref(&group)
+            )
+            .is_none()
+        );
     }
 
     let wrong_role = remove_body_group_bytes(2181, 2180, 1, 0x0000_0005_0000_0000);
     let (scope, group) = remove_body_group_fixture(&wrong_role, 2181, 2180).expect("parses");
-    assert!(crate::design::feature_project::project_remove_body(
-        &scope,
-        std::slice::from_ref(&group)
-    )
-    .is_none());
+    assert!(
+        crate::design::feature_project::body_ops::project_remove_body(
+            &scope,
+            std::slice::from_ref(&group)
+        )
+        .is_none()
+    );
 
     let complete = remove_body_group_bytes(2181, 2180, 1, 0x0000_0004_0000_0000);
     let mut truncated = complete[..complete.len() - 12].to_vec();
