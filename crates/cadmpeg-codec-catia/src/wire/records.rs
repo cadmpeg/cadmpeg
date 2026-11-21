@@ -213,6 +213,8 @@ fn pcurve_layout(
     IncreasingParameterInterval,
     usize,
 )> {
+    use crate::layout::owned_pcurve_wide_channel_header as wide_channel;
+
     let mut at = payload;
     let support_id = compact_int(data, &mut at)?;
     let degree = compact_int(data, &mut at)?;
@@ -250,11 +252,15 @@ fn pcurve_layout(
     }
     let knot_at = at;
     at += knot_bytes;
-    if owned && wide_extrapolation.is_none() && data.get(at) == Some(&0x14) {
-        if usize::from(View::u16_le_at(data.get(at..end)?, 1)?) != count {
+    if owned && wide_extrapolation.is_none() && data.get(at) == Some(&wide_channel::MARKER_VALUE) {
+        if usize::from(View::u16_le_at(
+            data.get(at..end)?,
+            wide_channel::SITE_COUNT,
+        )?) != count
+        {
             return None;
         }
-        at = at.checked_add(3)?;
+        at = at.checked_add(wide_channel::LEN)?;
     } else {
         if usize::try_from(compact_int(data, &mut at)?).ok()? != count {
             return None;

@@ -261,8 +261,8 @@ pub(super) fn spline(bytes: &[u8]) -> Option<(PcurveGeometry, [f64; 2])> {
     } else {
         0
     };
-    if kind == 0x7e {
-        inline(&mut view)?;
+    if kind == 0x7e && inline(&mut view)? != 1 {
+        return None;
     }
     let stop = leading.checked_add(spans)?;
     if stop.checked_add(trailing)? != last
@@ -383,6 +383,28 @@ mod tests {
                 assert!(pcurve_uv(EvaluationAdmission::Standard, &curve, endpoint).is_ok());
             }
         }
+    }
+
+    #[test]
+    fn extended_single_span_requires_its_terminal_control() {
+        let mut bytes = vec![5, 0x7e];
+        bytes.extend(1.0_f64.to_le_bytes());
+        bytes.extend([21, 9, 0x0c]);
+        for knot in [0.0_f64, 1.0] {
+            bytes.extend(knot.to_le_bytes());
+        }
+        for index in 0..6 {
+            bytes.extend(f64::from(index).to_le_bytes());
+            bytes.extend(0.0_f64.to_le_bytes());
+        }
+        bytes.extend([1, 5]);
+        assert!(spline(&bytes).is_some());
+        for control in [1, 9, 0xfd] {
+            *bytes.last_mut().expect("terminal control") = control;
+            assert!(spline(&bytes).is_none());
+        }
+        bytes.pop();
+        assert!(spline(&bytes).is_none());
     }
 
     #[test]

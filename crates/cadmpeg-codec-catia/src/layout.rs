@@ -959,3 +959,15 @@ pub(crate) mod sheet_plane_explicit_v_a0_payload {
     /// Record length in bytes. Spec §6.3.
     pub(crate) const LEN: usize = 82;
 }
+
+/// Byte offsets for the `owned_pcurve_wide_channel_header` record.
+///
+/// Spec §6.3. Record length 3 B.
+pub(crate) mod owned_pcurve_wide_channel_header {
+    /// Record length in bytes. Spec §6.3.
+    pub(crate) const LEN: usize = 3;
+    /// Stated value of `marker` (`u8`). Spec §6.3.
+    pub(crate) const MARKER_VALUE: u8 = 20;
+    /// Offset of `site_count` (`u16`, little-endian). Spec §6.3.
+    pub(crate) const SITE_COUNT: usize = 1;
+}

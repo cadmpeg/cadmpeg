@@ -701,7 +701,7 @@ transferred geometric jet.
 A 2D spline in a support surface's parameter space. Its payload stores `degU`, `K` definition points, one global curve parameter, one `(U,V)` pair per point, and 2D tangent and second derivative values. The leading operand `op1` is the underlying support's persistent CGM tag within its geometry factory. Explicit and implicit factories have separate tag namespaces. A tag remains stable through object creation, removal of other objects, and factory streaming. The array marker is `0x0c` or `0x08` followed by a one-byte `4q+1` or `4q+3` value. Both compact forms encode the leading-extrapolation count `q`. A sheet-owned
 pcurve can instead use `08 06 <q:u8>` for counts from 64 through 255. This form
 repeats the same count as `06 <q:u8>` after the knot array and the repeated
-definition-point count.
+definition-point count. With a one-byte extrapolation control, the sheet-owned channel header after the knots can instead be `14 <K:u16le>`. This three-byte header repeats the definition-point count `K`.
 
 The compact tag is separate from a physical file offset, record ordinal, allocation reference, and framed header token. Numeric equality supplies a candidate for an admitted typed identity relation; uniqueness and that relation's chart and endpoint invariants must also hold. Tags in separate factories or documents do not define a common identity.
 
@@ -787,7 +787,7 @@ A compact class-`24` definition has payload `81 <compact operand d> 0f 87` and n
 
 A sheet-owned class-`24` map retains allocation-reference operands in target-then-source order. Its source relation maps the second representation to the first.
 
-A scalar class-`24` domain relation begins with marker `82`, two compact operands in source-then-target order, and `0a <selector:u16le>` or `0b <selector:u16le>`:
+A scalar class-`24` domain relation begins with marker `82`, two representation operands, and `0a <selector:u16le>` or `0b <selector:u16le>`. The generic compact-operand production uses source-then-target order:
 
 | Offset | Type | Meaning |
 | --- | --- | --- |
@@ -980,10 +980,11 @@ knot span and the scalar is measured from that span's first knot. The
 station can select a point inside the knot domain beyond the curve's active
 interval. A four-reference incidence with lead `80` stores three scalar
 lanes. The second and third scalars address its third and fourth
-references when the first tag is compact and the second tag is zero.
+references when the first tag is compact and the second tag is zero. The 28-byte four-reference form is `80 a:f64le tag0:u8 b:f64le tag1:u8 00 c:f64le`; lane 2 uses compact-tagged `b` and lane 3 uses absolute `c`.
 An edge's class-`25` sampled relation also carries separate active ranges
 for its two curve representations. A line incidence can supply a spline
 station through an exact sample pair or a sampled identity relation.
+Each paired coordinate of an identity relation agrees within the greater of `1e-9` and `4·epsilon·max(|target|,|source|)`, where `epsilon` is binary64 machine epsilon.
 
 An extended spline-span tag is `04 <span:u8>`. The span byte is
 `44 + i`, where `i` is the zero-based index in the complete distinct-knot
@@ -1015,14 +1016,30 @@ A parameter-map companion spline uses its own knot array and extrapolation
 count before its station is mapped through the affine or sampled relation.
 
 The sheet class-`21` pcurve stores a compact operand, a chart prefix,
-degree and distinct-knot count as inline compact integers, `0c`,
+degree and distinct-knot count as inline compact integers, an array marker,
 the increasing f64 knots, and the UV pole pairs. Prefix
-`1e <span:f64le>` selects one span of degree one or five.
+`1e <span:f64le>` selects one span of degree one, four, or five.
 Prefix `1a <spans:compact> <last_span:f64le>` selects a degree-five
 spline with threefold interior knots. Prefix
 `16 <scalar:f64le> <span:f64le>` selects one degree-eleven span with a
 finite positive scalar. End knots have multiplicity degree plus one.
-The stored span equals the difference between the last two knots.
+The stored span equals the difference between the last two active knots.
+
+Prefixes `3a <spans:compact> <last_span:f64le>`, `3e <span:f64le>`, and
+`7e <span:f64le>` select extended degree-five splines. Prefixes `3e` and
+`7e` have one active span. The array marker is `0c` for zero leading spans
+or `08 <leading:compact>` for a leading extrapolation count. A compact
+trailing extrapolation count follows the poles. Prefix `7e` then ends with
+control `05`. The leading, active, and trailing span counts sum to one less
+than the distinct-knot count. The active interval starts at the leading
+span count and covers the declared active spans. The NURBS keeps all poles
+and knots, including both extrapolation regions.
+
+Prefix `0e` selects an explicit-domain cubic. Its payload after that prefix
+is `<span:f64le> <upper:f64le> <lower:f64le> 0d 09 0e
+<lower:f64le> <upper:f64le> <UV poles:4*(2*f64le)>`. The limits repeat
+exactly, `lower<upper`, and `span=upper-lower`. Both endpoint knots have
+multiplicity four. The fourth pole exhausts the payload.
 The sheet circle form adds `05 05` between the two center coordinates
 and the radius, followed by the two arc-length limits and the usual chart
 shift trailer.

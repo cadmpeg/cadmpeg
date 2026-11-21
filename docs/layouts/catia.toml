@@ -4589,3 +4589,27 @@ offset = 3
 type = "f64[3]"
 source = "spec"
 anchor = "27-byte coordinate selector"
+
+[[record]]
+name = "owned_pcurve_wide_channel_header"
+parsed_by = "crates/cadmpeg-codec-catia/src/wire/records.rs"
+kind = "byte"
+section = "6.3"
+anchor = "the sheet-owned channel header after the knots can instead be `14 <K:u16le>`"
+size = 3
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "u8"
+source = "spec"
+anchor = "`14 <K:u16le>`"
+value = 20
+
+[[record.field]]
+name = "site_count"
+offset = 1
+type = "u16"
+endianness = "little"
+source = "spec"
+anchor = "This three-byte header repeats the definition-point count `K`."

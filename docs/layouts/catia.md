@@ -1618,6 +1618,18 @@ Parsed by:
 | 0 | 3 | `tag` | `bytes[3]` | little | spec | 27-byte coordinate selector |
 | 3 | 24 | `coefficients` | `f64[3]` | little | spec | 27-byte coordinate selector |
 
+## `owned_pcurve_wide_channel_header`
+
+Spec §6.3 · layout: byte offsets · size: 3 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/wire/records.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | `14 <K:u16le>` · value `20` |
+| 1 | 2 | `site_count` | `u16` | little | spec | This three-byte header repeats the definition-point count `K`. |
+
 ## Not tabulated
 
 | Area | Spec | Reason |
