@@ -30,7 +30,17 @@ const HISTORY_BASELINES: [&str; 2] = [
 #[derive(Default)]
 pub(super) struct HistoryDrop {
     losses: Vec<LossNote>,
-    coarse: bool,
+    coarse: Coarse,
+}
+
+/// The drop a failure that names no record takes: the first drops the feature
+/// history, the next every parameter as well.
+#[derive(Default, Clone, Copy)]
+enum Coarse {
+    #[default]
+    None,
+    History,
+    Parameters,
 }
 
 /// The records one failure removes.
@@ -63,17 +73,25 @@ impl HistoryDrop {
         let reason = error.to_string();
         let named = named_records(ir, &reason);
         let removed = if named.is_empty() {
-            if self.coarse {
+            loop {
+                let (next, seeds) = match self.coarse {
+                    Coarse::None => (Coarse::History, every_design_record(ir)),
+                    Coarse::History => (Coarse::Parameters, every_parameter(ir)),
+                    Coarse::Parameters => return Err(error),
+                };
+                self.coarse = next;
+                let removed = remove(ir, &seeds);
+                if !removed.is_empty() {
+                    break removed;
+                }
+            }
+        } else {
+            let removed = remove(ir, &named);
+            if removed.is_empty() {
                 return Err(error);
             }
-            self.coarse = true;
-            remove(ir, &every_design_record(ir))
-        } else {
-            remove(ir, &named)
+            removed
         };
-        if removed.is_empty() {
-            return Err(error);
-        }
         self.losses.extend(removed.notes(&reason));
         Ok(())
     }
@@ -271,6 +289,18 @@ fn every_design_record(ir: &CadIr) -> Removed {
         constraints: BTreeSet::new(),
         parameters: BTreeSet::new(),
         entities: BTreeSet::new(),
+    }
+}
+
+fn every_parameter(ir: &CadIr) -> Removed {
+    Removed {
+        parameters: ir
+            .model
+            .parameters
+            .iter()
+            .map(|parameter| parameter.id.as_str().to_owned())
+            .collect(),
+        ..Removed::default()
     }
 }
 

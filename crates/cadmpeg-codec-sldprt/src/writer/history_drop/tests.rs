@@ -89,3 +89,36 @@ fn a_failure_that_names_a_constraint_leaves_out_that_constraint_and_keeps_its_op
         "writer.sketch-constraints-omitted"
     );
 }
+
+#[test]
+fn a_second_failure_that_names_no_record_leaves_out_every_parameter() {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model
+        .parameters
+        .push(cadmpeg_ir::features::DesignParameter {
+            product_definition: None,
+            id: cadmpeg_ir::features::ParameterId::mint("other:model:parameter#width").unwrap(),
+            owner: None,
+            ordinal: 0,
+            name: "width".into(),
+            expression: "10 mm".into(),
+            display: None,
+            value: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+    let mut drop = HistoryDrop::default();
+    let failure = || {
+        CodecError::malformed(
+            "SLDPRT parameter dependencies are inconsistent with their expressions",
+        )
+    };
+    drop.degrade(&mut ir, failure()).unwrap();
+    assert!(ir.model.parameters.is_empty());
+    assert!(drop.degrade(&mut ir, failure()).is_err());
+    let losses = drop.finish();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("other:model:parameter#width"));
+}
