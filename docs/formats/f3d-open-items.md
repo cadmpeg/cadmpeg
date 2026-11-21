@@ -474,13 +474,13 @@ prologue stores travel direction `3`, face-extend option `2`, and side extents
 
 **Note.** None.
 
-### DR-293. Mesh stream metadata
+### DR-293. Mesh face-group registry value
 
-**Question.** What component order does a split mesh stream use, what history bound does its compression encoding state, and what does the mesh face-group registry value count?
+**Question.** What does the mesh face-group registry value count?
 
-**Known.** A split stream stores two, three, or four equal-length f32 segments. The decoder retains its descriptor, reads the segments in stored order, and reports `mesh.split-stream-assumed`. It uses the larger of 1 MiB and the declared output length as the LZMA history bound and reports `mesh.history-window-assumed`. A face-group channel lists key and GUID entries. The decoder retains field 9 and all entries, uses the triangle selectors, and reports `mesh.face-groups-assumed` when the count differs or a group has no triangles.
+**Known.** A face-group channel lists key and GUID entries. The decoder retains field 9 and all entries, uses the triangle selectors, and reports `mesh.face-groups-assumed` when the count differs or a group has no triangles.
 
-**Need.** A mesh with distinct known coordinates establishes the component order. A documented encoding rule establishes the history bound. A controlled face-group edit establishes the meaning of field 9.
+**Need.** A controlled face-group edit establishes the meaning of field 9.
 
 **Conflict.** None.
 
