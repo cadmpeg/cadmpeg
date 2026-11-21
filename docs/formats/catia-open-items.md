@@ -502,9 +502,9 @@ different, independently constrained orientation route.
 
 **Question.** What scalar roles and control values define an active E5 NURBS extrapolation branch?
 
-**Known.** `catia.md` §9 "The E5 `0xaa` current-limit program" defines the limit and affine fields. Class `0xaa` has one extrapolation control. The E7 surface program has three flags, eight continuation scalars and six suffix controls. Zero controls disable extrapolation.
+**Known.** `catia.md` §9 "The E5 `0xaa` current-limit program" defines the limit and affine fields. Class `0xaa` has one extrapolation control. The E7 surface program has three flags, eight continuation scalars and six suffix controls. Zero controls disable extrapolation. Sheet-owned tensor suffixes retain two compact descriptors and optional counts. Unapplied descriptors, flags, and continuation scalars are reported with `geometry.surface-extrapolation-not-transferred`.
 
-**Need.** We must identify an active branch before interpreting its continuation fields.
+**Need.** We must identify an active branch before interpreting its continuation fields. Establish the knot remap, reversal, and restriction for descending or changed active limits before admitting new chart-changing forms.
 
 ## 7. Container and route selection
 

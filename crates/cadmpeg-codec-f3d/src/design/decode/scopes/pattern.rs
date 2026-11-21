@@ -97,10 +97,8 @@ pub(super) fn exact_rectangular_pattern_construction(
     let Some(mut construction) = parsed else {
         return Ok(None);
     };
-    let directions = active_direction_records(
-        &construction,
-        exact_rectangular_pattern_directions(bytes, records, scope),
-    );
+    let stored_directions = exact_rectangular_pattern_directions(bytes, records, scope);
+    let directions = active_direction_records(&construction, stored_directions.clone());
     let secondary = exact_rectangular_pattern_secondary_direction(
         bytes,
         records,
@@ -116,7 +114,7 @@ pub(super) fn exact_rectangular_pattern_construction(
         records,
         scope,
         &construction,
-        &directions,
+        &stored_directions,
         stream_types,
     ));
     if directions.len() == construction.bound_direction_record_count() {
@@ -348,7 +346,7 @@ fn rectangular_pattern_payload_frames(
                 || bytes.get(start + prefix::ZERO_TAIL..start + prefix::SENTINEL) != Some(&[0; 9])
                 || View::u32_le_at(bytes, start + prefix::SENTINEL) != Some(u32::MAX)
                 || !matches!(bytes.get(start + prefix::SYMMETRIC), Some(0 | 1))
-                || bytes.get(start + prefix::ZERO_AFTER_SYMMETRIC) != Some(&0)
+                || !matches!(bytes.get(start + prefix::SYMMETRIC_TWO), Some(0 | 1))
                 || [
                     (prefix::U_COUNT, owners[0]),
                     (prefix::V_COUNT, owners[1]),
@@ -520,13 +518,17 @@ fn exact_rectangular_pattern_distribution(
     if suffix_at.checked_add(suffix::LEN)? != *end {
         return None;
     }
-    let symmetric_at = start + prefix::SYMMETRIC;
+    let flag = |offset: usize| {
+        let at = start + offset;
+        Some(crate::records::identity::Located {
+            value: bytes.get(at) == Some(&1),
+            offset: u64::try_from(at).ok()?,
+        })
+    };
     Some(patterns::DesignRectangularPatternDistribution {
         record_index: *record_index,
-        symmetric: crate::records::identity::Located {
-            value: bytes.get(symmetric_at) == Some(&1),
-            offset: u64::try_from(symmetric_at).ok()?,
-        },
+        symmetric: flag(prefix::SYMMETRIC)?,
+        symmetric_two: flag(prefix::SYMMETRIC_TWO)?,
         total_extent: crate::records::identity::Located {
             value: total_extent,
             offset: u64::try_from(at + block::DISTANCE_TYPE).ok()?,
