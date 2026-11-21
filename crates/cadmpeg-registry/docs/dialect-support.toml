@@ -1214,3 +1214,20 @@ the sldprt and nx readers emit this residual layer for every other schema token
 extracted from a framed Parasolid stream. The source token names no classified
 row, so recovery is admitted without claiming a verified dialect. Both hosts
 charge source.kernel-dialect-unverified from this layer"""
+
+[format.solidedge]
+level = 0
+scored = ["solidedge:cfb"]
+
+[[support]]
+dialect = "solidedge:cfb"
+read = "detected"
+write = "none"
+reason = "Content detection and compound stream listing; body decoding is pending."
+
+
+[[support]]
+dialect = "solidedge:unknown"
+read = "unclassified-recovered"
+write = "none"
+reason = "Content detection and compound stream listing; body decoding is pending."

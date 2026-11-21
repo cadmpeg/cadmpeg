@@ -90,6 +90,9 @@ GENERATED_ID_OWNERS = {
         Path("crates/cadmpeg-codec-sat/src/dialect/registry_ids.rs"),
         "pub(crate)",
     ),
+    "solidedge": GeneratedIdOwner(
+        Path("crates/cadmpeg-codec-solidedge/src/dialect/registry_ids.rs"), "pub(crate)"
+    ),
     "sldprt": GeneratedIdOwner(
         Path("crates/cadmpeg-codec-sldprt/src/dialect/registry_ids.rs"), "pub(crate)"
     ),

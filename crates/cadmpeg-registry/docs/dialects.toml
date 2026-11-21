@@ -1602,3 +1602,21 @@ unknown_kind = "recovered-residual"
 title = "Parasolid stream with an unrecognized schema token"
 discriminants = { schema = "any other SCH_ token" }
 witness = "code:crates/cadmpeg-parasolid/src/lib.rs"
+
+[format.solidedge]
+complete = false
+aliases = ["par", "psm", "asm"]
+
+[[dialect]]
+id = "solidedge:cfb"
+title = "Solid Edge compound directory"
+discriminants = { container = "CFB", directory = "JSitesList and JGlobal" }
+witness = "code:crates/cadmpeg-codec-solidedge/src/container.rs"
+
+
+[[dialect]]
+id = "solidedge:unknown"
+unknown_kind = "recovered-residual"
+title = "Solid Edge compound document"
+discriminants = { container = "CFB", directory = "JSitesList and JGlobal" }
+witness = "code:crates/cadmpeg-codec-solidedge/src/container.rs"

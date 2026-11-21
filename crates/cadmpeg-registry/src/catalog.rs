@@ -209,6 +209,7 @@ impl InputCatalog {
                         #[cfg(any(
                             feature = "fcstd",
                             feature = "f3d",
+                            feature = "solidedge",
                             feature = "inventor",
                             feature = "sldprt",
                             feature = "catia",
@@ -509,6 +510,21 @@ mod tests {
             .descriptors()
             .any(|descriptor| descriptor.format_id().as_str() == "step"
                 && descriptor.codec().is_some()));
+    }
+
+    #[cfg(feature = "solidedge")]
+    #[test]
+    fn solid_edge_is_registered_as_a_read_only_family_codec() {
+        let catalog = InputCatalog::with_builtins();
+        let descriptor = catalog
+            .descriptors()
+            .find(|descriptor| descriptor.format_id().as_str() == "solidedge")
+            .expect("Solid Edge descriptor exists");
+        assert_eq!(descriptor.extensions(), ["par", "psm", "asm"]);
+        assert!(descriptor.codec().is_some());
+        assert!(crate::Format::from_name("solidedge")
+            .expect("registry loads")
+            .is_none());
     }
 
     #[cfg(feature = "inventor")]

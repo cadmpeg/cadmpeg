@@ -24,6 +24,7 @@ default = [
   "fcstd",
   "f3d",
   "inventor",
+  "solidedge",
   "sldprt",
   "catia",
   "creo",
@@ -41,6 +42,7 @@ default = [
 # encoding. Direct codec dependencies are needed only by CLI tests.
 fcstd = ["cadmpeg-registry/fcstd", "dep:cadmpeg-codec-freecad"]
 f3d = ["cadmpeg-registry/f3d", "dep:cadmpeg-codec-f3d"]
+solidedge = ["cadmpeg-registry/solidedge"]
 inventor = ["cadmpeg-registry/inventor"]
 sldprt = ["cadmpeg-registry/sldprt", "dep:cadmpeg-codec-sldprt"]
 catia = ["cadmpeg-registry/catia", "dep:cadmpeg-codec-catia"]

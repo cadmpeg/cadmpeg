@@ -501,6 +501,7 @@ fn generate_nx_submodule_seeds() -> Result<(), SeedError> {
 fn generate_inventor_submodule_seeds() -> Result<(), SeedError> {
     let cfb = synthetic_cfb_seed()?;
     write_seed("seeds/inventor_codec", "minimal", &cfb)?;
+    write_seed("seeds/solidedge_codec", "minimal", &cfb)?;
     write_seed("seeds/compound_snapshot", "minimal", &cfb)?;
     write_seed(
         "seeds/inventor_database",

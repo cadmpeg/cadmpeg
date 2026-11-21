@@ -73,6 +73,7 @@ its result.
 | Creo View `.pvz`                                  | L3    |
 | OpenUSD layers                                    | L2    |
 | STEP Part 21                                      | L8    |
+| Solid Edge `.par`, `.psm`, and `.asm`             | L0    |
 
 <!-- /generated: ladder-table -->
 
@@ -676,3 +677,22 @@ Part 28 XML, Part 26 binary/HDF5, and AP242 BO-Model sidecars are outside the de
 Per-format specifications in [`formats/`](formats/) define byte semantics. Adjacent `*-open-items.md` files contain unresolved fields and structures. Every **Partial** domain names its remaining work here or in the linked open-items document.
 
 The generated cells and the profile prose answer different questions. A cell is the row's disposition after fixture gating: `detected` means the codec classifies the dialect but no fixture in the repository backs a score for it, so it can state capability the prose describes and the cell still reads `detected`. A `detected` cell does not limit the headline level. A recorded evaluation backs the level without a committed file. A level named in profile prose names the ladder rung that capability text describes. Edit a cell only through `crates/cadmpeg-registry/docs/dialect-support.toml`; edit prose only outside a generated region.
+
+## Solid Edge `.par`, `.psm`, and `.asm`
+
+Detected by compound-file content. The reader lists streams. Body decoding is pending.
+The codec is read-only. Feature history and assembly placements are pending.
+
+See [`formats/solidedge.md`](formats/solidedge.md) and
+[`formats/solidedge-open-items.md`](formats/solidedge-open-items.md).
+
+<!-- generated: dialects solidedge -->
+
+**Ladder: L0.**
+
+| Dialect             | Read                   | Write |
+| ------------------- | ---------------------- | ----- |
+| `solidedge:cfb`     | detected               | none  |
+| `solidedge:unknown` | unclassified-recovered | none  |
+
+<!-- /generated: dialects solidedge -->

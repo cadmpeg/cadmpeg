@@ -38,6 +38,7 @@ pub(crate) enum FormatKind {
     #[cfg(any(
         feature = "fcstd",
         feature = "f3d",
+        feature = "solidedge",
         feature = "inventor",
         feature = "sldprt",
         feature = "catia",
@@ -108,6 +109,7 @@ impl FormatDescriptor {
             #[cfg(any(
                 feature = "fcstd",
                 feature = "f3d",
+                feature = "solidedge",
                 feature = "inventor",
                 feature = "sldprt",
                 feature = "catia",
@@ -133,6 +135,7 @@ impl FormatDescriptor {
             #[cfg(any(
                 feature = "fcstd",
                 feature = "f3d",
+                feature = "solidedge",
                 feature = "inventor",
                 feature = "sldprt",
                 feature = "catia",
@@ -155,6 +158,7 @@ impl FormatDescriptor {
             #[cfg(any(
                 feature = "fcstd",
                 feature = "f3d",
+                feature = "solidedge",
                 feature = "inventor",
                 feature = "sldprt",
                 feature = "catia",
@@ -173,6 +177,7 @@ impl FormatDescriptor {
 }
 
 #[cfg(any(
+    feature = "solidedge",
     feature = "inventor",
     feature = "catia",
     feature = "creo",
@@ -253,6 +258,13 @@ writable!(
     &["f3d"],
     OutputPhysics::Binary,
     || Box::new(cadmpeg_codec_f3d::F3dCodec)
+);
+#[cfg(feature = "solidedge")]
+reader!(
+    SOLIDEDGE,
+    FormatId::new("solidedge"),
+    &["par", "psm", "asm"],
+    || Box::new(cadmpeg_codec_solidedge::SolidEdgeCodec)
 );
 #[cfg(feature = "inventor")]
 reader!(INVENTOR, FormatId::new("inventor"), &["ipt", "iam"], || {
@@ -356,6 +368,8 @@ pub(crate) static FORMAT_DESCRIPTORS: &[&FormatDescriptor] = &[
     &F3D,
     #[cfg(feature = "inventor")]
     &INVENTOR,
+    #[cfg(feature = "solidedge")]
+    &SOLIDEDGE,
     #[cfg(feature = "sldprt")]
     &SLDPRT,
     #[cfg(feature = "catia")]

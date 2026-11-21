@@ -22,10 +22,11 @@ unreachable_pub = "deny"
 
 [features]
 default = [
-  "f3d", "inventor", "freecad", "sldprt", "catia", "creo", "nx",
+  "solidedge", "f3d", "inventor", "freecad", "sldprt", "catia", "creo", "nx",
   "rhino", "iges", "sat", "pvz", "usd", "step",
 ]
 f3d = ["dep:cadmpeg-codec-f3d"]
+solidedge = ["dep:cadmpeg-codec-solidedge"]
 inventor = ["dep:cadmpeg-codec-inventor"]
 freecad = ["dep:cadmpeg-codec-freecad"]
 sldprt = ["dep:cadmpeg-codec-sldprt"]
@@ -45,6 +46,7 @@ cadmpeg-asm = { path = "../cadmpeg-asm" }
 cadmpeg-core = { path = "../cadmpeg-core" }
 cadmpeg-container = { path = "../cadmpeg-container" }
 cadmpeg-codec-f3d = { path = "../cadmpeg-codec-f3d", optional = true }
+cadmpeg-codec-solidedge = { path = "../cadmpeg-codec-solidedge", optional = true }
 cadmpeg-codec-inventor = { path = "../cadmpeg-codec-inventor", optional = true }
 cadmpeg-protein = { path = "../cadmpeg-protein" }
 cadmpeg-codec-freecad = { path = "../cadmpeg-codec-freecad", optional = true }
@@ -836,3 +838,11 @@ bench = false
 
 [profile.release]
 debug = 1
+
+[[bin]]
+name = "solidedge_codec"
+path = "fuzz_targets/solidedge_codec.rs"
+test = false
+doc = false
+bench = false
+required-features = ["solidedge"]

@@ -16,6 +16,7 @@ members = [
   "crates/cadmpeg-protein",
   "crates/cadmpeg-codec-f3d",
   "crates/cadmpeg-codec-inventor",
+  "crates/cadmpeg-codec-solidedge",
   "crates/cadmpeg-codec-freecad",
   "crates/cadmpeg-codec-sldprt",
   "crates/cadmpeg-codec-catia",
@@ -55,6 +56,7 @@ cadmpeg-tessellate = { path = "crates/cadmpeg-tessellate", version = "0.6.12" }
 cadmpeg-test-support = { path = "crates/cadmpeg-test-support" }
 cadmpeg-protein = { path = "crates/cadmpeg-protein", version = "0.6.12" }
 cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.6.12" }
+cadmpeg-codec-solidedge = { path = "crates/cadmpeg-codec-solidedge", version = "0.6.12" }
 cadmpeg-codec-inventor = { path = "crates/cadmpeg-codec-inventor", version = "0.6.12" }
 cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.6.12" }
 cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.6.12" }

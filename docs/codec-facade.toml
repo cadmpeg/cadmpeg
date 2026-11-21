@@ -98,3 +98,9 @@ fuzz = "required"
 id = "usd"
 names = ["UsdCodec"]
 fuzz = "required"
+
+[[crate]]
+id = "solidedge"
+names = ["SolidEdgeCodec"]
+fuzz = "absent"
+fuzz_reason = "the codec target calls SolidEdgeCodec directly"
