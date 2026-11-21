@@ -14,7 +14,7 @@ use super::fixed::DATA_MODEL_OBJECT;
 use super::{
     count, BodyIndices, Context, RosterBody, AGGREGATE, ALTERNATE_OWNERS, ASSET_MANAGER,
     ASSET_SETTINGS, BODIES_ROOT, BODY_MAP, CONTEXT, DESIGN_COMPANION, DESIGN_OWNER,
-    PARAMETER_COMPANION, PARAMETER_OWNER, SCOPE, SNAPSHOT_MAP, SNAPSHOT_MAP_COMPANION,
+    PARAMETER_COMPANION, PARAMETER_OWNER, SNAPSHOT_MAP, SNAPSHOT_MAP_COMPANION,
 };
 use crate::layout;
 
@@ -146,7 +146,7 @@ pub(super) fn write(ctx: &Context<'_>, out: &mut DesignRecords) -> Result<(), Co
             .byte(0)
             .byte(1)
             .reference(records.design)
-            .reference(SCOPE)
+            .reference(ctx.item_scope())
             .header(&object, records.node)
             .zeros(8)
             .reference(CONTEXT);
@@ -260,14 +260,20 @@ fn reference(
             -1.0,
         ),
     };
-    out.record(&ctx.class_of(record)?, record)
-        .zeros(9)
-        .byte(1)
-        .u32(1)
-        .lp_ascii(property)?
-        .lp_ascii("PassiveRefMetaType")?
-        .reference(other)
-        .lp_utf16(&format!("0_{record}"))?
+    out.record(&ctx.class_of(record)?, record);
+    // An `Extrude`'s result body has the presentation-owner form: no
+    // property block (f3d.md §3.1, "Result body").
+    if side == Side::Design && ctx.roster.extrude.is_some() {
+        out.zeros(10);
+    } else {
+        out.zeros(9)
+            .byte(1)
+            .u32(1)
+            .lp_ascii(property)?
+            .lp_ascii("PassiveRefMetaType")?
+            .reference(other);
+    }
+    out.lp_utf16(&format!("0_{record}"))?
         .u32(if body.sheet { 4 } else { 2 })
         .f64(0.0)
         .f64(accuracy)
