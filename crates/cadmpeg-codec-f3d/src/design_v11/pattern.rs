@@ -176,7 +176,7 @@ fn project_seeds(
     seeds: &[PatternSeed],
     method: Option<PatternMethod>,
 ) -> Option<(PatternSeeds, bool)> {
-    use cadmpeg_ir::features::{BodySelection, FaceSelection};
+    use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
     let source = match seeds {
         [PatternSeed::Faces(selection)] => {
             let native = match selection {

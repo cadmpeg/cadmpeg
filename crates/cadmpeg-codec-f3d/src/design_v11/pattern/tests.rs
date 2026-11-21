@@ -6,8 +6,9 @@ use crate::records::feature::patterns::{
     DesignRectangularPatternDirection,
 };
 use crate::records::feature::scope::{DesignFeatureKind, DesignScopePayloadMut};
+use cadmpeg_ir::features::geometry::FeatureDirection3;
 use cadmpeg_ir::features::patterns::{LinearPatternDirection, PatternKind};
-use cadmpeg_ir::features::{FeatureDirection3, FeatureId};
+use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::scalar::PositiveLength;
 
@@ -290,7 +291,7 @@ fn an_unread_inactive_direction_charges_a_pinned_loss_and_keeps_both_runs() {
 
 #[test]
 fn face_and_body_seed_groups_keep_their_native_selections_beside_the_typed_layout() {
-    use cadmpeg_ir::features::{BodySelection, FaceSelection};
+    use cadmpeg_ir::features::selections::{BodySelection, FaceSelection};
     let scope = scope([3, 1], [1.0, 0.0], 8, false);
     for seed in [
         PatternSeed::Faces(FaceSelection::Native("f3d:seed-group#1".into())),
