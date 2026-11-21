@@ -21,6 +21,7 @@ fn suppressed(active: bool, flag: Option<bool>) -> Option<bool> {
         suppressed,
         rolled_back: false,
         suppressed_offset: scope.feature_ordinal_offset(),
+        envelope_offset: None,
     });
     let id = scope.id.clone();
     let crate::design::feature_project::ProjectedParameterDesign { features, .. } =

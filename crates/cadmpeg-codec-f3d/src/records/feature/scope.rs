@@ -96,6 +96,11 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_display_name, String, "display_name");
 cadmpeg_core::named_optional_field!(deserialize_tail_flags, DesignScopeTailFlags, "tail_flags");
 cadmpeg_core::named_optional_field!(
+    deserialize_tail_flags_envelope_offset,
+    u64,
+    "envelope_offset"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_deleted_members,
     super::deleted_members::DesignDeletedMembers,
     "deleted_members"
@@ -549,6 +554,33 @@ pub(crate) struct DesignScopeTailFlags {
     pub(crate) rolled_back: bool,
     /// Byte offset of the suppressed flag; the rolled-back flag follows it.
     pub(crate) suppressed_offset: u64,
+    /// Byte offset of the earlier same-index envelope that stores the flags,
+    /// where this envelope stores none. The flags then lie after the start of
+    /// that envelope and before the start of this one.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_tail_flags_envelope_offset"
+    )]
+    pub(crate) envelope_offset: Option<u64>,
+}
+
+impl DesignScopeTailFlags {
+    /// Whether `scope` can hold these flags: in its own tail before its paired
+    /// header or, from the earlier envelope at `envelope_offset`, after that
+    /// envelope's start and before `scope`'s start.
+    pub(crate) fn lie_within(&self, scope: &DesignParameterScope) -> bool {
+        let Some(end) = self.suppressed_offset.checked_add(1) else {
+            return false;
+        };
+        match self.envelope_offset {
+            None => {
+                self.suppressed_offset >= scope.feature_ordinal_offset
+                    && end < scope.paired_byte_offset
+            }
+            Some(envelope) => envelope < self.suppressed_offset && end < scope.byte_offset,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -2752,10 +2784,10 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 ));
             }
         }
-        if wire.tail_flags.is_some_and(|flags| {
-            flags.suppressed_offset < admitted.feature_ordinal_offset
-                || flags.suppressed_offset.checked_add(1) >= Some(admitted.paired_byte_offset)
-        }) {
+        if wire
+            .tail_flags
+            .is_some_and(|flags| !flags.lie_within(&admitted))
+        {
             return Err(DesignParameterScopePayloadError(
                 "tail_flags outside the scope tail".into(),
             ));
