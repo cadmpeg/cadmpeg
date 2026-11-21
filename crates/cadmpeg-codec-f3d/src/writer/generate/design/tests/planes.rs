@@ -19,8 +19,8 @@ use cadmpeg_ir::scalar::Length;
 
 use super::roster::{segment, Segment};
 use super::sketch::{
-    decoded_points, feature, feature_id, frame, near, picked, point2, principal, sketch_id, unread,
-    world, Source,
+    decoded_points, feature, feature_id, fixed_clock_tables, frame, near, picked, point2,
+    principal, sketch_id, unread, world, Source,
 };
 use super::{loss, scoped_cube, u32_at, write, write_bytes};
 use crate::loss::F3dLossCode;
@@ -468,6 +468,27 @@ fn the_records_of_a_workplane_item_have_the_stated_sizes() {
 }
 
 #[test]
+fn the_fixed_clock_note_names_the_workplane_timestamp_tables() {
+    let top = frame([0.0, 0.0, 10.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+    let ir = with(Vec::new(), vec![rectangle("top", unread(), top, false)]);
+    let (report, _, bytes) = write_bytes(&ir);
+    let design = segment(&bytes, DESIGN);
+    let [scope] = records_of(&design, "D869265F").as_slice()[..] else {
+        panic!("one WorkPlane scope");
+    };
+    let tables = fixed_clock_tables(&report, &bytes);
+    for (table, role) in [
+        (scope + 3, "AlongDistance"),
+        (scope + 5, "placement path"),
+        (scope + 9, "placement"),
+        (scope + 11, "scope"),
+        (scope + 16, "ExtraOffset"),
+    ] {
+        assert!(tables.contains(&table), "{role} table {table}: {tables:?}");
+    }
+}
+
+#[test]
 fn the_context_value_of_a_design_with_planes_and_no_dimension_is_named() {
     let top = frame([0.0, 0.0, 10.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
     let ir = with(Vec::new(), vec![rectangle("top", unread(), top, false)]);
@@ -497,9 +518,10 @@ fn the_workplane_note_names_the_parameter_numbering() {
         panic!("one WorkPlane note: {:#?}", report.losses);
     };
     for named in [
-        "parameter source ordinals",
-        "AlongDistance parameter takes the ordinal after the parameters of the items before it",
+        "one counter from 1 over the WorkPlane and Sketch items in timeline order",
+        "AlongDistance parameter takes the ordinal after the parameters of the WorkPlane and Sketch items before it",
         "ExtraOffset parameter's ordinal plus one",
+        "an Extrude item's two parameters take the last two ordinals",
     ] {
         assert!(note.contains(named), "{named}: {note}");
     }

@@ -12,7 +12,7 @@ use super::Node;
 
 impl<R> Node<R> {
     /// The node's operands, left to right.
-    fn operands(&self) -> impl Iterator<Item = &Self> {
+    pub(crate) fn operands(&self) -> impl Iterator<Item = &Self> {
         let (pair, rest): ([Option<&Self>; 2], &[Self]) = match self {
             Self::Unary { operand, .. } => ([Some(operand.as_ref()), None], &[]),
             Self::Binary { left, right, .. } => ([Some(left.as_ref()), Some(right.as_ref())], &[]),
@@ -31,7 +31,7 @@ impl<R> Node<R> {
     }
 
     /// The node's operands, left to right, to change in place.
-    fn operands_mut(&mut self) -> impl Iterator<Item = &mut Self> {
+    pub(crate) fn operands_mut(&mut self) -> impl Iterator<Item = &mut Self> {
         let (pair, rest): ([Option<&mut Self>; 2], &mut [Self]) = match self {
             Self::Unary { operand, .. } => ([Some(operand.as_mut()), None], &mut []),
             Self::Binary { left, right, .. } => {

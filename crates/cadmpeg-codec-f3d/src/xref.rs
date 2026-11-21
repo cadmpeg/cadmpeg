@@ -1075,7 +1075,11 @@ fn current_pose(
     let matching = poses
         .iter()
         .filter(|pose| {
-            pose.placement_record_index == placement.carrier_record_index && pose.role == role
+            pose.placement_record_index == placement.carrier_record_index
+                && match pose.legacy_target {
+                    Some(target) => legacy_placement_target(&placement.frame_bytes) == Some(target),
+                    None => pose.role == role,
+                }
         })
         .collect::<Vec<_>>();
     let pose = match matching.as_slice() {
@@ -1510,7 +1514,10 @@ pub(crate) fn current_pose_matches(reference: &XrefReference) -> bool {
         .any(|pose| {
             pose.carrier_record_index == current.carrier_record_index
                 && pose.placement_record_index == source.carrier_record_index
-                && pose.role == reference.neutron_role.as_str()
+                && match pose.legacy_target {
+                    Some(target) => legacy_placement_target(&source.frame_bytes) == Some(target),
+                    None => pose.role == reference.neutron_role.as_str(),
+                }
                 && pose.transform
                     == current
                         .transform
@@ -2362,8 +2369,11 @@ pub(crate) struct ComponentPathPose {
     pub(crate) carrier_record_index: u64,
     /// The occurrence-placement record that the path's local element names.
     pub(crate) placement_record_index: u64,
-    /// The occurrence role of the path's cross-document element.
+    /// The occurrence role of the path's cross-document element. Empty for a
+    /// legacy target element, which stores no link name.
     pub(crate) role: String,
+    /// The entity and source occurrence identity of a legacy target element.
+    pub(crate) legacy_target: Option<(u64, u64)>,
     /// `None` is the stored identity form.
     pub(crate) transform: Option<[[f64; 4]; 4]>,
     /// The complete carrier record, header included.
@@ -2371,11 +2381,27 @@ pub(crate) struct ComponentPathPose {
 }
 
 /// Parse a component-path carrier whose path is one cross-document element and
-/// one local element that names an occurrence-placement record, in either order.
+/// one local element that names an occurrence-placement record, in either order,
+/// or a legacy root-component target and then that local element.
 pub(crate) fn component_path_pose(
     body: &[u8],
     serializer_magic: Option<u32>,
 ) -> Option<ComponentPathPose> {
+    if let Some((legacy_target, placement_record_index, at)) = legacy_root_component_path(body) {
+        if body.get(at) != Some(&0) {
+            return None;
+        }
+        let ClosedPlacement { transform, .. } =
+            placement_matrix_and_tail(body, at + 1, serializer_magic)?;
+        return Some(ComponentPathPose {
+            carrier_record_index: View::u64_le_at(body, 7)?,
+            placement_record_index,
+            role: String::new(),
+            legacy_target: Some(legacy_target),
+            transform,
+            frame_bytes: body.to_vec(),
+        });
+    }
     let (members, at) = occurrence_path_members(body)?;
     let [(first, _), (second, _)] = members.as_slice() else {
         return None;
@@ -2397,9 +2423,47 @@ pub(crate) fn component_path_pose(
         carrier_record_index: View::u64_le_at(body, 7)?,
         placement_record_index,
         role: role.to_owned(),
+        legacy_target: None,
         transform,
         frame_bytes: body.to_vec(),
     })
+}
+
+/// The path of a component-path carrier with exactly two elements: a legacy
+/// target of the root-component type, then a local element that names an
+/// occurrence-placement record. Returns the target's entity and source
+/// occurrence identity, the placement record, and the offset after the path.
+fn legacy_root_component_path(body: &[u8]) -> Option<((u64, u64), u64, usize)> {
+    let (_, after_tag) = lp_ascii_strict(body, 0, 3..=3)?;
+    let mut at = lp_ascii_strict(body, after_tag.checked_add(8)?, 0..=256)?.1;
+    if body.get(at) != Some(&1) || View::u32_le_at(body, at + 1)? != 2 {
+        return None;
+    }
+    at += 5;
+    let target = take_legacy_occurrence_reference(body, &mut at)?;
+    if target.entity == 0
+        || target.source_occurrence_identity == 0
+        || !target
+            .type_guid
+            .eq_ignore_ascii_case(ROOT_COMPONENT_TYPE_GUID)
+    {
+        return None;
+    }
+    let target = (target.entity, target.source_occurrence_identity);
+    View::u32_le_at(body, at)?;
+    at += 4;
+    let placement_record_index = typed_local_placement(&take_owned_reference(body, &mut at)?)?;
+    View::u32_le_at(body, at)?;
+    Some((target, placement_record_index, at + 4))
+}
+
+/// The entity and source occurrence identity of the legacy target that opens a
+/// legacy attributed occurrence-placement record.
+fn legacy_placement_target(body: &[u8]) -> Option<(u64, u64)> {
+    legacy_attributed_placement_details(body)?;
+    let mut at = legacy_prefix::TARGET_REFERENCE;
+    let target = take_legacy_occurrence_reference(body, &mut at)?;
+    Some((target.entity, target.source_occurrence_identity))
 }
 
 /// Type-table identity of a Design root-component aggregate, which a
