@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{merge_operand_list_bindings, unbound_refusals};
+use super::{merge_operand_list_bindings, tool_replacement_loss, unbound_refusals};
 use crate::history::CombineOperandSide;
 use crate::loss::F3dLossCode;
 use cadmpeg_ir::features::{BodySelection, DistinctMembers, FeatureId};
@@ -61,6 +61,47 @@ fn recipe_tools_that_name_model_bodies_replace_slot_tools() {
             (native("target"), bodies("tool")),
         ),
         (bodies("target"), bodies("tool"))
+    );
+}
+
+#[test]
+fn a_recipe_tool_replacement_charges_a_loss_that_names_both_tools() {
+    let feature = FeatureId::mint("f3d:test:feature#combine").unwrap();
+    let (_, merged) = merge_operand_list_bindings(
+        (bodies("target"), historical(2)),
+        (native("target"), bodies("tool")),
+    );
+    let loss = tool_replacement_loss(&feature, &historical(2), &merged)
+        .expect("a replacement of bound slot tools");
+    assert_eq!(
+        loss.code,
+        F3dLossCode::FeatureCombineToolRecipeReplacementAssumed.kind()
+    );
+    assert!(
+        loss.message.contains("f3d:test:feature#combine"),
+        "{}",
+        loss.message
+    );
+    assert!(
+        loss.message.contains("f3d:test:body#tool"),
+        "{}",
+        loss.message
+    );
+    let BodySelection::Historical { bodies: slot, .. } = historical(2) else {
+        unreachable!("a historical selection")
+    };
+    assert!(
+        loss.message.contains(slot.as_slice()[0].as_str()),
+        "{}",
+        loss.message
+    );
+    assert_eq!(
+        tool_replacement_loss(&feature, &historical(2), &historical(2)),
+        None
+    );
+    assert_eq!(
+        tool_replacement_loss(&feature, &native("tools"), &bodies("tool")),
+        None
     );
 }
 

@@ -120,6 +120,7 @@ fn bind_historical_combine_operands<'a>(
         (recipe_target, recipe_tools),
     );
     losses.extend(unbound_refusals((&merged_target, &merged_tools), refusals));
+    losses.extend(tool_replacement_loss(feature_id, tools, &merged_tools));
     *target = merged_target;
     *tools = merged_tools;
 }
@@ -166,6 +167,41 @@ fn merge_operand_list_bindings(
         .into_iter()
         .find(|(target, tools)| CombineOperands::new(target.clone(), tools.clone()).is_ok())
         .unwrap_or((slot_target, slot_tools))
+}
+
+/// The loss for merged tools that replace slot tools that bind.
+fn tool_replacement_loss(
+    feature_id: &FeatureId,
+    slot_tools: &BodySelection,
+    merged_tools: &BodySelection,
+) -> Option<LossNote> {
+    (!native_operand(slot_tools) && merged_tools != slot_tools).then(|| {
+        crate::loss::F3dLossCode::FeatureCombineToolRecipeReplacementAssumed.note(format!(
+            "Combine {feature_id}: the body recipe tools {:?} replace the slot tools {:?}",
+            selection_bodies(merged_tools),
+            selection_bodies(slot_tools),
+        ))
+    })
+}
+
+/// The body identities of `selection`, or its native expression.
+fn selection_bodies(selection: &BodySelection) -> Vec<&str> {
+    match selection {
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+            bodies.as_slice().iter().map(|body| body.as_str()).collect()
+        }
+        BodySelection::ResolvedSet { members } => {
+            members.bodies().map(|body| body.as_str()).collect()
+        }
+        BodySelection::Historical { bodies, .. } => {
+            bodies.as_slice().iter().map(|body| body.as_str()).collect()
+        }
+        BodySelection::HistoricalSet { members, .. } => {
+            members.bodies().map(|body| body.as_str()).collect()
+        }
+        BodySelection::Native(native) => vec![native.as_str()],
+        _ => Vec::new(),
+    }
 }
 
 /// The slot refusals of the operands that stay native.

@@ -1910,6 +1910,28 @@ Two public designs retain the same two-edge ambiguity after the candidate-bounda
 
 **Note.** A two-list form without a companion reads the middle lists as the created-body and consumed-body lists and reports `feature.combine-middle-list-omitted-assumed`. DR-561 tracks the destination of a new-component request.
 
+### DR-272. Prologue of a Combine frame whose byte 20 is one
+
+**Question.** Which prologue does a `Combine` frame store when byte 20 is one, its fixed fields match both the standard and the operand-list prologue, and its lists do not complete the operand-list prologue?
+
+**Known.** `f3d.md` §3.1 gives the standard and operand-list prologues. A standard join and an operand-list prologue with an empty property block both store `01 00 00 00 00` at offsets 20 through 24. An operand-list prologue without a companion can also store zero at offsets 26 through 32. In this overlap the standard reading gives a join whose keep-tools Boolean is the operand-list operation byte, so an operand-list cut reads as a join that keeps its tools. A complete list reading checks the ordered operation identities, the list rules, the counted GUID and the exact reference-table boundary, and §3.1 selects the operand-list prologue for a frame without an expanded named tail that it reads. The corpus save `combine_cut_split.f3d` is in the overlap. Fusion reports its `Combine` as a cut with Keep Tools off, and the operand-list reading gives that cut. A frame in the overlap whose lists do not complete the operand-list prologue is read in the standard prologue and reports `feature.combine-prologue-assumed`. DR-560 covers the expanded named tail. A frame whose lists match its operands but contradict other required list fields reports `feature.combine-operand-list-refused` when no prologue reads it.
+
+**Need.** A frame of this kind with its operation and keep-tools state shown by result volumes or by a Fusion readback.
+
+**Conflict.** None.
+
+**Note.** For a non-operand-list Combine stored as Join with kept tools and no deleted bodies, the history binding assumes Cut and reports `feature.combine-kept-tools-cut-assumed`. The native operation remains stored in the scope.
+
+### DR-921. Tools of an operand-list Combine whose body recipes name model bodies
+
+**Question.** When the browser-node slots of an operand-list `Combine` bind its tools and the body recipes of the scope name model bodies for the tools, which bodies does the `Combine` use as its tools?
+
+**Known.** `f3d.md` §3.1 gives the slot rule and the body-recipe rules. The slots name bodies of the preceding history state, and the recipes name model bodies. The decoder takes the model bodies and reports `feature.combine-tool-recipe-replacement-assumed` with the slot tools and the replacing bodies. The model bodies are distinct from the target.
+
+**Need.** A Fusion readback of the tool bodies of such a `Combine`, compared with both bindings.
+
+**Conflict.** None.
+
 ### DR-561. Destination of a Combine new-component result
 
 **Question.** How does a Combine's new-component request identify the product definition and placement that contain its result?
