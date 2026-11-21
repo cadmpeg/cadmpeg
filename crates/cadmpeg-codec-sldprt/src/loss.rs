@@ -135,6 +135,10 @@ pub(crate) enum SldprtLossCode {
     SketchHandleReadingAssumed,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,
+    /// A list line with profile role 1 is marked construction from selector bit 3 (DI-77).
+    SketchListedLineConstructionAssumed,
+    /// A framed list curve drops a constraint-owning reading of +17 (DI-77).
+    SketchListedCurveRelationDropped,
     /// Native sketch relation has no projected neutral constraint.
     SketchRelationUnprojected,
     /// Native sketch relation is claimed by multiple neutral objects.
@@ -404,6 +408,8 @@ impl SldprtLossCode {
         Self::SketchArcRecordConflict,
         Self::SketchHandleReadingAssumed,
         Self::SketchProfileRejected,
+        Self::SketchListedLineConstructionAssumed,
+        Self::SketchListedCurveRelationDropped,
         Self::SketchRelationUnprojected,
         Self::SketchRelationMultiplyProjected,
         Self::FeatureNativeKindRetained,
@@ -541,6 +547,8 @@ impl SldprtLossCode {
             Self::SketchNativeConstraint => "sketch.native-constraint",
             Self::SketchNativeGeometry => "sketch.native-geometry",
             Self::SketchProfileRejected => "sketch.profile-rejected",
+            Self::SketchListedLineConstructionAssumed => "sketch.listed-line-construction-assumed",
+            Self::SketchListedCurveRelationDropped => "sketch.listed-curve-relation-dropped",
             Self::SketchHandleUnresolved => "sketch.handle-unresolved",
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
@@ -720,6 +728,8 @@ impl SldprtLossCode {
             | Self::SketchArcRecordConflict
             | Self::SketchHandleReadingAssumed
             | Self::SketchProfileRejected
+            | Self::SketchListedLineConstructionAssumed
+            | Self::SketchListedCurveRelationDropped
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
             | Self::FeatureNativeKindRetained
@@ -943,6 +953,8 @@ impl SldprtLossCode {
             | Self::SketchArcRecordConflict
             | Self::SketchHandleReadingAssumed
             | Self::SketchProfileRejected
+            | Self::SketchListedLineConstructionAssumed
+            | Self::SketchListedCurveRelationDropped
             | Self::SketchRelationUnprojected
             | Self::SketchRelationMultiplyProjected
             | Self::FeatureNativeKindRetained
@@ -1173,6 +1185,8 @@ mod tests {
                 "sketch.arc-record-conflict",
                 "sketch.handle-reading-assumed",
                 "sketch.profile-rejected",
+                "sketch.listed-line-construction-assumed",
+                "sketch.listed-curve-relation-dropped",
                 "sketch.relation-unprojected",
                 "sketch.relation-multiply-projected",
                 "feature.native-kind-retained",

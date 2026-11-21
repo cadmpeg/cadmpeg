@@ -41,6 +41,7 @@ mod generated_bodies;
 pub(crate) mod history_bodies;
 mod hole_support;
 pub(crate) mod linked_states;
+pub(crate) mod loft_solid;
 mod loop_index;
 mod move_face;
 mod output_blob;
@@ -2699,11 +2700,20 @@ fn combine_recipe_family_tool_slots(
     Some(selected.into_iter().collect::<Vec<_>>())
 }
 
+/// The operand of a `Combine` that a binding refusal concerns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum CombineOperandSide {
+    Target,
+    Tools,
+}
+
 /// Bind an operand-list `Combine` through the browser node of each operand.
 ///
 /// The target binds when its node names a body of the preceding history
 /// state. The tools bind when every tool node names a distinct body of that
-/// state. A body that both sides name leaves both selections native.
+/// state. A body that both sides name leaves both selections native, and the
+/// result is `Some(true)`. Each refusal names the operand side that it
+/// concerns.
 fn bind_operand_list_combine_bodies(
     (target, tools): (
         &mut cadmpeg_ir::features::BodySelection,
@@ -2716,8 +2726,8 @@ fn bind_operand_list_combine_bodies(
         &[AsmHistory],
         &[crate::records::feature::scope::DesignParameterScope],
     ),
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Option<()> {
+    refusals: &mut Vec<(CombineOperandSide, cadmpeg_ir::report::loss::LossNote)>,
+) -> Option<bool> {
     use crate::records::feature::combine::DesignCombineBodyNode;
     use cadmpeg_ir::features::{BodyMembers, BodySelection};
 
@@ -2756,9 +2766,17 @@ fn bind_operand_list_combine_bodies(
         }
     };
     let mut refuse = |operand: &str, record_index: u32, reason: &str| {
-        losses.push(crate::loss::F3dLossCode::FeatureCombineOperandBodyUnbound.note(format!(
-            "feature {feature_id} does not bind Combine {operand} {stream}:design-record#{record_index} through its browser node: {reason}"
-        )));
+        let side = if operand == "target" {
+            CombineOperandSide::Target
+        } else {
+            CombineOperandSide::Tools
+        };
+        refusals.push((
+            side,
+            crate::loss::F3dLossCode::FeatureCombineOperandBodyUnbound.note(format!(
+                "feature {feature_id} does not bind Combine {operand} {stream}:design-record#{record_index} through its browser node: {reason}"
+            )),
+        ));
     };
     let target_slot = match body_slot(operation.target_body_node) {
         Ok(slot) => Some(slot),
@@ -2776,7 +2794,7 @@ fn bind_operand_list_combine_bodies(
                     tool.record_index,
                     "its body is also the target body",
                 );
-                return None;
+                return Some(true);
             }
             Ok(slot) => {
                 if let Some(slots) = tool_slots.as_mut() {
@@ -2818,7 +2836,7 @@ fn bind_operand_list_combine_bodies(
         state: crate::ids::history_input_state_id(&prefix),
         members,
     };
-    Some(())
+    Some(false)
 }
 
 fn combine_external_local_tools(
@@ -4323,7 +4341,10 @@ pub(crate) fn project_feature_input_topologies(
         let Some(previous_state_id) = selection::feature_selected_input_state_id(feature)
             .or_else(|| scope.previous_history_state_id())
             .or_else(|| {
-                crate::design::feature_project::work_point_recipe_state_id(scope, edge_operands)
+                crate::design::feature_project::work_points::work_point_recipe_state_id(
+                    scope,
+                    edge_operands,
+                )
             })
             .or_else(|| crate::design::feature_project::work_plane_recipe_state_id(scope))
             .or_else(|| {
@@ -4532,6 +4553,7 @@ fn project_input_edge_geometry(
                 faces: project_input_members(&faces, |face| {
                     crate::ids::history_input_face_id(prefix, face)
                 })?,
+                carrier: sample.carrier.clone(),
                 supports: Vec::new(),
             })
         })
@@ -4555,7 +4577,9 @@ pub(crate) fn bind_vertex_recipe_history(
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut topology_queries = TopologyQueryCache::default();
     let source_ordinals =
-        crate::design::feature_project::authored_scope_ordinals_per_stream(scopes, timelines)?;
+        crate::design::feature_project::scope_order::authored_scope_ordinals_per_stream(
+            scopes, timelines,
+        )?;
     let mut input_states = HashMap::new();
     for scope in scopes.iter().filter(|scope| {
         matches!(
@@ -7782,29 +7806,34 @@ fn keep_first_error(
 
 /// The topology of each history's one terminal state.
 fn terminal_topologies(histories: &[AsmHistory]) -> Vec<(i64, &AsmHistoricalTopology)> {
-    let mut terminal_topologies = Vec::new();
-    for history in histories {
-        let mut preceding = HashSet::new();
-        for state in history.states() {
-            if let Some(previous) = state
+    histories
+        .iter()
+        .filter_map(|history| {
+            let state = terminal_state(history)?;
+            Some((state.state_id, history.topology(state)?))
+        })
+        .collect()
+}
+
+/// The one state of `history` that no bound transition names as its
+/// predecessor.
+fn terminal_state(history: &AsmHistory) -> Option<&AsmDeltaState> {
+    let preceding: HashSet<i64> = history
+        .states()
+        .iter()
+        .filter_map(|state| {
+            state
                 .transition
                 .as_ref()
                 .and_then(|transition| transition.previous_state_id)
-            {
-                preceding.insert(previous);
-            }
-        }
-        let mut terminals = history
-            .states()
-            .iter()
-            .filter(|state| !preceding.contains(&state.state_id));
-        if let Some(state) = terminals.next().filter(|_| terminals.next().is_none()) {
-            if let Some(topology) = history.topology(state) {
-                terminal_topologies.push((state.state_id, topology));
-            }
-        }
-    }
-    terminal_topologies
+        })
+        .collect();
+    let mut terminals = history
+        .states()
+        .iter()
+        .filter(|state| !preceding.contains(&state.state_id));
+    let state = terminals.next()?;
+    terminals.next().is_none().then_some(state)
 }
 
 /// One edge operand's scope and state pair with their topologies.
