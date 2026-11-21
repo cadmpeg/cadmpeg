@@ -1570,6 +1570,22 @@ fn homogeneous_curve_sum(
     ))?
 }
 
+/// The bounded domain of a curve that an edge with no range runs over: its
+/// stored interval, or the effective knot domain of a clamped NURBS curve.
+/// Validation checks such an edge's vertices at its ends, and a writer that
+/// states the edge's range seeds its inversions from them.
+pub fn bounded_curve_domain(curve: &crate::geometry::Curve) -> Option<[f64; 2]> {
+    if let Some(range) = curve.parameter_range {
+        return Some(range.endpoints());
+    }
+    match curve.geometry.solved() {
+        Some(crate::geometry::SolvedCurveGeometry::Nurbs(nurbs)) if !nurbs.periodic() => {
+            nurbs_curve_parameter_domain(nurbs).map(IncreasingParameterInterval::endpoints)
+        }
+        _ => None,
+    }
+}
+
 /// Effective knot domain of a structurally evaluable NURBS curve.
 pub fn nurbs_curve_parameter_domain(
     curve: &NurbsCurve,

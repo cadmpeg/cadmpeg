@@ -1266,6 +1266,7 @@ fn a_model_reference_into_the_design_outside_the_scope_is_refused() {
         target,
         name: "Part Number".into(),
         values,
+        native_ref: None,
     };
     let configuration =
         crate::features::ConfigurationId::mint("synthetic:test:configuration#large").unwrap();
@@ -1283,9 +1284,9 @@ fn a_model_reference_into_the_design_outside_the_scope_is_refused() {
         ),
         attribute(
             AttributeTarget::Document.into(),
-            vec![AttributeValue::Parameter(
+            vec![Some(AttributeValue::Parameter(
                 crate::features::ParameterId::mint("synthetic:test:parameter#depth").unwrap(),
-            )],
+            ))],
         ),
         attribute(
             InstanceTarget {
