@@ -18,6 +18,7 @@ use super::relation_loci::same_dimension_length;
 use super::relation_records::unique_relation_declaration_candidates;
 use super::scalars::{operand_kind, FeatureObjectNames, FeatureObjectStarts};
 use super::selections::{marker_local_links, operand_accepts_marker};
+use super::sketch_lists::{CurveForm, FramedCurve, SketchRecordLists};
 use super::{
     is_class_token, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, SKETCH_MARKER,
     SPATIAL_VERTEX_PREFIX,
@@ -752,6 +753,7 @@ pub(crate) fn admit_sketch_input_entities(
     let Some(last_start) = payload.len().checked_sub(SKETCH_MARKER.len() - 1) else {
         return Ok(Vec::new());
     };
+    let record_lists = SketchRecordLists::new(payload);
     (0..last_start)
         .filter(|offset| sketch_marker_at(payload, *offset))
         .enumerate()
@@ -895,6 +897,30 @@ pub(crate) fn admit_sketch_input_entities(
             } else {
                 SketchInputKind::from_native_code_and_layout(code, coordinates_m.is_some())
             };
+            let curve = match record_lists.listed_curve(payload, offset) {
+                Some(CurveForm::Line { .. }) => Some(FramedCurve::Line),
+                Some(CurveForm::Arc { start, end, .. }) if start == end => {
+                    Some(FramedCurve::Circle)
+                }
+                Some(CurveForm::Arc { .. }) => Some(FramedCurve::Arc),
+                None => match (kind, record_lists.listed_curve_kind(payload, offset)) {
+                    (SketchInputKind::Relation(_) | SketchInputKind::Native(_), curve) => curve,
+                    _ => None,
+                },
+            };
+            let dropped_relation = curve.filter(|_| kind.owns_constraint()).map(|curve| {
+                let form = match curve {
+                    FramedCurve::Line => "line",
+                    FramedCurve::Circle => "circle",
+                    FramedCurve::Arc => "arc",
+                };
+                (form, code)
+            });
+            let kind = match curve {
+                Some(FramedCurve::Line | FramedCurve::Circle) => SketchInputKind::LineOrCircle,
+                Some(FramedCurve::Arc) => SketchInputKind::Arc,
+                None => kind,
+            };
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 return Err(CodecError::malformed(format_args!(
                     "SolidWorks feature-input lane {parent} has more than u32::MAX sketch markers"
@@ -918,6 +944,7 @@ pub(crate) fn admit_sketch_input_entities(
             };
             entity.state_value = marker_state_value(payload, offset);
             entity.coordinates_m = coordinates_m;
+            entity.listed_curve_relation_drop = dropped_relation;
             entities.push(entity);
             Ok(entities)
         })
