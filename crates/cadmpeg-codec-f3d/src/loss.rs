@@ -700,6 +700,8 @@ pub(crate) enum F3dLossCode {
     FeatureProfileSelectionNative,
     /// Multiple Sketch-profile operands retain an unresolved group composition.
     FeatureExtrudeProfileGroupNative,
+    /// Multiple same-sketch region operands are composed as the union of their regions.
+    FeatureExtrudeProfileGroupUnionAssumed,
     /// An Extrude profile names a Sketch entity that the Design stream does not register.
     FeatureExtrudeProfileSketchAbsent,
     FeatureExtrudeSurfaceProfileAssumed,
@@ -1692,6 +1694,7 @@ impl F3dLossCode {
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
         Self::FeatureExtrudeProfileGroupNative,
+        Self::FeatureExtrudeProfileGroupUnionAssumed,
         Self::FeatureExtrudeProfileSketchAbsent,
         Self::FeatureExtrudeSurfaceProfileAssumed,
         Self::FeatureExtrudeSymmetricDistanceAssumed,
@@ -2655,6 +2658,9 @@ impl F3dLossCode {
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureSketchProfileFlagsAssumed => "feature.sketch-profile-flags-assumed",
             Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
+            Self::FeatureExtrudeProfileGroupUnionAssumed => {
+                "feature.extrude-profile-group-union-assumed"
+            }
             Self::FeatureExtrudeProfileSketchAbsent => "feature.extrude-profile-sketch-absent",
             Self::FeatureExtrudeSurfaceProfileAssumed => "feature.extrude-surface-profile-assumed",
             Self::FeatureExtrudeSymmetricDistanceAssumed => {
@@ -3632,6 +3638,7 @@ impl F3dLossCode {
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureExtrudeProfileGroupNative
+            | Self::FeatureExtrudeProfileGroupUnionAssumed
             | Self::FeatureExtrudeProfileSketchAbsent
             | Self::FeatureExtrudeSurfaceProfileAssumed
             | Self::FeatureExtrudeSymmetricDistanceAssumed
@@ -4344,6 +4351,7 @@ impl F3dLossCode {
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureExtrudeProfileGroupNative
+            | Self::FeatureExtrudeProfileGroupUnionAssumed
             | Self::FeatureExtrudeProfileSketchAbsent
             | Self::FeatureExtrudeSurfaceProfileAssumed
             | Self::FeatureExtrudeSymmetricDistanceAssumed
@@ -5164,6 +5172,7 @@ mod tests {
                 "dimension.unprojected",
                 "feature.profile-selection-native",
                 "feature.extrude-profile-group-native",
+                "feature.extrude-profile-group-union-assumed",
                 "feature.extrude-profile-sketch-absent",
                 "feature.extrude-surface-profile-assumed",
                 "feature.extrude-symmetric-distance-assumed",
