@@ -4196,7 +4196,12 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
             decoded.body.losses.extend(owned);
             crate::design::owners::release_unbound(&mut decoded.ir.model);
             crate::tree::state_root_definition(ctx, &mut decoded.ir)?;
-            crate::design_v11::project(ctx, &mut decoded.ir, &mut decoded.body)?;
+            crate::design_v11::project(
+                ctx,
+                &mut decoded.ir,
+                decoded.body.transfer,
+                &mut decoded.body.losses,
+            )?;
             decoded.ir.finalize();
             let hash = cadmpeg_ir::hash::document_local_sha256(
                 ctx,
