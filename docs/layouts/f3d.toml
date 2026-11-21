@@ -41774,8 +41774,8 @@ parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/w
 kind = "byte"
 section = "3.1"
 anchor = "A plane entity record has type GUID `8D424E29-DE23-4B1F-A3AD-84C52A497D1A`"
-size = 134
-note = "Offsets are relative to the plane entity's primary indexed header through the LP-UTF16 entity ID code-unit count, for property-block presence byte `0`. `workplane_item_plane_head` gives the presence-byte-`1` form."
+size = 21
+note = "Offsets are relative to the plane entity's primary indexed header. The property block follows the presence byte, then `constructed_plane_entity_body`."
 
 [[record.gap]]
 offset = 0
@@ -41792,65 +41792,73 @@ name = "property_presence"
 offset = 20
 type = "u8"
 source = "spec"
-anchor = "A constructed plane entity stores the property-block presence byte `0` or `1` at offset 20"
-value = 0
+anchor = "A constructed plane entity stores the property-block presence byte at offset 20"
+
+[[record]]
+name = "constructed_plane_entity_body"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block"
+size = 113
+note = "Offsets are relative to the end of the property block: offset 21 when the presence byte is `0`, 25 for an empty block, and 77 for the one property `EntityGenesis`. The LP-UTF16 code units of the Design entity ID follow."
 
 [[record.field]]
 name = "plane_kind"
-offset = 21
+offset = 0
 type = "u32"
 source = "spec"
-anchor = "When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it"
+anchor = "The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block"
 
 [[record.field]]
 name = "lower_corner"
-offset = 25
+offset = 4
 type = "f64[2]"
 source = "spec"
-anchor = "When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it"
+anchor = "The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block"
 
 [[record.field]]
 name = "zero_byte"
-offset = 41
+offset = 20
 type = "u8"
 source = "spec"
-anchor = "When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it"
+anchor = "The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block"
 value = 0
 
 [[record.field]]
 name = "origin"
-offset = 42
+offset = 21
 type = "f64[3]"
 source = "spec"
-anchor = "When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it"
+anchor = "The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block"
 
 [[record.field]]
 name = "u_direction"
-offset = 66
+offset = 45
 type = "f64[3]"
 source = "spec"
-anchor = "When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it"
+anchor = "The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block"
 
 [[record.field]]
 name = "v_direction"
-offset = 90
+offset = 69
 type = "f64[3]"
 source = "spec"
-anchor = "When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it"
+anchor = "The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block"
 
 [[record.field]]
 name = "upper_corner"
-offset = 114
+offset = 93
 type = "f64[2]"
 source = "spec"
-anchor = "When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it"
+anchor = "The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block"
 
 [[record.field]]
 name = "entity_id_code_unit_count"
-offset = 130
+offset = 109
 type = "u32"
 source = "spec"
-anchor = "and the entity ID begins at offset 130 from the indexed header"
+anchor = "The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block"
 
 [[record]]
 name = "derived_instance_prefix"
@@ -48503,7 +48511,6 @@ anchor = "The current history-state identity `0xffffffff`, the LP-UTF16 family n
 
 [[record]]
 name = "workplane_item_plane_head"
-parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs"
 kind = "byte"
 section = "Records of a construction-plane item"
 anchor = "**Plane entity.**"

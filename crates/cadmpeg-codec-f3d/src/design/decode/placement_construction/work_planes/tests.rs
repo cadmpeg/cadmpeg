@@ -313,11 +313,15 @@ fn append_work_plane_frame(
 
 type WorkPlaneTestSpec<'a> = (&'a str, u64, u64, [u8; 2], u8, &'a str);
 
-/// The property-block presence byte at offset 20 and the offset of the entity ID.
-type PlaneEntityForm = (u8, usize);
+/// The property block written at offset 20 and the offset of the entity ID.
+type PlaneEntityForm = (&'static [u8], usize);
 
-const WITHOUT_PROPERTIES: PlaneEntityForm = (0, 130);
-const WITH_PROPERTIES: PlaneEntityForm = (1, 186);
+const WITHOUT_PROPERTIES: PlaneEntityForm = (&[0], 130);
+const EMPTY_PROPERTIES: PlaneEntityForm = (&[1, 0, 0, 0, 0], 134);
+const ENTITY_GENESIS: PlaneEntityForm = (
+    b"\x01\x01\x00\x00\x00\x0d\x00\x00\x00EntityGenesis\x17\x00\x00\x00IntrinsicMetaTypeuint64\x00\x00\x00\x00\x00\x00\x00\x00",
+    186,
+);
 
 fn build_work_plane_test_archive(
     planes: &[WorkPlaneTestSpec<'_>],
@@ -352,9 +356,9 @@ fn build_work_plane_test_archive(
             let offset = bulk.len();
             lp_ascii(&mut bulk, "256");
             bulk.extend_from_slice(&entity_id.to_le_bytes());
-            let (property_presence, entity_id_at) = form;
+            let (properties, entity_id_at) = form;
             bulk.resize(offset + entity_id_at, 0);
-            bulk[offset + 20] = property_presence;
+            bulk[offset + 20..offset + 20 + properties.len()].copy_from_slice(properties);
             append_work_plane_frame(
                 &mut bulk,
                 offset,
@@ -394,7 +398,7 @@ fn build_work_plane_test_archive(
 fn work_plane_feature_name_decodes_cleanly() {
     use crate::test_support::zip_test::with_scan;
 
-    for form in [WITHOUT_PROPERTIES, WITH_PROPERTIES] {
+    for form in [WITHOUT_PROPERTIES, EMPTY_PROPERTIES, ENTITY_GENESIS] {
         let archive = build_work_plane_test_archive(
             &[(
                 "FusionAssetName[Active]/Design1/BulkStream.dat",
@@ -424,10 +428,16 @@ fn work_plane_feature_name_decodes_cleanly() {
 }
 
 #[test]
-fn work_plane_feature_name_reads_the_entity_id_where_the_presence_byte_places_it() {
+fn work_plane_feature_name_reads_the_entity_id_after_the_property_block() {
     use crate::test_support::zip_test::with_scan;
 
-    for form in [(1, 130), (0, 186), (2, 130)] {
+    let misplaced: [PlaneEntityForm; 4] = [
+        (WITHOUT_PROPERTIES.0, 186),
+        (EMPTY_PROPERTIES.0, 130),
+        (ENTITY_GENESIS.0, 134),
+        (&[2], 130),
+    ];
+    for form in misplaced {
         let archive = build_work_plane_test_archive(
             &[(
                 "FusionAssetName[Active]/Design1/BulkStream.dat",

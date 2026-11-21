@@ -12188,29 +12188,41 @@ Parsed by:
 
 ## `constructed_plane_entity_prefix`
 
-Spec §3.1 · layout: byte offsets · size: 134 B
+Spec §3.1 · layout: byte offsets · size: 21 B
 
-Offsets are relative to the plane entity's primary indexed header through the LP-UTF16 entity ID code-unit count, for property-block presence byte `0`. `workplane_item_plane_head` gives the presence-byte-`1` form.
+Offsets are relative to the plane entity's primary indexed header. The property block follows the presence byte, then `constructed_plane_entity_body`.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 20 | 1 | `property_presence` | `u8` | little | spec | A constructed plane entity stores the property-block presence byte `0` or `1` at offset 20 · value `0` |
-| 21 | 4 | `plane_kind` | `u32` | little | spec | When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it |
-| 25 | 16 | `lower_corner` | `f64[2]` | little | spec | When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it |
-| 41 | 1 | `zero_byte` | `u8` | little | spec | When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it · value `0` |
-| 42 | 24 | `origin` | `f64[3]` | little | spec | When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it |
-| 66 | 24 | `u_direction` | `f64[3]` | little | spec | When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it |
-| 90 | 24 | `v_direction` | `f64[3]` | little | spec | When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it |
-| 114 | 16 | `upper_corner` | `f64[2]` | little | spec | When the presence byte is `0`, the u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow it |
-| 130 | 4 | `entity_id_code_unit_count` | `u32` | little | spec | and the entity ID begins at offset 130 from the indexed header |
+| 20 | 1 | `property_presence` | `u8` | little | spec | A constructed plane entity stores the property-block presence byte at offset 20 |
 
 Unstated regions:
 
 - `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
 - `11..20` (9 B): The specification states no field in this range.
+
+## `constructed_plane_entity_body`
+
+Spec §3.1 · layout: byte offsets · size: 113 B
+
+Offsets are relative to the end of the property block: offset 21 when the presence byte is `0`, 25 for an empty block, and 77 for the one property `EntityGenesis`. The LP-UTF16 code units of the Design entity ID follow.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `plane_kind` | `u32` | little | spec | The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block |
+| 4 | 16 | `lower_corner` | `f64[2]` | little | spec | The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block |
+| 20 | 1 | `zero_byte` | `u8` | little | spec | The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block · value `0` |
+| 21 | 24 | `origin` | `f64[3]` | little | spec | The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block |
+| 45 | 24 | `u_direction` | `f64[3]` | little | spec | The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block |
+| 69 | 24 | `v_direction` | `f64[3]` | little | spec | The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block |
+| 93 | 16 | `upper_corner` | `f64[2]` | little | spec | The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block |
+| 109 | 4 | `entity_id_code_unit_count` | `u32` | little | spec | The u32 plane kind, the lower display corner, `u8 0`, the f64 origin, the f64 unit u direction, the f64 unit v direction, the upper display corner, and an LP-UTF16 Design entity ID follow the property block |
 
 ## `derived_instance_prefix`
 
@@ -14287,9 +14299,6 @@ Offsets are relative to the scope's indexed header. The paired scope record foll
 Spec §Records of a construction-plane item · layout: byte offsets · size: 190 B
 
 Offsets are relative to the plane entity's indexed header, for property-block presence byte `1`. The `L` code units of the Design entity ID follow at 190, then `workplane_item_plane_tail`.
-
-Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/placement_construction/work_planes.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
