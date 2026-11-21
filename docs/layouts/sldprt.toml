@@ -12142,6 +12142,132 @@ anchor = "and u16 `0`"
 value = 0
 
 [[record]]
+name = "view_bytes"
+kind = "byte"
+section = "Configuration objects"
+anchor = "The 115 bytes of a `moView_c` hold"
+size = 115
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/writer/native/config.rs"
+note = "A view's bytes after its name and frame, in a part of swVersion below 15000."
+
+[[record.gap]]
+offset = 0
+size = 24
+note = "Zero bytes."
+
+[[record.field]]
+name = "unit"
+offset = 24
+type = "f64"
+source = "spec"
+anchor = "hold f64 `1` at +24"
+
+[[record.gap]]
+offset = 32
+size = 26
+note = "Zero bytes."
+
+[[record.field]]
+name = "scale"
+offset = 58
+type = "f64"
+source = "spec"
+anchor = "the view's scale as an f64 at +58"
+
+[[record.gap]]
+offset = 66
+size = 3
+note = "Zero bytes."
+
+[[record.field]]
+name = "minus_one"
+offset = 69
+type = "i32"
+source = "spec"
+anchor = "i32 `-1` at +69"
+
+[[record.field]]
+name = "minus_one_real"
+offset = 73
+type = "f64"
+source = "spec"
+anchor = "f64 `-1` at +73"
+
+[[record.gap]]
+offset = 81
+size = 4
+note = "Zero bytes."
+
+[[record.field]]
+name = "index"
+offset = 85
+type = "u32"
+source = "spec"
+anchor = "the view's index as a little-endian u32 at +85"
+
+[[record.gap]]
+offset = 89
+size = 26
+note = "Zero bytes."
+
+[[record]]
+name = "annotation_view_tail"
+kind = "byte"
+section = "Configuration objects"
+anchor = "The 50 bytes after an annotation view's bytes hold"
+size = 50
+endianness = "little"
+parsed_by = "crates/cadmpeg-codec-sldprt/src/writer/native/config.rs"
+note = "The bytes a `moAnnotationView_c` writes after the view bytes."
+
+[[record.gap]]
+offset = 0
+size = 28
+note = "Zero bytes."
+
+[[record.field]]
+name = "one"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "little-endian u32 `1` at +28"
+value = 1
+
+[[record.gap]]
+offset = 32
+size = 2
+note = "Zero bytes."
+
+[[record.field]]
+name = "minus_one"
+offset = 34
+type = "i32"
+source = "spec"
+anchor = "i32 `-1` at +34"
+
+[[record.field]]
+name = "word"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "a little-endian u32 at +38"
+
+[[record.field]]
+name = "minus_one_second"
+offset = 42
+type = "i32"
+source = "spec"
+anchor = "i32 `-1` at +42 and +46"
+
+[[record.field]]
+name = "minus_one_third"
+offset = 46
+type = "i32"
+source = "spec"
+anchor = "i32 `-1` at +42 and +46"
+
+[[record]]
 name = "named_object_header"
 kind = "byte"
 section = "2.3"

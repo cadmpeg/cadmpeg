@@ -3166,6 +3166,53 @@ Parsed by:
 | 20 | 16 | `marker` | `bytes[16]` | little | spec | the 16 bytes `7d c3 94 25 ad 49 b2 54 7d c3 94 25 ad 49 b2 54` · value `[125, 195, 148, 37, 173, 73, 178, 84, 125, 195, 148, 37, 173, 73, 178, 84]` |
 | 36 | 2 | `zero_tail` | `u16` | little | spec | and u16 `0` · value `0` |
 
+## `view_bytes`
+
+Spec §Configuration objects · layout: byte offsets · size: 115 B
+
+A view's bytes after its name and frame, in a part of swVersion below 15000.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/writer/native/config.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 24 | 8 | `unit` | `f64` | little | spec | hold f64 `1` at +24 |
+| 58 | 8 | `scale` | `f64` | little | spec | the view's scale as an f64 at +58 |
+| 69 | 4 | `minus_one` | `i32` | little | spec | i32 `-1` at +69 |
+| 73 | 8 | `minus_one_real` | `f64` | little | spec | f64 `-1` at +73 |
+| 85 | 4 | `index` | `u32` | little | spec | the view's index as a little-endian u32 at +85 |
+
+Unstated regions:
+
+- `0..24` (24 B): Zero bytes.
+- `32..58` (26 B): Zero bytes.
+- `66..69` (3 B): Zero bytes.
+- `81..85` (4 B): Zero bytes.
+- `89..115` (26 B): Zero bytes.
+
+## `annotation_view_tail`
+
+Spec §Configuration objects · layout: byte offsets · size: 50 B
+
+The bytes a `moAnnotationView_c` writes after the view bytes.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/writer/native/config.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 28 | 4 | `one` | `u32` | little | spec | little-endian u32 `1` at +28 · value `1` |
+| 34 | 4 | `minus_one` | `i32` | little | spec | i32 `-1` at +34 |
+| 38 | 4 | `word` | `u32` | little | spec | a little-endian u32 at +38 |
+| 42 | 4 | `minus_one_second` | `i32` | little | spec | i32 `-1` at +42 and +46 |
+| 46 | 4 | `minus_one_third` | `i32` | little | spec | i32 `-1` at +42 and +46 |
+
+Unstated regions:
+
+- `0..28` (28 B): Zero bytes.
+- `32..34` (2 B): Zero bytes.
+
 ## `named_object_header`
 
 Spec §2.3 · layout: byte offsets · size: 16 B

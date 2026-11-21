@@ -43,11 +43,14 @@ const THREAD_DATA_RUN: usize = 300;
 /// An atom's 64 bytes after its named head.
 const ATOM_RUN: usize = 64;
 
-/// The bytes of a `moView_c` after its frame (§2.3).
-const VIEW_RUN: usize = 115;
+/// The view index the first annotation view takes; the notes-area view
+/// follows the annotation views.
+const FIRST_ANNOTATION_VIEW: u32 = 200;
 
-/// A `moAnnotationView_c`'s 50 bytes after the view bytes.
-const ANNOTATION_VIEW_RUN: usize = 50;
+/// The scale a view states at +58 of its bytes: `1`, or `0.8` in the
+/// notes-area view.
+const VIEW_SCALE: f64 = 1.0;
+const NOTES_AREA_SCALE: f64 = 0.8;
 
 /// The `gcCurvatureObject_c` values.
 const CURVATURE: [f64; 5] = [1000.0, 31.6, 4.0, 1.2, 1.0];
@@ -195,9 +198,9 @@ pub(super) fn config(facts: &Facts<'_>) -> Result<(Vec<u8>, ClassMap, PartRefs),
     a.object("suObList");
     a.u16(0);
     a.zeros(4);
-    for (name, rows) in VIEWS {
+    for (index, (name, rows)) in (0..).zip(VIEWS) {
         a.object("moView_c");
-        view(&mut a, name, rows);
+        view(&mut a, name, rows, index, VIEW_SCALE);
         a.u16(0);
     }
     a.u8(0);
@@ -687,8 +690,10 @@ fn environment(a: &mut Archive) -> u32 {
     index
 }
 
-/// A view's name, frame flag, frame rows and its bytes (§2.3).
-fn view(a: &mut Archive, name: &str, rows: Option<[f64; 9]>) {
+/// A view's name, frame flag, frame rows and its 115 bytes (§2.3): f64 `1`
+/// at +24, the scale at +58, i32 `-1` at +69, f64 `-1` at +73 and the view
+/// index at +85, the other bytes zero.
+fn view(a: &mut Archive, name: &str, rows: Option<[f64; 9]>, index: u32, scale: f64) {
     a.cstring(name);
     match rows {
         Some(rows) => {
@@ -697,7 +702,30 @@ fn view(a: &mut Archive, name: &str, rows: Option<[f64; 9]>) {
         }
         None => a.u8(0),
     }
-    a.zeros(VIEW_RUN);
+    a.zeros(24);
+    a.f64(1.0);
+    a.zeros(26);
+    a.f64(scale);
+    a.zeros(3);
+    a.i32(-1);
+    a.f64(-1.0);
+    a.zeros(4);
+    a.u32(index);
+    a.zeros(26);
+}
+
+/// A `moAnnotationView_c`: the view and its 50 bytes (§2.3): u32 `1` at
+/// +28, i32 `-1` at +34, u32 `1` at +38, and i32 `-1` at +42 and +46.
+fn annotation_view(a: &mut Archive, name: &str, rows: Option<[f64; 9]>, index: u32, scale: f64) {
+    a.object("moAnnotationView_c");
+    view(a, name, rows, index, scale);
+    a.zeros(28);
+    a.u32(1);
+    a.zeros(2);
+    a.i32(-1);
+    a.u32(1);
+    a.i32(-1);
+    a.i32(-1);
 }
 
 /// `moSketchBlockMgr_c` (§2.3): a named head (null name) and block, twelve
@@ -715,12 +743,8 @@ fn block_manager(a: &mut Archive) {
     a.u16(0);
     a.object("suObList");
     a.u16(2);
-    a.object("moAnnotationView_c");
-    view(a, "*Front", None);
-    a.zeros(ANNOTATION_VIEW_RUN);
-    a.object("moAnnotationView_c");
-    view(a, "*Top", VIEWS[5].1);
-    a.zeros(ANNOTATION_VIEW_RUN);
+    annotation_view(a, "*Front", None, FIRST_ANNOTATION_VIEW, VIEW_SCALE);
+    annotation_view(a, "*Top", VIEWS[5].1, FIRST_ANNOTATION_VIEW + 1, VIEW_SCALE);
     a.u32(0);
     a.u32(BLOCK_MANAGER_WORD);
     a.u32(1);
@@ -735,9 +759,13 @@ fn block_manager(a: &mut Archive) {
     a.zeros(30);
     a.object("suObList");
     a.u16(1);
-    a.object("moAnnotationView_c");
-    view(a, "Notes Area", None);
-    a.zeros(ANNOTATION_VIEW_RUN);
+    annotation_view(
+        a,
+        "Notes Area",
+        None,
+        FIRST_ANNOTATION_VIEW + 2,
+        NOTES_AREA_SCALE,
+    );
     a.u32(0);
     a.cstring("");
     a.cstring("");
