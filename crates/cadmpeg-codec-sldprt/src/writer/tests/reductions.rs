@@ -501,3 +501,40 @@ fn a_retained_partition_keeps_a_body_on_a_torus_the_compact_records_cannot_hold(
     let written = decode(&bytes);
     assert_eq!(written.ir().geometry.faces.len(), 1);
 }
+
+#[test]
+fn a_faceless_part_keeps_its_swift_annotations() {
+    let decoded = decode(&crate::test_support::swift::faceless_swift_fixture());
+    assert!(decoded.ir().geometry.faces.is_empty());
+    let annotations = |ir: &cadmpeg_ir::CadIr| {
+        ir.model
+            .pmi
+            .iter()
+            .map(|annotation| {
+                (
+                    annotation.id.clone(),
+                    serde_json::to_value(&annotation.definition).unwrap(),
+                    serde_json::to_value(&annotation.targets).unwrap(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let expected = annotations(decoded.ir());
+    assert_eq!(expected.len(), 1);
+    let (mut ir, _, fidelity) = decoded.into_parts();
+    ir.source
+        .as_mut()
+        .unwrap()
+        .attributes
+        .remove(cadmpeg_ir::hash::DOCUMENT_LOCAL_DIGEST_ATTRIBUTE)
+        .unwrap();
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(&ir, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    assert_eq!(annotations(decode(&bytes).ir()), expected);
+}

@@ -123,8 +123,10 @@ fn encoder_writes_authored_with_retained_native_envelope_ir() {
         cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
     let scan = crate::test_support::container::scan(&encoded);
-    assert_eq!(scan.blocks.len(), 2);
-    assert_eq!(scan.directory.len(), 2);
+    // The fixture's source image holds one token member, which the write
+    // carries as stored.
+    assert_eq!(scan.blocks.len(), 3);
+    assert_eq!(scan.directory.len(), 3);
     let names: std::collections::BTreeSet<_> = scan
         .blocks
         .iter()
@@ -132,8 +134,18 @@ fn encoder_writes_authored_with_retained_native_envelope_ir() {
         .collect();
     assert_eq!(
         names,
-        std::collections::BTreeSet::from(["Contents/Config-0-Partition", "Contents/Keywords-0"])
+        std::collections::BTreeSet::from([
+            "Contents/Config-0-Partition",
+            "Contents/Keywords-0",
+            "FixtureEnvelopeTokenSource",
+        ])
     );
+    let token = scan
+        .blocks
+        .iter()
+        .find(|block| block.section.name() == Some("FixtureEnvelopeTokenSource"))
+        .unwrap();
+    assert_eq!(token.payload, b"authored envelope fixture");
     let keywords = scan
         .blocks
         .iter()
