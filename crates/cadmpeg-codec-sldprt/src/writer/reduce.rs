@@ -314,6 +314,154 @@ fn note(code: SldprtLossCode, reason: &str, ids: &[String]) -> Option<LossNote> 
     (!ids.is_empty()).then(|| code.note(format!("{} {reason}: {}", ids.len(), ids.join(", "))))
 }
 
+/// A generated partition writes each carrier as an exact curve or surface
+/// record, which states no fit tolerance. A procedural cache or NURBS carrier of
+/// a written face or edge that states one approximates its construction within
+/// it; the tolerance is not written.
+pub(super) fn cache_tolerances_omitted(ir: &CadIr) -> Option<LossNote> {
+    let procedural_surfaces = ir
+        .geometry
+        .procedural_surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface.cache_fit_tolerance()))
+        .collect::<HashMap<_, _>>();
+    let procedural_curves = ir
+        .geometry
+        .procedural_curves
+        .iter()
+        .map(|curve| (&curve.id, curve.cache_fit_tolerance()))
+        .collect::<HashMap<_, _>>();
+    let used_surfaces = ir
+        .geometry
+        .faces
+        .iter()
+        .map(|face| &face.surface)
+        .collect::<std::collections::HashSet<_>>();
+    let used_curves = ir
+        .geometry
+        .edges
+        .iter()
+        .filter_map(|edge| edge.curve())
+        .collect::<std::collections::HashSet<_>>();
+    let mut stated = Vec::new();
+    for surface in &ir.geometry.surfaces {
+        if !used_surfaces.contains(&surface.id) {
+            continue;
+        }
+        let tolerance = match &surface.geometry {
+            SurfaceGeometry::Procedural { construction, .. } => {
+                procedural_surfaces.get(construction).copied().flatten()
+            }
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
+                nurbs.cache_fit_tolerance()
+            }
+            SurfaceGeometry::Solved(_) => None,
+        };
+        if let Some(tolerance) = tolerance {
+            stated.push((surface.id.as_str(), tolerance.get()));
+        }
+    }
+    for curve in &ir.geometry.curves {
+        if !used_curves.contains(&curve.id) {
+            continue;
+        }
+        if let CurveGeometry::Procedural { construction, .. } = &curve.geometry {
+            if let Some(tolerance) = procedural_curves.get(construction).copied().flatten() {
+                stated.push((curve.id.as_str(), tolerance.get()));
+            }
+        }
+    }
+    let largest = stated
+        .iter()
+        .map(|(_, tolerance)| *tolerance)
+        .reduce(f64::max)?;
+    let ids = stated
+        .iter()
+        .map(|(id, tolerance)| format!("{id} ({tolerance} mm)"))
+        .collect::<Vec<_>>();
+    note(
+        SldprtLossCode::WriterCacheTolerancesOmitted,
+        &format!(
+            "carrier(s) approximate their construction within a stated fit tolerance (largest \
+             {largest} mm) and are written as exact SLDPRT records without it"
+        ),
+        &ids,
+    )
+}
+
+/// A FIN names the vertex at its end, and the reader takes the other end of
+/// its edge from the next FIN of the ring (`sldprt.md` §4.2), so a loop whose
+/// coedges do not meet end to end cannot be stated: the edges at the break
+/// contradict their twins, and every face that uses one is written as the
+/// document states it and may not read back.
+pub(super) fn unchained_face_loops(ir: &CadIr) -> Option<LossNote> {
+    let edges = ir
+        .geometry
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge))
+        .collect::<HashMap<_, _>>();
+    let coedges = ir
+        .geometry
+        .coedges
+        .iter()
+        .map(|coedge| (&coedge.id, coedge))
+        .collect::<HashMap<_, _>>();
+    let mut broken = std::collections::HashSet::new();
+    for lp in &ir.geometry.loops {
+        let ends = lp
+            .coedges()
+            .iter()
+            .map(|id| {
+                let coedge = coedges.get(id)?;
+                let ends = edges.get(&coedge.edge)?.ends.as_ref()?;
+                Some((
+                    &coedge.edge,
+                    match coedge.sense {
+                        cadmpeg_ir::topology::Sense::Forward => (&ends.start, &ends.end),
+                        cadmpeg_ir::topology::Sense::Reversed => (&ends.end, &ends.start),
+                    },
+                ))
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(ends) = ends else {
+            continue;
+        };
+        for ((edge, (_, end)), (next_edge, (next_start, _))) in
+            ends.iter().zip(ends.iter().cycle().skip(1))
+        {
+            if end != next_start {
+                broken.insert(*edge);
+                broken.insert(*next_edge);
+            }
+        }
+    }
+    if broken.is_empty() {
+        return None;
+    }
+    let loop_faces = ir
+        .geometry
+        .loops
+        .iter()
+        .map(|lp| (&lp.id, lp.face.as_str()))
+        .collect::<HashMap<_, _>>();
+    let faces = ir
+        .geometry
+        .coedges
+        .iter()
+        .filter(|coedge| broken.contains(&coedge.edge))
+        .filter_map(|coedge| loop_faces.get(&coedge.owner_loop))
+        .map(|face| (*face).to_owned())
+        .collect::<std::collections::BTreeSet<_>>();
+    note(
+        SldprtLossCode::WriterFaceLoopsUnchained,
+        "face(s) have, or share an edge with, a loop whose coedges do not meet end to end, which \
+         the SLDPRT ring order cannot state; they are written as the document states them and \
+         may not read back",
+        &faces.into_iter().collect::<Vec<_>>(),
+    )
+}
+
 /// A generated partition of a document with no face holds no body.
 pub(super) fn faceless_bodies(ir: &CadIr) -> Option<LossNote> {
     note(
@@ -634,16 +782,6 @@ fn unwritable_surface(geometry: &SurfaceGeometry) -> Option<String> {
             } else {
                 None
             }
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere))
-            if sphere.radius().get() < 0.0 =>
-        {
-            Some(format!("signed sphere radius {}", sphere.radius().get()))
-        }
-        SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(torus)) => {
-            let major = torus.major_radius().get();
-            let minor = torus.minor_radius().get();
-            (!(major > minor && minor > 0.0)).then(|| format!("torus radii ({major}, {minor})"))
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { .. }) => {
             Some("a surface the writer has no record for".to_owned())

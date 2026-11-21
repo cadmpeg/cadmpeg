@@ -7,6 +7,7 @@ mod capacity;
 pub(crate) mod configuration_carriers;
 mod digests;
 mod flex_history;
+mod foreign_carriers;
 mod helix_surfaces;
 mod homogeneous_poles;
 mod metadata_members;

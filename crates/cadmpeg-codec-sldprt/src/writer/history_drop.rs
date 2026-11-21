@@ -6,7 +6,7 @@
 //! whole feature history. The current geometry is still written: the writer
 //! writes the current partition whatever history it writes.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -15,7 +15,9 @@ use cadmpeg_ir::report::loss::LossNote;
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::history::literals::{format_parameter_value, parse_parameter_literal};
 use crate::loss::SldprtLossCode;
+use crate::native::SldprtNative;
 
 /// Source attributes that state a `SolidWorks` feature-history baseline. A
 /// document with either is a `SolidWorks` source, whose history edits take the
@@ -29,7 +31,17 @@ const HISTORY_BASELINES: [&str; 2] = [
 #[derive(Default)]
 pub(super) struct HistoryDrop {
     losses: Vec<LossNote>,
-    coarse: bool,
+    coarse: Coarse,
+}
+
+/// The drop a failure that names no record takes: the first drops the feature
+/// history, the next every parameter as well.
+#[derive(Default, Clone, Copy)]
+enum Coarse {
+    #[default]
+    None,
+    History,
+    Parameters,
 }
 
 /// The records one failure removes.
@@ -39,6 +51,8 @@ struct Removed {
     sketches: BTreeSet<String>,
     constraints: BTreeSet<String>,
     parameters: BTreeSet<String>,
+    /// Sketch curves outside every profile of their sketch.
+    entities: BTreeSet<String>,
 }
 
 impl HistoryDrop {
@@ -60,17 +74,25 @@ impl HistoryDrop {
         let reason = error.to_string();
         let named = named_records(ir, &reason);
         let removed = if named.is_empty() {
-            if self.coarse {
+            loop {
+                let (next, seeds) = match self.coarse {
+                    Coarse::None => (Coarse::History, every_design_record(ir)),
+                    Coarse::History => (Coarse::Parameters, every_parameter(ir)),
+                    Coarse::Parameters => return Err(error),
+                };
+                self.coarse = next;
+                let removed = remove(ir, &seeds);
+                if !removed.is_empty() {
+                    break removed;
+                }
+            }
+        } else {
+            let removed = remove(ir, &named);
+            if removed.is_empty() {
                 return Err(error);
             }
-            self.coarse = true;
-            remove(ir, &every_design_record(ir))
-        } else {
-            remove(ir, &named)
+            removed
         };
-        if removed.is_empty() {
-            return Err(error);
-        }
         self.losses.extend(removed.notes(&reason));
         Ok(())
     }
@@ -78,6 +100,98 @@ impl HistoryDrop {
     pub(super) fn finish(self) -> Vec<LossNote> {
         self.losses
     }
+}
+
+/// Clear each feature and parameter `native_ref` that names no record of the
+/// document's `sldprt` namespace. The history writer reads that field as one of
+/// its own records (§3.4 W1); another format's reference is written as a
+/// generated record.
+pub(super) fn clear_foreign_native_refs(ir: &mut CadIr, native: Option<&SldprtNative>) {
+    let features = native
+        .iter()
+        .flat_map(|native| &native.feature_histories)
+        .flat_map(|history| &history.features)
+        .map(|feature| feature.id.as_str())
+        .collect::<HashSet<_>>();
+    let scalars = native
+        .iter()
+        .flat_map(|native| &native.feature_input_lanes)
+        .flat_map(|lane| &lane.scalars)
+        .map(|scalar| scalar.id.as_str())
+        .collect::<HashSet<_>>();
+    for feature in &mut ir.model.features {
+        if feature
+            .native_ref
+            .as_deref()
+            .is_some_and(|record| !features.contains(record))
+        {
+            feature.native_ref = None;
+        }
+    }
+    for parameter in &mut ir.model.parameters {
+        if parameter
+            .native_ref
+            .as_deref()
+            .is_some_and(|scalar| !scalars.contains(scalar))
+        {
+            parameter.native_ref = None;
+        }
+    }
+}
+
+/// Write each parameter whose expression is not a literal with its displayed
+/// value, and name the expression as left out. The Keywords dimension text
+/// holds the displayed value; the equation that drives it belongs to the
+/// equation manager in `Contents/Config-N` (`sldprt.md`, Keywords history),
+/// whose dimension references hold handle objects the format document does
+/// not state, so this writer writes no equation. A parameter with no value
+/// the text can hold is dropped and named.
+pub(super) fn equations_as_displayed_values(ir: &mut CadIr) -> Vec<LossNote> {
+    let mut written = Vec::new();
+    let mut valueless = Removed::default();
+    for parameter in &mut ir.model.parameters {
+        if parse_parameter_literal(&parameter.expression).is_some() {
+            continue;
+        }
+        let displayed = parameter
+            .value
+            .as_ref()
+            .map(format_parameter_value)
+            .filter(|text| parse_parameter_literal(text).is_some());
+        let Some(displayed) = displayed else {
+            valueless
+                .parameters
+                .insert(parameter.id.as_str().to_owned());
+            continue;
+        };
+        written.push(format!(
+            "{} ({} = {})",
+            parameter.id.as_str(),
+            parameter.name,
+            parameter.expression
+        ));
+        parameter.expression = displayed;
+        parameter.dependencies = cadmpeg_ir::features::DistinctMembers::default();
+    }
+    let mut notes = Vec::new();
+    if !written.is_empty() {
+        notes.push(
+            SldprtLossCode::WriterParameterExpressionsOmitted.note(format!(
+                "the SLDPRT writer writes {} parameter(s) with their displayed value and without \
+             the equation that drives it, which belongs to the equation manager this writer \
+             does not write: {}",
+                written.len(),
+                written.join(", ")
+            )),
+        );
+    }
+    if !valueless.is_empty() {
+        notes.extend(
+            remove(ir, &valueless)
+                .notes("an expression with no value a Keywords dimension text can hold"),
+        );
+    }
+    notes
 }
 
 /// Drop each `Native` operation of another format, with every record that
@@ -112,6 +226,7 @@ impl Removed {
             && self.sketches.is_empty()
             && self.constraints.is_empty()
             && self.parameters.is_empty()
+            && self.entities.is_empty()
     }
 
     fn notes(&self, reason: &str) -> Vec<LossNote> {
@@ -128,6 +243,14 @@ impl Removed {
                 list(&self.features),
                 list(&self.sketches),
                 list(&self.parameters),
+            )));
+        }
+        if !self.entities.is_empty() {
+            notes.push(SldprtLossCode::WriterFeaturesOmitted.note(format!(
+                "the SLDPRT history writer cannot write a sketch curve outside the sketch's \
+                 profiles ({reason}); it writes the sketches without {} such curve(s): {}",
+                self.entities.len(),
+                list(&self.entities),
             )));
         }
         if !self.constraints.is_empty() {
@@ -178,8 +301,19 @@ fn named_records(ir: &CadIr, message: &str) -> Removed {
             .map(str::to_owned),
     );
     for entity in &model.sketch_entities {
-        if named(entity.id().as_str()) {
+        if !named(entity.id().as_str()) {
+            continue;
+        }
+        let profiled = model
+            .sketches
+            .iter()
+            .filter(|sketch| sketch.id == entity.sketch)
+            .flat_map(|sketch| sketch.profiles.iter().flatten())
+            .any(|entity_use| &entity_use.entity == entity.id());
+        if profiled {
             seeds.sketches.insert(entity.sketch.as_str().to_owned());
+        } else {
+            seeds.entities.insert(entity.id().as_str().to_owned());
         }
     }
     seeds.constraints.extend(
@@ -204,6 +338,14 @@ fn named_records(ir: &CadIr, message: &str) -> Removed {
             .filter(|id| named(id))
             .map(str::to_owned),
     );
+    // A failure that names a constraint concerns that constraint; the other
+    // records it names are its operands.
+    if !seeds.constraints.is_empty() {
+        return Removed {
+            constraints: seeds.constraints,
+            ..Removed::default()
+        };
+    }
     seeds
 }
 
@@ -228,6 +370,19 @@ fn every_design_record(ir: &CadIr) -> Removed {
             .collect(),
         constraints: BTreeSet::new(),
         parameters: BTreeSet::new(),
+        entities: BTreeSet::new(),
+    }
+}
+
+fn every_parameter(ir: &CadIr) -> Removed {
+    Removed {
+        parameters: ir
+            .model
+            .parameters
+            .iter()
+            .map(|parameter| parameter.id.as_str().to_owned())
+            .collect(),
+        ..Removed::default()
     }
 }
 
@@ -253,6 +408,7 @@ fn remove(ir: &mut CadIr, seeds: &Removed) -> Removed {
         .collect::<Vec<_>>();
     let mut dropped = seeds.features.clone();
     dropped.extend(seeds.sketches.iter().cloned());
+    dropped.extend(seeds.entities.iter().cloned());
     // A feature or sketch that names a dropped feature or sketch needs it. A
     // tree node only groups its children, and is kept.
     loop {
@@ -317,12 +473,20 @@ fn remove(ir: &mut CadIr, seeds: &Removed) -> Removed {
     model
         .sketch_entities
         .retain(|entity| !removed.sketches.contains(entity.sketch.as_str()));
+    model.sketch_entities.retain(|entity| {
+        let keep = !seeds.entities.contains(entity.id().as_str());
+        if !keep {
+            removed.entities.insert(entity.id().as_str().to_owned());
+        }
+        keep
+    });
     model
         .spatial_sketch_entities
         .retain(|entity| !mentions(&value(entity), &removed.sketches));
     model.sketch_constraints.retain(|constraint| {
         let keep = !removed.sketches.contains(constraint.sketch.as_str())
-            && !seeds.constraints.contains(constraint.id.as_str());
+            && !seeds.constraints.contains(constraint.id.as_str())
+            && !mentions(&value(constraint), &removed.entities);
         if !keep && !removed.sketches.contains(constraint.sketch.as_str()) {
             removed
                 .constraints
@@ -399,3 +563,6 @@ fn mentions(record: &Value, ids: &BTreeSet<String>) -> bool {
         other => walk(other, ids),
     }
 }
+
+#[cfg(test)]
+mod tests;

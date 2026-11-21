@@ -1245,7 +1245,7 @@ fn semantic_writer_rejects_unsupported_conic_curves() {
 }
 
 #[test]
-fn semantic_writer_omits_bodies_on_analytic_surfaces_compact_records_cannot_hold() {
+fn semantic_writer_omits_bodies_on_cones_compact_records_cannot_hold() {
     let cube = crate::test_support::ir::source_less_cube();
     let origin = cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0);
     let axis = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
@@ -1278,24 +1278,6 @@ fn semantic_writer_omits_bodies_on_analytic_surfaces_compact_records_cannot_hold
                 .unwrap(),
             )),
             "cone half-angle -0.7853981633974483",
-        ),
-        (
-            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-                cadmpeg_ir::geometry::analytic::SphereSurface::try_new(
-                    origin, axis, reference, -2.0,
-                )
-                .unwrap(),
-            )),
-            "signed sphere radius -2",
-        ),
-        (
-            cadmpeg_ir::geometry::SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-                cadmpeg_ir::geometry::analytic::TorusSurface::try_new(
-                    origin, axis, reference, 2.0, -0.5,
-                )
-                .unwrap(),
-            )),
-            "torus radii (2, -0.5)",
         ),
     ];
 

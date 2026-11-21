@@ -6,6 +6,7 @@ use std::io::Write;
 use std::num::NonZeroU16;
 
 mod accounting;
+mod body_drop;
 mod default_properties;
 mod edge_direction;
 mod envelope;
@@ -33,7 +34,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use cadmpeg_ir::scalar::FiniteReal;
-use cadmpeg_ir::topology::{BodyKind, Color, Sense};
+use cadmpeg_ir::topology::{BodyKind, Color, LoopBoundary, Sense};
 use cadmpeg_ir::Annotations;
 
 use crate::SourceRecord;
@@ -171,6 +172,10 @@ pub(crate) fn write_semantic_with_records(
     }
     losses.extend(history_drop::foreign_native_operations(&mut normalized));
     let reducible = history_drop::HistoryDrop::applies(&normalized);
+    if reducible {
+        history_drop::clear_foreign_native_refs(&mut normalized, native.as_ref());
+        losses.extend(history_drop::equations_as_displayed_values(&mut normalized));
+    }
     let mut dropped_history = history_drop::HistoryDrop::default();
     let feature_input_renames = loop {
         let snapshot = reducible.then(|| (normalized.model.parameters.clone(), native.clone()));
@@ -209,6 +214,7 @@ pub(crate) fn write_semantic_with_records(
     let brep_empty = ir.geometry.faces.is_empty();
     let coverage = semantic_coverage(retained_partition.is_some());
     let mut bodiless_partitions = Vec::new();
+    let mut encodable = None;
     let partition_sections = if let Some(retained) = retained_partition {
         vec![retained]
     } else if let Some(patched) = patched_partition {
@@ -224,25 +230,20 @@ pub(crate) fn write_semantic_with_records(
         } else {
             empty_partitions(ir, &mut bodiless_partitions)?
         }
-    } else if !ir.model.configurations.is_empty() {
-        configuration_partitions(ir, length_scale, &mut bodiless_partitions)?
     } else {
-        let schema_32001 = ir
-            .geometry
-            .bodies
-            .iter()
-            .any(|body| body.kind == BodyKind::Sheet);
-        let body = brep_body(ir, length_scale, schema_32001)?;
-        let schema = if schema_32001 {
-            "SCH_SW_32001_11000"
-        } else {
-            "SCH_SW_33103_11000"
-        };
-        vec![(
-            "Contents/Config-0-Partition".to_string(),
-            parasolid_stream(&body, schema)?,
-        )]
+        let encoded = body_drop::encode_without_unwritable_bodies(ir, |ir| {
+            generated_partitions(ir, length_scale)
+        })?;
+        losses.extend(encoded.losses);
+        let written = encoded.reduced.as_ref().unwrap_or(ir);
+        losses.extend(reduce::cache_tolerances_omitted(written));
+        losses.extend(reduce::unchained_face_loops(written));
+        encodable = encoded.reduced;
+        let (partitions, bodiless) = encoded.partitions;
+        bodiless_partitions.extend(bodiless);
+        partitions
     };
+    let ir = encodable.as_ref().unwrap_or(ir);
     losses.extend(cadmpeg_ir::codec::write::record_residual_unavailable(
         "SLDPRT",
         "writes each of these partitions, which hold no body, as a partition and a deltas \
@@ -347,11 +348,23 @@ pub(crate) fn write_semantic_with_records(
                 members.push(&mut sections, &mut unwritten, section, payload);
             }
         } else {
+            let (payload, omitted) = tessellation_payload(ir, length_scale)?;
+            if !omitted.is_empty() {
+                losses.push(
+                    crate::loss::SldprtLossCode::WriterTessellationMetadataOmitted.note(format!(
+                        "{} tessellation(s) state auxiliary channels other than the three the \
+                         SLDPRT display-list table carries after the strip, position and normal \
+                         channels; they are written with the table's default channels: {}",
+                        omitted.len(),
+                        omitted.join(", ")
+                    )),
+                );
+            }
             members.push(
                 &mut sections,
                 &mut unwritten,
                 "Contents/DisplayLists".into(),
-                tessellation_payload(ir, length_scale)?,
+                payload,
             );
         }
     }
@@ -870,6 +883,44 @@ pub(crate) fn pmi_local_sha256(ir: &CadIr) -> Result<String, CodecError> {
     Ok(cadmpeg_ir::hash::sha256_hex(&bytes))
 }
 
+/// Named member payloads.
+type Sections = Vec<(String, Vec<u8>)>;
+
+/// The partitions the writer generates from the document's bodies, and the
+/// sections of those that hold no body.
+fn generated_partitions(
+    ir: &CadIr,
+    length_scale: f64,
+) -> Result<(Sections, Vec<String>), CodecError> {
+    let mut bodiless = Vec::new();
+    if ir.geometry.faces.is_empty() {
+        let partitions = empty_partitions(ir, &mut bodiless)?;
+        return Ok((partitions, bodiless));
+    }
+    if !ir.model.configurations.is_empty() {
+        let partitions = configuration_partitions(ir, length_scale, &mut bodiless)?;
+        return Ok((partitions, bodiless));
+    }
+    let schema_32001 = ir
+        .geometry
+        .bodies
+        .iter()
+        .any(|body| body.kind == BodyKind::Sheet);
+    let body = brep_body(ir, length_scale, schema_32001)?;
+    let schema = if schema_32001 {
+        "SCH_SW_32001_11000"
+    } else {
+        "SCH_SW_33103_11000"
+    };
+    Ok((
+        vec![(
+            "Contents/Config-0-Partition".to_string(),
+            parasolid_stream(&body, schema)?,
+        )],
+        bodiless,
+    ))
+}
+
 fn configuration_partitions(
     ir: &CadIr,
     length_scale: f64,
@@ -1077,6 +1128,9 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .collect::<HashSet<_>>();
     for shell in &subset.geometry.shells {
         vertices.extend(shell.free_vertices().cloned());
+    }
+    for loop_ in &subset.geometry.loops {
+        vertices.extend(loop_.vertices().cloned());
     }
     subset
         .geometry
@@ -2707,7 +2761,12 @@ fn xml_text(out: &mut String, value: &str) {
     }
 }
 
-fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecError> {
+/// The display-list member, and the meshes whose auxiliary channels it does
+/// not hold.
+fn tessellation_payload(
+    ir: &CadIr,
+    length_scale: f64,
+) -> Result<(Vec<u8>, Vec<String>), CodecError> {
     type AuxiliaryWriter = fn(&mut Vec<u8>, &[u32]) -> Result<(), CodecError>;
     let meshes = ir
         .model
@@ -2715,6 +2774,7 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
         .iter()
         .map(sequential_tessellation)
         .collect::<Result<Vec<_>, _>>()?;
+    let mut omitted = Vec::new();
     let mut out = b"uoTempBodyTessData_c".to_vec();
     out.extend_from_slice(&[0; 8]);
     out.extend_from_slice(b"uoTempFaceTessData_c");
@@ -2756,9 +2816,9 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
         descriptor(&mut out, 12, 100, 2, mesh.vertex_normals().len(), &normals)?;
         // `has_core_tessellation_channels` matches at least three channels, so
         // the remainder after the core three is the complete auxiliary run.
-        // The display-list table carries exactly three auxiliary channels; the
-        // consistency check below refuses any other number rather than
-        // truncating the run the mesh states.
+        // The display-list table carries exactly three auxiliary channels; a
+        // run of another shape is left out whole and the table's defaults are
+        // written.
         let auxiliary_start = usize::from(has_core_tessellation_channels(mesh.channels())) * 3;
         let auxiliary = &mesh.channels()[auxiliary_start..];
         let strip_lengths = mesh
@@ -2767,15 +2827,14 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
             .map(|run| usize::try_from(*run))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| CodecError::Malformed("tessellation strip length overflow".into()))?;
-        if !auxiliary.is_empty()
-            && !crate::tessellation::auxiliary_channels_are_consistent(&strip_lengths, auxiliary)
+        let auxiliary = if auxiliary.is_empty()
+            || crate::tessellation::auxiliary_channels_are_consistent(&strip_lengths, auxiliary)
         {
-            return Err(CodecError::InvalidInput(
-                "tessellation channels: the SLDPRT display-list table carries exactly three \
-                 auxiliary channels after the strip, position and normal channels"
-                    .into(),
-            ));
-        }
+            auxiliary
+        } else {
+            omitted.push(mesh.id.as_str().to_owned());
+            &[]
+        };
         for channel in auxiliary {
             descriptor(
                 &mut out,
@@ -2816,7 +2875,7 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
             append(&mut out, &list_c)?;
         }
     }
-    Ok(out)
+    Ok((out, omitted))
 }
 
 fn has_core_tessellation_channels(
@@ -2831,17 +2890,6 @@ fn has_core_tessellation_channels(
 fn sequential_tessellation(
     mesh: &cadmpeg_ir::tessellation::Tessellation,
 ) -> Result<cadmpeg_ir::tessellation::Tessellation, CodecError> {
-    if !mesh.triangle_groups().is_empty() || !mesh.texture_assignments().is_empty() {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT display tessellation triangle groups and texture assignments are not writable"
-                .into(),
-        ));
-    }
-    if !mesh.feature_edges().is_empty() {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT display tessellation feature edges are not writable".into(),
-        ));
-    }
     if matches!(
         mesh.mesh(),
         cadmpeg_ir::tessellation::TessellationMesh::Strips { .. }
@@ -2927,8 +2975,14 @@ fn sequential_tessellation(
             |strips| cadmpeg_ir::tessellation::TessellationMesh::ShadedStrips { strips },
         )
     };
+    // The display list holds no face grouping, texture or feature-edge
+    // record; the export accounting charges each.
     mesh.clone()
-        .with_mesh(rows, channels)
+        .with_triangle_groups(Vec::new())
+        .and_then(|mesh| mesh.with_texture_assignments(Vec::new()))
+        .and_then(|mesh| mesh.with_texture_coordinates(Vec::new()))
+        .and_then(|mesh| mesh.with_feature_edges(Vec::new()))
+        .and_then(|mesh| mesh.with_mesh(rows, channels))
         .map_err(|err| CodecError::Malformed(err.to_string()))
 }
 
@@ -2970,6 +3024,19 @@ fn descriptor(
     out.extend_from_slice(&count.to_le_bytes());
     out.extend_from_slice(data);
     Ok(())
+}
+
+/// `error` with the record it concerns named as a whole token (§3.2), so the
+/// encode retry can find the body that owns it.
+fn named_record(error: CodecError, id: &str) -> CodecError {
+    match error {
+        CodecError::NotImplemented(message) => {
+            CodecError::NotImplemented(format!("{message}: {id}"))
+        }
+        CodecError::Malformed(message) => CodecError::malformed(format_args!("{message}: {id}")),
+        CodecError::InvalidInput(message) => CodecError::InvalidInput(format!("{message}: {id}")),
+        other => other,
+    }
 }
 
 pub(crate) fn brep_body(
@@ -3041,6 +3108,17 @@ pub(crate) fn brep_body(
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    // The sole FIN of each vertex loop (§4, coedge `00 11` marker `0x3f`).
+    let vertex_loop_fins = ir
+        .geometry
+        .loops
+        .iter()
+        .filter_map(|item| match &item.boundary {
+            LoopBoundary::Vertex { vertex, .. } => Some((item, vertex)),
+            LoopBoundary::Ring(_) => None,
+        })
+        .map(|(item, vertex)| Ok((item.id.clone(), (take_attr(&mut next)?, vertex))))
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let loops = ir
         .geometry
         .loops
@@ -3060,10 +3138,18 @@ pub(crate) fn brep_body(
         .map(|body| Ok((body.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let vertex_owners = ownership::vertex_body_owners(ir, &body_attrs)?;
-    let reversed_edges = edge_direction::reversed_compact_edges(ir)?;
+    let reversed_edges = edge_direction::reversed_edges(ir)?;
     let mut out = Vec::new();
     for surface in &ir.geometry.surfaces {
-        if let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(nurbs)) = &surface.geometry {
+        // A procedural carrier is written as the solved shape the source
+        // retains for it; its construction is charged by the arena coverage.
+        let solved = surface.geometry.solved().ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "carrier has no solved geometry: {}",
+                surface.id.as_str()
+            ))
+        })?;
+        if let SolvedSurfaceGeometry::Nurbs(nurbs) = solved {
             write_nurbs_surface(
                 &mut out,
                 surfaces[&surface.id],
@@ -3074,15 +3160,17 @@ pub(crate) fn brep_body(
             )?;
             continue;
         }
-        let reference = surface_reference(surface.geometry.solved().ok_or_else(|| {
-            cadmpeg_core::CodecError::NotImplemented("carrier has no solved geometry".into())
-        })?);
-        let (kind, values) = surface_values(&surface.geometry, reference, length_scale)?;
+        let (kind, values) = surface_values(
+            &SurfaceGeometry::Solved(solved.clone()),
+            surface_reference(solved),
+            length_scale,
+        )
+        .map_err(|error| named_record(error, surface.id.as_str()))?;
         compact(
             &mut out,
             kind,
             surfaces[&surface.id],
-            SURFACE_MARKER,
+            surface_marker(solved),
             &values,
         );
     }
@@ -3090,7 +3178,13 @@ pub(crate) fn brep_body(
         if derived_sphere_seam_curves.contains(&curve.id) {
             continue;
         }
-        if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &curve.geometry {
+        let solved = curve.geometry.solved().ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "carrier has no solved geometry: {}",
+                curve.id.as_str()
+            ))
+        })?;
+        if let SolvedCurveGeometry::Nurbs(nurbs) = solved {
             write_nurbs_curve(
                 &mut out,
                 curves[&curve.id],
@@ -3101,7 +3195,8 @@ pub(crate) fn brep_body(
             )?;
             continue;
         }
-        let (kind, values) = curve_values(&curve.geometry, length_scale)?;
+        let (kind, values) = curve_values(&CurveGeometry::Solved(solved.clone()), length_scale)
+            .map_err(|error| named_record(error, curve.id.as_str()))?;
         compact(
             &mut out,
             kind,
@@ -3120,7 +3215,7 @@ pub(crate) fn brep_body(
         .iter()
         .map(|face| Ok((face.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
-    let face_colors = face_colors(ir)?;
+    let face_colors = face_colors(ir);
     let mut colored_faces = face_colors.keys().collect::<Vec<_>>();
     colored_faces.sort();
     let color_attrs = colored_faces
@@ -3157,9 +3252,10 @@ pub(crate) fn brep_body(
         if let Some(tolerance) = vertex.tolerance {
             let value = tolerance.get() * length_scale;
             if !value.is_finite() || value <= 0.0 {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT vertex tolerance is outside the finite positive source range".into(),
-                ));
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT vertex tolerance is outside the finite positive source range: {}",
+                    vertex.id
+                )));
             }
             bef64(&mut out, value);
         } else {
@@ -3167,23 +3263,38 @@ pub(crate) fn brep_body(
         }
         be16(&mut out, vertex_owners[&vertex.id]);
     }
+    let mut canonical_fins = HashMap::new();
+    for coedge in &ir.geometry.coedges {
+        if reversed_edges.stored_sense(&coedge.edge, coedge.sense) == Sense::Forward {
+            canonical_fins
+                .entry(&coedge.edge)
+                .or_insert(coedges[&coedge.id]);
+        }
+    }
     for edge in &ir.geometry.edges {
-        let ends = edge_ends(edge)?;
-        let owner = vertex_owners
-            .get(&ends.start)
-            .ok_or_else(|| CodecError::Malformed("SLDPRT EDGE start has no BODY owner".into()))?;
+        let ends = edge_ends(edge).map_err(|error| named_record(error, edge.id.as_str()))?;
+        let owner = vertex_owners.get(&ends.start).ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "SLDPRT EDGE start has no BODY owner: {}",
+                edge.id
+            ))
+        })?;
         if vertex_owners.get(&ends.end) != Some(owner) {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT EDGE endpoints do not have one BODY owner".into(),
-            ));
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT EDGE endpoints do not have one BODY owner: {}",
+                edge.id
+            )));
         }
         tag(&mut out, 0x10);
         be16(&mut out, edges[&edge.id]);
         be32(&mut out, 0);
         be16(&mut out, 0);
         out.extend_from_slice(&MAGIC);
+        // The canonical forward FIN, stated so that an edge with several
+        // forward FINs still names one (§4).
+        let canonical = canonical_fins.get(&edge.id).copied().unwrap_or(0);
         for value in [
-            0,
+            canonical,
             0,
             0,
             edge.curve()
@@ -3212,11 +3323,13 @@ pub(crate) fn brep_body(
     for coedge in &ir.geometry.coedges {
         tag(&mut out, 0x11);
         be16(&mut out, coedges[&coedge.id]);
-        let edge = edges_by_id
-            .get(&coedge.edge)
-            .copied()
-            .ok_or_else(|| CodecError::Malformed("coedge references missing edge".into()))?;
-        let ends = edge_ends(edge)?;
+        let edge = edges_by_id.get(&coedge.edge).copied().ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "coedge references missing edge: {}",
+                coedge.id
+            ))
+        })?;
+        let ends = edge_ends(edge).map_err(|error| named_record(error, edge.id.as_str()))?;
         let forward_vertex = if coedge.sense == Sense::Forward {
             &ends.end
         } else {
@@ -3255,32 +3368,51 @@ pub(crate) fn brep_body(
         );
     }
     for lp in &ir.geometry.loops {
-        let face = faces_by_id
-            .get(&lp.face)
-            .copied()
-            .ok_or_else(|| CodecError::Malformed("loop references missing face".into()))?;
+        let Some((fin, vertex)) = vertex_loop_fins.get(&lp.id) else {
+            continue;
+        };
+        let vertex = vertices.get(*vertex).copied().ok_or_else(|| {
+            CodecError::malformed(format_args!(
+                "vertex loop references a missing vertex: {}",
+                lp.id
+            ))
+        })?;
+        tag(&mut out, 0x11);
+        be16(&mut out, *fin);
+        for value in [0, loops[&lp.id], *fin, *fin, vertex, 0, 0, 0, 0] {
+            be16(&mut out, value);
+        }
+        out.push(0x3f);
+    }
+    for lp in &ir.geometry.loops {
+        let face = faces_by_id.get(&lp.face).copied().ok_or_else(|| {
+            CodecError::malformed(format_args!("loop references missing face: {}", lp.id))
+        })?;
         let position = face
             .loops
             .iter()
             .position(|id| id == &lp.id)
-            .ok_or_else(|| CodecError::Malformed("face does not own referenced loop".into()))?;
+            .ok_or_else(|| {
+                CodecError::malformed(format_args!("face does not own referenced loop: {}", lp.id))
+            })?;
         let next_loop = face
             .loops
             .iter()
             .nth(position + 1)
             .map_or(0, |id| loops[id]);
+        let first_fin = match vertex_loop_fins.get(&lp.id) {
+            Some((fin, _)) => *fin,
+            None => {
+                coedges[lp
+                    .coedges()
+                    .first()
+                    .ok_or_else(|| CodecError::malformed(format_args!("empty loop: {}", lp.id)))?]
+            }
+        };
         tag(&mut out, 0x0f);
         be16(&mut out, loops[&lp.id]);
         be32(&mut out, 0);
-        for value in [
-            0,
-            coedges[lp
-                .coedges()
-                .first()
-                .ok_or_else(|| CodecError::Malformed("empty loop".into()))?],
-            faces[&lp.face],
-            next_loop,
-        ] {
+        for value in [0, first_fin, faces[&lp.face], next_loop] {
             be16(&mut out, value);
         }
     }
@@ -3290,11 +3422,10 @@ pub(crate) fn brep_body(
         be32(&mut out, 0);
         be16(&mut out, face_owners[&face.id]);
         out.extend_from_slice(&MAGIC);
-        let first = face
-            .loops
-            .iter()
-            .next()
-            .ok_or_else(|| CodecError::Malformed("face has no loop".into()))?;
+        let first =
+            face.loops.iter().next().ok_or_else(|| {
+                CodecError::malformed(format_args!("face has no loop: {}", face.id))
+            })?;
         for value in [0, 0, loops[first], 0, surfaces[&face.surface]] {
             be16(&mut out, value);
         }
@@ -3367,9 +3498,10 @@ fn write_body_hierarchy(
         let mut native_regions = Vec::new();
         for region in ir.geometry.body_regions(&body.id) {
             if body.kind == BodyKind::Sheet && region.shells.len() != 1 {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT sheet regions require exactly one shell".into(),
-                ));
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT sheet regions require exactly one shell: {}",
+                    body.id
+                )));
             }
             let native_region = take_attr(next)?;
             native_regions.push(native_region);
@@ -3417,18 +3549,23 @@ fn write_body_hierarchy(
                     1,
                     native_region,
                     0x001b,
-                    &fixed_refs(&native_lumps, "SLDPRT region has more than six shells")?,
+                    &fixed_refs(&native_lumps, "SLDPRT region has more than six shells")
+                        .map_err(|error| named_record(error, body.id.as_str()))?,
                 )?;
             }
         }
         let mut root_refs = [0; 6];
         if native_regions.is_empty() {
-            return Err(CodecError::Malformed("SLDPRT body has no regions".into()));
+            return Err(CodecError::malformed(format_args!(
+                "SLDPRT body has no regions: {}",
+                body.id
+            )));
         }
         if native_regions.len() > 5 {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT body has more than five regions".into(),
-            ));
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT body has more than five regions: {}",
+                body.id
+            )));
         }
         root_refs[1..=native_regions.len()].copy_from_slice(&native_regions);
         entity51(out, 2, root, 0x0017, &root_refs)?;
@@ -3575,7 +3712,22 @@ fn write_typed_body_hierarchy(
                     )
                 })?,
         );
-        for value in [1, body_attrs[body], 1, 1, 1, 1, region_attrs[&region.id], 1] {
+        let next_shell = region
+            .shells
+            .iter()
+            .skip_while(|candidate| *candidate != &shell.id)
+            .nth(1)
+            .map_or(1, |id| shell_attrs[id]);
+        for value in [
+            1,
+            body_attrs[body],
+            next_shell,
+            1,
+            1,
+            1,
+            region_attrs[&region.id],
+            1,
+        ] {
             typed_ref(out, value)?;
         }
     }
@@ -3676,9 +3828,18 @@ fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
     Ok(refs)
 }
 
-pub(crate) fn face_colors(
+/// The colour of each face that states one: its own colour, else that of its
+/// first face appearance binding with a base colour.
+pub(crate) fn face_colors(ir: &CadIr) -> HashMap<cadmpeg_ir::ids::FaceId, Color> {
+    face_colors_and_unwritten_bindings(ir).0
+}
+
+/// The face colours, and the face appearance bindings the colours do not
+/// hold: one whose appearance is missing or states no base colour, or whose
+/// colour differs from one the face already states.
+pub(super) fn face_colors_and_unwritten_bindings(
     ir: &CadIr,
-) -> Result<HashMap<cadmpeg_ir::ids::FaceId, Color>, CodecError> {
+) -> (HashMap<cadmpeg_ir::ids::FaceId, Color>, Vec<String>) {
     let appearances = ir
         .model
         .appearances
@@ -3691,26 +3852,23 @@ pub(crate) fn face_colors(
         .iter()
         .filter_map(|face| face.color.map(|color| (face.id.clone(), color)))
         .collect::<HashMap<_, _>>();
+    let mut unwritten = Vec::new();
     for binding in &ir.model.appearance_bindings {
         let AppearanceTarget::Face(face) = &binding.target.entity else {
             continue;
         };
-        let appearance = appearances.get(&binding.appearance).ok_or_else(|| {
-            CodecError::Malformed("face binding references missing appearance".into())
-        })?;
-        let color = appearance.base_color.ok_or_else(|| {
-            CodecError::NotImplemented("SLDPRT face appearance has no base color".into())
-        })?;
-        if colors
-            .insert(face.clone(), color)
-            .is_some_and(|old| old != color)
-        {
-            return Err(CodecError::Malformed(
-                "face has conflicting appearance colors".into(),
-            ));
+        let Some(color) = appearances
+            .get(&binding.appearance)
+            .and_then(|appearance| appearance.base_color)
+        else {
+            unwritten.push(binding.id.as_str().to_owned());
+            continue;
+        };
+        if *colors.entry(face.clone()).or_insert(color) != color {
+            unwritten.push(binding.id.as_str().to_owned());
         }
     }
-    Ok(colors)
+    (colors, unwritten)
 }
 
 fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
@@ -3885,12 +4043,9 @@ pub(super) fn surface_values(
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(sphere_surface)) => {
             let center = sphere_surface.center().get();
             let axis = sphere_surface.frame().axis().as_raw();
-            let radius = sphere_surface.radius().get();
-            if radius < 0.0 {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT compact sphere carriers require a positive radius".into(),
-                ));
-            }
+            // A negative radius is the same sphere with its normal reversed,
+            // which the orientation marker states (`surface_marker`).
+            let radius = sphere_surface.radius().get().abs();
             let axis = *axis;
             (
                 0x35,
@@ -3912,12 +4067,10 @@ pub(super) fn surface_values(
             let center = torus_surface.center().get();
             let axis = torus_surface.frame().axis().as_raw();
             let major_radius = torus_surface.major_radius().get();
-            let minor_radius = torus_surface.minor_radius().get();
-            if !(major_radius > minor_radius && minor_radius > 0.0) {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT compact torus carriers require major > minor > 0".into(),
-                ));
-            }
+            // A negative tube radius is the same torus with its minor angle
+            // moved by a half turn; its natural normal still points out of
+            // the tube, so the magnitude keeps the face sense.
+            let minor_radius = torus_surface.minor_radius().get().abs();
             (
                 0x36,
                 vec![
@@ -3942,9 +4095,16 @@ pub(super) fn surface_values(
             | SolvedSurfaceGeometry::Unknown { .. },
         )
         | SurfaceGeometry::Procedural { .. } => {
-            return Err(CodecError::NotImplemented(
-                "semantic SLDPRT writer does not support this surface carrier".into(),
-            ))
+            let kind = match geometry {
+                SurfaceGeometry::Procedural { .. } => "procedural",
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(_)) => "nurbs",
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(_)) => "polygonal",
+                SurfaceGeometry::Solved(SolvedSurfaceGeometry::Transformed(_)) => "transformed",
+                SurfaceGeometry::Solved(_) => "unknown",
+            };
+            return Err(CodecError::NotImplemented(format!(
+                "semantic SLDPRT writer does not support this surface carrier ({kind})"
+            )));
         }
     };
     Ok(result)
@@ -3958,11 +4118,6 @@ fn write_nurbs_curve(
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
-    if nurbs.periodic() {
-        return Err(CodecError::NotImplemented(
-            "semantic SLDPRT writer does not support periodic NURBS curves".into(),
-        ));
-    }
     let descriptor = take_attr(next)?;
     let control = take_attr(next)?;
     let multiplicity = take_attr(next)?;
@@ -3996,7 +4151,7 @@ fn write_nurbs_curve(
     be16(out, if rational { 4 } else { 3 });
     be32(out, knot_count);
     out.push(0);
-    out.extend_from_slice(&[0, 0, u8::from(rational), 0]);
+    out.extend_from_slice(&[u8::from(nurbs.periodic()), 0, u8::from(rational), 0]);
     for attr in [control, multiplicity, knots] {
         be16(out, attr);
     }
@@ -4026,11 +4181,6 @@ fn write_nurbs_surface(
     length_scale: f64,
     entity: &str,
 ) -> Result<(), CodecError> {
-    if nurbs.u_periodic() || nurbs.v_periodic() {
-        return Err(CodecError::NotImplemented(
-            "semantic SLDPRT writer does not support periodic NURBS surfaces".into(),
-        ));
-    }
     let u_degree = u16::try_from(nurbs.u_degree()).map_err(|_| {
         CodecError::NotImplemented(format!(
             "SLDPRT NURBS surface {entity} u degree exceeds the native u16 field"
@@ -4085,7 +4235,7 @@ fn write_nurbs_surface(
     be16(out, 0);
     tag(out, 0x7e);
     be16(out, descriptor);
-    out.extend_from_slice(&[0, 0]);
+    out.extend_from_slice(&[u8::from(nurbs.u_periodic()), u8::from(nurbs.v_periodic())]);
     be16(out, u_degree);
     be16(out, v_degree);
     be32(out, u_count);
@@ -4440,6 +4590,22 @@ pub(super) fn surface_reference(geometry: &SolvedSurfaceGeometry) -> cadmpeg_ir:
 
 /// Orientation marker of a written compact surface.
 const SURFACE_MARKER: u8 = 0x2b;
+const SURFACE_REVERSED_MARKER: u8 = 0x2d;
+
+/// The orientation marker of a compact surface record (sldprt.md §7.1):
+/// `0x2d` reverses the natural normal of the stored carrier. A sphere of
+/// negative radius has its natural normal pointing at its centre, so its
+/// magnitude is written reversed. A torus of negative tube radius keeps its
+/// normal pointing out of the tube and needs no reversal.
+fn surface_marker(surface: &SolvedSurfaceGeometry) -> u8 {
+    let reversed =
+        matches!(surface, SolvedSurfaceGeometry::Sphere(sphere) if sphere.radius().get() < 0.0);
+    if reversed {
+        SURFACE_REVERSED_MARKER
+    } else {
+        SURFACE_MARKER
+    }
+}
 
 /// Orientation marker of a written compact curve whose stored edges run along
 /// its parameter.
