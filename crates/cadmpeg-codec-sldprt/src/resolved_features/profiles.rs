@@ -1096,8 +1096,9 @@ pub(crate) struct HeldMarkerGeometry {
     unchecked: HashMap<String, ChordConflict>,
     /// The lines an earlier finalize pass examined.
     finalized: HashSet<SketchEntityId>,
-    /// Each sketch read from a feature's compact records whose feature now
-    /// binds the sketch read from its marker records, with that sketch.
+    /// Each sketch read from a feature's compact records whose feature a
+    /// later pass binds again to the sketch read from its marker records,
+    /// with that sketch.
     superseded: Vec<(SketchId, SketchId)>,
 }
 
@@ -1127,7 +1128,7 @@ impl HeldMarkerGeometry {
 /// where it has them, and otherwise the marker role as its native kind with
 /// one loss per entity, charges one loss for each line whose curve record
 /// states another form, and one for each compact-record sketch that a
-/// marker-record sketch superseded.
+/// marker-record sketch superseded and `losses` does not name yet.
 pub(crate) fn finalize_unread_marker_entities(
     sketch_entities: &mut Vec<SketchEntity>,
     held: HeldMarkerGeometry,
@@ -1213,9 +1214,12 @@ pub(crate) fn finalize_unread_marker_entities(
         )));
     }
     for (compact, markers) in superseded {
-        losses.push(SldprtLossCode::SketchReadingSuperseded.note(format!(
+        let note = SldprtLossCode::SketchReadingSuperseded.note(format!(
             "sketch {compact}, read from its feature's compact records, stays in the model; the feature binds sketch {markers}, read from its marker records"
-        )));
+        ));
+        if !losses.contains(&note) {
+            losses.push(note);
+        }
     }
 }
 
@@ -1553,6 +1557,11 @@ pub(crate) fn project_marker_backed_sketches(
                 continue;
             }
             if sketches.iter().any(|sketch| sketch.id == sketch_id) {
+                if let Some(compact) = compact_sketch_id(lane_key, native_feature.ordinal)
+                    .filter(|compact| sketches.iter().any(|sketch| sketch.id == *compact))
+                {
+                    held_geometry.superseded.push((compact, sketch_id.clone()));
+                }
                 features[feature_index]
                     .evaluation
                     .set_definition(if block_definition {
@@ -2624,11 +2633,6 @@ pub(crate) fn project_marker_backed_sketches(
             if let Some(bound_sketch) = &bound_sketch {
                 sketch_entities.retain(|entity| entity.sketch != *bound_sketch);
                 sketches.retain(|sketch| sketch.id != *bound_sketch);
-            }
-            if let Some(compact) = compact_sketch_id(lane_key, native_feature.ordinal) {
-                if sketches.iter().any(|sketch| sketch.id == compact) {
-                    held_geometry.superseded.push((compact, sketch_id.clone()));
-                }
             }
             sketch_entities.extend(projected);
             held_geometry.handles.extend(held);

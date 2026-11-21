@@ -724,15 +724,18 @@ fn a_skipped_marker_whose_curve_record_reads_takes_the_record_line() {
 }
 
 /// Each compact-record sketch that a marker-record sketch superseded charges
-/// one loss naming both sketches.
+/// one loss naming both sketches, once over the passes of every
+/// configuration.
 #[test]
 fn a_superseded_compact_sketch_is_named() {
     let compact = SketchId::mint("synthetic:test:id#compact").unwrap();
     let markers = SketchId::mint("synthetic:test:id#markers").unwrap();
-    let mut held = HeldMarkerGeometry::default();
-    held.superseded.push((compact.clone(), markers.clone()));
     let mut losses = Vec::new();
-    finalize_unread_marker_entities(&mut Vec::new(), held, &mut losses);
+    for _ in 0..2 {
+        let mut held = HeldMarkerGeometry::default();
+        held.superseded.push((compact.clone(), markers.clone()));
+        finalize_unread_marker_entities(&mut Vec::new(), held, &mut losses);
+    }
     let [loss] = losses.as_slice() else {
         panic!("one loss: {losses:?}");
     };
