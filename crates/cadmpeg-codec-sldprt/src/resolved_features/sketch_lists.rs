@@ -4,20 +4,24 @@
 //! An `sgSketch` object writes a 14-byte header (a little-endian u32 point
 //! count *N*, u16 `0`, a u16, u16 `0` and a little-endian u32), *N* point
 //! records, a little-endian u32 and its curve lists. In a curve record whose
-//! selector has bit 0 clear, the endpoint and centre fields are zero-based
-//! indices into the point records of its own sketch, and the sense word
-//! selects a line, a counterclockwise arc or a clockwise arc. A marker whose
-//! record is one of these records takes its geometry from the record
-//! (`docs/formats/sldprt.md` §2, "A marker whose record is a point record or a
-//! curve record").
+//! selector has bit 0 clear, other than the current-prefix 92-byte
+//! selector-4 line with locus `05 00 01 00` that §2 reads, the endpoint and
+//! centre fields are zero-based indices into the point records of its own
+//! sketch, and the sense word selects a line, a counterclockwise arc or a
+//! clockwise arc. A marker whose record is one of these records takes its
+//! geometry from the record (`docs/formats/sldprt.md` §2, "A marker whose
+//! record is a point record or a curve record").
 
-use super::SKETCH_ANGLE_TOLERANCE;
+use super::{SKETCH_ANGLE_TOLERANCE, SKETCH_MARKER};
 use crate::brep::graph::LINEAR_RESOLUTION_MM;
 use crate::layout::{
-    sketch_arc_record as arc, sketch_arc_record_legacy as legacy_arc, sketch_record_head as head,
+    sketch_arc_record as arc, sketch_arc_record_legacy as legacy_arc, sketch_line_record as line,
+    sketch_record_head as head,
 };
+use crate::loss::SldprtLossCode;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 use std::collections::BTreeMap;
@@ -52,6 +56,8 @@ const SELECTOR_CONSTRUCTION_BIT: u16 = 8;
 /// The selectors of the curve records whose kind [`framed_curve`] and
 /// [`SketchRecordLists::listed_curve`] decide.
 const ROSTER_SELECTORS: [u16; 2] = [4, 12];
+/// The locus at +23 of a geometry curve record.
+const OBJECT_INDEX_LOCUS: [u8; 4] = [0x05, 0x00, 0x01, 0x00];
 /// Where a curve record's f64 `-1` stands after its fields start.
 const MINUS_ONE: usize = arc::MINUS_ONE - arc::START;
 /// Where a curve record's sense word stands after its fields start.
@@ -404,8 +410,9 @@ fn framed_curve(payload: &[u8], offset: usize) -> Option<(usize, FramedCurve)> {
 
 /// The form of the curve record at `offset`, in either head layout, when its
 /// selector has bit 0 clear: a line when the low half of its sense word is
-/// `0` and its endpoint indices differ, and an arc when the word is `1` or
-/// `-1` and the centre index is followed by i32 `-2`.
+/// `0`, its endpoint indices differ and it is not the object-index line that
+/// §2 reads ([`object_index_line`]), and an arc when the word is `1` or `-1`
+/// and the centre index is followed by i32 `-2`.
 pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
     let fields = curve_fields(payload, offset)?;
     let selector = View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?;
@@ -429,7 +436,44 @@ pub(super) fn curve_form(payload: &[u8], offset: usize) -> Option<CurveForm> {
             counterclockwise: sense == COUNTERCLOCKWISE,
         });
     }
-    (sense & LINE_TYPE_MASK == 0 && start != end).then_some(CurveForm::Line { start, end })
+    (sense & LINE_TYPE_MASK == 0
+        && start != end
+        && !(object_index_line(payload, offset, fields, selector)
+            && super::endpoints::wide_indexed_curve_endpoint_indices(payload, offset).is_some()))
+    .then_some(CurveForm::Line { start, end })
+}
+
+/// Whether the record at `offset` has locus `05 00 01 00` at +23.
+fn object_index_locus(payload: &[u8], offset: usize) -> bool {
+    offset.checked_add(head::LOCUS).is_some_and(|at| {
+        at.checked_add(OBJECT_INDEX_LOCUS.len())
+            .and_then(|end| payload.get(at..end))
+            == Some(&OBJECT_INDEX_LOCUS)
+    })
+}
+
+/// Whether the record at `offset` is a current-prefix 92-byte line with
+/// selector `4` and locus `05 00 01 00`, whose endpoint values plus one are
+/// object indices of point markers when §2 reads it.
+fn object_index_line(payload: &[u8], offset: usize, fields: usize, selector: u16) -> bool {
+    let prefix_end = offset.checked_add(SKETCH_MARKER.len());
+    let end = offset.checked_add(line::RECORD_ID + size_of::<u32>());
+    selector == 4
+        && Some(fields) == offset.checked_add(CURRENT_FIELDS)
+        && prefix_end.and_then(|end| payload.get(offset..end)) == Some(SKETCH_MARKER)
+        && object_index_locus(payload, offset)
+        && end.is_some_and(|end| end == payload.len() || record_head(payload, end))
+}
+
+/// The loss of a curve record on locus `05 00 01 00` that [`curve_form`]
+/// reads: its indices are taken as zero-based point-record positions.
+pub(super) fn point_record_index_basis_loss(payload: &[u8], offset: usize) -> Option<LossNote> {
+    curve_form(payload, offset)?;
+    object_index_locus(payload, offset).then(|| {
+        SldprtLossCode::SketchPointRecordIndexBasisAssumed.note(format!(
+            "curve record at {offset}: locus 05 00 01 00 uses assumed zero-based point-record positions in its sgSketch for endpoint and centre indices",
+        ))
+    })
 }
 
 /// Whether bit 3 of the selector of the record at `offset` is set: the
@@ -450,6 +494,9 @@ pub(super) struct ListedEntity {
     pub(super) endpoints: Option<[usize; 2]>,
     /// The record is a curve record whose selector has bit 3 set.
     pub(super) construction: bool,
+    /// The record is a curve record on locus `05 00 01 00`
+    /// ([`point_record_index_basis_loss`]).
+    pub(super) index_basis_loss: Option<LossNote>,
 }
 
 /// Why the curve record of a marker gives it no entity, so that the marker
@@ -527,6 +574,48 @@ pub(super) fn listed_entity(
     owns: &impl Fn(usize) -> bool,
     project: &impl Fn([f64; 2]) -> Option<Point2>,
 ) -> Option<Result<ListedEntity, ChordConflict>> {
+    read_listed_entity(payload, lists, offset, owns, project, ChordTest::Required)
+}
+
+/// The entity [`listed_entity`] reads at `offset` from the point records of
+/// any feature object, where an arc record that it refuses with
+/// [`ChordConflict::MissesChord`] reads all the same, without endpoints: the
+/// arc about its centre point record from its start point record, swept in
+/// its sense to the direction of its end point record.
+pub(super) fn off_chord_arc(
+    payload: &[u8],
+    lists: &SketchRecordLists,
+    offset: usize,
+    project: &impl Fn([f64; 2]) -> Option<Point2>,
+) -> Option<ListedEntity> {
+    read_listed_entity(
+        payload,
+        lists,
+        offset,
+        &|_| true,
+        project,
+        ChordTest::Waived,
+    )?
+    .ok()
+}
+
+/// Whether an arc record must end on its endpoint point records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChordTest {
+    /// An arc that ends off them is [`ChordConflict::MissesChord`].
+    Required,
+    /// An arc that ends off them reads without endpoints.
+    Waived,
+}
+
+fn read_listed_entity(
+    payload: &[u8],
+    lists: &SketchRecordLists,
+    offset: usize,
+    owns: &impl Fn(usize) -> bool,
+    project: &impl Fn([f64; 2]) -> Option<Point2>,
+    chord: ChordTest,
+) -> Option<Result<ListedEntity, ChordConflict>> {
     let ListedRecord::Curve(sketch) = lists.record(offset)? else {
         let position = project(point_coordinates(payload, offset)?)?;
         return Some(Ok(ListedEntity {
@@ -534,6 +623,7 @@ pub(super) fn listed_entity(
                 .ok()?,
             endpoints: None,
             construction: false,
+            index_basis_loss: None,
         }));
     };
     let construction = construction_record(payload, offset);
@@ -542,6 +632,7 @@ pub(super) fn listed_entity(
             geometry,
             endpoints,
             construction,
+            index_basis_loss: point_record_index_basis_loss(payload, offset),
         }))
     };
     let (start, end, center, counterclockwise) = match curve_form(payload, offset) {
@@ -619,6 +710,8 @@ pub(super) fn listed_entity(
         [start_at, end_at]
     } else if near(first, end_ir) && near(last, start_ir) {
         [end_at, start_at]
+    } else if chord == ChordTest::Waived {
+        return entity(arc, None);
     } else {
         return Some(Err(ChordConflict::MissesChord));
     };
