@@ -476,6 +476,12 @@ pub(crate) const TRANSFERRED_PARAMETER_COUNT: CoverageKey =
     CoverageKey::new("transferred_parameter_count");
 pub(crate) const TRANSFERRED_PMI_DIMENSION_COUNT: CoverageKey =
     CoverageKey::new("transferred_pmi_dimension_count");
+pub(crate) const TRANSFERRED_PMI_ANNOTATION_COUNT: CoverageKey =
+    CoverageKey::new("transferred_pmi_annotation_count");
+pub(crate) const TRANSFERRED_PMI_MAIN_TOLERANCE_COUNT: CoverageKey =
+    CoverageKey::new("transferred_pmi_main_tolerance_count");
+pub(crate) const TRANSFERRED_PMI_SECONDARY_TOLERANCE_COUNT: CoverageKey =
+    CoverageKey::new("transferred_pmi_secondary_tolerance_count");
 pub(crate) const TRANSFERRED_RELATION_PROGRAM_INPUT_PARAMETER_COUNT: CoverageKey =
     CoverageKey::new("transferred_relation_program_input_parameter_count");
 pub(crate) const TRANSFERRED_SKETCH_CONSTRAINT_COUNT: CoverageKey =

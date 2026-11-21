@@ -62,6 +62,7 @@ fn generated_source_less_writes_unassigned_protein_appearance() {
             ),
         ]),
         textures: Vec::new(),
+        native_ref: None,
     }];
     let mut encoded = Vec::new();
     F3dCodec
@@ -396,6 +397,7 @@ fn synthesized_appearance_properties_report_each_unwritten_key() {
             base_color: Some(cadmpeg_ir::topology::Color::new(0.2, 0.3, 0.4, 1.0).unwrap()),
             properties,
             textures: Vec::new(),
+            native_ref: None,
         });
         let plan = F3dCodec
             .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -455,6 +457,7 @@ fn appearances_sharing_a_guid_with_different_assets_take_distinct_guids() {
         base_color: Some(Color::new(red, 0.35, 0.75, 1.0).expect("valid color")),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     };
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     source_less.model.appearances = vec![
@@ -514,6 +517,7 @@ fn an_appearance_with_no_guid_is_written_under_an_allocated_guid_with_a_loss() {
         base_color: Some(Color::new(0.15, 0.35, 0.75, 1.0).expect("valid color")),
         properties: std::collections::BTreeMap::new(),
         textures: Vec::new(),
+        native_ref: None,
     }];
     let mut encoded = Vec::new();
     let report = F3dCodec

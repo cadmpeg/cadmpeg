@@ -868,7 +868,8 @@ impl Builder<'_, '_, '_, '_> {
             .model
             .tessellations
             .push(tessellation.with_body(Some(body.clone())));
-        self.material(prim, key)?;
+        let target = AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string());
+        self.material(prim, key, target)?;
         for subset in &mesh.subsets {
             self.subset_material(&subset.path, key)?;
         }
@@ -968,8 +969,14 @@ impl Builder<'_, '_, '_, '_> {
             .map_err(|error| error.to_string())
     }
 
-    /// Binds the material of `prim` to the tessellation of definition `key`.
-    fn material(&mut self, prim: &Prim<'_>, key: &str) -> Result<(), CodecError> {
+    /// Binds the material of `prim`, whose definition is `key`, to `target`: the tessellation of
+    /// a mesh, the face of a patch.
+    fn material(
+        &mut self,
+        prim: &Prim<'_>,
+        key: &str,
+        target: AppearanceTarget,
+    ) -> Result<(), CodecError> {
         let Some(bound) =
             crate::schema::shading::bound_material(self.stage, prim, &mut self.issues)
         else {
@@ -985,13 +992,13 @@ impl Builder<'_, '_, '_, '_> {
         let appearance = self.appearance(&surface)?;
         self.ir.model.appearance_bindings.push(AppearanceBinding {
             id: crate::ids::appearance_binding(key),
-            target: AppearanceTarget::Tessellation(crate::ids::tessellation(key).to_string())
-                .into(),
+            target: target.into(),
             appearance,
             source_entity_id: Some(surface.material),
             object_type: None,
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
         self.admit("usd_appearance")
     }
@@ -1047,6 +1054,7 @@ impl Builder<'_, '_, '_, '_> {
             object_type: None,
             visible: None,
             channels: BTreeMap::new(),
+            native_ref: None,
         });
         self.admit("usd_appearance")
     }
@@ -1316,6 +1324,7 @@ impl Builder<'_, '_, '_, '_> {
             native_ref: None,
         });
         self.body(prim, key, BodyKind::Sheet);
+        self.material(prim, key, AppearanceTarget::Face(face))?;
         self.transferred = true;
         self.admit("usd_patch")?;
         Ok(Some(crate::ids::body(key)))
@@ -1488,6 +1497,7 @@ fn surface_appearance(surface: &SurfaceShader) -> Appearance {
         base_color,
         properties,
         textures: Vec::new(),
+        native_ref: None,
     }
 }
 

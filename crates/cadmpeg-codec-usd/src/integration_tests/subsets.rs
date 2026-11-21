@@ -208,3 +208,59 @@ fn a_face_named_by_a_triangle_group_binds_its_material_to_the_group() {
         .iter()
         .any(|loss| loss.code == crate::loss::UsdLossCode::ExportGroupFaceNotWritten.kind()));
 }
+
+/// A material bound to a `NurbsPatch` binds to the patch's face, and no loss says it was dropped.
+#[test]
+fn a_patch_material_binds_the_patch_face() {
+    let text = r#"#usda 1.0
+def NurbsPatch "Sheet" (
+    prepend apiSchemas = ["MaterialBindingAPI"]
+)
+{
+    int uVertexCount = 2
+    int vVertexCount = 2
+    int uOrder = 2
+    int vOrder = 2
+    double[] uKnots = [0, 0, 1, 1]
+    double[] vKnots = [0, 0, 1, 1]
+    point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0)]
+    rel material:binding = </Looks/Red>
+}
+def Scope "Looks"
+{
+    def Material "Red"
+    {
+        token outputs:surface.connect = </Looks/Red/S.outputs:surface>
+        def Shader "S"
+        {
+            uniform token info:id = "UsdPreviewSurface"
+            color3f inputs:diffuseColor = (1, 0, 0)
+            token outputs:surface
+        }
+    }
+}
+"#;
+    let decoded = decode(text);
+    let model = &decoded.ir().model;
+    let [face] = decoded.ir().geometry.faces.as_slice() else {
+        panic!("one face");
+    };
+    let bound: Vec<_> = model
+        .appearance_bindings
+        .iter()
+        .filter(|binding| binding.target.entity == AppearanceTarget::Face(face.id.clone()))
+        .filter_map(|binding| {
+            model
+                .appearances
+                .iter()
+                .find(|appearance| appearance.id == binding.appearance)
+        })
+        .collect();
+    assert_eq!(bound.len(), 1, "{:?}", model.appearance_bindings);
+    assert_eq!(bound[0].name.as_deref(), Some("Red"));
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("material")));
+}
