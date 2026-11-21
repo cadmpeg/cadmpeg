@@ -133,6 +133,8 @@ pub(crate) enum SldprtLossCode {
     /// line with an identifier trailer and that the handle's own read
     /// endpoints contradict when they coincide.
     SketchHandleReadingAssumed,
+    /// A geometry-locus curve uses assumed zero-based sketch point-record indices.
+    SketchPointRecordIndexBasisAssumed,
     /// A compact sketch profile failed neutral profile admission.
     SketchProfileRejected,
     /// Native sketch relation has no projected neutral constraint.
@@ -397,6 +399,7 @@ impl SldprtLossCode {
         Self::SketchLineDegenerate,
         Self::SketchArcRecordConflict,
         Self::SketchHandleReadingAssumed,
+        Self::SketchPointRecordIndexBasisAssumed,
         Self::SketchProfileRejected,
         Self::SketchRelationUnprojected,
         Self::SketchRelationMultiplyProjected,
@@ -537,6 +540,7 @@ impl SldprtLossCode {
             Self::SketchLineDegenerate => "sketch.line-degenerate",
             Self::SketchArcRecordConflict => "sketch.arc-record-conflict",
             Self::SketchHandleReadingAssumed => "sketch.handle-reading-assumed",
+            Self::SketchPointRecordIndexBasisAssumed => "sketch.point-record-index-basis-assumed",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchRelationMultiplyProjected => "sketch.relation-multiply-projected",
             Self::FeatureNativeKindRetained => "feature.native-kind-retained",
@@ -708,6 +712,7 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
+            | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchHandleReadingAssumed
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
@@ -927,6 +932,7 @@ impl SldprtLossCode {
             | Self::SketchHandleUnresolved
             | Self::SketchLineDegenerate
             | Self::SketchArcRecordConflict
+            | Self::SketchPointRecordIndexBasisAssumed
             | Self::SketchHandleReadingAssumed
             | Self::SketchProfileRejected
             | Self::SketchRelationUnprojected
@@ -1158,6 +1164,7 @@ mod tests {
                 "sketch.line-degenerate",
                 "sketch.arc-record-conflict",
                 "sketch.handle-reading-assumed",
+                "sketch.point-record-index-basis-assumed",
                 "sketch.profile-rejected",
                 "sketch.relation-unprojected",
                 "sketch.relation-multiply-projected",

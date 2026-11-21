@@ -49,7 +49,8 @@ use super::relation_loci::same_dimension_length;
 use super::scalars::FeatureObjectNames;
 use super::sketch_lists::{
     chord_record, identifier_trailer_line_record, listed_record_geometry,
-    unchecked_record_conflict, ChordConflict, ChordRecord, ListedReading, SketchRecordLists,
+    point_record_index_basis_loss, unchecked_record_conflict, ChordConflict, ChordRecord,
+    ListedReading, SketchRecordLists,
 };
 use super::transforms::{record_top_marker_coordinates, sketch_frame_marker_transform};
 use super::typed_relations::{
@@ -1093,6 +1094,8 @@ pub(crate) struct HeldMarkerGeometry {
     unchecked: HashMap<String, ChordConflict>,
     /// The lines an earlier finalize pass examined.
     finalized: HashSet<SketchEntityId>,
+    index_basis_assumptions:
+        HashMap<(SketchId, String), (SketchGeometry, cadmpeg_ir::report::loss::LossNote)>,
 }
 
 impl HeldMarkerGeometry {
@@ -1123,6 +1126,7 @@ struct ListedGeometry {
     geometry: SketchGeometry,
     /// The record is a line with an identifier trailer (open item EV-29).
     identifier_trailer: bool,
+    index_basis_loss: Option<cadmpeg_ir::report::loss::LossNote>,
 }
 
 /// Adds the held arc handles, gives every marker entity that no recovery
@@ -1144,6 +1148,7 @@ pub(crate) fn finalize_unread_marker_entities(
         chord_conflicts,
         unchecked,
         finalized,
+        mut index_basis_assumptions,
     } = held;
     sketch_entities.extend(handles);
     for entity in sketch_entities.iter_mut() {
@@ -1176,6 +1181,9 @@ pub(crate) fn finalize_unread_marker_entities(
                     entity.native_ref.as_deref().unwrap_or("without a native reference"),
                 )));
             }
+            if let Some(loss) = read.index_basis_loss {
+                losses.push(loss);
+            }
             entity.geometry = read.geometry;
             continue;
         }
@@ -1207,6 +1215,13 @@ pub(crate) fn finalize_unread_marker_entities(
             SketchGeometry::native(cadmpeg_core::nonblank_literal!("sldprt:{role}-handle"));
     }
     for entity in sketch_entities.iter() {
+        if let Some((geometry, loss)) = entity.native_ref.as_ref().and_then(|marker| {
+            index_basis_assumptions.remove(&(entity.sketch.clone(), marker.clone()))
+        }) {
+            if geometry == entity.geometry {
+                losses.push(loss);
+            }
+        }
         if !matches!(
             entity.geometry.definition(),
             SketchGeometryDefinition::Line { .. }
@@ -1606,6 +1621,7 @@ pub(crate) fn project_marker_backed_sketches(
             let mut held = Vec::new();
             let mut listed = Vec::new();
             let mut chord_conflicts = Vec::new();
+            let mut index_basis_assumptions = Vec::new();
             for marker in markers.iter().copied() {
                 let native_kind = cadmpeg_core::nonblank_literal!(
                     "sldprt:marker-geometry:{}",
@@ -2258,6 +2274,7 @@ pub(crate) fn project_marker_backed_sketches(
                     {
                         return Err(MarkerGeometryFailure::Absent);
                     }
+                    let mut point_record_read = false;
                     let geometry = if matches!(
                         geometry.definition(),
                         SketchGeometryDefinition::Native { .. }
@@ -2274,6 +2291,7 @@ pub(crate) fn project_marker_backed_sketches(
                             })
                         };
                         if let Some(roster) = read(ListedReading::Roster) {
+                            point_record_read = true;
                             roster
                         } else {
                             if let Some(complete) = read(ListedReading::Complete) {
@@ -2286,6 +2304,14 @@ pub(crate) fn project_marker_backed_sketches(
                                     ListedGeometry {
                                         geometry: complete,
                                         identifier_trailer,
+                                        index_basis_loss: index_from_u64(marker.offset()).and_then(
+                                            |offset| {
+                                                point_record_index_basis_loss(
+                                                    &lane.native_payload,
+                                                    offset,
+                                                )
+                                            },
+                                        ),
                                     },
                                 ));
                             }
@@ -2303,7 +2329,10 @@ pub(crate) fn project_marker_backed_sketches(
                                 &project_coordinates,
                             )
                         }) {
-                            Some(ChordRecord::Arc(arc)) => arc,
+                            Some(ChordRecord::Arc(arc)) => {
+                                point_record_read = true;
+                                arc
+                            }
                             Some(ChordRecord::Conflict(conflict)) => {
                                 chord_conflicts.push((marker.id().to_owned(), conflict));
                                 geometry
@@ -2313,6 +2342,14 @@ pub(crate) fn project_marker_backed_sketches(
                     } else {
                         geometry
                     };
+                    if point_record_read {
+                        if let Some(loss) = index_from_u64(marker.offset()).and_then(|offset| {
+                            point_record_index_basis_loss(&lane.native_payload, offset)
+                        }) {
+                            index_basis_assumptions
+                                .push((marker.id().to_owned(), (geometry.clone(), loss)));
+                        }
+                    }
                     let construction = index_from_u64(marker.offset()).is_some_and(|offset| {
                         (marker_is_selected_construction_line(&lane.native_payload, offset)
                             || current_compact_roster_selected_axis(&lane.native_payload, offset))
@@ -2567,6 +2604,11 @@ pub(crate) fn project_marker_backed_sketches(
                 listed
                     .into_iter()
                     .map(|(marker, geometry)| ((sketch_id.clone(), marker), geometry)),
+            );
+            held_geometry.index_basis_assumptions.extend(
+                index_basis_assumptions
+                    .into_iter()
+                    .map(|(marker, reading)| ((sketch_id.clone(), marker), reading)),
             );
             held_geometry.chord_conflicts.extend(
                 chord_conflicts

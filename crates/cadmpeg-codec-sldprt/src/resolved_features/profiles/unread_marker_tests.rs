@@ -348,6 +348,7 @@ fn a_placeholder_with_held_curve_record_geometry_takes_it_without_a_loss() {
         ListedGeometry {
             geometry: line.clone(),
             identifier_trailer: false,
+            index_basis_loss: None,
         },
     );
     let mut entities = vec![read, other_sketch];
@@ -536,6 +537,7 @@ fn held_geometry_of_a_trailer_line_or_a_degenerate_handle_charges_the_assumed_re
             ListedGeometry {
                 geometry: line.clone(),
                 identifier_trailer,
+                index_basis_loss: None,
             },
         );
     }
@@ -582,4 +584,54 @@ fn a_later_line_on_a_marker_whose_record_is_not_a_line_charges_the_conflict() {
     assert_eq!(loss.code, SldprtLossCode::SketchArcRecordConflict.kind());
     assert!(loss.message.contains(entities[1].id().as_str()));
     assert!(loss.message.contains("does not compare the record"));
+}
+
+#[test]
+fn geometry_locus_arc_projection_reports_its_point_record_index_basis() {
+    for end in [1u16, 2] {
+        let (mut payload, points, arc) = sensed_arc_sketch();
+        let offset = usize::try_from(arc).unwrap();
+        payload[offset + 23..offset + 27].copy_from_slice(&[5, 0, 1, 0]);
+        payload[offset + 66..offset + 68].copy_from_slice(&end.to_le_bytes());
+        let mut markers = Vec::new();
+        for (ordinal, ((id, offset), coordinates)) in ["p0", "p1", "p2"]
+            .into_iter()
+            .zip(points)
+            .zip(SENSED_ARC_POINTS)
+            .enumerate()
+        {
+            markers.push(marker_at(
+                id,
+                u32::try_from(ordinal).unwrap(),
+                offset,
+                SketchInputKind::Point,
+                Some(coordinates),
+            ));
+        }
+        markers.push(marker_at(
+            "curve",
+            3,
+            arc,
+            SketchInputKind::LineOrCircle,
+            None,
+        ));
+        let (mut entities, held) = projected_entities(markers, payload);
+        let mut losses = Vec::new();
+        finalize_unread_marker_entities(&mut entities, held, &mut losses);
+        let geometry = marker_entity(&entities, "curve").geometry.definition();
+        assert!(matches!(
+            (end, geometry),
+            (1, SketchGeometryDefinition::Circle { .. })
+                | (2, SketchGeometryDefinition::Arc { .. })
+        ));
+        assert_eq!(
+            losses
+                .iter()
+                .filter(
+                    |loss| loss.code == SldprtLossCode::SketchPointRecordIndexBasisAssumed.kind()
+                )
+                .count(),
+            1
+        );
+    }
 }

@@ -710,17 +710,81 @@ fn an_arc_record_conflicts_with_a_line_no_chord_test_compared() {
         .contains("does not compare the record"));
 }
 
-/// `docs/formats/sldprt.md` §2: for locus `05 00 01 00` each endpoint value
-/// plus one is the object index of a point marker.
 #[test]
-fn a_curve_with_the_object_index_locus_stays_unresolved() {
+fn geometry_locus_arcs_and_circles_keep_point_record_readings_with_a_loss() {
     let mut sample = sample();
-    for offset in [sample.line, sample.arc, sample.circle] {
+    for (offset, end) in [(sample.arc, 2), (sample.circle, 1)] {
         sample.payload[offset + head::LOCUS..offset + head::LOCUS + 4]
             .copy_from_slice(&OBJECT_INDEX_LOCUS);
+        for reading in [ListedReading::Roster, ListedReading::Complete] {
+            assert_eq!(
+                curve_form(&sample.payload, offset, reading),
+                Some(CurveForm::Arc {
+                    start: 1,
+                    end,
+                    center: 0,
+                    counterclockwise: true,
+                })
+            );
+        }
+        let loss = point_record_index_basis_loss(&sample.payload, offset).unwrap();
+        assert_eq!(
+            loss.code,
+            SldprtLossCode::SketchPointRecordIndexBasisAssumed.kind()
+        );
+        assert!(loss.message.contains("zero-based point-record positions"));
     }
-    for offset in [sample.line, sample.arc, sample.circle] {
-        assert!(curve_stays_unresolved(&sample.payload, offset));
-        assert!(roster_geometry(&sample.payload, offset).is_none());
+    let (center, radius, start, end) = arc_parts(roster_geometry(&sample.payload, sample.arc));
+    assert_eq!(center, Point2::new(0.0, 0.0));
+    assert!((radius - 10.0).abs() < EPS_TEST);
+    assert!(start.abs() < EPS_TEST);
+    assert!((end - FRAC_PI_2).abs() < EPS_TEST);
+    assert_eq!(
+        roster_geometry(&sample.payload, sample.circle),
+        expected(SketchGeometryDefinition::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length::new(10.0).unwrap()
+        })
+    );
+    assert!(point_record_index_basis_loss(&sample.payload, sample.line).is_none());
+}
+
+#[test]
+fn current_prefix_92_byte_selector_four_geometry_locus_line_uses_object_indices() {
+    let mut sample = sample();
+    sample.payload.drain(sample.line + 92..sample.line + 94);
+    sample.payload[sample.line + head::LOCUS..sample.line + head::LOCUS + 4]
+        .copy_from_slice(&OBJECT_INDEX_LOCUS);
+    assert!(curve_stays_unresolved(&sample.payload, sample.line));
+    assert!(roster_geometry(&sample.payload, sample.line).is_none());
+    assert!(point_record_index_basis_loss(&sample.payload, sample.line).is_none());
+    sample.payload.truncate(sample.line + 92);
+    assert!(curve_stays_unresolved(&sample.payload, sample.line));
+}
+
+#[test]
+fn geometry_locus_lines_of_other_sizes_selectors_and_prefixes_keep_their_reading() {
+    for (short, selector, slot) in [(false, 4u16, 3), (true, 12, 3), (true, 4, 1)] {
+        let mut sample = sample();
+        if short {
+            sample.payload.drain(sample.line + 92..sample.line + 94);
+        }
+        sample.payload[sample.line + head::LOCUS..sample.line + head::LOCUS + 4]
+            .copy_from_slice(&OBJECT_INDEX_LOCUS);
+        sample.payload[sample.line + SELECTOR..sample.line + SELECTOR + 2]
+            .copy_from_slice(&selector.to_le_bytes());
+        sample.payload[sample.line + 4] = slot;
+        assert_eq!(
+            curve_form(&sample.payload, sample.line, ListedReading::Complete),
+            Some(CurveForm::Line { start: 1, end: 2 })
+        );
+        assert_eq!(
+            geometry(&sample, sample.line),
+            expected(SketchGeometryDefinition::Line {
+                start: Point2::new(10.0, 0.0),
+                end: Point2::new(0.0, 10.0),
+            })
+        );
+        assert!(point_record_index_basis_loss(&sample.payload, sample.line).is_some());
     }
 }

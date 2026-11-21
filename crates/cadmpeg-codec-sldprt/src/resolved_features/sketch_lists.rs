@@ -4,19 +4,22 @@
 //! An `sgSketch` object writes a 14-byte header (a little-endian u32 point
 //! count *N*, u16 `0`, a u16, u16 `0` and a little-endian u32), *N* point
 //! records, a little-endian u32 and its curve lists. In a curve record whose
-//! selector has bit 0 clear and whose locus differs from `05 00 01 00`,
+//! selector has bit 0 clear, except the current-prefix 92-byte selector-4
+//! line with locus `05 00 01 00`,
 //! the endpoint and centre fields are zero-based indices into the point
 //! records of its own sketch, and the sense word selects a line, a
 //! counterclockwise arc or a clockwise arc.
 
-use super::SKETCH_ANGLE_TOLERANCE;
+use super::{SKETCH_ANGLE_TOLERANCE, SKETCH_MARKER};
 use crate::brep::graph::LINEAR_RESOLUTION_MM;
 use crate::layout::{
     sketch_arc_record as arc, sketch_arc_record_legacy as legacy_arc, sketch_line_record as line,
     sketch_record_head as head,
 };
+use crate::loss::SldprtLossCode;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, Length};
 use cadmpeg_ir::sketches::{SketchGeometry, SketchGeometryDefinition};
 use std::collections::BTreeMap;
@@ -336,7 +339,7 @@ pub(super) fn point_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 2
 }
 
 /// The form of the curve record at `offset`, in either head layout, when its
-/// selector has bit 0 clear and its locus differs from `05 00 01 00`:
+/// selector has bit 0 clear:
 /// a line when the low half of its sense word is `0`, and an arc when the
 /// word is `1` or `-1` and the centre index is
 /// followed by i32 `-2`. [`ListedReading::Roster`] also requires the current
@@ -347,10 +350,6 @@ pub(super) fn curve_form(
     reading: ListedReading,
 ) -> Option<CurveForm> {
     let fields = curve_fields(payload, offset)?;
-    let locus = offset.checked_add(head::LOCUS)?;
-    if payload.get(locus..locus.checked_add(4)?)? == OBJECT_INDEX_LOCUS {
-        return None;
-    }
     let selector = View::u16_le_at(payload, offset.checked_add(SELECTOR)?)?;
     if selector & SELECTOR_OPEN_BIT != 0 {
         return None;
@@ -380,8 +379,36 @@ pub(super) fn curve_form(
     }
     (sense & LINE_TYPE_MASK == 0
         && start != end
+        && !object_index_line(payload, offset, fields, selector)
         && !(roster && identifier_trailer_line(payload, offset)?))
     .then_some(CurveForm::Line { start, end })
+}
+
+fn object_index_locus(payload: &[u8], offset: usize) -> bool {
+    offset.checked_add(head::LOCUS).is_some_and(|at| {
+        at.checked_add(OBJECT_INDEX_LOCUS.len())
+            .and_then(|end| payload.get(at..end))
+            == Some(&OBJECT_INDEX_LOCUS)
+    })
+}
+
+fn object_index_line(payload: &[u8], offset: usize, fields: usize, selector: u16) -> bool {
+    let prefix_end = offset.checked_add(SKETCH_MARKER.len());
+    let end = offset.checked_add(line::RECORD_ID + size_of::<u32>());
+    selector == 4
+        && Some(fields) == offset.checked_add(CURRENT_FIELDS)
+        && prefix_end.and_then(|end| payload.get(offset..end)) == Some(SKETCH_MARKER)
+        && object_index_locus(payload, offset)
+        && end.is_some_and(|end| end == payload.len() || record_head(payload, end))
+}
+
+pub(super) fn point_record_index_basis_loss(payload: &[u8], offset: usize) -> Option<LossNote> {
+    curve_form(payload, offset, ListedReading::Complete)?;
+    object_index_locus(payload, offset).then(|| {
+        SldprtLossCode::SketchPointRecordIndexBasisAssumed.note(format!(
+            "curve record at {offset}: locus 05 00 01 00 uses assumed zero-based point-record positions in its sgSketch for endpoint and centre indices",
+        ))
+    })
 }
 
 /// Whether the current-layout line record at `offset` stores a trailer u32
