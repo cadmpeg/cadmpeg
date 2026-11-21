@@ -785,6 +785,32 @@ fn an_equation_is_written_as_its_displayed_value_and_named() {
 }
 
 #[test]
+fn a_displayed_value_parameter_a_later_drop_removes_is_not_named_as_written() {
+    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    let mut ir = cube_with_foreign_history();
+    let id = ParameterId::mint("other:model:parameter#d6").unwrap();
+    ir.model.parameters.push(DesignParameter {
+        product_definition: None,
+        id: id.clone(),
+        owner: Some(ir.model.features[1].id.clone()),
+        ordinal: 0,
+        name: "d6".into(),
+        expression: "d5 * 2".into(),
+        display: None,
+        value: Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(12.7).unwrap(),
+        )),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        properties: std::collections::BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    let (displayed, _) = super::super::history_drop::equations_as_displayed_values(&mut ir);
+    ir.model.parameters.retain(|parameter| parameter.id != id);
+    assert!(displayed.note(&ir).is_none());
+}
+
+#[test]
 fn a_curve_shared_by_two_profiles_is_written_once() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, FeatureOperation};
     use cadmpeg_ir::math::{Point2, Vector3};

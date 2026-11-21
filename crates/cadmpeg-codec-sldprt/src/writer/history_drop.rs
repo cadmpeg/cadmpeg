@@ -145,8 +145,9 @@ pub(super) fn clear_foreign_native_refs(ir: &mut CadIr, native: Option<&SldprtNa
 /// equation manager in `Contents/Config-N` (`sldprt.md`, Keywords history),
 /// whose dimension references hold handle objects the format document does
 /// not state, so this writer writes no equation. A parameter with no value
-/// the text can hold is dropped and named.
-pub(super) fn equations_as_displayed_values(ir: &mut CadIr) -> Vec<LossNote> {
+/// the text can hold is dropped and named. The rewritten parameters come
+/// back as [`DisplayedValues`], named once the write knows which it keeps.
+pub(super) fn equations_as_displayed_values(ir: &mut CadIr) -> (DisplayedValues, Vec<LossNote>) {
     let mut written = Vec::new();
     let mut valueless = Removed::default();
     for parameter in &mut ir.model.parameters {
@@ -164,34 +165,59 @@ pub(super) fn equations_as_displayed_values(ir: &mut CadIr) -> Vec<LossNote> {
                 .insert(parameter.id.as_str().to_owned());
             continue;
         };
-        written.push(format!(
-            "{} ({} = {})",
-            parameter.id.as_str(),
-            parameter.name,
-            parameter.expression
+        written.push((
+            parameter.id.as_str().to_owned(),
+            format!(
+                "{} ({} = {})",
+                parameter.id.as_str(),
+                parameter.name,
+                parameter.expression
+            ),
         ));
         parameter.expression = displayed;
         parameter.dependencies = cadmpeg_ir::features::DistinctMembers::default();
     }
     let mut notes = Vec::new();
-    if !written.is_empty() {
-        notes.push(
-            SldprtLossCode::WriterParameterExpressionsOmitted.note(format!(
-                "the SLDPRT writer writes {} parameter(s) with their displayed value and without \
-             the equation that drives it, which belongs to the equation manager this writer \
-             does not write: {}",
-                written.len(),
-                written.join(", ")
-            )),
-        );
-    }
     if !valueless.is_empty() {
         notes.extend(
             remove(ir, &valueless)
                 .notes("an expression with no value a Keywords dimension text can hold"),
         );
     }
-    notes
+    (DisplayedValues(written), notes)
+}
+
+/// Parameters written with their displayed value in place of their
+/// expression: each parameter's id and the text that names it.
+#[derive(Default)]
+pub(super) struct DisplayedValues(Vec<(String, String)>);
+
+impl DisplayedValues {
+    /// The note naming those of the parameters that `ir` still holds. A
+    /// parameter a later drop removed is named by that drop.
+    pub(super) fn note(self, ir: &CadIr) -> Option<LossNote> {
+        let kept: BTreeSet<&str> = ir
+            .model
+            .parameters
+            .iter()
+            .map(|parameter| parameter.id.as_str())
+            .collect();
+        let written: Vec<String> = self
+            .0
+            .into_iter()
+            .filter(|(id, _)| kept.contains(id.as_str()))
+            .map(|(_, text)| text)
+            .collect();
+        (!written.is_empty()).then(|| {
+            SldprtLossCode::WriterParameterExpressionsOmitted.note(format!(
+                "the SLDPRT writer writes {} parameter(s) with their displayed value and without \
+             the equation that drives it, which belongs to the equation manager this writer \
+             does not write: {}",
+                written.len(),
+                written.join(", ")
+            ))
+        })
+    }
 }
 
 /// Drop each `Native` operation of another format, with every record that
