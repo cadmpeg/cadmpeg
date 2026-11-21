@@ -3,6 +3,7 @@
 
 mod extrude_direction;
 mod mesh_bodies;
+mod native_skeleton;
 mod profile_data;
 mod root_definition;
 mod scalar_relation_values;

@@ -1000,7 +1000,7 @@ The face geometry after a `moFaceRefPlnData_c` in an in-context part has two obs
 
 **Question.** What is the grammar of a `moRelMgr_c` object's detailing settings after its ten dimension styles, how are `moCThreadRefMgr_c` records and the untagged thread data laid out, how are `moRelation_c` objects and their equation sides read inside `Config-N`, and what are the `Config-N` layouts of files below `swVersion` 14000?
 
-**Known.** A per-version template of gap lengths and string positions reads the detailing settings in 892 streams. Thread data with records writes 17-byte entries (u32, u32, a byte, f64), then f64 geometry of varying length, two `CString` values and three matrix rows; 124 streams stop there. 34 stop at equations, and none of the 37 streams of 10000–12000 reaches its end, for want of templates for those versions.
+**Known.** A per-version template of gap lengths and string positions reads the detailing settings in 892 streams. In a part of `swVersion` 14000 with no relations the template is 246 byte runs, 237 `CString` values and eight `moLengthUserUnits_c` objects, in one order. Thread data with records writes 17-byte entries (u32, u32, a byte, f64), then f64 geometry of varying length, two `CString` values and three matrix rows; 124 streams stop there. 34 stop at equations, and none of the 37 streams of 10000–12000 reaches its end, for want of templates for those versions.
 
 **Need.** A writer that creates a part has to write the configuration stream, and a reader that keeps detailing settings, threads and equations has to read it.
 

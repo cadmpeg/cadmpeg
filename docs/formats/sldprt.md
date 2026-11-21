@@ -1882,6 +1882,8 @@ A `moPart_c` object writes, in order:
 | optionally 29 bytes of thread data written without a tag, a `moCThreadRefMgr_c` and a `moPrtExplViewManager_c` object |
 | with the view manager, eight zero bytes, eight `ff` bytes and 26 bytes; without it, 51 zero bytes; then the next object identifier as u32 and eight zero bytes |
 
+The part's first u32 is the byte count from its end to the u32 that follows the twenty zero bytes. That u32 is the byte count from its end to the end of the stream.
+
 The *marker block* writes `aaaaaaaa bbbbbbbb`. Before `swVersion` 12000 it continues with a fixed 74 bytes (10000) or 82 (11000). Otherwise it writes a little-endian u32 *a*; when *a* is `1`, u32 `0x18`, u32 `0x10`, u32 `1`, a u32 count and that many points of three f64; then 78 bytes (12000) or 82 (14000 and above), the next object identifier as u32, from 19000 a u32 count *k*, *k* eight-byte entries and a u32, and u16 `0`.
 
 A `moVisualProperties_c` body writes u32 colour, u32, u32 colour, two `CString` values (the second the material), six f64 and a u32 flag. With the flag set: two f64, 88 bytes, a `CString`, six bytes, two f64 and six u32 (five before 15000); with it clear, five u32. Then a `CString`, a u32 and a u32 appearance flag. With an appearance: u32 count, u32, the appearance name, 81 bytes, the texture path, twelve bytes, a `CString`, 76 bytes; from 13000 a `CString` and u32; from 13000 up to 19000 three `CString` values and 92 bytes. Then a `CString`, a u32 and, except in 13000–14999, a second u32; a `CString`, two u32, a `CString` and twenty bytes. From 17000 a u32 follows; when it is non-zero, 192 bytes, five `CString` values, four bytes, two `CString` values, 28 bytes, two `CString` values, eight bytes and three `CString` values.
@@ -1910,7 +1912,7 @@ The part's `moUnitComponent_c` (its *part-header form*) writes u16 `2`, a byte, 
 
 A `moSketchBlockMgr_c` writes a named head (null name) and feature block, twelve more bytes of a 16-byte identifier, u32, u32 identifier, u32, u16, a `suObList`, u32, u32, a u32 count *k*, *k* identifiers, 30 bytes and a `moPMarkRecord_c` pointer (a null pointer is followed by the record's body in place), a `suObList`, a u32 and two `CString` values.
 
-A `moRelMgr_c` writes a u16 relation count and that many `moRelation_c` objects, a u16, and the document's detailing settings in place: a head (`CString`, 24 or 32 bytes, the standard name, 205 bytes, `CString`, u32, `CString`), unit names (48 or 52 bytes, a u32 count and that many `CString` values), a u32, 108 bytes (before 15000) or 200, from 16000 a u16 count and that many `CString` values, a font (`CString`, 64 bytes and, from 17000, a u32 weight), a header block, and ten dimension styles. **The remainder of the detailing settings is read by a per-version template of gap lengths and `CString` positions, not by a decoded grammar** (open item EV-19). The manager ends with 0, 8, 12, 16 or 20 bytes by version, a u16 count and that many parameter objects (named head, u16 `0`, f64, a byte).
+A `moRelMgr_c` writes a u16 relation count and that many `moRelation_c` objects, a u16, and the document's detailing settings in place: a head (`CString`, 24 or 32 bytes, the standard name, 205 bytes, `CString`, u32, `CString`), unit names (48 or 52 bytes, a u32 count and that many `CString` values), a u32, 108 bytes (before 15000) or 200, from 16000 a u16 count and that many `CString` values, a font (`CString`, 64 bytes and, from 17000, a u32 weight), a header block, and ten dimension styles. **The remainder of the detailing settings is read by a per-version template of gap lengths and `CString` positions, not by a decoded grammar** (open item EV-19). In a part of `swVersion` 14000 the remainder also holds `moLengthUserUnits_c` objects, written by their class tag, among its byte runs and `CString` values. The manager ends with 0, 8, 12, 16 or 20 bytes by version, a u16 count and that many parameter objects (named head, u16 `0`, f64, a byte).
 
 #### Sketch objects
 
@@ -3379,6 +3381,24 @@ The native default dictionary permits multiple names for one PID and an administ
 An `SW-MassProp-Config-N` value with 14 comma-separated decimal fields, each with six fractional digits, stores a saved mass-properties vector for `Config-N`. Its first twelve values follow the metric mass-properties order: center-of-mass x, y and z in metres; volume in cubic metres; surface area in square metres; mass in kilograms; and six moments of inertia in kilogram square metres. Each recognized value has a source representation bound of one half unit in its last decimal place.
 
 The f64 density fields in `moPart_c` and `moDensityParameter_c` are in kilograms per cubic metre. The latter is referenced by `moMaterial_c`.
+
+### 8.2 Fixed-form streams
+
+A block-envelope part holds these streams in these forms:
+
+| Stream | Form |
+| --- | --- |
+| `Contents/OleItems` | little-endian u32 `0` |
+| `Contents/eModelLic` | little-endian u32 |
+| `Contents/MBLinkData` | six zero bytes |
+| `_MO_VERSION_<v>/AssyVisualData` | little-endian u32 `0`; `<v>` is the part's `swVersion` |
+| `Contents/User Units Table` | no bytes |
+| `Contents/View Orientation Data` | a UTF-8 XML document whose root element is `VIEWS`, empty in a part with no saved views |
+| `Contents/CnfgObjs` | in a part with no configuration objects, little-endian u32 `0` and an empty `CString`; otherwise the class declarations of §2.2 |
+
+`swXmlContents/Features` is a UTF-8 XML document, the XML declaration and a carriage return and line feed, then a root element `swSolidWorks` in namespace `http://www.solidworks.com/sw2003/schema`. Its `swVersion` attribute is the part's version. It holds `swHeader/swFile` (`swDocType`, `swCreationTime`, `swPath`), `swModelList/swModel` (`swName`, the active configuration's `swConfigurationName` and `swConfigurationId`), one `swConfigurationList/swConfiguration` per configuration (`swName`, `swID`, `swReference`) and `swExtFeatureList`.
+
+`swXmlContents/KeyWords`, or `swXmlContents/KeyWords__ZLB` in a compound-file part, holds the Keywords document after a lead byte `0x85` or `0x86`: the XML declaration, a carriage return and line feed, and the `Keywords` root element. Its child elements are grouped by tag in ascending tag order, and ordered within one tag by `id` compared as text.
 
 ## 9. Units
 

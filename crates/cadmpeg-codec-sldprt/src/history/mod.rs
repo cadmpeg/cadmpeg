@@ -65,15 +65,46 @@ fn report_unkeyed_property(losses: &mut Vec<LossNote>, record: &str, duplicate: 
     losses.push(crate::loss::SldprtLossCode::SourcePropertyKeyBlank.note(message));
 }
 
+/// Whether `stream` is the history summary the writer generates
+/// (`Contents/Keywords` or `Contents/Keywords-<n>`), a stream no
+/// `SolidWorks` part holds.
+fn is_history_summary(stream: &str) -> bool {
+    stream
+        .strip_prefix("Contents/Keywords")
+        .is_some_and(|rest| {
+            rest.is_empty()
+                || rest.strip_prefix('-').is_some_and(|index| {
+                    !index.is_empty() && index.bytes().all(|b| b.is_ascii_digit())
+                })
+        })
+}
+
+/// Whether `stream` is the native Keywords index of a block-envelope or
+/// compound-file part.
+fn is_native_keywords(stream: &str) -> bool {
+    matches!(
+        stream,
+        "swXmlContents/KeyWords" | "swXmlContents/KeyWords__ZLB"
+    )
+}
+
 pub(crate) fn histories(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
     annotations: &mut Annotations,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<FeatureHistory>, CodecError> {
+    // A generated part holds its history in the writer's summary; its native
+    // Keywords index lists the skeleton tree the summary already accounts for.
+    let summary = scan
+        .sections()
+        .any(|section| is_history_summary(section.source_stream().as_str()));
     scan.sections()
         .try_fold(Vec::new(), |mut histories, section| {
             let source = section.ordinal();
+            if summary && is_native_keywords(section.source_stream().as_str()) {
+                return Ok(histories);
+            }
             let Some(payload) = section.xml_payload() else {
                 return Ok(histories);
             };

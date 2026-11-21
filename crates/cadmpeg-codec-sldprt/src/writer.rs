@@ -13,6 +13,7 @@ mod envelope;
 mod history_drop;
 mod materials;
 mod metadata_owners;
+mod native;
 mod ownership;
 mod reduce;
 pub(crate) mod target;
@@ -447,11 +448,15 @@ pub(crate) fn write_semantic_with_records(
     let document_envelope = crate::container::first_solidworks_envelope(
         opaque.blocks.iter().map(|(_, payload)| payload.as_slice()),
     );
+    let skeleton = retained_records.is_empty();
+    if skeleton {
+        losses.extend(native_skeleton(ir, &mut sections)?);
+    }
     if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
         let active_name = active.name.as_deref().ok_or_else(|| {
             CodecError::Malformed("active SLDPRT configuration has no resolved name".into())
         })?;
-        if document_envelope.is_none() {
+        if document_envelope.is_none() && !skeleton {
             members.push(
                 &mut sections,
                 &mut unwritten,
@@ -516,6 +521,119 @@ pub(crate) fn write_semantic_with_records(
         unwritten,
         losses,
     })
+}
+
+/// Add the native object structure of a generated part (`writer::native`)
+/// to `sections`. A generated sketch lane already in
+/// `Contents/Config-0-ResolvedFeatures` follows the default tree there.
+/// Returns the losses the skeleton states.
+fn native_skeleton(
+    ir: &CadIr,
+    sections: &mut Vec<(String, Vec<u8>)>,
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
+    let name = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("sw_name"))
+        .map(|name| native_part_name(name))
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| "Part1".to_owned());
+    let active = ir
+        .model
+        .configurations
+        .iter()
+        .find(|value| value.active)
+        .and_then(|value| value.name.clone())
+        .unwrap_or_else(|| "Default".to_owned());
+    let bodies = (0..ir.geometry.bodies.len())
+        .map(|index| native::Body::numbered(&name, index))
+        .collect::<Result<Vec<_>, _>>()?;
+    let facts = native::Facts {
+        name: &name,
+        active: &active,
+        bodies: &bodies,
+    };
+    let mut lane_follows = false;
+    for (stream, payload) in native::skeleton(&facts)? {
+        if let Some((_, existing)) = sections
+            .iter_mut()
+            .find(|(candidate, _)| *candidate == stream)
+        {
+            let mut merged = payload;
+            merged.append(existing);
+            *existing = merged;
+            lane_follows = true;
+        } else {
+            sections.push((stream, payload));
+        }
+    }
+    let summarized = sections
+        .iter()
+        .any(|(stream, _)| stream.starts_with("Contents/Keywords"))
+        .then(|| {
+            ir.model
+                .features
+                .iter()
+                .map(|feature| feature.id.as_str().to_owned())
+                .collect::<Vec<_>>()
+        });
+    Ok(native_skeleton_losses(summarized, lane_follows))
+}
+
+/// The part name a `sw_name` attribute states: its last path component
+/// without the `.sldprt` extension.
+fn native_part_name(name: &str) -> String {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    let stem = base
+        .len()
+        .checked_sub(".sldprt".len())
+        .filter(|&cut| base.is_char_boundary(cut) && base[cut..].eq_ignore_ascii_case(".sldprt"))
+        .map_or(base, |cut| &base[..cut]);
+    stem.to_owned()
+}
+
+/// The losses of a written native skeleton. `summarized` holds the features
+/// written only in the history summary, when the write holds one.
+fn native_skeleton_losses(
+    summarized: Option<Vec<String>>,
+    lane_follows: bool,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use crate::loss::SldprtLossCode;
+    let mut losses = Vec::new();
+    if let Some(features) = summarized {
+        losses.push(SldprtLossCode::WriterNativeHistorySummary.note(format!(
+            "{} source feature(s) are written only in the cadmpeg history summary \
+             Contents/Keywords-0, a stream SolidWorks parts do not hold; the native feature \
+             tree holds the default tree and one moBaseBody_c stored body per body: {}",
+            features.len(),
+            features.join(", ")
+        )));
+    }
+    losses.extend([
+        SldprtLossCode::WriterNativeSkeletonUnlaidRuns.note(
+            "byte runs of the native skeleton that sldprt.md gives as lengths only are written \
+             as zero bytes: the moRelMgr_c detailing settings (EV-19), the bytes before \
+             moPrtExplViewManager_c, the sketch settings of the origin, the view and \
+             annotation-view bytes, the atom bytes; swXmlContents/Features declares no \
+             swVersion while Config-0 states 14000",
+        ),
+        SldprtLossCode::WriterNativeStreamsOmitted.note(
+            "the native skeleton leaves out Header2, ModelStamps, Contents/CMgr, \
+             Contents/CMgrHdr2, Contents/Definition, Contents/Config-0-LWDATA, \
+             Contents/Config-0-ModelHeader, _MO_VERSION_14000/Biography, \
+             _MO_VERSION_14000/History, Contents/CusProps, the docProps and package-relationship \
+             members, Preview, PreviewPNG, SwDocContentMgr and ThirdPty streams, and the object \
+             streams of configurations other than the first",
+        ),
+    ]);
+    if lane_follows {
+        losses.push(SldprtLossCode::WriterNativeSketchLaneOrphan.note(
+            "the generated sketch marker records follow the native feature tree in \
+             Contents/Config-0-ResolvedFeatures with no owning moProfileFeature_c object, so an \
+             exact walk of the stream stops at the first of them",
+        ));
+    }
+    losses
 }
 
 /// What the semantic writer does with each model arena.
