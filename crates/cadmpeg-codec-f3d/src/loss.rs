@@ -448,8 +448,8 @@ pub(crate) enum F3dLossCode {
     FeatureRevolvePlaneWorkPlaneAssumed,
     /// A circular pattern's symmetric distribution has no circular pattern field.
     FeatureCircularPatternPlacementNotTransferred,
-    /// A partial-turn circular pattern without a readable symmetric byte is read as one-sided.
-    FeatureCircularPatternDistributionAssumed,
+    /// A circular pattern assumes equal spacing with unread spacing and Compute controls.
+    FeatureCircularPatternControlsAssumed,
     /// A rectangular-pattern payload's seed kind or body references disagree
     /// with its seed group, whose seeds are kept.
     FeaturePatternPayloadSeedUnconfirmed,
@@ -1578,7 +1578,7 @@ impl F3dLossCode {
         Self::FeatureMirrorPlaneWorkPlaneAssumed,
         Self::FeatureRevolvePlaneWorkPlaneAssumed,
         Self::FeatureCircularPatternPlacementNotTransferred,
-        Self::FeatureCircularPatternDistributionAssumed,
+        Self::FeatureCircularPatternControlsAssumed,
         Self::FeaturePatternPayloadSeedUnconfirmed,
         Self::FeatureRectangularPatternDistanceFormAssumed,
         Self::FeatureRectangularPatternInactiveSymmetricDropped,
@@ -2367,8 +2367,8 @@ impl F3dLossCode {
             Self::FeatureCircularPatternPlacementNotTransferred => {
                 "feature.circular-pattern-placement-not-transferred"
             }
-            Self::FeatureCircularPatternDistributionAssumed => {
-                "feature.circular-pattern-distribution-assumed"
+            Self::FeatureCircularPatternControlsAssumed => {
+                "feature.circular-pattern-controls-assumed"
             }
             Self::FeaturePatternPayloadSeedUnconfirmed => {
                 "feature.pattern-payload-seed-unconfirmed"
@@ -3483,7 +3483,7 @@ impl F3dLossCode {
             | Self::FeatureMirrorPlaneWorkPlaneAssumed
             | Self::FeatureRevolvePlaneWorkPlaneAssumed
             | Self::FeatureCircularPatternPlacementNotTransferred
-            | Self::FeatureCircularPatternDistributionAssumed
+            | Self::FeatureCircularPatternControlsAssumed
             | Self::FeaturePatternPayloadSeedUnconfirmed
             | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureRectangularPatternInactiveSymmetricDropped
@@ -4197,7 +4197,7 @@ impl F3dLossCode {
             | Self::FeatureMirrorPlaneWorkPlaneAssumed
             | Self::FeatureRevolvePlaneWorkPlaneAssumed
             | Self::FeatureCircularPatternPlacementNotTransferred
-            | Self::FeatureCircularPatternDistributionAssumed
+            | Self::FeatureCircularPatternControlsAssumed
             | Self::FeaturePatternPayloadSeedUnconfirmed
             | Self::FeatureRectangularPatternDistanceFormAssumed
             | Self::FeatureRectangularPatternInactiveSymmetricDropped
@@ -5110,7 +5110,7 @@ mod tests {
                 "feature.mirror-plane-work-plane-assumed",
                 "feature.revolve-plane-work-plane-assumed",
                 "feature.circular-pattern-placement-not-transferred",
-                "feature.circular-pattern-distribution-assumed",
+                "feature.circular-pattern-controls-assumed",
                 "feature.pattern-payload-seed-unconfirmed",
                 "feature.rectangular-pattern-distance-form-assumed",
                 "feature.rectangular-pattern-inactive-symmetric-dropped",

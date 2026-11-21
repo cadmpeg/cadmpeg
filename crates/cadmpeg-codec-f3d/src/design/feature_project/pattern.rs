@@ -59,22 +59,30 @@ pub(super) fn project_circular_pattern(
         count: construction.count.get(),
     })
     .ok()?;
-    if (construction.angle.get() - std::f64::consts::TAU).abs() > EPS_CIRCULAR_PATTERN_FULL_TURN {
-        match construction.symmetric.map(|symmetric| symmetric.value) {
-            Some(true) => losses.push(
-                crate::loss::F3dLossCode::FeatureCircularPatternPlacementNotTransferred.note(format!(
-                    "CircularPattern scope {} drops the symmetric distribution: a circular pattern has no field for it.",
-                    scope.id
-                )),
-            ),
-            Some(false) => {}
-            None => losses.push(
-                crate::loss::F3dLossCode::FeatureCircularPatternDistributionAssumed.note(format!(
-                    "CircularPattern scope {} is read as one-sided: its partial turn has no readable payload symmetric byte.",
-                    scope.id
-                )),
-            ),
-        }
+    let distribution = match construction.symmetric {
+        Some(_) => format!(
+            "retains distribution control {} in its native payload",
+            crate::layout::circular_pattern_payload_distribution::FIXED_TWO_VALUE,
+        ),
+        None => "is read with one-sided distribution".to_owned(),
+    };
+    losses.push(
+        crate::loss::F3dLossCode::FeatureCircularPatternControlsAssumed.note(format!(
+            "CircularPattern scope {} is read with equal spacing; it {}; its spacing and Compute controls remain unread (DR-642).",
+            scope.id, distribution,
+        )),
+    );
+    if (construction.angle.get() - std::f64::consts::TAU).abs() > EPS_CIRCULAR_PATTERN_FULL_TURN
+        && construction
+            .symmetric
+            .is_some_and(|symmetric| symmetric.value)
+    {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureCircularPatternPlacementNotTransferred.note(format!(
+                "CircularPattern scope {} drops the symmetric distribution: a circular pattern has no field for it.",
+                scope.id
+            )),
+        );
     }
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
         seeds,
