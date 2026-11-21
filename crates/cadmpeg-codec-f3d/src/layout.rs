@@ -416,6 +416,22 @@ pub(crate) mod design_parameter_typed_compact_owned_prefix {
     pub(crate) const EXPRESSION_LENGTH: usize = 81;
 }
 
+/// Byte offsets for the `design_parameter_discriminated_prefix` record.
+///
+/// Spec §3.1. Record length 30 B.
+///
+/// ```text
+/// Offsets are relative to the indexed header of a discriminated parameter through the family discriminator. One zero byte, the source ordinal and the owner form follow.
+/// ```
+pub(crate) mod design_parameter_discriminated_prefix {
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `header_flag` (`u8`). Spec §3.1.
+    pub(crate) const HEADER_FLAG: usize = 21;
+    /// Offset of `family_discriminator` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const FAMILY_DISCRIMINATOR: usize = 22;
+}
+
 /// Byte offsets for the `design_parameter_wide_discriminated_prefix` record.
 ///
 /// Spec §3.1. Record length 35 B.

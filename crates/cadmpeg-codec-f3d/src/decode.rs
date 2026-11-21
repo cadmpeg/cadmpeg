@@ -2186,6 +2186,22 @@ fn report_parameter_trailer_flags(
     }
 }
 
+fn report_parameter_header_flags(
+    report: &mut DecodeBody,
+    flagged: &[crate::design::decode::parameters::StreamParameterCount],
+) {
+    for parameters in flagged {
+        push_loss_vec(
+            &mut report.losses,
+            F3dLossCode::ParameterHeaderFlagUninterpreted,
+            format_args!(
+                "{} decoded parameter(s) in {} set the header flag at offset 21; the flag is not interpreted (f3d-open-items.md DR-1007).",
+                parameters.count, parameters.stream
+            ),
+        );
+    }
+}
+
 fn report_parameter_owner_trailer_flags(
     report: &mut DecodeBody,
     flagged: &[crate::design::decode::parameters::StreamParameterCount],
@@ -3451,6 +3467,7 @@ impl<'a> F3dDecodeSession<'a> {
         report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
         report_parameter_trailer_flags(&mut self.report, &prereqs.design_parameter_trailer_flags);
         report_parameter_null_owners(&mut self.report, &prereqs.design_parameter_null_owners);
+        report_parameter_header_flags(&mut self.report, &prereqs.design_parameter_header_flags);
         report_parameter_owner_trailer_flags(
             &mut self.report,
             &prereqs.design_parameter_owner_trailer_flags,

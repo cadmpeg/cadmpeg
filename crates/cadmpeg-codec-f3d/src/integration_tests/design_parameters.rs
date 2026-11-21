@@ -67,6 +67,57 @@ fn compact_null_owner_parameter_reports_its_owner_and_trailer_flag() {
         .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
 }
 
+/// A discriminated parameter frame that sets the header flag decodes through
+/// the full decode and reports the uninterpreted header flag.
+#[test]
+fn a_parameter_with_the_header_flag_decodes_and_reports_the_flag() {
+    const TAIL_TYPE_GUID: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";
+    let mut frame = crate::design::test_support::parameter_record(
+        None,
+        "2.50 mm",
+        "Thickness",
+        Some("mm"),
+        "d1",
+        0.25,
+    );
+    frame[21] = 1;
+    frame[22..30].copy_from_slice(&6u64.to_le_bytes());
+    let expression_end = 36 + 4 + 2 * "2.50 mm".len();
+    frame.splice(expression_end..expression_end + 9, [0; 10]);
+    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+        &[(
+            TAIL_TYPE_GUID,
+            "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
+            3,
+            "CommonData",
+            &[19],
+        )],
+        &[],
+    );
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    for (name, payload) in [("BulkStream.dat", frame), ("MetaStream.dat", metadata)] {
+        zip.start_file(format!("FusionAssetName[Active]/Design1/{name}"), stored)
+            .unwrap();
+        zip.write_all(&payload).unwrap();
+    }
+    let decoded = decode(zip.finish().unwrap().into_inner());
+    let native = f3d_native(decoded.ir());
+    let [parameter] = native.design_parameters.as_slice() else {
+        panic!("expected the one Thickness parameter");
+    };
+    assert_eq!(parameter.name(), "d1");
+    assert_eq!(parameter.owner_record_index(), None);
+    let losses = &decoded.report().losses;
+    assert!(losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::ParameterHeaderFlagUninterpreted.kind()
+    }));
+    assert!(!losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
+}
+
 #[test]
 fn base_feature_without_result_body_binding_keeps_a_neutral_snapshot() {
     for source_kind in [

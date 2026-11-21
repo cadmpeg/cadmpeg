@@ -16,6 +16,7 @@ use crate::layout::design_parameter_comment_expression_trailer as comment_traile
 use crate::layout::design_parameter_compact_null_owner_prefix as null_owner;
 use crate::layout::design_parameter_compact_owned_expression_trailer as compact_trailer;
 use crate::layout::design_parameter_discriminated_expression_trailer as nine_trailer;
+use crate::layout::design_parameter_discriminated_prefix as prefix;
 use crate::layout::design_parameter_discriminated_text_expression_trailer as ten_trailer;
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
 use crate::layout::design_parameter_owner_legacy_68 as legacy_owner_68;
@@ -95,6 +96,8 @@ pub(crate) struct DecodedParameters {
     pub(crate) trailer_flags: Vec<StreamParameterCount>,
     /// Per-stream counts of decoded compact null-owner parameters.
     pub(crate) null_owners: Vec<StreamParameterCount>,
+    /// Per-stream counts of decoded parameters with a set header flag.
+    pub(crate) header_flags: Vec<StreamParameterCount>,
 }
 
 /// Decode every indexed parameter record in each Design `BulkStream`.
@@ -107,6 +110,7 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
     let mut unparsed = Vec::new();
     let mut trailer_flags = Vec::new();
     let mut null_owners = Vec::new();
+    let mut header_flags = Vec::new();
     for entry in scan
         .entries
         .iter()
@@ -119,6 +123,7 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
         let mut unparsed_count = 0usize;
         let mut trailer_flag_count = 0usize;
         let mut null_owner_count = 0usize;
+        let mut header_flag_count = 0usize;
         while let Some(at) = next_indexed_record_offset(bytes, position) {
             let end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
             let frame = &bytes[at..end];
@@ -137,12 +142,14 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
                 let record_index = parsed.record_index;
                 let uninterpreted_trailer_flag = parsed.uninterpreted_trailer_flag;
                 let compact_null_owner = parsed.compact_null_owner;
+                let header_flag = parsed.header_flag;
                 match locate_design_parameter(parsed, &entry.name, at) {
                     Some(parameter) => {
                         emitted_record_indices.insert(record_index);
                         out.push(parameter);
                         trailer_flag_count += usize::from(uninterpreted_trailer_flag);
                         null_owner_count += usize::from(compact_null_owner);
+                        header_flag_count += usize::from(header_flag);
                     }
                     None => unparsed_count = next_unparsed_count(unparsed_count)?,
                 }
@@ -175,6 +182,12 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
                 count: null_owner_count,
             });
         }
+        if header_flag_count != 0 {
+            header_flags.push(StreamParameterCount {
+                stream: entry.name.clone(),
+                count: header_flag_count,
+            });
+        }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(DecodedParameters {
@@ -182,6 +195,7 @@ pub(crate) fn decode_parameters(scan: &ContainerScan) -> Result<DecodedParameter
         unparsed,
         trailer_flags,
         null_owners,
+        header_flags,
     })
 }
 
@@ -213,6 +227,8 @@ pub(in crate::design) struct ParsedDesignParameter {
     uninterpreted_trailer_flag: bool,
     /// Whether the frame is the compact null-owner form.
     compact_null_owner: bool,
+    /// The header flag at offset 21 of the discriminated form.
+    header_flag: bool,
 }
 
 /// Unit token parsed in frame-relative coordinates.
@@ -291,8 +307,6 @@ impl ParsedDesignParameter {
     }
 }
 
-/// Frame-relative offset of the parameter family discriminator.
-const DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET: usize = 22;
 /// Further zero bytes before the discriminator in the wide discriminated form.
 const WIDE_DISCRIMINATED_SHIFT: usize = 4;
 
@@ -328,9 +342,12 @@ pub(in crate::design) fn parse_design_parameter(
     payload: &[u8],
 ) -> Result<Option<ParsedDesignParameter>, CodecError> {
     let parsed = (|| {
-        if View::u32_le_at(payload, 0) != Some(3) || payload.get(11..22) != Some(&[0; 11]) {
+        if View::u32_le_at(payload, 0) != Some(3)
+            || payload.get(prefix::ZERO_RUN_10..prefix::HEADER_FLAG) != Some(&[0; 10])
+        {
             return None;
         }
+        let header_flag = trailer_flag(payload, prefix::HEADER_FLAG)?;
         let raw_tag = payload.get(4..7)?;
         if !raw_tag.iter().all(u8::is_ascii_graphic) {
             return None;
@@ -399,6 +416,12 @@ pub(in crate::design) fn parse_design_parameter(
                     Ok(value) => value.map(Ok),
                     Err(error) => Some(Err(error)),
                 }
+            })
+            .map(|parsed| {
+                parsed.map(|parameter| ParsedDesignParameter {
+                    header_flag,
+                    ..parameter
+                })
             })
     })();
     parsed.transpose()
@@ -520,7 +543,7 @@ fn parse_header_form(
     shift: usize,
     trailer: DiscriminatedTrailerLength,
 ) -> Option<Result<ParsedDesignParameter, CodecError>> {
-    let discriminator_at = DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET + shift;
+    let discriminator_at = prefix::FAMILY_DISCRIMINATOR + shift;
     let comment = if discriminated && shift == WIDE_DISCRIMINATED_SHIFT {
         Some(wide_parameter_comment(payload)?)
     } else {
@@ -687,6 +710,7 @@ fn parse_header_form(
         uninterpreted_trailer_flag: compact_flag
             || flagged.is_some_and(|flagged| flagged.uninterpreted),
         compact_null_owner: false,
+        header_flag: false,
     }))
 }
 
@@ -788,6 +812,7 @@ fn parse_comment_discriminated_parameter(
         text_value: None,
         uninterpreted_trailer_flag: false,
         compact_null_owner: false,
+        header_flag: false,
     }))
 }
 
@@ -934,6 +959,7 @@ fn compact_trailer_parameter(
         text_value: None,
         uninterpreted_trailer_flag: compact_flag,
         compact_null_owner: owner_record_index.is_none(),
+        header_flag: false,
     }))
 }
 
@@ -959,8 +985,7 @@ impl ParameterTailTargets {
         parameter_tail_collection(frame).is_some_and(|target| {
             let target = u64::from(target);
             if self.collections.is_empty() {
-                frame.get(indexed_header::LEN..DESIGN_PARAMETER_DISCRIMINATOR_FRAME_OFFSET)
-                    == Some(&[0; 11])
+                frame.get(indexed_header::LEN..prefix::FAMILY_DISCRIMINATOR) == Some(&[0; 11])
                     && !self.others.contains(&target)
             } else {
                 self.collections.contains(&target)
@@ -1157,6 +1182,7 @@ fn parse_typed_compact_design_parameter(
             text_value: None,
             uninterpreted_trailer_flag: false,
             compact_null_owner: false,
+            header_flag: false,
         }))
     })();
     parsed.transpose()
@@ -1216,6 +1242,7 @@ fn parse_legacy_design_parameter(
             text_value: None,
             uninterpreted_trailer_flag: false,
             compact_null_owner: false,
+            header_flag: false,
         }))
     })();
     parsed.transpose()

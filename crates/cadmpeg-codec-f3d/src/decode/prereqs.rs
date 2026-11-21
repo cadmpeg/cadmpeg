@@ -38,6 +38,10 @@ pub(super) struct ProductPrereqs {
     /// session reports them as losses.
     pub(super) design_parameter_null_owners:
         Vec<crate::design::decode::parameters::StreamParameterCount>,
+    /// Per-stream counts of decoded parameters that set the header flag; the
+    /// session reports them as losses.
+    pub(super) design_parameter_header_flags:
+        Vec<crate::design::decode::parameters::StreamParameterCount>,
     /// Native parameter identities retained without an interpreted owner frame.
     pub(super) design_parameter_owner_unparsed: Vec<String>,
     /// Per-stream counts of decoded owners whose compact trailer sets its
@@ -121,6 +125,7 @@ impl ProductPrereqs {
             design_parameter_unparsed: _,
             design_parameter_trailer_flags: _,
             design_parameter_null_owners: _,
+            design_parameter_header_flags: _,
             design_parameter_owner_unparsed: _,
             design_parameter_owner_trailer_flags: _,
             design_superseded_scope_envelopes: _,
@@ -196,6 +201,7 @@ pub(super) fn decode(
         unparsed: design_parameter_unparsed,
         trailer_flags: design_parameter_trailer_flags,
         null_owners: design_parameter_null_owners,
+        header_flags: design_parameter_header_flags,
     } = crate::design::decode::parameters::decode_parameters(scan)?;
     let design_entity_headers = crate::design::decode::sketch::decode_entity_headers(scan)?;
     let design_record_headers =
@@ -290,6 +296,7 @@ pub(super) fn decode(
         design_parameter_unparsed,
         design_parameter_trailer_flags,
         design_parameter_null_owners,
+        design_parameter_header_flags,
         design_parameter_owner_unparsed,
         design_parameter_owner_trailer_flags,
         design_superseded_scope_envelopes,
