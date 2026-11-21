@@ -596,7 +596,8 @@ impl<'a> Reduction<'a> {
     /// to that distance, with `geometry.vertex-tolerance-widened` naming it.
     /// On a curve other than a line, conic or point, each end also inverts
     /// from the other end's seed; an edge whose two witnesses of one end lie on
-    /// different arcs of a self-crossing curve keeps no range.
+    /// different arcs of a self-crossing curve keeps no range. The two ends of
+    /// a closed curve's domain are one place, not two arcs.
     /// An edge that runs against its line is written with its ends exchanged.
     /// A line or conic carrier that a vertex lies beyond the edge's allowance
     /// from is ranged between the vertices' feet on it, with a loss naming the
@@ -683,21 +684,26 @@ impl<'a> Reduction<'a> {
                             .map(|last| [first, last]),
                     )
                 };
-                let gap = |point: Point3, parameter| match cadmpeg_ir::eval::model_curve_point_by_id(
-                    EvaluationAdmission::Decode(&ctx),
-                    &index,
-                    curve,
-                    parameter,
-                ) {
-                    Ok(foot) => Ok(Some(foot.get().distance(point))),
-                    Err(EvaluationFailure::ResourceLimit(limit)) => {
-                        Err(CodecError::ResourceLimit(limit))
+                let point_at = |parameter| -> Result<Option<Point3>, CodecError> {
+                    match cadmpeg_ir::eval::model_curve_point_by_id(
+                        EvaluationAdmission::Decode(&ctx),
+                        &index,
+                        curve,
+                        parameter,
+                    ) {
+                        Ok(foot) => Ok(Some(foot.get())),
+                        Err(EvaluationFailure::ResourceLimit(limit)) => {
+                            Err(CodecError::ResourceLimit(limit))
+                        }
+                        Err(
+                            EvaluationFailure::NoValue
+                            | EvaluationFailure::NonFinite(_)
+                            | EvaluationFailure::WorkExhausted,
+                        ) => Ok(None),
                     }
-                    Err(
-                        EvaluationFailure::NoValue
-                        | EvaluationFailure::NonFinite(_)
-                        | EvaluationFailure::WorkExhausted,
-                    ) => Ok(None),
+                };
+                let gap = |point: Point3, parameter| -> Result<Option<f64>, CodecError> {
+                    Ok(point_at(parameter)?.map(|foot| foot.distance(point)))
                 };
                 let solved = carrier.geometry.solved();
                 let line = matches!(solved, Some(SolvedCurveGeometry::Line(_)));
@@ -738,15 +744,16 @@ impl<'a> Reduction<'a> {
                     // A freeform curve can pass a point on two arcs, and the
                     // seed picks the witness: each end inverts from the other
                     // end's seed as well, and an edge whose two witnesses of an
-                    // end lie on different arcs keeps no range. On a periodic
-                    // curve the witnesses split the loop into two arcs, and the
-                    // seam's two witnesses bound a short one across the seam.
-                    let seam = match solved {
+                    // end lie on different arcs keeps no range. On a closed
+                    // curve, periodic or not, the witnesses split the loop into
+                    // two arcs, and the closure's two witnesses bound a short
+                    // one across it.
+                    let bounds = match solved {
                         Some(SolvedCurveGeometry::Nurbs(nurbs)) if nurbs.periodic() => {
                             cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)
                                 .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
                         }
-                        _ => None,
+                        _ => domain,
                     };
                     let one_arc =
                         |point: Point3, seed: f64, witness: f64| -> Result<bool, CodecError> {
@@ -761,9 +768,15 @@ impl<'a> Reduction<'a> {
                             if near(middle)? {
                                 return Ok(true);
                             }
-                            let Some([low, high]) = seam else {
+                            let Some([low, high]) = bounds else {
                                 return Ok(false);
                             };
+                            let Some(closure) = point_at(low)? else {
+                                return Ok(false);
+                            };
+                            if !gap(closure, high)?.is_some_and(|distance| distance <= allowance) {
+                                return Ok(false);
+                            }
                             let half = 0.5 * (high - low);
                             near(if middle + half <= high {
                                 middle + half

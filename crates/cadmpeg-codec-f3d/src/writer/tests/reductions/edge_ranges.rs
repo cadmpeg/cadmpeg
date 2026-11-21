@@ -568,6 +568,41 @@ fn an_open_edge_starting_where_its_nurbs_curve_crosses_itself_keeps_its_stand_in
 }
 
 #[test]
+fn an_open_edge_from_where_its_closed_nurbs_curve_closes_takes_its_range() {
+    // The curve starts and ends at (0,0,0) and passes (10,0,0) at 1. The
+    // edge's start inverts to 0 from the curve's start and to 3 from its end:
+    // the two ends of a closed curve's domain are one place, so the edge runs
+    // over [0, 1] as a sibling edge from (10,0,0) back to the closure would
+    // run over [1, 3].
+    let ir = cube_with_unranged_nurbs_edge(
+        vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(10.0, 0.0, 0.0),
+            Point3::new(10.0, 10.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+        ],
+        false,
+    );
+    let edge = ir.geometry.edges[0].id.to_string();
+    let (report, decoded) = write(&ir);
+    assert!(
+        !record_invalid_names(&report, &edge),
+        "{:#?}",
+        report.losses
+    );
+    let [start, end] = decoded.geometry.edges[0]
+        .param_range()
+        .expect("the edge is written with a range")
+        .get();
+    assert!(
+        start.abs() < EPS_PARAMETER && (end - 1.0).abs() < EPS_PARAMETER,
+        "[{start}, {end}]"
+    );
+    assert!(start_position(&decoded, 0).distance(Point3::new(0.0, 0.0, 0.0)) < EPS_PARAMETER);
+}
+
+#[test]
 fn an_open_edge_off_its_curve_is_ranged_between_the_feet_with_a_loss() {
     let ir = cube_with_unranged_edge(Point3::new(10.0, 5.0, 0.0));
     let edge = ir.geometry.edges[0].id.to_string();
