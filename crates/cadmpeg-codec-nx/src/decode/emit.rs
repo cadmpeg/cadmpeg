@@ -207,6 +207,13 @@ pub(super) fn emit_topology(
                 valid_vertex_xmts.insert(vertex);
             }
         }
+        if let Some(vertex) = graph
+            .get(NodeKind::Fin, *xmt)
+            .and_then(Node::vertex_loop_fin_fields)
+            .and_then(|fields| fields.vertex.map(u32::from))
+        {
+            valid_vertex_xmts.insert(vertex);
+        }
     }
     let mut admitted_shell_faces: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
     for face in graph
@@ -454,11 +461,24 @@ pub(super) fn emit_topology(
         let Some(fin_fields) = fin.fin_fields() else {
             continue;
         };
-        let curve_xmt = [fields.curve, fin_fields.curve_xmt]
+        // A tolerant edge carries one curve per FIN, each on its own surface. A FIN whose surface
+        // has no parameter conversion loses its pcurve, so the partner FIN supplies the carrier.
+        let partner_curve = fin_fields
+            .other
+            .and_then(|target| graph.get(NodeKind::Fin, u32::from(target)))
+            .and_then(Node::fin_fields)
+            .and_then(|partner| partner.curve_xmt);
+        let carrier_candidates = [fields.curve, fin_fields.curve_xmt, partner_curve]
             .into_iter()
             .flatten()
             .map(u32::from)
-            .find(|xmt| *xmt > 1);
+            .filter(|xmt| *xmt > 1)
+            .collect::<Vec<_>>();
+        let curve_xmt = carrier_candidates
+            .iter()
+            .copied()
+            .find(|xmt| curves.contains_key(xmt) || pcurves.contains_key(xmt))
+            .or_else(|| carrier_candidates.first().copied());
         let mut curve = curve_xmt.and_then(|xmt| curves.get(&xmt)).cloned();
         let mut param_range = curve_xmt.and_then(|xmt| trim_ranges.get(&xmt)).copied();
         if curve.is_none() {
@@ -604,15 +624,13 @@ pub(super) fn emit_topology(
             .vertex
             .and_then(|target| vertices.get(&u32::from(target)))
             .cloned();
-        if end.is_none()
-            && end_fields.vertex.is_none()
-            && end_fields.forward == end_fin
-            && end_fields.backward == end_fin
-        {
-            // A partnered closed FIN repeats the null vertex and closes its own
-            // forward/backward links. Its endpoint is the same analytic point
-            // as the current FIN's synthesized start, even when `end_fin` is a
-            // distinct radial partner record.
+        let partner_closes = (end_fields.forward == end_fin && end_fields.backward == end_fin)
+            || (end_fields.forward.is_none() && end_fields.backward.is_none());
+        if end.is_none() && end_fields.vertex.is_none() && partner_closes {
+            // A partnered closed FIN repeats the null vertex and either closes its own
+            // forward/backward links or, on a free edge of a sheet, has no links at all.
+            // Its endpoint is the same analytic point as the current FIN's synthesized
+            // start, even when `end_fin` is a distinct radial partner record.
             end = Some(start.clone());
         }
         let Some(end) = end else {
@@ -682,6 +700,26 @@ pub(super) fn emit_topology(
                 None => {
                     param_range = None;
                 }
+            }
+        }
+        // The stored senses order an edge without a range only relative to its curve record, so
+        // its vertices can still sit on an open spline in the reverse order.
+        if param_range.is_none() && start != end {
+            let runs_against_curve = curve
+                .as_ref()
+                .and_then(|carrier| curve_indices.get(carrier).copied())
+                .zip(vertex_positions.get(&start).copied())
+                .zip(vertex_positions.get(&end).copied())
+                .is_some_and(|((curve_index, (start_position, _)), (end_position, _))| {
+                    open_spline_runs_from_end_to_start(
+                        &ir.geometry.curves[curve_index].geometry,
+                        start_position,
+                        end_position,
+                    )
+                });
+            if runs_against_curve {
+                std::mem::swap(&mut start, &mut end);
+                against_source = !against_source;
             }
         }
 
@@ -770,14 +808,19 @@ pub(super) fn emit_topology(
         let id: LoopId =
             scope.id_from_display(&cadmpeg_ir::identity_component!("loop"), node.xmt())?;
         let ring_resolves = valid_loop_rings[&loop_xmt].iter().all(|fin_xmt| {
-            graph
-                .get(NodeKind::Fin, *fin_xmt)
-                .and_then(Node::fin_fields)
-                .is_some_and(|fields| {
-                    fields
-                        .edge
-                        .is_some_and(|target| edges.contains_key(&u32::from(target)))
-                })
+            let Some(fin) = graph.get(NodeKind::Fin, *fin_xmt) else {
+                return false;
+            };
+            if let Some(vertex_fin) = fin.vertex_loop_fin_fields() {
+                return vertex_fin
+                    .vertex
+                    .is_some_and(|target| vertices.contains_key(&u32::from(target)));
+            }
+            fin.fin_fields().is_some_and(|fields| {
+                fields
+                    .edge
+                    .is_some_and(|target| edges.contains_key(&u32::from(target)))
+            })
         });
         if !ring_resolves {
             topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
@@ -1204,13 +1247,31 @@ pub(super) fn emit_topology(
         }
     }
     for pending in pending_faces {
-        if let Some(failure) = face_loop_failures.remove(&pending.xmt) {
+        let boundary_failed = if let Some(failure) = face_loop_failures.remove(&pending.xmt) {
             topology_losses.push(crate::loss::NxLossCode::TopologyFaceLoopUnresolved.note(
                 format!("parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face is emitted without loops",
                 pending.xmt),
             ));
+            true
+        } else {
+            false
+        };
+        let mut loops = face_loops.remove(&pending.id).unwrap_or_default();
+        let face_node = graph.get(NodeKind::Face, pending.xmt);
+        let has_null_loop_ref = face_node
+            .and_then(Node::face_fields)
+            .is_some_and(|fields| fields.loop_xmt.is_none());
+        if loops.is_empty() && !boundary_failed && has_null_loop_ref {
+            loops = whole_sphere_pole_loops(
+                ir,
+                annotations,
+                &scope,
+                source_stream,
+                face_node,
+                &pending.id,
+                &pending.surface,
+            )?;
         }
-        let loops = face_loops.remove(&pending.id).unwrap_or_default();
 
         ir.geometry.faces.push(Face {
             id: pending.id,
@@ -1525,6 +1586,89 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     Ok(Some(vertex))
 }
 
+/// Bound a face that covers a whole sphere by a vertex loop at each pole. Parasolid
+/// stores such a face with no loop at all, but a neutral face needs a boundary.
+fn whole_sphere_pole_loops(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    scope: &IdScope,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
+    node: Option<&Node>,
+    face: &FaceId,
+    surface: &SurfaceId,
+) -> Result<Vec<LoopId>, CodecError> {
+    let Some(node) = node else {
+        return Ok(Vec::new());
+    };
+    let Some(sphere) = ir
+        .geometry
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)
+        .and_then(|candidate| candidate.geometry.solved())
+        .and_then(|solved| match solved {
+            SolvedSurfaceGeometry::Sphere(sphere) => Some(sphere),
+            _ => None,
+        })
+    else {
+        return Ok(Vec::new());
+    };
+    let center = sphere.center().get();
+    let axis = *sphere.frame().axis().as_raw();
+    let radius = sphere.radius().get();
+    let mut loops = Vec::new();
+    for (name, signed) in [("south", -radius), ("north", radius)] {
+        let Some(position) = FinitePoint3::new(Point3::new(
+            center.x + signed * axis.x,
+            center.y + signed * axis.y,
+            center.z + signed * axis.z,
+        )) else {
+            return Ok(Vec::new());
+        };
+        let label = format!("sphere-pole-{}-{name}", node.xmt());
+        let point: PointId =
+            scope.id_from_display(&cadmpeg_ir::identity_component!("point"), &label)?;
+        let vertex: VertexId =
+            scope.id_from_display(&cadmpeg_ir::identity_component!("vertex"), &label)?;
+        let id: LoopId = scope.id_from_display(&cadmpeg_ir::identity_component!("loop"), &label)?;
+        let offset = cadmpeg_core::decode::u64_from_index(node.pos());
+        annotations.note(
+            point.as_str(),
+            source_stream,
+            offset,
+            Some("SPHERE_POLE_POINT"),
+        );
+        annotations.exactness(point.as_str(), Exactness::Inferred);
+        annotations.note(
+            vertex.as_str(),
+            source_stream,
+            offset,
+            Some("SPHERE_POLE_VERTEX"),
+        );
+        annotations.exactness(vertex.as_str(), Exactness::Inferred);
+        ir.geometry
+            .points
+            .push(Point::new(point.clone(), position, None));
+        ir.geometry.vertices.push(Vertex {
+            id: vertex.clone(),
+            point,
+            tolerance: None,
+            native_ref: None,
+        });
+        ir.geometry.loops.push(Loop {
+            id: id.clone(),
+            face: face.clone(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
+                vertex,
+                pcurves: Vec::new(),
+            },
+            native_ref: None,
+        });
+        loops.push(id);
+    }
+    Ok(loops)
+}
+
 pub(super) fn canonical_trim_range(geometry: &CurveGeometry, raw: [f64; 2]) -> Option<[f64; 2]> {
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => {
@@ -1608,6 +1752,68 @@ fn curve_sense(graph: &Graph, xmt: u32) -> Option<cadmpeg_ir::topology::Sense> {
     .find_map(|kind| graph.get(kind, xmt))
     .and_then(Node::common_header)
     .map(|(sense, _)| sense)
+}
+
+/// End-pole gap, as a fraction of the polygon's length, below which a control polygon is closed.
+const CLOSED_POLYGON_GAP: f64 = 1.0e-6;
+
+/// Whether `start` lies after `end` along an open spline. The control polygon stays close to the
+/// spline, and the position of a point along the polygon needs no evaluation of the curve.
+fn open_spline_runs_from_end_to_start(
+    geometry: &CurveGeometry,
+    start: Point3,
+    end: Point3,
+) -> bool {
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = geometry.solved() else {
+        return false;
+    };
+    let poles = nurbs.pole_rows().raw_points();
+    let (Some(first), Some(last)) = (poles.first(), poles.last()) else {
+        return false;
+    };
+    let length = poles
+        .windows(2)
+        .map(|pair| pair[0].distance(pair[1]))
+        .sum::<f64>();
+    // A curve that closes on itself has a seam, so the order of two positions says nothing.
+    if first.distance(*last) <= length * CLOSED_POLYGON_GAP {
+        return false;
+    }
+    match (
+        polygon_position(&poles, start),
+        polygon_position(&poles, end),
+    ) {
+        (Some(from), Some(to)) => to < from,
+        _ => false,
+    }
+}
+
+/// The distance along a control polygon of the polygon point nearest to `point`.
+fn polygon_position(poles: &[Point3], point: Point3) -> Option<f64> {
+    let mut walked = 0.0;
+    let mut nearest: Option<(f64, f64)> = None;
+    for pair in poles.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let span = cadmpeg_ir::math::Vector3::new(b.x - a.x, b.y - a.y, b.z - a.z);
+        let arm = cadmpeg_ir::math::Vector3::new(point.x - a.x, point.y - a.y, point.z - a.z);
+        let length = span.norm();
+        let along = if length > 0.0 {
+            (arm.dot(span) / (length * length)).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let foot = Point3::new(
+            a.x + span.x * along,
+            a.y + span.y * along,
+            a.z + span.z * along,
+        );
+        let distance = foot.distance(point);
+        if nearest.is_none_or(|(best, _)| distance < best) {
+            nearest = Some((distance, walked + length * along));
+        }
+        walked += length;
+    }
+    nearest.map(|(_, position)| position)
 }
 
 fn reversed(sense: cadmpeg_ir::topology::Sense) -> cadmpeg_ir::topology::Sense {
@@ -1875,6 +2081,44 @@ mod tests {
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     use cadmpeg_ir::ids::CurveId;
     use cadmpeg_ir::math::Point3;
+
+    #[test]
+    fn an_edge_whose_vertices_sit_in_reverse_order_on_an_open_spline_runs_against_it() {
+        let spline = |poles: Vec<Point3>| {
+            CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+                cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
+                    2,
+                    vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    poles,
+                    None,
+                    false,
+                )
+                .unwrap(),
+            ))
+        };
+        let open = spline(vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(5.0, 4.0, 0.0),
+            Point3::new(10.0, 0.0, 0.0),
+        ]);
+        let (near_start, near_end) = (Point3::new(2.0, 1.5, 0.0), Point3::new(8.0, 1.5, 0.0));
+
+        assert!(!super::open_spline_runs_from_end_to_start(
+            &open, near_start, near_end
+        ));
+        assert!(super::open_spline_runs_from_end_to_start(
+            &open, near_end, near_start
+        ));
+
+        let closed = spline(vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(5.0, 4.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+        ]);
+        assert!(!super::open_spline_runs_from_end_to_start(
+            &closed, near_end, near_start
+        ));
+    }
 
     fn empty_source_scan() -> Scan<'static> {
         Scan {
