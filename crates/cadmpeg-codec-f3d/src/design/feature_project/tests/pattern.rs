@@ -155,24 +155,37 @@ fn circular_pattern_seed_role_selects_body_or_face() {
             )),
         ),
     ] {
-        let definition = project_circular_pattern(
-            &circular_scope(),
-            &[group(10, 20, role)],
-            &[],
-            &[],
-            &[],
-            &mut Vec::new(),
-        )
-        .expect("circular pattern");
-        let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) = definition
-        else {
-            panic!("circular pattern definition");
-        };
-        assert_eq!(seeds, vec![expected_seed]);
-        assert!(matches!(
-            pattern.definition(),
-            PatternTransform::Circular { .. }
-        ));
+        for symmetric in [None, Some(false)] {
+            let mut scope = circular_scope();
+            if let crate::records::feature::scope::DesignScopePayloadMut::CPattern(Some(
+                construction,
+            )) = scope.payload_mut()
+            {
+                construction.symmetric =
+                    symmetric.map(|value| crate::records::identity::Located { value, offset: 21 });
+            }
+            let mut losses = Vec::new();
+            let definition = project_circular_pattern(
+                &scope,
+                &[group(10, 20, role)],
+                &[],
+                &[],
+                &[],
+                &mut losses,
+            )
+            .expect("circular pattern");
+            assert_unread_circular_controls(&losses);
+            let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+                definition
+            else {
+                panic!("circular pattern definition");
+            };
+            assert_eq!(seeds, vec![expected_seed.clone()]);
+            assert!(matches!(
+                pattern.definition(),
+                PatternTransform::Circular { .. }
+            ));
+        }
     }
 }
 
@@ -202,41 +215,89 @@ fn a_symmetric_partial_turn_reports_its_dropped_distribution() {
         losses
     };
     let losses = with(std::f64::consts::FRAC_PI_2, true);
-    let [loss] = losses.as_slice() else {
-        panic!("one placement loss");
-    };
+    assert_eq!(losses.len(), 2);
     assert_eq!(
-        loss.code,
+        losses[0].code,
+        crate::loss::F3dLossCode::FeatureCircularPatternControlsAssumed.kind()
+    );
+    assert_eq!(
+        losses[1].code,
         crate::loss::F3dLossCode::FeatureCircularPatternPlacementNotTransferred.kind()
     );
-    assert!(loss.message.contains("symmetric distribution"));
-    assert!(with(std::f64::consts::TAU, true).is_empty());
-    assert!(with(std::f64::consts::FRAC_PI_2, false).is_empty());
-
-    let mut scope = circular_scope();
-    if let crate::records::feature::scope::DesignScopePayloadMut::CPattern(Some(construction)) =
-        scope.payload_mut()
-    {
-        construction.angle =
-            cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap();
+    assert!(losses[1].message.contains("symmetric distribution"));
+    for losses in [
+        with(std::f64::consts::TAU, true),
+        with(std::f64::consts::FRAC_PI_2, false),
+    ] {
+        let [loss] = losses.as_slice() else {
+            panic!("one circular control assumption loss");
+        };
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::FeatureCircularPatternControlsAssumed.kind()
+        );
     }
-    let mut losses = Vec::new();
-    project_circular_pattern(
-        &scope,
-        &[group(10, 20, DesignOperandRole::BODIES_B)],
-        &[],
-        &[],
-        &[],
-        &mut losses,
-    )
-    .expect("circular pattern");
-    let [loss] = losses.as_slice() else {
-        panic!("one assumption loss");
+}
+
+fn assert_unread_circular_controls(losses: &[cadmpeg_ir::report::loss::LossNote]) {
+    let [loss] = losses else {
+        panic!("one circular control assumption loss");
     };
     assert_eq!(
         loss.code,
-        crate::loss::F3dLossCode::FeatureCircularPatternDistributionAssumed.kind()
+        crate::loss::F3dLossCode::FeatureCircularPatternControlsAssumed.kind()
     );
+    assert!(loss.message.contains("equal spacing"));
+    assert!(loss.message.contains("Compute controls remain unread"));
+}
+
+#[test]
+fn circular_pattern_unread_controls_cover_partial_turn_and_feature_seeds() {
+    for feature_seed in [false, true] {
+        let mut scope = circular_scope();
+        if let crate::records::feature::scope::DesignScopePayloadMut::CPattern(Some(construction)) =
+            scope.payload_mut()
+        {
+            construction.count = std::num::NonZeroU32::new(2).unwrap();
+            construction.angle =
+                cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::FRAC_PI_2).unwrap();
+        }
+        let feature = seed_scope(5, Some(2));
+        let selections = if feature_seed {
+            vec![compact_entity_selection(30, 31, 5)]
+        } else {
+            Vec::new()
+        };
+        let mut losses = Vec::new();
+        let definition = project_circular_pattern(
+            &scope,
+            &[group(10, 30, DesignOperandRole::BODIES_A)],
+            &[],
+            &selections,
+            &[scope.clone(), feature.clone()],
+            &mut losses,
+        )
+        .expect("partial-turn circular pattern");
+        let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) = definition
+        else {
+            panic!("circular pattern definition");
+        };
+        if feature_seed {
+            assert_eq!(
+                seeds,
+                vec![PatternSeed::Feature(crate::ids::neutral_feature_id(
+                    &feature
+                ))]
+            );
+        }
+        let PatternTransform::Circular { angle, count, .. } = pattern.definition() else {
+            panic!("circular transform");
+        };
+        assert_eq!(*count, 2);
+        assert!((angle.get() - std::f64::consts::FRAC_PI_2).abs() < EPS_SPACING);
+        assert_unread_circular_controls(&losses);
+        assert!(losses[0].message.contains("one-sided"));
+    }
 }
 
 #[test]
@@ -672,9 +733,11 @@ fn circular_feature_seeds_keep_the_compute_interpretation_native() {
     };
     assert_eq!(
         loss.code,
-        crate::loss::F3dLossCode::FeatureCircularPatternComputeUnresolved.kind()
+        crate::loss::F3dLossCode::FeatureCircularPatternControlsAssumed.kind()
     );
     assert!(loss.message.contains("control 2"));
+    assert!(loss.message.contains("equal spacing"));
+    assert!(loss.message.contains("Compute controls remain unread"));
 }
 
 #[test]

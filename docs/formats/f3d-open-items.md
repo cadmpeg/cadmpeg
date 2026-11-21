@@ -2729,11 +2729,11 @@ DR-481 tracks a Chamfer group with two bounded-face members and a nonempty trans
 
 **Question.** Which bytes store the Compute option of a circular pattern of features, and does it share the rectangular distribution block's fields? Which bytes store the symmetric and equal-spacing controls in legacy circular-pattern records?
 
-**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the rectangular Compute option: `0` Optimized, `1` Identical, `2` Adjust, in the u32 before the seed kind. The circular decoder reads the symmetric byte from a payload whose distribution block stores u32 `2` in the matching position. The five patterns with 220-byte axis frames in Parametric_20t_GT2_Pulley, LDO_153030, and Parametric_extrusion_generator retain their legacy distribution controls in native data. Their neutral definitions use uniform spacing. The three partial turns project as one-sided with `feature.circular-pattern-distribution-assumed`.
+**Known.** `f3d.md` §3.1 "A rectangular-pattern scope can store an indexed pattern payload" gives the rectangular Compute option: `0` Optimized, `1` Identical, `2` Adjust, in the u32 before the seed kind. The circular decoder reads the symmetric byte from a payload whose distribution block stores u32 `2` in the matching position. The five patterns with 220-byte axis frames in Parametric_20t_GT2_Pulley, LDO_153030, and Parametric_extrusion_generator retain their legacy distribution controls in native data. Their neutral definitions assume equal spacing: a full turn uses total angle divided by count; a partial turn uses total angle divided by count minus one and places the last instance at the total angle. Each circular projection reports `feature.circular-pattern-controls-assumed`, which names equal spacing and the unread Compute control. A projection with an unread symmetric byte also names its one-sided distribution in that note.
 
 **Need.** The circular distribution-block bytes for Compute options `0` and `1`, with symmetric byte `0` and `1`. Saves with each legacy symmetric and equal-spacing control changed separately must bind those controls to their bytes. Use three instances over a partial turn, asymmetric seed geometry, and the stored result bodies.
 
-**Note.** A circular pattern of features projected from a read payload reports `feature.circular-pattern-compute-unresolved`. The raw distribution control stays in the native payload.
+**Note.** A circular pattern projected from a read payload includes the fixed distribution control in `feature.circular-pattern-controls-assumed`. The raw distribution control stays in the native payload.
 
 ### DR-818. Targets of rectangular-pattern body references
 
