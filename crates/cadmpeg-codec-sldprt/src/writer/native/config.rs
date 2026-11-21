@@ -77,19 +77,45 @@ const VIEWS: [(&str, Option<[f64; 9]>); 10] = [
     (
         "*Isometric",
         Some([
-            std::f64::consts::FRAC_1_SQRT_2,
-            -0.408_248_290_463_863,
-            0.577_350_269_189_626,
+            0.707_106_781_186_546_2,
+            -0.408_204_055_911_355_17,
+            0.577_381_545_199_983_9,
             0.0,
-            0.816_496_580_927_726,
-            0.577_350_269_189_626,
-            -std::f64::consts::FRAC_1_SQRT_2,
-            -0.408_248_290_463_863,
-            0.577_350_269_189_626,
+            0.816_540_811_885_749_9,
+            0.577_287_712_085_542_6,
+            -0.707_106_781_186_548_8,
+            -0.408_204_055_911_353_7,
+            0.577_381_545_199_981_7,
         ]),
     ),
-    ("*Trimetric", None),
-    ("*Dimetric", None),
+    (
+        "*Trimetric",
+        Some([
+            0.884_418_121_677_421_4,
+            -0.240_365_894_683_921_36,
+            0.400_036_026_779_313_94,
+            0.0,
+            0.857_167_300_702_134,
+            0.515_038_074_910_018_1,
+            -0.466_695_388_930_062_1,
+            -0.455_509_006_804_273_25,
+            0.758_094_294_050_286_8,
+        ]),
+    ),
+    (
+        "*Dimetric",
+        Some([
+            0.935_414_346_724_141_1,
+            -0.117_851_130_142_681_38,
+            0.333_333_333_266_778_1,
+            0.0,
+            0.942_809_041_610_104,
+            0.333_333_333_254_022_4,
+            -0.353_553_390_512_166_05,
+            -0.311_804_782_167_191_8,
+            0.881_917_103_743_329_1,
+        ]),
+    ),
 ];
 
 /// Writes the stream and returns it with the class map it ends with and the
@@ -153,7 +179,7 @@ pub(super) fn config(facts: &Facts<'_>) -> Result<(Vec<u8>, ClassMap, PartRefs),
     a.u32(next_id);
     a.u32(1);
     a.object("moAtom_c");
-    named_with(&mut a, None, Schema::Plain, u32::MAX, 0);
+    atom_head(&mut a);
     a.zeros(ATOM_RUN);
     a.u32(VERSION);
     a.u32(RECORD_BASE + 1);
@@ -183,11 +209,11 @@ pub(super) fn config(facts: &Facts<'_>) -> Result<(Vec<u8>, ClassMap, PartRefs),
     a.zeros(THREAD_DATA_RUN);
     a.object("moPrtExplViewManager_c");
     named(&mut a, None, Schema::Plain, ids::EXPLODED_VIEWS);
-    block(&mut a, TAIL);
+    block(&mut a, Tail { word64: 0, ..TAIL });
     a.zeros(8);
     a.bytes(&[0xff; 8]);
     a.zeros(26);
-    a.u32(next_id);
+    a.u32(FIRST_BODY_ID);
     a.zeros(8);
     let (mut bytes, map) = a.finish()?;
     patch_section_lengths(&mut bytes, first_section, second_section)?;
@@ -199,6 +225,18 @@ pub(super) fn config(facts: &Facts<'_>) -> Result<(Vec<u8>, ClassMap, PartRefs),
             bodies,
         },
     ))
+}
+
+/// An atom's named head: no name, u32 `1`, no identifier.
+fn atom_head(a: &mut Archive) {
+    a.null();
+    a.u32(1);
+    a.u16(0);
+    a.u8(0);
+    a.u8(0x40);
+    a.u32(u32::MAX);
+    a.u32(0);
+    a.cstring("");
 }
 
 /// The part's first u32 is the byte count from its end to the u32 after the
@@ -225,7 +263,7 @@ fn patch_section_lengths(bytes: &mut [u8], first: usize, second: usize) -> Resul
     Ok(())
 }
 
-/// A `moVisualProperties_c` body (§2.3) of a grey part with no appearance.
+/// A `moVisualProperties_c` body (§2.3) of a white part with no appearance.
 fn visual(a: &mut Archive) {
     a.u32(0x00ff_ffff);
     a.u32(0);
@@ -234,15 +272,15 @@ fn visual(a: &mut Archive) {
     a.cstring("");
     a.f64s(&[1.0, 1.0, 1.0, 0.3125, 0.0, 0.3]);
     a.u32(0);
-    a.u32s(&[0, 0, 0, 0, 0]);
+    a.u32s(&[1, 0, 1, 0, 1]);
+    a.cstring("");
+    a.u32(1);
+    a.u32(0);
     a.cstring("");
     a.u32(0);
-    a.u32(0);
     a.cstring("");
     a.u32(0);
-    a.cstring("");
-    a.u32(0);
-    a.u32(0);
+    a.u32(1);
     a.cstring("");
     a.zeros(20);
 }
@@ -263,8 +301,9 @@ const UNIT_WORDS: [u32; 4] = [1, 0, 1, 1];
 /// The step value most units state.
 const UNIT_STEP: f64 = 0.01;
 
-/// The angle a unit table states after the decimal places: π/4.
-const UNIT_ANGLE: f64 = std::f64::consts::FRAC_PI_4;
+/// The angle a unit states after its decimal places: the little-endian f64
+/// of π/4 rounded to fourteen decimal places.
+const UNIT_ANGLE: [u8; 8] = [0x28, 0x2d, 0x44, 0x54, 0xfb, 0x21, 0xe9, 0x3f];
 
 const UNITS: [Unit; 15] = [
     Unit {
@@ -411,7 +450,7 @@ fn unit_base(a: &mut Archive, unit: &Unit) {
     a.f64(unit.value);
     a.u32(unit.decimals);
     a.u32(1);
-    a.f64(UNIT_ANGLE);
+    a.bytes(&UNIT_ANGLE);
     a.u32s(&unit.words);
     a.f64(0.0);
     a.u32(0);
@@ -683,11 +722,12 @@ fn block_manager(a: &mut Archive) {
     view(a, "*Top", VIEWS[5].1);
     a.zeros(ANNOTATION_VIEW_RUN);
     a.u32(0);
-    a.u32(0);
+    a.u32(BLOCK_MANAGER_WORD);
     a.u32(1);
     a.u32(0);
     a.zeros(30);
     a.object("moPMarkRecord_c");
+    a.u32(MARK_KIND);
     a.u32(1);
     a.u32(0);
     a.u32(0);
@@ -705,3 +745,10 @@ fn block_manager(a: &mut Archive) {
 
 /// The sketch-block manager's identifier.
 const BLOCK_MANAGER_ID: u32 = 100;
+
+/// The sketch-block manager's `moPMarkRecord_c` *X* (§2.3), which writes a
+/// further u32 `1`.
+const MARK_KIND: u32 = 4;
+
+/// The u32 the sketch-block manager writes before its identifier count.
+const BLOCK_MANAGER_WORD: u32 = 199;

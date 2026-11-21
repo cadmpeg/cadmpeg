@@ -64,6 +64,11 @@ pub(super) struct Tail {
     pub(super) word30: u32,
     /// The u32 at tail +56.
     pub(super) word56: u32,
+    /// The u32 at tail +60.
+    pub(super) word60: u32,
+    /// Whether the block states the version and date it was created in at
+    /// +29 and +33.
+    pub(super) created: bool,
     /// The u32 at tail +64, written in a part of `swVersion` 11000 or above.
     pub(super) word64: u32,
 }
@@ -74,6 +79,8 @@ pub(super) const TAIL: Tail = Tail {
     kind: 1,
     word30: 0x0004_0000,
     word56: 0,
+    word60: 1,
+    created: false,
     word64: 1,
 };
 
@@ -84,6 +91,8 @@ pub(super) const ADDED_FOLDER_TAIL: Tail = Tail {
     kind: 3,
     word30: 0,
     word56: 320_106,
+    word60: 1,
+    created: false,
     word64: 1,
 };
 
@@ -102,8 +111,13 @@ pub(super) fn block_close(archive: &mut Archive, tail: Tail) {
     archive.u32(tail.block_word);
     archive.u32(0);
     archive.u8(0);
-    archive.u32(0);
-    archive.u32(0);
+    if tail.created {
+        archive.u32(VERSION);
+        archive.u32(CREATION_DATE);
+    } else {
+        archive.u32(0);
+        archive.u32(0);
+    }
     archive.u32(VERSION);
     archive.f64(0.0);
     archive.u32(CREATION_DATE);
@@ -119,7 +133,7 @@ pub(super) fn block_close(archive: &mut Archive, tail: Tail) {
     archive.u32(FILETIME.1);
     archive.u16(2);
     archive.u32(tail.word56);
-    archive.u32(1);
+    archive.u32(tail.word60);
     archive.u32(tail.word64);
 }
 

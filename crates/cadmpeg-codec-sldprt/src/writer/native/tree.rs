@@ -24,6 +24,17 @@ const FIXED_RELATION: u32 = 17;
 /// The u32 a sketch tail opens its group list with: `100000` and no groups.
 const NO_CONTOUR_GROUPS: u32 = 100_000;
 
+/// The block tail of a stored body: created in the part's version, kind `3`
+/// and +60 `0`.
+const BASE_BODY_TAIL: Tail = Tail {
+    kind: 3,
+    word30: 0,
+    word60: 0,
+    created: true,
+    word64: 0,
+    ..TAIL
+};
+
 /// The top-level objects of the default tree: twelve folders, three planes
 /// and their plane data, and the origin.
 const DEFAULT_TREE_OBJECTS: usize = 19;
@@ -241,6 +252,15 @@ impl Plane {
 
     /// The plane's normal: Front is the XY plane, Top the XZ plane and Right
     /// the YZ plane.
+    /// The plane's rotation rows, for the planes that state one.
+    fn rotation(self) -> Option<[f64; 9]> {
+        match self {
+            Self::Front => None,
+            Self::Top => Some([1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0]),
+            Self::Right => Some([-0.0, 0.0, 1.0, -0.0, 1.0, 0.0, -1.0, 0.0, 0.0]),
+        }
+    }
+
     fn normal(self) -> [f64; 3] {
         match self {
             Self::Front => [0.0, 0.0, 1.0],
@@ -265,13 +285,19 @@ fn reference_plane(archive: &mut Archive, plane: Plane) {
     archive.zeros(10);
 }
 
-/// `moDefaultRefPlnData_c`: the plane's point and normal, its display
-/// half-extents and centre (§2.3).
+/// `moDefaultRefPlnData_c`: the plane's point and normal, its rotation, its
+/// display half-extents and centre (§2.3).
 fn plane_data(archive: &mut Archive, plane: Plane) {
     archive.object("moDefaultRefPlnData_c");
     archive.f64s(&[0.0, 0.0, 0.0]);
     archive.f64s(&plane.normal());
-    archive.u8(0);
+    match plane.rotation() {
+        Some(rows) => {
+            archive.u8(1);
+            archive.f64s(&rows);
+        }
+        None => archive.u8(0),
+    }
     archive.f64s(&[0.0, 0.0, 0.0, 1.0]);
     archive.u8(0);
     archive.f64s(&[
@@ -417,7 +443,7 @@ pub(super) fn unit_component(archive: &mut Archive, body: u32) {
 fn base_body(archive: &mut Archive, body: &Body, component: u32) {
     archive.object("moBaseBody_c");
     named(archive, Some(&body.name), Schema::Plain, body.feature_id);
-    block(archive, Tail { word64: 0, ..TAIL });
+    block(archive, BASE_BODY_TAIL);
     body_head(archive, Some(std::slice::from_ref(&component)), &[body.id]);
     archive.object("moPMarkRecord_c");
     archive.u32(10);
